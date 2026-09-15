@@ -9,6 +9,59 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn complete_codec_admits_provider_names_with_source_identity_encoding() {
+    let document = br##"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name=""/><Object type="Part::Feature" name="A B"/><Object type="Part::Feature" name="#"/></Objects>
+<ObjectData Count="3"><Object name=""><Properties Count="0"/></Object><Object name="A B"><Properties Count="0"/></Object><Object name="#"><Properties Count="0"/></Object></ObjectData>
+</Document>"##;
+    let gui = br##"<Document SchemaVersion="1"><ViewProviderData Count="3">
+<ViewProvider name=""><Properties Count="1"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property></Properties></ViewProvider>
+<ViewProvider name="A B"><Properties Count="1"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property></Properties></ViewProvider>
+<ViewProvider name="#"><Properties Count="1"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"##;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("legal provider names must decode");
+
+    let mut appearance_ids = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .map(|appearance| appearance.id.as_str())
+        .collect::<Vec<_>>();
+    appearance_ids.sort_unstable();
+    assert_eq!(
+        appearance_ids,
+        [
+            "fcstd:appearance:object#%23",
+            "fcstd:appearance:object#%EMPTY",
+            "fcstd:appearance:object#A%20B",
+        ]
+    );
+    let providers = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
+        .expect("providers");
+    let unnamed = providers
+        .iter()
+        .find(|provider| provider.name.is_empty())
+        .expect("unnamed provider");
+    assert_eq!(unnamed.id, "fcstd:native:gui-view-provider#%EMPTY");
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 pub(crate) fn retains_ordered_document_level_gui_state() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>

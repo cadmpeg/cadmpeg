@@ -307,6 +307,8 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             || [node.copy_on_change_source(), node.copy_on_change_group()]
                 .into_iter()
                 .flatten()
+                .filter(|target| target.document().is_none())
+                .filter_map(|target| target.object())
                 .chain(node.element_objects().iter().map(String::as_str))
                 .any(|object| !object_ids.contains(object))
         {
@@ -852,8 +854,10 @@ impl CodecBackend for FcstdCodec {
                 &mut ir,
                 "fcstd",
                 [UnknownRecord::retained(
-                    UnknownId::mint(native::native_id("thumbnail", name))
-                        .expect("identity grammar"),
+                    UnknownId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
+                        native::encoded_key(name),
+                    ),
                     0,
                     bytes.to_vec(),
                     vec![native::native_id("document", "0")],

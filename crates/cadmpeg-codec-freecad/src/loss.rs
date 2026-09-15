@@ -12,7 +12,11 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind, Severity,
+};
+
+const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 
 /// A stable, machine-readable identifier for one `.fcstd` transfer loss.
 ///
@@ -111,18 +115,9 @@ impl FreecadLossCode {
             Self::SourceGuiSchemaUnverified => None,
             other => other.shared_taxonomy().strict_floor(),
         };
-        cadmpeg_ir::report::NamespacedLossKind::new(
-            const {
-                match cadmpeg_ir::report::LossNamespace::new("fcstd") {
-                    Ok(namespace) => namespace,
-                    Err(_) => panic!("reserved codec namespace"),
-                }
-            },
-            self.code(),
-            self.shared_taxonomy(),
-        )
-        .with_strict_floor(strict_floor)
-        .into()
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
+            .with_strict_floor(strict_floor)
+            .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.

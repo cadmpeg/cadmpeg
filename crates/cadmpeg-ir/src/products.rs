@@ -431,20 +431,20 @@ impl LinkState {
 pub struct CopyOnChange {
     /// Ownership policy.
     pub policy: CopyOnChangePolicy,
-    /// Original component tracked by copy-on-change.
+    /// Original component or external object tracked by copy-on-change.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "cadmpeg_core::absent_key::present"
     )]
-    pub source: Option<ProductDefinitionId>,
-    /// Internal component holding owned copies.
+    pub source: Option<PrototypeReference>,
+    /// Internal component or external object holding owned copies.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "cadmpeg_core::absent_key::present"
     )]
-    pub group: Option<ProductDefinitionId>,
+    pub group: Option<PrototypeReference>,
     /// Whether the tracked source was persisted as changed.
     #[serde(
         default,
@@ -814,12 +814,14 @@ mod tests {
             Some(true),
             Some(CopyOnChange {
                 policy: CopyOnChangePolicy::Owned,
-                source: Some(
-                    ProductDefinitionId::mint("test:model:product#source").expect("valid identity"),
-                ),
-                group: Some(
-                    ProductDefinitionId::mint("test:model:product#group").expect("valid identity"),
-                ),
+                source: Some(PrototypeReference::Local {
+                    definition: ProductDefinitionId::mint("test:model:product#source")
+                        .expect("valid identity"),
+                }),
+                group: Some(PrototypeReference::Local {
+                    definition: ProductDefinitionId::mint("test:model:product#group")
+                        .expect("valid identity"),
+                }),
                 touched: Some(true),
             }),
         );
@@ -832,8 +834,8 @@ mod tests {
                 {"kind": "claim_child", "claim": true},
                 {"kind": "copy_on_change", "state": {
                     "policy": {"policy": "owned"},
-                    "source": "test:model:product#source",
-                    "group": "test:model:product#group",
+                    "source": {"scope": "local", "definition": "test:model:product#source"},
+                    "group": {"scope": "local", "definition": "test:model:product#group"},
                     "touched": true
                 }}
             ])

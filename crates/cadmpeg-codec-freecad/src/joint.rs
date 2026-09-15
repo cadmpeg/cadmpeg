@@ -207,12 +207,14 @@ pub(crate) fn transfer_neutral(
                     },
                 )
             };
-            let id = JointId::mint(crate::native::model_id(
-                "joint",
-                &record.object,
-                "constraint",
-            ))
-            .expect("identity grammar");
+            let key = match crate::native::model_key(&record.object, "constraint") {
+                Ok(key) => key,
+                Err(error) => return Some(Err(CodecError::malformed(error))),
+            };
+            let id = JointId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "joint"),
+                key,
+            );
             let angle = scalar("Angle").map(f64::to_radians);
             let distance = scalar("Distance");
             let distance2 = scalar("Distance2");

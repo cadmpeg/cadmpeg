@@ -145,6 +145,90 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
 }
 
 #[test]
+fn mutation_rejects_link_carrier_edits_without_changing_the_graph() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
+<ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode link carrier");
+    let before = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties")
+        .iter()
+        .find(|property| property.name == "Support")
+        .expect("Support property")
+        .links()
+        .to_vec();
+    let mut edited = decoded.ir().clone();
+    let error = FcstdCodec
+        .set_property_value_attribute(
+            &mut edited,
+            crate::FcstdPropertyOwner::Object("Owner"),
+            "Support",
+            0,
+            "value",
+            "Missing",
+        )
+        .expect_err("link target mutation must refuse stale graph output");
+    assert!(error.to_string().contains("graph-aware serializer"));
+    let after = edited
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties")
+        .iter()
+        .find(|property| property.name == "Support")
+        .expect("Support property")
+        .links()
+        .to_vec();
+    assert_eq!(after, before);
+    assert!(crate::validate_native(&edited).is_empty());
+}
+
+#[test]
+fn writer_rejects_direct_link_carrier_graph_drift() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
+<ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode link carrier");
+    let mut edited = decoded.ir().clone();
+    let namespace = edited.native.namespace_mut("fcstd");
+    let mut properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let support = properties
+        .iter_mut()
+        .find(|property| property.name == "Support")
+        .expect("Support property");
+    support.values_mut().expect("persisted property")[0]
+        .attributes
+        .insert("value".into(), "Missing".into());
+    namespace
+        .set_arena("properties", &properties)
+        .expect("replace properties");
+
+    let error = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("writer must check the written semantic graph");
+    assert!(error.to_string().contains("value or link graph"));
+}
+
+#[test]
 fn seekable_encoder_matches_the_write_only_fallback() {
     let decoded = FcstdCodec
         .decode(

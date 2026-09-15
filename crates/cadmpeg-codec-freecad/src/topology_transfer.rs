@@ -333,7 +333,7 @@ impl<'a> Builder<'a> {
                 let primary_range =
                     normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
                 ir.model.pcurves.push(Pcurve {
-                    id: self.pcurve_id(position + 1, representation_index, false),
+                    id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
                     metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                         None,
@@ -366,7 +366,7 @@ impl<'a> Builder<'a> {
                         Some(parameter_range),
                     );
                     ir.model.pcurves.push(Pcurve {
-                        id: self.pcurve_id(position + 1, representation_index, true),
+                        id: self.pcurve_id(position + 1, representation_index, true)?,
                         geometry: secondary_geometry,
                         metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
                             None,
@@ -419,18 +419,25 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    fn pcurve_id(&self, edge: usize, representation: usize, secondary: bool) -> PcurveId {
-        PcurveId::mint(crate::native::model_id(
-            "pcurve",
-            &self.payload.id,
-            format!(
-                "{}:{}:{}",
-                edge,
-                representation + 1,
-                usize::from(secondary) + 1
-            ),
+    fn pcurve_id(
+        &self,
+        edge: usize,
+        representation: usize,
+        secondary: bool,
+    ) -> Result<PcurveId, CodecError> {
+        Ok(PcurveId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "pcurve"),
+            crate::native::model_key(
+                &self.payload.id,
+                format!(
+                    "{}:{}:{}",
+                    edge,
+                    representation + 1,
+                    usize::from(secondary) + 1
+                ),
+            )
+            .map_err(CodecError::malformed)?,
         ))
-        .expect("identity grammar")
     }
 
     fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
@@ -485,8 +492,10 @@ impl<'a> Builder<'a> {
             }
         }
         let body_key = self.topology_label(root.shape, Transform::identity())?;
-        let body_id = BodyId::mint(crate::native::model_id("body", &self.payload.id, &body_key))
-            .expect("identity grammar");
+        let body_id = BodyId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "body"),
+            crate::native::model_key(&self.payload.id, &body_key).map_err(CodecError::malformed)?,
+        );
         self.current_body = Some(body_id.clone());
         let kind = match root_kind {
             TextShapeKind::Solid => BodyKind::Solid,
@@ -565,8 +574,10 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
         let key = self.topology_label(shape_index, transform)?;
-        let region_id = RegionId::mint(crate::native::model_id("region", &self.payload.id, &key))
-            .expect("identity grammar");
+        let region_id = RegionId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "region"),
+            crate::native::model_key(&self.payload.id, &key).map_err(CodecError::malformed)?,
+        );
         let mut shells = Vec::new();
         if shape.kind() == TextShapeKind::Solid {
             for child in shape
@@ -634,8 +645,10 @@ impl<'a> Builder<'a> {
     ) -> Result<Vec<ShellId>, CodecError> {
         let shape = self.shape(shape_index)?.clone();
         let key = self.topology_label(shape_index, transform)?;
-        let shell_id = ShellId::mint(crate::native::model_id("shell", &self.payload.id, &key))
-            .expect("identity grammar");
+        let shell_id = ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "shell"),
+            crate::native::model_key(&self.payload.id, &key).map_err(CodecError::malformed)?,
+        );
         if shape.kind() == TextShapeKind::Shell {
             let face_uses = shape
                 .children
@@ -648,12 +661,14 @@ impl<'a> Builder<'a> {
                 let component_id = if component_index == 0 {
                     shell_id.clone()
                 } else {
-                    ShellId::mint(crate::native::model_id(
-                        "shell",
-                        &self.payload.id,
-                        format!("{key}:component:{}", component_index + 1),
-                    ))
-                    .expect("identity grammar")
+                    ShellId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "shell"),
+                        crate::native::model_key(
+                            &self.payload.id,
+                            format!("{key}:component:{}", component_index + 1),
+                        )
+                        .map_err(CodecError::malformed)?,
+                    )
                 };
                 let mut faces = Vec::with_capacity(component.len());
                 for &face_index in component {
@@ -850,8 +865,10 @@ impl<'a> Builder<'a> {
             .compose(self.tables.location(location)?)
             .map_err(location_transform_error)?;
         let face_key = self.topology_label(face_use.shape, face_transform)?;
-        let face_id = FaceId::mint(crate::native::model_id("face", &self.payload.id, &face_key))
-            .expect("identity grammar");
+        let face_id = FaceId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "face"),
+            crate::native::model_key(&self.payload.id, &face_key).map_err(CodecError::malformed)?,
+        );
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
         // Only the owning topological face placement remains to be applied here.
         let located_triangulation = triangulation
@@ -874,12 +891,14 @@ impl<'a> Builder<'a> {
         } else if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             &located_triangulation
         {
-            let id = SurfaceId::mint(crate::native::model_id(
-                "surface",
-                &self.payload.id,
-                format!("triangulation:{index}@{face_key}"),
-            ))
-            .expect("identity grammar");
+            let id = SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                crate::native::model_key(
+                    &self.payload.id,
+                    format!("triangulation:{index}@{face_key}"),
+                )
+                .map_err(CodecError::malformed)?,
+            );
             if self.emitted_surfaces.insert(id.clone()) {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
@@ -957,22 +976,26 @@ impl<'a> Builder<'a> {
             if edge_uses.is_empty() {
                 continue;
             }
-            let loop_id = LoopId::mint(crate::native::model_id(
-                "loop",
-                &self.payload.id,
-                format!("{}:{}", face_key, loop_index + 1),
-            ))
-            .expect("identity grammar");
+            let loop_id = LoopId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "loop"),
+                crate::native::model_key(
+                    &self.payload.id,
+                    format!("{}:{}", face_key, loop_index + 1),
+                )
+                .map_err(CodecError::malformed)?,
+            );
             let coedge_ids = (0..edge_uses.len())
                 .map(|index| {
-                    CoedgeId::mint(crate::native::model_id(
-                        "coedge",
-                        &self.payload.id,
-                        format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
+                    Ok(CoedgeId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "coedge"),
+                        crate::native::model_key(
+                            &self.payload.id,
+                            format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
+                        )
+                        .map_err(CodecError::malformed)?,
                     ))
-                    .expect("identity grammar")
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, CodecError>>()?;
             for (index, edge_use) in edge_uses.iter().enumerate() {
                 let edge_transform = wire_transform
                     .compose(self.tables.location(edge_use.location)?)
@@ -1007,8 +1030,15 @@ impl<'a> Builder<'a> {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
-                        .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).map_err(
+                        |error| {
+                            CodecError::malformed(format_args!(
+                                "FCStd face {} loop {} has invalid ring: {error}",
+                                face_id,
+                                loop_index + 1
+                            ))
+                        },
+                    )?,
                 ),
             });
             self.bind_topology(
@@ -1078,12 +1108,14 @@ impl<'a> Builder<'a> {
         let (start_use, end_use) = edge_endpoint_uses(edge_use.shape, &shape.children)?;
         let start = self.ensure_vertex(ir, start_use, transform)?;
         let end = self.ensure_vertex(ir, end_use, transform)?;
-        let id = EdgeId::mint(crate::native::model_id(
-            "edge",
-            &self.payload.id,
-            self.topology_label(edge_use.shape, transform)?,
-        ))
-        .expect("identity grammar");
+        let id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
+            crate::native::model_key(
+                &self.payload.id,
+                self.topology_label(edge_use.shape, transform)?,
+            )
+            .map_err(CodecError::malformed)?,
+        );
         let curve_representation =
             select_exact_curve_representation(edge_use.shape, &representations, &self.tables)?;
         let polygon_representation = if curve_representation.is_none() {
@@ -1181,8 +1213,12 @@ impl<'a> Builder<'a> {
                 ))
             }
         };
-        let id =
-            CurveId::mint(format!("{edge}:polygon:{}", ordinal + 1)).expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
+            edge.key()
+                .colon(cadmpeg_ir::identity_key!("polygon"))
+                .colon(ordinal + 1),
+        );
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
@@ -1203,8 +1239,13 @@ impl<'a> Builder<'a> {
                 deflection,
             } = self.indexed_polygon(polygons[1], *triangulation)?;
             ir.model.curves.push(Curve {
-                id: CurveId::mint(format!("{edge}:polygon:{}:secondary", ordinal + 1))
-                    .expect("identity grammar"),
+                id: CurveId::compose(
+                    &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
+                    edge.key()
+                        .colon(cadmpeg_ir::identity_key!("polygon"))
+                        .colon(ordinal + 1)
+                        .colon(cadmpeg_ir::identity_key!("secondary")),
+                ),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     samples.edit_points(|point| *point = carrier_transform.apply_point(*point));
                     PolylineCurve::new(samples, deflection * scale)
@@ -1295,10 +1336,14 @@ impl<'a> Builder<'a> {
             )));
         };
         let label = self.topology_label(vertex_use.shape, transform)?;
-        let point_id = PointId::mint(crate::native::model_id("point", &self.payload.id, &label))
-            .expect("identity grammar");
-        let vertex_id = VertexId::mint(crate::native::model_id("vertex", &self.payload.id, &label))
-            .expect("identity grammar");
+        let point_id = PointId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
+            crate::native::model_key(&self.payload.id, &label).map_err(CodecError::malformed)?,
+        );
+        let vertex_id = VertexId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "vertex"),
+            crate::native::model_key(&self.payload.id, &label).map_err(CodecError::malformed)?,
+        );
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: transform.apply_point(point),
@@ -1333,21 +1378,22 @@ impl<'a> Builder<'a> {
         source: usize,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let base_id = CurveId::mint(crate::native::model_id(
-            "curve",
-            &self.payload.id,
-            source.to_string(),
-        ))
-        .expect("identity grammar");
+        let base_id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
+            crate::native::model_key(&self.payload.id, source.to_string())
+                .map_err(CodecError::malformed)?,
+        );
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let id = CurveId::mint(crate::native::model_id(
-            "curve",
-            &self.payload.id,
-            format!("{}@{}", source, transform_digest(transform)),
-        ))
-        .expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
+            crate::native::model_key(
+                &self.payload.id,
+                format!("{}@{}", source, transform_digest(transform)),
+            )
+            .map_err(CodecError::malformed)?,
+        );
         if self.emitted_curves.insert(id.clone()) {
             let base = ir
                 .model
@@ -1373,21 +1419,22 @@ impl<'a> Builder<'a> {
         source: usize,
         transform: Transform,
     ) -> Result<SurfaceId, CodecError> {
-        let base_id = SurfaceId::mint(crate::native::model_id(
-            "surface",
-            &self.payload.id,
-            source.to_string(),
-        ))
-        .expect("identity grammar");
+        let base_id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+            crate::native::model_key(&self.payload.id, source.to_string())
+                .map_err(CodecError::malformed)?,
+        );
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let id = SurfaceId::mint(crate::native::model_id(
-            "surface",
-            &self.payload.id,
-            format!("{}@{}", source, transform_digest(transform)),
-        ))
-        .expect("identity grammar");
+        let id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+            crate::native::model_key(
+                &self.payload.id,
+                format!("{}@{}", source, transform_digest(transform)),
+            )
+            .map_err(CodecError::malformed)?,
+        );
         if self.emitted_surfaces.insert(id.clone()) {
             let base = ir
                 .model
@@ -1412,8 +1459,10 @@ impl<'a> Builder<'a> {
                     .add_procedural_surface(
                         id.clone(),
                         ProceduralSurface::new(
-                            ProceduralSurfaceId::mint(format!("{id}:construction"))
-                                .expect("identity grammar"),
+                            ProceduralSurfaceId::compose(
+                                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                                id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                            ),
                             ProceduralSurfaceDefinition::Replica {
                                 source: base_id,
                                 transform,
@@ -1497,7 +1546,7 @@ impl<'a> Builder<'a> {
         };
         let parameter_range = normalize_pcurve_parameter_range(&geometry, Some(parameter_range));
         Ok(Some((
-            self.pcurve_id(edge_use.shape, index, secondary),
+            self.pcurve_id(edge_use.shape, index, secondary)?,
             bounded_pcurve_range(*degenerated, parameter_range),
         )))
     }

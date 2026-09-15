@@ -1040,6 +1040,107 @@ fn transfers_external_product_paths_and_targets() {
 }
 
 #[test]
+fn preserves_external_copy_on_change_targets_when_local_names_collide() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Box"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+<Object name="Box"><Properties Count="0"/></Object>
+<Object name="Occurrence"><Properties Count="4">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="other.FCStd" name="MissingBox"/></Property>
+<Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+<Property name="LinkCopyOnChangeSource" type="App::PropertyXLink"><XLink file="other.FCStd" name="Box"/></Property>
+<Property name="LinkCopyOnChangeGroup" type="App::PropertyLink"><Link value="Box"/></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[("Document.xml", document)])),
+            &DecodeOptions::default(),
+        )
+        .expect("external copy-on-change target");
+    let namespace = result.ir().native.namespace("fcstd").expect("native");
+    let properties = namespace
+        .arena_as::<native::PropertyRecord>("properties")
+        .expect("properties");
+    let source = properties
+        .iter()
+        .find(|property| property.name == "LinkCopyOnChangeSource")
+        .expect("copy source property")
+        .links()[0]
+        .as_ref()
+        .expect("copy source link");
+    assert_eq!(source.document_name(), Some("other.FCStd"));
+    assert_eq!(source.object(), Some("Box"));
+    let prototype = properties
+        .iter()
+        .find(|property| property.name == "LinkedObject")
+        .expect("prototype property")
+        .links()[0]
+        .as_ref()
+        .expect("prototype link");
+    assert_eq!(prototype.document_name(), Some("other.FCStd"));
+    assert_eq!(prototype.object(), Some("MissingBox"));
+
+    let nodes = namespace
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Occurrence"))
+        .expect("occurrence");
+    assert_eq!(occurrence.prototype(), Some("MissingBox"));
+    assert_eq!(
+        occurrence
+            .external_document()
+            .map(crate::native::ExternalDocument::as_str),
+        Some("other.FCStd")
+    );
+    let copy = occurrence
+        .occurrence()
+        .and_then(|node| node.copy_on_change.as_ref())
+        .expect("copy-on-change");
+    assert_eq!(
+        copy.source
+            .as_ref()
+            .and_then(|target| target.document_name()),
+        Some("other.FCStd")
+    );
+    assert_eq!(
+        copy.source.as_ref().and_then(|target| target.object()),
+        Some("Box")
+    );
+    assert_eq!(
+        copy.group.as_ref().and_then(|target| target.object()),
+        Some("fcstd:native:object#Box")
+    );
+
+    let neutral_occurrence = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("Occurrence"))
+        })
+        .expect("neutral occurrence");
+    let copy = neutral_occurrence
+        .link
+        .as_ref()
+        .and_then(|link| link.copy_on_change())
+        .expect("neutral copy-on-change");
+    assert!(matches!(
+        &copy.source,
+        Some(cadmpeg_ir::PrototypeReference::External { document, object: Some(object) })
+            if document.as_path() == Some("other.FCStd") && object == "Box"
+    ));
+    assert!(crate::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn rejects_non_schema_link_carrier_aliases() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Link" name="Link"/></Objects>

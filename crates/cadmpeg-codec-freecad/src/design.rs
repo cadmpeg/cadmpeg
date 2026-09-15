@@ -7,6 +7,7 @@ use cadmpeg_core::decode::{alloc_filled, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
@@ -84,8 +85,10 @@ pub(crate) fn transfer(
         .map(|object| {
             Ok((
                 object.id.as_str(),
-                SketchId::mint(format!("fcstd:design:sketch#{}", object.name))
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                SketchId::compose(
+                    &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch"),
+                    object_key(object)?,
+                ),
             ))
         })
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
@@ -741,7 +744,11 @@ fn feature_ordinals<'a>(
             remaining
                 .into_iter()
                 .min_by_key(|object| object.order)
-                .expect("the loop has at least one un-emitted design object")
+                .ok_or_else(|| {
+                    CodecError::malformed(
+                        "design object ordering lost an un-emitted object while resolving a cycle",
+                    )
+                })?
         };
         let ordinal = source_ordinals[ordinals.len()];
         emitted.insert(next.id.as_str());
@@ -927,14 +934,15 @@ fn append_spreadsheet(
                 retained.insert(attribute, value.to_owned());
             }
         }
-        let id = ParameterId::mint(format!(
-            "fcstd:design:parameter#{}:cell:{address}",
-            object.name
-        ))
-        .map_err(CodecError::malformed)?;
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
             CodecError::malformed(format_args!("{} cell has invalid address", property.id))
         })?;
+        let id = ParameterId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "design", "parameter"),
+            object_key(object)?
+                .colon(cadmpeg_ir::identity_key!("cell"))
+                .colon(IdentityKey::encode_segment(address)),
+        );
         cell_ids.push(SpreadsheetCell {
             address: cell_address,
             parameter: id.clone(),
@@ -970,8 +978,10 @@ fn append_spreadsheet(
         });
     }
     Ok(Spreadsheet {
-        id: SpreadsheetId::mint(format!("fcstd:design:spreadsheet#{}", object.name))
-            .map_err(CodecError::malformed)?,
+        id: SpreadsheetId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "design", "spreadsheet"),
+            object_key(object)?,
+        ),
         feature: feature_id(object)?,
         cells: cell_ids,
         column_widths: spreadsheet_dimensions(
@@ -1197,11 +1207,10 @@ fn append_operation_parameters(
             );
         }
         parameters.push(DesignParameter {
-            id: ParameterId::mint(format!(
-                "fcstd:design:parameter#{}:{}",
-                object.name, property.name
-            ))
-            .map_err(CodecError::malformed)?,
+            id: ParameterId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "design", "parameter"),
+                object_key(object)?.colon(IdentityKey::encode_segment(&property.name)),
+            ),
             owner: Some(owner.clone()),
             ordinal: property.order as u32,
             name: property.name.clone(),
@@ -1404,8 +1413,10 @@ fn parse_sketch(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<SketchTransfer, CodecError> {
-    let id = SketchId::mint(format!("fcstd:design:sketch#{}", object.name))
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+    let id = SketchId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch"),
+        object_key(object)?,
+    );
     let mut entities = Vec::new();
     let mut matched_references = BTreeSet::new();
     if let Some(geometry) = property(properties, "Geometry") {
@@ -1448,12 +1459,10 @@ fn parse_sketch(
             };
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId::mint(format!(
-                        "fcstd:design:sketch-entity#{}:{}",
-                        object.name,
-                        index + 1
-                    ))
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    SketchEntityId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
+                        object_key(object)?.colon(index + 1),
+                    ),
                     id.clone(),
                     geometry_value,
                 )
@@ -1536,11 +1545,12 @@ fn parse_sketch(
             };
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId::mint(format!(
-                        "fcstd:design:sketch-entity#{}:external:{external_index}",
-                        object.name
-                    ))
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    SketchEntityId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
+                        object_key(object)?
+                            .colon(cadmpeg_ir::identity_key!("external"))
+                            .colon(external_index),
+                    ),
                     id.clone(),
                     geometry,
                 )
@@ -1571,21 +1581,26 @@ fn parse_sketch(
                 continue;
             };
             let numeric_suffix = format!(":external:{external_index}");
+            let entity_key = object_key(object)?
+                .colon(cadmpeg_ir::identity_key!("external"))
+                .colon(external_index);
+            let link_entity_key = object_key(object)?
+                .colon(cadmpeg_ir::identity_key!("external-link"))
+                .colon(external_index);
             let entity_suffix = if entities
                 .iter()
                 .any(|entity| entity.id().as_str().ends_with(&numeric_suffix))
             {
-                format!(":external-link:{external_index}")
+                link_entity_key
             } else {
-                numeric_suffix
+                entity_key
             };
             entities.push(
                 SketchEntity::new(
-                    SketchEntityId::mint(format!(
-                        "fcstd:design:sketch-entity#{}{}",
-                        object.name, entity_suffix
-                    ))
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    SketchEntityId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
+                        entity_suffix,
+                    ),
                     id.clone(),
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
                         document: reference.document_name().map(str::to_owned),
@@ -1607,11 +1622,11 @@ fn parse_sketch(
     if horizontal_axis {
         entities.push(
             SketchEntity::new(
-                SketchEntityId::mint(format!(
-                    "fcstd:design:sketch-entity#{}:reference-horizontal-axis",
-                    object.name
-                ))
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                SketchEntityId::compose(
+                    &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
+                    object_key(object)?
+                        .colon(cadmpeg_ir::identity_key!("reference-horizontal-axis")),
+                ),
                 id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
@@ -1626,11 +1641,10 @@ fn parse_sketch(
     if vertical_axis {
         entities.push(
             SketchEntity::new(
-                SketchEntityId::mint(format!(
-                    "fcstd:design:sketch-entity#{}:reference-vertical-axis",
-                    object.name
-                ))
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                SketchEntityId::compose(
+                    &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
+                    object_key(object)?.colon(cadmpeg_ir::identity_key!("reference-vertical-axis")),
+                ),
                 id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
@@ -1645,11 +1659,10 @@ fn parse_sketch(
     if root_point {
         entities.push(
             SketchEntity::new(
-                SketchEntityId::mint(format!(
-                    "fcstd:design:sketch-entity#{}:reference-root-point",
-                    object.name
-                ))
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                SketchEntityId::compose(
+                    &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-entity"),
+                    object_key(object)?.colon(cadmpeg_ir::identity_key!("reference-root-point")),
+                ),
                 id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
@@ -2191,12 +2204,12 @@ fn parse_constraints(
             node.attribute("Value")
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| {
-                    let id = ParameterId::mint(format!(
-                        "fcstd:design:parameter#{}:constraint:{}",
-                        object.name,
-                        index + 1
-                    ))
-                    .map_err(CodecError::malformed)?;
+                    let id = ParameterId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "design", "parameter"),
+                        object_key(object)?
+                            .colon(cadmpeg_ir::identity_key!("constraint"))
+                            .colon(index + 1),
+                    );
                     let value = match type_code {
                         Some(9) => ParameterValue::Angle(
                             cadmpeg_ir::scalar::Angle::new(value).ok_or_else(|| {
@@ -2311,6 +2324,27 @@ fn parse_constraints(
             || type_code.and_then(|type_code| midpoint_constraint(type_code, &operands, entities));
         let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
             .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
+        let native_operands = operands
+            .iter()
+            .filter_map(|(entity, position)| {
+                (*entity < 0 || resolve(*entity, *position).is_none()).then(|| {
+                    cadmpeg_core::text::NonBlankString::new(format!("position:{position}"))
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "{} constraint {} has an empty source operand kind",
+                                property.id,
+                                index + 1
+                            ))
+                        })
+                        .map(|native_kind| SketchNativeOperand {
+                            native_kind,
+                            field: None,
+                            object_index: u32::try_from(*entity).ok(),
+                            native_ref: None,
+                        })
+                })
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
         let definition = (type_code == Some(15) && all_resolved)
             .then(internal_alignment)
             .flatten()
@@ -2328,32 +2362,13 @@ fn parse_constraints(
                 native_properties: std::collections::BTreeMap::new(),
                 entities: resolved.iter().map(locus_entity).cloned().collect(),
                 parameter,
-                operands: operands
-                    .iter()
-                    .filter_map(|(entity, position)| {
-                        if *entity < 0 || resolve(*entity, *position).is_none() {
-                            Some(SketchNativeOperand {
-                                native_kind: cadmpeg_core::text::NonBlankString::new(format!(
-                                    "position:{position}"
-                                ))
-                                .expect("source operand kind is nonempty"),
-                                field: None,
-                                object_index: u32::try_from(*entity).ok(),
-                                native_ref: None,
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect(),
+                operands: native_operands,
             });
         constraints.push(SketchConstraint {
-            id: SketchConstraintId::mint(format!(
-                "fcstd:design:sketch-constraint#{}:{}",
-                object.name,
-                index + 1
-            ))
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            id: SketchConstraintId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "design", "sketch-constraint"),
+                object_key(object)?.colon(index + 1),
+            ),
             sketch: sketch.clone(),
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -6297,7 +6312,14 @@ fn operation_boolean(kind: &str) -> BooleanOp {
 }
 
 fn feature_id(object: &ObjectRecord) -> Result<FeatureId, CodecError> {
-    FeatureId::mint(format!("fcstd:design:feature#{}", object.name)).map_err(CodecError::malformed)
+    Ok(FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "design", "feature"),
+        object_key(object)?,
+    ))
+}
+
+fn object_key(object: &ObjectRecord) -> Result<IdentityKey, CodecError> {
+    crate::native::id_key_identity(&object.id).map_err(CodecError::malformed)
 }
 
 fn feature_base_definition(

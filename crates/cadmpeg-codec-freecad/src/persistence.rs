@@ -407,7 +407,10 @@ fn parse_document(
             continue;
         };
         for link in links.iter_mut().flatten() {
-            if let Some(target) = link.object() {
+            if link.document().is_none() {
+                let Some(target) = link.object() else {
+                    continue;
+                };
                 if declared_names.contains(target) {
                     link.set_object(
                         cadmpeg_core::text::NonBlankString::new(object_id(target)).ok_or_else(
@@ -514,10 +517,12 @@ fn parse_properties(
                         ))
                     })?;
                 if let Some(ctx) = ctx {
-                    ctx.charge_retained(
-                        u64::try_from(len).unwrap_or(u64::MAX),
-                        "fcstd_property_value_xml",
-                    )?;
+                    let len = u64::try_from(len).map_err(|_| {
+                        CodecError::malformed(format_args!(
+                            "property {name} retained value XML length exceeds u64"
+                        ))
+                    })?;
+                    ctx.charge_retained(len, "fcstd_property_value_xml")?;
                 }
                 Ok(ValueRecord {
                     tag: value.tag_name().name().to_owned(),

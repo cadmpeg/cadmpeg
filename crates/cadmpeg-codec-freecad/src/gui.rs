@@ -9,7 +9,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::AppearanceId;
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, IdentityKey};
 use cadmpeg_ir::presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
     ViewPresentation,
@@ -84,6 +84,75 @@ impl AppearancePlan {
 struct CameraSettings {
     position: Option<[f64; 3]>,
     orientation: Option<[f64; 4]>,
+}
+
+/// The admitted native provider identity is the source of every neutral
+/// appearance key. The persisted display name remains separate so names such
+/// as `A B`, `#`, and the empty string remain legal source values.
+fn provider_identity_key(name: &str) -> IdentityKey {
+    crate::native::encoded_key(name)
+}
+
+fn provider_native_id(key: &IdentityKey) -> String {
+    crate::native::native_id_from_key("gui-view-provider", key)
+}
+
+fn object_appearance_id(provider: &IdentityKey) -> AppearanceId {
+    AppearanceId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "object"),
+        provider.clone(),
+    )
+}
+
+fn edge_appearance_id(provider: &IdentityKey) -> AppearanceId {
+    AppearanceId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "edge"),
+        provider.clone(),
+    )
+}
+
+fn vertex_appearance_id(provider: &IdentityKey) -> AppearanceId {
+    AppearanceId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "vertex"),
+        provider.clone(),
+    )
+}
+
+fn shape_material_appearance_id(provider: &IdentityKey, index: usize) -> AppearanceId {
+    AppearanceId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "shape-material"),
+        provider.clone().colon(index + 1),
+    )
+}
+
+fn topology_appearance_id(
+    kind: TopologyColorKind,
+    provider: &IdentityKey,
+    index: usize,
+) -> AppearanceId {
+    let namespace = match kind {
+        TopologyColorKind::Face => cadmpeg_ir::identity_namespace!("fcstd", "appearance", "face"),
+        TopologyColorKind::Edge => cadmpeg_ir::identity_namespace!("fcstd", "appearance", "edge"),
+        TopologyColorKind::Vertex => {
+            cadmpeg_ir::identity_namespace!("fcstd", "appearance", "vertex")
+        }
+    };
+    AppearanceId::compose(&namespace, provider.clone().colon(index + 1))
+}
+
+fn topology_binding_kind(kind: TopologyColorKind) -> IdentityKey {
+    match kind {
+        TopologyColorKind::Face => cadmpeg_ir::identity_key!("face"),
+        TopologyColorKind::Edge => cadmpeg_ir::identity_key!("edge"),
+        TopologyColorKind::Vertex => cadmpeg_ir::identity_key!("vertex"),
+    }
+}
+
+fn binding_id(key: IdentityKey) -> AppearanceBindingId {
+    AppearanceBindingId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "appearance", "binding"),
+        key,
+    )
 }
 
 /// Whether the shared application-property registry knows this GUI property.
@@ -268,12 +337,14 @@ fn transfer_schema_one(
                 "GuiDocument.xml has duplicate ViewProvider names".into(),
             ));
         }
+        let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
                 text,
                 provider,
                 provider_order,
                 None,
+                &provider_key,
                 &mut native_providers,
                 &mut native_properties,
             )?;
@@ -284,6 +355,7 @@ fn transfer_schema_one(
             provider,
             provider_order,
             Some(object_id),
+            &provider_key,
             &mut native_providers,
             &mut native_properties,
         )?;
@@ -370,6 +442,7 @@ fn transfer_schema_one(
                 ir,
                 &mut plan,
                 name,
+                &provider_key,
                 object_id,
                 file,
                 entries,
@@ -405,7 +478,7 @@ fn transfer_schema_one(
                 color,
                 width,
                 &payload_prefixes,
-            );
+            )?;
         }
         if let Some(file) = values
             .get("LineColorArray")
@@ -415,6 +488,7 @@ fn transfer_schema_one(
                 ir,
                 &mut plan,
                 name,
+                &provider_key,
                 object_id,
                 file,
                 entries,
@@ -445,7 +519,7 @@ fn transfer_schema_one(
                 color,
                 size,
                 &payload_prefixes,
-            );
+            )?;
         }
         if let Some(file) = values
             .get("PointColorArray")
@@ -455,6 +529,7 @@ fn transfer_schema_one(
                 ir,
                 &mut plan,
                 name,
+                &provider_key,
                 object_id,
                 file,
                 entries,
@@ -470,8 +545,7 @@ fn transfer_schema_one(
         let Some(packed_color) = packed_color else {
             continue;
         };
-        let appearance_id = AppearanceId::mint(format!("fcstd:appearance:object#{name}"))
-            .expect("identity grammar");
+        let appearance_id = object_appearance_id(&provider_key);
         let mut material_properties = BTreeMap::new();
         if let Some(material) = material {
             for (source, target) in [
@@ -504,9 +578,7 @@ fn transfer_schema_one(
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
-                id: format!("fcstd:appearance:binding#{name}:{index}")
-                    .try_into()
-                    .expect("valid identity"),
+                id: binding_id(provider_key.clone().colon(index)),
                 target: AppearanceTarget::Body(body),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
@@ -574,9 +646,10 @@ fn transfer_neutral_presentation(
 ) -> Result<(), CodecError> {
     let mut state_losses = Vec::new();
     for document in &graph.documents {
-        let mut presentation = PresentationDocument::new(
-            PresentationId::mint("fcstd:presentation:document#0").expect("identity grammar"),
-        );
+        let mut presentation = PresentationDocument::new(PresentationId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "presentation", "document"),
+            cadmpeg_ir::identity_key!("0"),
+        ));
         presentation.schema_version = neutral_schema_version;
         presentation.native_ref = Some(document.id.clone());
         presentation
@@ -666,12 +739,10 @@ fn transfer_neutral_presentation(
         );
         charge_refused_gui_keys(losses, &refused);
         plan.view_presentations.push(ViewPresentation {
-            id: PresentationId::mint(crate::native::model_id(
-                "presentation-view",
-                &provider.id,
-                "state",
-            ))
-            .expect("identity grammar"),
+            id: PresentationId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "presentation-view"),
+                crate::native::model_key(&provider.id, "state").map_err(CodecError::malformed)?,
+            ),
             object: provider
                 .object
                 .as_ref()
@@ -811,9 +882,12 @@ fn camera_field<const N: usize>(
     end: usize,
     field: &str,
 ) -> Result<[f64; N], CodecError> {
+    let end_index = start.checked_add(N).ok_or_else(|| {
+        CodecError::malformed(format_args!("GUI camera {field} field offset overflows"))
+    })?;
     let values = tokens
-        .get(start..start.saturating_add(N))
-        .filter(|values| values.len() == N && start.saturating_add(N) <= end)
+        .get(start..end_index)
+        .filter(|values| values.len() == N && end_index <= end)
         .ok_or_else(|| {
             CodecError::malformed(format_args!("GUI camera {field} field is incomplete"))
         })?
@@ -839,7 +913,7 @@ fn transfer_edge_appearance(
     packed_color: u32,
     width: Option<f64>,
     payload_prefixes: &[String],
-) {
+) -> Result<(), CodecError> {
     let edges = ir
         .model
         .edges
@@ -852,10 +926,10 @@ fn transfer_edge_appearance(
         .map(|edge| edge.id.clone())
         .collect::<Vec<_>>();
     if edges.is_empty() {
-        return;
+        return Ok(());
     }
-    let appearance_id = AppearanceId::mint(format!("fcstd:appearance:edge#{provider_name}"))
-        .expect("identity grammar");
+    let provider_key = provider_identity_key(provider_name);
+    let appearance_id = edge_appearance_id(&provider_key);
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} line appearance")),
@@ -879,9 +953,11 @@ fn transfer_edge_appearance(
     });
     for (index, edge) in edges.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}")
-                .try_into()
-                .expect("valid identity"),
+            id: binding_id(
+                cadmpeg_ir::identity_key!("edge")
+                    .colon(provider_key.clone())
+                    .colon(index),
+            ),
             target: AppearanceTarget::Edge(edge),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -894,6 +970,7 @@ fn transfer_edge_appearance(
             .into(),
         });
     }
+    Ok(())
 }
 
 fn transfer_vertex_appearance(
@@ -904,7 +981,7 @@ fn transfer_vertex_appearance(
     packed_color: u32,
     size: Option<f64>,
     payload_prefixes: &[String],
-) {
+) -> Result<(), CodecError> {
     let vertices = ir
         .model
         .vertices
@@ -917,10 +994,10 @@ fn transfer_vertex_appearance(
         .map(|vertex| vertex.id.clone())
         .collect::<Vec<_>>();
     if vertices.is_empty() {
-        return;
+        return Ok(());
     }
-    let appearance_id = AppearanceId::mint(format!("fcstd:appearance:vertex#{provider_name}"))
-        .expect("identity grammar");
+    let provider_key = provider_identity_key(provider_name);
+    let appearance_id = vertex_appearance_id(&provider_key);
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} point appearance")),
@@ -944,9 +1021,11 @@ fn transfer_vertex_appearance(
     });
     for (index, vertex) in vertices.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}")
-                .try_into()
-                .expect("valid identity"),
+            id: binding_id(
+                cadmpeg_ir::identity_key!("vertex")
+                    .colon(provider_key.clone())
+                    .colon(index),
+            ),
             target: AppearanceTarget::Vertex(vertex),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -959,6 +1038,7 @@ fn transfer_vertex_appearance(
             .into(),
         });
     }
+    Ok(())
 }
 
 fn gui_state(
@@ -1034,13 +1114,14 @@ fn append_native_provider(
     provider: roxmltree::Node<'_, '_>,
     order: usize,
     object: Option<&str>,
+    provider_key: &IdentityKey,
     providers: &mut Vec<GuiViewProviderRecord>,
     properties: &mut Vec<GuiPropertyRecord>,
 ) -> Result<(), CodecError> {
     let name = provider
         .attribute("name")
         .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
-    let id = crate::native::native_id("gui-view-provider", name);
+    let id = provider_native_id(provider_key);
     providers.push(GuiViewProviderRecord {
         id: id.clone(),
         object: object
@@ -3349,10 +3430,12 @@ fn validate_gui_list_payloads(
             }
             continue;
         }
-        let entry_name = property
-            .side_entries
-            .first()
-            .expect("nonempty side entries");
+        let entry_name = property.side_entries.first().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "GUI property {} has no side entry",
+                property.id
+            ))
+        })?;
         if property.side_entries.len() != 1 {
             return Err(CodecError::malformed(format_args!(
                 "GUI property {} references more than one side entry",
@@ -3644,7 +3727,12 @@ fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String
             ))
         })?
         .get();
-    String::from_utf8(view.take(length).expect("counted material string").to_vec()).map_err(|_| {
+    let bytes = view.take(length).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "GUI material list {property_id} string exceeds its payload"
+        ))
+    })?;
+    String::from_utf8(bytes.to_vec()).map_err(|_| {
         CodecError::malformed(format_args!(
             "GUI material list {property_id} string is not UTF-8"
         ))
@@ -3663,6 +3751,7 @@ fn transfer_shape_appearances(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     for provider in &graph.providers {
+        let provider_key = provider_identity_key(&provider.name);
         let Some(object_id) = provider
             .object
             .as_ref()
@@ -3682,11 +3771,15 @@ fn transfer_shape_appearances(
         };
         let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads)?;
         let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
-        let mapped_count = group.map_or(0, |group| group.names.len().saturating_sub(1));
+        let mapped_count = match group {
+            None => 0,
+            Some(group) => match group.names.len() {
+                0 => 0,
+                length => length - 1,
+            },
+        };
         if materials.len() == 1 {
-            let legacy_id =
-                AppearanceId::mint(format!("fcstd:appearance:object#{}", provider.name))
-                    .expect("identity grammar");
+            let legacy_id = object_appearance_id(&provider_key);
             plan.bindings
                 .retain(|binding| binding.appearance != legacy_id);
             plan.appearances
@@ -3721,12 +3814,7 @@ fn transfer_shape_appearances(
             }
         }
         for (index, material) in materials.iter().enumerate() {
-            let appearance_id = AppearanceId::mint(format!(
-                "fcstd:appearance:shape-material#{}:{}",
-                provider.name,
-                index + 1
-            ))
-            .expect("identity grammar");
+            let appearance_id = shape_material_appearance_id(&provider_key, index);
             plan.appearances.push(material_appearance(
                 appearance_id.clone(),
                 &provider.name,
@@ -3741,12 +3829,11 @@ fn transfer_shape_appearances(
                         color: Some(decode_color(material.diffuse, Some(material.transparency))?),
                     });
                     plan.bindings.push(AppearanceBinding {
-                        id: format!(
-                            "fcstd:appearance:binding#shape-material:{}:{body_index}",
-                            provider.name
-                        )
-                        .try_into()
-                        .expect("valid identity"),
+                        id: binding_id(
+                            cadmpeg_ir::identity_key!("shape-material")
+                                .colon(provider_key.clone())
+                                .colon(body_index),
+                        ),
                         target: AppearanceTarget::Body(body.clone()),
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
@@ -3762,7 +3849,7 @@ fn transfer_shape_appearances(
                     group,
                     index,
                     &appearance_id,
-                    &provider.name,
+                    &provider_key,
                     object_id,
                 );
             }
@@ -3911,7 +3998,7 @@ fn bind_material_faces(
     group: &ElementMapGroup,
     material_index: usize,
     appearance_id: &AppearanceId,
-    provider_name: &str,
+    provider_key: &IdentityKey,
     object_id: &str,
 ) {
     let mut bound = HashSet::new();
@@ -3931,9 +4018,11 @@ fn bind_material_faces(
         };
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#shape-material:{provider_name}:{binding_index}")
-                .try_into()
-                .expect("valid identity"),
+            id: binding_id(
+                cadmpeg_ir::identity_key!("shape-material")
+                    .colon(provider_key.clone())
+                    .colon(binding_index),
+            ),
             target: AppearanceTarget::Face(face),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -3986,6 +4075,7 @@ fn transfer_topology_colors(
     ir: &CadIr,
     plan: &mut AppearancePlan,
     provider_name: &str,
+    provider_key: &IdentityKey,
     object_id: &str,
     entry_name: &str,
     entries: &BTreeMap<String, View<'_>>,
@@ -4010,7 +4100,10 @@ fn transfer_topology_colors(
         return Ok(());
     };
     // FreeCAD uses a single list entry as a uniform color for every mapped subelement.
-    let mapped_count = group.names.len().saturating_sub(1);
+    let mapped_count = match group.names.len() {
+        0 => 0,
+        length => length - 1,
+    };
     if mapped_count == 0 {
         return Ok(());
     }
@@ -4026,12 +4119,7 @@ fn transfer_topology_colors(
         return Ok(());
     }
     for (index, packed) in colors.into_iter().enumerate() {
-        let lower = kind.name().to_ascii_lowercase();
-        let appearance_id = AppearanceId::mint(format!(
-            "fcstd:appearance:{lower}#{provider_name}:{}",
-            index + 1
-        ))
-        .expect("identity grammar");
+        let appearance_id = topology_appearance_id(kind, provider_key, index);
         let uniform_names = (count == 1)
             .then_some(&group.names)
             .into_iter()
@@ -4047,17 +4135,21 @@ fn transfer_topology_colors(
             .flat_map(|name| &name.topology_ids)
             .filter(|id| bound_topology.insert((*id).clone()))
             .filter(|id| match kind {
-                TopologyColorKind::Face => {
-                    ir.model.faces.iter().any(|face| face.id.as_str() == **id)
-                }
-                TopologyColorKind::Edge => {
-                    ir.model.edges.iter().any(|edge| edge.id.as_str() == **id)
-                }
+                TopologyColorKind::Face => ir
+                    .model
+                    .faces
+                    .iter()
+                    .any(|face| face.id.as_str() == id.as_str()),
+                TopologyColorKind::Edge => ir
+                    .model
+                    .edges
+                    .iter()
+                    .any(|edge| edge.id.as_str() == id.as_str()),
                 TopologyColorKind::Vertex => ir
                     .model
                     .vertices
                     .iter()
-                    .any(|vertex| vertex.id.as_str() == **id),
+                    .any(|vertex| vertex.id.as_str() == id.as_str()),
             })
         {
             if !emitted_appearance {
@@ -4085,25 +4177,35 @@ fn transfer_topology_colors(
                 });
                 emitted_appearance = true;
             }
-            let target = match kind {
-                TopologyColorKind::Face => AppearanceTarget::Face(
-                    cadmpeg_ir::ids::FaceId::mint(topology_id.clone()).expect("identity grammar"),
-                ),
-                TopologyColorKind::Edge => AppearanceTarget::Edge(
-                    cadmpeg_ir::ids::EdgeId::mint(topology_id.clone()).expect("identity grammar"),
-                ),
-                TopologyColorKind::Vertex => AppearanceTarget::Vertex(
-                    cadmpeg_ir::ids::VertexId::mint(topology_id.clone()).expect("identity grammar"),
-                ),
+            let Some((target, topology_key)) = (match kind {
+                TopologyColorKind::Face => ir
+                    .model
+                    .faces
+                    .iter()
+                    .find(|face| face.id.as_str() == topology_id.as_str())
+                    .map(|face| (AppearanceTarget::Face(face.id.clone()), face.id.key())),
+                TopologyColorKind::Edge => ir
+                    .model
+                    .edges
+                    .iter()
+                    .find(|edge| edge.id.as_str() == topology_id.as_str())
+                    .map(|edge| (AppearanceTarget::Edge(edge.id.clone()), edge.id.key())),
+                TopologyColorKind::Vertex => ir
+                    .model
+                    .vertices
+                    .iter()
+                    .find(|vertex| vertex.id.as_str() == topology_id.as_str())
+                    .map(|vertex| (AppearanceTarget::Vertex(vertex.id.clone()), vertex.id.key())),
+            }) else {
+                continue;
             };
             plan.bindings.push(AppearanceBinding {
-                id: format!(
-                    "fcstd:appearance:binding#{lower}:{provider_name}:{}:{}",
-                    index + 1,
-                    crate::native::id_key(topology_id)
-                )
-                .try_into()
-                .expect("valid identity"),
+                id: binding_id(
+                    topology_binding_kind(kind)
+                        .colon(provider_key.clone())
+                        .colon(index + 1)
+                        .colon(topology_key),
+                ),
                 target,
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
