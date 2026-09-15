@@ -1000,6 +1000,54 @@ fn rendering_attributes_parse_object_mapping_and_future_suffix() {
 }
 
 #[test]
+fn rendering_attributes_accept_nonempty_obsolete_material_mapping_channels() {
+    let archive = ArchiveVersion::V8;
+    let mut channel_body = 7_i32.to_le_bytes().to_vec();
+    channel_body.extend([0x33; 16]);
+    channel_body.extend(
+        (0..16)
+            .map(|index| if index % 5 == 0 { 1.0 } else { 0.0 })
+            .flat_map(f64::to_le_bytes),
+    );
+    let channel = anonymous_chunk(archive, 1, &channel_body);
+
+    let mut material_body = vec![1, 0, 0, 0, 1, 0, 0, 0];
+    material_body.extend([0x11; 16]);
+    material_body.extend([0x22; 16]);
+    material_body.extend(1_i32.to_le_bytes());
+    material_body.extend(channel);
+    material_body.extend([0x44; 16]);
+    material_body.extend([3, 0, 0, 0]);
+    let material = crc_chunk(archive, 0x4000_8000, &material_body);
+
+    let mut rendering_body = vec![1, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0];
+    let material_start = rendering_body.len();
+    rendering_body.extend(material);
+    let material_end = rendering_body.len();
+    rendering_body.extend(0_i32.to_le_bytes());
+    rendering_body.extend([1, 1, 0]);
+    let bytes = crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &rendering_body,
+        &[material_start..material_end],
+    );
+
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded rendering chunk");
+    let mut warnings = Diagnostics::new();
+    let range = settings::parse_rendering_attributes(
+        &bytes,
+        &mut reader,
+        archive,
+        settings::RenderingAttributesKind::Object,
+        &mut warnings,
+    )
+    .expect("valid obsolete material mapping channels are consumed");
+    assert_eq!(range, 0..bytes.len());
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
 fn future_linetype_extension_stops_at_unknown_code() {
     let archive = ArchiveVersion::V8;
     let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
@@ -1023,6 +1071,59 @@ fn future_linetype_extension_stops_at_unknown_code() {
     assert_eq!(descriptor.version, (2, 4));
     assert_eq!(reader.remaining(), 0);
     assert!(warnings.is_empty());
+}
+
+#[test]
+fn embedded_linetype_accepts_unset_and_future_segment_tags() {
+    let archive = ArchiveVersion::V8;
+    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
+    let mut body = Vec::new();
+    body.extend(2_i32.to_le_bytes());
+    body.extend(4_i32.to_le_bytes());
+    body.extend(&model_attributes);
+    body.extend(2_i32.to_le_bytes());
+    body.extend(1.5_f64.to_le_bytes());
+    body.extend(0xffff_ffff_u32.to_le_bytes());
+    body.extend(2.5_f64.to_le_bytes());
+    body.extend(7_u32.to_le_bytes());
+    body.push(0);
+    let chunk = crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &body,
+        &[8..8 + model_attributes.len()],
+    );
+    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
+    let mut warnings = Diagnostics::new();
+    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
+        .expect("documented unset and future segment tags are admitted");
+    assert_eq!(descriptor.version, (2, 4));
+    assert_eq!(reader.remaining(), 0);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn legacy_embedded_linetype_accepts_unset_and_future_segment_tags() {
+    let archive = ArchiveVersion::V5;
+    let mut body = Vec::new();
+    body.extend(1_i32.to_le_bytes());
+    body.extend(1_i32.to_le_bytes());
+    body.extend(7_i32.to_le_bytes());
+    body.extend(utf16_bytes("legacy-linetype"));
+    body.extend(2_i32.to_le_bytes());
+    body.extend(1.5_f64.to_le_bytes());
+    body.extend(0xffff_ffff_u32.to_le_bytes());
+    body.extend(2.5_f64.to_le_bytes());
+    body.extend(7_u32.to_le_bytes());
+    body.extend([0x55; 16]);
+    let chunk = crc_chunk(archive, 0x4000_8000, &body);
+    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded legacy linetype");
+    let mut warnings = Diagnostics::new();
+    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
+        .expect("legacy documented segment tags are admitted");
+    assert_eq!(descriptor.version, (1, 1));
+    assert_eq!(reader.remaining(), 0);
+    assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
