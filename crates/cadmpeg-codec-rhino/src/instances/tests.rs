@@ -382,7 +382,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     assert_eq!(external.fields()["full_path"], "/full/source.3dm");
     assert_eq!(external.fields()["relative_path"], "relative/source.3dm");
     assert_eq!(external.fields()["relative_path_preferred"], true);
-    assert!(result.source_fidelity().retained_records.is_empty());
+    assert!(result.source_fidelity().retained_records().is_empty());
 
     let full_carrier = class_userdata(
         archive,
@@ -501,7 +501,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     let malformed_result = crate::decode::decode_for_test(&scan);
     let malformed_retained = malformed_result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .values()
         .find(|source| source.offset() == malformed_range.start as u64)
         .expect("malformed definition fidelity");
@@ -569,7 +569,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     assert_eq!(future_external.fields()["relative_path"], "");
     let future_retained = future_result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .values()
         .find(|source| source.offset() == future_range.start as u64)
         .expect("future definition fidelity");
@@ -1188,7 +1188,8 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.decode_geometry();
         assert!(context.mesh_budget_used() > 0);
-        let result = crate::decode::seal_for_test(context.commit(), false);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
         assert!(result.ir().model.tessellations.is_empty());
         assert!(result.ir().model.bodies.is_empty());
     });
@@ -1320,7 +1321,8 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_expansion_limits([16, 1, 128]);
         context.decode_geometry();
-        let result = crate::decode::seal_for_test(context.commit(), false);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
         assert_eq!(result.ir().model.points.len(), 1);
         assert_eq!(
             result.ir().model.bodies[0]

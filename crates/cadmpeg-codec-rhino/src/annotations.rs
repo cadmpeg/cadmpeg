@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! General Rhino text, leader, and text-dot annotations.
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
@@ -448,7 +449,7 @@ fn decode_v2_annotation_arrow(
 }
 
 /// Projects every supported general annotation into stable native records.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
     let Some(scale) = scan
         .metadata
         .settings
@@ -456,7 +457,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         .as_ref()
         .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut losses = Vec::new();
     let mut annotations = Vec::new();
@@ -688,18 +689,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace
-        .set_arena("annotations", &annotations)
-        .expect("Rhino annotations serialize");
-    namespace
-        .set_arena("text_dots", &dots)
-        .expect("Rhino text dots serialize");
+    namespace.set_arena("annotations", &annotations)?;
+    namespace.set_arena("text_dots", &dots)?;
     if !arrows.is_empty() {
-        namespace
-            .set_arena("annotation_arrows", &arrows)
-            .expect("Rhino annotation arrows serialize");
+        namespace.set_arena("annotation_arrows", &arrows)?;
     }
-    losses
+    Ok(losses)
 }
 
 #[cfg(test)]
@@ -873,7 +868,7 @@ mod tests {
             ),
         ]);
         let mut ir = CadIr::empty();
-        install(&scan, &mut ir);
+        install(&scan, &mut ir).expect("annotation installation");
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
         assert_eq!(namespace.arenas()["annotations"].len(), 4);
@@ -994,7 +989,7 @@ mod tests {
             ),
         ]);
         let mut ir = CadIr::empty();
-        install(&scan, &mut ir);
+        install(&scan, &mut ir).expect("annotation installation");
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
         assert_eq!(namespace.arenas()["text_dots"].len(), 1);

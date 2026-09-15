@@ -914,10 +914,11 @@ fn elevate_to_degree(
     for boundary in boundaries.iter().take(boundaries.len() - 1) {
         elevated_knots.extend(std::iter::repeat_n(boundary[1], target));
     }
-    elevated_knots.extend(std::iter::repeat_n(
-        boundaries.last().expect("nonempty spans")[1],
-        target + 1,
-    ));
+    let last_boundary = boundaries
+        .last()
+        .copied()
+        .ok_or_else(|| error(offset, "polycurve segment has no nonempty span"))?;
+    elevated_knots.extend(std::iter::repeat_n(last_boundary[1], target + 1));
     let mut output_weights = Vec::with_capacity(elevated.len());
     let mut control_points = Vec::with_capacity(elevated.len());
     for point in elevated {
@@ -956,7 +957,7 @@ pub(crate) fn join_nurbs_segments(
         .iter()
         .map(NurbsCurve::degree)
         .max()
-        .expect("nonempty segments");
+        .ok_or_else(|| error(offset, "polycurve has no segments"))?;
     let target = usize::try_from(degree).map_err(|_| error(offset, "curve degree overflow"))?;
     if target == 0 {
         return Err(error(offset, "polycurve segment degree must be positive"));
@@ -1019,7 +1020,12 @@ pub(crate) fn join_nurbs_segments(
     let mut warnings = Diagnostics::new();
     for (index, mut segment) in segments.into_iter().enumerate() {
         if index > 0 {
-            let previous = *control_points.last().expect("previous segment endpoint");
+            let Some(previous) = control_points.last().copied() else {
+                return Err(error(
+                    offset,
+                    "polycurve join has no previous segment endpoint",
+                ));
+            };
             let next = segment.control_points()[0];
             let midpoint = Point3::new(
                 (previous.x + next.x) * 0.5,
@@ -1036,7 +1042,10 @@ pub(crate) fn join_nurbs_segments(
                     format!("polycurve join moved endpoints by half of gap {gap}"),
                 );
             }
-            *control_points.last_mut().expect("previous endpoint") = midpoint;
+            let Some(previous) = control_points.last_mut() else {
+                return Err(error(offset, "polycurve join has no previous endpoint"));
+            };
+            *previous = midpoint;
             let mut first = true;
             segment
                 .edit_control_points(|point| {
@@ -1751,7 +1760,7 @@ fn close_native_point(
         .all(|(actual, expected)| (*actual - expected).abs() <= EPS_CURVE_POSITION)
 }
 
-pub(crate) fn error(offset: usize, message: &str) -> GeometryError {
+pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError {
     GeometryError::malformed(offset, message)
 }
 

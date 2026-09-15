@@ -664,7 +664,13 @@ fn read_faces(
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
             let offset = (face * 4 + slot) * width.bytes();
-            *index = face_index(raw, offset, width);
+            let Some(value) = face_index(raw, offset, width) else {
+                return Err(error(
+                    reader.position(),
+                    format!("mesh face index payload is truncated at offset {offset}"),
+                ));
+            };
+            *index = value;
             if (*index as usize) >= vertices {
                 return Err(error(reader.position(), "mesh face index out of range"));
             }
@@ -721,11 +727,11 @@ fn distance_squared(a: Point3, b: Point3) -> f64 {
     (a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)
 }
 
-fn face_index(raw: &[u8], offset: usize, width: FaceIndexWidth) -> u32 {
+fn face_index(raw: &[u8], offset: usize, width: FaceIndexWidth) -> Option<u32> {
     match width {
-        FaceIndexWidth::One => u32::from(raw[offset]),
-        FaceIndexWidth::Two => u32::from(View::u16_le_at(raw, offset).expect("face width")),
-        FaceIndexWidth::Four => View::u32_le_at(raw, offset).expect("face width"),
+        FaceIndexWidth::One => raw.get(offset).copied().map(u32::from),
+        FaceIndexWidth::Two => View::u16_le_at(raw, offset).map(u32::from),
+        FaceIndexWidth::Four => View::u32_le_at(raw, offset),
     }
 }
 
@@ -1382,8 +1388,10 @@ fn read_v4v5_ngon_userdata(
     let stored_vertex_count = if minor >= 1 { reader.i32()? } else { 0 };
     reader.skip_remaining()?;
 
-    let mesh_face_count = i32::try_from(face_count).expect("mesh face cap fits i32");
-    let mesh_vertex_count = i32::try_from(vertex_count).expect("mesh vertex cap fits i32");
+    let mesh_face_count = i32::try_from(face_count)
+        .map_err(|_| error(reader.position(), "mesh face count exceeds i32"))?;
+    let mesh_vertex_count = i32::try_from(vertex_count)
+        .map_err(|_| error(reader.position(), "mesh vertex count exceeds i32"))?;
     let valid = if stored_face_count == 0 && stored_vertex_count == 0 {
         records.iter().all(|(vertices, faces)| {
             legacy_ngon_indices_valid(vertices, faces, mesh_vertex_count, mesh_face_count)

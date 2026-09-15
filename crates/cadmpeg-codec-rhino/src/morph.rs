@@ -593,16 +593,20 @@ pub(crate) fn project(
             surface_properties(&format!("{prefix}_surface"), surface, &mut properties);
         }
     }
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(key.to_owned())
+        .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let feature_id = FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "morph", "feature"),
+        key,
+    );
+    let ordinal = morph.source_range.start as u64;
     Ok(Feature {
-        id: FeatureId::mint(format!("rhino:morph:feature#{key}")).expect("identity grammar"),
-        ordinal: u64::try_from(morph.source_range.start).expect("source offset fits u64"),
+        id: feature_id.clone(),
+        ordinal,
         name,
         suppressed: Some(false),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: cadmpeg_core::text::named_entries(
-            format_args!("rhino:morph:feature#{key}"),
-            properties,
-        )?,
+        source_properties: cadmpeg_core::text::named_entries(feature_id.as_str(), properties)?,
         source_tag: Some("RhinoMorphControl".to_string()),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),

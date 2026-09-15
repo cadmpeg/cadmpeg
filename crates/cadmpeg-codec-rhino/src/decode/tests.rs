@@ -1201,7 +1201,8 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
             .expect("required invariant")
             .links_mut()
             .clear();
-        let result = crate::decode::seal_for_test(context.commit(), false);
+        let result =
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
         assert!(result
             .report()
             .losses
@@ -1413,7 +1414,7 @@ fn class_report_counts_terminal_outcomes_once() {
         assert!(context.mark_decoded(0));
         assert!(context.mark_failed(2));
         assert!(!context.mark_decoded(2));
-        let result = seal_for_test(context.commit(), false);
+        let result = seal_for_test(context.commit().expect("test decode commit"), false);
         for (code, message) in [
             (RhinoLossCode::ObjectRecordCensus, "decoded 1/5 Rhino object records".to_string()),
             (RhinoLossCode::HatchFillNotTransferred, format!("framed and read 2 object record(s) for class {class}; construction state is retained as native passthrough")),
@@ -1457,7 +1458,7 @@ fn class_report_preserves_nil_class_source_selection() {
         }
         with_expand(&scan, |expand| {
             let context = DecodeContext::new(&scan, expand);
-            let result = seal_for_test(context.commit(), false);
+            let result = seal_for_test(context.commit().expect("test decode commit"), false);
             let loss = result
                 .report()
                 .losses

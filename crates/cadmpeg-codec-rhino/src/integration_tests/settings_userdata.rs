@@ -86,9 +86,12 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
     assert_eq!(render_settings.len(), 1);
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000015-20008136-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000015-20008136-")
+        })
         .map(|(_, record)| record)
         .expect("render-settings userdata record is retained");
     assert_eq!(retained.data(), Some(userdata.as_slice()));

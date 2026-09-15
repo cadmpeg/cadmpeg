@@ -159,10 +159,10 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let result = crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
-        crate::decode::seal_for_test(context.commit(), false)
+        crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
     });
 
-    let retained = &result.source_fidelity().retained_records;
+    let retained = &result.source_fidelity().retained_records();
     assert_eq!(
         retained
             .values()
@@ -201,12 +201,12 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let result = crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_retention_limits(point.len(), point.len());
-        crate::decode::seal_for_test(context.commit(), false)
+        crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
     });
     assert_eq!(
         result
             .source_fidelity()
-            .retained_records
+            .retained_records()
             .values()
             .next()
             .expect("retained record")
@@ -216,7 +216,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     assert_eq!(
         result
             .source_fidelity()
-            .retained_records
+            .retained_records()
             .values()
             .nth(1)
             .expect("retained record")
@@ -846,7 +846,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             .expect("required invariant")[0];
         let retained = &result
             .source_fidelity()
-            .retained_records
+            .retained_records()
             .values()
             .next()
             .expect("retained record");
