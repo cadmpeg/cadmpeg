@@ -637,19 +637,23 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .and_then(|source| source.attributes.get("physical_archive_bytes"))
         .and_then(|value| value.parse().ok());
     validate_span_chain("physical archive", &physical, physical_end, &mut findings);
+    let string_table_ids = string_tables
+        .iter()
+        .map(|record| record.id())
+        .collect::<Vec<_>>();
     let logical_owner_ids = property_ids
         .iter()
-        .map(|id| (*id).to_owned())
-        .chain(gui_properties.iter().map(|record| record.id.clone()))
+        .copied()
+        .chain(gui_properties.iter().map(|record| record.id.as_str()))
         .chain(
             gui_documents
                 .iter()
-                .flat_map(|document| document.states.iter().map(|record| record.id.clone())),
+                .flat_map(|document| document.states.iter().map(|record| record.id.as_str())),
         )
-        .chain(shape_payloads.iter().map(|record| record.id.clone()))
-        .chain(string_tables.iter().map(|record| record.id()))
-        .chain(element_maps.iter().map(|record| record.id.clone()))
-        .chain(entries.iter().map(|record| record.id.clone()))
+        .chain(shape_payloads.iter().map(|record| record.id.as_str()))
+        .chain(string_table_ids.iter().map(String::as_str))
+        .chain(element_maps.iter().map(|record| record.id.as_str()))
+        .chain(entries.iter().map(|record| record.id.as_str()))
         .collect::<HashSet<_>>();
     let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
     for span in &logical {
