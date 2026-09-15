@@ -10,7 +10,7 @@ fn parser_accepts_external_instance_references_in_edition_three() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("external reference");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.references[0].name, "#100");
+    assert_eq!(exchange.references[0].name.to_string(), "#100");
     assert_eq!(exchange.references[0].uri, "part.step#root");
     assert_eq!(
         exchange.anchors[0].value,
@@ -114,7 +114,7 @@ fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
         exchange
             .references
             .iter()
-            .map(|entry| entry.name.as_str())
+            .map(|entry| entry.name.to_string())
             .collect::<Vec<_>>(),
         ["#200", "@100"]
     );

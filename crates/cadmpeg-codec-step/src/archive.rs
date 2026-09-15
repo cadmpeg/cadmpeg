@@ -151,14 +151,10 @@ pub(crate) fn root_reference_notes(
     // this pass records the binding and does not import a subsidiary graph.
     let (exchange, _) = crate::parse::parse(root_bytes)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    let uris = exchange
-        .references
-        .iter()
-        .map(|reference| (reference.name.as_str(), reference.uri.as_str()))
-        .collect::<Vec<_>>();
     let mut notes = Vec::new();
-    for (name, uri) in uris {
-        let uri = forwarded_reference_uri(&exchange, uri);
+    for reference in &exchange.references {
+        let name = reference.name;
+        let uri = forwarded_reference_uri(&exchange, &reference.uri);
         match resolve_uri(ROOT_NAME, uri)? {
             ReferenceTarget::Internal {
                 member,

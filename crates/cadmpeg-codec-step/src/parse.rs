@@ -19,7 +19,7 @@ use self::implementation_level::{DeclaredImplementationLevel, ImplementationLeve
 
 pub(crate) mod implementation_level;
 
-use crate::lex::{BinaryValue, LexError, Lexer, OccurrencePrefix, Token, TokenKind};
+use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 use crate::parse::schema_identifier::{
     split_schema_identifier, valid_schema_identifier, AdmittedSchemaIdentifier,
 };
@@ -182,11 +182,27 @@ pub struct AnchorTag {
     pub value: Value,
 }
 
+/// An admitted entity or value occurrence name in a REFERENCE binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum ReferenceName {
+    Entity(u64),
+    Value(u64),
+}
+
+impl std::fmt::Display for ReferenceName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Entity(id) => write!(formatter, "#{id}"),
+            Self::Value(id) => write!(formatter, "@{id}"),
+        }
+    }
+}
+
 /// One edition-3 external REFERENCE binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceEntry {
     /// External entity or value occurrence name such as `#123`.
-    pub name: String,
+    pub name: ReferenceName,
     /// External resource URI.
     pub uri: String,
 }
@@ -716,33 +732,31 @@ impl Parser<'_, '_, '_> {
         let mut reference_entries = Vec::new();
         let mut external_reference_ids = BTreeSet::new();
         let mut external_value_reference_ids = BTreeSet::new();
-        let mut reference_names = BTreeSet::new();
         if self.peek_name("REFERENCE") {
             self.lexer.set_allow_print_controls(false);
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
-                let (name, prefix, id) = match self.next_kind()? {
-                    TokenKind::Instance(id) => (format!("#{id}"), OccurrencePrefix::Entity, id),
-                    TokenKind::ValueInstance(id) => (format!("@{id}"), OccurrencePrefix::Value, id),
+                let (name, same_kind, other_kind, id) = match self.next_kind()? {
+                    TokenKind::Instance(id) => (
+                        ReferenceName::Entity(id),
+                        &mut external_reference_ids,
+                        &external_value_reference_ids,
+                        id,
+                    ),
+                    TokenKind::ValueInstance(id) => (
+                        ReferenceName::Value(id),
+                        &mut external_value_reference_ids,
+                        &external_reference_ids,
+                        id,
+                    ),
                     _ => return self.err("expected reference name"),
                 };
-                self.charge_string_storage(&name, "step_parse_reference_storage")?;
-                if !reference_names.insert(name.clone()) {
+                if !same_kind.insert(id) {
                     return self.err("duplicate reference name");
                 }
-                let already_used = external_reference_ids.contains(&id)
-                    || external_value_reference_ids.contains(&id);
-                if already_used {
+                if other_kind.contains(&id) {
                     return self.err("duplicate external occurrence integer");
-                }
-                match prefix {
-                    OccurrencePrefix::Entity => {
-                        external_reference_ids.insert(id);
-                    }
-                    OccurrencePrefix::Value => {
-                        external_value_reference_ids.insert(id);
-                    }
                 }
                 self.punct(&TokenKind::Equals)?;
                 let TokenKind::Resource(uri) = self.next_kind()? else {
@@ -2230,22 +2244,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ReferenceKind {
-    Entity,
-    Value,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct ReferenceKey {
-    kind: ReferenceKind,
-    id: u64,
-}
-
 struct ReferenceResolver<'a, 'ctx, 'arena> {
-    bindings: BTreeMap<ReferenceKey, &'a str>,
+    bindings: BTreeMap<ReferenceName, &'a str>,
     anchors: &'a BTreeMap<String, Value>,
-    stack: Vec<ReferenceKey>,
+    stack: Vec<ReferenceName>,
     remaining_nodes: usize,
     budget: Option<&'ctx DecodeContext<'arena>>,
 }
@@ -2258,37 +2260,17 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         references: &'a [ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
         budget: Option<&'ctx DecodeContext<'arena>>,
-    ) -> Result<Self, ResolveError> {
-        let mut bindings = BTreeMap::new();
-        for reference in references {
-            let (kind, id) = match reference.name.as_bytes().first() {
-                Some(b'#') => (ReferenceKind::Entity, &reference.name[1..]),
-                Some(b'@') => (ReferenceKind::Value, &reference.name[1..]),
-                _ => {
-                    return Err(ResolveError::Syntax(
-                        "invalid REFERENCE occurrence name".into(),
-                    ))
-                }
-            };
-            let id = id
-                .parse::<u64>()
-                .map_err(|_| ResolveError::Syntax("invalid REFERENCE occurrence name".into()))?;
-            if bindings
-                .insert(ReferenceKey { kind, id }, reference.uri.as_str())
-                .is_some()
-            {
-                return Err(ResolveError::Syntax(
-                    "duplicate REFERENCE occurrence name".into(),
-                ));
-            }
-        }
-        Ok(Self {
-            bindings,
+    ) -> Self {
+        Self {
+            bindings: references
+                .iter()
+                .map(|reference| (reference.name, reference.uri.as_str()))
+                .collect(),
             anchors,
             stack: Vec::new(),
             remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES),
             budget,
-        })
+        }
     }
 
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
@@ -2301,22 +2283,12 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             return Err("REFERENCE expansion exceeds its depth limit".into());
         }
         match value {
-            Value::Reference(id) => self.resolve_occurrence(
-                ReferenceKey {
-                    kind: ReferenceKind::Entity,
-                    id: *id,
-                },
-                value,
-                depth,
-            ),
-            Value::ValueReference(id) => self.resolve_occurrence(
-                ReferenceKey {
-                    kind: ReferenceKind::Value,
-                    id: *id,
-                },
-                value,
-                depth,
-            ),
+            Value::Reference(id) => {
+                self.resolve_occurrence(ReferenceName::Entity(*id), value, depth)
+            }
+            Value::ValueReference(id) => {
+                self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
+            }
             Value::List(values) => values
                 .iter()
                 .map(|value| self.resolve_value(value, depth + 1))
@@ -2332,7 +2304,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
 
     fn resolve_occurrence(
         &mut self,
-        key: ReferenceKey,
+        key: ReferenceName,
         original: &Value,
         depth: usize,
     ) -> Result<Value, ResolveError> {
@@ -2366,7 +2338,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 Ok(Value::Omitted)
             };
         }
-        if !reference_target_matches(key.kind, &resolved) {
+        if !reference_target_matches(key, &resolved) {
             return Ok(Value::Omitted);
         }
         self.charge_materialized_nodes(&resolved)?;
@@ -2410,7 +2382,7 @@ fn resolve_local_references(
         .iter()
         .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
         .collect::<BTreeMap<_, _>>();
-    let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
+    let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget);
     for anchor in anchors {
         anchor.value = resolver.resolve_value(&anchor.value, 0)?;
         for tag in &mut anchor.tags {
@@ -2427,10 +2399,10 @@ fn resolve_local_references(
     Ok(())
 }
 
-fn reference_target_matches(kind: ReferenceKind, value: &Value) -> bool {
-    match kind {
-        ReferenceKind::Entity => matches!(value, Value::Reference(_) | Value::ConstantEntity(_)),
-        ReferenceKind::Value => !matches!(
+fn reference_target_matches(name: ReferenceName, value: &Value) -> bool {
+    match name {
+        ReferenceName::Entity(_) => matches!(value, Value::Reference(_) | Value::ConstantEntity(_)),
+        ReferenceName::Value(_) => !matches!(
             value,
             Value::Reference(_) | Value::ConstantEntity(_) | Value::Resource(_)
         ),

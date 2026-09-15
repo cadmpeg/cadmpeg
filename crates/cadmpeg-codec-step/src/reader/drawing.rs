@@ -15,7 +15,7 @@ use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::ids;
 use crate::loss::StepLossCode;
-use crate::parse::{Exchange, RawRecord, Value};
+use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 
 use super::representation;
 use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
@@ -147,9 +147,9 @@ pub(super) fn decode(
     let external_documents = exchange
         .references
         .iter()
-        .filter_map(|entry| {
-            let id = entry.name.strip_prefix('#')?.parse().ok()?;
-            Some((id, entry.uri.as_str()))
+        .filter_map(|entry| match entry.name {
+            ReferenceName::Entity(id) => Some((id, entry.uri.as_str())),
+            ReferenceName::Value(_) => None,
         })
         .collect::<BTreeMap<_, _>>();
     let target_context = TargetContext {

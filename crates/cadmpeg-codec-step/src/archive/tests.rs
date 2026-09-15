@@ -355,7 +355,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         crate::parse::parse(subsidiary).expect("parse ZIP subsidiary");
     assert!(root_diagnostics.is_empty());
     assert!(subsidiary_diagnostics.is_empty());
-    assert_eq!(root_exchange.references[0].name, "#10");
+    assert_eq!(root_exchange.references[0].name.to_string(), "#10");
     assert_eq!(root_exchange.references[0].uri, "#target");
     assert_eq!(
         root_exchange.anchors[0].value,
