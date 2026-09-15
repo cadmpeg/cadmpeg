@@ -4,9 +4,9 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
-    BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveInlineForm,
-    PcurveNurbs, PcurveNurbsPoles, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface,
+    PcurveGeometry, PcurveInlineForm, PcurveNurbs, PcurveNurbsPoles, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -43,13 +43,10 @@ pub(crate) fn native_nurbs_surface(
     bytes: &mut Vec<u8>,
     surface: &NurbsSurface,
 ) -> Result<(), CodecError> {
-    let u_count = usize::try_from(surface.u_count())
-        .map_err(|_| CodecError::NotImplemented("F3D NURBS u count exceeds usize".into()))?;
-    let v_count = usize::try_from(surface.v_count())
-        .map_err(|_| CodecError::NotImplemented("F3D NURBS v count exceeds usize".into()))?;
+    let poles = surface.pole_grid();
     native_ident(
         bytes,
-        if surface.weights().is_some() {
+        if matches!(poles, NurbsPoleGrid::Rational { .. }) {
             "nurbs"
         } else {
             "nubs"
@@ -64,14 +61,26 @@ pub(crate) fn native_nurbs_surface(
     native_nurbs_knot_counts(bytes, [surface.u_knots(), surface.v_knots()])?;
     native_nurbs_knots(bytes, surface.u_knots())?;
     native_nurbs_knots(bytes, surface.v_knots())?;
-    for v in 0..v_count {
-        for u in 0..u_count {
-            let point = surface.control_grid()[u][v];
-            native_f64(bytes, point.x / LEN_TO_MM);
-            native_f64(bytes, point.y / LEN_TO_MM);
-            native_f64(bytes, point.z / LEN_TO_MM);
-            if let Some(weight) = surface.weight(u, v) {
-                native_f64(bytes, weight);
+    match poles {
+        NurbsPoleGrid::Polynomial { rows } => {
+            for v in 0..poles.v_count() {
+                for row in rows {
+                    let point = row[v];
+                    native_f64(bytes, point.x / LEN_TO_MM);
+                    native_f64(bytes, point.y / LEN_TO_MM);
+                    native_f64(bytes, point.z / LEN_TO_MM);
+                }
+            }
+        }
+        NurbsPoleGrid::Rational { rows } => {
+            for v in 0..poles.v_count() {
+                for row in rows {
+                    let pole = row[v];
+                    native_f64(bytes, pole.point.x / LEN_TO_MM);
+                    native_f64(bytes, pole.point.y / LEN_TO_MM);
+                    native_f64(bytes, pole.point.z / LEN_TO_MM);
+                    native_f64(bytes, pole.weight.get());
+                }
             }
         }
     }
@@ -4347,11 +4356,10 @@ pub(crate) fn native_nurbs_curve(
     bytes: &mut Vec<u8>,
     curve: &NurbsCurve,
 ) -> Result<(), CodecError> {
-    let _degree = usize::try_from(curve.degree())
-        .map_err(|_| CodecError::NotImplemented("F3D NURBS curve degree exceeds usize".into()))?;
+    let poles = curve.pole_rows();
     native_ident(
         bytes,
-        if curve.weights().is_some() {
+        if matches!(poles, NurbsPoles3::Rational { .. }) {
             "nurbs"
         } else {
             "nubs"
@@ -4365,12 +4373,21 @@ pub(crate) fn native_nurbs_curve(
             .map_err(|_| CodecError::NotImplemented("F3D unique-knot count exceeds i64".into()))?,
     );
     native_nurbs_knots(bytes, curve.knots())?;
-    for (index, point) in curve.control_points().iter().enumerate() {
-        native_f64(bytes, point.x / LEN_TO_MM);
-        native_f64(bytes, point.y / LEN_TO_MM);
-        native_f64(bytes, point.z / LEN_TO_MM);
-        if let Some(weights) = curve.weights() {
-            native_f64(bytes, weights[index]);
+    match poles {
+        NurbsPoles3::Polynomial { points } => {
+            for point in points {
+                native_f64(bytes, point.x / LEN_TO_MM);
+                native_f64(bytes, point.y / LEN_TO_MM);
+                native_f64(bytes, point.z / LEN_TO_MM);
+            }
+        }
+        NurbsPoles3::Rational { points } => {
+            for pole in points {
+                native_f64(bytes, pole.point.x / LEN_TO_MM);
+                native_f64(bytes, pole.point.y / LEN_TO_MM);
+                native_f64(bytes, pole.point.z / LEN_TO_MM);
+                native_f64(bytes, pole.weight.get());
+            }
         }
     }
     Ok(())
