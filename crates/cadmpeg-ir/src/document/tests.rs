@@ -13,6 +13,8 @@ use crate::validate::validate_neutral;
 use crate::{diff, CadIr};
 use serde::{de::DeserializeOwned, Serialize};
 
+mod unknowns;
+
 struct SerdeIdentity;
 
 impl EntityRewrite for SerdeIdentity {
