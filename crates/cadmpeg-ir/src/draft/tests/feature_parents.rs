@@ -120,6 +120,7 @@ fn parent_admission_checks_tree_ownership_across_the_destination_and_draft() {
 fn incomplete_commit_discards_only_parent_entries_owned_by_discarded_children() {
     let mut base = CadIr::empty();
     parent_draft()
+        .with_accounting()
         .commit_incomplete(
             &mut base,
             &mut Annotations::default(),
@@ -141,6 +142,7 @@ fn incomplete_commit_discards_only_parent_entries_owned_by_discarded_children() 
     let mut rejected_base = CadIr::empty();
     let before = rejected_base.clone();
     let error = parent_draft()
+        .with_accounting()
         .commit_incomplete(
             &mut rejected_base,
             &mut Annotations::default(),
