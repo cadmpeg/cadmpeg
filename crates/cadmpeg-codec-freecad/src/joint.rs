@@ -75,10 +75,7 @@ pub(crate) fn transfer(
                                     offset_name: &str|
              -> Result<JointConnectorRecord, CodecError> {
                 Ok(JointConnectorRecord {
-                    reference: connector(owned, reference_name)?
-                        .into_iter()
-                        .next()
-                        .flatten(),
+                    reference: connector(owned, reference_name)?,
                     placement: placement(owned, placement_name)?.unwrap_or_default(),
                     offset: placement(owned, offset_name)?.unwrap_or_default(),
                 })
@@ -356,8 +353,8 @@ fn joint_kind(
             distance,
             distance2,
         },
-        other => PairedJointKind::Native {
-            name: other.to_owned(),
+        _ => PairedJointKind::Native {
+            name: kind.as_str().to_owned(),
             angle,
             translation_offset: None,
             distance,
@@ -571,7 +568,7 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
 fn connector(
     properties: &[&PropertyRecord],
     name: &str,
-) -> Result<Vec<Option<crate::native::LinkTarget>>, CodecError> {
+) -> Result<Option<crate::native::LinkTarget>, CodecError> {
     let Some(property) = unique_property(properties, name)? else {
         return Err(malformed(format!("joint connector {name} is missing")));
     };
@@ -594,14 +591,14 @@ fn connector(
             property.id
         )));
     }
-    if property.links().len() != 1 {
+    let [target] = property.links() else {
         return Err(malformed(format!(
             "joint connector {} requires one target, found {}",
             property.id,
             property.links().len()
         )));
-    }
-    Ok(property.links().to_vec())
+    };
+    Ok(target.clone())
 }
 
 fn placement(
@@ -661,6 +658,49 @@ pub(crate) mod tests {
                 ),
                 "{family} must not fall through to a native joint family"
             );
+        }
+    }
+
+    #[test]
+    fn custom_joint_labels_keep_source_case_through_neutral_transfer() {
+        for family in ["CustomCoupling", "My Joint V2"] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Assembly::AssemblyObject" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="2">
+<Object name="Base"><Properties Count="0"/></Object>
+<Object name="Joint"><Properties Count="3">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="{family}"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+</Properties></Object></ObjectData></Document>"#
+            );
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .expect("custom joint family");
+            let native = result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::joint::JointRecord>("joints")
+                .unwrap();
+            assert_eq!(native.len(), 1);
+            assert_eq!(native[0].kind(), family);
+            let [joint] = result.ir().model.assembly_joints.as_slice() else {
+                panic!("one neutral joint")
+            };
+            assert!(matches!(
+                joint.paired_kind(),
+                Some(PairedJointKind::Native { name, .. }) if name == family
+            ));
+            assert_valid_document(result.ir());
+            let wire = serde_json::to_string(result.ir()).unwrap();
+            let restored = cadmpeg_ir::CadIr::from_json(&wire).unwrap();
+            assert_valid_document(&restored);
         }
     }
 
