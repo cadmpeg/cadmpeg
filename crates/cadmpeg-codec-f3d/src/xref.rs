@@ -10,6 +10,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 
 use serde::Deserialize;
@@ -27,8 +28,6 @@ use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
 use crate::records::feature::{DesignComponentInsertConstruction, DesignParameterScope};
 use crate::records::{XrefDesign, XrefReference};
-
-const EPS_XREF_DECODE_RIGID_MATRIX_E8: f64 = 1.0e-8;
 
 /// Top-level container entry holding the external-reference table.
 pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
@@ -74,10 +73,11 @@ pub struct Docstruct {
 
 #[derive(Deserialize)]
 struct RedirectionsJson {
-    #[serde(default)]
+    name: String,
+    #[serde(rename = "schema-version")]
+    schema_version: u32,
     designs: Vec<DesignJson>,
     /// `{}` in a leaf document, an array in a referencing document.
-    #[serde(default)]
     references: ReferencesJson,
 }
 
@@ -85,53 +85,122 @@ struct RedirectionsJson {
 #[serde(untagged)]
 enum ReferencesJson {
     List(Vec<ReferenceJson>),
-    /// The leaf form `references: {}`; any non-array value carries no
-    /// references.
-    Other(serde::de::IgnoredAny),
-}
-
-impl Default for ReferencesJson {
-    fn default() -> Self {
-        ReferencesJson::List(Vec::new())
-    }
+    /// The only legal non-array form is the empty leaf object `{}`.
+    Object(BTreeMap<String, serde_json::Value>),
 }
 
 #[derive(Deserialize)]
 struct DesignJson {
-    #[serde(rename = "file-version", default)]
+    #[serde(rename = "file-version")]
     file_version: i64,
-    #[serde(rename = "targetFileName", default)]
+    #[serde(rename = "targetFileName")]
     target_file_name: String,
-    #[serde(rename = "displayName", default)]
+    #[serde(rename = "displayName")]
     display_name: String,
-    #[serde(rename = "lineageUrn", default)]
+    #[serde(rename = "lineageUrn")]
     lineage_urn: String,
-    #[serde(rename = "versionUrn", default)]
+    #[serde(rename = "versionUrn")]
     version_urn: String,
 }
 
 #[derive(Deserialize)]
 struct ReferenceJson {
-    #[serde(default)]
     from: String,
-    #[serde(rename = "relativePath", default)]
+    #[serde(rename = "relativePath")]
     relative_path: String,
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type")]
     reference_type: String,
-    #[serde(default)]
-    properties: Vec<serde_json::Map<String, serde_json::Value>>,
+    properties: Vec<BTreeMap<String, PropertyJson>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PropertyJson {
+    value: String,
+    #[serde(rename = "dataType")]
+    data_type: String,
 }
 
 impl ReferenceJson {
-    fn property(&self, name: &str) -> String {
-        self.properties
-            .iter()
-            .find_map(|object| object.get(name))
-            .and_then(|property| property.get("value"))
-            .and_then(|value| value.as_str())
-            .map(str::to_string)
-            .unwrap_or_default()
+    fn into_fields(self, ordinal: usize) -> Result<(String, String, String, String), CodecError> {
+        let Self {
+            from,
+            relative_path,
+            reference_type,
+            properties,
+        } = self;
+        if reference_type != "XREF" {
+            return Err(redirections_error(format_args!(
+                "references[{ordinal}].type must be XREF"
+            )));
+        }
+        require_text(&from, format_args!("references[{ordinal}].from"))?;
+        require_text(
+            &relative_path,
+            format_args!("references[{ordinal}].relativePath"),
+        )?;
+        let mut role = None;
+        let mut data = None;
+        for (property_index, property) in properties.into_iter().enumerate() {
+            if property.len() != 1 {
+                return Err(redirections_error(format_args!(
+                    "references[{ordinal}].properties[{property_index}] must contain one member"
+                )));
+            }
+            let Some((name, value)) = property.into_iter().next() else {
+                return Err(redirections_error(format_args!(
+                    "references[{ordinal}].properties[{property_index}] must contain one member"
+                )));
+            };
+            if value.data_type != "STRING" {
+                return Err(redirections_error(format_args!(
+                    "references[{ordinal}].properties[{property_index}].{name}.dataType must be STRING"
+                )));
+            }
+            let slot = match name.as_str() {
+                "neutronRole" => &mut role,
+                "neutronData" => &mut data,
+                _ => {
+                    return Err(redirections_error(format_args!(
+                    "references[{ordinal}].properties[{property_index}] has unknown member {name}"
+                )))
+                }
+            };
+            if slot.replace(value.value).is_some() {
+                return Err(redirections_error(format_args!(
+                    "references[{ordinal}].properties repeats {name}"
+                )));
+            }
+        }
+        let role = role.ok_or_else(|| {
+            redirections_error(format_args!(
+                "references[{ordinal}].properties is missing neutronRole"
+            ))
+        })?;
+        require_text(
+            &role,
+            format_args!("references[{ordinal}].properties.neutronRole.value"),
+        )?;
+        let data = data.ok_or_else(|| {
+            redirections_error(format_args!(
+                "references[{ordinal}].properties is missing neutronData"
+            ))
+        })?;
+        Ok((from, relative_path, role, data))
     }
+}
+
+fn redirections_error(message: impl std::fmt::Display) -> CodecError {
+    CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY}: {message}"))
+}
+
+fn require_text(value: &str, field: impl std::fmt::Display) -> Result<(), CodecError> {
+    if value.is_empty() {
+        return Err(redirections_error(format_args!(
+            "{field} must be non-empty"
+        )));
+    }
+    Ok(())
 }
 
 /// Validate `ComponentReferenceData.json`, if present.
@@ -205,11 +274,31 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
             "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
         ))
     })?;
+    if parsed.name != "RedirectionsStream" {
+        return Err(redirections_error(format_args!(
+            "name must be RedirectionsStream"
+        )));
+    }
+    if parsed.schema_version != 0 {
+        return Err(redirections_error(format_args!(
+            "unsupported schema-version {}",
+            parsed.schema_version
+        )));
+    }
+    if parsed.designs.is_empty() {
+        return Err(redirections_error(
+            "designs must contain the document entry",
+        ));
+    }
     let designs = parsed
         .designs
         .into_iter()
         .enumerate()
         .map(|(ordinal, design)| {
+            require_text(
+                &design.target_file_name,
+                format_args!("designs[{ordinal}].targetFileName"),
+            )?;
             Ok(XrefDesign {
                 id: format!("f3d:xref:design#{ordinal}"),
                 ordinal: ordinal_at(ordinal)?,
@@ -222,22 +311,33 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     let references = match parsed.references {
-        ReferencesJson::List(references) => references,
-        ReferencesJson::Other(_) => Vec::new(),
+        ReferencesJson::List(references) if !references.is_empty() => references,
+        ReferencesJson::List(_) => {
+            return Err(redirections_error(
+                "references must be {} when the document has no outgoing XREF",
+            ));
+        }
+        ReferencesJson::Object(fields) if fields.is_empty() => Vec::new(),
+        ReferencesJson::Object(_) => {
+            return Err(redirections_error(
+                "references object must be empty for a leaf document",
+            ));
+        }
     };
     let references = references
         .into_iter()
-        .filter(|reference| reference.reference_type == "XREF")
         .enumerate()
         .map(|(ordinal, reference)| {
+            let (from, relative_path, neutron_role, neutron_data) =
+                reference.into_fields(ordinal)?;
             Ok(XrefReference {
                 id: format!("f3d:xref:reference#{ordinal}"),
                 ordinal: ordinal_at(ordinal)?,
                 occurrence_ordinal: 0,
-                neutron_role: reference.property("neutronRole"),
-                neutron_data: reference.property("neutronData"),
-                from: reference.from,
-                relative_path: reference.relative_path,
+                neutron_role,
+                neutron_data,
+                from,
+                relative_path,
                 transform: None,
             })
         })
@@ -301,7 +401,7 @@ pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg
                     [0.0, 0.0, 1.0, 0.0],
                     [0.0, 0.0, 0.0, 1.0],
                 ],
-                crate::records::DesignAffineTransform::rows,
+                crate::records::XrefPlacementTransform::rows,
             );
             Ok(Occurrence {
                 id: crate::ids::neutral_xref_occurrence_id(
@@ -340,7 +440,7 @@ pub fn bind_component_insert_features(
             reference.neutron_role == construction.neutron_role
                 && reference
                     .transform
-                    .map(crate::records::DesignAffineTransform::rows)
+                    .map(crate::records::XrefPlacementTransform::rows)
                     == Some((*construction.transform()).into())
         });
         let Some(reference) = matches.next() else {
@@ -473,7 +573,7 @@ fn bind_occurrences(
             );
             occurrence.occurrence_ordinal = ordinal_at(occurrence_ordinal)?;
             occurrence.transform = transform
-                .map(crate::records::DesignAffineTransform::try_from)
+                .map(crate::records::XrefPlacementTransform::try_from)
                 .transpose()
                 .map_err(CodecError::NotImplemented)?;
             expanded.push(occurrence);
@@ -1299,21 +1399,9 @@ fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
             *value = view.f64_le()?;
         }
     }
-    if !rows.iter().flatten().all(|value| value.is_finite()) || rows[3] != [0.0, 0.0, 0.0, 1.0] {
-        return None;
-    }
-    let tolerance = EPS_XREF_DECODE_RIGID_MATRIX_E8;
-    for left in 0..3 {
-        for right in 0..3 {
-            let dot = (0..3)
-                .map(|row| rows[row][left] * rows[row][right])
-                .sum::<f64>();
-            if (dot - f64::from(left == right)).abs() > tolerance {
-                return None;
-            }
-        }
-    }
-    Some(rows)
+    crate::records::XrefPlacementTransform::try_from(rows)
+        .ok()
+        .map(crate::records::XrefPlacementTransform::rows)
 }
 
 #[cfg(test)]

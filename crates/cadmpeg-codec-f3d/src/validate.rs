@@ -2414,7 +2414,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             reference.neutron_role == construction.neutron_role
                                 && reference
                                     .transform
-                                    .map(records::DesignAffineTransform::rows)
+                                    .map(records::XrefPlacementTransform::rows)
                                     == Some((*construction.transform()).into())
                         }))
             }

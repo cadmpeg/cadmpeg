@@ -171,12 +171,20 @@ impl MergeSession<'_, '_> {
                 apply_occurrence_transform(&mut component_ir.model, transform.rows())?;
             }
             append_feature_history(&parent_ir.model, &mut component_ir.model)?;
+            let occurrence_start = parent_ir.model.occurrences.len();
             let mut scope = OccurrenceScope {
                 occurrence: &occurrence,
             };
             parent_ir
                 .model
                 .extend_rewritten(component_ir.model, &mut scope)?;
+            reparent_component_roots(
+                &mut parent_ir.model.occurrences[occurrence_start..],
+                &crate::ids::neutral_xref_occurrence_id(
+                    reference.ordinal,
+                    reference.occurrence_ordinal,
+                ),
+            );
             extend_native(&mut parent_ir.native, component_ir.native, &occurrence)?;
             parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
@@ -200,6 +208,25 @@ impl MergeSession<'_, '_> {
             ));
         }
         Ok(merged)
+    }
+}
+
+/// Places every root-level occurrence from a merged member inside the
+/// occurrence that owns that member. Child occurrence parents already carry
+/// the member-local hierarchy and are left unchanged.
+pub(super) fn reparent_component_roots(
+    occurrences: &mut [cadmpeg_ir::products::Occurrence],
+    parent: &cadmpeg_ir::ids::OccurrenceId,
+) {
+    for occurrence in occurrences {
+        if matches!(
+            occurrence.parent,
+            cadmpeg_ir::products::OccurrenceParent::Root {}
+        ) {
+            occurrence.parent = cadmpeg_ir::products::OccurrenceParent::Occurrence {
+                occurrence: parent.clone(),
+            };
+        }
     }
 }
 

@@ -3032,8 +3032,10 @@ fn decode_scanned_document<'a>(
             cadmpeg_ir::report::DecodeTransfer::ContainerOnly {},
             container_losses(scan),
         );
-        if let Ok(Some(table)) = crate::xref::decode(scan) {
-            apply_assembly_classification(&mut report, scan, &table);
+        match crate::xref::decode(scan) {
+            Ok(Some(table)) => apply_assembly_classification(&mut report, scan, &table),
+            Ok(None) => {}
+            Err(error) => report.losses.push(xref_parse_loss(&error)),
         }
         return decode_result(
             ctx,

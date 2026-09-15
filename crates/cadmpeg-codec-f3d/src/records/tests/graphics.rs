@@ -1228,3 +1228,23 @@ fn affine_placement_preserves_shear_and_rejects_invalid_wire() {
     rows[0][0] = f64::INFINITY;
     assert!(DesignAffineTransform::try_from(rows).is_err());
 }
+
+#[test]
+fn xref_placement_requires_a_proper_rigid_transform() {
+    use crate::records::XrefPlacementTransform;
+
+    let identity = cadmpeg_ir::transform::Transform::identity().rows();
+    assert!(XrefPlacementTransform::try_from(identity).is_ok());
+
+    let mut reflected = identity;
+    reflected[0][0] = -1.0;
+    assert!(XrefPlacementTransform::try_from(reflected).is_err());
+
+    let mut scaled = identity;
+    scaled[0][0] = 2.0;
+    assert!(XrefPlacementTransform::try_from(scaled).is_err());
+
+    let mut non_affine = identity;
+    non_affine[3][0] = 1.0;
+    assert!(XrefPlacementTransform::try_from(non_affine).is_err());
+}
