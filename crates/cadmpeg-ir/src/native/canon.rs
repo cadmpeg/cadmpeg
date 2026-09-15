@@ -52,15 +52,6 @@ fn escape_key(key: &str) -> String {
     serde_json::Value::String(key.to_owned()).to_string()
 }
 
-/// Render one finite or non-finite double the way `serde_json::Value` does.
-fn render_f64(value: f64) -> String {
-    if value.is_finite() {
-        serde_json::Value::from(value).to_string()
-    } else {
-        "null".to_owned()
-    }
-}
-
 /// The canonical-value serializer. Every `serialize_*` returns a [`Node`].
 pub(super) struct CanonValue;
 
@@ -131,11 +122,13 @@ impl ser::Serializer for CanonValue {
     }
 
     fn serialize_f32(self, value: f32) -> Result<Node, Error> {
-        Ok(Node::Text(render_f64(f64::from(value))))
+        Ok(Node::Text(
+            serde_json::Value::from(f64::from(value)).to_string(),
+        ))
     }
 
     fn serialize_f64(self, value: f64) -> Result<Node, Error> {
-        Ok(Node::Text(render_f64(value)))
+        Ok(Node::Text(serde_json::Value::from(value).to_string()))
     }
 
     fn serialize_char(self, value: char) -> Result<Node, Error> {
@@ -425,8 +418,8 @@ impl ser::SerializeStructVariant for CanonVariantMap {
 }
 
 /// Map-key serializer with `serde_json::Value`'s key conventions: strings
-/// pass through, an integer or character becomes its string form, and any
-/// other shape is rejected.
+/// pass through, scalar keys and unit variants use their string forms, and
+/// compound or absent keys are rejected. Floating-point keys must be finite.
 struct CanonKey;
 
 fn key_must_be_a_string() -> Error {
