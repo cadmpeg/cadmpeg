@@ -347,6 +347,7 @@ macro_rules! declare_model {
             where
                 S: Serializer,
             {
+                validate_feature_parents(&[self]).map_err(serde::ser::Error::custom)?;
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -363,17 +364,18 @@ macro_rules! declare_model {
                 let procedural_surfaces = std::mem::take(&mut wire.procedural_surfaces);
                 let procedural_curves = std::mem::take(&mut wire.procedural_curves);
                 let feature_wires = std::mem::take(&mut wire.features);
-                let (features, feature_parents): (Vec<_>, Vec<_>) = feature_wires
-                    .into_iter()
-                    .map(FeatureRowWire::into_parts)
-                    .unzip();
                 let mut model = Self {
                     $($field: model_read_value!(wire, $field),)*
                     feature_regeneration_parents: FeatureRegenerationParents::default(),
                 };
-                model.features = features;
-                admit_feature_regeneration_parents(&mut model, feature_parents)
-                    .map_err(serde::de::Error::custom)?;
+                for wire in feature_wires {
+                    let (feature, parent) = wire.into_parts();
+                    if let Some(parent) = parent {
+                        model.feature_regeneration_parents.0.insert(feature.id.clone(), parent);
+                    }
+                    model.features.push(feature);
+                }
+                validate_feature_parents(&[&model]).map_err(serde::de::Error::custom)?;
                 for wire in procedural_surfaces {
                     let (owner, procedural) = wire.into_parts();
                     model
@@ -421,6 +423,24 @@ macro_rules! declare_model {
                 $(self.$field.append(&mut other.$field);)*
                 self.feature_regeneration_parents.0
                     .extend(other.feature_regeneration_parents.0);
+            }
+
+            /// Retains selected entities and removes predecessor entries owned by
+            /// discarded features. References from retained children still require
+            /// admission against the destination model.
+            pub(crate) fn retain_entities(
+                &mut self,
+                mut keep: impl FnMut(crate::schema::EntityKind, &str) -> bool,
+            ) {
+                $(self.$field.retain(|entity| {
+                    keep(<$ty as crate::schema::EntitySchema>::KIND,
+                        crate::schema::EntitySchema::identity(entity))
+                });)*
+                if !self.feature_regeneration_parents.0.is_empty() {
+                    let children = self.features.iter().map(|feature| &feature.id)
+                        .collect::<std::collections::HashSet<_>>();
+                    self.feature_regeneration_parents.0.retain(|child, _| children.contains(child));
+                }
             }
 
             /// Visits every typed identity reference in canonical arena order.
@@ -511,6 +531,7 @@ macro_rules! declare_model_view {
 
         impl Serialize for SortedModel<'_> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                validate_feature_parents(&[self.owner]).map_err(serde::ser::Error::custom)?;
                 Self::serialize(self, serializer)
             }
         }
@@ -749,67 +770,81 @@ impl JsonSchema for CensusKey {
     }
 }
 
-/// Seats the regeneration predecessors a document states beside its features.
-///
-/// The structural tree edge is stated once, in the owning tree node's ordered
-/// `children`, so a feature that a tree node owns states no predecessor of its
-/// own. Predecessor and ordinal are independent data, and the checks between
-/// them are invariants: a feature has at most one tree parent, the named
-/// predecessor exists, and it precedes its child.
-fn admit_feature_regeneration_parents(
-    model: &mut Model,
-    wire_parents: Vec<Option<crate::features::FeatureId>>,
-) -> Result<(), String> {
+/// A model-owned feature relation that cannot survive document admission.
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub(crate) struct FeatureParentError {
+    pub(crate) owner: crate::features::FeatureId,
+    pub(crate) message: String,
+}
+
+/// Checks structural ownership and predecessor ordering across the supplied
+/// models as one graph. Draft references may resolve in the destination model.
+pub(crate) fn validate_feature_parents(models: &[&Model]) -> Result<(), FeatureParentError> {
     use crate::features::{FeatureDefinition, FeatureOperation};
     use std::collections::HashMap;
 
-    let indices = model
-        .features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    let mut tree_parents = HashMap::<crate::features::FeatureId, crate::features::FeatureId>::new();
-    for parent in &model.features {
+    let mut features = HashMap::new();
+    for feature in models.iter().flat_map(|model| &model.features) {
+        if features.insert(&feature.id, feature).is_some() {
+            return Err(FeatureParentError {
+                owner: feature.id.clone(),
+                message: format!("feature identity `{}` is repeated", feature.id),
+            });
+        }
+    }
+    let mut tree_parents = HashMap::new();
+    for parent in models.iter().flat_map(|model| &model.features) {
         let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
             parent.evaluation.definition()
         else {
             continue;
         };
         for child in children {
-            if let Some(previous) = tree_parents.insert(child.clone(), parent.id.clone()) {
-                return Err(format!(
-                    "feature `{child}` has two tree parents `{previous}` and `{}`",
-                    parent.id
-                ));
+            if let Some(previous) = tree_parents.insert(child, &parent.id) {
+                return Err(FeatureParentError {
+                    owner: child.clone(),
+                    message: format!(
+                        "feature `{child}` has two tree parents `{previous}` and `{}`",
+                        parent.id
+                    ),
+                });
             }
         }
     }
-
-    for (child_index, wire_parent) in wire_parents.into_iter().enumerate() {
-        let child_id = model.features[child_index].id.clone();
-        let Some(parent_id) = wire_parent else {
-            continue;
-        };
-        if let Some(existing) = tree_parents.get(&child_id) {
-            return Err(format!(
-                "tree child `{child_id}` is owned by `{existing}` and states no regeneration parent"
-            ));
+    let mut regeneration_parents = HashMap::new();
+    for (child, parent) in models
+        .iter()
+        .flat_map(|model| &model.feature_regeneration_parents.0)
+    {
+        if let Some(previous) = regeneration_parents.insert(child, parent) {
+            return Err(FeatureParentError {
+                owner: child.clone(),
+                message: format!("feature `{child}` has two regeneration parent entries `{previous}` and `{parent}`"),
+            });
         }
-        let Some(&parent_index) = indices.get(&parent_id) else {
-            return Err(format!(
-                "feature `{child_id}` names missing regeneration parent `{parent_id}`"
-            ));
-        };
-        if model.features[parent_index].ordinal >= model.features[child_index].ordinal {
-            return Err(format!(
-                "regeneration parent `{parent_id}` does not precede child `{child_id}`"
-            ));
+        let child_feature = features.get(child).ok_or_else(|| FeatureParentError {
+            owner: child.clone(),
+            message: format!("regeneration relation names missing child feature `{child}`"),
+        })?;
+        if let Some(existing) = tree_parents.get(child) {
+            return Err(FeatureParentError {
+                owner: child.clone(),
+                message: format!(
+                    "tree child `{child}` is owned by `{existing}` and states no regeneration parent"
+                ),
+            });
         }
-        model
-            .feature_regeneration_parents
-            .0
-            .insert(child_id, parent_id);
+        let parent_feature = features.get(parent).ok_or_else(|| FeatureParentError {
+            owner: child.clone(),
+            message: format!("feature `{child}` names missing regeneration parent `{parent}`"),
+        })?;
+        if parent_feature.ordinal >= child_feature.ordinal {
+            return Err(FeatureParentError {
+                owner: child.clone(),
+                message: format!("regeneration parent `{parent}` does not precede child `{child}`"),
+            });
+        }
     }
     Ok(())
 }
@@ -829,6 +864,10 @@ impl Model {
             };
             children.contains(child).then_some(&candidate.id)
         })
+    }
+
+    pub(crate) fn has_feature_regeneration_parents(&self) -> bool {
+        !self.feature_regeneration_parents.0.is_empty()
     }
 
     /// Regeneration predecessor of a feature that no tree node owns.
