@@ -333,8 +333,18 @@ def direct_input_argument(arguments, bindings):
 
 
 def call_uses_input(code, call, bindings):
+    """Prove direct consumption only for an unaliased, unrebound parameter.
+
+    Each candidate occurs once in its signature and once at the read call.
+    Additional uses require binding analysis this lexical checker does not
+    provide; a spelling reused by a local, closure or pattern is not proof.
+    """
+    single_use = {
+        binding for binding in bindings
+        if len(re.findall(rf"\b{re.escape(binding)}\b", code)) == 2
+    }
     arguments = call_arguments(code, call)
-    return arguments is not None and direct_input_argument(arguments, bindings)
+    return arguments is not None and direct_input_argument(arguments, single_use)
 
 
 def source_module_scope(path):
@@ -481,7 +491,7 @@ def collect_deserialize_functions(path):
             path,
             source.count("\n", 0, opening.start()) + 1,
             opening.group("name"),
-            source[brace + 1:end - 1],
+            source[opening.start():end],
             module_scope + scopes[bisect_right(offsets, opening.start()) - 1],
             opening.start(),
             end,
