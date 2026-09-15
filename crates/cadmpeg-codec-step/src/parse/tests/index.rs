@@ -16,11 +16,11 @@ fn released_source_graph_drops_records_and_cached_entity_indexes() {
     let (mut exchange, _) = parse(source).expect("required invariant");
     assert!(exchange.has_entity("POINT"));
 
-    exchange.release_source_graph();
+    let _ = exchange.release_source_graph();
 
     assert!(exchange.records().is_empty());
-    assert!(exchange.header.is_empty());
-    assert!(exchange.data.is_empty());
+    assert!(exchange.header().is_empty());
+    assert!(exchange.data().is_empty());
     assert!(!exchange.has_entity("POINT"));
 }
 

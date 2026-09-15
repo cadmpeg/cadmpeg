@@ -355,10 +355,10 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         crate::parse::parse(subsidiary).expect("parse ZIP subsidiary");
     assert!(root_diagnostics.is_empty());
     assert!(subsidiary_diagnostics.is_empty());
-    assert_eq!(root_exchange.references[0].name.to_string(), "#10");
-    assert_eq!(root_exchange.references[0].uri, "#target");
+    assert_eq!(root_exchange.references()[0].name.to_string(), "#10");
+    assert_eq!(root_exchange.references()[0].uri, "#target");
     assert_eq!(
-        root_exchange.anchors[0].value,
+        root_exchange.anchors()[0].value,
         crate::parse::Value::Resource("parts/ce02_composition_subsidiary.p21#remote_point".into())
     );
     assert_eq!(
@@ -366,7 +366,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         subsidiary_exchange.schema_identifiers()
     );
 
-    let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors[0].value else {
+    let crate::parse::Value::Resource(resource_uri) = &root_exchange.anchors()[0].value else {
         panic!("root forwarding anchor");
     };
     let ReferenceTarget::Internal {
@@ -381,7 +381,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
     assert_eq!(query, None);
     assert_eq!(fragment.as_deref(), Some("remote_point"));
     let anchor = subsidiary_exchange
-        .anchors
+        .anchors()
         .iter()
         .find(|anchor| anchor.name == "remote_point")
         .expect("subsidiary target anchor");
@@ -447,10 +447,10 @@ fn forwarded_reference_retains_unparsed_subsidiary_as_a_resource() {
     let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
-        root_exchange.anchors[0].value,
+        root_exchange.anchors()[0].value,
         crate::parse::Value::Resource("parts/ce02_subsidiary_unparsed.p21#remote_item".into())
     );
-    assert_eq!(root_exchange.references[0].uri, "#target");
+    assert_eq!(root_exchange.references()[0].uri, "#target");
 
     let bytes = step_zip(&[
         (ROOT_NAME, root, CompressionMethod::Stored),
@@ -555,7 +555,7 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
     let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse valid root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
-        root_exchange.references[0].uri,
+        root_exchange.references()[0].uri,
         "parts/er03_subsidiary_valid.p21#remote_item"
     );
     assert_eq!(
@@ -567,7 +567,7 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
         crate::parse::parse(subsidiary).expect("parse valid subsidiary");
     assert!(subsidiary_diagnostics.is_empty());
     assert_eq!(
-        subsidiary_exchange.anchors[0].value,
+        subsidiary_exchange.anchors()[0].value,
         crate::parse::Value::Reference(1)
     );
     assert_eq!(
@@ -613,13 +613,13 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
     let beta = include_bytes!("tests/data/er03_subsidiary_beta.p21");
     let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse identity root");
     assert!(root_diagnostics.is_empty());
-    assert_eq!(root_exchange.references.len(), 2);
+    assert_eq!(root_exchange.references().len(), 2);
     assert_eq!(
-        root_exchange.references[0].uri,
+        root_exchange.references()[0].uri,
         "parts/er03_subsidiary_alpha.p21#remote_item"
     );
     assert_eq!(
-        root_exchange.references[1].uri,
+        root_exchange.references()[1].uri,
         "parts/er03_subsidiary_beta.p21#remote_item"
     );
     assert_eq!(
@@ -636,8 +636,11 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
     ] {
         let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse subsidiary");
         assert!(diagnostics.is_empty());
-        assert_eq!(exchange.anchors[0].name, "remote_item");
-        assert_eq!(exchange.anchors[0].value, crate::parse::Value::Reference(1));
+        assert_eq!(exchange.anchors()[0].name, "remote_item");
+        assert_eq!(
+            exchange.anchors()[0].value,
+            crate::parse::Value::Reference(1)
+        );
         assert_eq!(
             exchange.records()[&1].partials[0].parameters,
             vec![crate::parse::Value::String(value.to_vec())]
@@ -709,16 +712,16 @@ fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
     let (root_exchange, root_diagnostics) = crate::parse::parse(root).expect("parse CE-02 root");
     assert!(root_diagnostics.is_empty());
     assert_eq!(
-        root_exchange.anchors[0].value,
+        root_exchange.anchors()[0].value,
         crate::parse::Value::Resource("parts/ce02_subsidiary_valid.p21#remote_item".into())
     );
-    assert_eq!(root_exchange.references[0].uri, "#target");
+    assert_eq!(root_exchange.references()[0].uri, "#target");
 
     let (subsidiary_exchange, subsidiary_diagnostics) =
         crate::parse::parse(subsidiary).expect("parse CE-02 subsidiary");
     assert!(subsidiary_diagnostics.is_empty());
     assert_eq!(
-        subsidiary_exchange.anchors[0].value,
+        subsidiary_exchange.anchors()[0].value,
         crate::parse::Value::Reference(1)
     );
     assert_eq!(
@@ -888,8 +891,8 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
     let (exchange, diagnostics) =
         crate::parse::parse(bytes).expect("parse opaque signature payload");
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.signatures.len(), 1);
-    let signature = exchange.signatures[0].clone();
+    assert_eq!(exchange.signatures().len(), 1);
+    let signature = exchange.signatures()[0].clone();
     assert!(bytes[signature.clone()]
         .windows(b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=".len())
         .any(|bytes| bytes == b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA="));

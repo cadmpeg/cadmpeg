@@ -29,7 +29,7 @@ fn sections(exchange: &crate::parse::Exchange, input: impl AsRef<[u8]>) -> Vec<S
     let tokens = crate::lex::lex(input).expect("signature tokens");
     let exchange_start = tokens[0].span.start;
     exchange
-        .signatures
+        .signatures()
         .iter()
         .map(|span| {
             let section_tokens = tokens
@@ -120,11 +120,11 @@ fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("multiple signatures");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.signatures.len(), 2);
-    assert!(source[exchange.signatures[0].clone()]
+    assert_eq!(exchange.signatures().len(), 2);
+    assert!(source[exchange.signatures()[0].clone()]
         .windows(b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=".len())
         .any(|bytes| bytes == b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA="));
-    assert!(source[exchange.signatures[1].clone()]
+    assert!(source[exchange.signatures()[1].clone()]
         .windows(b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=".len())
         .any(|bytes| bytes == b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA="));
     assert_eq!(sections(&exchange, source).len(), 2);
@@ -149,21 +149,21 @@ fn parser_accepts_signature_edge_separators_and_keeps_each_boundary() {
 
     assert!(diagnostics.is_empty());
     assert_eq!(sections(&exchange, &source).len(), 2);
-    assert_eq!(exchange.signatures.len(), 2);
-    assert!(source.as_bytes()[exchange.signatures[0].clone()].ends_with(b"DSEC;"));
-    assert!(source.as_bytes()[exchange.signatures[0].clone()]
+    assert_eq!(exchange.signatures().len(), 2);
+    assert!(source.as_bytes()[exchange.signatures()[0].clone()].ends_with(b"DSEC;"));
+    assert!(source.as_bytes()[exchange.signatures()[0].clone()]
         .windows(b"EN\nDSEC;".len())
         .any(|bytes| bytes == b"EN\nDSEC;"));
-    assert!(source.as_bytes()[exchange.signatures[1].clone()].ends_with(b"ENDSEC;"));
+    assert!(source.as_bytes()[exchange.signatures()[1].clone()].ends_with(b"ENDSEC;"));
     assert_eq!(
         sections(&exchange, &source)[0].signed.end,
-        exchange.signatures[0].start
+        exchange.signatures()[0].start
     );
     assert_eq!(
         sections(&exchange, &source)[1].signed.end,
-        exchange.signatures[1].start
+        exchange.signatures()[1].start
     );
-    assert_eq!(exchange.signatures[1].start, exchange.signatures[0].end);
+    assert_eq!(exchange.signatures()[1].start, exchange.signatures()[0].end);
     assert_eq!(sections(&exchange, &source)[0].cms.len(), 92);
     assert_eq!(sections(&exchange, &source)[1].cms.len(), 92);
 }
@@ -334,7 +334,7 @@ fn parser_projects_each_signature_to_preceding_alphabet_bytes() {
 fn parser_ignores_controls_inside_signature_terminators() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nEN\nDSEC;";
     let (exchange, _) = crate::parse::parse(source).expect("split signature terminator");
-    assert_eq!(exchange.signatures.len(), 1);
+    assert_eq!(exchange.signatures().len(), 1);
 }
 
 #[test]

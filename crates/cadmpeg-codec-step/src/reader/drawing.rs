@@ -145,7 +145,7 @@ pub(super) fn decode(
         &mut target_identities,
     );
     let external_documents = exchange
-        .references
+        .references()
         .iter()
         .filter_map(|entry| match entry.name {
             ReferenceName::Entity(id) => Some((id, entry.uri.as_str())),

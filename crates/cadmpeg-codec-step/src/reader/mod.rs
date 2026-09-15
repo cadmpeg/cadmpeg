@@ -133,7 +133,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("data_sections"),
-            exchange.data.len().to_string(),
+            exchange.data().len().to_string(),
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("entity_instances"),
@@ -154,7 +154,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             cadmpeg_ir::report::DecodeTransfer::full(false)
         });
         body.notes = exchange
-            .references
+            .references()
             .iter()
             .map(|entry| format!("external reference {} -> {}", entry.name, entry.uri))
             .collect();
@@ -515,8 +515,7 @@ fn decode_exchange_mode(
         byte_accounting(input, exchange, &session.typed_records, session.ctx)?
     };
     if matches!(mode, DecodeMode::Decode(_)) {
-        let signature_spans = std::mem::take(&mut exchange.signatures);
-        exchange.release_source_graph();
+        let signature_spans = exchange.release_source_graph();
         let mut opaque = Vec::with_capacity(opaque_sources.len() + signature_spans.len());
         for source in opaque_sources {
             session
@@ -616,7 +615,7 @@ fn semantic_input_work(exchange: &Exchange) -> u64 {
                 .fold(0, u64::saturating_add),
         )
     });
-    let headers = exchange.header.iter().map(|record| {
+    let headers = exchange.header().iter().map(|record| {
         1_u64.saturating_add(
             record
                 .parameters
@@ -626,10 +625,10 @@ fn semantic_input_work(exchange: &Exchange) -> u64 {
         )
     });
     let anchors = exchange
-        .anchors
+        .anchors()
         .iter()
         .map(|anchor| 1_u64.saturating_add(value_work_units(&anchor.value)));
-    let data = exchange.data.iter().map(|section| {
+    let data = exchange.data().iter().map(|section| {
         1_u64
             .saturating_add(
                 section
@@ -640,7 +639,7 @@ fn semantic_input_work(exchange: &Exchange) -> u64 {
             )
             .saturating_add(u64::try_from(section.records.len()).unwrap_or(u64::MAX))
     });
-    let references = u64::try_from(exchange.references.len()).unwrap_or(u64::MAX);
+    let references = u64::try_from(exchange.references().len()).unwrap_or(u64::MAX);
     records
         .chain(headers)
         .chain(anchors)
@@ -1069,7 +1068,7 @@ fn byte_accounting(
             format_args!("record #{id}"),
         )?;
     }
-    for signature in &exchange.signatures {
+    for signature in exchange.signatures() {
         claim_range(
             &mut classes,
             signature,

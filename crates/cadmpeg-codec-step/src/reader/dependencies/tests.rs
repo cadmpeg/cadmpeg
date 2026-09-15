@@ -139,7 +139,7 @@ fn bind_entity_reference(
     target: &crate::parse::Exchange,
 ) -> Result<CallerEntityBinding, &'static str> {
     let reference = root
-        .references
+        .references()
         .iter()
         .find(|reference| reference.name == crate::parse::ReferenceName::Entity(10))
         .ok_or("missing root reference")?;
@@ -164,7 +164,7 @@ fn bind_entity_reference(
         return Err("resource coordinate contexts differ");
     }
     let anchor = target
-        .anchors
+        .anchors()
         .iter()
         .find(|anchor| anchor.name == anchor_name)
         .ok_or("target anchor is missing")?;
@@ -243,7 +243,10 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         root.records()[&5].partials[0].parameters,
         vec![crate::parse::Value::Reference(10)]
     );
-    assert_eq!(target.anchors[0].value, crate::parse::Value::Reference(12));
+    assert_eq!(
+        target.anchors()[0].value,
+        crate::parse::Value::Reference(12)
+    );
     assert_eq!(
         target.records()[&11].partials[0].parameters,
         vec![crate::parse::Value::Reference(20)]
@@ -533,7 +536,7 @@ fn compose_part26_point(
         return Part26Composition::Unbound("resource coordinate contexts differ");
     }
     let anchor = target
-        .anchors
+        .anchors()
         .iter()
         .find(|anchor| anchor.name == relation.part21_anchor);
     let Some(anchor) = anchor else {
@@ -729,7 +732,7 @@ fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
     let (exchange, diagnostics) = crate::parse::parse(bytes).expect("parse cache witness");
     assert!(diagnostics.is_empty());
     let population = exchange
-        .header
+        .header()
         .iter()
         .find(|record| record.name == "SCHEMA_POPULATION")
         .expect("schema population header");
@@ -794,10 +797,10 @@ fn signed_resource_digest_and_timestamp_are_retained_without_cache_identity() {
     let signed_exchange = crate::parse::parse(signed_resource)
         .expect("parse signed resource")
         .0;
-    assert_eq!(signed_exchange.signatures.len(), 1);
+    assert_eq!(signed_exchange.signatures().len(), 1);
 
     let population = exchange
-        .header
+        .header()
         .iter()
         .find(|record| record.name == "SCHEMA_POPULATION")
         .expect("signed schema population header");

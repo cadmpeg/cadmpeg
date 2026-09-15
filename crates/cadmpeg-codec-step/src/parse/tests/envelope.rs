@@ -220,7 +220,7 @@ fn parser_recovers_an_out_of_range_schema_object_identifier_component() {
         diagnostics[0].message,
         "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
     );
-    assert_eq!(exchange.header[2].name, "FILE_SCHEMA");
+    assert_eq!(exchange.header()[2].name, "FILE_SCHEMA");
     assert_eq!(
         exchange.schema_identifiers(),
         ["AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"]
@@ -342,7 +342,7 @@ fn parser_retains_unset_file_name_tail_metadata() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'',$,$);FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("unset producer metadata");
     assert!(matches!(
-        exchange.header[1].parameters[6],
+        exchange.header()[1].parameters[6],
         crate::parse::Value::Omitted
     ));
 }
@@ -418,7 +418,7 @@ fn unknown_implementation_level_uses_the_retained_substitution_for_later_section
     let (exchange, diagnostics) =
         crate::parse::parse(source).expect("the substituted 4;3 grammar admits ANCHOR");
     assert_eq!(exchange.implementation_level(), "1;1");
-    assert_eq!(exchange.anchors.len(), 1);
+    assert_eq!(exchange.anchors().len(), 1);
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
         diagnostics[0].kind,
@@ -487,8 +487,8 @@ fn parser_allows_multiple_schema_identifiers_at_legacy_level() {
 fn parser_validates_optional_header_entities_and_data_section_targets() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));FILE_POPULATION('AP242','INCLUDE_ALL_COMPATIBLE',('main'));SECTION_LANGUAGE('main','eng');SECTION_CONTEXT('main',('design'));!VENDOR(('metadata'));ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("valid optional header entities");
-    assert_eq!(exchange.data[0].records, vec![1]);
-    assert_eq!(exchange.header[7].name, "!VENDOR");
+    assert_eq!(exchange.data()[0].records, vec![1]);
+    assert_eq!(exchange.header()[7].name, "!VENDOR");
 
     let invalid = [
         (
@@ -566,7 +566,7 @@ fn parser_enforces_data_section_parameter_shape_and_multiplicity() {
 
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP214'));ENDSEC;DATA('section-1',('AP242'));#1=ITEM();ENDSEC;DATA('section-2',('AP214'));#2=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("valid named DATA sections");
-    assert_eq!(exchange.data.len(), 2);
+    assert_eq!(exchange.data().len(), 2);
 }
 
 #[test]

@@ -131,9 +131,9 @@ fn inspect_exchange(
         storage: EntryStorage::unreported(VerbatimLabel::None),
         attributes: BTreeMap::default(),
     }];
-    if !exchange.anchors.is_empty() {
+    if !exchange.anchors().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
-        attributes.insert("anchor_count".into(), exchange.anchors.len().to_string());
+        attributes.insert("anchor_count".into(), exchange.anchors().len().to_string());
         entries.push(ContainerEntry {
             name: "ANCHOR".into(),
             role: ContainerRole::InFileAnchors,
@@ -141,16 +141,16 @@ fn inspect_exchange(
             attributes,
         });
     }
-    if !exchange.references.is_empty() {
+    if !exchange.references().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
         attributes.insert(
             "external_count".into(),
-            exchange.references.len().to_string(),
+            exchange.references().len().to_string(),
         );
         attributes.insert(
             "external_uris".into(),
             exchange
-                .references
+                .references()
                 .iter()
                 .map(|entry| entry.uri.as_str())
                 .collect::<Vec<_>>()
@@ -163,7 +163,7 @@ fn inspect_exchange(
             attributes,
         });
     }
-    for (index, section) in exchange.data.iter().enumerate() {
+    for (index, section) in exchange.data().iter().enumerate() {
         let mut counts = std::collections::BTreeMap::<String, usize>::new();
         for id in &section.records {
             if !opaque_offsets.contains(&exchange.records()[id].span.start) {
@@ -211,7 +211,7 @@ fn inspect_exchange(
             attributes,
         });
     }
-    for (index, signature) in exchange.signatures.iter().enumerate() {
+    for (index, signature) in exchange.signatures().iter().enumerate() {
         entries.push(ContainerEntry {
             name: if index == 0 {
                 "SIGNATURE".into()
