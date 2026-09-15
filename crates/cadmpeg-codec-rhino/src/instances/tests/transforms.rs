@@ -147,3 +147,48 @@ fn invalid_instance_inverse_is_located_and_later_reference_survives() {
         );
     }
 }
+
+#[test]
+fn source_instance_world_placement_is_applied_once() {
+    let cases = [
+        (Transform::identity().rows(), Point3::new(1.0, 2.0, 3.0)),
+        (
+            [
+                [1.0, 0.0, 0.0, 10.0],
+                [0.0, 1.0, 0.0, 20.0],
+                [0.0, 0.0, 1.0, 30.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            Point3::new(11.0, 22.0, 33.0),
+        ),
+        (
+            [
+                [0.0, -1.0, 0.0, 10.0],
+                [1.0, 0.0, 0.0, 20.0],
+                [0.0, 0.0, 1.0, 30.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            Point3::new(8.0, 21.0, 33.0),
+        ),
+    ];
+    for (rows, expected) in cases {
+        let source = document(&[rows]);
+        let decoded = crate::RhinoCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert!(!decoded.report().losses.iter().any(|loss| [
+            RhinoLossCode::IntegrityFailure.kind(),
+            RhinoLossCode::ProductOccurrenceDropped.kind()
+        ]
+        .contains(&loss.code)));
+        let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+        for ir in [decoded.ir(), &reread] {
+            assert_eq!(ir.model.bodies.len(), 1);
+            assert_eq!(ir.model.points.len(), 1);
+            let point = ir.model.points[0].position;
+            let body = ir.model.bodies.first().unwrap();
+            let world = body.transform.unwrap_or_default().apply_point(point);
+            assert_eq!(world, expected);
+        }
+    }
+}

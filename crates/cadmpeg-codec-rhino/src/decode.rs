@@ -1864,7 +1864,6 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Body>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing bodies".to_string())?
         {
-            compose_body_transform(body, transform).map_err(|error| error.to_string())?;
             links.push(body.id.to_string());
             derived_ids.push(body.id.to_string());
         }
@@ -5228,17 +5227,6 @@ fn commit_curve_tree(
             .map_err(|error| error.to_string())?;
     }
     Ok(id)
-}
-
-fn compose_body_transform(
-    body: &mut Body,
-    transform: Transform,
-) -> Result<(), cadmpeg_ir::transform::TransformError> {
-    body.transform = Some(match body.transform {
-        Some(existing) => transform.compose(existing)?,
-        None => transform,
-    });
-    Ok(())
 }
 
 /// The hatch plane's placement, scaled into millimetres.
