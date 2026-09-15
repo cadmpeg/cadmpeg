@@ -135,7 +135,7 @@ fn definition_diagnostics_keep_codes_locations_and_prior_failures_in_both_decode
                 .range
                 .start as u64;
             assert_eq!(
-                scan.definitions.definitions.len(),
+                scan.definitions.definitions().len(),
                 usize::from(!malformed_tail)
             );
             for container_only in [false, true] {

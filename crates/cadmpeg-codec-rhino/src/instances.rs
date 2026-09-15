@@ -157,7 +157,7 @@ pub(crate) struct InstanceDefinition {
     /// Complete table-record range.
     pub(crate) source_range: Range<usize>,
     /// Definition UUID.
-    pub(crate) id: Uuid,
+    id: Uuid,
     /// Ordered source member UUIDs.
     pub(crate) members: Vec<Uuid>,
     /// Component archive index when present.
@@ -180,6 +180,12 @@ pub(crate) struct InstanceDefinition {
     pub(crate) linked_appearance: u32,
     /// Exclusive linked-file source.
     pub(crate) link: LinkSource,
+}
+
+impl InstanceDefinition {
+    pub(crate) fn id(&self) -> Uuid {
+        self.id
+    }
 }
 
 #[cfg(test)]
@@ -237,13 +243,31 @@ impl InstanceReference {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DefinitionScan {
     /// Valid definitions in source order.
-    pub(crate) definitions: Vec<InstanceDefinition>,
+    definitions: Vec<InstanceDefinition>,
     /// Definition UUIDs that were duplicated and are therefore ambiguous.
-    pub(crate) ambiguous_ids: HashSet<Uuid>,
+    ambiguous_ids: HashSet<Uuid>,
     /// Union of member UUIDs from every safely parseable definition prefix.
-    pub(crate) member_object_ids: HashSet<Uuid>,
+    member_object_ids: HashSet<Uuid>,
     /// Recoverable per-record diagnostics.
-    pub(crate) diagnostics: Vec<DefinitionDiagnostic>,
+    diagnostics: Vec<DefinitionDiagnostic>,
+}
+
+impl DefinitionScan {
+    pub(crate) fn definitions(&self) -> &[InstanceDefinition] {
+        &self.definitions
+    }
+
+    pub(crate) fn is_ambiguous(&self, id: Uuid) -> bool {
+        self.ambiguous_ids.contains(&id)
+    }
+
+    pub(crate) fn contains_member(&self, id: Uuid) -> bool {
+        self.member_object_ids.contains(&id)
+    }
+
+    pub(crate) fn diagnostics(&self) -> &[DefinitionDiagnostic] {
+        &self.diagnostics
+    }
 }
 
 /// Result of scanning instance-definition records.

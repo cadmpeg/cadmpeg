@@ -276,11 +276,10 @@ impl<'a> DecodeContext<'a> {
             object_candidates,
             definition_candidates: scan
                 .definitions
-                .definitions
+                .definitions()
                 .iter()
                 .enumerate()
-                .filter(|(_, definition)| !scan.definitions.ambiguous_ids.contains(&definition.id))
-                .map(|(index, definition)| (definition.id, index))
+                .map(|(index, definition)| (definition.id(), index))
                 .collect(),
             expansion_budget: ExpansionBudget::from_session(expand.ctx()),
         };
@@ -1582,10 +1581,7 @@ impl<'a> DecodeContext<'a> {
 
     fn is_definition_member(&self, object: &ObjectDescriptor) -> bool {
         let identity = &object.identity;
-        self.scan
-            .definitions
-            .member_object_ids
-            .contains(&identity.object_id)
+        self.scan.definitions.contains_member(identity.object_id)
     }
 
     fn object_key(&self, identity: &crate::objects::SourceIdentity, source_order: usize) -> String {
@@ -1752,8 +1748,7 @@ impl<'a> DecodeContext<'a> {
         if self
             .scan
             .definitions
-            .ambiguous_ids
-            .contains(&reference.definition_id())
+            .is_ambiguous(reference.definition_id())
         {
             return Err(format!(
                 "definition {} is duplicated",
@@ -1763,28 +1758,28 @@ impl<'a> DecodeContext<'a> {
         let definition = self
             .definition_candidates
             .get(&reference.definition_id())
-            .and_then(|index| self.scan.definitions.definitions.get(*index))
+            .and_then(|index| self.scan.definitions.definitions().get(*index))
             .ok_or_else(|| format!("definition {} is missing", reference.definition_id()))?;
         if matches!(definition.kind, crate::instances::DefinitionKind::Linked)
             && definition.members.is_empty()
         {
             return Err(format!(
                 "linked external definition {} has no local members",
-                definition.id
+                definition.id()
             ));
         }
         if matches!(definition.kind, crate::instances::DefinitionKind::Unset) {
-            return Err(format!("definition {} has unset type", definition.id));
+            return Err(format!("definition {} has unset type", definition.id()));
         }
         let unique_members = definition.members.iter().copied().collect::<BTreeSet<_>>();
         if unique_members.len() != definition.members.len() {
             return Err(format!(
                 "definition {} contains duplicate member UUIDs",
-                definition.id
+                definition.id()
             ));
         }
-        if stack.contains(&definition.id) {
-            return Err(format!("definition cycle reaches {}", definition.id));
+        if stack.contains(&definition.id()) {
+            return Err(format!("definition cycle reaches {}", definition.id()));
         }
         let binding = self.unit_binding();
         let crate::settings::UnitBinding::Millimeters(scale) = binding else {
@@ -1796,7 +1791,7 @@ impl<'a> DecodeContext<'a> {
         let local = crate::instances::scale_translation(reference.transform(), scale)
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
         let transform = parent.compose(local).map_err(|error| error.to_string())?;
-        let definition_id = definition.id;
+        let definition_id = definition.id();
         let definition_members = definition.members.clone();
         stack.push(definition_id);
         path.push(self.reference_segment(source_order, identity));
@@ -2212,7 +2207,7 @@ impl<'a> DecodeContext<'a> {
         losses.extend(
             self.scan
                 .definitions
-                .diagnostics
+                .diagnostics()
                 .iter()
                 .map(crate::instances::DefinitionDiagnostic::to_loss),
         );

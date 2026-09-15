@@ -1243,7 +1243,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     notes.extend(scan.warnings.messages().map(str::to_owned));
     notes.extend(
         scan.definitions
-            .diagnostics
+            .diagnostics()
             .iter()
             .map(|diagnostic| diagnostic.diagnostic.message.clone()),
     );
@@ -1306,7 +1306,7 @@ pub(crate) fn source_meta(primary: DialectMatch, detail: SourceMetaDetail<'_>) -
             );
             attributes.insert(
                 cadmpeg_core::nonblank_literal!("instance_definition_count"),
-                scan.definitions.definitions.len().to_string(),
+                scan.definitions.definitions().len().to_string(),
             );
             attributes
         }
@@ -1344,7 +1344,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     notes.extend(scan.warnings.messages().map(str::to_owned));
     notes.extend(
         scan.definitions
-            .diagnostics
+            .diagnostics()
             .iter()
             .map(|diagnostic| diagnostic.diagnostic.message.clone()),
     );
@@ -1360,7 +1360,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
         .collect();
     losses.extend(
         scan.definitions
-            .diagnostics
+            .diagnostics()
             .iter()
             .map(crate::instances::DefinitionDiagnostic::to_loss),
     );

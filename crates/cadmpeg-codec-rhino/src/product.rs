@@ -183,8 +183,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
 
     let mut definitions = Vec::new();
     let mut external = Vec::new();
-    for definition in &scan.definitions.definitions {
-        let external_reference = external_record(definition.id, &definition.link);
+    for definition in scan.definitions.definitions() {
+        let external_reference = external_record(definition.id(), &definition.link);
         let external_id = external_reference.as_ref().map(|value| value.id.clone());
         if let Some(value) = external_reference {
             external.push(value);
@@ -200,9 +200,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
         links.sort();
         links.dedup();
         definitions.push(DefinitionRecord {
-            id: definition_id(definition.id),
+            id: definition_id(definition.id()),
             source_offset: definition.source_range.start as u64,
-            source_uuid: definition.id.to_string(),
+            source_uuid: definition.id().to_string(),
             archive_index: definition.index,
             name: definition.name.clone(),
             description: definition.description.clone(),
@@ -221,13 +221,13 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut member_definitions = HashMap::<Uuid, Vec<String>>::new();
     let mut definition_ids = std::collections::HashSet::new();
-    for definition in &scan.definitions.definitions {
-        definition_ids.insert(definition.id);
+    for definition in scan.definitions.definitions() {
+        definition_ids.insert(definition.id());
         for member in &definition.members {
             member_definitions
                 .entry(*member)
                 .or_default()
-                .push(definition.id.to_string());
+                .push(definition.id().to_string());
         }
     }
     for parents in member_definitions.values_mut() {
