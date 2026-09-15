@@ -2,7 +2,7 @@
 //! Rhino instance-definition and instance-reference records.
 
 use crate::loss::{Diagnostics, RhinoDiagnostic, RhinoLossCode};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::text::NonBlankString;
@@ -881,6 +881,22 @@ fn parse_v6(
     })
 }
 
+fn skip_definition_child(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+    typecode: u32,
+) -> Result<(), FramingError> {
+    let child = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+    if child.typecode != typecode || child.short() {
+        return Err(FramingError::structural(
+            reader.position(),
+            "unexpected definition metadata child",
+        ));
+    }
+    reader.skip(child.next_offset() - reader.position())
+}
+
 fn extract_member_ids(
     data: &[u8],
     range: Range<usize>,
@@ -914,13 +930,20 @@ fn extract_member_ids(
         ));
     }
     outer.skip_remaining()?;
-    let _component = model_component(data, &mut reader, archive, &mut Diagnostics::new())?;
-    let _kind = reader.u32()?;
-    let _units = unit_detail(data, &mut reader, archive, &mut Diagnostics::new())?;
-    let _description = utf16(&mut reader)?;
-    let _url = utf16(&mut reader)?;
-    let _url_tag = utf16(&mut reader)?;
-    let _bounds = bbox(&mut reader)?;
+    // Recovery needs the outer field boundaries, independent of metadata admission.
+    skip_definition_child(data, &mut reader, archive, MODEL_ATTRIBUTES)?;
+    reader.skip(4)?; // definition kind
+    skip_definition_child(data, &mut reader, archive, ANONYMOUS)?;
+    for _ in 0..3 {
+        let count = usize::try_from(reader.u32()?).map_err(|_| FramingError::Overflow {
+            offset: reader.position(),
+        })?;
+        let length = count.checked_mul(2).ok_or(FramingError::Overflow {
+            offset: reader.position(),
+        })?;
+        reader.skip(length)?;
+    }
+    reader.skip(48)?; // bounding box
     if reader.bool()? {
         members(&mut reader)
     } else {
@@ -1045,8 +1068,9 @@ pub(crate) fn parse_definitions(
     table_typecode: u32,
 ) -> DefinitionParse {
     let mut result = DefinitionParse::default();
-    let mut seen = HashSet::new();
-    for record in records {
+    let mut seen = HashMap::new();
+    let mut opaque_indices = BTreeSet::new();
+    for (source_order, record) in records.iter().enumerate() {
         let mut warnings = Diagnostics::new();
         let parsed = (|| {
             let (class, userdata) =
@@ -1104,37 +1128,38 @@ pub(crate) fn parse_definitions(
         match parsed {
             Ok((definition, userdata_degraded)) => {
                 if userdata_degraded {
-                    result.opaque_records.push(OpaqueRecord {
-                        table_typecode,
-                        record: record.clone(),
-                    });
+                    opaque_indices.insert(source_order);
                 }
-                if seen.insert(definition.id) {
-                    result
-                        .scan
-                        .member_object_ids
-                        .extend(definition.members.iter().copied());
-                    result.scan.definitions.push(definition);
-                } else {
-                    result
-                        .scan
-                        .member_object_ids
-                        .extend(definition.members.iter().copied());
-                    result.scan.ambiguous_ids.insert(definition.id);
-                    result
-                        .scan
-                        .definitions
-                        .retain(|value| value.id != definition.id);
-                    result.scan.diagnostics.push(DefinitionDiagnostic {
-                        diagnostic: RhinoDiagnostic {
+                result
+                    .scan
+                    .member_object_ids
+                    .extend(definition.members.iter().copied());
+                match seen.entry(definition.id) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(source_order);
+                        result.scan.definitions.push(definition);
+                    }
+                    std::collections::hash_map::Entry::Occupied(entry) => {
+                        let first = *entry.get();
+                        opaque_indices.extend([first, source_order]);
+                        let diagnostic = RhinoDiagnostic {
                             code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
                             message: format!(
                                 "duplicate instance definition UUID {}",
                                 definition.id
                             ),
-                        },
-                        source_range: record.range.clone(),
-                    });
+                        };
+                        if result.scan.ambiguous_ids.insert(definition.id) {
+                            result.scan.diagnostics.push(DefinitionDiagnostic {
+                                diagnostic: diagnostic.clone(),
+                                source_range: records[first].range.clone(),
+                            });
+                        }
+                        result.scan.diagnostics.push(DefinitionDiagnostic {
+                            diagnostic,
+                            source_range: record.range.clone(),
+                        });
+                    }
                 }
             }
             Err(error) => {
@@ -1145,13 +1170,21 @@ pub(crate) fn parse_definitions(
                     },
                     source_range: record.range.clone(),
                 });
-                result.opaque_records.push(OpaqueRecord {
-                    table_typecode,
-                    record: record.clone(),
-                });
+                opaque_indices.insert(source_order);
             }
         }
     }
+    result
+        .scan
+        .definitions
+        .retain(|definition| !result.scan.ambiguous_ids.contains(&definition.id));
+    result.opaque_records = opaque_indices
+        .into_iter()
+        .map(|index| OpaqueRecord {
+            table_typecode,
+            record: records[index].clone(),
+        })
+        .collect();
     result
 }
 
