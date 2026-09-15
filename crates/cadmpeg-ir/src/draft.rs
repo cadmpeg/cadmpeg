@@ -210,11 +210,21 @@ pub enum DraftError {
     },
 }
 
-/// Transactional collection of staged model entities and decode accounting.
+/// Transactional collection of staged model entities.
+///
+/// A plain draft carries no accounting and can commit through `commit_model`.
+/// [`with_accounting`](Self::with_accounting) adds accounting and requires the
+/// commit route that accepts every accounting destination.
 #[derive(Debug)]
-pub struct ModelDraft {
+pub struct ModelDraft<A = ()> {
     model: Model,
     identity_index: Option<IdentityIndex>,
+    accounting: A,
+}
+
+/// Exactness, loss notes and transfer entries that must accompany a draft commit.
+#[derive(Debug, Default)]
+pub struct DraftAccounting {
     exactness: BTreeMap<String, Exactness>,
     notes: Vec<LossNote>,
     ledger: TransferLedger,
@@ -225,9 +235,7 @@ impl Default for ModelDraft {
         Self {
             model: Model::default(),
             identity_index: Some(IdentityIndex::new()),
-            exactness: BTreeMap::new(),
-            notes: Vec::new(),
-            ledger: TransferLedger::default(),
+            accounting: (),
         }
     }
 }
@@ -238,6 +246,39 @@ impl ModelDraft {
         Self::default()
     }
 
+    /// Add accounting while preserving all staged entities and their index.
+    ///
+    /// Accounted drafts cannot use a model-only commit:
+    ///
+    /// ```compile_fail
+    /// let draft = cadmpeg_ir::draft::ModelDraft::new().with_accounting();
+    /// draft.commit_model(&mut cadmpeg_ir::CadIr::empty()).unwrap();
+    /// ```
+    ///
+    /// A commit session also requires a draft with no accounting:
+    ///
+    /// ```compile_fail
+    /// let draft = cadmpeg_ir::draft::ModelDraft::new().with_accounting();
+    /// let mut document = cadmpeg_ir::CadIr::empty();
+    /// cadmpeg_ir::draft::CommitSession::new(&mut document).commit_model(draft).unwrap();
+    /// ```
+    pub fn with_accounting(self) -> ModelDraft<DraftAccounting> {
+        ModelDraft {
+            model: self.model,
+            identity_index: self.identity_index,
+            accounting: DraftAccounting::default(),
+        }
+    }
+
+    /// Commit a draft that carries model entities only.
+    pub fn commit_model(mut self, base: &mut CadIr) -> Result<(), DraftError> {
+        self.validate_against(base)?;
+        base.model.append(self.model);
+        Ok(())
+    }
+}
+
+impl<A> ModelDraft<A> {
     /// Inserts one entity, rejecting draft-local identity collisions immediately.
     pub fn insert<T: ArenaEntity>(&mut self, entity: T) -> Result<(), DraftError> {
         let mut identity_index = self.take_identity_index()?;
@@ -284,44 +325,9 @@ impl ModelDraft {
         &mut self.model
     }
 
-    /// Records sparse exactness for a staged entity.
-    pub fn exactness(&mut self, identity: impl Into<String>, exactness: Exactness) {
-        let identity = identity.into();
-        if exactness == Exactness::ByteExact {
-            self.exactness.remove(&identity);
-        } else {
-            self.exactness.insert(identity, exactness);
-        }
-    }
-
-    /// Retains exactness notes selected by identity.
-    pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
-        self.exactness.retain(|identity, _| keep(identity));
-    }
-
-    /// Adds a staged loss note.
-    pub fn note(&mut self, note: LossNote) {
-        self.notes.push(note);
-    }
-
-    /// Returns the mutable staged transfer ledger.
-    pub fn ledger_mut(&mut self) -> &mut TransferLedger {
-        &mut self.ledger
-    }
-
     /// Number of staged entities.
     pub fn entity_count(&self) -> usize {
         self.model.entity_count()
-    }
-
-    /// Commits only staged model entities, discarding empty ancillary staging surfaces.
-    pub fn commit_model(self, base: &mut CadIr) -> Result<(), DraftError> {
-        self.commit(
-            base,
-            &mut Annotations::default(),
-            &mut Vec::new(),
-            &mut TransferLedger::default(),
-        )
     }
 
     // Validation needs only membership in the identity universe, so this
@@ -420,6 +426,43 @@ impl ModelDraft {
         self.identity_index = Some(identity_index);
         Ok(())
     }
+}
+
+impl ModelDraft<DraftAccounting> {
+    /// Records sparse exactness for a staged entity.
+    pub fn exactness(&mut self, identity: impl Into<String>, exactness: Exactness) {
+        let identity = identity.into();
+        if exactness == Exactness::ByteExact {
+            self.accounting.exactness.remove(&identity);
+        } else {
+            self.accounting.exactness.insert(identity, exactness);
+        }
+    }
+
+    /// Retains exactness notes selected by identity.
+    pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.accounting
+            .exactness
+            .retain(|identity, _| keep(identity));
+    }
+
+    /// Adds a staged loss note.
+    ///
+    /// Plain drafts have no accounting mutation route:
+    ///
+    /// ```compile_fail
+    /// fn stage(draft: &mut cadmpeg_ir::draft::ModelDraft, note: cadmpeg_ir::report::LossNote) {
+    ///     draft.note(note);
+    /// }
+    /// ```
+    pub fn note(&mut self, note: LossNote) {
+        self.accounting.notes.push(note);
+    }
+
+    /// Returns the mutable staged transfer ledger.
+    pub fn ledger_mut(&mut self) -> &mut TransferLedger {
+        &mut self.accounting.ledger
+    }
 
     /// Validates and atomically extends a document, annotations, notes, and ledger.
     pub fn commit(
@@ -430,7 +473,24 @@ impl ModelDraft {
         ledger: &mut TransferLedger,
     ) -> Result<(), DraftError> {
         self.validate_against(base)?;
-        self.commit_validated(base, annotations, notes, ledger);
+        let Self {
+            model,
+            identity_index: _,
+            accounting:
+                DraftAccounting {
+                    exactness,
+                    notes: staged_notes,
+                    ledger: staged_ledger,
+                },
+        } = self;
+        base.model.append(model);
+        let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
+        for (identity, exactness) in exactness {
+            annotation_builder.exactness(identity, exactness);
+        }
+        *annotations = annotation_builder.build();
+        notes.extend(staged_notes);
+        ledger.entries.extend(staged_ledger.entries);
         Ok(())
     }
 
@@ -445,34 +505,11 @@ impl ModelDraft {
     ) -> Result<(), DraftError> {
         self.model.retain_entities(keep);
         let identity_index = index_model_identities(&self.model)?;
-        self.exactness
+        self.accounting
+            .exactness
             .retain(|identity, _| identity_index_contains(&self.model, &identity_index, identity));
         self.identity_index = Some(identity_index);
         self.commit(base, annotations, notes, ledger)
-    }
-
-    fn commit_validated(
-        self,
-        base: &mut CadIr,
-        annotations: &mut Annotations,
-        notes: &mut Vec<LossNote>,
-        ledger: &mut TransferLedger,
-    ) {
-        let Self {
-            model,
-            identity_index: _,
-            exactness,
-            notes: staged_notes,
-            ledger: staged_ledger,
-        } = self;
-        base.model.append(model);
-        let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
-        for (identity, exactness) in exactness {
-            annotation_builder.exactness(identity, exactness);
-        }
-        *annotations = annotation_builder.build();
-        notes.extend(staged_notes);
-        ledger.entries.extend(staged_ledger.entries);
     }
 }
 
@@ -606,18 +643,14 @@ impl<'a> CommitSession<'a> {
             };
         }
         crate::document::arena_registry!(register_draft);
-        draft.commit_validated(
-            self.base,
-            &mut Annotations::default(),
-            &mut Vec::new(),
-            &mut TransferLedger::default(),
-        );
+        self.base.model.append(draft.model);
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    mod accounting;
     mod feature_parents;
 
     use super::{CommitSession, DraftError, ModelCheckpoint, ModelDraft};
@@ -728,7 +761,7 @@ mod tests {
     fn collision_refuses_without_mutating_any_destination() {
         let mut ir = CadIr::empty();
         ir.model.points.push(point("test:model:point#1"));
-        let mut draft = ModelDraft::new();
+        let mut draft = ModelDraft::new().with_accounting();
         draft
             .insert(point("test:model:point#1"))
             .expect("insert point into empty draft");
@@ -786,7 +819,7 @@ mod tests {
     #[test]
     fn incomplete_commit_rechecks_duplicate_identities() {
         let identity = "test:model:point#incomplete-duplicate";
-        let mut draft = ModelDraft::new();
+        let mut draft = ModelDraft::new().with_accounting();
         draft.model_mut().points.push(point(identity));
         draft.model_mut().points.push(point(identity));
         let mut ir = CadIr::empty();

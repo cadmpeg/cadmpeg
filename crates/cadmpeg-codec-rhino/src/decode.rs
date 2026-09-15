@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
+use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -3612,18 +3612,29 @@ fn stage_extrusion_caps(
     Ok(())
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct BrepDraft {
     kind: BrepTransferKind,
-    draft: ModelDraft,
+    draft: ModelDraft<DraftAccounting>,
     links: Vec<String>,
     warnings: Diagnostics,
     typed_losses: Vec<LossNote>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+impl Default for BrepDraft {
+    fn default() -> Self {
+        Self {
+            kind: BrepTransferKind::FullTopology,
+            draft: ModelDraft::new().with_accounting(),
+            links: Vec::new(),
+            warnings: Diagnostics::default(),
+            typed_losses: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BrepTransferKind {
-    #[default]
     FullTopology,
     FreeCarrierFallback,
 }
@@ -3765,10 +3776,7 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
         scale,
         mesh_budget,
     } = input;
-    let mut staged = BrepDraft {
-        kind: BrepTransferKind::FullTopology,
-        ..BrepDraft::default()
-    };
+    let mut staged = BrepDraft::default();
     let mut c3 = BTreeMap::new();
     let mut surfaces = BTreeMap::new();
     let mut child_cause = None;
