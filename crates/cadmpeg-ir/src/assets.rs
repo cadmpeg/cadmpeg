@@ -14,13 +14,28 @@ crate::ids::id_type!(
 
 /// Nonempty embedded asset bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct AssetData(
-    #[serde(with = "crate::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
-    Vec<u8>,
-);
+pub struct AssetData(#[serde(with = "crate::bytes")] Vec<u8>);
+
+#[cfg(feature = "schema")]
+impl JsonSchema for AssetData {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "AssetData".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // The final alphabet symbols before padding have zero unused bits.
+        // The separate alphabet check also rejects a trailing line terminator,
+        // which some regular-expression engines permit before `$`.
+        schemars::json_schema!({
+            "type": "string",
+            "minLength": 4,
+            "contentEncoding": "base64",
+            "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/][AQgw]==|[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=)?$",
+            "not": {"pattern": "[^A-Za-z0-9+/=]"}
+        })
+    }
+}
 
 impl AssetData {
     /// Construct nonempty embedded bytes.
@@ -105,8 +120,10 @@ fn deserialize_uri<'de, D: serde::Deserializer<'de>>(
 struct AssetWire {
     id: AssetId,
     #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<NonBlankString>"))]
     name: Option<String>,
     #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<NonBlankString>"))]
     media_type: Option<String>,
     content: AssetContent,
     #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
@@ -160,6 +177,47 @@ impl TryFrom<AssetWire> for Asset {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_document_admission_requires_nonempty_canonical_asset_bytes() {
+        let empty = serde_json::to_value(crate::CadIr::empty()).unwrap();
+        let document = |data: &str| {
+            let mut wire = empty.clone();
+            wire["model"]["assets"] = serde_json::json!([{
+                "id": "test:assets:asset#embedded",
+                "content": {"kind": "embedded", "data": data}
+            }]);
+            wire
+        };
+        for (encoded, bytes) in [
+            ("AA==", vec![0]),
+            ("AAA=", vec![0, 0]),
+            ("AAAA", vec![0, 0, 0]),
+        ] {
+            let wire = document(encoded);
+            let ir: crate::CadIr = serde_json::from_value(wire.clone()).unwrap();
+            let AssetContent::Embedded { data } = &ir.model.assets[0].content else {
+                panic!("embedded fixture changed content family");
+            };
+            assert_eq!(data.as_slice(), bytes);
+            assert_eq!(serde_json::to_value(ir).unwrap(), wire);
+        }
+        for encoded in ["", "AA", "AA=", "AAAA=", "AB==", "AAB=", "AA==\n", "__8="] {
+            assert!(
+                serde_json::from_value::<crate::CadIr>(document(encoded)).is_err(),
+                "accepted invalid embedded bytes {encoded:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "schema")]
+    fn asset_byte_schema_requires_at_least_one_encoded_byte() {
+        let schema = serde_json::to_value(schemars::schema_for!(AssetData)).unwrap();
+        assert_eq!(schema["type"], "string");
+        assert_eq!(schema["minLength"], 4);
+        assert_eq!(schema["contentEncoding"], "base64");
+    }
 
     #[test]
     fn asset_admission_rejects_empty_content_and_metadata() {
