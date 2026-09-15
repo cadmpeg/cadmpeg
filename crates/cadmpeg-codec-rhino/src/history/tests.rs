@@ -90,7 +90,7 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        project(&records, None, &mut ir, &mut Diagnostics::new()),
+        project(&records, None, &mut ir, &mut Diagnostics::new()).expect("history projection"),
         (0, 0, 0, 0)
     );
 
@@ -122,7 +122,7 @@ fn projection_counts_dependency_on_later_producer() {
     let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        project(&records, None, &mut ir, &mut Diagnostics::new()),
+        project(&records, None, &mut ir, &mut Diagnostics::new()).expect("history projection"),
         (0, 0, 1, 0)
     );
     assert!(ir.model.features[0].dependencies.is_empty());
@@ -137,7 +137,7 @@ fn projection_counts_dependency_with_ambiguous_producers() {
     ];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        project(&records, None, &mut ir, &mut Diagnostics::new()),
+        project(&records, None, &mut ir, &mut Diagnostics::new()).expect("history projection"),
         (0, 0, 1, 0)
     );
     assert!(ir.model.features[2].dependencies.is_empty());
@@ -239,7 +239,7 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     let records = [producer, record(2, 12, &[40], &[41])];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        project(&records, None, &mut ir, &mut Diagnostics::new()),
+        project(&records, None, &mut ir, &mut Diagnostics::new()).expect("history projection"),
         (0, 0, 0, 0)
     );
 

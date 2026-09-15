@@ -164,9 +164,12 @@ fn assert_layer_record_retained(
         .any(|loss| loss.message.contains(message)));
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000011-20008050-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000011-20008050-")
+        })
         .map(|(_, record)| record)
         .expect("layer record is retained");
     assert_eq!(retained.data(), Some(layer));

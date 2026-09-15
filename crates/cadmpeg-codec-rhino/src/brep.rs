@@ -2426,7 +2426,11 @@ fn validate_rings(raw: &RawBrep, resolved: &ResolvedBrep) -> Result<(), Geometry
             }
         }
         let first = &resolved.trims[*first_trim];
-        let last = &resolved.trims[*ring.last().expect("nonempty ring")];
+        let last_trim = ring
+            .last()
+            .copied()
+            .ok_or_else(|| error(loop_record.source_range.start, "loop ring is empty"))?;
+        let last = &resolved.trims[last_trim];
         let first_start = first.vertices[0];
         let last_end = last.vertices[1];
         if first_start != last_end {

@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::TransferLedger;
@@ -68,6 +68,11 @@ fn is_v1_presentation_setting(typecode: u32) -> bool {
         typecode,
         TCODE_NAMED_CPLANE | TCODE_NAMED_VIEW | TCODE_VIEWPORT
     )
+}
+
+fn legacy_identity_key(value: impl Into<String>) -> Result<IdentityKey, CodecError> {
+    IdentityKey::try_new(value.into())
+        .map_err(|error| CodecError::malformed(format_args!("invalid V1 identity key: {error}")))
 }
 
 #[derive(Debug, Serialize)]
@@ -523,31 +528,32 @@ fn retain_v1_record(
 ) -> UnknownRecord {
     let range = chunk.range();
     let bytes = &data[range.clone()];
-    let retain = bytes.len() <= crate::decode::RETAINED_RECORD_CAP
-        && retained_bytes
-            .checked_add(bytes.len())
-            .is_some_and(|end| end <= crate::decode::RETAINED_DOCUMENT_CAP);
-    if retain {
-        *retained_bytes = retained_bytes
-            .checked_add(bytes.len())
-            .expect("V1 retention cap checked");
-    }
-    let id = UnknownId::mint(format!(
-        "rhino:legacy:record#{:08x}-{:016x}",
-        chunk.typecode, chunk.header_start
-    ))
-    .expect("identity grammar");
-    let offset = u64::try_from(range.start).expect("V1 record offset fits u64");
-    if retain {
-        UnknownRecord::retained(id, offset, bytes.to_vec(), Vec::new())
-    } else {
-        UnknownRecord::unavailable(
+    let retained_end = retained_bytes.checked_add(bytes.len()).filter(|end| {
+        bytes.len() <= crate::decode::RETAINED_RECORD_CAP
+            && *end <= crate::decode::RETAINED_DOCUMENT_CAP
+    });
+    let typecode = chunk.typecode.to_be_bytes();
+    let header = chunk.header_start.to_be_bytes();
+    let key = IdentityKey::hex_byte(typecode[0])
+        .with_hex_bytes(&typecode[1..])
+        .dash(IdentityKey::hex_byte(header[0]).with_hex_bytes(&header[1..]));
+    let id = UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "legacy", "record"),
+        key,
+    );
+    let offset = range.start as u64;
+    match retained_end {
+        Some(end) => {
+            *retained_bytes = end;
+            UnknownRecord::retained(id, offset, bytes.to_vec(), Vec::new())
+        }
+        None => UnknownRecord::unavailable(
             id,
             offset,
-            u64::try_from(bytes.len()).expect("V1 record length fits u64"),
+            bytes.len() as u64,
             sha256_hex(bytes),
             Vec::new(),
-        )
+        ),
     }
 }
 
@@ -625,7 +631,10 @@ fn legacy_spline(
     while stored_knots.len() < cv_count {
         stored_knots.push(reader.f64().map_err(malformed)?);
     }
-    let last = *stored_knots.last().expect("first knot exists");
+    let last = stored_knots
+        .last()
+        .copied()
+        .ok_or_else(|| CodecError::malformed("V1 spline has no stored knots"))?;
     if clamped & 2 != 0 {
         stored_knots.resize(knot_count, last);
     } else {
@@ -1417,15 +1426,19 @@ fn union(parents: &mut [usize], left: usize, right: usize) {
 }
 
 fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<(), CodecError> {
-    let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{suffix}")
-        .try_into()
-        .expect("valid identity");
-    let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{suffix}")
-        .try_into()
-        .expect("valid identity");
-    let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{suffix}")
-        .try_into()
-        .expect("valid identity");
+    let suffix_key = legacy_identity_key(suffix.to_owned())?;
+    let body_id = cadmpeg_ir::ids::BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+        suffix_key.clone(),
+    );
+    let region_id = cadmpeg_ir::ids::RegionId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+        suffix_key.clone(),
+    );
+    let shell_id = cadmpeg_ir::ids::ShellId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+        suffix_key.clone(),
+    );
     let mut trim_paths = Vec::new();
     let mut face_trim_indices = alloc_filled(
         brep.faces.len(),
@@ -1518,12 +1531,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
     }
     for (face_index, face) in brep.faces.iter().enumerate() {
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
-            let globals = trim_paths
+            let start = trim_paths
                 .iter()
                 .enumerate()
                 .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
-                .map(|start| (start..start + loop_record.trims.len()).collect::<Vec<_>>())
-                .unwrap_or_default();
+                .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
+            let globals = (start..start + loop_record.trims.len()).collect::<Vec<_>>();
             for (position, global) in globals.iter().copied().enumerate() {
                 let root = roots[global];
                 if group_points.contains_key(&root) {
@@ -1604,7 +1617,10 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
     let mut class_samples = BTreeMap::<usize, Vec<(Point3, f64)>>::new();
     for root in &group_roots {
         let points = group_points[root];
-        let tolerance = group_tolerance.get(root).copied().unwrap_or(0.0);
+        let tolerance = group_tolerance
+            .get(root)
+            .copied()
+            .ok_or_else(|| CodecError::malformed("V1 edge group has no recorded tolerance"))?;
         for (slot, point) in points.into_iter().enumerate() {
             let class = find_root(&mut endpoint_parents, root * 2 + slot);
             class_samples
@@ -1627,14 +1643,14 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         );
         let position = Point3::new(position.x / count, position.y / count, position.z / count);
         let index = vertex_by_class.len();
-        let point_id: cadmpeg_ir::ids::PointId =
-            format!("rhino:object:point#{suffix}.vertex-{index}")
-                .try_into()
-                .expect("valid identity");
-        let vertex_id: cadmpeg_ir::ids::VertexId =
-            format!("rhino:object:vertex#{suffix}.slot-{index}")
-                .try_into()
-                .expect("valid identity");
+        let point_id = cadmpeg_ir::ids::PointId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
+            legacy_identity_key(format!("{suffix}.vertex-{index}"))?,
+        );
+        let vertex_id = cadmpeg_ir::ids::VertexId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
+            legacy_identity_key(format!("{suffix}.slot-{index}"))?,
+        );
         ir.model.points.push(Point {
             id: point_id.clone(),
             position,
@@ -1654,22 +1670,25 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
     }
     let mut group_vertices = BTreeMap::new();
     for root in &group_roots {
-        let ids = [0, 1].map(|slot| {
-            let class = find_root(&mut endpoint_parents, root * 2 + slot);
-            vertex_by_class
-                .get(&class)
-                .expect("every V1 endpoint class has a vertex")
-                .clone()
-        });
+        let start_class = find_root(&mut endpoint_parents, root * 2);
+        let end_class = find_root(&mut endpoint_parents, root * 2 + 1);
+        let start = vertex_by_class.get(&start_class).cloned().ok_or_else(|| {
+            CodecError::malformed("V1 edge start endpoint has no admitted vertex")
+        })?;
+        let end = vertex_by_class
+            .get(&end_class)
+            .cloned()
+            .ok_or_else(|| CodecError::malformed("V1 edge end endpoint has no admitted vertex"))?;
+        let ids = [start, end];
         group_vertices.insert(*root, ids);
     }
     let mut group_edges = BTreeMap::new();
     for (edge_index, root) in group_roots.iter().copied().enumerate() {
         let curve_id = if let Some(curve) = group_curve.remove(&root) {
-            let id: cadmpeg_ir::ids::CurveId =
-                format!("rhino:object:curve#{suffix}.edge-{edge_index}")
-                    .try_into()
-                    .expect("valid identity");
+            let id = cadmpeg_ir::ids::CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
+                legacy_identity_key(format!("{suffix}.edge-{edge_index}"))?,
+            );
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone())),
@@ -1679,10 +1698,10 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         } else {
             None
         };
-        let edge_id: cadmpeg_ir::ids::EdgeId =
-            format!("rhino:object:edge#{suffix}.slot-{edge_index}")
-                .try_into()
-                .expect("valid identity");
+        let edge_id = cadmpeg_ir::ids::EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "edge"),
+            legacy_identity_key(format!("{suffix}.slot-{edge_index}"))?,
+        );
         let vertices = group_vertices
             .get(&root)
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
@@ -1711,14 +1730,14 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
     let mut coedges_by_root = BTreeMap::<usize, Vec<cadmpeg_ir::ids::CoedgeId>>::new();
     let mut global_trim = 0_usize;
     for (face_index, face_record) in brep.faces.into_iter().enumerate() {
-        let surface_id: cadmpeg_ir::ids::SurfaceId =
-            format!("rhino:object:surface#{suffix}.face-{face_index}")
-                .try_into()
-                .expect("valid identity");
-        let face_id: cadmpeg_ir::ids::FaceId =
-            format!("rhino:object:face#{suffix}.slot-{face_index}")
-                .try_into()
-                .expect("valid identity");
+        let surface_id = cadmpeg_ir::ids::SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
+            legacy_identity_key(format!("{suffix}.face-{face_index}"))?,
+        );
+        let face_id = cadmpeg_ir::ids::FaceId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "object", "face"),
+            legacy_identity_key(format!("{suffix}.slot-{face_index}"))?,
+        );
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
@@ -1731,18 +1750,19 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         let mut outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
         let mut classified = false;
         for (loop_index, loop_record) in face_record.loops.into_iter().enumerate() {
-            let loop_id: cadmpeg_ir::ids::LoopId =
-                format!("rhino:object:loop#{suffix}.face-{face_index}-{loop_index}")
-                    .try_into()
-                    .expect("valid identity");
+            let loop_id = cadmpeg_ir::ids::LoopId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "loop"),
+                legacy_identity_key(format!("{suffix}.face-{face_index}-{loop_index}"))?,
+            );
             let mut coedge_ids = Vec::with_capacity(loop_record.trims.len());
             for (trim_index, trim) in loop_record.trims.into_iter().enumerate() {
                 let root = roots[global_trim];
-                let pcurve_id: cadmpeg_ir::ids::PcurveId = format!(
-                    "rhino:object:pcurve#{suffix}.face-{face_index}-{loop_index}-{trim_index}"
-                )
-                .try_into()
-                .expect("valid identity");
+                let pcurve_id = cadmpeg_ir::ids::PcurveId::compose(
+                    &cadmpeg_ir::identity_namespace!("rhino", "object", "pcurve"),
+                    legacy_identity_key(format!(
+                        "{suffix}.face-{face_index}-{loop_index}-{trim_index}"
+                    ))?,
+                );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
@@ -1767,11 +1787,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 });
-                let coedge_id: cadmpeg_ir::ids::CoedgeId = format!(
-                    "rhino:object:coedge#{suffix}.face-{face_index}-{loop_index}-{trim_index}"
-                )
-                .try_into()
-                .expect("valid identity");
+                let coedge_id = cadmpeg_ir::ids::CoedgeId::compose(
+                    &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),
+                    legacy_identity_key(format!(
+                        "{suffix}.face-{face_index}-{loop_index}-{trim_index}"
+                    ))?,
+                );
                 coedges_by_root
                     .entry(root)
                     .or_default()
@@ -2302,21 +2323,27 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 )));
             }
             let suffix = format!("legacy-{decoded:06}");
-            let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{suffix}")
-                .try_into()
-                .expect("valid identity");
-            let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{suffix}")
-                .try_into()
-                .expect("valid identity");
-            let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{suffix}")
-                .try_into()
-                .expect("valid identity");
-            let vertex_id: cadmpeg_ir::ids::VertexId = format!("rhino:object:vertex#{suffix}")
-                .try_into()
-                .expect("valid identity");
-            let point_id: cadmpeg_ir::ids::PointId = format!("rhino:object:point#{suffix}")
-                .try_into()
-                .expect("valid identity");
+            let suffix_key = legacy_identity_key(suffix.clone())?;
+            let body_id = cadmpeg_ir::ids::BodyId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+                suffix_key.clone(),
+            );
+            let region_id = cadmpeg_ir::ids::RegionId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+                suffix_key.clone(),
+            );
+            let shell_id = cadmpeg_ir::ids::ShellId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+                suffix_key.clone(),
+            );
+            let vertex_id = cadmpeg_ir::ids::VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
+                suffix_key.clone(),
+            );
+            let point_id = cadmpeg_ir::ids::PointId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
+                suffix_key,
+            );
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position,
@@ -2390,42 +2417,43 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 Ok(segments) => {
                     for segment in segments {
                         let suffix = format!("legacy-{decoded_curves:06}");
-                        let curve_id: cadmpeg_ir::ids::CurveId =
-                            format!("rhino:object:curve#{suffix}")
-                                .try_into()
-                                .expect("valid identity");
-                        let body_id: cadmpeg_ir::ids::BodyId =
-                            format!("rhino:object:body#curve-{suffix}")
-                                .try_into()
-                                .expect("valid identity");
-                        let region_id: cadmpeg_ir::ids::RegionId =
-                            format!("rhino:object:region#curve-{suffix}")
-                                .try_into()
-                                .expect("valid identity");
-                        let shell_id: cadmpeg_ir::ids::ShellId =
-                            format!("rhino:object:shell#curve-{suffix}")
-                                .try_into()
-                                .expect("valid identity");
-                        let edge_id: cadmpeg_ir::ids::EdgeId =
-                            format!("rhino:object:edge#{suffix}")
-                                .try_into()
-                                .expect("valid identity");
-                        let start_vertex: cadmpeg_ir::ids::VertexId =
-                            format!("rhino:object:vertex#{suffix}.start")
-                                .try_into()
-                                .expect("valid identity");
-                        let end_vertex: cadmpeg_ir::ids::VertexId =
-                            format!("rhino:object:vertex#{suffix}.end")
-                                .try_into()
-                                .expect("valid identity");
-                        let start_point: cadmpeg_ir::ids::PointId =
-                            format!("rhino:object:point#{suffix}.start")
-                                .try_into()
-                                .expect("valid identity");
-                        let end_point: cadmpeg_ir::ids::PointId =
-                            format!("rhino:object:point#{suffix}.end")
-                                .try_into()
-                                .expect("valid identity");
+                        let suffix_key = legacy_identity_key(suffix.clone())?;
+                        let curve_id = cadmpeg_ir::ids::CurveId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
+                            suffix_key.clone(),
+                        );
+                        let body_id = cadmpeg_ir::ids::BodyId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+                            legacy_identity_key(format!("curve-{suffix}"))?,
+                        );
+                        let region_id = cadmpeg_ir::ids::RegionId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "region"),
+                            legacy_identity_key(format!("curve-{suffix}"))?,
+                        );
+                        let shell_id = cadmpeg_ir::ids::ShellId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
+                            legacy_identity_key(format!("curve-{suffix}"))?,
+                        );
+                        let edge_id = cadmpeg_ir::ids::EdgeId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "edge"),
+                            suffix_key.clone(),
+                        );
+                        let start_vertex = cadmpeg_ir::ids::VertexId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
+                            legacy_identity_key(format!("{suffix}.start"))?,
+                        );
+                        let end_vertex = cadmpeg_ir::ids::VertexId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
+                            legacy_identity_key(format!("{suffix}.end"))?,
+                        );
+                        let start_point = cadmpeg_ir::ids::PointId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
+                            legacy_identity_key(format!("{suffix}.start"))?,
+                        );
+                        let end_point = cadmpeg_ir::ids::PointId::compose(
+                            &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
+                            legacy_identity_key(format!("{suffix}.end"))?,
+                        );
                         let degree = usize::try_from(segment.degree()).map_err(|_| {
                             CodecError::Malformed("V1 curve degree is negative".to_string())
                         })?;
@@ -2541,7 +2569,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
         let namespace = ir.native.namespace_mut("rhino");
         namespace
             .set_arena("legacy_v1_records", &direct_records)
-            .expect("Rhino V1 direct records serialize");
+            .map_err(CodecError::malformed)?;
     }
     ir.model.finalize();
     let opaque_count = opaque_records.len();
@@ -2565,7 +2593,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
         .chain(tolerance_losses)
         .collect();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
-    source_fidelity.retain_unknown_records("rhino", opaque_records);
+    source_fidelity.retain_unknown_records("rhino", opaque_records)?;
     Ok(Decoded {
         ir,
         body: DecodeBody {
@@ -3100,7 +3128,7 @@ mod tests {
             false,
         );
         assert_eq!(result.ir().tolerances.linear.get(), 10.0);
-        assert_eq!(result.source_fidelity().retained_records.len(), 3);
+        assert_eq!(result.source_fidelity().retained_records().len(), 3);
         assert_eq!(
             result
                 .report()
@@ -3129,7 +3157,7 @@ mod tests {
             false,
         );
         assert_eq!(result.ir().model.points.len(), 1);
-        let retained = &result.source_fidelity().retained_records;
+        let retained = &result.source_fidelity().retained_records();
         assert_eq!(retained.len(), 1);
         assert_eq!(
             retained.values().next().expect("retained record").offset(),
@@ -3155,6 +3183,7 @@ mod tests {
             .keys()
             .next()
             .expect("retained record")
+            .as_str()
             .starts_with("rhino:legacy:record#00200004-"));
         assert!(result
             .report()
@@ -3229,7 +3258,7 @@ mod tests {
         assert_eq!(result.report().coverage()["legacy_v1_nurbs_curves"], 1);
         assert_eq!(result.report().coverage()["legacy_v1_nurbs_surfaces"], 1);
         assert_eq!(result.report().coverage()["legacy_v1_nurbs_breps"], 1);
-        assert!(result.source_fidelity().retained_records.is_empty());
+        assert!(result.source_fidelity().retained_records().is_empty());
     }
 
     #[test]

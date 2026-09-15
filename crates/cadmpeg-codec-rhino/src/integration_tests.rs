@@ -332,9 +332,12 @@ fn registered_future_table_major_is_retained_without_known_prefix() {
     assert_eq!(result.ir().model.points.len(), 1);
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000018-20008073-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000018-20008073-")
+        })
         .map(|(_, record)| record)
         .expect("future-major table record is retained");
     assert_eq!(retained.data(), Some(future_group.as_slice()));
@@ -468,9 +471,12 @@ fn registered_userdata_future_payload_is_retained_by_table_owner() {
     );
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000012-20008060-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000012-20008060-")
+        })
         .map(|(_, record)| record)
         .expect("future userdata table record is retained");
     assert_eq!(retained.data(), Some(light_record.as_slice()));
@@ -607,9 +613,12 @@ fn registered_material_userdata_future_payload_is_retained_by_table_owner() {
     assert!(materials[0].field("physically_based").is_none());
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000010-20008040-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000010-20008040-")
+        })
         .map(|(_, record)| record)
         .expect("future material userdata record is retained");
     assert_eq!(retained.data(), Some(material_record.as_slice()));
@@ -744,9 +753,12 @@ fn registered_dimension_style_userdata_future_payload_is_retained_by_table_owner
     );
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000020-20008075-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000020-20008075-")
+        })
         .map(|(_, record)| record)
         .expect("future dimension-style userdata record is retained");
     assert_eq!(retained.data(), Some(dimstyle_record.as_slice()));
@@ -880,9 +892,12 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
         .is_none());
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000010-20008040-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000010-20008040-")
+        })
         .map(|(_, record)| record)
         .expect("callback-owned RDK material record is retained");
     assert_eq!(retained.data(), Some(material_record.as_slice()));
@@ -1429,9 +1444,12 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
             && loss.message.contains("could not be transferred")));
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000025-2000807a-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000025-2000807a-")
+        })
         .map(|(_, record)| record)
         .expect("future mapping cache record is retained");
     assert_eq!(retained.data(), Some(mapping_record.as_slice()));
@@ -1472,9 +1490,12 @@ fn future_settings_payload_is_retained_without_known_prefix() {
     assert_eq!(result.ir().model.points.len(), 1);
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000015-20008034-"))
+        .find(|(id, _)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000015-20008034-")
+        })
         .map(|(_, record)| record)
         .expect("future settings payload is retained");
     assert_eq!(retained.data(), Some(future_annotation.as_slice()));
@@ -1545,11 +1566,11 @@ fn user_table_records_are_retained_as_complete_opaque_source_records() {
     let result = decode(support::archive_with_user_records(&[], &[record]));
     let (retained_id, retained) = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .find(|(id, _)| id.starts_with("rhino:opaque:record#"))
+        .find(|(id, _)| id.as_str().starts_with("rhino:opaque:record#"))
         .expect("user table record must be retained");
-    assert!(retained_id.contains("-70000042-"));
+    assert!(retained_id.as_str().contains("-70000042-"));
     assert_eq!(retained.byte_len(), expected.len() as u64);
     assert_eq!(retained.data(), Some(expected.as_slice()));
 }

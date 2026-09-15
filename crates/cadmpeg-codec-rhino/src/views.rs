@@ -2,6 +2,7 @@
 //! Saved and active Rhino view presentation records.
 
 use crate::loss::Diagnostics;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
@@ -289,13 +290,13 @@ fn scaled_plane(mut value: Plane, scale: f64, offset: usize) -> Result<Plane, Fr
 }
 
 fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    bytes
-        .iter()
-        .fold(String::with_capacity(bytes.len() * 2), |mut value, byte| {
-            write!(value, "{byte:02x}").expect("writing to String cannot fail");
-            value
-        })
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut value = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    value
 }
 
 fn image_reference<'a>(
@@ -1280,7 +1281,7 @@ fn parse_named_cplanes(
 
 /// Result of installing saved and active view records.
 /// Installs saved and active view records with complete child accounting.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, CodecError> {
     let scale = scan
         .metadata
         .settings
@@ -1341,16 +1342,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace
-        .set_arena("views", &views)
-        .expect("Rhino views serialize");
-    namespace
-        .set_arena("construction_planes", &cplanes)
-        .expect("Rhino construction planes serialize");
-    NativeInstall {
+    namespace.set_arena("views", &views)?;
+    namespace.set_arena("construction_planes", &cplanes)?;
+    Ok(NativeInstall {
         losses,
         opaque_records,
-    }
+    })
 }
 
 #[cfg(test)]

@@ -132,7 +132,10 @@ pub fn subd(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    let id = "rhino:fuzz:subd#0".try_into().expect("valid identity");
+    let id = cadmpeg_ir::ids::SubdId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "fuzz", "subd"),
+        0_usize,
+    );
     let _probe = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
 }
 

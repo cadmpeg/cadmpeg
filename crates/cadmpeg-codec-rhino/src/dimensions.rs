@@ -1687,9 +1687,14 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(key.to_owned())
+        .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    let annotation_id = SemanticAnnotationId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "dimension", "annotation"),
+        key,
+    );
     let annotation = SemanticAnnotation {
-        id: SemanticAnnotationId::mint(format!("rhino:dimension:annotation#{key}"))
-            .expect("identity grammar"),
+        id: annotation_id.clone(),
         object: object.to_string(),
         kind: SemanticAnnotationKind::Dimension,
         runtime_type: runtime_type.to_string(),
@@ -1698,17 +1703,11 @@ pub(crate) fn project(
             .then(|| dimension.user_text.clone())
             .into_iter()
             .collect(),
-        references: cadmpeg_core::text::named_entries(
-            format_args!("rhino:dimension:annotation#{key}"),
-            references,
-        )?,
+        references: cadmpeg_core::text::named_entries(annotation_id.as_str(), references)?,
         value: Some(value),
         format: (!dimension.rich_text.is_empty()).then(|| dimension.rich_text.clone()),
         position,
-        parameters: cadmpeg_core::text::named_entries(
-            format_args!("rhino:dimension:annotation#{key}"),
-            parameters,
-        )?,
+        parameters: cadmpeg_core::text::named_entries(annotation_id.as_str(), parameters)?,
         assets: Vec::new(),
         native_ref: object.to_string(),
     };

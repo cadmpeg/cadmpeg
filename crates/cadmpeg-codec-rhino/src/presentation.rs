@@ -5,6 +5,7 @@ use crate::loss::Diagnostics;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
 use serde::Serialize;
@@ -1217,13 +1218,13 @@ fn object_attributes_presentation(
 }
 
 fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    bytes
-        .iter()
-        .fold(String::with_capacity(bytes.len() * 2), |mut value, byte| {
-            write!(value, "{byte:02x}").expect("writing to String cannot fail");
-            value
-        })
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut value = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    value
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
@@ -4051,7 +4052,7 @@ fn parse_text_style(
 }
 
 /// Results of transferring table-owned presentation records.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, CodecError> {
     let scale = scan
         .metadata
         .settings
@@ -4501,46 +4502,22 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
         group.links.sort();
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace
-        .set_arena("groups", &groups)
-        .expect("Rhino groups serialize");
-    namespace
-        .set_arena("materials", &materials)
-        .expect("Rhino materials serialize");
-    namespace
-        .set_arena("lights", &lights)
-        .expect("Rhino lights serialize");
-    namespace
-        .set_arena("linetypes", &linetypes)
-        .expect("Rhino linetypes serialize");
-    namespace
-        .set_arena("hatch_patterns", &hatch_patterns)
-        .expect("Rhino hatch patterns serialize");
-    namespace
-        .set_arena("dimension_styles", &dimension_styles)
-        .expect("Rhino dimension styles serialize");
-    namespace
-        .set_arena("embedded_images", &images)
-        .expect("Rhino images serialize");
-    namespace
-        .set_arena("windows_bitmaps", &windows_bitmaps)
-        .expect("Rhino Windows bitmaps serialize");
-    namespace
-        .set_arena("texture_mappings", &texture_mappings)
-        .expect("Rhino texture mappings serialize");
-    namespace
-        .set_arena("text_styles", &text_styles)
-        .expect("Rhino text styles serialize");
-    namespace
-        .set_arena("layers", &layers)
-        .expect("Rhino layers serialize");
-    namespace
-        .set_arena("object_presentation", &object_presentation)
-        .expect("Rhino object presentation serializes");
-    NativeInstall {
+    namespace.set_arena("groups", &groups)?;
+    namespace.set_arena("materials", &materials)?;
+    namespace.set_arena("lights", &lights)?;
+    namespace.set_arena("linetypes", &linetypes)?;
+    namespace.set_arena("hatch_patterns", &hatch_patterns)?;
+    namespace.set_arena("dimension_styles", &dimension_styles)?;
+    namespace.set_arena("embedded_images", &images)?;
+    namespace.set_arena("windows_bitmaps", &windows_bitmaps)?;
+    namespace.set_arena("texture_mappings", &texture_mappings)?;
+    namespace.set_arena("text_styles", &text_styles)?;
+    namespace.set_arena("layers", &layers)?;
+    namespace.set_arena("object_presentation", &object_presentation)?;
+    Ok(NativeInstall {
         losses,
         opaque_records,
-    }
+    })
 }
 
 #[cfg(test)]

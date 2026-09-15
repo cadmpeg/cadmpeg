@@ -2282,27 +2282,43 @@ pub(crate) fn parse_metadata(
     metadata
 }
 
-fn reassign_duplicate_layer_indices(layers: &mut [LayerRecord], warnings: &mut Diagnostics) {
+fn reassign_duplicate_layer_indices(layers: &mut Vec<LayerRecord>, warnings: &mut Diagnostics) {
     let mut used = layers
         .iter()
         .map(|layer| layer.index)
         .collect::<BTreeSet<_>>();
     let mut owners = BTreeSet::new();
-    for layer in layers {
-        let original_index = layer.index;
+    let mut position = 0;
+    while position < layers.len() {
+        let original_index = layers[position].index;
         if owners.insert(original_index) {
+            position += 1;
             continue;
         }
-        let new_index = next_layer_index(&used);
-        layer.index = new_index;
+        let Some(new_index) = next_layer_index(&used) else {
+            let source_offset = layers[position].source.range.start;
+            warnings.push_coded(
+                crate::loss::RhinoLossCode::DuplicateRecordResolved,
+                format!(
+                    "duplicate layer index {original_index} at offset {source_offset} was dropped; no available i32 layer index"
+                ),
+            );
+            layers.remove(position);
+            continue;
+        };
+        layers[position].index = new_index;
         used.insert(new_index);
-        warnings.push_coded(crate::loss::RhinoLossCode::DuplicateRecordResolved, format!(
-            "duplicate layer index {original_index}; later record assigned new index {new_index}; first record owns archive references"
-        ));
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::DuplicateRecordResolved,
+            format!(
+                "duplicate layer index {original_index}; later record assigned new index {new_index}; first record owns archive references"
+            ),
+        );
+        position += 1;
     }
 }
 
-fn next_layer_index(used: &BTreeSet<i32>) -> i32 {
+fn next_layer_index(used: &BTreeSet<i32>) -> Option<i32> {
     let mut candidate = used
         .iter()
         .copied()
@@ -2311,17 +2327,17 @@ fn next_layer_index(used: &BTreeSet<i32>) -> i32 {
         .unwrap_or(-1);
     while let Some(next) = candidate.checked_add(1) {
         if !used.contains(&next) {
-            return next;
+            return Some(next);
         }
         candidate = next;
     }
     let mut candidate = -2;
-    while used.contains(&candidate) {
-        candidate = candidate
-            .checked_sub(1)
-            .expect("finite layer index set leaves an available index");
+    loop {
+        if !used.contains(&candidate) {
+            return Some(candidate);
+        }
+        candidate = candidate.checked_sub(1)?;
     }
-    candidate
 }
 
 fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {

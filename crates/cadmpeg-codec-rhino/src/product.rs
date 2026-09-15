@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
 
@@ -88,13 +89,13 @@ fn kind(value: DefinitionKind) -> &'static str {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    bytes
-        .iter()
-        .fold(String::with_capacity(bytes.len() * 2), |mut value, byte| {
-            write!(value, "{byte:02x}").expect("writing to String cannot fail");
-            value
-        })
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut value = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    value
 }
 
 fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalReferenceRecord> {
@@ -146,7 +147,7 @@ fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalR
 }
 
 /// Installs the source product graph without requiring occurrence expansion.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     let mut object_records = BTreeMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         if let Some(identity) = object.identity() {
@@ -272,13 +273,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     }
 
     let namespace = ir.native.namespace_mut("rhino");
-    namespace
-        .set_arena("product_definitions", &definitions)
-        .expect("Rhino definitions serialize");
-    namespace
-        .set_arena("product_occurrences", &occurrences)
-        .expect("Rhino occurrences serialize");
-    namespace
-        .set_arena("external_references", &external)
-        .expect("Rhino external references serialize");
+    namespace.set_arena("product_definitions", &definitions)?;
+    namespace.set_arena("product_occurrences", &occurrences)?;
+    namespace.set_arena("external_references", &external)?;
+    Ok(())
 }

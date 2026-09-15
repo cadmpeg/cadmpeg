@@ -843,8 +843,10 @@ fn extended_geometry_json(
             value.class_data_range.clone(),
             archive,
             scale,
-            cadmpeg_ir::ids::SubdId::mint("rhino:history:subd#embedded".to_string())
-                .expect("identity grammar"),
+            cadmpeg_ir::ids::SubdId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "history", "subd"),
+                cadmpeg_ir::identity_key!("embedded"),
+            ),
         )
         .ok()?;
         match subd {
@@ -1242,8 +1244,9 @@ pub(crate) fn project(
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
     warnings: &mut Diagnostics,
-) -> (usize, usize, usize, usize) {
+) -> Result<(usize, usize, usize, usize), String> {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::ids::{Identity, IdentityKey};
 
     #[derive(serde::Serialize)]
     struct NativeHistoryRecord {
@@ -1275,10 +1278,18 @@ pub(crate) fn project(
         } else {
             format!("offset-{}", record.source_range.start)
         };
-        ids.push(
-            FeatureId::mint(format!("rhino:history:feature#{key}")).expect("identity grammar"),
+        let key = IdentityKey::try_new(key).map_err(|error| error.to_string())?;
+        ids.push(FeatureId::compose(
+            &cadmpeg_ir::identity_namespace!("rhino", "history", "feature"),
+            key.clone(),
+        ));
+        native_ids.push(
+            Identity::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "history", "record"),
+                key,
+            )
+            .to_string(),
         );
-        native_ids.push(format!("rhino:history:record#{key}"));
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in records.iter().enumerate() {
@@ -1372,7 +1383,8 @@ pub(crate) fn project(
         }
         ir.model.features.push(Feature {
             id: ids[index].clone(),
-            ordinal: u64::try_from(index).expect("history source order fits u64"),
+            ordinal: u64::try_from(index)
+                .map_err(|_| "history source order exceeds u64".to_string())?,
             name: None,
             suppressed: Some(false),
             dependencies,
@@ -1393,32 +1405,44 @@ pub(crate) fn project(
     let native = records
         .iter()
         .enumerate()
-        .map(|(index, record)| NativeHistoryRecord {
-            id: native_ids[index].clone(),
-            source_offset: record.source_range.start as u64,
-            source_uuid: (!record.id.is_nil()).then(|| record.id.to_string()),
-            command_uuid: record.command_id.to_string(),
-            record_version: record.version,
-            record_type: match record.record_type {
-                RecordType::HistoryParameters => "history_parameters",
-                RecordType::FeatureParameters => "feature_parameters",
-            },
-            copy_on_replace: record.copy_on_replace,
-            antecedent_object_uuids: record.antecedents.iter().map(ToString::to_string).collect(),
-            descendant_object_uuids: record.descendants.iter().map(ToString::to_string).collect(),
-            value_count: record.values.len(),
+        .map(|(index, record)| {
+            let source_offset = u64::try_from(record.source_range.start)
+                .map_err(|_| "history source offset exceeds u64".to_string())?;
+            Ok(NativeHistoryRecord {
+                id: native_ids[index].clone(),
+                source_offset,
+                source_uuid: (!record.id.is_nil()).then(|| record.id.to_string()),
+                command_uuid: record.command_id.to_string(),
+                record_version: record.version,
+                record_type: match record.record_type {
+                    RecordType::HistoryParameters => "history_parameters",
+                    RecordType::FeatureParameters => "feature_parameters",
+                },
+                copy_on_replace: record.copy_on_replace,
+                antecedent_object_uuids: record
+                    .antecedents
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                descendant_object_uuids: record
+                    .descendants
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                value_count: record.values.len(),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, String>>()?;
     ir.native
         .namespace_mut("rhino")
         .set_arena("history_records", &native)
-        .expect("Rhino history records serialize");
-    (
+        .map_err(|error| error.to_string())?;
+    Ok((
         sink.untyped,
         sink.failed,
         dropped_dependencies,
         sink.redundant_repairs,
-    )
+    ))
 }
 
 #[cfg(test)]

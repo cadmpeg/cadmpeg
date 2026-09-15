@@ -714,7 +714,9 @@ fn list_checksum_children(
         offset: chunk.body().start,
         needed: 4,
     })?;
-    let child_count = usize::try_from(count).unwrap_or(0);
+    let child_count = usize::try_from(count).map_err(|_| {
+        FramingError::structural(chunk.body().start, "negative view-list child count")
+    })?;
     let mut offset = chunk
         .body()
         .start
@@ -1034,9 +1036,12 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                         "document table record budget of {record_limit} exceeded"
                     ))
                 })?;
-            table_record_count = table_record_count
-                .checked_add(1)
-                .expect("document record budget bounds table count");
+            table_record_count = table_record_count.checked_add(1).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "table record count overflow at offset {}",
+                    child_offset
+                ))
+            })?;
             let record = Record::from_chunk(&child);
             let opaque = table_base(chunk.typecode) == TCODE_USER
                 || !record_is_allowed(chunk.typecode, record.typecode, record.is_short());
@@ -1378,10 +1383,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     if ctx.container_only() && scan.archive.is_chunked() {
         return Ok(container_only_result(&scan));
     }
-    Ok(crate::decode::decode(
-        &scan,
-        crate::mesh::MeshExpand::new(ctx, root),
-    ))
+    crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
 }
 
 #[cfg(test)]

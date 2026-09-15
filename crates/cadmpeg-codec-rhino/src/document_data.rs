@@ -2,6 +2,7 @@
 //! Rhino document properties, selectors, previews, and setting identities.
 
 use crate::loss::Diagnostics;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
 use std::ops::Range;
@@ -386,7 +387,12 @@ fn render_settings(
             scale_background_to_fit,
         )
     } else {
-        let version = legacy_version.expect("legacy branch has a parsed version");
+        let version = legacy_version.ok_or_else(|| {
+            FramingError::structural(
+                reader.position(),
+                "legacy render-settings branch has no parsed version",
+            )
+        })?;
         let dpi = (version >= 101).then(|| reader.f64()).transpose()?;
         let units = (version >= 101).then(|| reader.u32()).transpose()?;
         let bottom = (version >= 102).then(|| reader.array()).transpose()?;
@@ -498,7 +504,7 @@ fn render_userdata(
 ///
 /// The returned records are complete settings records whose payload was not
 /// admitted by a registered owner.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<OpaqueRecord>, CodecError> {
     let properties = &scan.metadata.properties;
     let revisions = properties
         .revision_history
@@ -649,34 +655,16 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace
-        .set_arena("revisions", &revisions)
-        .expect("Rhino revisions serialize");
-    namespace
-        .set_arena("document_notes", &notes)
-        .expect("Rhino notes serialize");
-    namespace
-        .set_arena("applications", &applications)
-        .expect("Rhino applications serialize");
-    namespace
-        .set_arena("document_settings", &document_settings)
-        .expect("Rhino settings serialize");
-    namespace
-        .set_arena("previews", &previews)
-        .expect("Rhino previews serialize");
-    namespace
-        .set_arena("setting_records", &setting_records)
-        .expect("Rhino setting records serialize");
-    namespace
-        .set_arena("annotation_settings", &annotations)
-        .expect("Rhino annotation settings serialize");
-    namespace
-        .set_arena("grid_defaults", &grids)
-        .expect("Rhino grid defaults serialize");
-    namespace
-        .set_arena("render_settings", &renders)
-        .expect("Rhino render settings serialize");
-    opaque_records
+    namespace.set_arena("revisions", &revisions)?;
+    namespace.set_arena("document_notes", &notes)?;
+    namespace.set_arena("applications", &applications)?;
+    namespace.set_arena("document_settings", &document_settings)?;
+    namespace.set_arena("previews", &previews)?;
+    namespace.set_arena("setting_records", &setting_records)?;
+    namespace.set_arena("annotation_settings", &annotations)?;
+    namespace.set_arena("grid_defaults", &grids)?;
+    namespace.set_arena("render_settings", &renders)?;
+    Ok(opaque_records)
 }
 
 #[cfg(test)]
