@@ -867,6 +867,63 @@ fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
 }
 
 #[test]
+fn ps09_ambiguous_occurrence_owned_placements_remain_opaque() {
+    let input = include_bytes!("tests/data/ps09_ambiguous_occurrence_items.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .expect("decode PS-09 ambiguous occurrence fixture");
+
+    assert!(!result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .any(|occurrence| occurrence.id.as_str().contains("#16")));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("NAUO #16")
+            && loss.message.contains("occurrence-owned mapped")
+            && loss.message.contains("#47")
+            && loss.message.contains("#48")
+            && loss.message.contains("no neutral occurrence was admitted")
+            && loss.message.contains("remain opaque")
+    }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+
+    let unknowns = result.ir().native_unknowns("step").unwrap();
+    let unknown_ids = unknowns
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        unknown_ids,
+        std::collections::BTreeSet::from([
+            "step:data:next_assembly_usage_occurrence#16",
+            "step:data:shape_definition_representation#47",
+            "step:data:shape_definition_representation#48",
+        ])
+    );
+    for id in &unknown_ids {
+        let retained = result
+            .source_fidelity()
+            .retained_record(id)
+            .expect("ambiguous occurrence placement source record is retained");
+        assert_eq!(
+            retained.data(),
+            Some(
+                &input[retained.offset() as usize
+                    ..(retained.offset() + retained.byte_len()) as usize]
+            )
+        );
+    }
+}
+
+#[test]
 fn unrelated_representation_mapping_does_not_place_an_occurrence() {
     let result = StepCodec::default()
         .decode(

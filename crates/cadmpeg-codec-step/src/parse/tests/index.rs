@@ -43,6 +43,44 @@ fn entity_unions_are_ordered_unique_and_name_order_independent() {
 }
 
 #[test]
+fn poisoned_entity_union_cache_preserves_completed_entries_and_accepts_new_queries() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#3=C();#2=(A()B());#1=B();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = parse(source).expect("valid record graph");
+    assert_eq!(
+        exchange
+            .entities_any(&["A", "B"])
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>(),
+        vec![1, 2],
+    );
+
+    let interrupted = std::panic::catch_unwind(|| {
+        let _cache = exchange.entity_unions().lock().expect("unpoisoned cache");
+        panic!("interrupt between completed cache entries");
+    });
+    assert!(interrupted.is_err());
+
+    for names in [["B", "A"], ["B", "C"]] {
+        let actual = exchange
+            .entities_any(&names)
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        let expected = exchange
+            .records
+            .iter()
+            .filter(|(_, record)| {
+                record
+                    .partials
+                    .iter()
+                    .any(|partial| names.contains(&partial.name.as_str()))
+            })
+            .map(|(&id, _)| id)
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
 fn anchor_budget_charges_only_resource_expansion() {
     let anchors = BTreeMap::new();
     let mut resolver = AnchorResolver::new(&anchors, None);

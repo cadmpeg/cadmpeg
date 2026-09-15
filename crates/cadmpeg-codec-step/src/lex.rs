@@ -565,39 +565,40 @@ impl<'a> Lexer<'a> {
                 return Err(Self::error(start, "string exceeds maximum stored length"));
             }
             match self.input.get(self.at).copied() {
-                Some(b'\'') if self.match_exact_ignoring_controls(self.at, b"''").is_some() => {
-                    bytes.extend_from_slice(b"''");
-                    self.at = self
-                        .match_exact_ignoring_controls(self.at, b"''")
-                        .expect("doubled apostrophe matched above");
-                }
                 Some(b'\'') => {
-                    self.at += 1;
-                    return Ok(TokenKind::String(bytes));
+                    if let Some(end) = self.match_exact_ignoring_controls(self.at, b"''") {
+                        bytes.extend_from_slice(b"''");
+                        self.at = end;
+                    } else {
+                        self.at += 1;
+                        return Ok(TokenKind::String(bytes));
+                    }
                 }
                 Some(byte) if byte.is_ascii_control() => {
                     self.at += 1;
                 }
-                Some(b'\\') if self.print_control_end(self.at).is_some() => {
-                    if !self.allow_print_controls {
-                        return Err(Self::error(
-                            self.at,
-                            "print control directive is not allowed in this section",
-                        ));
-                    }
-                    let end = self
-                        .print_control_end(self.at)
-                        .expect("print control matched above");
-                    let directive = if self
-                        .match_exact_ignoring_controls(self.at, b"\\N\\")
-                        .is_some()
-                    {
-                        b"\\N\\"
+                Some(b'\\') => {
+                    if let Some(end) = self.print_control_end(self.at) {
+                        if !self.allow_print_controls {
+                            return Err(Self::error(
+                                self.at,
+                                "print control directive is not allowed in this section",
+                            ));
+                        }
+                        let directive = if self
+                            .match_exact_ignoring_controls(self.at, b"\\N\\")
+                            .is_some()
+                        {
+                            b"\\N\\"
+                        } else {
+                            b"\\F\\"
+                        };
+                        bytes.extend_from_slice(directive);
+                        self.at = end;
                     } else {
-                        b"\\F\\"
-                    };
-                    bytes.extend_from_slice(directive);
-                    self.at = end;
+                        bytes.push(b'\\');
+                        self.at += 1;
+                    }
                 }
                 Some(byte) => {
                     bytes.push(byte);
@@ -652,20 +653,20 @@ impl<'a> Lexer<'a> {
         if digits.is_empty() && unused_bits != 0 {
             return Err(Self::error(start, "empty binary payload has unused bits"));
         }
-        let nibbles = digits
-            .iter()
-            .map(|digit| digit.nibble())
-            .collect::<Vec<_>>();
         if unused_bits != 0
-            && nibbles
+            && digits
                 .last()
-                .is_some_and(|nibble| nibble & ((1 << unused_bits) - 1) != 0)
+                .is_some_and(|digit| digit.nibble() & ((1 << unused_bits) - 1) != 0)
         {
             return Err(Self::error(start, "unused binary bits are not zero"));
         }
-        let mut data = Vec::with_capacity(nibbles.len().div_ceil(2));
-        for chunk in nibbles.chunks(2) {
-            data.push((chunk[0] << 4) | chunk.get(1).copied().unwrap_or(0));
+        let mut data = Vec::with_capacity(digits.len().div_ceil(2));
+        let mut pairs = digits.chunks_exact(2);
+        for pair in &mut pairs {
+            data.push((pair[0].nibble() << 4) | pair[1].nibble());
+        }
+        if let [last] = pairs.remainder() {
+            data.push(last.nibble() << 4);
         }
         let unused_bits = unused_bits + if digits.len() % 2 == 1 { 4 } else { 0 };
         self.at += 1;

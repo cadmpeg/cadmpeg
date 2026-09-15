@@ -354,8 +354,20 @@ pub(super) fn decode(
             .map(|id| format!("#{id}"))
             .collect::<Vec<_>>()
             .join(", ");
+        let context_dependent = source_ids.iter().all(|id| {
+            exchange.records.get(id).is_some_and(|record| {
+                record
+                    .partial("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")
+                    .is_some()
+            })
+        });
+        let placement_kind = if context_dependent {
+            "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
+        } else {
+            "occurrence-owned mapped"
+        };
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
-            "NAUO #{usage_id} has multiple resolved CONTEXT_DEPENDENT_SHAPE_REPRESENTATION placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
+            "NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
         )));
     }
     for (&usage_id, source_ids) in &competing_placements {
@@ -977,9 +989,15 @@ fn occurrence_placements(
                 result.insert(usage_id, *transform);
             }
             [] => {}
-            _ => losses.push(StepLossCode::DecodeWarning.note(format!(
-                "NAUO #{usage_id} has an ambiguous occurrence shape placement"
-            ))),
+            _ => {
+                let mut source_ids = candidates
+                    .iter()
+                    .map(|(source_id, _)| *source_id)
+                    .collect::<Vec<_>>();
+                source_ids.sort_unstable();
+                source_ids.dedup();
+                ambiguous.insert(usage_id, source_ids);
+            }
         }
     }
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
@@ -989,7 +1007,7 @@ fn occurrence_placements(
             .or_default() += 1;
     }
     for (&usage_id, usage) in usages {
-        if result.contains_key(&usage_id) {
+        if result.contains_key(&usage_id) || ambiguous.contains_key(&usage_id) {
             continue;
         }
         // A parent representation's MAPPED_ITEM identifies its child through
