@@ -24,10 +24,11 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
             push_f64(&mut bytes, 0.001);
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .unwrap_or_else(|| panic!("offset surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
@@ -91,12 +92,12 @@ fn offset_surface_rejects_nested_cache_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .is_none()
         );
@@ -155,10 +156,10 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
         bytes.push(0x0b);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("revision deformable surface at width {int_width}"));
         assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
@@ -249,10 +250,11 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
             }
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .unwrap_or_else(|| panic!("taper surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
@@ -309,12 +311,12 @@ fn taper_surface_rejects_nested_cache_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .is_none()
         );
@@ -340,10 +342,10 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         }
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("compound surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
@@ -398,12 +400,13 @@ fn compound_surface_rejects_nonleading_cache_and_trailing_fields() {
             }
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
             assert!(
                 crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                     &tokens,
-                    &test_table(&bytes, int_width),
+                    &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
                 )
                 .is_none()
             );
@@ -435,10 +438,11 @@ fn loft_surface_walks_bridge_to_direct_cache() {
             push_f64(&mut bytes, 0.001);
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .unwrap_or_else(|| panic!("loft surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
@@ -498,12 +502,12 @@ fn loft_surface_rejects_nested_cache_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .is_none()
         );
@@ -524,10 +528,11 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
             push_int(&mut bytes, 0x04, 9, int_width);
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
             let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
@@ -576,12 +581,13 @@ fn exact_surface_rejects_nonleading_cache_and_trailing_fields() {
             }
             bytes.push(0x10);
 
-            let tokens = lex_test_span(&bytes, int_width);
+            let tokens =
+                lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
             assert!(
                 crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                     &tokens,
-                    &test_table(&bytes, int_width),
+                    &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
                 )
                 .is_none()
             );
@@ -600,10 +606,10 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("ruled surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
@@ -633,12 +639,12 @@ fn ruled_surface_rejects_nested_profile_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .is_none()
         );
@@ -657,10 +663,10 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("sum surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
@@ -706,12 +712,12 @@ fn sum_surface_rejects_nested_curve_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .is_none()
         );
@@ -730,10 +736,10 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("revolution surface at width {int_width}"));
         let fit_tolerance = decoded.legacy_cache_fit_tolerance().expect("fit tolerance");
@@ -784,12 +790,12 @@ fn revolution_surface_rejects_nested_profile_substitution() {
         push_f64(&mut bytes, 0.001);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_surface::procedural_surface_resolving_refs(
                 &tokens,
-                &test_table(&bytes, int_width),
+                &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
             )
             .is_none()
         );
@@ -815,10 +821,10 @@ fn revision_revolution_uses_the_shared_tails_solved_cache_domain() {
         bytes.push(0x0b);
         bytes.push(0x10);
 
-        let tokens = lex_test_span(&bytes, int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
             &tokens,
-            &test_table(&bytes, int_width),
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("revision revolution surface at width {int_width}"));
         let (definition, _) = decoded.into_parts();
@@ -852,8 +858,10 @@ fn surface_cache_resolves_width4_subtype_ref() {
     push_int(&mut record, 0x04, 0, RefWidth::Four);
     record.push(0x10);
     let surface = crate::nurbs::core::surface_cache_resolving_refs(
-        &crate::nurbs::toks::lex_test_span(&record, RefWidth::Four),
-        &crate::nurbs::toks::test_table(&active, RefWidth::Four),
+        &crate::nurbs::toks::lex_test_span(&record, RefWidth::Four)
+            .expect("valid single-record byte fixture"),
+        &crate::nurbs::toks::test_table(&active, RefWidth::Four)
+            .expect("valid single-record byte fixture"),
     )
     .expect("resolved width-4 ref");
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
@@ -870,8 +878,10 @@ fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
         push_int(&mut record, 0x04, 0, int_width);
         record.push(0x10);
         let surface = crate::nurbs::core::surface_cache_resolving_refs(
-            &crate::nurbs::toks::lex_test_span(&record, int_width),
-            &crate::nurbs::toks::test_table(&active, int_width),
+            &crate::nurbs::toks::lex_test_span(&record, int_width)
+                .expect("valid single-record byte fixture"),
+            &crate::nurbs::toks::test_table(&active, int_width)
+                .expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
         assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
@@ -1070,8 +1080,8 @@ fn cache_first_intersection_resolves_support_ref_and_nullable_pcurve() {
         let mut active = support;
         active.extend_from_slice(&record);
         let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
-            &lex_test_span(&record, int_width),
-            &test_table(&active, int_width),
+            &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
+            &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("cache-first intersection at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, flag) =
@@ -1150,8 +1160,8 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
 
             let mut active = support.clone();
             active.extend_from_slice(&record);
-            let toks = lex_test_span(&record, int_width);
-            let table = test_table(&active, int_width);
+            let toks = lex_test_span(&record, int_width).expect("valid single-record byte fixture");
+            let table = test_table(&active, int_width).expect("valid single-record byte fixture");
             let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
                 .unwrap_or_else(|| panic!("cacheless support intersection at {int_width}: {form}"));
             let crate::nurbs::proc_curve::ProceduralCurveConstruction::Intersection(context, _) =
@@ -1214,8 +1224,8 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         let mut active = support;
         active.extend_from_slice(&record);
         let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
-            &lex_test_span(&record, int_width),
-            &test_table(&active, int_width),
+            &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
+            &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(
@@ -1290,8 +1300,8 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         let mut active = support;
         active.extend_from_slice(&record);
         let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(
-            &lex_test_span(&record, int_width),
-            &test_table(&active, int_width),
+            &lex_test_span(&record, int_width).expect("valid single-record byte fixture"),
+            &test_table(&active, int_width).expect("valid single-record byte fixture"),
         )
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
         let crate::nurbs::proc_curve::ProceduralCurveConstruction::SurfaceCurve(

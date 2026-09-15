@@ -365,9 +365,10 @@ mod ownership_tests {
                 None
             );
             assert_eq!(
-                crate::nurbs::toks::owned_construction_subtype(&crate::nurbs::toks::lex_test_span(
-                    &bytes, int_width
-                ))
+                crate::nurbs::toks::owned_construction_subtype(
+                    &crate::nurbs::toks::lex_test_span(&bytes, int_width)
+                        .expect("valid single-record byte fixture")
+                )
                 .as_deref(),
                 Some("defm_int_cur")
             );

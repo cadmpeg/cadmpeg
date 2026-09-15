@@ -495,31 +495,47 @@ impl SubtypeTable {
 /// Lex a bare byte span (a subtype scope or block without a record name or
 /// terminator) into payload tokens, for tests that build byte fixtures.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics when `bytes` fails to lex as one record payload.
+/// Refuses malformed tokens and bytes that frame as more than one record.
 #[cfg(any(test, feature = "test-support"))]
-pub fn lex_test_span(bytes: &[u8], ref_width: RefWidth) -> std::sync::Arc<[Token]> {
+pub fn lex_test_span(
+    bytes: &[u8],
+    ref_width: RefWidth,
+) -> Result<std::sync::Arc<[Token]>, crate::stream_error::StreamError> {
     let mut wrapped = vec![0x0d, 1, b'x'];
     wrapped.extend_from_slice(bytes);
     wrapped.push(0x11);
-    let records =
-        crate::sab::frame(&wrapped, 0, wrapped.len(), ref_width).expect("test span lexes");
-    records.into_iter().next().expect("one record").tokens
+    let records = crate::sab::frame(&wrapped, 0, wrapped.len(), ref_width)?;
+    let [record]: [crate::sab::Record; 1] =
+        records
+            .try_into()
+            .map_err(|records: Vec<_>| crate::stream_error::StreamError {
+                format: crate::stream_error::StreamFormat::Binary,
+                offset: 0,
+                reason: format!(
+                    "bare payload frames as {} records, expected one",
+                    records.len()
+                ),
+            })?;
+    Ok(record.tokens)
 }
 
 /// Build a [`SubtypeTable`] over a bare byte span, for tests.
 #[cfg(any(test, feature = "test-support"))]
-pub fn test_table(bytes: &[u8], ref_width: RefWidth) -> SubtypeTable {
+pub fn test_table(
+    bytes: &[u8],
+    ref_width: RefWidth,
+) -> Result<SubtypeTable, crate::stream_error::StreamError> {
     let record = crate::sab::Record {
         index: 0,
         name: String::new(),
 
-        tokens: lex_test_span(bytes, ref_width),
+        tokens: lex_test_span(bytes, ref_width)?,
         offset: 0,
         len: 0,
     };
-    SubtypeTable::from_records(&[record])
+    Ok(SubtypeTable::from_records(&[record]))
 }
 
 #[cfg(test)]
@@ -528,6 +544,32 @@ mod tests {
 
     fn ident(name: &str) -> Token {
         Token::Ident(name.to_string())
+    }
+
+    #[test]
+    fn bare_payload_admission_preserves_empty_and_single_token_payloads() {
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            assert!(lex_test_span(&[], width).unwrap().is_empty());
+            assert_eq!(&*lex_test_span(&[0x0a], width).unwrap(), &[Token::True]);
+        }
+    }
+
+    #[test]
+    fn bare_payload_admission_refuses_truncated_tokens() {
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            assert!(lex_test_span(&[0x06], width).is_err());
+            assert!(test_table(&[0x06], width).is_err());
+        }
+    }
+
+    #[test]
+    fn bare_payload_admission_refuses_an_extra_record() {
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let bytes = [0x11, 0x0d, 1, b'y'];
+            let error = lex_test_span(&bytes, width).unwrap_err();
+            assert!(error.reason.contains("2 records"), "{error}");
+            assert!(test_table(&bytes, width).is_err());
+        }
     }
 
     #[test]

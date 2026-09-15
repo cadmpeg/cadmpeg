@@ -4547,7 +4547,8 @@ mod tail_selector_tests {
         push_enum(&mut span, 1);
         span.push(0x06);
         span.extend_from_slice(&0.0f64.to_le_bytes());
-        let toks = toks::lex_test_span(&span, RefWidth::Four);
+        let toks =
+            toks::lex_test_span(&span, RefWidth::Four).expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
         assert!(revision_surface_tail(&mut cur).is_none());
     }
@@ -4579,7 +4580,8 @@ mod tail_selector_tests {
         }
         span.push(0x0b);
 
-        let toks = toks::lex_test_span(&span, RefWidth::Four);
+        let toks =
+            toks::lex_test_span(&span, RefWidth::Four).expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
         let tail = revision_surface_tail(&mut cur).expect("parameterized tail");
         assert_eq!(cur.pos(), toks.len());

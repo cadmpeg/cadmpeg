@@ -6907,7 +6907,8 @@ mod revision_surface_tail_tests {
         let toks = cadmpeg_asm::nurbs::toks::lex_test_span(
             &bytes,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
-        );
+        )
+        .expect("valid single-record byte fixture");
         let mut cur = cadmpeg_asm::nurbs::toks::Cur::at(&toks, 0);
         let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&mut cur)
             .expect("decoded parameterized tail");
