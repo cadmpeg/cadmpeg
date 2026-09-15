@@ -1000,11 +1000,6 @@ fn times(reader: &mut BoundedReader<'_>) -> Result<UtcTime, FramingError> {
     Ok(UtcTime { fields })
 }
 
-fn finish(reader: &mut BoundedReader<'_>, _label: &str) -> Result<(), FramingError> {
-    reader.skip_remaining()?;
-    Ok(())
-}
-
 fn short_index(record: &Record, label: &str) -> Result<i64, FramingError> {
     record
         .short_value()
@@ -1173,7 +1168,7 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
             ));
         }
     }
-    finish(reader, "units")?;
+    reader.skip_remaining()?;
     Ok(UnitsAndTolerances {
         unit,
         absolute_tolerance: absolute,
@@ -1238,7 +1233,8 @@ fn parse_plugin_reference<'a>(
             }
         }
     }
-    finish(&mut payload, "plugin reference")
+    payload.skip_remaining()?;
+    Ok(())
 }
 
 pub(crate) fn parse_plugin_list(
@@ -1266,7 +1262,8 @@ pub(crate) fn parse_plugin_list(
     for _ in 0..count {
         parse_plugin_reference(data, &mut reader, archive)?;
     }
-    finish(&mut reader, "plugin list")
+    reader.skip_remaining()?;
+    Ok(())
 }
 
 fn parse_earth_anchor<'a>(
@@ -1292,7 +1289,8 @@ fn parse_earth_anchor<'a>(
             payload.i32()?;
         }
     }
-    finish(&mut payload, "earth anchor")
+    payload.skip_remaining()?;
+    Ok(())
 }
 
 fn parse_io_settings<'a>(
@@ -1304,7 +1302,8 @@ fn parse_io_settings<'a>(
     anonymous_version(&mut payload, "IO settings")?;
     payload.bool()?;
     payload.i32()?;
-    finish(&mut payload, "IO settings")
+    payload.skip_remaining()?;
+    Ok(())
 }
 
 fn parse_subd_display_parameters<'a>(
@@ -1326,7 +1325,7 @@ fn parse_subd_display_parameters<'a>(
     } else {
         None
     };
-    finish(&mut payload, "SubD display parameters")?;
+    payload.skip_remaining()?;
     Ok(SubDDisplayParameters {
         version,
         display_density,
@@ -1465,7 +1464,8 @@ pub(crate) fn parse_settings_attributes(
             uuid(&mut reader)?;
         }
     }
-    finish(&mut reader, "settings attributes")
+    reader.skip_remaining()?;
+    Ok(())
 }
 
 fn parse_mesh_record(
@@ -1475,7 +1475,8 @@ fn parse_mesh_record(
 ) -> Result<(), FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     parse_mesh_parameters(data, &mut reader, archive, true)?;
-    finish(&mut reader, "mesh settings")
+    reader.skip_remaining()?;
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -1793,7 +1794,7 @@ pub(crate) fn parse_direct_linetype<'a>(
             }
         }
     }
-    finish(&mut payload, "embedded linetype")?;
+    payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
     }
@@ -1905,7 +1906,7 @@ pub(crate) fn parse_direct_section_style<'a>(
     // the ID and lets the anonymous-chunk boundary discard the value bytes it
     // cannot type. A lower or duplicate known ID has the same bounded-suffix
     // result because the cascade has passed it.
-    finish(&mut payload, "embedded section style")?;
+    payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
         warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
     }
@@ -2184,7 +2185,7 @@ fn parse_layer(
             }
         }
     }
-    finish(&mut reader, "layer payload")?;
+    reader.skip_remaining()?;
     Ok((layer, userdata_degraded))
 }
 
@@ -2385,7 +2386,7 @@ fn report_layer_parent_references(layers: &[LayerRecord], warnings: &mut Diagnos
 fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let value = utf16(&mut reader)?;
-    finish(&mut reader, "UTF-16 property")?;
+    reader.skip_remaining()?;
     Ok(value)
 }
 

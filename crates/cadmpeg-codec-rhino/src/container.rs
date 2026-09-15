@@ -323,6 +323,7 @@ fn checksum_warning(
                 | TCODE_OBSOLETE_LAYERSET_RECORD
                 | TCODE_FONT_RECORD
                 | TCODE_DIMSTYLE_RECORD
+                | TCODE_INSTANCE_DEFINITION_RECORD
                 | TCODE_HATCH_PATTERN_RECORD
                 | TCODE_LINETYPE_RECORD
                 | TCODE_TEXTURE_MAPPING_RECORD
@@ -717,16 +718,20 @@ fn user_table_uuid_checksum_children(
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     reader.skip(16)?;
-    if reader.position() == reader.end() {
+    if reader.remaining() < 4
+        || View::u32_le_at(data, reader.position()) != Some(TCODE_USER_TABLE_RECORD_HEADER)
+    {
         return Ok(Vec::new());
     }
 
     let start = reader.position();
     let child = chunk_at(data, start, reader.end(), archive, false)?;
-    if child.typecode != TCODE_USER_TABLE_RECORD_HEADER || child.short() {
-        return Ok(Vec::new());
+    if child.short() {
+        return Err(FramingError::structural(
+            start,
+            "user-table record header must be a long chunk",
+        ));
     }
-    reader.skip(child.next_offset() - start)?;
     Ok(vec![child.range()])
 }
 
@@ -1240,7 +1245,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         scan.definitions
             .diagnostics
             .iter()
-            .map(|diagnostic| diagnostic.message.clone()),
+            .map(|diagnostic| diagnostic.diagnostic.message.clone()),
     );
     let matched = dialect_match(scan);
     let losses = crate::dialect::admission_loss(&matched)
@@ -1341,23 +1346,25 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
         scan.definitions
             .diagnostics
             .iter()
-            .map(|diagnostic| diagnostic.message.clone()),
+            .map(|diagnostic| diagnostic.diagnostic.message.clone()),
     );
     let mut losses: Vec<_> = scan
         .warnings
         .iter()
-        .map(|message| {
-            crate::loss::RhinoLossCode::ContainerScanDiagnostic.note(message.message.clone())
+        .map(|diagnostic| {
+            diagnostic
+                .code
+                .unwrap_or(crate::loss::RhinoLossCode::ContainerScanDiagnostic)
+                .note(diagnostic.message.clone())
         })
         .collect();
-    losses.extend(scan.definitions.diagnostics.iter().map(|diagnostic| {
-        crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded
-            .note(diagnostic.message.clone())
-            .with_provenance(
-                cadmpeg_ir::SourceProvenance::root("rhino", diagnostic.source_range.start as u64)
-                    .with_tag("INSTANCE_DEFINITION_TABLE"),
-            )
-    }));
+    losses.extend(scan.definitions.losses.iter().cloned());
+    losses.extend(
+        scan.definitions
+            .diagnostics
+            .iter()
+            .map(crate::instances::DefinitionDiagnostic::to_loss),
+    );
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
     let ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan)));

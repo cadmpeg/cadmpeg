@@ -2211,20 +2211,13 @@ impl<'a> DecodeContext<'a> {
         }
         self.report.typed_losses.extend(omissions);
         losses.extend(self.scan.definitions.losses.iter().cloned());
-        if let Some(first) = self.scan.definitions.diagnostics.first() {
-            losses.push(
-                RhinoLossCode::ContainerInstanceDefinitionDegraded
-                    .note(format!(
-                        "retained {} malformed, ambiguous, or checksum-degraded instance-definition record(s); first: {}",
-                        self.scan.definitions.diagnostics.len(),
-                        first.message
-                    ))
-                .with_provenance(
-                    SourceProvenance::root("rhino", first.source_range.start as u64)
-                        .with_tag("INSTANCE_DEFINITION_TABLE"),
-                ),
-            );
-        }
+        losses.extend(
+            self.scan
+                .definitions
+                .diagnostics
+                .iter()
+                .map(crate::instances::DefinitionDiagnostic::to_loss),
+        );
         losses.append(&mut self.report.typed_losses);
         losses.extend(self.scan.warnings.iter().map(|diagnostic| {
             diagnostic

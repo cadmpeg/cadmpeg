@@ -18,6 +18,7 @@ use crate::test_support as support;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 mod angular_dimension_userdata;
 mod annotations_userdata;
+mod definition_diagnostics;
 mod dimension_userdata;
 mod hatch_userdata;
 mod layer_userdata;

@@ -754,6 +754,53 @@ fn user_table_uuid_crc_covers_uuid_without_record_header() {
 }
 
 #[test]
+fn user_table_uuid_direct_suffixes_are_checked_without_child_headers() {
+    for archive in [ArchiveVersion::V4, ArchiveVersion::V5, ArchiveVersion::V8] {
+        for suffix_len in 0..=20 {
+            let mut body = vec![0x41; 16];
+            body.extend(std::iter::repeat_n(0xbe, suffix_len));
+            let mut record = crc_chunk(archive, 0x2000_8080, &body);
+            assert_eq!(
+                super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+                    .expect("bounded direct suffix"),
+                None,
+                "archive={archive:?} suffix_len={suffix_len}"
+            );
+            let last = record.len() - 1;
+            record[last] ^= 1;
+            let warning = super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+                .expect("bounded checksum mismatch")
+                .expect("direct bytes must remain covered by the checksum");
+            assert!(warning.starts_with("CRC mismatch"), "{warning}");
+        }
+    }
+}
+
+#[test]
+fn user_table_uuid_known_child_header_cannot_be_discarded_after_framing_failure() {
+    for archive in [ArchiveVersion::V4, ArchiveVersion::V5, ArchiveVersion::V8] {
+        let length_width = if archive.uses_eight_byte_values() {
+            8
+        } else {
+            4
+        };
+        for length in [Vec::new(), vec![0xff; length_width], vec![0; length_width]] {
+            let body = [
+                vec![0x41; 16],
+                0x2000_8082_u32.to_le_bytes().to_vec(),
+                length,
+            ]
+            .concat();
+            let record = crc_chunk(archive, 0x2000_8080, &body);
+            let warning = super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+                .expect("outer boundary remains recoverable")
+                .expect("recognized child framing failure must remain visible");
+            assert!(warning.starts_with("checksum child framing"), "{warning}");
+        }
+    }
+}
+
+#[test]
 fn historical_settings_record_is_bounded_and_retained_as_a_setting() {
     let archive = ArchiveVersion::V5;
     let record = crc_chunk(archive, 0x2000_803e, &[0; 24]);

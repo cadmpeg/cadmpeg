@@ -491,10 +491,11 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .definitions
         .diagnostics
         .iter()
-        .any(
-            |diagnostic| diagnostic.message.contains("alternate-path userdata")
-                && diagnostic.message.contains("was dropped")
-        ));
+        .any(|diagnostic| diagnostic
+            .diagnostic
+            .message
+            .contains("alternate-path userdata")
+            && diagnostic.diagnostic.message.contains("was dropped")));
     let malformed_range = scan
         .opaque_records
         .iter()
@@ -553,6 +554,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .iter()
         .any(|diagnostic| {
             diagnostic
+                .diagnostic
                 .message
                 .contains("unsupported instance-definition alternate-path version")
         }));
@@ -735,7 +737,7 @@ fn definition_scan_recovers_after_malformed_record_and_preserves_membership_unio
     assert!(scan.definitions.diagnostics.len() >= 2);
     assert!(scan.definitions.diagnostics.iter().all(|diagnostic| {
         diagnostic.source_range.start < diagnostic.source_range.end
-            && !diagnostic.message.contains("unsupported class")
+            && !diagnostic.diagnostic.message.contains("unsupported class")
     }));
     let container_only =
         crate::decode::seal_for_test(crate::container::container_only_result(&scan), true);
