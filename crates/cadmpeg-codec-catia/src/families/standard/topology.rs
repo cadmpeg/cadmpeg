@@ -27,6 +27,74 @@ pub struct StandardTopology {
     pub(crate) logical_vertex_count: usize,
 }
 
+/// Classify admitted face partitions and require every physical edge to belong
+/// to exactly one partition. Each component is closed when all its edges have
+/// two uses; an isolated face has no closed component.
+fn classify_body_groups(
+    groups: &[impl AsRef<[FaceTopology]>],
+    edge_count: usize,
+) -> Option<Vec<BodyKind>> {
+    use std::collections::hash_map::Entry;
+
+    let mut seen_edges = HashSet::new();
+    let mut kinds = Vec::new();
+    for group in groups {
+        let faces = group.as_ref();
+        let mut union = UnionFind::new(faces.len());
+        let mut uses = HashMap::<usize, (usize, usize)>::new();
+        for (face, topology) in faces.iter().enumerate() {
+            for coedge in topology
+                .boundaries
+                .iter()
+                .flat_map(|boundary| &boundary.coedges)
+            {
+                if coedge.edge_row >= edge_count {
+                    return None;
+                }
+                match uses.entry(coedge.edge_row) {
+                    Entry::Occupied(mut entry) => {
+                        let (first_face, count) = entry.get_mut();
+                        union.union(face, *first_face);
+                        *count += 1;
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert((face, 1));
+                    }
+                }
+            }
+        }
+        let components = (0..faces.len())
+            .map(|face| union.find(face))
+            .collect::<HashSet<_>>();
+        let mut paired_components = HashSet::new();
+        let mut unpaired_components = HashSet::new();
+        for (&edge, &(first_face, count)) in &uses {
+            if !seen_edges.insert(edge) {
+                return None;
+            }
+            let component = union.find(first_face);
+            if count == 2 {
+                paired_components.insert(component);
+            } else {
+                unpaired_components.insert(component);
+            }
+        }
+        let closed_count = paired_components.difference(&unpaired_components).count();
+        kinds.push(
+            if uses.values().any(|(_, count)| *count > 2)
+                || (closed_count != 0 && closed_count != components.len())
+            {
+                BodyKind::General
+            } else if !components.is_empty() && closed_count == components.len() {
+                BodyKind::Solid
+            } else {
+                BodyKind::Sheet
+            },
+        );
+    }
+    (seen_edges.len() == edge_count).then_some(kinds)
+}
+
 impl StandardTopology {
     /// Number of faces, equal to the largest contiguous `30 04 04 ff` FBB
     /// run's row count ([spec §5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
@@ -100,111 +168,39 @@ impl StandardTopology {
     /// An edge cannot belong to faces in two different groups.
     #[must_use]
     pub fn body_kinds(&self, face_groups: &[usize]) -> Option<Vec<BodyKind>> {
-        if face_groups.iter().sum::<usize>() != self.faces.len() {
+        let mut remaining = self.faces.as_slice();
+        let mut groups = Vec::new();
+        for &count in face_groups {
+            let (group, rest) = remaining.split_at_checked(count)?;
+            groups.push(group);
+            remaining = rest;
+        }
+        if !remaining.is_empty() {
             return None;
         }
-        let mut body_by_face = Vec::with_capacity(self.faces.len());
-        for (body, count) in face_groups.iter().copied().enumerate() {
-            body_by_face.extend(std::iter::repeat_n(body, count));
-        }
-        let mut uses = alloc_filled(
-            face_groups.len(),
-            HashMap::<usize, usize>::new(),
-            "catia standard body edge uses",
-        )
-        .ok()?;
-        let mut bodies_by_edge = alloc_filled(
-            self.edge_rows.len(),
-            HashSet::new(),
-            "catia standard edge bodies",
-        )
-        .ok()?;
-        let mut first_face_by_edge = alloc_filled(
-            self.edge_rows.len(),
-            None,
-            "catia standard first edge faces",
-        )
-        .ok()?;
-        for (face, topology) in self.faces.iter().enumerate() {
-            let body = body_by_face[face];
-            for coedge in topology
-                .boundaries
-                .iter()
-                .flat_map(|boundary| &boundary.coedges)
-            {
-                if coedge.edge_row >= self.edge_rows.len() {
-                    return None;
-                }
-                bodies_by_edge[coedge.edge_row].insert(body);
-                first_face_by_edge[coedge.edge_row].get_or_insert(face);
-                *uses[body].entry(coedge.edge_row).or_default() += 1;
-            }
-        }
-        if bodies_by_edge.iter().any(|bodies| bodies.len() != 1) {
-            return None;
-        }
-        let components = self.face_components();
-        let mut component_by_face =
-            alloc_filled(self.faces.len(), 0usize, "catia standard face components").ok()?;
-        let mut components_by_body = alloc_filled(
-            face_groups.len(),
-            Vec::new(),
-            "catia standard body components",
-        )
-        .ok()?;
-        for (component, faces) in components.iter().enumerate() {
-            let body = body_by_face[faces[0]];
-            components_by_body[body].push(component);
-            for &face in faces {
-                component_by_face[face] = component;
-            }
-        }
-        let component_by_edge = first_face_by_edge
-            .into_iter()
-            .map(|face| face.map(|face| component_by_face[face]))
-            .collect::<Vec<_>>();
-        Some(
-            uses.into_iter()
-                .zip(components_by_body)
-                .map(|(uses, components)| {
-                    let closed_component_count = components
-                        .iter()
-                        .filter(|component| {
-                            uses.keys()
-                                .any(|edge| component_by_edge[*edge] == Some(**component))
-                                && uses.iter().all(|(edge, count)| {
-                                    component_by_edge[*edge] != Some(**component) || *count == 2
-                                })
-                        })
-                        .count();
-                    if uses.values().any(|count| *count > 2)
-                        || (closed_component_count != 0
-                            && closed_component_count != components.len())
-                    {
-                        BodyKind::General
-                    } else if !components.is_empty() && closed_component_count == components.len() {
-                        BodyKind::Solid
-                    } else {
-                        BodyKind::Sheet
-                    }
-                })
-                .collect(),
-        )
+        classify_body_groups(&groups, self.edge_rows.len())
     }
 
     /// Orient every incidence-closed FBB face group independently. Open sheet
     /// and non-manifold general groups retain their reconstructed loop senses.
     pub fn orient_solid_body_cycles(&mut self, face_groups: &[usize]) -> Option<()> {
-        let kinds = self.body_kinds(face_groups)?;
-        let mut start = 0usize;
-        for (&count, kind) in face_groups.iter().zip(kinds) {
-            let end = start.checked_add(count)?;
-            if kind == BodyKind::Solid {
-                orient_face_cycles(self.faces.get_mut(start..end)?)?;
-            }
-            start = end;
+        let mut remaining = self.faces.as_mut_slice();
+        let mut groups = Vec::new();
+        for &count in face_groups {
+            let (group, rest) = remaining.split_at_mut_checked(count)?;
+            groups.push(group);
+            remaining = rest;
         }
-        (start == self.faces.len()).then_some(())
+        if !remaining.is_empty() {
+            return None;
+        }
+        let kinds = classify_body_groups(&groups, self.edge_rows.len())?;
+        for (group, kind) in groups.into_iter().zip(kinds) {
+            if kind == BodyKind::Solid {
+                orient_face_cycles(group)?;
+            }
+        }
+        Some(())
     }
 
     /// Bind logical port/corner components to coordinate-row indices from one
@@ -832,32 +828,22 @@ fn duplicate_face_assignments_equivalent(
 }
 
 pub(crate) fn orient_face_cycles(faces: &mut [FaceTopology]) -> Option<()> {
-    let boundary_nodes = faces
-        .iter()
-        .enumerate()
-        .flat_map(|(face, value)| (0..value.boundaries.len()).map(move |boundary| (face, boundary)))
+    let boundaries = faces
+        .iter_mut()
+        .flat_map(|face| &mut face.boundaries)
         .collect::<Vec<_>>();
-    let node_by_boundary = boundary_nodes
-        .iter()
-        .enumerate()
-        .map(|(node, boundary)| (*boundary, node))
-        .collect::<HashMap<_, _>>();
     let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
-    for (face_index, face) in faces.iter().enumerate() {
-        for (boundary_index, boundary) in face.boundaries.iter().enumerate() {
-            let node = node_by_boundary[&(face_index, boundary_index)];
-            for coedge in &boundary.coedges {
-                edge_uses
-                    .entry(coedge.edge_row)
-                    .or_default()
-                    .push((node, coedge.reversed));
-            }
+    for (node, boundary) in boundaries.iter().enumerate() {
+        for coedge in &boundary.coedges {
+            edge_uses
+                .entry(coedge.edge_row)
+                .or_default()
+                .push((node, coedge.reversed));
         }
     }
-    let flips = solve_boundary_orientation_constraints(boundary_nodes.len(), &edge_uses, true)?;
-    for ((face_index, boundary_index), flip) in boundary_nodes.into_iter().zip(flips) {
+    let flips = solve_boundary_orientation_constraints(boundaries.len(), &edge_uses, true)?;
+    for (boundary, flip) in boundaries.into_iter().zip(flips) {
         if flip {
-            let boundary = &mut faces[face_index].boundaries[boundary_index];
             boundary.coedges.reverse();
             for coedge in &mut boundary.coedges {
                 coedge.reversed = !coedge.reversed;
@@ -901,14 +887,15 @@ pub(crate) fn solve_boundary_orientation_constraints(
     }
 
     let mut flips = alloc_filled(boundary_count, None, "catia standard boundary flips").ok()?;
+    let mut result = Vec::new();
     for root in 0..boundary_count {
-        if flips[root].is_some() {
+        if let Some(flip) = flips[root] {
+            result.push(flip);
             continue;
         }
         flips[root] = Some(false);
-        let mut stack = vec![root];
-        while let Some(face) = stack.pop() {
-            let flip = flips[face]?;
+        let mut stack = vec![(root, false)];
+        while let Some((face, flip)) = stack.pop() {
             for &(neighbor, parity) in &constraints[face] {
                 let required = flip ^ parity;
                 match flips[neighbor] {
@@ -916,70 +903,83 @@ pub(crate) fn solve_boundary_orientation_constraints(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        stack.push(neighbor);
+                        stack.push((neighbor, required));
                     }
                 }
             }
         }
+        result.push(false);
     }
-    flips.into_iter().collect()
+    Some(result)
 }
 
 pub(crate) fn incidence_cycles(
     incident: &[usize],
     edge_points: &[[usize; 2]],
 ) -> Option<Vec<NonEmptyMembers<(usize, bool)>>> {
+    #[derive(Clone, Copy)]
+    struct AdjacentEdge {
+        edge: usize,
+        vertex: usize,
+        reversed: bool,
+    }
+
     if incident.is_empty() {
         return None;
     }
-    let mut at_vertex = HashMap::<usize, Vec<usize>>::new();
+    let mut vertex_indices = HashMap::<usize, usize>::new();
+    let mut at_vertex = Vec::<Vec<AdjacentEdge>>::new();
+    let mut unseen = BTreeMap::new();
+    let mut seen_edges = HashSet::new();
     let mut cycles = Vec::new();
     for &edge in incident {
-        let [start, end] = edge_points[edge];
+        if !seen_edges.insert(edge) {
+            return None;
+        }
+        let [start, end] = *edge_points.get(edge)?;
         if start == end {
             cycles.push(NonEmptyMembers::one((edge, false)));
             continue;
         }
-        at_vertex.entry(start).or_default().push(edge);
-        at_vertex.entry(end).or_default().push(edge);
+        let [start, end] = [start, end].map(|vertex| {
+            *vertex_indices.entry(vertex).or_insert_with(|| {
+                let index = at_vertex.len();
+                at_vertex.push(Vec::new());
+                index
+            })
+        });
+        at_vertex[start].push(AdjacentEdge {
+            edge,
+            vertex: end,
+            reversed: false,
+        });
+        at_vertex[end].push(AdjacentEdge {
+            edge,
+            vertex: start,
+            reversed: true,
+        });
+        unseen.insert(edge, [start, end]);
     }
-    if at_vertex.values().any(|edges| edges.len() != 2) {
-        return None;
-    }
-    let mut unseen: HashSet<usize> = incident
-        .iter()
-        .copied()
-        .filter(|edge| edge_points[*edge][0] != edge_points[*edge][1])
-        .collect();
-    let mut ordered_unseen = unseen.iter().copied().collect::<Vec<_>>();
-    ordered_unseen.sort_unstable();
-    let mut next_unseen = 0;
-    loop {
-        while ordered_unseen
-            .get(next_unseen)
-            .is_some_and(|edge| !unseen.contains(edge))
-        {
-            next_unseen += 1;
-        }
-        let Some(&first) = ordered_unseen.get(next_unseen) else {
-            break;
-        };
-        let [start_vertex, mut vertex] = edge_points[first];
-        unseen.remove(&first);
+    let at_vertex = at_vertex
+        .into_iter()
+        .map(|edges| <[AdjacentEdge; 2]>::try_from(edges).ok())
+        .collect::<Option<Vec<_>>>()?;
+    while let Some((first, [start_vertex, mut vertex])) = unseen.pop_first() {
         let mut cycle = NonEmptyMembers::one((first, false));
+        let mut previous_edge = first;
         while vertex != start_vertex {
-            let edge = *at_vertex
-                .get(&vertex)?
-                .iter()
-                .find(|candidate| unseen.contains(candidate))?;
-            unseen.remove(&edge);
-            let endpoints = edge_points[edge];
-            let reversed = endpoints[1] == vertex;
-            if !reversed && endpoints[0] != vertex {
-                return None;
-            }
-            vertex = if reversed { endpoints[0] } else { endpoints[1] };
-            cycle.push((edge, reversed));
+            // Every vertex has two distinct incident edges. The edge other
+            // than the one just traversed continues this closed component.
+            let [left, right] = at_vertex[vertex];
+            let next = if left.edge == previous_edge {
+                right
+            } else {
+                left
+            };
+            unseen.remove(&next.edge);
+            vertex = next.vertex;
+            previous_edge = next.edge;
+            cycle.push((next.edge, next.reversed));
         }
         cycles.push(cycle);
     }
@@ -1135,3 +1135,6 @@ pub(crate) fn reconstruct_mesh_selection(
         vertex_points,
     })
 }
+
+#[cfg(test)]
+mod tests;
