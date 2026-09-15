@@ -124,13 +124,27 @@ impl Vector3 {
         Vector3::new(self.x * factor, self.y * factor, self.z * factor)
     }
 
-    /// Unit vector in the same direction, or `None` when the length is
-    /// within [`f64::EPSILON`] of zero (degenerate direction).
+    /// Unit vector in the same direction, or `None` when a component is
+    /// non-finite or the length is within [`f64::EPSILON`] of zero.
     #[must_use]
     pub fn unit(self) -> Option<Vector3> {
-        let length = self.norm();
-        (length > f64::EPSILON)
-            .then(|| Vector3::new(self.x / length, self.y / length, self.z / length))
+        if ![self.x, self.y, self.z].into_iter().all(f64::is_finite) {
+            return None;
+        }
+        let scale = self.x.abs().max(self.y.abs()).max(self.z.abs());
+        if scale == 0.0 {
+            return None;
+        }
+        let scaled = Vector3::new(self.x / scale, self.y / scale, self.z / scale);
+        let length = scaled.norm();
+        if scale <= f64::EPSILON && scale * length <= f64::EPSILON {
+            return None;
+        }
+        Some(Vector3::new(
+            scaled.x / length,
+            scaled.y / length,
+            scaled.z / length,
+        ))
     }
 }
 
@@ -167,3 +181,6 @@ impl Point2 {
         Point2 { u, v }
     }
 }
+
+#[cfg(test)]
+mod tests;
