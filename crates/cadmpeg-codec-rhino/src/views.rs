@@ -37,6 +37,7 @@ const VIEW_POSITION: u32 = 0x2000_8b3b;
 const VIEW_ATTRIBUTES: u32 = 0x2000_8c3b;
 const VIEW_VIEWPORT_USERDATA: u32 = 0x2000_8d3b;
 const CLASS_USERDATA: u32 = 0x0002_7ffd;
+const ANONYMOUS: u32 = 0x4000_8000;
 
 #[derive(Debug, Serialize)]
 struct ViewChild {
@@ -319,21 +320,50 @@ fn image_reference<'a>(
     ))
 }
 
+#[derive(Debug)]
+struct ImageParseError {
+    error: FramingError,
+    file_reference_range: Option<std::ops::Range<usize>>,
+}
+
+impl From<FramingError> for ImageParseError {
+    fn from(error: FramingError) -> Self {
+        Self {
+            error,
+            file_reference_range: None,
+        }
+    }
+}
+
+fn framed_file_reference_range(
+    data: &[u8],
+    reader: &BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<std::ops::Range<usize>, FramingError> {
+    let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short() {
+        return Err(FramingError::structural(
+            reader.position(),
+            "file reference is not anonymous",
+        ));
+    }
+    Ok(chunk.range())
+}
+
 fn parse_trace_image(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: f64,
     warnings: &mut Diagnostics,
-) -> Result<(TraceImage, Option<std::ops::Range<usize>>), FramingError> {
+) -> Result<(TraceImage, Option<std::ops::Range<usize>>), ImageParseError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
     if packed >> 4 != 1 {
-        return Err(FramingError::structural(
-            body.start,
-            "trace-image version is unsupported",
-        ));
+        return Err(
+            FramingError::structural(body.start, "trace-image version is unsupported").into(),
+        );
     }
     let legacy_file_path = utf16(&mut reader)?;
     let width_mm = scaled_coordinate(reader.f64()?, scale)
@@ -346,7 +376,14 @@ fn parse_trace_image(
     let hidden = minor >= 2 && reader.bool()?;
     let filtered = minor >= 3 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 4 {
-        let (value, range) = image_reference(data, &mut reader, archive, warnings)?;
+        let source_range = framed_file_reference_range(data, &reader, archive)?;
+        let (value, range) =
+            image_reference(data, &mut reader, archive, warnings).map_err(|error| {
+                ImageParseError {
+                    error,
+                    file_reference_range: Some(source_range),
+                }
+            })?;
         (Some(value), Some(range))
     } else {
         (None, None)
@@ -374,21 +411,27 @@ fn parse_wallpaper(
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-) -> Result<(Wallpaper, Option<std::ops::Range<usize>>), FramingError> {
+) -> Result<(Wallpaper, Option<std::ops::Range<usize>>), ImageParseError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
     if packed >> 4 != 1 {
-        return Err(FramingError::structural(
-            body.start,
-            "wallpaper version is unsupported",
-        ));
+        return Err(
+            FramingError::structural(body.start, "wallpaper version is unsupported").into(),
+        );
     }
     let legacy_file_path = utf16(&mut reader)?;
     let grayscale = reader.bool()?;
     let hidden = minor >= 1 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 2 {
-        let (value, range) = image_reference(data, &mut reader, archive, warnings)?;
+        let source_range = framed_file_reference_range(data, &reader, archive)?;
+        let (value, range) =
+            image_reference(data, &mut reader, archive, warnings).map_err(|error| {
+                ImageParseError {
+                    error,
+                    file_reference_range: Some(source_range),
+                }
+            })?;
         (Some(value), Some(range))
     } else {
         (None, None)
@@ -948,6 +991,7 @@ fn parse_view(
     scale: f64,
     list_kind: ViewListKind,
     list_index: usize,
+    parse_losses: &mut Vec<LossNote>,
 ) -> Result<(ViewRecord, Vec<LossNote>), FramingError> {
     let mut offset = record.body().start;
     let mut name = String::new();
@@ -997,13 +1041,26 @@ fn parse_view(
             }
             VIEW_TRACE_IMAGE if !child.short() => {
                 let mut file_reference_diagnostics = Diagnostics::new();
-                let (value, file_reference_range) = parse_trace_image(
+                let (value, file_reference_range) = match parse_trace_image(
                     data,
                     child.body().clone(),
                     archive,
                     scale,
                     &mut file_reference_diagnostics,
-                )?;
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        if let Some(source_range) = error.file_reference_range.as_ref() {
+                            append_file_reference_diagnostics(
+                                parse_losses,
+                                file_reference_diagnostics,
+                                source_range,
+                                "VIEW/TRACE_IMAGE/FILE_REFERENCE",
+                            );
+                        }
+                        return Err(error.error);
+                    }
+                };
                 if let Some(source_range) = file_reference_range.as_ref() {
                     append_file_reference_diagnostics(
                         &mut checksum_warnings,
@@ -1034,12 +1091,25 @@ fn parse_view(
             }
             VIEW_WALLPAPER_V3 if !child.short() => {
                 let mut file_reference_diagnostics = Diagnostics::new();
-                let (value, file_reference_range) = parse_wallpaper(
+                let (value, file_reference_range) = match parse_wallpaper(
                     data,
                     child.body().clone(),
                     archive,
                     &mut file_reference_diagnostics,
-                )?;
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        if let Some(source_range) = error.file_reference_range.as_ref() {
+                            append_file_reference_diagnostics(
+                                parse_losses,
+                                file_reference_diagnostics,
+                                source_range,
+                                "VIEW/WALLPAPER/FILE_REFERENCE",
+                            );
+                        }
+                        return Err(error.error);
+                    }
+                };
                 if let Some(source_range) = file_reference_range.as_ref() {
                     append_file_reference_diagnostics(
                         &mut checksum_warnings,
@@ -1272,17 +1342,29 @@ fn parse_list(
             break;
         }
         let next = view.next_offset();
-        match parse_view(data, &view, archive, scale, list_kind, index) {
+        let mut parse_losses = Vec::new();
+        match parse_view(
+            data,
+            &view,
+            archive,
+            scale,
+            list_kind,
+            index,
+            &mut parse_losses,
+        ) {
             Ok((value, checksum_warnings)) => {
                 losses.extend(checksum_warnings);
                 views.push(value);
             }
-            Err(error) => losses.push(
-                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
-                    "{kind} view record at offset {} was omitted after child parsing failed: {error}",
-                    view.header_start
-                )),
-            ),
+            Err(error) => {
+                losses.extend(parse_losses);
+                losses.push(
+                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                        "{kind} view record at offset {} was omitted after child parsing failed: {error}",
+                        view.header_start
+                    )),
+                );
+            }
         }
         if let Err(error) = reader.skip(next - reader.position()) {
             losses.push(
