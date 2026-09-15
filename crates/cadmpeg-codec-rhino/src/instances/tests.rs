@@ -835,7 +835,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
-            .links,
+            .links.iter().map(|link| link.as_str()).collect::<Vec<_>>(),
         body_ids
     );
     assert_eq!(

@@ -598,6 +598,15 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
+    fn sync_native_unknowns(&mut self) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+        let products = self
+            .unknowns
+            .iter()
+            .map(NativeUnknownRecord::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        self.ir.set_native_unknowns_from("rhino", products)
+    }
+
     fn validate_candidate<T>(
         &mut self,
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> T,
@@ -620,10 +629,7 @@ impl<'a> DecodeContext<'a> {
                 return Err(CandidateError::Admission(error));
             }
         };
-        if let Err(error) = self
-            .ir
-            .set_native_unknowns_from("rhino", self.unknowns.iter().map(NativeUnknownRecord::from))
-        {
+        if let Err(error) = self.sync_native_unknowns() {
             before.truncate(&mut self.ir);
             self.annotations = annotation_checkpoint;
             return Err(CandidateError::Admission(error.to_string()));
@@ -677,7 +683,8 @@ impl<'a> DecodeContext<'a> {
                 return Err(CandidateError::Admission(error));
             }
             for (index, links) in link_updates {
-                *self.unknowns[index].links_mut() = links;
+                *self.unknowns[index].links_mut() =
+                    links.into_iter().map(|link| link.into_string()).collect();
             }
             self.ir.model.finalize();
             Ok(value)
@@ -1996,10 +2003,7 @@ impl<'a> DecodeContext<'a> {
         self.instance_selection = original_selection;
         self.instance_display = original_display;
         self.expansion_budget = original_expansion_budget;
-        if let Err(error) = self
-            .ir
-            .set_native_unknowns_from("rhino", self.unknowns.iter().map(NativeUnknownRecord::from))
-        {
+        if let Err(error) = self.sync_native_unknowns() {
             self.scan_warning(
                 source_order,
                 &format!("Rhino unknown records could not be serialized after instance rollback: {error}"),
@@ -3367,10 +3371,7 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let unknown = self.unknowns[source_order].id().clone();
-        if let Err(error) = self
-            .ir
-            .set_native_unknowns_from("rhino", self.unknowns.iter().map(NativeUnknownRecord::from))
-        {
+        if let Err(error) = self.sync_native_unknowns() {
             self.scan_warning(
                 source_order,
                 &format!("Rhino unknown records could not be serialized: {error}"),
@@ -3534,19 +3535,25 @@ fn duplicate_userdata_count(userdata: &[UserdataDescriptor], class: crate::wire:
 
 #[cfg(test)]
 fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
-    let Ok(mut unknowns) = ir.native_unknowns("rhino") else {
-        return;
-    };
-    let Some(record) = unknowns.iter_mut().find(|record| record.id == *unknown) else {
-        return;
-    };
-    append_links_to_native_record(record, links);
-    let _probe = ir.set_native_unknowns("rhino", &unknowns);
-}
-
-#[cfg(test)]
-fn append_links_to_native_record(record: &mut NativeUnknownRecord, links: &[String]) {
-    append_links(&record.id, &mut record.links, links);
+    let mut unknowns = ir
+        .native_unknowns("rhino")
+        .expect("fixture unknown records");
+    let record = unknowns
+        .iter_mut()
+        .find(|record| record.id == *unknown)
+        .expect("fixture unknown record exists");
+    record.links.extend(
+        links
+            .iter()
+            .filter(|link| link.as_str() != record.id.as_str())
+            .map(|link| {
+                cadmpeg_ir::ids::Identity::new(link.clone()).expect("fixture link identity")
+            }),
+    );
+    record.links.sort();
+    record.links.dedup();
+    ir.set_native_unknowns("rhino", &unknowns)
+        .expect("fixture unknown records");
 }
 
 fn append_links_to_record(record: &mut UnknownRecord, links: &[String]) {

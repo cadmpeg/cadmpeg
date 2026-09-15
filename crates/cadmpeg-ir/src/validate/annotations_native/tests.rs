@@ -118,7 +118,7 @@ fn unresolved_unknown_record_link_is_reported_once() {
         "test",
         &[crate::NativeUnknownRecord {
             id: crate::ids::UnknownId::mint("test:model:unknown#0").expect("valid identity"),
-            links: vec!["test:missing#0".into()],
+            links: vec!["test:model:missing#0".try_into().unwrap()],
         }],
     )
     .expect("store unknown record");
@@ -127,9 +127,29 @@ fn unresolved_unknown_record_link_is_reported_once() {
     let reported = findings
         .iter()
         .filter(|finding| {
-            finding.check == Check::NativeLinks && finding.message.contains("test:missing#0")
+            finding.check == Check::NativeLinks && finding.message.contains("test:model:missing#0")
         })
         .collect::<Vec<_>>();
     assert_eq!(reported.len(), 1);
     assert_eq!(reported[0].entity.as_deref(), Some("test:model:unknown#0"));
+}
+
+#[test]
+fn complete_document_native_link_validation_reports_malformed_shapes() {
+    for links in [
+        serde_json::json!(null), serde_json::json!(true), serde_json::json!(3),
+        serde_json::json!("test:model:body#0"), serde_json::json!({}),
+        serde_json::json!([null]), serde_json::json!([false]), serde_json::json!([3]),
+        serde_json::json!([{}]), serde_json::json!([[]]),
+    ] {
+        let mut wire = serde_json::to_value(unit_cube().unwrap()).unwrap();
+        wire["native"] = serde_json::json!({"test": {"unknowns": [{
+            "id": "test:source:unknown#malformed", "links": links
+        }]}});
+        let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
+        let findings = validate_neutral(&ir, Vec::new()).findings;
+        let found = findings.iter().filter(|finding| finding.check == Check::NativeLinks
+            && finding.entity.as_deref() == Some("test:source:unknown#malformed")).collect::<Vec<_>>();
+        assert_eq!(found.len(), 1, "{findings:?}");
+    }
 }

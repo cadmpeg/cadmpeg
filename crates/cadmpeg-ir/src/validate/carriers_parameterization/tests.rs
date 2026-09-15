@@ -114,6 +114,33 @@ fn orphan_carrier_is_flagged() {
 }
 
 #[test]
+fn malformed_unknown_does_not_erase_another_records_carrier_link() {
+    let mut ir = unit_cube().unwrap();
+    let mut carrier = ir.model.curves[0].clone();
+    carrier.id = CurveId::mint("test:model:curve#native-only").unwrap();
+    let carrier_id = carrier.id.as_str().to_owned();
+    ir.model.curves.push(carrier);
+    ir.model.finalize();
+    let mut wire = serde_json::to_value(&ir).unwrap();
+    wire["native"] = serde_json::json!({"test": {"unknowns": [
+        {"id": "test:source:unknown#good", "links": [carrier_id]},
+        {"id": "test:source:unknown#malformed", "links": [null]}
+    ]}});
+    let parsed = crate::CadIr::from_json(&wire.to_string()).unwrap();
+    let findings = validate_neutral(&parsed, Vec::new()).findings;
+    assert!(findings.iter().any(|finding| finding.check == Check::NativeLinks
+        && finding.entity.as_deref() == Some("test:source:unknown#malformed")));
+    assert!(!findings.iter().any(|finding| finding.check == Check::CarrierReachability
+        && finding.entity.as_deref() == Some(carrier_id.as_str())), "{findings:?}");
+
+    wire["native"]["test"]["unknowns"][0]["links"] = serde_json::json!([]);
+    let orphan = crate::CadIr::from_json(&wire.to_string()).unwrap();
+    assert!(validate_neutral(&orphan, Vec::new()).findings.iter().any(|finding|
+        finding.check == Check::CarrierReachability
+        && finding.entity.as_deref() == Some(carrier_id.as_str())));
+}
+
+#[test]
 fn periodic_curve_parameter_domain_is_checked() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let curve_id = ir.model.edges[0].curve().clone().unwrap();

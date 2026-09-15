@@ -2,7 +2,7 @@
 //! Retained source records without a typed IR interpretation.
 #![deny(clippy::disallowed_methods)]
 
-use crate::ids::UnknownId;
+use crate::ids::{Identity, UnknownId};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,17 @@ use serde::{Deserialize, Serialize};
 /// The product projection contains only identity and links. Extra source
 /// fields require an explicit raw [`UnknownRecord`] read; this reader must not
 /// silently discard them.
+///
+/// Product links carry admitted identities, including identities whose targets
+/// will be added later during document assembly.
+///
+/// ```compile_fail
+/// let mut record = cadmpeg_ir::NativeUnknownRecord {
+///     id: "test:source:unknown#0".try_into().unwrap(),
+///     links: Vec::new(),
+/// };
+/// record.links.push(String::from("malformed"));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -25,7 +36,7 @@ pub struct NativeUnknownRecord {
     pub id: UnknownId,
     /// Related entity IDs from any document arena.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub links: Vec<String>,
+    pub links: Vec<Identity>,
 }
 
 /// Raw source retention facts. Digest text and extents are producer evidence;
@@ -45,12 +56,27 @@ pub(crate) enum RawRetainedBytes {
     },
 }
 
-impl From<&UnknownRecord> for NativeUnknownRecord {
-    fn from(record: &UnknownRecord) -> Self {
-        Self {
+impl TryFrom<&UnknownRecord> for NativeUnknownRecord {
+    type Error = crate::native::NativeConvertError;
+
+    fn try_from(record: &UnknownRecord) -> Result<Self, Self::Error> {
+        let links = record
+            .links()
+            .iter()
+            .enumerate()
+            .map(|(index, link)| {
+                Identity::new(link.clone()).map_err(|error| {
+                    Self::Error::InvalidCollection(format!(
+                        "native unknown {} link {index}: {error}",
+                        record.id()
+                    ))
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
             id: record.id().clone(),
-            links: record.links().to_vec(),
-        }
+            links,
+        })
     }
 }
 
@@ -64,8 +90,7 @@ impl From<&NativeUnknownRecord> for crate::native::NativeRecord {
                     record
                         .links
                         .iter()
-                        .cloned()
-                        .map(serde_json::Value::String)
+                        .map(|link| serde_json::Value::String(link.as_str().to_owned()))
                         .collect(),
                 ),
             );
@@ -195,6 +220,37 @@ impl UnknownRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn product_projection_checks_raw_link_identity_without_changing_evidence() {
+        for link in [
+            "",
+            "missing",
+            "test:body#0",
+            "test:model:body#",
+            "test:model:body#with space",
+        ] {
+            let raw = UnknownRecord::retained(
+                UnknownId::mint("test:source:unknown#0").unwrap(),
+                0,
+                vec![1],
+                vec![link.to_owned()],
+            );
+            let error = NativeUnknownRecord::try_from(&raw).unwrap_err();
+            assert!(error.to_string().contains(raw.id().as_str()), "{error}");
+            assert!(error.to_string().contains("link 0"), "{error}");
+            let wire = serde_json::to_value(&raw).unwrap();
+            assert_eq!(serde_json::from_value::<UnknownRecord>(wire).unwrap(), raw);
+        }
+        let raw = UnknownRecord::retained(
+            UnknownId::mint("test:source:unknown#0").unwrap(),
+            0,
+            vec![1],
+            vec!["test:model:body#unresolved".into()],
+        );
+        let product = NativeUnknownRecord::try_from(&raw).unwrap();
+        assert_eq!(product.links[0].as_str(), "test:model:body#unresolved");
+    }
 
     #[test]
     fn raw_source_facts_survive_document_admission_without_becoming_a_product_projection() {

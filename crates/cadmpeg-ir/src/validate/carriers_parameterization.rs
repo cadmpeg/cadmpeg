@@ -851,19 +851,24 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::Unknown { .. } => {}
         }
     }
-    // Only the link targets are wanted, so the records are consumed one at a
-    // time and dropped; an arena that cannot be read contributes nothing, as it
-    // did when the whole population was deserialized in one fallible step.
-    let native_links = ir
-        .all_native_unknowns_iter()
-        .try_fold(Vec::new(), |mut links, record| {
-            links.extend(record?.links);
-            Ok::<_, crate::native::NativeConvertError>(links)
-        })
-        .unwrap_or_default();
+    // NativeLinks reports malformed link fields. Read each source link here so
+    // one malformed record cannot erase reachability from the other records.
+    let mut native_links = Vec::new();
+    for record in ir.native.0.values()
+        .flat_map(|namespace| namespace.arenas().get("unknowns"))
+        .flatten()
+    {
+        if let Some(serde_json::Value::Array(links)) = record.field("links") {
+            for link in links {
+                if let serde_json::Value::String(link) = link {
+                    native_links.push(link);
+                }
+            }
+        }
+    }
     for link in &native_links {
-        surfaces.insert(link);
-        curves.insert(link);
+        surfaces.insert(link.as_str());
+        curves.insert(link.as_str());
     }
     let composite_segments = ir
         .model

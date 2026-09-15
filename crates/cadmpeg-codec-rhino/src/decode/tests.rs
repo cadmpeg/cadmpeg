@@ -459,7 +459,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         candidate
             .native_unknowns("rhino")
             .expect("required invariant")[0]
-            .links,
+            .links.iter().map(|link| link.as_str()).collect::<Vec<_>>(),
         vec![curve_id.to_string()]
     );
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
