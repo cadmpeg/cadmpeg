@@ -5,6 +5,7 @@ use crate::ids::kind;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::{Identity, ProductDefinitionId};
@@ -55,27 +56,6 @@ impl TargetContext<'_> {
             self.external_documents,
         )
     }
-}
-
-/// Keys one drawing record's open property set, charging every key the reader
-/// cannot key.
-///
-/// The drawing is still transferred. A key holding no non-whitespace character
-/// cannot be asked for, and a key the record states twice is already taken, so
-/// the charge names the record and, for a restated key, the key itself.
-fn keyed_properties<V>(
-    losses: &mut Vec<LossNote>,
-    record: &str,
-    entries: impl IntoIterator<Item = (String, V)>,
-) -> BTreeMap<cadmpeg_core::text::NonBlankString, V> {
-    let (kept, refused) = cadmpeg_core::text::named_entries_reporting(record, entries);
-    for key in refused {
-        losses.push(
-            StepLossCode::MetadataStringInvalid
-                .note(format!("{key}; the property is not transferred")),
-        );
-    }
-    kept
 }
 
 /// Decode the drawing object graph without claiming unsupported graphics.
@@ -189,8 +169,11 @@ pub(super) fn decode(
             ..
         } = candidate;
         let mut stored_parameters = BTreeMap::new();
-        stored_parameters.insert("source_id".into(), format!("#{id}"));
-        stored_parameters.insert("source_type".into(), name.into());
+        stored_parameters.insert(
+            cadmpeg_core::nonblank_literal!("source_id"),
+            format!("#{id}"),
+        );
+        stored_parameters.insert(cadmpeg_core::nonblank_literal!("source_type"), name.into());
         for (index, value) in parameters.iter().enumerate() {
             if let Some(value) = value_text(
                 exchange,
@@ -221,13 +204,13 @@ pub(super) fn decode(
                 runtime_type: name.into(),
                 order: u32::try_from(order).unwrap_or(u32::MAX),
                 visible: hidden_drawing_ids.contains(&id).then_some(false),
-                relationships: keyed_properties(&mut losses, identity.as_str(), relationships),
+                relationships,
                 template: None,
                 position: None,
                 scale: None,
                 direction: None,
                 rotation_degrees: None,
-                parameters: keyed_properties(&mut losses, identity.as_str(), stored_parameters),
+                parameters: stored_parameters,
                 assets: Vec::new(),
                 native_ref: identity.into_string(),
             },
@@ -269,7 +252,7 @@ fn referenced_target_ids(
 ) -> BTreeSet<u64> {
     let mut ids = BTreeSet::new();
     for candidate in candidates {
-        for &(index, _) in relationship_fields(candidate.name) {
+        for &index in relationship_indices(candidate.name) {
             if let Some(value) = candidate.parameters.get(index) {
                 collect_reference_ids(value, &mut ids);
             }
@@ -440,67 +423,65 @@ fn source_parameters<'a>(record: &'a RawRecord, name: &str) -> Cow<'a, [Value]> 
     Cow::Borrowed(direct.unwrap_or_default())
 }
 
-fn parameter_key(name: &str, index: usize) -> String {
-    let field = match (name, index) {
-        ("DRAWING_DEFINITION", 0) => "name",
-        ("DRAWING_DEFINITION", 1) => "description",
-        ("DRAWING_REVISION", 0) => "name",
-        ("DRAWING_REVISION", 1) => "drawing",
-        ("DRAWING_REVISION", 2) => "description",
-        ("DRAWING_SHEET_REVISION", 0) => "name",
-        ("DRAWING_SHEET_REVISION", 1) => "items",
-        ("DRAWING_SHEET_REVISION", 2) => "presentation_context",
-        ("DRAWING_SHEET_REVISION", 3) => "revision",
-        ("PRESENTATION_VIEW", 0) => "name",
-        ("PRESENTATION_VIEW", 1) => "items",
-        ("PRESENTATION_VIEW", 2) => "presentation_context",
-        ("PRESENTATION_SIZE", 0) => "drawing_sheet_revision",
-        ("PRESENTATION_SIZE", 1) => "size",
-        ("DRAUGHTING_MODEL", 0) => "name",
-        ("DRAUGHTING_MODEL", 1) => "items",
-        ("DRAUGHTING_MODEL", 2) => "presentation_context",
-        ("DRAUGHTING_CALLOUT", 0) => "name",
-        ("DRAUGHTING_CALLOUT", 1) => "contents",
-        _ => return format!("parameter_{index}"),
-    };
-    field.into()
+fn parameter_key(name: &str, index: usize) -> NonBlankString {
+    match (name, index) {
+        ("DRAWING_DEFINITION", 0) => cadmpeg_core::nonblank_literal!("name"),
+        ("DRAWING_DEFINITION", 1) => cadmpeg_core::nonblank_literal!("description"),
+        ("DRAWING_REVISION", 0) => cadmpeg_core::nonblank_literal!("name"),
+        ("DRAWING_REVISION", 1) => cadmpeg_core::nonblank_literal!("drawing"),
+        ("DRAWING_REVISION", 2) => cadmpeg_core::nonblank_literal!("description"),
+        ("DRAWING_SHEET_REVISION", 0) => cadmpeg_core::nonblank_literal!("name"),
+        ("DRAWING_SHEET_REVISION", 1) => cadmpeg_core::nonblank_literal!("items"),
+        ("DRAWING_SHEET_REVISION", 2) => cadmpeg_core::nonblank_literal!("presentation_context"),
+        ("DRAWING_SHEET_REVISION", 3) => cadmpeg_core::nonblank_literal!("revision"),
+        ("PRESENTATION_VIEW", 0) => cadmpeg_core::nonblank_literal!("name"),
+        ("PRESENTATION_VIEW", 1) => cadmpeg_core::nonblank_literal!("items"),
+        ("PRESENTATION_VIEW", 2) => cadmpeg_core::nonblank_literal!("presentation_context"),
+        ("PRESENTATION_SIZE", 0) => cadmpeg_core::nonblank_literal!("drawing_sheet_revision"),
+        ("PRESENTATION_SIZE", 1) => cadmpeg_core::nonblank_literal!("size"),
+        ("DRAUGHTING_MODEL", 0) => cadmpeg_core::nonblank_literal!("name"),
+        ("DRAUGHTING_MODEL", 1) => cadmpeg_core::nonblank_literal!("items"),
+        ("DRAUGHTING_MODEL", 2) => cadmpeg_core::nonblank_literal!("presentation_context"),
+        ("DRAUGHTING_CALLOUT", 0) => cadmpeg_core::nonblank_literal!("name"),
+        ("DRAUGHTING_CALLOUT", 1) => cadmpeg_core::nonblank_literal!("contents"),
+        _ => cadmpeg_core::nonblank_literal!("parameter_{index}"),
+    }
 }
 
-fn relationship_fields(name: &str) -> &'static [(usize, &'static str)] {
+fn relationship_indices(name: &str) -> &'static [usize] {
     match name {
-        "DRAWING_REVISION" => &[(1, "drawing")],
-        "DRAWING_SHEET_REVISION" => &[(1, "items"), (2, "presentation_context"), (3, "revision")],
-        "PRESENTATION_VIEW" => &[(1, "items"), (2, "presentation_context")],
-        "PRESENTATION_SIZE" => &[(0, "drawing_sheet_revision"), (1, "size")],
-        "DRAUGHTING_MODEL" => &[(1, "items"), (2, "presentation_context")],
-        "DRAUGHTING_CALLOUT" => &[(1, "contents")],
+        "DRAWING_REVISION" | "DRAUGHTING_CALLOUT" => &[1],
+        "DRAWING_SHEET_REVISION" => &[1, 2, 3],
+        "PRESENTATION_VIEW" | "DRAUGHTING_MODEL" => &[1, 2],
+        "PRESENTATION_SIZE" => &[0, 1],
         _ => &[],
     }
 }
 
 fn add_reference_fields(
-    relationships: &mut BTreeMap<String, Vec<ReferenceSelection>>,
+    relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
     name: &str,
     parameters: &[Value],
     source_id: u64,
     target_context: &TargetContext<'_>,
     losses: &mut Vec<LossNote>,
 ) {
-    for &(index, role) in relationship_fields(name) {
+    for &index in relationship_indices(name) {
         let Some(value) = parameters.get(index) else {
             continue;
         };
+        let role = parameter_key(name, index);
         let mut references = Vec::new();
         collect_references(value, &mut references);
         for target_id in references {
             match target_context.resolve(target_id) {
                 TargetResolution::Resolved(target) => {
-                    relationships.entry(role.into()).or_default().push(target);
+                    relationships.entry(role.clone()).or_default().push(target);
                 }
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing #{source_id} {name}"),
-                    role,
+                    role.as_str(),
                     target_id,
                     &identities,
                 ),
@@ -626,9 +607,9 @@ fn add_draughting_model_associations(
         let Some(model_id) = parameters.get(3).and_then(value_reference) else {
             continue;
         };
-        if !drawings.contains_key(&model_id) {
+        let Some(model) = drawings.get_mut(&model_id) else {
             continue;
-        }
+        };
 
         let mut complete = true;
         let definition_id = parameters.get(2).and_then(value_reference);
@@ -736,9 +717,6 @@ fn add_draughting_model_associations(
             None
         };
 
-        let Some(model) = drawings.get_mut(&model_id) else {
-            continue;
-        };
         if let Some(definition) = definition_target {
             model
                 .relationships
