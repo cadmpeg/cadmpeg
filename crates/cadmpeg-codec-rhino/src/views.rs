@@ -37,7 +37,6 @@ const VIEW_POSITION: u32 = 0x2000_8b3b;
 const VIEW_ATTRIBUTES: u32 = 0x2000_8c3b;
 const VIEW_VIEWPORT_USERDATA: u32 = 0x2000_8d3b;
 const CLASS_USERDATA: u32 = 0x0002_7ffd;
-const ANONYMOUS: u32 = 0x4000_8000;
 
 #[derive(Debug, Serialize)]
 struct ViewChild {
@@ -320,50 +319,22 @@ fn image_reference<'a>(
     ))
 }
 
-#[derive(Debug)]
-struct ImageParseError {
-    error: FramingError,
-    file_reference_range: Option<std::ops::Range<usize>>,
-}
-
-impl From<FramingError> for ImageParseError {
-    fn from(error: FramingError) -> Self {
-        Self {
-            error,
-            file_reference_range: None,
-        }
-    }
-}
-
-fn framed_file_reference_range(
-    data: &[u8],
-    reader: &BoundedReader<'_>,
-    archive: ArchiveVersion,
-) -> Result<std::ops::Range<usize>, FramingError> {
-    let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short() {
-        return Err(FramingError::structural(
-            reader.position(),
-            "file reference is not anonymous",
-        ));
-    }
-    Ok(chunk.range())
-}
-
 fn parse_trace_image(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: f64,
     warnings: &mut Diagnostics,
-) -> Result<(TraceImage, Option<std::ops::Range<usize>>), ImageParseError> {
+    losses: &mut Vec<LossNote>,
+) -> Result<(TraceImage, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
     if packed >> 4 != 1 {
-        return Err(
-            FramingError::structural(body.start, "trace-image version is unsupported").into(),
-        );
+        return Err(FramingError::structural(
+            body.start,
+            "trace-image version is unsupported",
+        ));
     }
     let legacy_file_path = utf16(&mut reader)?;
     let width_mm = scaled_coordinate(reader.f64()?, scale)
@@ -376,14 +347,15 @@ fn parse_trace_image(
     let hidden = minor >= 2 && reader.bool()?;
     let filtered = minor >= 3 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 4 {
-        let source_range = framed_file_reference_range(data, &reader, archive)?;
-        let (value, range) =
-            image_reference(data, &mut reader, archive, warnings).map_err(|error| {
-                ImageParseError {
-                    error,
-                    file_reference_range: Some(source_range),
-                }
-            })?;
+        let source_offset = reader.position();
+        let parsed = image_reference(data, &mut reader, archive, warnings);
+        append_file_reference_diagnostics(
+            losses,
+            std::mem::take(warnings),
+            source_offset,
+            "VIEW/TRACE_IMAGE/FILE_REFERENCE",
+        );
+        let (value, range) = parsed?;
         (Some(value), Some(range))
     } else {
         (None, None)
@@ -411,27 +383,30 @@ fn parse_wallpaper(
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-) -> Result<(Wallpaper, Option<std::ops::Range<usize>>), ImageParseError> {
+    losses: &mut Vec<LossNote>,
+) -> Result<(Wallpaper, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
     if packed >> 4 != 1 {
-        return Err(
-            FramingError::structural(body.start, "wallpaper version is unsupported").into(),
-        );
+        return Err(FramingError::structural(
+            body.start,
+            "wallpaper version is unsupported",
+        ));
     }
     let legacy_file_path = utf16(&mut reader)?;
     let grayscale = reader.bool()?;
     let hidden = minor >= 1 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 2 {
-        let source_range = framed_file_reference_range(data, &reader, archive)?;
-        let (value, range) =
-            image_reference(data, &mut reader, archive, warnings).map_err(|error| {
-                ImageParseError {
-                    error,
-                    file_reference_range: Some(source_range),
-                }
-            })?;
+        let source_offset = reader.position();
+        let parsed = image_reference(data, &mut reader, archive, warnings);
+        append_file_reference_diagnostics(
+            losses,
+            std::mem::take(warnings),
+            source_offset,
+            "VIEW/WALLPAPER/FILE_REFERENCE",
+        );
+        let (value, range) = parsed?;
         (Some(value), Some(range))
     } else {
         (None, None)
@@ -451,7 +426,7 @@ fn parse_wallpaper(
 fn append_file_reference_diagnostics(
     losses: &mut Vec<LossNote>,
     diagnostics: Diagnostics,
-    source_range: &std::ops::Range<usize>,
+    source_offset: usize,
     tag: &str,
 ) {
     for diagnostic in diagnostics {
@@ -461,13 +436,21 @@ fn append_file_reference_diagnostics(
         losses.push(
             code.note(format!(
                 "file reference at offset {}: {}",
-                source_range.start, diagnostic.message
+                source_offset, diagnostic.message
             ))
-            .with_provenance(
-                SourceProvenance::root("rhino", source_range.start as u64).with_tag(tag),
-            ),
+            .with_provenance(SourceProvenance::root("rhino", source_offset as u64).with_tag(tag)),
         );
     }
+}
+
+fn located_presentation_loss(
+    offset: usize,
+    tag: impl Into<String>,
+    message: impl Into<String>,
+) -> LossNote {
+    crate::loss::RhinoLossCode::PresentationRecordDropped
+        .note(message.into())
+        .with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag))
 }
 
 fn parse_cplane(
@@ -991,8 +974,8 @@ fn parse_view(
     scale: f64,
     list_kind: ViewListKind,
     list_index: usize,
-    parse_losses: &mut Vec<LossNote>,
-) -> Result<(ViewRecord, Vec<LossNote>), FramingError> {
+    losses: &mut Vec<LossNote>,
+) -> Result<ViewRecord, FramingError> {
     let mut offset = record.body().start;
     let mut name = String::new();
     let mut target = None;
@@ -1008,7 +991,6 @@ fn parse_view(
     let mut wallpaper = None;
     let mut children = Vec::new();
     let mut checksum_children = Vec::new();
-    let mut checksum_warnings: Vec<LossNote> = Vec::new();
     let mut parse_warnings = Vec::new();
     let mut terminated = false;
     while offset < record.body().end {
@@ -1019,7 +1001,7 @@ fn parse_view(
             VIEW_VIEWPORT | VIEW_CPLANE | VIEW_TARGET | VIEW_POSITION | VIEW_NAME | VIEW_WALLPAPER
         ) {
             if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
-                checksum_warnings.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+                losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
             }
         }
         children.push(ViewChild {
@@ -1036,45 +1018,32 @@ fn parse_view(
             VIEW_VIEWPORT if !child.short() => {
                 match parse_viewport(data, child.body().clone(), scale) {
                     Ok(value) => viewport = Some(value),
-                    Err(error) => parse_warnings.push(format!("viewport retained: {error}")),
+                    Err(error) => {
+                        let message = format!("viewport retained: {error}");
+                        parse_warnings.push(message.clone());
+                        losses.push(located_presentation_loss(
+                            child.header_start,
+                            "VIEW/VIEWPORT",
+                            message,
+                        ));
+                    }
                 }
             }
             VIEW_TRACE_IMAGE if !child.short() => {
                 let mut file_reference_diagnostics = Diagnostics::new();
-                let (value, file_reference_range) = match parse_trace_image(
+                let (value, file_reference_range) = parse_trace_image(
                     data,
                     child.body().clone(),
                     archive,
                     scale,
                     &mut file_reference_diagnostics,
-                ) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        if let Some(source_range) = error.file_reference_range.as_ref() {
-                            append_file_reference_diagnostics(
-                                parse_losses,
-                                file_reference_diagnostics,
-                                source_range,
-                                "VIEW/TRACE_IMAGE/FILE_REFERENCE",
-                            );
-                        }
-                        return Err(error.error);
-                    }
-                };
-                if let Some(source_range) = file_reference_range.as_ref() {
-                    append_file_reference_diagnostics(
-                        &mut checksum_warnings,
-                        file_reference_diagnostics,
-                        source_range,
-                        "VIEW/TRACE_IMAGE/FILE_REFERENCE",
-                    );
-                }
+                    losses,
+                )?;
                 let nested_children = file_reference_range.clone().into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    checksum_warnings
-                        .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+                    losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
                 trace_image = Some(value);
             }
@@ -1091,39 +1060,18 @@ fn parse_view(
             }
             VIEW_WALLPAPER_V3 if !child.short() => {
                 let mut file_reference_diagnostics = Diagnostics::new();
-                let (value, file_reference_range) = match parse_wallpaper(
+                let (value, file_reference_range) = parse_wallpaper(
                     data,
                     child.body().clone(),
                     archive,
                     &mut file_reference_diagnostics,
-                ) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        if let Some(source_range) = error.file_reference_range.as_ref() {
-                            append_file_reference_diagnostics(
-                                parse_losses,
-                                file_reference_diagnostics,
-                                source_range,
-                                "VIEW/WALLPAPER/FILE_REFERENCE",
-                            );
-                        }
-                        return Err(error.error);
-                    }
-                };
-                if let Some(source_range) = file_reference_range.as_ref() {
-                    append_file_reference_diagnostics(
-                        &mut checksum_warnings,
-                        file_reference_diagnostics,
-                        source_range,
-                        "VIEW/WALLPAPER/FILE_REFERENCE",
-                    );
-                }
+                    losses,
+                )?;
                 let nested_children = file_reference_range.clone().into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    checksum_warnings
-                        .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+                    losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
                 wallpaper = Some(value);
             }
@@ -1159,14 +1107,13 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    checksum_warnings
-                        .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+                    losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
                 attributes_detail = Some(attributes);
             }
             VIEW_VIEWPORT_USERDATA => {
                 if child.short() {
-                    checksum_warnings.push(
+                    losses.push(
                         crate::loss::RhinoLossCode::ViewportUserdataDropped.note(format!(
                             "viewport userdata at offset {} must be a long chunk",
                             child.header_start
@@ -1178,12 +1125,12 @@ fn parse_view(
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
                             {
-                                checksum_warnings.push(
+                                losses.push(
                                     crate::loss::RhinoLossCode::IntegrityFailure.note(warning),
                                 );
                             }
                             for warning in scan.checksum_warnings {
-                                checksum_warnings.push(
+                                losses.push(
                                     warning
                                         .code
                                         .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure)
@@ -1191,7 +1138,7 @@ fn parse_view(
                                 );
                             }
                             if scan.has_untyped_content {
-                                checksum_warnings.push(
+                                losses.push(
                                     crate::loss::RhinoLossCode::ViewportUserdataDropped.note(
                                         format!(
                                     "viewport userdata at offset {} has no typed CADIR owner",
@@ -1201,7 +1148,7 @@ fn parse_view(
                                 );
                             }
                         }
-                        Err(error) => checksum_warnings.push(
+                        Err(error) => losses.push(
                             crate::loss::RhinoLossCode::ViewportUserdataDropped.note(format!(
                                 "viewport userdata at offset {} could not be framed: {error}",
                                 child.header_start
@@ -1239,31 +1186,28 @@ fn parse_view(
         _ => None,
     };
     if let Some(warning) = checksum_warning {
-        checksum_warnings.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+        losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
     }
-    Ok((
-        ViewRecord {
-            id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
-            source_offset: record.header_start as u64,
-            list_kind,
-            list_index,
-            name,
-            target_millimeters: target,
-            window_position,
-            show_construction_grid: show_grid,
-            show_construction_axes: show_axes,
-            show_world_axes,
-            legacy_display_mode,
-            attributes: attributes_detail,
-            construction_plane,
-            viewport,
-            trace_image,
-            wallpaper,
-            children,
-            parse_warnings,
-        },
-        checksum_warnings,
-    ))
+    Ok(ViewRecord {
+        id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
+        source_offset: record.header_start as u64,
+        list_kind,
+        list_index,
+        name,
+        target_millimeters: target,
+        window_position,
+        show_construction_grid: show_grid,
+        show_construction_axes: show_axes,
+        show_world_axes,
+        legacy_display_mode,
+        attributes: attributes_detail,
+        construction_plane,
+        viewport,
+        trace_image,
+        wallpaper,
+        children,
+        parse_warnings,
+    })
 }
 
 fn parse_list(
@@ -1274,47 +1218,59 @@ fn parse_list(
     list_kind: ViewListKind,
 ) -> (Vec<ViewRecord>, Vec<LossNote>) {
     let kind = list_kind.as_str();
+    let list_tag = match list_kind {
+        ViewListKind::Named => "VIEW/NAMED_VIEWS",
+        ViewListKind::Active => "VIEW/ACTIVE_VIEWS",
+    };
     let mut losses = Vec::new();
     let mut reader = match BoundedReader::new(data, record.body().start, record.body().end) {
         Ok(reader) => reader,
         Err(error) => {
-            losses.push(
-                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+            losses.push(located_presentation_loss(
+                record.range.start,
+                list_tag,
+                format!(
                     "{kind} view list at offset {} could not be framed: {error}",
                     record.body().start
-                )),
-            );
+                ),
+            ));
             return (Vec::new(), losses);
         }
     };
     let signed_count = match reader.i32() {
         Ok(value) => value,
         Err(error) => {
-            losses.push(
-                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+            losses.push(located_presentation_loss(
+                record.range.start,
+                list_tag,
+                format!(
                     "{kind} view list at offset {} has no readable count: {error}",
                     record.body().start
-                )),
-            );
+                ),
+            ));
             return (Vec::new(), losses);
         }
     };
     let Ok(count) = usize::try_from(signed_count) else {
-        losses.push(
-            crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+        losses.push(located_presentation_loss(
+            record.range.start,
+            list_tag,
+            format!(
                 "{kind} view list at offset {} has a negative count {signed_count}",
                 record.body().start
-            )),
-        );
+            ),
+        ));
         return (Vec::new(), losses);
     };
     if count > 1 << 16 {
-        losses.push(
-            crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+        losses.push(located_presentation_loss(
+            record.range.start,
+            list_tag,
+            format!(
                 "{kind} view list at offset {} exceeds the 65536-entry bound",
                 record.body().start
-            )),
-        );
+            ),
+        ));
         return (Vec::new(), losses);
     }
     let mut views = Vec::new();
@@ -1323,26 +1279,29 @@ fn parse_list(
         let view = match chunk_at(data, reader.position(), reader.end(), archive, false) {
             Ok(view) => view,
             Err(error) => {
-                losses.push(
-                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                losses.push(located_presentation_loss(
+                    reader.position(),
+                    "VIEW/RECORD",
+                    format!(
                         "{kind} view record at offset {} could not be framed: {error}",
                         reader.position()
-                    )),
-                );
+                    ),
+                ));
                 break;
             }
         };
         if view.typecode != VIEW_RECORD || view.short() {
-            losses.push(
-                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+            losses.push(located_presentation_loss(
+                child_offset,
+                "VIEW/RECORD",
+                format!(
                     "{kind} view list child at offset {child_offset} has unexpected typecode {:#010x}",
                     view.typecode
-                )),
-            );
+                ),
+            ));
             break;
         }
         let next = view.next_offset();
-        let mut parse_losses = Vec::new();
         match parse_view(
             data,
             &view,
@@ -1350,29 +1309,27 @@ fn parse_list(
             scale,
             list_kind,
             index,
-            &mut parse_losses,
+            &mut losses,
         ) {
-            Ok((value, checksum_warnings)) => {
-                losses.extend(checksum_warnings);
-                views.push(value);
-            }
-            Err(error) => {
-                losses.extend(parse_losses);
-                losses.push(
-                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
-                        "{kind} view record at offset {} was omitted after child parsing failed: {error}",
-                        view.header_start
-                    )),
-                );
-            }
+            Ok(value) => views.push(value),
+            Err(error) => losses.push(located_presentation_loss(
+                view.header_start,
+                "VIEW/RECORD",
+                format!(
+                    "{kind} view record at offset {} was omitted after child parsing failed: {error}",
+                    view.header_start
+                ),
+            )),
         }
         if let Err(error) = reader.skip(next - reader.position()) {
-            losses.push(
-                crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+            losses.push(located_presentation_loss(
+                view.header_start,
+                "VIEW/RECORD",
+                format!(
                     "{kind} view record at offset {} could not advance to its bounded end: {error}",
                     view.header_start
-                )),
-            );
+                ),
+            ));
             break;
         }
     }
@@ -1422,7 +1379,9 @@ fn retain_unbound_view_record(
     binding: UnitBinding,
     kind: &str,
 ) {
-    losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(
+    losses.push(located_presentation_loss(
+        record.range.start,
+        format!("VIEW/{kind}"),
         format!(
             "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
             record.range.start,
@@ -1463,7 +1422,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
                 match parse_named_cplanes(scan.data, record, scan.archive, scale) {
                     Ok(values) => cplanes.extend(values),
                     Err(error) => {
-                        losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(
+                        losses.push(located_presentation_loss(
+                            record.range.start,
+                            "VIEW/NAMED_CPLANES",
                             format!(
                                 "named construction-plane list at offset {} was omitted after parsing failed: {error}",
                                 record.range.start
@@ -1707,8 +1668,16 @@ mod tests {
         trace.extend([0, 1, 1]);
         trace.extend([0xde, 0xad, 0xbe, 0xef]);
         let mut warnings = Diagnostics::new();
-        let (trace, _) = parse_trace_image(&trace, 0..trace.len(), archive, 1.0, &mut warnings)
-            .expect("trace image");
+        let mut losses = Vec::new();
+        let (trace, _) = parse_trace_image(
+            &trace,
+            0..trace.len(),
+            archive,
+            1.0,
+            &mut warnings,
+            &mut losses,
+        )
+        .expect("trace image");
         assert_eq!(trace.legacy_file_path, "trace-witness.png");
         assert_eq!([trace.width_mm, trace.height_mm], [42.0, 24.0]);
         assert!(!trace.grayscale);
@@ -1720,9 +1689,15 @@ mod tests {
         wallpaper.extend([0, 1]);
         wallpaper.extend([0xca, 0xfe]);
         let mut warnings = Diagnostics::new();
-        let (wallpaper, _) =
-            parse_wallpaper(&wallpaper, 0..wallpaper.len(), archive, &mut warnings)
-                .expect("wallpaper");
+        let mut losses = Vec::new();
+        let (wallpaper, _) = parse_wallpaper(
+            &wallpaper,
+            0..wallpaper.len(),
+            archive,
+            &mut warnings,
+            &mut losses,
+        )
+        .expect("wallpaper");
         assert_eq!(wallpaper.legacy_file_path, "wallpaper-witness.png");
         assert!(!wallpaper.grayscale && wallpaper.hidden);
         assert!(wallpaper.file_reference.is_none());
