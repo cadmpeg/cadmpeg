@@ -77,13 +77,26 @@ impl schemars::JsonSchema for Sha256Digest {
     }
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({"type": "string", "pattern": "^[0-9a-f]{64}$"})
+        schemars::json_schema!({
+            "type": "string", "minLength": 64, "maxLength": 64,
+            "pattern": "^[0-9a-f]{64}$"
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "schema")]
+    #[test]
+    fn digest_schema_does_not_admit_a_trailing_line_break() {
+        let schema = serde_json::to_value(schemars::schema_for!(Sha256Digest)).unwrap();
+        assert_eq!(schema["minLength"], 64);
+        assert_eq!(schema["maxLength"], 64);
+        assert_eq!(schema["pattern"], "^[0-9a-f]{64}$");
+        assert!(Sha256Digest::try_from(format!("{}\n", "a".repeat(64))).is_err());
+    }
 
     #[test]
     fn digest_matches_sha256_abc_vector() {

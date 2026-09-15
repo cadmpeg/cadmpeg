@@ -20,6 +20,7 @@ use std::fmt;
 /// registry string. Deserialize rejects any other string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename_all = "lowercase"))]
 pub enum CodecFormat {
     /// `acis`
     Acis,
@@ -201,7 +202,6 @@ impl<'de> Deserialize<'de> for CodecFormat {
 #[serde(deny_unknown_fields)]
 pub struct SourceObjectAssociation {
     /// Source format identifier.
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub format: CodecFormat,
     /// Native source object identifier.
     #[serde(deserialize_with = "deserialize_object_id")]
@@ -264,9 +264,19 @@ pub struct Provenance<Location> {
 /// The empty string is not a stream name; the root stream is the absence of
 /// one. Build a compile-time name with [`stream_name!`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "String", into = "String")]
 pub struct StreamName(std::borrow::Cow<'static, str>);
+
+#[cfg(feature = "schema")]
+impl JsonSchema for StreamName {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "StreamName".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({"type": "string", "minLength": 1})
+    }
+}
 
 /// A static stream name whose non-empty invariant was admitted during const
 /// evaluation.
@@ -643,6 +653,29 @@ pub enum Exactness {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "schema")]
+    #[test]
+    fn provenance_schemas_use_admitted_stream_names_and_codec_spellings() {
+        let schema = serde_json::to_value(schemars::schema_for!(StreamName)).unwrap();
+        assert_eq!(schema["type"], "string");
+        assert_eq!(schema["minLength"], 1);
+        let schema = serde_json::to_value(schemars::schema_for!(CodecFormat)).unwrap();
+        let variants = schema["oneOf"].as_array().unwrap();
+        for variant in variants {
+            let text = variant["const"].as_str().unwrap();
+            let format = CodecFormat::parse(text).unwrap();
+            assert_eq!(serde_json::to_value(format).unwrap(), variant["const"]);
+        }
+        assert_eq!(variants.len(), 13);
+        assert!(variants.iter().any(|variant| variant["const"] == "f3d"));
+        let schema = serde_json::to_value(schemars::schema_for!(SourceObjectAssociation)).unwrap();
+        assert_eq!(
+            schema["properties"]["format"]["$ref"],
+            "#/$defs/CodecFormat"
+        );
+        assert_eq!(schema["$defs"]["CodecFormat"]["oneOf"].as_array().unwrap(), variants);
+    }
 
     #[test]
     fn registry_format_parser_is_total_for_runtime_text() {

@@ -45,9 +45,20 @@ impl From<AnnotationIdentityCollision> for cadmpeg_core::CodecError {
 
 /// Non-empty serde field path keying an exactness override.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "String", into = "String")]
 pub struct FieldName(String);
+
+#[cfg(feature = "schema")]
+impl JsonSchema for FieldName {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FieldName".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // The map schema generator uses key patterns to constrain property names.
+        schemars::json_schema!({"type": "string", "minLength": 1, "pattern": "[\\s\\S]"})
+    }
+}
 
 /// The empty string does not name a serialized field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -135,9 +146,21 @@ impl TryFrom<Exactness> for Inexactness {
 
 /// Field exactness overrides, at least one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(into = "BTreeMap<FieldName, Exactness>")]
 pub struct NonEmptyMap(BTreeMap<FieldName, Exactness>);
+
+#[cfg(feature = "schema")]
+impl JsonSchema for NonEmptyMap {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "NonEmptyMap".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let mut schema = BTreeMap::<FieldName, Exactness>::json_schema(generator);
+        schema.insert("minProperties".into(), 1.into());
+        schema
+    }
+}
 
 /// A field override table carries at least one entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -484,6 +507,28 @@ mod tests {
     mod identity_merges;
 
     use super::*;
+
+    #[cfg(feature = "schema")]
+    #[test]
+    fn exactness_schemas_preserve_field_and_population_admission() {
+        let schema = serde_json::to_value(schemars::schema_for!(NonEmptyMap)).unwrap();
+        assert_eq!(schema["minProperties"], 1);
+        assert_eq!(schema["additionalProperties"], false);
+        assert!(schema["patternProperties"].get("[\\s\\S]").is_some());
+        let schema = serde_json::to_value(schemars::schema_for!(FieldName)).unwrap();
+        assert_eq!(schema["type"], "string");
+        assert_eq!(schema["minLength"], 1);
+
+        // Whitespace and line breaks are legal field text; only absence is refused.
+        for field in [" ", "\n", "geometry.radius"] {
+            let key = FieldName::try_from(field.to_owned()).unwrap();
+            let map = NonEmptyMap::try_from(BTreeMap::from([(key, Exactness::Derived)])).unwrap();
+            let wire = serde_json::to_value(&map).unwrap();
+            assert_eq!(serde_json::from_value::<NonEmptyMap>(wire).unwrap(), map);
+        }
+        assert!(FieldName::try_from(String::new()).is_err());
+        assert!(NonEmptyMap::try_from(BTreeMap::new()).is_err());
+    }
 
     #[test]
     fn builder_names_streams_and_records_provenance() {
