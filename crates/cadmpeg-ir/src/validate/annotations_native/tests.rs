@@ -137,10 +137,16 @@ fn unresolved_unknown_record_link_is_reported_once() {
 #[test]
 fn complete_document_native_link_validation_reports_malformed_shapes() {
     for links in [
-        serde_json::json!(null), serde_json::json!(true), serde_json::json!(3),
-        serde_json::json!("test:model:body#0"), serde_json::json!({}),
-        serde_json::json!([null]), serde_json::json!([false]), serde_json::json!([3]),
-        serde_json::json!([{}]), serde_json::json!([[]]),
+        serde_json::json!(null),
+        serde_json::json!(true),
+        serde_json::json!(3),
+        serde_json::json!("test:model:body#0"),
+        serde_json::json!({}),
+        serde_json::json!([null]),
+        serde_json::json!([false]),
+        serde_json::json!([3]),
+        serde_json::json!([{}]),
+        serde_json::json!([[]]),
     ] {
         let mut wire = serde_json::to_value(unit_cube().unwrap()).unwrap();
         wire["native"] = serde_json::json!({"test": {"unknowns": [{
@@ -148,8 +154,41 @@ fn complete_document_native_link_validation_reports_malformed_shapes() {
         }]}});
         let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
         let findings = validate_neutral(&ir, Vec::new()).findings;
-        let found = findings.iter().filter(|finding| finding.check == Check::NativeLinks
-            && finding.entity.as_deref() == Some("test:source:unknown#malformed")).collect::<Vec<_>>();
+        let found = findings
+            .iter()
+            .filter(|finding| {
+                finding.check == Check::NativeLinks
+                    && finding.entity.as_deref() == Some("test:source:unknown#malformed")
+            })
+            .collect::<Vec<_>>();
         assert_eq!(found.len(), 1, "{findings:?}");
+    }
+}
+
+#[test]
+fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
+    for links in [
+        serde_json::json!(null),
+        serde_json::json!(false),
+        serde_json::json!(3),
+        serde_json::json!("source-specific value"),
+        serde_json::json!({"target": 42}),
+        serde_json::json!([null]),
+        serde_json::json!([{"object": "source-object", "subelements": ["Face1"]}]),
+        serde_json::json!(["source-specific value", {"row": 7}]),
+    ] {
+        let mut wire = serde_json::to_value(unit_cube().unwrap()).unwrap();
+        wire["native"] = serde_json::json!({"test": {"properties": [{
+            "id": "test:native:property#links", "links": links
+        }]}});
+        let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
+        let findings = validate_neutral(&ir, Vec::new()).findings;
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.check != Check::NativeLinks),
+            "{findings:?}"
+        );
+        assert_eq!(serde_json::to_value(&ir).unwrap()["native"], wire["native"]);
     }
 }
