@@ -3006,9 +3006,8 @@ impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
     fn try_from(wire_nodes: Vec<ElementMapNodeWire>) -> Result<Self, Self::Error> {
         let mut nodes = Vec::with_capacity(wire_nodes.len());
         for (position, wire) in wire_nodes.into_iter().enumerate() {
-            let expected_index = position
-                .checked_add(1)
-                .ok_or_else(|| "element-map node position exceeds index space".to_owned())?;
+            // Every position is below the vector's representable length.
+            let expected_index = position + 1;
             if wire.index != expected_index {
                 return Err(format!(
                     "maps[{position}].index must equal {expected_index}, got {}",
@@ -3033,13 +3032,8 @@ impl Serialize for ElementMapNodes {
 
         let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
         for (position, node) in self.0.iter().enumerate() {
-            let index = position.checked_add(1).ok_or_else(|| {
-                <S::Error as serde::ser::Error>::custom(
-                    "element-map node position exceeds index space",
-                )
-            })?;
             sequence.serialize_element(&ElementMapNodeWireRef {
-                index,
+                index: position + 1,
                 map_id: node.map_id,
                 groups: &node.groups,
             })?;
