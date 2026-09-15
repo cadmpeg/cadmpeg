@@ -33,6 +33,26 @@ fn id(key: &str) -> PointId {
 }
 
 #[test]
+fn generic_unknown_links_share_the_typed_identity_rewrite_boundary() {
+    let record = crate::NativeUnknownRecord {
+        id: crate::ids::UnknownId::mint("test:model:unknown#source").unwrap(),
+        links: vec![crate::ids::Identity::new("test:model:point#a").unwrap()],
+    };
+    let rewritten = serde_json::to_value(identities(&record, |source| {
+        source.replace("test:model:", "test:occurrence:")
+    }))
+    .unwrap();
+    assert_eq!(
+        rewritten,
+        serde_json::json!({
+            "id": "test:occurrence:unknown#source",
+            "links": ["test:occurrence:point#a"]
+        })
+    );
+    assert_eq!(record.links[0].as_str(), "test:model:point#a");
+}
+
+#[test]
 fn rewriting_distinguishes_identities_from_identical_text_in_every_container() {
     let source = id("a").to_string();
     let entity = Entity {

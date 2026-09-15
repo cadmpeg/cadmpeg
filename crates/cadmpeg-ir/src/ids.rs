@@ -43,12 +43,35 @@ pub fn is_valid_identity(id: &str) -> bool {
 }
 
 /// An entity identity with validated namespace and key grammar.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
-)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
 #[serde(try_from = "String")]
 pub struct Identity(String);
+
+impl serde::Serialize for Identity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        crate::schema::serialize_reference_id(self.as_str(), serializer)
+    }
+}
+
+// Unicode White_Space matches char::is_whitespace; ECMAScript \s does not.
+#[cfg(feature = "schema")]
+const SCHEMA_WHITESPACE: &str =
+    r"\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000";
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Identity {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Identity".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // A strict end assertion also refuses a trailing line break.
+        let pattern = format!(
+            r"^(?:[^:#{SCHEMA_WHITESPACE}]+:){{2}}[^:#{SCHEMA_WHITESPACE}]+#[^#{SCHEMA_WHITESPACE}]+(?![\s\S])"
+        );
+        schemars::json_schema!({"type": "string", "pattern": pattern})
+    }
+}
 
 impl Identity {
     /// Admit a string matching the entity identity grammar.
@@ -886,9 +909,20 @@ macro_rules! local_id_type {
         #[derive(
             Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
         )]
-        #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
         pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
+
+        #[cfg(feature = "schema")]
+        impl schemars::JsonSchema for $name {
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                stringify!($name).into()
+            }
+
+            fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                let pattern = format!(r"^[^{}]+(?![\s\S])", SCHEMA_WHITESPACE);
+                schemars::json_schema!({"type": "string", "pattern": pattern})
+            }
+        }
 
         impl $name {
             /// Mint a non-empty identity that has no whitespace.
