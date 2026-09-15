@@ -4,9 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-mod reader_routes {
-    include!("source_census/reader_routes.rs");
-}
+mod reader_routes;
 
 /// Every hand-written `Deserialize` in the three wire crates, with the reader
 /// route that admits its wire value.
