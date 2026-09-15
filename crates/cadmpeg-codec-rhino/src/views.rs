@@ -323,7 +323,6 @@ fn parse_trace_image(
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: f64,
-    warnings: &mut Diagnostics,
     losses: &mut Vec<LossNote>,
 ) -> Result<(TraceImage, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
@@ -347,10 +346,11 @@ fn parse_trace_image(
     let filtered = minor >= 3 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 4 {
         let source_offset = reader.position();
-        let parsed = image_reference(data, &mut reader, archive, warnings);
+        let mut warnings = Diagnostics::new();
+        let parsed = image_reference(data, &mut reader, archive, &mut warnings);
         append_file_reference_diagnostics(
             losses,
-            std::mem::take(warnings),
+            warnings,
             source_offset,
             "VIEW/TRACE_IMAGE/FILE_REFERENCE",
         );
@@ -381,7 +381,6 @@ fn parse_wallpaper(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
     losses: &mut Vec<LossNote>,
 ) -> Result<(Wallpaper, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
@@ -398,10 +397,11 @@ fn parse_wallpaper(
     let hidden = minor >= 1 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 2 {
         let source_offset = reader.position();
-        let parsed = image_reference(data, &mut reader, archive, warnings);
+        let mut warnings = Diagnostics::new();
+        let parsed = image_reference(data, &mut reader, archive, &mut warnings);
         append_file_reference_diagnostics(
             losses,
-            std::mem::take(warnings),
+            warnings,
             source_offset,
             "VIEW/WALLPAPER/FILE_REFERENCE",
         );
@@ -1073,15 +1073,8 @@ fn parse_view(
                 }
             }
             VIEW_TRACE_IMAGE if !child.short() => {
-                let mut file_reference_diagnostics = Diagnostics::new();
-                let (value, file_reference_range) = parse_trace_image(
-                    data,
-                    child.body().clone(),
-                    archive,
-                    scale,
-                    &mut file_reference_diagnostics,
-                    losses,
-                )?;
+                let (value, file_reference_range) =
+                    parse_trace_image(data, child.body().clone(), archive, scale, losses)?;
                 let nested_children = file_reference_range.clone().into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
@@ -1106,14 +1099,8 @@ fn parse_view(
                 });
             }
             VIEW_WALLPAPER_V3 if !child.short() => {
-                let mut file_reference_diagnostics = Diagnostics::new();
-                let (value, file_reference_range) = parse_wallpaper(
-                    data,
-                    child.body().clone(),
-                    archive,
-                    &mut file_reference_diagnostics,
-                    losses,
-                )?;
+                let (value, file_reference_range) =
+                    parse_wallpaper(data, child.body().clone(), archive, losses)?;
                 let nested_children = file_reference_range.clone().into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
@@ -1572,7 +1559,6 @@ mod tests {
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
-    use crate::loss::Diagnostics;
     use crate::test_support::test_dump::{
         anonymous_chunk, class_userdata_v2_with_direct_payload, crc_chunk, crc_chunk_excluding,
         file_reference, long_chunk, short_chunk, utf16_bytes,
@@ -1736,17 +1722,9 @@ mod tests {
         serialized_plane(&mut trace);
         trace.extend([0, 1, 1]);
         trace.extend([0xde, 0xad, 0xbe, 0xef]);
-        let mut warnings = Diagnostics::new();
         let mut losses = Vec::new();
-        let (trace, _) = parse_trace_image(
-            &trace,
-            0..trace.len(),
-            archive,
-            1.0,
-            &mut warnings,
-            &mut losses,
-        )
-        .expect("trace image");
+        let (trace, _) = parse_trace_image(&trace, 0..trace.len(), archive, 1.0, &mut losses)
+            .expect("trace image");
         assert_eq!(trace.legacy_file_path, "trace-witness.png");
         assert_eq!([trace.width_mm, trace.height_mm], [42.0, 24.0]);
         assert!(!trace.grayscale);
@@ -1757,16 +1735,9 @@ mod tests {
         wallpaper.extend(utf16_bytes("wallpaper-witness.png"));
         wallpaper.extend([0, 1]);
         wallpaper.extend([0xca, 0xfe]);
-        let mut warnings = Diagnostics::new();
         let mut losses = Vec::new();
-        let (wallpaper, _) = parse_wallpaper(
-            &wallpaper,
-            0..wallpaper.len(),
-            archive,
-            &mut warnings,
-            &mut losses,
-        )
-        .expect("wallpaper");
+        let (wallpaper, _) = parse_wallpaper(&wallpaper, 0..wallpaper.len(), archive, &mut losses)
+            .expect("wallpaper");
         assert_eq!(wallpaper.legacy_file_path, "wallpaper-witness.png");
         assert!(!wallpaper.grayscale && wallpaper.hidden);
         assert!(wallpaper.file_reference.is_none());
