@@ -217,7 +217,7 @@ fn decode_selects_tolerant_coedge_extension_from_save_format() {
         (
             21400u32,
             Vec::new(),
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
         ),
     ] {
         let mut smbh = synthetic_geometry_smbh();

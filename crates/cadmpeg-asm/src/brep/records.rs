@@ -330,7 +330,7 @@ native_record! {
 pub enum EvaluatedToleranceSlot {
     /// The record ends before the slot; the vertex carries no tolerance and
     /// there is no trailing field.
-    Absent,
+    Absent {},
     /// The slot holds the `-1` unset sentinel; the vertex carries no tolerance.
     Unset {
         /// Trailing LONG following the slot, retained verbatim; absent in
@@ -362,7 +362,7 @@ impl EvaluatedToleranceSlot {
     #[must_use]
     pub fn trailing(self) -> Option<i64> {
         match self {
-            Self::Absent => None,
+            Self::Absent {} => None,
             Self::Unset { trailing } | Self::Evaluated { trailing } => trailing,
         }
     }
@@ -420,13 +420,12 @@ native_record! {
 }
 
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "layout", deny_unknown_fields)]
 pub enum TolerantCoedgeExtension {
     /// Releases below 215 have no fixed extension fields.
-    #[default]
-    None,
+    None {},
     /// Releases 215 through 219 carry one nullable entity reference.
     Reference {
         /// Referenced record index; `None` is the native null reference.
@@ -452,6 +451,12 @@ pub enum TolerantCoedgeExtension {
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         parameter_range: Option<[f64; 2]>,
     },
+}
+
+impl Default for TolerantCoedgeExtension {
+    fn default() -> Self {
+        Self::None {}
+    }
 }
 
 native_record! {
@@ -593,6 +598,76 @@ mod tests {
     use super::{EndpointSlot, WireMembers};
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
+
+    fn assert_empty_slot_refuses_extra_keys<T>(arena: &str, field: &str, record: serde_json::Value)
+    where
+        T: serde::de::DeserializeOwned + serde::Serialize + std::fmt::Debug,
+    {
+        let mut document = serde_json::to_value(cadmpeg_ir::CadIr::empty()).unwrap();
+        document["native"] = serde_json::json!({"f3d": {arena: [record.clone()]}});
+        let admitted: cadmpeg_ir::CadIr = serde_json::from_value(document.clone()).unwrap();
+        let typed: Vec<T> = admitted
+            .native
+            .namespace("f3d")
+            .unwrap()
+            .arena_as(arena)
+            .unwrap();
+        assert_eq!(serde_json::to_value(&typed[0]).unwrap(), record);
+
+        for extra in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(0),
+            serde_json::json!(1.25),
+            serde_json::json!("extra"),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            let mut invalid = document.clone();
+            invalid["native"]["f3d"][arena][0][field]["zz_bogus"] = extra;
+            let admitted: cadmpeg_ir::CadIr = serde_json::from_value(invalid).unwrap();
+            let error = admitted
+                .native
+                .namespace("f3d")
+                .unwrap()
+                .arena_as::<T>(arena)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("zz_bogus"), "{error}");
+            assert!(error.contains(arena), "{error}");
+            assert!(error.contains(record["id"].as_str().unwrap()), "{error}");
+        }
+    }
+
+    #[test]
+    fn absent_vertex_tolerance_refuses_extra_keys_after_document_admission() {
+        assert_empty_slot_refuses_extra_keys::<super::TolerantVertexTail>(
+            "tolerant_vertex_tails",
+            "evaluated_slot",
+            serde_json::json!({
+                "id": "f3d:asm:tolerant-vertex-tail#1",
+                "record_index": 1,
+                "vertex": "f3d:brep:entity#1",
+                "leading_tolerances": [-1.0, -1.0],
+                "evaluated_slot": {"slot": "absent"},
+            }),
+        );
+    }
+
+    #[test]
+    fn absent_coedge_extension_refuses_extra_keys_after_document_admission() {
+        assert_empty_slot_refuses_extra_keys::<super::TolerantCoedgeParameters>(
+            "tolerant_coedge_parameters",
+            "extension",
+            serde_json::json!({
+                "id": "f3d:asm:tolerant-coedge-parameters#1",
+                "record_index": 1,
+                "coedge": "f3d:brep:entity#1",
+                "parameter_range": [0.0, 1.0],
+                "extension": {"layout": "none"},
+            }),
+        );
+    }
 
     #[test]
     fn tolerant_coedge_curve_sense_requires_the_current_wire_name() {

@@ -47,7 +47,7 @@ pub(crate) fn native_tolerant_coedge_extension(
     match extension {
         None
         | Some(
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
             | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None },
         ) => {
             native_ref(records, -1);

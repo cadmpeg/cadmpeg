@@ -865,7 +865,7 @@ pub(crate) fn validate_source_less_design_links(
             )));
         }
         match &parameters.extension {
-            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
             | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None } => {}
             cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,

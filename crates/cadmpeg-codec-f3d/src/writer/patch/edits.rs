@@ -484,8 +484,8 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 "F3D tolerant-vertex tail edit changes structural fields: {id}"
             )));
         }
-        if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Absent)
-            != matches!(after.evaluated_slot, EvaluatedToleranceSlot::Absent)
+        if matches!(before.evaluated_slot, EvaluatedToleranceSlot::Absent {})
+            != matches!(after.evaluated_slot, EvaluatedToleranceSlot::Absent {})
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D tolerant-vertex tail edit changes record width: {id}"
@@ -500,8 +500,8 @@ pub(crate) fn validate_tolerant_vertex_edits(
             (Some(tolerance), EvaluatedToleranceSlot::Evaluated { .. }) => tolerance.get(),
             (None, EvaluatedToleranceSlot::Unset { .. }) => -1.0,
             // The record ends before the slot; there is nothing to patch.
-            (None, EvaluatedToleranceSlot::Absent) => continue,
-            (Some(_), EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Unset { .. })
+            (None, EvaluatedToleranceSlot::Absent {}) => continue,
+            (Some(_), EvaluatedToleranceSlot::Absent {} | EvaluatedToleranceSlot::Unset { .. })
             | (None, EvaluatedToleranceSlot::Evaluated { .. }) => {
                 return Err(CodecError::malformed(format_args!(
                     "tolerant vertex {id} tail disagrees with its vertex tolerance"

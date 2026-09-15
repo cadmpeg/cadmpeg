@@ -376,7 +376,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 coedge: tolerant_coedge,
                 record_index: 0,
                 parameter_range: [0.25, 0.75],
-                extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None,
+                extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
             }];
         native.body_visibilities = vec![crate::records::BodyVisibility {
             id: "f3d:design:body-visibility#generated".into(),
@@ -745,7 +745,7 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
-            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent,
+            evaluated_slot: cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {},
         }];
     }
     let mut encoded = Vec::new();
@@ -771,7 +771,7 @@ fn an_absent_tolerant_vertex_slot_round_trips_without_a_neutral_tolerance() {
     let tail = &f3d_native(round_trip.ir()).tolerant_vertex_tails[0];
     assert_eq!(
         tail.evaluated_slot,
-        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent
+        cadmpeg_asm::brep::records::EvaluatedToleranceSlot::Absent {}
     );
     assert_eq!(tail.evaluated_slot.trailing(), None);
     assert_eq!(tail.leading_tolerances, [-1.0, -1.0]);
