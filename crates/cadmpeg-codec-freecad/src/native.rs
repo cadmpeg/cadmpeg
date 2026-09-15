@@ -606,6 +606,54 @@ mod tests {
     }
 
     #[test]
+    fn element_map_child_admission_checks_constructors_and_wire_fields() {
+        let node = |descriptor: &str| super::ElementMapNode {
+            map_id: 0,
+            groups: vec![super::ElementMapGroup {
+                indexed_name: "Face".into(),
+                children: vec![descriptor.into()],
+                names: Vec::new(),
+            }],
+        };
+        for descriptor in [
+            "1 0 3 1 1 ;postfix 0",
+            "1 0 3 1 -1 ;postfix 0",
+            "1 0 3 1 0",
+            "1 0 3 1 0 ;postfix 0 extra",
+            "-1 0 3 1 0 ;postfix 0",
+            "1 -1 3 1 0 ;postfix 0",
+            "1 0 not-an-int 1 0 ;postfix 0",
+            "1 0 2147483648 1 0 ;postfix 0",
+            "1 0 3 not-an-int 0 ;postfix 0",
+        ] {
+            assert!(
+                super::ElementMapNodes::try_from(vec![node(descriptor)]).is_err(),
+                "constructor admitted {descriptor:?}",
+            );
+            let wire = serde_json::json!([{
+                "index": 1,
+                "map_id": 0,
+                "groups": node(descriptor).groups,
+            }]);
+            assert!(
+                serde_json::from_value::<super::ElementMapNodes>(wire).is_err(),
+                "wire reader admitted {descriptor:?}",
+            );
+        }
+
+        for descriptor in ["0 0 0 -1 0 ;postfix 0", "1 0 3 1 0 ;postfix 0.2.3"] {
+            let admitted = super::ElementMapNodes::try_from(vec![node(descriptor)])
+                .expect("zero extents and child string-id lists remain legal");
+            let wire = serde_json::to_value(&admitted).unwrap();
+            assert_eq!(wire[0]["groups"][0]["children"][0], descriptor);
+            assert_eq!(
+                serde_json::from_value::<super::ElementMapNodes>(wire).unwrap(),
+                admitted,
+            );
+        }
+    }
+
+    #[test]
     fn element_map_declared_count_is_independent_xml_metadata() {
         let wire = serde_json::json!({
             "id": "fcstd:native:element-map#test",
@@ -3120,6 +3168,63 @@ impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
         if nodes.is_empty() {
             return Err("maps must contain a root node".to_owned());
         }
+        for (position, node) in nodes.iter().enumerate() {
+            let node_index = position + 1;
+            for group in &node.groups {
+                for (child_index, descriptor) in group.children.iter().enumerate() {
+                    let location = || {
+                        format!(
+                            "element-map node {node_index} group {} child {child_index}",
+                            group.indexed_name
+                        )
+                    };
+                    let mut fields = descriptor.split_ascii_whitespace();
+                    let words: [Option<&str>; 7] = std::array::from_fn(|_| fields.next());
+                    let [Some(index), Some(offset), Some(count), Some(tag), Some(map), Some(_), Some(_)] =
+                        words
+                    else {
+                        return Err(format!(
+                            "{} descriptor must contain seven fields",
+                            location()
+                        ));
+                    };
+                    if fields.next().is_some() {
+                        return Err(format!(
+                            "{} descriptor must contain seven fields",
+                            location()
+                        ));
+                    }
+                    for (name, word) in [
+                        ("index", index),
+                        ("offset", offset),
+                        ("count", count),
+                        ("tag", tag),
+                        ("mapIndex", map),
+                    ] {
+                        let value = word
+                            .parse::<i64>()
+                            .map_err(|_| format!("{} has an invalid {name}", location()))?;
+                        if name != "tag" && i32::try_from(value).is_err() {
+                            return Err(format!(
+                                "{} {name} exceeds signed 32-bit range",
+                                location()
+                            ));
+                        }
+                        if matches!(name, "index" | "offset") && value < 0 {
+                            return Err(format!("{} has a negative {name}", location()));
+                        }
+                        if name == "mapIndex"
+                            && usize::try_from(value).map_or(true, |index| index >= node_index)
+                        {
+                            return Err(format!(
+                                "{} mapIndex {value} does not name a prior map",
+                                location()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         Ok(Self(nodes))
     }
 }
@@ -3138,11 +3243,6 @@ impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
                     wire.index
                 ));
             }
-            for group in &wire.groups {
-                for child in &group.children {
-                    validate_element_map_child_descriptor(child, expected_index)?;
-                }
-            }
             nodes.push(ElementMapNode {
                 map_id: wire.map_id,
                 groups: wire.groups,
@@ -3150,37 +3250,6 @@ impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
         }
         Self::try_from(nodes)
     }
-}
-
-/// Validate the map-index field of one FreeCAD child-map descriptor.
-///
-/// The descriptor's remaining fields are retained as source text because
-/// their grammar is owned by the FreeCAD topology reader. The fifth token is
-/// the one field whose relation is established by the surrounding map stream:
-/// zero means no child map, otherwise it names an already serialized node.
-pub(crate) fn validate_element_map_child_descriptor(
-    descriptor: &str,
-    node_index: usize,
-) -> Result<(), String> {
-    let mut fields = descriptor.split_ascii_whitespace();
-    for _ in 0..4 {
-        fields
-            .next()
-            .ok_or_else(|| "element-map child descriptor has no mapIndex".to_owned())?;
-    }
-    let map_index = fields
-        .next()
-        .ok_or_else(|| "element-map child descriptor has no mapIndex".to_owned())?
-        .parse::<i64>()
-        .map_err(|_| "element-map child descriptor has an invalid mapIndex".to_owned())?;
-    let node_index = i64::try_from(node_index)
-        .map_err(|_| "element-map node index exceeds signed range".to_owned())?;
-    if map_index < 0 || map_index >= node_index {
-        return Err(format!(
-            "element-map child mapIndex {map_index} does not name a prior map for node {node_index}"
-        ));
-    }
-    Ok(())
 }
 
 impl Serialize for ElementMapNodes {
@@ -3208,22 +3277,46 @@ impl From<ElementMapNodes> for Vec<ElementMapNode> {
     }
 }
 
-impl From<ElementMapNode> for ElementMapNodes {
-    fn from(root: ElementMapNode) -> Self {
-        Self(vec![root])
-    }
-}
-
 impl ElementMapNodes {
+    /// Construct one root from legacy name groups, which have no child maps.
+    pub fn from_root_names(
+        map_id: u64,
+        groups: BTreeMap<String, Vec<Vec<ElementMappedName>>>,
+    ) -> Self {
+        Self(vec![ElementMapNode {
+            map_id,
+            groups: groups
+                .into_iter()
+                .map(|(indexed_name, names)| ElementMapGroup {
+                    indexed_name,
+                    children: Vec::new(),
+                    names,
+                })
+                .collect(),
+        }])
+    }
+
     /// Returns the owning shape map.
     pub fn root(&self) -> &ElementMapNode {
         &self.0[self.0.len() - 1]
     }
 
-    /// Returns the owning shape map for node-content edits.
-    pub fn root_mut(&mut self) -> &mut ElementMapNode {
+    /// Add a topology binding without exposing child-map descriptors for mutation.
+    pub fn bind_root_topology(&mut self, indexed_name: &str, source_index: usize, id: &str) {
         let index = self.0.len() - 1;
-        &mut self.0[index]
+        for group in &mut self.0[index].groups {
+            if group.indexed_name != indexed_name {
+                continue;
+            }
+            let Some(names) = group.names.get_mut(source_index) else {
+                continue;
+            };
+            for name in names {
+                if !name.topology_ids.iter().any(|existing| existing == id) {
+                    name.topology_ids.push(id.to_owned());
+                }
+            }
+        }
     }
 
     /// Returns nodes in serialized order.
