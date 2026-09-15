@@ -6,6 +6,9 @@ A document read must not silently accept a key no type declares. The golden
 sweeps test shapes the goldens carry; this checker follows declared
 read routes in the three wire crates. Imported bare names use
 a unique-declaration fallback; this is not a Rust name-resolution proof.
+Declarations without attributes are included when following a read route.
+Nongeneric type aliases are followed to their targets; other alias shapes
+fail the static check when used as a read route.
 
 An item that derives ``Deserialize`` passes when its serde attributes state one
 of:
@@ -77,7 +80,10 @@ SKIP_BASENAMES = {
 SKIP_DIRS = {"tests", "golden_tests", "integration_tests", "test_support"}
 
 ITEM_RE = re.compile(
-    r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(struct|enum)\s+(\$?\w+)"
+    r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(struct|enum|type)\s+(\$?\w+)"
+)
+DECLARATION_OR_ATTRIBUTE = re.compile(
+    r"#\s*\[|\b(?:pub(?:\s*\([^)]*\))?\s+)?(?:struct|enum|type)\s+\$?\w+"
 )
 
 
@@ -136,7 +142,7 @@ def collect_items(path):
     offsets, scopes = lexical_scopes(code)
     items = []
     cursor = 0
-    while opening := SOURCE_POLICY.OUTER_ATTRIBUTE.search(code, cursor):
+    while opening := DECLARATION_OR_ATTRIBUTE.search(code, cursor):
         start = cursor = opening.start()
         attrs = []
         while SOURCE_POLICY.OUTER_ATTRIBUTE.match(code, cursor):
@@ -147,7 +153,7 @@ def collect_items(path):
             cursor = end
             while cursor < len(code) and code[cursor].isspace():
                 cursor += 1
-        match = ITEM_RE.match(code[cursor:])
+        match = ITEM_RE.match(code, cursor)
         if match is None:
             continue
         body_end = SOURCE_POLICY.item_end(code, cursor)
@@ -313,7 +319,19 @@ def untagged_arms(item):
 
 def named_types(text):
     # Retain the whole path: other::Wire cannot inherit a local Wire's deny.
-    return re.findall(r"(?<![\w:])(?:::)?(?:[A-Za-z_]\w*::)*[A-Z]\w*", text)
+    # Rust permits lower-case type aliases and declarations too.
+    return re.findall(r"(?<![\w:'])(?:::)?(?:[A-Za-z_]\w*::)*[A-Za-z_]\w*", text)
+
+
+def alias_target(item):
+    """Read a nongeneric type alias; other alias shapes need explicit proof."""
+    code = SOURCE_POLICY.mask_rust_non_code(item.body)
+    match = re.fullmatch(
+        r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?type\s+\w+\s*=\s*(.*?)\s*;\s*",
+        code,
+        re.S,
+    )
+    return match.group(1) if match else None
 
 
 def resolve_item(index, name, owner, ambiguities):
@@ -422,6 +440,18 @@ def main():
             return True
         checking.add(identity)
         try:
+            if item.kind == "type":
+                target = alias_target(item)
+                if target is None:
+                    return False
+                admitted = True
+                for name in named_types(target):
+                    target_item = resolve_item(index, name, item, ambiguities)
+                    if target_item is not None and not passes(target_item):
+                        admitted = False
+                    elif target_item is None and (name in index or "::" in name):
+                        admitted = False
+                return admitted
             attrs = serde_attrs(item.attrs)
             if re.search(r"\bdeny_unknown_fields\b", attrs):
                 return True

@@ -211,6 +211,55 @@ class DenyCensusTests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     list(census.source_files())
 
+    def test_an_unattributed_hand_reader_is_not_an_unknown_scalar(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(from = "Open")]
+            struct Reader;
+            impl From<Open> for Reader { fn from(_: Open) -> Self { Self } }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader", output)
+
+    def test_an_alias_cannot_hide_an_open_reader(self) -> None:
+        for target in ["Open", "open"]:
+            with self.subTest(target=target):
+                status, output = self.run_census({"lib.rs": f'''
+                    struct {target};
+                    type Wire = {target};
+                    type Alias = Wire;
+                    #[derive(Deserialize)] #[serde(from = "Alias")]
+                    struct Reader;
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader", output)
+
+    def test_an_alias_to_a_denying_reader_is_checked(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            type Wire = Closed;
+            type Alias = Wire;
+            #[derive(Deserialize)] #[serde(from = "Alias")]
+            struct Reader;
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_an_alias_to_a_scalar_does_not_invent_an_object_key_set(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            type Scalar = u8;
+            type Wire = [Scalar; 2];
+            #[derive(Deserialize)] #[serde(from = "Wire")]
+            struct Reader;
+        '''})
+        self.assertEqual(status, 0, output)
+
 
 if __name__ == "__main__":
     unittest.main()
