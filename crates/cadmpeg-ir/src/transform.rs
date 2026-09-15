@@ -302,7 +302,10 @@ fn fast_dot(coefficients: [f64; 3], components: [f64; 3], products: [f64; 3]) ->
     }
     if coefficients.into_iter().zip(components).zip(products).any(
         |((coefficient, component), product)| {
-            coefficient != 0.0 && component != 0.0 && product == 0.0
+            // A product below the normal range may have rounded before it
+            // reached this check, even when it is nonzero. Recompute every
+            // such column from the exact significands.
+            coefficient != 0.0 && component != 0.0 && product.abs() < f64::MIN_POSITIVE
         },
     ) {
         return None;
