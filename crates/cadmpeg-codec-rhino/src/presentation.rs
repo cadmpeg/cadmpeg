@@ -21,7 +21,7 @@ use crate::objects::{
     parse_class_wrapper_with_userdata, parse_user_string_list, AttributeUserdataDescriptor,
     ClassUserdata, ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
 };
-use crate::settings::{self, utf16, UnitBinding};
+use crate::settings::{self, utf16, MillimeterScale, StandardUnit, UnitBinding};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -328,6 +328,11 @@ struct LightRecord {
     links: Vec<String>,
 }
 
+struct SourceLinetypeSegment {
+    length: f64,
+    segment_type: u32,
+}
+
 #[derive(Debug, Serialize)]
 struct LinetypeSegment {
     length_millimeters: f64,
@@ -349,6 +354,13 @@ struct LinetypeRecord {
     width_units: u8,
     taper_points: Vec<[f64; 2]>,
     always_model_distance: bool,
+}
+
+struct SourceHatchLine {
+    angle_radians: f64,
+    base: [f64; 2],
+    offset: [f64; 2],
+    dashes: Vec<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -378,6 +390,46 @@ struct HatchPatternRecord {
 struct HatchPatternDistanceSettings {
     pattern_unit_system: u8,
     always_model_distances: bool,
+}
+
+#[derive(Debug)]
+enum PatternTransferError {
+    Framing(FramingError),
+    NativeDocumentUnits,
+    UnavailableDocumentUnits,
+    UnsupportedHatchUnit(u8),
+}
+
+impl From<FramingError> for PatternTransferError {
+    fn from(error: FramingError) -> Self {
+        Self::Framing(error)
+    }
+}
+
+impl std::fmt::Display for PatternTransferError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Framing(error) => error.fmt(formatter),
+            Self::NativeDocumentUnits => {
+                formatter.write_str("document has no physical millimetre binding (native)")
+            }
+            Self::UnavailableDocumentUnits => {
+                formatter.write_str("document has no physical millimetre binding (unavailable)")
+            }
+            Self::UnsupportedHatchUnit(code) => write!(
+                formatter,
+                "hatch pattern unit code {code} has no physical length definition",
+            ),
+        }
+    }
+}
+
+fn pattern_document_scale(binding: UnitBinding) -> Result<MillimeterScale, PatternTransferError> {
+    match binding {
+        UnitBinding::Millimeters(scale) => Ok(scale),
+        UnitBinding::Native => Err(PatternTransferError::NativeDocumentUnits),
+        UnitBinding::Unavailable => Err(PatternTransferError::UnavailableDocumentUnits),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -2445,7 +2497,7 @@ fn push_light(
     lights.push(light);
 }
 
-fn segments(reader: &mut BoundedReader<'_>) -> Result<Vec<LinetypeSegment>, FramingError> {
+fn segments(reader: &mut BoundedReader<'_>) -> Result<Vec<SourceLinetypeSegment>, FramingError> {
     let count = reader.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -2457,8 +2509,8 @@ fn segments(reader: &mut BoundedReader<'_>) -> Result<Vec<LinetypeSegment>, Fram
     let mut values = Vec::with_capacity(bytes / 12);
     for _ in 0..bytes / 12 {
         let length = read_finite(reader, "linetype segment length")?;
-        values.push(LinetypeSegment {
-            length_millimeters: length,
+        values.push(SourceLinetypeSegment {
+            length,
             segment_type: reader.u32()?,
         });
     }
@@ -2469,11 +2521,17 @@ fn parse_linetype(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    scale: Option<f64>,
+    binding: UnitBinding,
     source_offset: usize,
-) -> Result<LinetypeRecord, FramingError> {
+) -> Result<LinetypeRecord, PatternTransferError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
-    let component = if version.0 == 1 && version.1 >= 0 {
+    let mut cap = 0;
+    let mut join = 0;
+    let mut width = 1.0;
+    let mut width_units = 0;
+    let mut taper = Vec::new();
+    let mut always = false;
+    let (component, values) = if version.0 == 1 && version.1 >= 0 {
         let index = reader.i32()?;
         let name = utf16(&mut reader)?;
         let values = segments(&mut reader)?;
@@ -2482,148 +2540,113 @@ fn parse_linetype(
         } else {
             Uuid::nil()
         };
-        reader.skip_remaining()?;
-        return Ok(linetype_record(
+        (
             Component {
                 index: Some(index),
                 id,
                 name,
             },
             values,
-            source_offset,
-            0,
-            0,
-            1.0,
-            0,
-            Vec::new(),
-            false,
-        ));
+        )
     } else if version.0 == 2 && version.1 >= 0 {
-        component(data, &mut reader, archive)?
-    } else {
-        return Err(FramingError::structural(
-            reader.position(),
-            "linetype version is unsupported",
-        ));
-    };
-    let mut values = segments(&mut reader)?;
-    let mut item = if version.1 >= 1 { reader.u8()? } else { 0 };
-    let mut cap = 0;
-    let mut join = 0;
-    let mut width = 1.0;
-    let mut width_units = 0;
-    let mut taper = Vec::new();
-    let mut always = false;
-    if item == 1 {
-        cap = reader.u8()?;
-        item = reader.u8()?;
-    }
-    if item == 2 {
-        join = reader.u8()?;
-        item = reader.u8()?;
-    }
-    if version.1 >= 2 {
-        if item == 3 {
-            width = read_finite(&mut reader, "linetype width")?;
+        let component = component(data, &mut reader, archive)?;
+        let values = segments(&mut reader)?;
+        let mut item = if version.1 >= 1 { reader.u8()? } else { 0 };
+        if item == 1 {
+            cap = reader.u8()?;
             item = reader.u8()?;
         }
-        if item == 4 {
-            width_units = reader.u8()?;
+        if item == 2 {
+            join = reader.u8()?;
             item = reader.u8()?;
         }
-        if item == 5 {
-            let count = reader.i32()?;
-            let bytes = crate::chunks::checked_count_bytes(
-                count,
-                16,
-                reader.remaining(),
-                1 << 16,
-                reader.position(),
-            )?;
-            for _ in 0..bytes / 16 {
-                taper.push([reader.f64()?, reader.f64()?]);
+        if version.1 >= 2 {
+            if item == 3 {
+                width = read_finite(&mut reader, "linetype width")?;
+                item = reader.u8()?;
             }
-            if !taper.iter().flatten().all(|value| value.is_finite()) {
-                return Err(FramingError::structural(
+            if item == 4 {
+                width_units = reader.u8()?;
+                item = reader.u8()?;
+            }
+            if item == 5 {
+                let count = reader.i32()?;
+                let bytes = crate::chunks::checked_count_bytes(
+                    count,
+                    16,
+                    reader.remaining(),
+                    1 << 16,
                     reader.position(),
-                    "linetype taper is not finite",
-                ));
-            }
-            item = reader.u8()?;
-        }
-    }
-    if version.1 >= 3 && item == 6 {
-        always = reader.bool()?;
-        let _next_item = reader.u8()?;
-    }
-    if always {
-        if let Some(scale) = scale {
-            for segment in &mut values {
-                segment.length_millimeters = scaled_coordinate(segment.length_millimeters, scale)
-                    .ok_or_else(|| {
-                    FramingError::structural(
+                )?;
+                for _ in 0..bytes / 16 {
+                    taper.push([reader.f64()?, reader.f64()?]);
+                }
+                if !taper.iter().flatten().all(|value| value.is_finite()) {
+                    return Err(FramingError::structural(
                         reader.position(),
+                        "linetype taper is not finite",
+                    )
+                    .into());
+                }
+                item = reader.u8()?;
+            }
+        }
+        if version.1 >= 3 && item == 6 {
+            always = reader.bool()?;
+            let _next_item = reader.u8()?;
+        }
+        (component, values)
+    } else {
+        return Err(
+            FramingError::structural(reader.position(), "linetype version is unsupported").into(),
+        );
+    };
+    // An unknown or out-of-order extension has no generic width. The source
+    // reader consumes its identifier and leaves a bounded suffix.
+    reader.skip_remaining()?;
+    let segments = values
+        .into_iter()
+        .map(|segment| {
+            let length_millimeters = if always {
+                let scale = pattern_document_scale(binding)?;
+                scaled_coordinate(segment.length, scale.value()).ok_or_else(|| {
+                    FramingError::structural(
+                        source_offset,
                         "scaled model-distance linetype segment is invalid",
                     )
-                })?;
-            }
-        }
-    }
-    // The source reader consumes an unknown or out-of-order ID and closes
-    // the anonymous chunk. Its value has no generic width and remains a
-    // bounded suffix.
-    reader.skip_remaining()?;
-    Ok(linetype_record(
-        component,
-        values,
-        source_offset,
-        cap,
-        join,
-        width,
-        width_units,
-        taper,
-        always,
-    ))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn linetype_record(
-    component: Component,
-    segments: Vec<LinetypeSegment>,
-    source_offset: usize,
-    line_cap: u8,
-    line_join: u8,
-    width: f64,
-    width_units: u8,
-    taper_points: Vec<[f64; 2]>,
-    always_model_distance: bool,
-) -> LinetypeRecord {
+                })?
+            } else {
+                segment.length
+            };
+            Ok(LinetypeSegment {
+                length_millimeters,
+                segment_type: segment.segment_type,
+            })
+        })
+        .collect::<Result<Vec<_>, PatternTransferError>>()?;
     let id = component.id;
     let key = if id.is_nil() {
         format!("record-{source_offset}")
     } else {
         id.to_string()
     };
-    LinetypeRecord {
+    Ok(LinetypeRecord {
         id: format!("rhino:presentation:linetype#{key}"),
         source_offset: source_offset as u64,
         archive_index: component.index,
         source_uuid: (!id.is_nil()).then(|| id.to_string()),
         name: component.name,
         segments,
-        line_cap,
-        line_join,
+        line_cap: cap,
+        line_join: join,
         width,
         width_units,
-        taper_points,
-        always_model_distance,
-    }
+        taper_points: taper,
+        always_model_distance: always,
+    })
 }
 
-fn hatch_line_v5(
-    reader: &mut BoundedReader<'_>,
-    scale: Option<f64>,
-) -> Result<HatchLineRecord, FramingError> {
+fn hatch_line_v5(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, FramingError> {
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
         return Err(FramingError::structural(
@@ -2631,16 +2654,19 @@ fn hatch_line_v5(
             "hatch-line version is unsupported",
         ));
     }
-    hatch_line_fields(reader, scale)
+    hatch_line_fields(reader)
 }
 
-fn hatch_line_fields(
-    reader: &mut BoundedReader<'_>,
-    scale: Option<f64>,
-) -> Result<HatchLineRecord, FramingError> {
+fn hatch_line_fields(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, FramingError> {
     let angle_radians = read_finite(reader, "hatch-line angle")?;
-    let mut base = [reader.f64()?, reader.f64()?];
-    let mut offset = [reader.f64()?, reader.f64()?];
+    let base = [
+        read_finite(reader, "hatch-line base")?,
+        read_finite(reader, "hatch-line base")?,
+    ];
+    let offset = [
+        read_finite(reader, "hatch-line offset")?,
+        read_finite(reader, "hatch-line offset")?,
+    ];
     let count = reader.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -2653,81 +2679,69 @@ fn hatch_line_fields(
     for _ in 0..bytes / 8 {
         dashes.push(read_finite(reader, "hatch dash")?);
     }
-    if let Some(scale) = scale {
-        for value in base
-            .iter_mut()
-            .chain(offset.iter_mut())
-            .chain(dashes.iter_mut())
-        {
-            *value = scaled_coordinate(*value, scale).ok_or_else(|| {
-                FramingError::structural(reader.position(), "scaled hatch line is invalid")
-            })?;
-        }
-    }
-    Ok(HatchLineRecord {
+    Ok(SourceHatchLine {
         angle_radians,
-        base_millimeters: base,
-        offset_millimeters: offset,
-        dashes_millimeters: dashes,
+        base,
+        offset,
+        dashes,
     })
 }
 
-/// Resolves the unit selector for model-distance hatch lines.
-///
-/// Archive-90 records can carry their own standard unit selector. A zero or
-/// unset selector delegates to the document binding; older records always do
-/// the same. Print-distance lines are already millimetre output lengths.
+/// The pattern selector defines length units independently of display mode.
 fn hatch_pattern_scale(
     settings: Option<HatchPatternDistanceSettings>,
-    document_scale: Option<f64>,
-) -> Option<f64> {
-    match settings {
-        None => document_scale,
-        Some(settings) if !settings.always_model_distances => None,
-        Some(settings) if matches!(settings.pattern_unit_system, 0 | 255) => document_scale,
-        Some(settings) => crate::settings::standard_scale(i32::from(settings.pattern_unit_system)),
+    binding: UnitBinding,
+) -> Result<MillimeterScale, PatternTransferError> {
+    match settings.map(|settings| settings.pattern_unit_system) {
+        None | Some(0) => pattern_document_scale(binding),
+        Some(code) => StandardUnit::from_value(i32::from(code))
+            .map(MillimeterScale::from)
+            .ok_or(PatternTransferError::UnsupportedHatchUnit(code)),
     }
 }
 
-fn scale_hatch_lines(
-    lines: &mut [HatchLineRecord],
-    scale: Option<f64>,
-    source_offset: usize,
-) -> Result<(), FramingError> {
-    let Some(scale) = scale else {
-        return Ok(());
-    };
-    for line in lines {
-        for value in line
-            .base_millimeters
+impl SourceHatchLine {
+    fn into_millimeters(
+        mut self,
+        scale: MillimeterScale,
+        source_offset: usize,
+    ) -> Result<HatchLineRecord, FramingError> {
+        for value in self
+            .base
             .iter_mut()
-            .chain(line.offset_millimeters.iter_mut())
-            .chain(line.dashes_millimeters.iter_mut())
+            .chain(self.offset.iter_mut())
+            .chain(self.dashes.iter_mut())
         {
-            *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+            *value = scaled_coordinate(*value, scale.value()).ok_or_else(|| {
                 FramingError::structural(source_offset, "scaled hatch line is invalid")
             })?;
         }
+        Ok(HatchLineRecord {
+            angle_radians: self.angle_radians,
+            base_millimeters: self.base,
+            offset_millimeters: self.offset,
+            dashes_millimeters: self.dashes,
+        })
     }
-    Ok(())
 }
 
 fn parse_hatch_pattern(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    scale: Option<f64>,
+    binding: UnitBinding,
     source_offset: usize,
-) -> Result<HatchPatternRecord, FramingError> {
+) -> Result<HatchPatternRecord, PatternTransferError> {
     let modern = data.get(range.start).copied() == Some(0);
     let mut distance_settings = None;
-    let (component, fill_type, description, mut lines) = if modern {
+    let (component, fill_type, description, lines) = if modern {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 || version.1 < 0 {
             return Err(FramingError::structural(
                 reader.position(),
                 "hatch-pattern version is unsupported",
-            ));
+            )
+            .into());
         }
         let component = component(data, &mut reader, archive)?;
         let fill_type = reader.i32()?;
@@ -2742,7 +2756,8 @@ fn parse_hatch_pattern(
             return Err(FramingError::structural(
                 line_reader.position() - 4,
                 "hatch-line count exceeds limit",
-            ));
+            )
+            .into());
         }
         let mut lines = Vec::with_capacity(count);
         for _ in 0..count {
@@ -2759,9 +2774,10 @@ fn parse_hatch_pattern(
                 return Err(FramingError::structural(
                     payload.position(),
                     "hatch-line version is unsupported",
-                ));
+                )
+                .into());
             }
-            lines.push(hatch_line_fields(&mut payload, None)?);
+            lines.push(hatch_line_fields(&mut payload)?);
             payload.skip_remaining()?;
             line_reader.skip(line.next_offset() - line_reader.position())?;
         }
@@ -2782,7 +2798,8 @@ fn parse_hatch_pattern(
             return Err(FramingError::structural(
                 range.start,
                 "legacy hatch-pattern version is unsupported",
-            ));
+            )
+            .into());
         }
         let index = reader.i32()?;
         let fill_type = reader.i32()?;
@@ -2796,11 +2813,12 @@ fn parse_hatch_pattern(
             return Err(FramingError::structural(
                 reader.position() - 4,
                 "hatch-line count exceeds limit",
-            ));
+            )
+            .into());
         }
         let mut lines = Vec::with_capacity(count);
         for _ in 0..count {
-            lines.push(hatch_line_v5(&mut reader, None)?);
+            lines.push(hatch_line_v5(&mut reader)?);
         }
         let id = if packed & 0x0f >= 2 {
             uuid(&mut reader)?
@@ -2819,11 +2837,15 @@ fn parse_hatch_pattern(
             lines,
         )
     };
-    scale_hatch_lines(
-        &mut lines,
-        hatch_pattern_scale(distance_settings, scale),
-        source_offset,
-    )?;
+    let lines = if lines.is_empty() {
+        Vec::new()
+    } else {
+        let scale = hatch_pattern_scale(distance_settings, binding)?;
+        lines
+            .into_iter()
+            .map(|line| line.into_millimeters(scale, source_offset))
+            .collect::<Result<Vec<_>, _>>()?
+    };
     let key = if component.id.is_nil() {
         format!("record-{source_offset}")
     } else {
@@ -4306,55 +4328,49 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
                 }
             } else if table_type == LINETYPE_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, LINETYPE) {
-                    if let Ok(value) = parse_linetype(
+                    match parse_linetype(
                         scan.data,
                         range,
                         scan.archive,
-                        physical_scale,
+                        binding,
                         record.range.start,
                     ) {
-                        if value.always_model_distance && physical_scale.is_none() {
-                            retain_unbound_presentation_record(
-                                &mut losses,
-                                &mut opaque_records,
-                                table.typecode,
-                                record,
-                                binding,
-                                "model-distance linetype",
-                            );
-                        } else {
-                            linetypes.push(value);
+                        Ok(value) => linetypes.push(value),
+                        Err(error) => {
+                            losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                                "linetype record at offset {} was retained as complete source: {error}",
+                                record.range.start,
+                            )));
+                            opaque_records.push(OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            });
                         }
-                        parsed = true;
                     }
+                    parsed = true;
                 }
             } else if table_type == HATCH_PATTERN_TABLE {
                 if let Ok(range) = class_data(scan.data, record, scan.archive, HATCH_PATTERN) {
-                    if let Ok(value) = parse_hatch_pattern(
+                    match parse_hatch_pattern(
                         scan.data,
                         range,
                         scan.archive,
-                        physical_scale,
+                        binding,
                         record.range.start,
                     ) {
-                        let needs_scale = value
-                            .distance_settings
-                            .is_none_or(|settings| settings.always_model_distances);
-                        let resolved_scale = hatch_pattern_scale(value.distance_settings, physical_scale);
-                        if needs_scale && resolved_scale.is_none() {
-                            retain_unbound_presentation_record(
-                                &mut losses,
-                                &mut opaque_records,
-                                table.typecode,
-                                record,
-                                binding,
-                                "model-distance hatch pattern",
-                            );
-                        } else {
-                            hatch_patterns.push(value);
+                        Ok(value) => hatch_patterns.push(value),
+                        Err(error) => {
+                            losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
+                                "hatch pattern record at offset {} was retained as complete source: {error}",
+                                record.range.start,
+                            )));
+                            opaque_records.push(OpaqueRecord {
+                                table_typecode: table.typecode,
+                                record: record.clone(),
+                            });
                         }
-                        parsed = true;
                     }
+                    parsed = true;
                 }
             } else if table_type == DIMSTYLE_TABLE {
                 let Some(scale) = physical_scale else {
@@ -5825,21 +5841,20 @@ mod tests {
 
     #[test]
     fn absent_component_index_does_not_alias_system_index_minus_one() {
-        let record = linetype_record(
-            Component {
-                index: None,
-                id: Uuid::nil(),
-                name: String::new(),
-            },
-            Vec::new(),
-            7,
-            0,
-            0,
-            0.0,
-            0,
-            Vec::new(),
-            false,
-        );
+        let record = LinetypeRecord {
+            id: "rhino:presentation:linetype#record-7".to_owned(),
+            source_offset: 7,
+            archive_index: None,
+            source_uuid: None,
+            name: String::new(),
+            segments: Vec::new(),
+            line_cap: 0,
+            line_join: 0,
+            width: 0.0,
+            width_units: 0,
+            taper_points: Vec::new(),
+            always_model_distance: false,
+        };
         assert_eq!(record.archive_index, None);
         let json = serde_json::to_value(record).expect("linetype record JSON");
         assert!(json.get("archive_index").is_none());
@@ -6512,8 +6527,14 @@ mod tests {
         body.extend([0x66; 16]);
         body.extend([0xaa, 0xbb]);
         let bytes = anonymous(15, &body);
-        let value = parse_linetype(&bytes, 0..bytes.len(), ArchiveVersion::V5, Some(10.0), 0)
-            .expect("required invariant");
+        let value = parse_linetype(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            0,
+        )
+        .expect("required invariant");
         assert_eq!(value.name, "dash");
         assert_eq!(value.segments[0].length_millimeters, 2.0);
         assert_eq!(value.segments[0].segment_type, 0);
@@ -6575,7 +6596,7 @@ mod tests {
             &model_distance_bytes,
             0..model_distance_bytes.len(),
             ArchiveVersion::V8,
-            Some(25.4),
+            UnitBinding::Millimeters(StandardUnit::Inches.into()),
             0,
         )
         .expect("model-distance linetype");
@@ -6599,20 +6620,20 @@ mod tests {
             &model_distance_bytes,
             0..model_distance_bytes.len(),
             ArchiveVersion::V8,
-            None,
+            UnitBinding::Unavailable,
             0,
-        )
-        .expect("model-distance linetype without a unit binding");
-        assert_eq!(unbound_model_distance.segments[0].length_millimeters, 2.5);
-        assert_eq!(unbound_model_distance.segments[1].length_millimeters, 1.25);
-        assert!(unbound_model_distance.always_model_distance);
+        );
+        assert!(matches!(
+            unbound_model_distance,
+            Err(PatternTransferError::UnavailableDocumentUnits)
+        ));
 
         let print_distance_bytes = modern_linetype(false);
         let print_distance = parse_linetype(
             &print_distance_bytes,
             0..print_distance_bytes.len(),
             ArchiveVersion::V8,
-            Some(25.4),
+            UnitBinding::Millimeters(StandardUnit::Inches.into()),
             0,
         )
         .expect("print-distance linetype");
@@ -6723,19 +6744,25 @@ mod tests {
 
     #[test]
     fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
         for (document_unit, pattern_unit, always_model_distances, typed, expected_base) in [
             (Some(2), 8, true, true, Some([25.4, 50.8])),
             (None, 8, true, true, Some([25.4, 50.8])),
             (Some(0), 0, true, false, None),
             (None, 255, true, false, None),
-            (None, 8, false, true, Some([1.0, 2.0])),
+            (None, 8, false, true, Some([25.4, 50.8])),
+            (Some(3), 8, false, true, Some([25.4, 50.8])),
+            (Some(3), 0, false, true, Some([10.0, 20.0])),
+            (None, 0, false, false, None),
+            (Some(2), 255, true, false, None),
+            (Some(2), 255, false, false, None),
+            (Some(2), 11, true, false, None),
+            (Some(2), 11, false, false, None),
+            (Some(2), 26, true, false, None),
         ] {
             let archive = ArchiveVersion::V9;
-            let record = modern_hatch_pattern_record(
-                archive,
-                pattern_unit,
-                always_model_distances,
-            );
+            let record = modern_hatch_pattern_record(archive, pattern_unit, always_model_distances);
             let unit_records = document_unit
                 .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
                 .unwrap_or_default();
@@ -6752,7 +6779,8 @@ mod tests {
                     crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
                 ],
             );
-            let scan = crate::container::scan_owned(bytes).expect("complete hatch document");
+            let scan =
+                crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
             let mut ir = CadIr::empty();
             let installed = install(&scan, &mut ir).expect("hatch install");
             let hatch_patterns = &ir.native.namespace("rhino").unwrap().arenas()["hatch_patterns"];
@@ -6771,10 +6799,82 @@ mod tests {
             match expected_base {
                 Some(expected) => {
                     let value = serde_json::to_value(&hatch_patterns[0]).expect("hatch JSON");
-                    assert_eq!(value["lines"][0]["base_millimeters"], serde_json::json!(expected));
+                    assert_eq!(
+                        value["lines"][0]["base_millimeters"],
+                        serde_json::json!(expected)
+                    );
                 }
                 None => assert!(hatch_patterns.is_empty()),
             }
+            let decoded = crate::RhinoCodec
+                .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                .expect("complete hatch decode");
+            let admitted: CadIr = serde_json::from_slice(
+                &serde_json::to_vec(decoded.ir()).expect("complete hatch CADIR"),
+            )
+            .expect("complete hatch CADIR admission");
+            let records = &admitted.native.namespace("rhino").unwrap().arenas()["hatch_patterns"];
+            assert_eq!(records.len(), usize::from(typed));
+            if let Some(expected) = expected_base {
+                let value = serde_json::to_value(&records[0]).expect("admitted hatch JSON");
+                assert_eq!(
+                    value["lines"][0]["base_millimeters"],
+                    serde_json::json!(expected)
+                );
+            } else {
+                assert!(decoded
+                    .source_fidelity()
+                    .retained_records()
+                    .values()
+                    .any(|source| { source.data() == Some(record.as_slice()) }));
+                let reason = if matches!(pattern_unit, 11 | 26 | 255) {
+                    format!("hatch pattern unit code {pattern_unit}")
+                } else {
+                    "no physical millimetre binding".to_owned()
+                };
+                assert!(decoded.report().losses.iter().any(|loss| {
+                    loss.code == RhinoLossCode::PresentationRecordDropped.kind()
+                        && loss.message.contains(&reason)
+                        && loss.message.contains(&format!(
+                            "offset {}",
+                            scan.tables
+                                .iter()
+                                .find(|table| table.typecode == HATCH_PATTERN_TABLE)
+                                .unwrap()
+                                .records[0]
+                                .range
+                                .start
+                        ))
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn solid_hatch_pattern_needs_no_length_binding() {
+        let mut bytes = vec![0x12];
+        bytes.extend(3_i32.to_le_bytes());
+        bytes.extend(0_i32.to_le_bytes());
+        bytes.extend(utf16("solid"));
+        bytes.extend(utf16("solid fill"));
+        bytes.extend([0x77; 16]);
+        for binding in [UnitBinding::Native, UnitBinding::Unavailable] {
+            let pattern =
+                parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V5, binding, 23)
+                    .expect("solid hatch has no dimensional payload");
+            assert!(pattern.lines.is_empty());
+            assert_eq!(pattern.fill_type, 0);
+            let mut ir = CadIr::empty();
+            ir.native
+                .namespace_mut("rhino")
+                .set_arena("hatch_patterns", &[pattern])
+                .unwrap();
+            let admitted: CadIr =
+                serde_json::from_slice(&serde_json::to_vec(&ir).unwrap()).unwrap();
+            assert_eq!(
+                admitted.native.namespace("rhino").unwrap().arenas()["hatch_patterns"].len(),
+                1
+            );
         }
     }
 
@@ -6795,18 +6895,30 @@ mod tests {
         bytes.extend(5.0_f64.to_le_bytes());
         bytes.extend((-2.0_f64).to_le_bytes());
         bytes.extend([0x77; 16]);
-        let value = parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V5, Some(10.0), 0)
-            .expect("required invariant");
+        let value = parse_hatch_pattern(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            0,
+        )
+        .expect("required invariant");
         assert_eq!(value.lines[0].base_millimeters, [10.0, 20.0]);
         assert_eq!(value.lines[0].offset_millimeters, [30.0, 40.0]);
         assert_eq!(value.lines[0].dashes_millimeters, [50.0, -20.0]);
         assert_eq!(value.lines[0].angle_radians, 0.5);
 
-        let unbound = parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V5, None, 0)
-            .expect("hatch pattern without a unit binding");
-        assert_eq!(unbound.lines[0].base_millimeters, [1.0, 2.0]);
-        assert_eq!(unbound.lines[0].offset_millimeters, [3.0, 4.0]);
-        assert_eq!(unbound.lines[0].dashes_millimeters, [5.0, -2.0]);
+        let unbound = parse_hatch_pattern(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V5,
+            UnitBinding::Unavailable,
+            0,
+        );
+        assert!(matches!(
+            unbound,
+            Err(PatternTransferError::UnavailableDocumentUnits)
+        ));
     }
 
     #[test]
@@ -6847,9 +6959,14 @@ mod tests {
         let mut v8_body = body.clone();
         v8_body.extend([0xc7; 4]);
         let bytes = anonymous(0, &v8_body);
-        let value =
-            parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V8, Some(10.0), 321)
-                .expect("modern hatch pattern");
+        let value = parse_hatch_pattern(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
+            321,
+        )
+        .expect("modern hatch pattern");
 
         assert_eq!(value.archive_index, Some(5));
         assert_eq!(
@@ -6883,7 +7000,7 @@ mod tests {
             &v9_bytes,
             0..v9_bytes.len(),
             ArchiveVersion::V9,
-            Some(10.0),
+            UnitBinding::Millimeters(StandardUnit::Centimeters.into()),
             321,
         )
         .expect("archive-90 hatch pattern");
