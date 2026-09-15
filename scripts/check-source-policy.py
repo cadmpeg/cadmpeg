@@ -30,10 +30,12 @@ class Finding:
 
 FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
-LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
-LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
-LOSS_NOTE_STRUCT = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?struct\s+LossNote\s*\{")
-LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+LossNote\s*\{")
+LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
+LOSS_NOTE_PATH = r"(?:::\s*)?(?:(?:r#)?[^\W\d]\w*\s*::\s*)*(?:r#)?(?P<name>LossNote)"
+LOSS_NOTE_RETURN = re.compile(r"->\s*" + LOSS_NOTE_PATH + r"\s*\{")
+LOSS_NOTE_STRUCT = re.compile(r"\bstruct\s+(?:r#)?(?P<name>LossNote)\s*\{")
+LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+" + LOSS_NOTE_PATH + r"\s*\{")
+LOSS_NOTE_TRAIT_IMPL = re.compile(r"\bfor\s+" + LOSS_NOTE_PATH + r"\s*\{")
 BARE_TOLERANCE = re.compile(
     r"(?<![0-9A-Za-z_.])1(?:\.0+)?[eE]-(?:6|7|8|9|10|11|12)\b"
 )
@@ -440,10 +442,18 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
             calls = calls[1:]
         for _ in calls:
             report("unapproved_endian_read", index + 1, "Use a bounded View read; reconstructed scalars and packed color ordering require a local endian exception.")
-        if LOSS_NOTE_LIT.search(line) and not any(
-            pattern.search(line) for pattern in (LOSS_NOTE_RETURN, LOSS_NOTE_STRUCT, LOSS_NOTE_IMPL)
-        ):
-            report("loss_note_literal", index + 1, "Construct loss notes through the owning loss code's note method.")
+
+    # Exclude the type occurrence, not its entire line: the same function may
+    # construct a LossNote immediately after its return type and opening brace.
+    loss_note_types = {
+        match.start("name")
+        for pattern in (LOSS_NOTE_RETURN, LOSS_NOTE_STRUCT, LOSS_NOTE_IMPL, LOSS_NOTE_TRAIT_IMPL)
+        for match in pattern.finditer(code)
+    }
+    for match in LOSS_NOTE_LIT.finditer(code):
+        if match.start() not in loss_note_types:
+            report("loss_note_literal", code.count("\n", 0, match.start()) + 1,
+                   "Construct loss notes through the owning loss code's note method.")
 
     for match in MALFORMED_FORMAT.finditer(code):
         report("formatted_malformed_error", code.count("\n", 0, match.start()) + 1,
