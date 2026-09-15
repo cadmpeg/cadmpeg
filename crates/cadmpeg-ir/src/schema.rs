@@ -16,6 +16,22 @@ thread_local! {
     static REFERENCE_WALK_ACTIVE: Cell<bool> = const { Cell::new(false) };
 }
 
+pub mod rewrite;
+
+struct ReferenceWalkScope(bool);
+
+impl ReferenceWalkScope {
+    fn enter() -> Self {
+        Self(REFERENCE_WALK_ACTIVE.replace(true))
+    }
+}
+
+impl Drop for ReferenceWalkScope {
+    fn drop(&mut self) {
+        REFERENCE_WALK_ACTIVE.set(self.0);
+    }
+}
+
 /// Canonical neutral arena kind.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -453,15 +469,7 @@ pub(crate) fn visit_typed_references<T: EntitySchema>(
     entity: &T,
     visitor: &mut dyn FnMut(Reference),
 ) -> Result<(), ReferenceWalkError> {
-    struct WalkScope(bool);
-
-    impl Drop for WalkScope {
-        fn drop(&mut self) {
-            REFERENCE_WALK_ACTIVE.set(self.0);
-        }
-    }
-
-    let scope = WalkScope(REFERENCE_WALK_ACTIVE.replace(true));
+    let scope = ReferenceWalkScope::enter();
     let mut serializer = ReferenceSerializer {
         identity: entity.identity(),
         visitor,

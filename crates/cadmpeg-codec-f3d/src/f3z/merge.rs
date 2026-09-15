@@ -9,7 +9,6 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
 use serde::{de::DeserializeOwned, Serialize};
-use serde_value::Value;
 
 use super::archive::{ArchiveSession, ClassifiedMember};
 use crate::container::ContainerScan;
@@ -349,38 +348,15 @@ impl EntityRewrite for OccurrenceScope<'_> {
     type Error = CodecError;
 
     fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, CodecError> {
-        let mut value = serde_value::to_value(entity).map_err(|error| {
+        let rewritten = cadmpeg_ir::schema::rewrite::identities(&entity, |id| {
+            rescope(id, self.occurrence).unwrap_or_else(|| id.to_owned())
+        });
+        let value = serde_value::to_value(rewritten).map_err(|error| {
             CodecError::malformed(format_args!("model serialization failed: {error}"))
         })?;
-        remap_ids(&mut value, self.occurrence);
         crate::value_tree::from_value(value).map_err(|error| {
             CodecError::malformed(format_args!("merged model round-trip failed: {error}"))
         })
-    }
-}
-
-fn remap_ids(value: &mut Value, occurrence: &str) {
-    match value {
-        Value::String(text) => {
-            if let Some(rescoped) = rescope(text, occurrence) {
-                *text = rescoped;
-            }
-        }
-        Value::Seq(items) => {
-            for item in items {
-                remap_ids(item, occurrence);
-            }
-        }
-        Value::Map(fields) => {
-            let entries = std::mem::take(fields);
-            for (mut key, mut item) in entries {
-                remap_ids(&mut key, occurrence);
-                remap_ids(&mut item, occurrence);
-                fields.insert(key, item);
-            }
-        }
-        Value::Option(Some(item)) | Value::Newtype(item) => remap_ids(item, occurrence),
-        _ => {}
     }
 }
 

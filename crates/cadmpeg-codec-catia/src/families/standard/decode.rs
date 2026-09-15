@@ -23,7 +23,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use serde::{de::DeserializeOwned, Serialize};
-use serde_value::{Value, ValueDeserializer};
+use serde_value::ValueDeserializer;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -1375,25 +1375,6 @@ fn rescope_standard_id(text: &str, scope: &str) -> String {
     )
 }
 
-fn rescope_standard_value(value: &mut Value, scope: &str) {
-    match value {
-        Value::String(text) => *text = rescope_standard_id(text, scope),
-        Value::Seq(items) => items
-            .iter_mut()
-            .for_each(|item| rescope_standard_value(item, scope)),
-        Value::Map(fields) => {
-            let entries = std::mem::take(fields);
-            for (mut key, mut item) in entries {
-                rescope_standard_value(&mut key, scope);
-                rescope_standard_value(&mut item, scope);
-                fields.insert(key, item);
-            }
-        }
-        Value::Option(Some(item)) | Value::Newtype(item) => rescope_standard_value(item, scope),
-        _ => {}
-    }
-}
-
 struct StandardPopulationScope<'a> {
     scope: &'a str,
 }
@@ -1402,9 +1383,11 @@ impl EntityRewrite for StandardPopulationScope<'_> {
     type Error = String;
 
     fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error> {
-        let mut value = serde_value::to_value(entity)
+        let rewritten = cadmpeg_ir::schema::rewrite::identities(&entity, |id| {
+            rescope_standard_id(id, self.scope)
+        });
+        let value = serde_value::to_value(rewritten)
             .map_err(|error| format!("standard population entity serialization failed: {error}"))?;
-        rescope_standard_value(&mut value, self.scope);
         T::deserialize(ValueDeserializer::<serde_value::DeserializerError>::new(
             value,
         ))

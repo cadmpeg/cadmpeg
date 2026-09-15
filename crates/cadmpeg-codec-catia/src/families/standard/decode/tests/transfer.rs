@@ -20,6 +20,38 @@ use crate::CatiaCodec;
 const EPS_TRANSFER_PLANE_FRAME: f64 = 1.0e-6;
 
 #[test]
+fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
+    use super::super::StandardPopulationScope;
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::{BodyId, RegionId};
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let source_id = "catia:standard:body#source";
+    let body = Body {
+        id: BodyId::mint(source_id).unwrap(),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId::mint("catia:standard:region#source").unwrap()],
+        transform: None,
+        name: Some(source_id.into()),
+        color: None,
+        visible: None,
+    };
+    let scoped = StandardPopulationScope {
+        scope: "population-1",
+    }
+    .rewrite(body)
+    .unwrap();
+    assert_eq!(
+        scoped.id.as_str(),
+        "catia:standard:population-1/body#source"
+    );
+    assert_eq!(
+        scoped.regions[0].as_str(),
+        "catia:standard:population-1/region#source"
+    );
+    assert_eq!(scoped.name.as_deref(), Some(source_id));
+}
+
+#[test]
 fn standard_decode_retains_native_surface_carrier_tags() {
     let decoded = CatiaCodec
         .decode(
@@ -143,7 +175,8 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert_eq!(unknowns[0].id.as_str(), "catia:payload:unknown#brep-stream");
     assert!(unknowns[0]
         .links
-        .iter().any(|link| link.as_str() == "catia:standard:circle#0"));
+        .iter()
+        .any(|link| link.as_str() == "catia:standard:circle#0"));
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let axis = cylinder_surface.axis();

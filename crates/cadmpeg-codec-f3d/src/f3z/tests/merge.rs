@@ -169,6 +169,32 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
 }
 
 #[test]
+fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
+    use cadmpeg_ir::document::EntityRewrite;
+    let source_id = "f3d:model:body#source";
+    let body = Body {
+        id: BodyId::mint(source_id).unwrap(),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId::mint("f3d:model:region#source").unwrap()],
+        transform: None,
+        name: Some(source_id.into()),
+        color: None,
+        visible: None,
+    };
+    let scoped = OccurrenceScope {
+        occurrence: "component-0",
+    }
+    .rewrite(body)
+    .unwrap();
+    assert_eq!(scoped.id.as_str(), "f3d:xref/component-0/model:body#source");
+    assert_eq!(
+        scoped.regions[0].as_str(),
+        "f3d:xref/component-0/model:region#source"
+    );
+    assert_eq!(scoped.name.as_deref(), Some(source_id));
+}
+
+#[test]
 fn occurrence_merge_remaps_and_retains_native_records() {
     let placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(
