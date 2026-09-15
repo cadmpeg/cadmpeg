@@ -1221,14 +1221,38 @@ impl CadIr {
     /// should derive them inside the iterator: each reference is serialized as
     /// it is produced, so the derived population is never resident alongside the
     /// arena built from it.
-    pub fn set_native_unknowns_from<T: Serialize, I: IntoIterator<Item = T>>(
+    /// Duplicate identities are refused before the document changes.
+    ///
+    /// Only the reserved product projection can enter through this route.
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::CadIr;
+    /// let raw = serde_json::json!({"id": "test:native:unknown#0", "extra": true});
+    /// CadIr::empty().set_native_unknowns_from("test", [raw]).unwrap();
+    /// ```
+    pub fn set_native_unknowns_from<T: Borrow<NativeUnknownRecord>, I: IntoIterator<Item = T>>(
         &mut self,
         format: &str,
         records: I,
     ) -> Result<(), crate::native::NativeConvertError> {
+        let mut records: Vec<_> = records
+            .into_iter()
+            .map(|record| {
+                let record: &NativeUnknownRecord = record.borrow();
+                crate::native::NativeRecord::from(record)
+            })
+            .collect();
+        records.sort_by(|left, right| left.id().cmp(right.id()));
+        if let Some(pair) = records.windows(2).find(|pair| pair[0].id() == pair[1].id()) {
+            return Err(crate::native::NativeConvertError::InvalidCollection(
+                format!("duplicate native unknown record {}", pair[0].id()),
+            ));
+        }
         self.native
             .namespace_mut(format)
-            .set_arena_from("unknowns", records)
+            .arenas_mut()
+            .insert("unknowns".into(), records);
+        Ok(())
     }
 
     /// Construct an empty document with default tolerances.

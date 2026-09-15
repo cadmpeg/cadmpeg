@@ -425,7 +425,7 @@ impl SourceFidelity {
     ///
     /// Incoming identities must be distinct from each other and from existing
     /// retained and native unknown records. Both destinations are committed
-    /// after all admission and serialization succeeds. Existing records remain.
+    /// after all admission succeeds. Existing records remain.
     pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
@@ -462,12 +462,7 @@ impl SourceFidelity {
             });
             retained.insert(id, record);
         }
-        let products =
-            crate::native::arena_from(products.into_iter().map(Ok::<_, NativeConvertError>))?;
-        ir.native
-            .namespace_mut(format)
-            .arenas_mut()
-            .insert("unknowns".into(), products);
+        ir.set_native_unknowns_from(format, products)?;
         self.retained_records.extend(retained);
         Ok(())
     }

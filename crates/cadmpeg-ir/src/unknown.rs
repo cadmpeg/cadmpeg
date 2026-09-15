@@ -54,6 +54,26 @@ impl From<&UnknownRecord> for NativeUnknownRecord {
     }
 }
 
+impl From<&NativeUnknownRecord> for crate::native::NativeRecord {
+    fn from(record: &NativeUnknownRecord) -> Self {
+        let mut fields = serde_json::Map::new();
+        if !record.links.is_empty() {
+            fields.insert(
+                "links".into(),
+                serde_json::Value::Array(
+                    record
+                        .links
+                        .iter()
+                        .cloned()
+                        .map(serde_json::Value::String)
+                        .collect(),
+                ),
+            );
+        }
+        Self::from_identity(record.id.clone(), fields)
+    }
+}
+
 /// A recognized source record represented by location, retained image, and
 /// links.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
