@@ -217,7 +217,7 @@ fn wallpaper_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
     view_with_child(archive, wallpaper)
 }
 
-fn named_views_record_with_views(archive: ArchiveVersion, views: &[Vec<u8>]) -> Vec<u8> {
+fn view_list_record(archive: ArchiveVersion, typecode: u32, views: &[Vec<u8>]) -> Vec<u8> {
     let mut list_body = (views.len() as i32).to_le_bytes().to_vec();
     let mut view_ranges = Vec::with_capacity(views.len());
     for view in views {
@@ -225,7 +225,7 @@ fn named_views_record_with_views(archive: ArchiveVersion, views: &[Vec<u8>]) -> 
         list_body.extend(view);
         view_ranges.push(start..list_body.len());
     }
-    support::test_dump::crc_chunk_excluding(archive, 0x2000_8036, &list_body, &view_ranges)
+    support::test_dump::crc_chunk_excluding(archive, typecode, &list_body, &view_ranges)
 }
 
 fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: bool) -> Vec<u8> {
@@ -235,18 +235,18 @@ fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: boo
         let last = reference.len() - 1;
         reference[last] ^= 1;
     }
-    named_views_record_with_views(archive, &[trace_view(archive, reference)])
+    view_list_record(archive, 0x2000_8036, &[trace_view(archive, reference)])
 }
 
-fn document_with_named_views(archive: ArchiveVersion, named_views: Vec<u8>) -> Vec<u8> {
+fn document_with_views(archive: ArchiveVersion, views: Vec<u8>) -> Vec<u8> {
     support::test_dump::minimal_document(
-        "80",
+        &archive.value().to_string(),
         &[
             support::test_dump::table(archive, 0x1000_0014, &[]),
             support::test_dump::table(
                 archive,
                 0x1000_0015,
-                &[support::test_dump::units_record(archive, 2), named_views],
+                &[support::test_dump::units_record(archive, 2), views],
             ),
             support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
@@ -254,10 +254,24 @@ fn document_with_named_views(archive: ArchiveVersion, named_views: Vec<u8>) -> V
 }
 
 fn source_offset(document: &[u8], fragment: &[u8]) -> usize {
-    document
+    let mut locations = document
         .windows(fragment.len())
-        .position(|window| window == fragment)
-        .expect("fixture fragment has one source location")
+        .enumerate()
+        .filter_map(|(offset, window)| (window == fragment).then_some(offset));
+    let offset = locations
+        .next()
+        .expect("fixture fragment has a source location");
+    assert!(
+        locations.next().is_none(),
+        "fixture fragment must have one source location"
+    );
+    offset
+}
+
+#[test]
+#[should_panic(expected = "fixture fragment must have one source location")]
+fn ambiguous_fixture_source_offsets_are_rejected() {
+    source_offset(&[1, 2, 1, 2], &[1, 2]);
 }
 
 #[test]
@@ -480,7 +494,7 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
         archive,
         support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
     );
-    let named_views = named_views_record_with_views(archive, &[malformed, valid]);
+    let named_views = view_list_record(archive, 0x2000_8036, &[malformed, valid]);
     let bytes = support::test_dump::minimal_document(
         "80",
         &[
@@ -552,7 +566,7 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
         archive,
         support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
     );
-    let named_views = named_views_record_with_views(archive, &[malformed, valid]);
+    let named_views = view_list_record(archive, 0x2000_8036, &[malformed, valid]);
     let bytes = support::test_dump::minimal_document(
         "80",
         &[
@@ -637,8 +651,8 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
         archive,
         support::test_dump::file_reference(archive, "/trace/later.png", "later.png"),
     );
-    let named_views = named_views_record_with_views(archive, &[malformed_view.clone(), valid_view]);
-    let document = document_with_named_views(archive, named_views.clone());
+    let named_views = view_list_record(archive, 0x2000_8036, &[malformed_view.clone(), valid_view]);
+    let document = document_with_views(archive, named_views.clone());
     let result = decode(document.clone());
 
     let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
@@ -754,8 +768,8 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
             support::test_dump::file_reference(archive, "/trace/recovered.png", "recovered.png"),
         );
         let named_views =
-            named_views_record_with_views(archive, &[malformed_view.clone(), valid_view]);
-        let document = document_with_named_views(archive, named_views.clone());
+            view_list_record(archive, 0x2000_8036, &[malformed_view.clone(), valid_view]);
+        let document = document_with_views(archive, named_views.clone());
         let result = decode(document.clone());
 
         let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
@@ -853,8 +867,8 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
             "userdata-later.png",
         ),
     );
-    let named_views = named_views_record_with_views(archive, &[malformed_view, valid_view]);
-    let document = document_with_named_views(archive, named_views);
+    let named_views = view_list_record(archive, 0x2000_8036, &[malformed_view, valid_view]);
+    let document = document_with_views(archive, named_views);
     let result = decode(document.clone());
 
     let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
@@ -923,4 +937,83 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
         userdata_source
     );
     assert_valid(&result);
+}
+
+#[test]
+fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
+    for archive in [ArchiveVersion::V5, ArchiveVersion::V8] {
+        let mut reference = support::test_dump::file_reference(
+            archive,
+            "/trace/active-corrupt.png",
+            "active-corrupt.png",
+        );
+        *reference.last_mut().expect("reference checksum") ^= 1;
+        let bad_target = support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
+        let rejected = view_with_children(
+            archive,
+            &[trace_child(archive, reference.clone()), bad_target],
+            Some(support::test_dump::short_chunk(archive, 0xffff_ffff, 0)),
+        );
+        let later = trace_view(
+            archive,
+            support::test_dump::file_reference(
+                archive,
+                "/trace/active-later.png",
+                "active-later.png",
+            ),
+        );
+        let list = view_list_record(archive, 0x2000_8037, &[rejected.clone(), later]);
+        let document = document_with_views(archive, list.clone());
+        assert_eq!(
+            crate::chunks::parse_header(&document)
+                .unwrap()
+                .archive_version,
+            archive
+        );
+        let result = decode(document.clone());
+        let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            views[0].field("list_kind"),
+            Some(serde_json::json!("active"))
+        );
+        assert_eq!(views[0].field("list_index"), Some(serde_json::json!(1)));
+        for (code, tag, offset) in [
+            (
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                "VIEW/TRACE_IMAGE/FILE_REFERENCE",
+                source_offset(&document, &reference),
+            ),
+            (
+                crate::loss::RhinoLossCode::PresentationRecordDropped,
+                "VIEW/RECORD",
+                source_offset(&document, &rejected),
+            ),
+        ] {
+            let losses = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code == code.kind()
+                        && loss
+                            .provenance
+                            .as_ref()
+                            .and_then(|provenance| provenance.tag.as_deref())
+                            == Some(tag)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(losses.len(), 1, "{archive:?}/{tag}");
+            assert_eq!(
+                losses[0].provenance.as_ref().unwrap().offset as usize,
+                offset
+            );
+        }
+        assert!(result
+            .source_fidelity()
+            .retained_records()
+            .iter()
+            .any(|(_, record)| record.data() == Some(list.as_slice())));
+        assert_valid(&result);
+    }
 }
