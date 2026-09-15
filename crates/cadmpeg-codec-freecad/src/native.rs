@@ -66,6 +66,74 @@ pub(crate) fn model_key(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::Codec;
+
+    #[test]
+    fn child_map_reference_is_rejected_by_complete_cadir_admission() {
+        let mut ir = crate::FcstdCodec
+            .decode(
+                &mut std::io::Cursor::new(crate::test_support::GEOMETRY),
+                &cadmpeg_ir::DecodeOptions::default(),
+            )
+            .expect("geometry fixture decodes")
+            .ir()
+            .clone();
+        let namespace = ir.native.namespace_mut("fcstd");
+        let mut maps = namespace
+            .arena_as::<serde_json::Value>("element_maps")
+            .expect("element maps");
+        let mut changed = false;
+        'maps: for map in &mut maps {
+            let Some(nodes) = map["maps"].as_array_mut() else {
+                continue;
+            };
+            for node in nodes {
+                let Some(groups) = node["groups"].as_array_mut() else {
+                    continue;
+                };
+                for group in groups {
+                    let Some(children) = group["children"].as_array_mut() else {
+                        continue;
+                    };
+                    for child in children {
+                        let Some(descriptor) = child.as_str().map(str::to_owned) else {
+                            continue;
+                        };
+                        let mut fields = descriptor
+                            .split_ascii_whitespace()
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>();
+                        if fields.len() < 5 {
+                            continue;
+                        }
+                        fields[4] = "-1".to_owned();
+                        *child = serde_json::json!(fields.join(" "));
+                        changed = true;
+                        break 'maps;
+                    }
+                }
+            }
+        }
+        assert!(
+            changed,
+            "geometry fixture must contain a child-map descriptor"
+        );
+        namespace
+            .set_arena("element_maps", &maps)
+            .expect("mutated element-map arena");
+        let json = serde_json::to_string(&ir).expect("serialize mutated CADIR");
+        let reparsed =
+            cadmpeg_ir::CadIr::from_json(&json).expect("complete CADIR document remains parseable");
+        let findings = crate::FcstdCodec.validate_native(&reparsed);
+        assert!(
+            findings.iter().any(|finding| {
+                finding.message.contains("mapIndex")
+                    && finding.check == cadmpeg_ir::report::Check::NativeLinks
+            }),
+            "invalid child mapIndex was not reported: {findings:#?}"
+        );
+    }
+
     use super::{model_id, native_child_id, native_id};
 
     #[test]

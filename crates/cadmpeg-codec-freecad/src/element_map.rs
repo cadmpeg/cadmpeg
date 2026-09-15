@@ -1173,7 +1173,7 @@ mod tests {
     use crate::test_support::*;
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
-    use std::io::Cursor;
+    use std::io::{Cursor, Read};
 
     fn test_property(type_name: &str, raw_xml: &str) -> PropertyRecord {
         PropertyRecord {
@@ -1787,5 +1787,44 @@ Co 1001000 +2 0 *
             owning_property(node, &[first, second]),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
+    }
+
+    #[test]
+    fn child_map_reference_is_rejected_by_complete_source_admission() {
+        let mut source = zip::ZipArchive::new(Cursor::new(GEOMETRY)).expect("geometry archive");
+        let mut entries = Vec::new();
+        let mut changed = false;
+        let original = b"1 0 3 1 0 ;:H,E;:H:5,E 0";
+        let replacement = b"1 0 3 1 9 ;:H,E;:H:5,E 0";
+        for index in 0..source.len() {
+            let mut entry = source.by_index(index).expect("geometry member");
+            let name = entry.name().to_owned();
+            let mut data = Vec::new();
+            entry.read_to_end(&mut data).expect("read geometry member");
+            if !changed {
+                if let Some(offset) = data
+                    .windows(original.len())
+                    .position(|window| window == original)
+                {
+                    data[offset..offset + replacement.len()].copy_from_slice(replacement);
+                    changed = true;
+                }
+            }
+            entries.push((name, data));
+        }
+        assert!(
+            changed,
+            "geometry fixture must contain a child-map descriptor with a mapped child"
+        );
+        let references = entries
+            .iter()
+            .map(|(name, data)| (name.as_str(), data.as_slice()))
+            .collect::<Vec<_>>();
+        let result = FcstdCodec.decode(
+            &mut Cursor::new(archive_entries(&references)),
+            &DecodeOptions::default(),
+        );
+        let error = result.expect_err("current source route rejects the mutated child-map index");
+        assert!(error.to_string().contains("mapIndex"), "{error}");
     }
 }
