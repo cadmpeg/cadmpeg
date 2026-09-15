@@ -435,7 +435,7 @@ class DenyCensusTests(unittest.TestCase):
         '''})
         self.assertEqual(status, 0, output)
 
-    def test_conditional_untagged_variant_requires_refusal_proof(self) -> None:
+    def test_conditional_untagged_variant_inherits_container_refusal(self) -> None:
         status, output = self.run_census({"lib.rs": '''
             #[derive(Deserialize)] #[serde(deny_unknown_fields)]
             enum Reader {
@@ -444,8 +444,66 @@ class DenyCensusTests(unittest.TestCase):
                 B { value: u8 },
             }
         '''})
+        self.assertEqual(status, 0, output)
+
+    def test_untagged_inline_variant_requires_container_refusal(self) -> None:
+        for container in ('tag = "kind"', 'untagged'):
+            for deny in (False, True):
+                with self.subTest(container=container, deny=deny):
+                    metadata = container + (", deny_unknown_fields" if deny else "")
+                    arm_attribute = '' if container == 'untagged' else '#[serde(untagged)]'
+                    status, output = self.run_census({"lib.rs": f'''
+                        #[derive(Deserialize)] #[serde({metadata})]
+                        enum Reader {{ {arm_attribute} A {{ value: u8 }} }}
+                    '''})
+                    self.assertEqual(status, 0 if deny else 1, output)
+
+    def test_internal_newtype_with_skipped_field_ignores_container_refusal(self) -> None:
+        for field_attribute in (
+            '#[serde(skip)]',
+            '#[serde(skip_deserializing)]',
+            '#[cfg_attr(feature = "omit", serde(skip_deserializing))]',
+        ):
+            with self.subTest(field_attribute=field_attribute):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Default, Deserialize)] #[serde(deny_unknown_fields)]
+                    struct Closed {{}}
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader {{ A({field_attribute} Closed) }}
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A", output)
+
+    def test_internal_untagged_unit_arm_reads_null_without_object_keys(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A {}, #[serde(untagged)] B }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_conditional_untagged_unit_arm_must_deny_its_tagged_route(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A {},
+                #[cfg_attr(feature = "untagged", serde(untagged))]
+                B,
+            }
+        '''})
         self.assertEqual(status, 1, output)
         self.assertIn("Reader::B", output)
+
+    def test_untagged_tuple_checks_each_payload_reader(self) -> None:
+        for fields, admitted in (("Closed, String", True), ("String, Open", False)):
+            with self.subTest(fields=fields):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    struct Closed {{ value: String }}
+                    struct Open;
+                    #[derive(Deserialize)] #[serde(untagged)]
+                    enum Reader {{ A({fields}) }}
+                '''})
+                self.assertEqual(status, 0 if admitted else 1, output)
 
 
 if __name__ == "__main__":
