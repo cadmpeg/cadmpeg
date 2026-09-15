@@ -315,8 +315,10 @@ impl AnnotationBuilder {
     pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
         let id = id.to_string();
         let fields = match self.annotations.exactness.remove(&id) {
-            Some(note) => {
-                let mut fields = note.fields().clone();
+            Some(ExactnessNote::Entity { mut fields, .. })
+            | Some(ExactnessNote::Fields {
+                fields: NonEmptyMap(mut fields),
+            }) => {
                 fields.retain(|_, value| *value != exactness);
                 fields
             }
@@ -350,8 +352,8 @@ impl AnnotationBuilder {
 
     /// Set a serialized field's exactness.
     ///
-    /// A byte-exact override is omitted because it is already the sparse
-    /// default. Empty byte-exact notes are removed.
+    /// A byte-exact override is retained for an inexact entity. For a
+    /// byte-exact entity, the override is omitted and an empty note is removed.
     pub fn field_exactness(
         &mut self,
         id: impl Display,
@@ -362,16 +364,19 @@ impl AnnotationBuilder {
         let field = FieldName::try_from(field.into())
             .map_err(|_| "an exactness field name cannot be empty")?;
         if exactness == Exactness::ByteExact {
-            let Some(mut note) = self.annotations.exactness.remove(&id) else {
+            let Some(note) = self.annotations.exactness.remove(&id) else {
                 return Ok(self);
             };
-            match &mut note {
-                ExactnessNote::Entity { .. } => {
-                    note.fields_mut().insert(field, Exactness::ByteExact);
-                    self.annotations.exactness.insert(id, note);
+            match note {
+                ExactnessNote::Entity { entity, mut fields } => {
+                    fields.insert(field, Exactness::ByteExact);
+                    self.annotations
+                        .exactness
+                        .insert(id, ExactnessNote::Entity { entity, fields });
                 }
-                ExactnessNote::Fields { fields } => {
-                    let mut fields = fields.get().clone();
+                ExactnessNote::Fields {
+                    fields: NonEmptyMap(mut fields),
+                } => {
                     fields.remove(&field);
                     if let Ok(fields) = NonEmptyMap::try_from(fields) {
                         self.annotations
