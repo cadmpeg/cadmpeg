@@ -677,11 +677,14 @@ impl Parser<'_, '_, '_> {
             ));
         let schema_names_for_matching =
             schema_names_for_matching(&header_admission.schema_identifiers);
-        if let Err(message) =
-            validate_header_sections(implementation_level, &header, &schema_names_for_matching)
-        {
-            return self.err(message);
-        }
+        let header_data_references = match validate_header_sections(
+            implementation_level,
+            &header,
+            &schema_names_for_matching,
+        ) {
+            Ok(references) => references,
+            Err(message) => return self.err(message),
+        };
         let mut anchors = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
             if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
@@ -837,7 +840,8 @@ impl Parser<'_, '_, '_> {
         {
             return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
-        if let Err(message) = validate_header_data_references(&header, &data, implementation_level)
+        if let Err(message) =
+            validate_header_data_references(&header_data_references, &data_section_names)
         {
             return self.err(message);
         }
@@ -1547,11 +1551,16 @@ fn schema_object_identifier_diagnostics(
         .collect()
 }
 
+enum HeaderDataReferences {
+    FilePopulation(BTreeSet<String>),
+    Section(String),
+}
+
 fn validate_header_sections(
     implementation_level: ImplementationLevel,
     header: &[HeaderRecord],
     schema_identifiers: &[String],
-) -> Result<(), &'static str> {
+) -> Result<Vec<HeaderDataReferences>, &'static str> {
     let has = |name: &str| header.iter().any(|record| record.name == name);
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("FILE_POPULATION") {
         return Err("2;1 forbids FILE_POPULATION in HEADER");
@@ -1572,6 +1581,7 @@ fn validate_header_sections(
         _ => {}
     }
 
+    let mut references = Vec::new();
     let mut user_defined = false;
     let mut schema_population_seen = false;
     let mut language_sections = BTreeSet::new();
@@ -1595,32 +1605,34 @@ fn validate_header_sections(
                 }
             }
             "FILE_POPULATION" => {
-                if !valid_file_population(
+                let sections = admit_file_population(
                     &record.parameters,
                     schema_identifiers,
                     implementation_level,
-                ) {
-                    return Err("FILE_POPULATION has invalid parameters");
-                }
+                )
+                .map_err(|()| "FILE_POPULATION has invalid parameters")?;
+                references.push(HeaderDataReferences::FilePopulation(sections));
             }
             "SECTION_LANGUAGE" => {
                 let section = valid_section_language(&record.parameters, implementation_level)
                     .map_err(|()| "SECTION_LANGUAGE has invalid parameters")?;
-                if !language_sections.insert(section) {
+                if !language_sections.insert(section.clone()) {
                     return Err("HEADER contains duplicate SECTION_LANGUAGE section");
                 }
+                references.extend(section.map(HeaderDataReferences::Section));
             }
             "SECTION_CONTEXT" => {
                 let section = valid_section_context(&record.parameters, implementation_level)
                     .map_err(|()| "SECTION_CONTEXT has invalid parameters")?;
-                if !context_sections.insert(section) {
+                if !context_sections.insert(section.clone()) {
                     return Err("HEADER contains duplicate SECTION_CONTEXT section");
                 }
+                references.extend(section.map(HeaderDataReferences::Section));
             }
             _ => return Err("HEADER contains an unsupported entity"),
         }
     }
-    Ok(())
+    Ok(references)
 }
 
 fn valid_schema_population(
@@ -1644,38 +1656,35 @@ fn valid_schema_population(
         })
 }
 
-fn valid_file_population(
+fn admit_file_population(
     parameters: &[Value],
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
-) -> bool {
+) -> Result<BTreeSet<String>, ()> {
     let [Value::String(schema), Value::String(determination), governed_sections] = parameters
     else {
-        return false;
+        return Err(());
     };
-    let Some(schema) = decoded_bytes(schema, implementation_level) else {
-        return false;
-    };
+    let schema = decoded_bytes(schema, implementation_level).ok_or(())?;
     if !valid_schema_identifier(&schema)
         || decoded_bytes(determination, implementation_level).is_none()
+        || !schema_identifier_matches(schema_identifiers, &schema)
     {
-        return false;
-    }
-    if !schema_identifier_matches(schema_identifiers, &schema) {
-        return false;
+        return Err(());
     }
     match governed_sections {
-        Value::Omitted => true,
+        Value::Omitted => Ok(BTreeSet::new()),
         Value::List(sections) if !sections.is_empty() => {
             let mut names = BTreeSet::new();
-            sections.iter().all(|section| {
-                let Some(section) = decoded_string(section, implementation_level) else {
-                    return false;
-                };
-                names.insert(section)
-            })
+            for section in sections {
+                let section = decoded_string(section, implementation_level).ok_or(())?;
+                if !names.insert(section) {
+                    return Err(());
+                }
+            }
+            Ok(names)
         }
-        _ => false,
+        _ => Err(()),
     }
 }
 
@@ -1937,57 +1946,26 @@ fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -
 }
 
 fn validate_header_data_references(
-    header: &[HeaderRecord],
-    data: &[DataSection],
-    implementation_level: ImplementationLevel,
+    references: &[HeaderDataReferences],
+    data_section_names: &BTreeSet<String>,
 ) -> Result<(), &'static str> {
-    let mut names = BTreeSet::new();
-    for section in data {
-        if let [Value::String(name), Value::List(_)] = section.parameters.as_slice() {
-            let name = decoded_string(&Value::String(name.clone()), implementation_level)
-                .ok_or("DATA section parameters contain an invalid string")?;
-            names.insert(name);
-        }
-    }
-    for record in header.iter().skip(3) {
-        match record.name.as_str() {
-            "FILE_POPULATION" => {
-                let Some(Value::List(sections)) = record.parameters.get(2) else {
-                    continue;
-                };
-                for section in sections {
-                    let section = decoded_string(section, implementation_level)
-                        .ok_or("FILE_POPULATION has invalid parameters")?;
-                    if !names.contains(&section) {
-                        return Err("FILE_POPULATION names an unknown DATA section");
-                    }
+    for reference in references {
+        match reference {
+            HeaderDataReferences::FilePopulation(sections) => {
+                if sections
+                    .iter()
+                    .any(|section| !data_section_names.contains(section))
+                {
+                    return Err("FILE_POPULATION names an unknown DATA section");
                 }
             }
-            "SECTION_LANGUAGE" => {
-                validate_header_section_name(&record.parameters[0], &names, implementation_level)?;
+            HeaderDataReferences::Section(section) => {
+                if !data_section_names.contains(section) {
+                    return Err("header section reference names an unknown DATA section");
+                }
             }
-            "SECTION_CONTEXT" => {
-                validate_header_section_name(&record.parameters[0], &names, implementation_level)?;
-            }
-            _ => {}
         }
     }
-    Ok(())
-}
-
-fn validate_header_section_name(
-    value: &Value,
-    data_section_names: &BTreeSet<String>,
-    implementation_level: ImplementationLevel,
-) -> Result<(), &'static str> {
-    let Value::Omitted = value else {
-        let section = decoded_string(value, implementation_level)
-            .ok_or("header section reference has invalid parameters")?;
-        if !data_section_names.contains(&section) {
-            return Err("header section reference names an unknown DATA section");
-        }
-        return Ok(());
-    };
     Ok(())
 }
 
@@ -2101,7 +2079,7 @@ fn recursion_cap(budget: Option<&DecodeContext<'_>>, format_cap: usize) -> usize
 
 struct AnchorResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
-    memo: BTreeMap<String, (Value, usize)>,
+    memo: BTreeMap<&'a str, (Value, usize)>,
     remaining_nodes: usize,
     budget: Option<&'ctx DecodeContext<'arena>>,
 }
@@ -2162,7 +2140,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     fn resolve(
         &mut self,
         value: &Value,
-        stack: &mut Vec<String>,
+        stack: &mut Vec<&'a str>,
         budget: usize,
         depth: usize,
     ) -> Result<(Value, usize, usize), ResolveError> {
@@ -2174,8 +2152,9 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
             return Err("expanded anchor graph exceeds its node or depth limit".into());
         }
-        match value {
-            Value::Resource(name) if self.anchors.contains_key(name) => {
+        if let Value::Resource(name) = value {
+            if let Some((name, source)) = self.anchors.get_key_value(name) {
+                let name = name.as_str();
                 if let Some((value, nodes)) = self.memo.get(name) {
                     if *nodes > budget {
                         return Err("expanded anchor value exceeds 1000000 nodes".into());
@@ -2184,15 +2163,17 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     self.charge_storage(value)?;
                     return Ok((value.clone(), *nodes, *nodes));
                 }
-                if stack.contains(name) {
+                if stack.contains(&name) {
                     return Err(format!("cyclic anchor binding <{name}>").into());
                 }
-                stack.push(name.clone());
-                let source = &self.anchors[name];
-                self.charge_nodes(value_node_count(source, Self::MAX_EXPANDED_NODES)?)?;
-                self.charge_storage(source)?;
-                let source = source.clone();
-                let resolved = self.resolve(&source, stack, budget, depth + 1);
+                let source_nodes = value_node_count(source, Self::MAX_EXPANDED_NODES)?;
+                if let Some(context) = self.budget {
+                    context
+                        .charge_work(source_nodes as u64, "step_anchor_materialization")
+                        .map_err(ResolveError::Resource)?;
+                }
+                stack.push(name);
+                let resolved = self.resolve(source, stack, budget, depth + 1);
                 stack.pop();
                 let (value, nodes, _) = resolved?;
                 if nodes > budget {
@@ -2200,10 +2181,12 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 self.charge_nodes(nodes)?;
                 self.charge_storage(&value)?;
-                self.memo.insert(name.clone(), (value.clone(), nodes));
+                self.memo.insert(name, (value.clone(), nodes));
                 self.charge_storage(&value)?;
-                Ok((value, nodes, nodes))
+                return Ok((value, nodes, nodes));
             }
+        }
+        match value {
             Value::List(values) => {
                 self.charge_nodes(1)?;
                 let mut nodes = 1usize;
