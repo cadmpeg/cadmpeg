@@ -653,6 +653,15 @@ fn layer_metadata_with_record_count(
     writer_version: Option<i64>,
     record_count: usize,
 ) -> (settings::DocumentMetadata, Diagnostics) {
+    layer_metadata_with_record_count_and_id(extension, writer_version, record_count, [0; 16])
+}
+
+fn layer_metadata_with_record_count_and_id(
+    extension: &[u8],
+    writer_version: Option<i64>,
+    record_count: usize,
+    id: [u8; 16],
+) -> (settings::DocumentMetadata, Diagnostics) {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
@@ -671,7 +680,7 @@ fn layer_metadata_with_record_count(
     payload.extend([0, 0, 0, 255]);
     payload.extend(0.0_f64.to_le_bytes());
     payload.push(0);
-    payload.extend([0; 16]);
+    payload.extend(id);
     if writer_version.is_some() {
         payload.extend([0x44; 16]);
         payload.push(1);
@@ -784,6 +793,35 @@ fn duplicate_layer_indexes_are_preserved_and_reported() {
 }
 
 #[test]
+fn nil_layer_uuid_is_source_absence_and_is_retained_per_record() {
+    let (metadata, warnings) = layer_metadata_with_record_count_and_id(&[0], None, 2, [0; 16]);
+
+    assert_eq!(metadata.layers.len(), 2, "{warnings:?}");
+    assert!(metadata.layers.iter().all(|layer| layer.id.is_none()));
+    assert_eq!(metadata.opaque_records.len(), 2);
+    assert!(!warnings
+        .iter()
+        .any(|warning| warning.contains("duplicate layer UUID")));
+}
+
+#[test]
+fn duplicate_non_nil_layer_uuids_remain_ambiguous() {
+    let id = [0x44; 16];
+    let (metadata, warnings) = layer_metadata_with_record_count_and_id(&[0], None, 2, id);
+
+    assert_eq!(metadata.layers.len(), 2, "{warnings:?}");
+    assert!(metadata
+        .layers
+        .iter()
+        .all(|layer| layer.id == Some(Uuid::from_canonical(id))));
+    assert!(warnings.iter().any(|warning| {
+        warning.code == Some(crate::loss::RhinoLossCode::DuplicateRecordResolved)
+            && warning.contains("duplicate layer UUID")
+    }));
+    assert!(metadata.opaque_records.is_empty());
+}
+
+#[test]
 fn duplicate_layer_parent_uuid_is_reported_as_ambiguous() {
     let (mut metadata, _) = layer_metadata(&[0], Some(200_912_010));
     let parent = Uuid::from_canonical([0x44; 16]);
@@ -856,6 +894,76 @@ fn rendering_attributes_accept_layer_future_minor_suffix() {
     .expect("layer reader preserves a later anonymous minor suffix");
     assert_eq!(range, 0..bytes.len());
     assert!(warnings.is_empty());
+}
+
+fn object_rendering_with_minors(
+    outer_minor: i32,
+    material_minor: i32,
+    mapping_minor: Option<i32>,
+    channel_minor: Option<i32>,
+) -> Vec<u8> {
+    let mut material_body = uuid_bytes();
+    material_body.extend(uuid_bytes());
+    material_body.extend(0_i32.to_le_bytes());
+    let material = anonymous_chunk(ArchiveVersion::V8, material_minor, &material_body);
+
+    let mut body = uuid_bytes();
+    let channel_count = i32::from(channel_minor.is_some());
+    body.extend(channel_count.to_le_bytes());
+    if let Some(channel_minor) = channel_minor {
+        let mut channel_body = 7_i32.to_le_bytes().to_vec();
+        channel_body.extend(uuid_bytes());
+        if channel_minor >= 1 {
+            channel_body.extend((0..16).flat_map(|value| (value as f64).to_le_bytes()));
+        }
+        body.extend(anonymous_chunk(
+            ArchiveVersion::V8,
+            channel_minor,
+            &channel_body,
+        ));
+    }
+    let mapping = mapping_minor.map(|minor| anonymous_chunk(ArchiveVersion::V8, minor, &body));
+
+    let mut rendering_body = 1_i32.to_le_bytes().to_vec();
+    rendering_body.extend(material);
+    rendering_body.extend(i32::from(mapping.is_some()).to_le_bytes());
+    if let Some(mapping) = mapping {
+        rendering_body.extend(mapping);
+    }
+    let mut payload = 1_i32.to_le_bytes().to_vec();
+    payload.extend(outer_minor.to_le_bytes());
+    payload.extend(rendering_body);
+    crc_chunk(ArchiveVersion::V8, 0x4000_8000, &payload)
+}
+
+#[test]
+fn rendering_attributes_reject_negative_version_minors_at_each_nested_gate() {
+    for (label, bytes) in [
+        ("outer", object_rendering_with_minors(-1, 0, None, None)),
+        ("material", object_rendering_with_minors(1, -1, None, None)),
+        (
+            "mapping",
+            object_rendering_with_minors(1, 0, Some(-1), None),
+        ),
+        (
+            "channel",
+            object_rendering_with_minors(1, 0, Some(0), Some(-1)),
+        ),
+    ] {
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("rendering chunk");
+        let mut warnings = Diagnostics::new();
+        let result = settings::parse_rendering_attributes(
+            &bytes,
+            &mut reader,
+            ArchiveVersion::V8,
+            settings::RenderingAttributesKind::Object,
+            &mut warnings,
+        );
+        assert!(
+            result.is_err(),
+            "negative {label} minor was admitted: {result:?}"
+        );
+    }
 }
 
 #[test]
