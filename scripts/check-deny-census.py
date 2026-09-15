@@ -13,8 +13,8 @@ fail the static check when used as a read route.
 An item that derives ``Deserialize`` passes when its serde attributes state one
 of:
 
-* ``deny_unknown_fields`` - it refuses the container's own keys. This census
-  does not yet follow tuple payload readers behind a container deny;
+* ``deny_unknown_fields`` - it refuses the container's own keys, and every
+  tuple payload reader that can receive an object is checked as well;
 * ``try_from = "T"`` or ``from = "T"`` - the read goes through ``T``, which is
   checked in turn;
 * ``transparent`` - the read is the inner type's read, with no key of its own;
@@ -90,13 +90,21 @@ DECLARATION_OR_ATTRIBUTE = re.compile(
 
 
 class Item:
-    def __init__(self, path, line, kind, name, attrs, body, scope=None):
+    def __init__(self, path, line, kind, name, attrs, body, scope=None,
+                 start=0, end=None, reader_proven=False):
         self.path = path
         self.line = line
         self.kind = kind
         self.name = name
         self.attrs = attrs
         self.body = body
+        self.start = start
+        self.end = len(body) if end is None else end
+        # Declaration macros can contain a handwritten Deserialize impl that
+        # the source declaration parser cannot associate with the expansion.
+        # This flag is set only from a recognized macro body, never from a
+        # caller's name or an exception table.
+        self.reader_proven = reader_proven
         src = path.parts.index("src")
         self.crate = Path(*path.parts[:src])
         parts = path.parts[src + 1:]
@@ -169,9 +177,357 @@ def collect_items(path):
             "\n".join(attrs),
             source[cursor:body_end],
             scopes[bisect_right(offsets, cursor) - 1],
+            start,
+            body_end,
         ))
         cursor = body_end
     return items
+
+
+class DeserializeImpl:
+    """One handwritten ``Deserialize`` impl and its source body."""
+
+    def __init__(self, path, line, name, body, scope, start, body_start, end):
+        self.path = path
+        self.line = line
+        self.name = name
+        self.body = body
+        self.scope = scope
+        self.start = start
+        self.body_start = body_start
+        self.end = end
+
+
+class DeserializeFunction:
+    """One helper function that owns a custom field deserializer."""
+
+    def __init__(self, path, line, name, body, start, end):
+        self.path = path
+        self.line = line
+        self.name = name
+        self.body = body
+        self.start = start
+        self.end = end
+
+
+IMPL_TRAIT_RE = re.compile(
+    r"(?:\b(?:[A-Za-z_$]\w*\s*::\s*)*)Deserialize"
+    r"\s*(?:<[^{}]*>)?\s+for\s+"
+    r"(?P<target>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*"
+    r"[A-Za-z_$]\w*(?:\s*<[^{}]*>)?)",
+    re.S,
+)
+
+
+def delimited_end(code, opening, left="{", right="}"):
+    """Return the exclusive end of one balanced delimiter sequence."""
+    depth = 0
+    for index in range(opening, len(code)):
+        char = code[index]
+        if char == left:
+            depth += 1
+        elif char == right:
+            depth -= 1
+            if depth == 0:
+                return index + 1
+            if depth < 0:
+                return None
+    return None
+
+
+def body_open(code, start):
+    """Find an impl body, ignoring delimiters in generic parameters."""
+    depths = {"<": 0, "(": 0, "[": 0}
+    closing = {")": "(",
+        "]": "[",
+        ">": "<",
+    }
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in depths:
+            depths[char] += 1
+        elif char in closing:
+            opener = closing[char]
+            if depths[opener]:
+                depths[opener] -= 1
+        elif char == "{" and not any(depths.values()):
+            return index
+    return None
+
+
+def collect_deserialize_impls(path):
+    """Collect handwritten readers without accepting comments or literals."""
+    source = path.read_text(encoding="utf-8")
+    code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
+    readers = []
+    for opening in re.finditer(r"\bimpl\b", code):
+        brace = body_open(code, opening.end())
+        if brace is None:
+            continue
+        header = code[opening.start():brace]
+        match = IMPL_TRAIT_RE.search(header)
+        if match is None:
+            continue
+        target = match.group("target").strip()
+        name_match = re.search(r"([A-Za-z_$]\w*)\s*(?:<|$)", target.rsplit("::", 1)[-1])
+        if name_match is None:
+            continue
+        name = name_match.group(1)
+        if name.startswith("$"):
+            continue
+        end = delimited_end(code, brace)
+        if end is None:
+            raise ValueError(f"{path}: incomplete Deserialize impl at byte {opening.start()}")
+        readers.append(DeserializeImpl(
+            path,
+            source.count("\n", 0, opening.start()) + 1,
+            name,
+            source[brace + 1:end - 1],
+            scopes[bisect_right(offsets, opening.start()) - 1],
+            opening.start(),
+            brace + 1,
+            end,
+        ))
+    return readers
+
+
+def collect_deserialize_functions(path):
+    """Collect named helper functions used by custom field readers."""
+    source = path.read_text(encoding="utf-8")
+    code, _ = SOURCE_POLICY.production_source(source)
+    functions = []
+    for opening in re.finditer(r"\bfn\s+(?P<name>[A-Za-z_]\w*)\s*", code):
+        brace = body_open(code, opening.end())
+        if brace is None:
+            continue
+        end = delimited_end(code, brace)
+        if end is None:
+            raise ValueError(f"{path}: incomplete helper function at byte {opening.start()}")
+        functions.append(DeserializeFunction(
+            path,
+            source.count("\n", 0, opening.start()) + 1,
+            opening.group("name"),
+            source[brace + 1:end - 1],
+            opening.start(),
+            end,
+        ))
+    return functions
+
+
+def macro_templates(path, items):
+    """Return recognized declaration macro templates found in ``path``."""
+    source = path.read_text(encoding="utf-8")
+    code, _ = SOURCE_POLICY.production_source(source)
+    templates = {}
+    for definition in re.finditer(
+        r"\bmacro_rules\s*!\s*(?P<name>"
+        r"id_type|local_id_type|checked_scalar|checked_feature_geometry)\s*\{",
+        code,
+    ):
+        body_end = delimited_end(code, definition.end() - 1)
+        if body_end is None:
+            raise ValueError(f"{path}: incomplete macro definition at byte {definition.start()}")
+        template = next(
+            (
+                item for item in items
+                if item.name == "$name"
+                and item.kind == "struct"
+                and definition.end() <= item.start < body_end
+            ),
+            None,
+        )
+        macro_body = code[definition.end():body_end - 1]
+        body_contract = {
+            "id_type": derives_deserialize(template.attrs) if template else False,
+            "local_id_type": derives_deserialize(template.attrs) if template else False,
+            "checked_scalar": bool(
+                re.search(
+                    r"impl\s*(?:<[^{}]*>)?\s*"
+                    r"(?:[A-Za-z_$]\w*\s*::\s*)*Deserialize"
+                    r"[^{}]*for\s+\$name\b",
+                    macro_body,
+                )
+                and re.search(r"\bf64\s*::\s*deserialize\b", macro_body)
+            ),
+            "checked_feature_geometry": bool(
+                re.search(
+                    r"impl\s*(?:<[^{}]*>)?\s*"
+                    r"(?:[A-Za-z_$]\w*\s*::\s*)*Deserialize"
+                    r"[^{}]*for\s+\$name\b",
+                    macro_body,
+                )
+                and re.search(r"\$raw\s*::\s*deserialize\b", macro_body)
+            ),
+        }
+        if (
+            template is not None
+            and has_serde_flag(template.attrs, "transparent")
+            and body_contract[definition.group("name")]
+        ):
+            contract = template
+        else:
+            # Keep an unproved definition visible to the caller. A valid
+            # definition with the same macro name in another module must not
+            # silently certify this one.
+            contract = None
+        name = definition.group("name")
+        if name in templates:
+            # Duplicate macro definitions are not a deterministic expansion
+            # contract, even when both happen to look valid.
+            templates[name] = None
+        else:
+            templates[name] = contract
+    return templates
+
+
+def macro_generated_items(path, items, templates=None):
+    """Expand declaration macros whose template is visible in this source.
+
+    Rust expands the recognized declaration macros before deriving or
+    implementing their readers. The census has no Rust macro expansion, so it
+    reads each template declaration and instantiates the names at each call
+    site. This is source proof from the macro body, not an exception list of
+    accepted identifiers.
+    """
+    source = path.read_text(encoding="utf-8")
+    code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
+    if templates is None:
+        templates = macro_templates(path, items)
+    generated = []
+    call_re = re.compile(
+        r"\b(?P<macro>"
+        r"id_type|local_id_type|checked_scalar|checked_feature_geometry)\s*!\s*\("
+    )
+    for call in call_re.finditer(code):
+        end = delimited_end(code, call.end() - 1, "(", ")")
+        if end is None:
+            raise ValueError(f"{path}: incomplete declaration macro at byte {call.start()}")
+        args = code[call.end():end - 1]
+        parts = list(split_metadata(args))
+        first_argument = next(
+            (strip_variant_attributes(part) for part in parts
+             if strip_variant_attributes(part)),
+            "",
+        )
+        name_match = re.fullmatch(r"[A-Za-z_]\w*", first_argument)
+        if name_match is None:
+            continue
+        # Documentation and the checked-scalar condition/error are macro
+        # arguments too.  The first identifier is the ``$name`` argument;
+        # taking the last one turns ``Length, value, true, ...`` into an
+        # invented declaration such as ``true``.
+        name = name_match.group(0)
+        template = templates.get(call.group("macro"))
+        if template is None:
+            continue
+        body = template.body.replace("$name", name)
+        if call.group("macro") == "checked_feature_geometry":
+            raw_argument = (
+                strip_variant_attributes(parts[1]).strip()
+                if len(parts) > 1 else ""
+            )
+            if not re.fullmatch(
+                r"(?:::)?(?:[A-Za-z_]\w*\s*::\s*)*[A-Za-z_]\w*",
+                raw_argument,
+            ):
+                continue
+            body = body.replace("$raw", raw_argument)
+        generated.append(Item(
+            path,
+            source.count("\n", 0, call.start()) + 1,
+            template.kind,
+            name,
+            template.attrs,
+            body,
+            scopes[bisect_right(offsets, call.start()) - 1],
+            call.start(),
+            end,
+            True,
+        ))
+    return generated
+
+
+def deserializer_macro_contracts(path):
+    """Read forwarding contracts from the macro bodies that define them."""
+    source = path.read_text(encoding="utf-8")
+    code, _ = SOURCE_POLICY.production_source(source)
+    contracts = {}
+    for definition in re.finditer(
+        r"\bmacro_rules\s*!\s*(?P<name>"
+        r"selection_field_deserializer|named_field|named_optional_field)\s*\{",
+        code,
+    ):
+        body_end = delimited_end(code, definition.end() - 1)
+        if body_end is None:
+            raise ValueError(f"{path}: incomplete deserializer macro at byte {definition.start()}")
+        body = code[definition.end():body_end - 1]
+        name = definition.group("name")
+        if name == "selection_field_deserializer":
+            contract = "forward" if re.search(
+                r"\bT\s*::\s*deserialize\b", body
+            ) else None
+        else:
+            target = "deserialize_named_optional" if name == "named_optional_field" else "deserialize_named"
+            contract = "named" if re.search(
+                rf"\$crate\s*::\s*units\s*::\s*{target}\b", body
+            ) else None
+        if name in contracts:
+            # A same-named macro with a different body leaves no reliable
+            # forwarding contract, including valid plus unproved bodies.
+            contracts[name] = contract if contracts[name] == contract else None
+        else:
+            contracts[name] = contract
+    return contracts
+
+
+def deserializer_helpers(path, contracts=None):
+    """Collect local macro-generated deserializers with source proof.
+
+    ``selection_field_deserializer!`` forwards to the selected type's
+    ``Deserialize`` implementation. ``named_field!`` and
+    ``named_optional_field!`` do the same through the units helper, with the
+    declared target type visible at the call site. These are forwarding
+    contracts in the macro bodies; names alone are never admitted.
+    """
+    source = path.read_text(encoding="utf-8")
+    code, _ = SOURCE_POLICY.production_source(source)
+    if contracts is None:
+        contracts = deserializer_macro_contracts(path)
+    forwarders = set()
+    named = {}
+    call_re = re.compile(
+        r"(?:::)?(?:[A-Za-z_]\w*::)*(?P<macro>"
+        r"selection_field_deserializer|named_field|named_optional_field)\s*!\s*\("
+    )
+    for call in call_re.finditer(code):
+        end = delimited_end(code, call.end() - 1, "(", ")")
+        if end is None:
+            raise ValueError(f"{path}: incomplete deserializer macro at byte {call.start()}")
+        args = code[call.end():end - 1]
+        parts = list(split_metadata(args))
+        if not parts:
+            continue
+        name = strip_variant_attributes(parts[0]).strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", name):
+            continue
+        if call.group("macro") == "selection_field_deserializer":
+            if contracts.get(call.group("macro")) == "forward":
+                forwarders.add(name)
+            continue
+        expected_contract = "named" if call.group("macro") in {
+            "named_field", "named_optional_field"
+        } else None
+        if contracts.get(call.group("macro")) != expected_contract:
+            continue
+        if len(parts) < 2:
+            continue
+        target = parts[1].strip()
+        if not target:
+            continue
+        named[name] = (target, call.group("macro") == "named_optional_field")
+    return forwarders, named
 
 
 def split_metadata(text):
@@ -182,6 +538,10 @@ def split_metadata(text):
         if char in "([{":
             depth += 1
         elif char in ")]}":
+            depth -= 1
+        elif char == "<":
+            depth += 1
+        elif char == ">" and depth:
             depth -= 1
         elif char == "," and depth == 0:
             yield text[start:pos]
@@ -258,6 +618,11 @@ def reader_type(value):
         return None
 
 
+def canonical_path(value):
+    """Normalize a Rust path without treating a suffix as ownership proof."""
+    return re.sub(r"\s*::\s*", "::", value).replace("$crate", "crate").strip()
+
+
 def derives_deserialize(attrs):
     for arguments, _ in attribute_arguments(attrs, "derive"):
         for name in split_metadata(arguments):
@@ -305,6 +670,26 @@ def strip_variant_attributes(raw):
         cursor = end
 
 
+def strip_variant_attributes_source(raw):
+    """Remove leading variant attributes while retaining their source text.
+
+    Structural classification uses the masked form above. Payload metadata
+    also needs the original ``deserialize_with`` value so that a helper can
+    be classified by its actual path.
+    """
+    code = SOURCE_POLICY.mask_rust_non_code(raw)
+    cursor = 0
+    while True:
+        while cursor < len(code) and code[cursor].isspace():
+            cursor += 1
+        if SOURCE_POLICY.OUTER_ATTRIBUTE.match(code, cursor) is None:
+            return raw[cursor:].strip()
+        end = SOURCE_POLICY.attribute_end(code, cursor)
+        if end is None:
+            raise ValueError("incomplete variant attribute")
+        cursor = end
+
+
 def enum_variants(item):
     if item.kind != "enum":
         return None
@@ -329,15 +714,16 @@ def all_unit_variants(item):
 
 def split_tuple_types(text):
     """Split the inside of a tuple variant into its top-level type texts."""
+    code = SOURCE_POLICY.mask_rust_non_code(text)
     depth = 0
     types = []
     current = ""
-    for char in text:
-        if char in "({[<":
+    for char, masked in zip(text, code):
+        if masked in "({[<":
             depth += 1
-        elif char in ")}]>":
+        elif masked in ")}]>":
             depth -= 1
-        if char == "," and depth == 0:
+        if masked == "," and depth == 0:
             types.append(current)
             current = ""
         else:
@@ -355,6 +741,116 @@ class Arm:
         self.skipped_newtype = skipped_newtype
 
 
+def type_without_attributes(text):
+    """Return a field or tuple type after its leading serde attributes."""
+    code = strip_variant_attributes(text).strip()
+    return re.sub(r"^pub(?:\s*\([^)]*\))?\s+", "", code)
+
+
+def type_parts(text):
+    """Return a type path and its top-level generic arguments.
+
+    The census only needs the outer type constructor. Rust's parser is not
+    available here, so a malformed or unsupported expression returns
+    ``(None, None)`` and is handled as an unproved route.
+    """
+    code = type_without_attributes(text)
+    if not code:
+        return None, None
+    if code.startswith("&"):
+        # A reference to a scalar still cannot consume an object. A reference
+        # to an arbitrary type keeps the inner route visible to the caller.
+        remainder = code[1:].lstrip()
+        remainder = re.sub(r"^'[_A-Za-z]\w*\s*", "", remainder)
+        if remainder.startswith("mut "):
+            remainder = remainder[4:].lstrip()
+        return type_parts(remainder)
+    if code.startswith("[") or code.startswith("("):
+        return code[0], []
+    match = re.match(
+        r"(?P<path>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*[A-Za-z_$]\w*)",
+        code,
+    )
+    if match is None:
+        return None, None
+    path = re.sub(r"\s*::\s*", "::", match.group("path"))
+    path = path.replace("$crate", "crate")
+    cursor = match.end()
+    while cursor < len(code) and code[cursor].isspace():
+        cursor += 1
+    if cursor == len(code):
+        return path, []
+    if code[cursor] != "<":
+        return None, None
+    end = generic_end(code, cursor)
+    if end is None or code[end:].strip():
+        return None, None
+    return path, split_tuple_types(code[cursor + 1:end - 1])
+
+
+def generic_end(code, opening):
+    """Return the exclusive end of a generic argument list."""
+    depth = 0
+    for index in range(opening, len(code)):
+        if code[index] == "<":
+            depth += 1
+        elif code[index] == ">":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+            if depth < 0:
+                return None
+    return None
+
+
+SCALAR_TYPES = {
+    "bool", "char", "str", "String",
+    "i8", "i16", "i32", "i64", "i128", "isize",
+    "u8", "u16", "u32", "u64", "u128", "usize",
+    "f32", "f64",
+}
+SEQUENCE_TYPES = {
+    "Vec", "VecDeque", "LinkedList", "BinaryHeap", "HashSet", "BTreeSet",
+    "ByteBuf",
+}
+MAP_TYPES = {"HashMap", "BTreeMap", "IndexMap"}
+OPTIONAL_TYPES = {"Option"}
+DELEGATING_TYPES = {"Box", "Rc", "Arc", "Pin", "RefCell", "Cell", "Mutex", "RwLock"}
+ABSENT_KEY_HELPERS = {
+    "crate::absent_key::present",
+    "crate::absent_key::nullable",
+    "cadmpeg_core::absent_key::present",
+    "cadmpeg_core::absent_key::nullable",
+}
+DISTINCT_MAP_HELPERS = {
+    "crate::distinct_keys::btree_map",
+    "crate::distinct_keys::hash_map",
+    "crate::distinct_keys::json_object",
+    "cadmpeg_core::distinct_keys::btree_map",
+    "cadmpeg_core::distinct_keys::hash_map",
+    "cadmpeg_core::distinct_keys::json_object",
+}
+LOCAL_ID_HELPERS = {
+    "crate::ids::deserialize_local_id",
+}
+OPEN_READER_ROUTE = re.compile(
+    r"\bdeserialize_(?:any|map|struct|enum|identifier|ignored_any|"
+    r"newtype_struct|seq|tuple)\s*\(|"
+    r"\b(?:MapAccess|MapDeserializer|Visitor|visit_map|visit_seq)\b"
+)
+
+
+def is_free_form_map(path):
+    """Whether a fully qualified map path intentionally admits arbitrary keys."""
+    return path in {
+        "serde_json::Value",
+        "serde_json::Map",
+        "std::collections::HashMap",
+        "std::collections::BTreeMap",
+        "indexmap::IndexMap",
+    }
+
+
 def untagged_arms(item):
     """The arms of an enum body, classified as unit, tuple or struct.
 
@@ -368,7 +864,7 @@ def untagged_arms(item):
         untagged = ("always" if has_serde_flag(raw, "untagged") else
                     "conditional" if has_serde_flag(raw, "untagged", include_conditional=True)
                     else None)
-        text = strip_variant_attributes(raw)
+        text = strip_variant_attributes_source(raw)
         match = re.match(r"(\$?\w+)\s*(.*)", text, re.S)
         if match is None:
             continue
@@ -387,14 +883,6 @@ def untagged_arms(item):
         else:
             arms.append(Arm(name, "unit", [], untagged))
     return arms
-
-
-def named_types(text):
-    # Retain the whole path: other::Wire cannot inherit a local Wire's deny.
-    # Rust permits lower-case type aliases and declarations too.
-    text = SOURCE_POLICY.mask_rust_non_code(text)
-    text = re.sub(r"\s*::\s*", "::", text)
-    return re.findall(r"(?<![\w:'])(?:::)?(?:[A-Za-z_]\w*::)*[A-Za-z_]\w*", text)
 
 
 def alias_target(item):
@@ -441,6 +929,18 @@ def resolve_item(index, name, owner, ambiguities):
         wanted = scope + tuple(prefix)
         matches = [candidate for candidate in candidates
                    if candidate.crate == crate and candidate.scope == wanted]
+        if not matches:
+            # A public re-export such as ``crate::geometry::NurbsCurve`` can
+            # own its declaration in the private ``geometry::carriers``
+            # module. A unique descendant is source evidence for that module
+            # route; ambiguous descendants still fail closed.
+            descendants = [
+                candidate for candidate in candidates
+                if candidate.crate == crate
+                and candidate.scope[:len(wanted)] == wanted
+            ]
+            if len(descendants) == 1:
+                matches = descendants
     else:
         scope = owner.scope
         while True:
@@ -460,20 +960,340 @@ def resolve_item(index, name, owner, ambiguities):
 
 
 def main():
+    paths = list(source_files())
+    raw_items = {path: collect_items(path) for path in paths}
+
+    # The id macro is declared in ids.rs and invoked from several sibling
+    # modules. Gather templates first so qualified invocations are expanded
+    # from the same source contract as local invocations.
+    templates = {}
+    deserializer_contracts = {}
+    for path in paths:
+        for name, template in macro_templates(path, raw_items[path]).items():
+            if name not in templates:
+                templates[name] = template
+            elif templates[name] is None or template is None:
+                templates[name] = None
+            elif (
+                templates[name].path != template.path
+                or templates[name].start != template.start
+            ):
+                # Two definitions with the same recognized macro name do not
+                # supply a deterministic expansion proof.
+                templates[name] = None
+        for name, contract in deserializer_macro_contracts(path).items():
+            if name not in deserializer_contracts:
+                deserializer_contracts[name] = contract
+            elif deserializer_contracts[name] == contract:
+                # Identical definitions have the same forwarding contract.
+                # Keep that source proof available to their call sites.
+                deserializer_contracts[name] = contract
+            else:
+                # A valid and an invalid definition with the same name must
+                # not let the valid one certify the invalid one.
+                deserializer_contracts[name] = None
+
     index = {}
     order = []
-    for path in source_files():
-        for item in collect_items(path):
+    readers = {}
+    helper_functions = {}
+    helper_forwarders = set()
+    helper_forwarder_sources = {}
+    helper_targets = {}
+    helper_target_sources = {}
+    for path in paths:
+        items = [item for item in raw_items[path] if not item.name.startswith("$")]
+        generated = macro_generated_items(path, raw_items[path], templates)
+        for item in items + generated:
             order.append(item)
             index.setdefault(item.name, []).append(item)
+        for reader in collect_deserialize_impls(path):
+            readers.setdefault((path, reader.name), []).append(reader)
+        for function in collect_deserialize_functions(path):
+            helper_functions.setdefault(function.name, []).append(function)
+        forwarders, named = deserializer_helpers(path, deserializer_contracts)
+        helper_forwarders.update(forwarders)
+        for name in forwarders:
+            helper_forwarder_sources.setdefault(name, set()).add(path)
+        for name, target in named.items():
+            helper_target_sources.setdefault(name, set()).add(path)
+            if name in helper_targets and helper_targets[name] != target:
+                helper_targets[name] = None
+            else:
+                helper_targets[name] = target
 
     failures = []
     arm_failures = []
     ambiguities = []
     checking = set()
 
+    def resolve_reader_target(name, owner, reader):
+        """Resolve a call, preferring a local wire declared in its body."""
+        if "::" not in name:
+            local = [
+                candidate for candidate in index.get(name, ())
+                if candidate.path == reader.path
+                and reader.body_start <= candidate.start < reader.end
+            ]
+            if len(local) == 1:
+                return local[0]
+        return resolve_item(index, name, owner, ambiguities)
+
+    def helper_source_applies(sources, owner):
+        """Apply a macro-generated helper only from its unique module owner."""
+        if len(sources) != 1:
+            return False
+        source = next(iter(sources))
+        if source == owner.path:
+            return True
+        if source.name in {"lib.rs", "mod.rs"}:
+            return owner.path.parent == source.parent or source.parent in owner.path.parents
+        return source.parent / source.stem == owner.path.parent
+
+    def helper_forwarder_applies(name, owner):
+        return helper_source_applies(helper_forwarder_sources.get(name, set()), owner)
+
+    def helper_target_applies(name, owner):
+        return helper_source_applies(helper_target_sources.get(name, set()), owner)
+
+    deserialize_call_re = re.compile(
+        r"(?P<path>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*[A-Za-z_$]\w*)"
+        r"(?P<generic>\s*::\s*<(?P<args>[^{}]*)>)?\s*::\s*deserialize\b"
+    )
+
+    def helper_function_passes(function, owner, allow_free_form=False):
+        """Prove a custom helper from the direct reader it invokes."""
+        code = SOURCE_POLICY.mask_rust_non_code(function.body)
+        if OPEN_READER_ROUTE.search(code):
+            return False
+        array_route = bool(
+            re.search(r"<\s*\[[^{}]*\]\s*>\s*::\s*deserialize\b", code)
+        )
+        calls = list(deserialize_call_re.finditer(code))
+        if not calls and not array_route:
+            return False
+        for call in calls:
+            path = re.sub(r"\s*::\s*", "::", call.group("path"))
+            path = path.replace("$crate", "crate")
+            base = path.rsplit("::", 1)[-1]
+            if path in {"Self", "self"}:
+                return False
+            # A local declaration can shadow a prelude or conventional
+            # container name. Resolve that declaration before applying the
+            # built-in reader contract; otherwise `struct Vec<T>` or a
+            # custom `String` reader could be admitted by its spelling.
+            if "::" not in path and base in index:
+                target = target_for_type(path, owner)
+                if target is None or not passes(target):
+                    return False
+                continue
+            # A handwritten map/JSON reader is object-open. It must be
+            # carried by an explicit free-form payload type, not hidden in a
+            # custom wrapper behind a denying enum.
+            if base in SCALAR_TYPES or base in SEQUENCE_TYPES:
+                continue
+            if is_free_form_map(path) or base in MAP_TYPES:
+                if allow_free_form:
+                    continue
+                return False
+            generic = call.group("args")
+            if generic is not None:
+                if base in SEQUENCE_TYPES:
+                    continue
+                ok, _ = payload_proof(
+                    f"{path}<{generic}>", owner
+                )
+                if not ok:
+                    return False
+                continue
+            target = target_for_type(path, owner)
+            if target is None or not passes(target):
+                return False
+        return True
+
+    def manual_reader_passes(item, reader):
+        """Prove a handwritten reader from every direct input route it uses."""
+        code = SOURCE_POLICY.mask_rust_non_code(reader.body)
+        if OPEN_READER_ROUTE.search(code):
+            return False
+        # This spelling is an array reader whose leading ``<`` is not a type
+        # path token accepted by the call regex below.
+        if re.search(r"<\s*\[[^{}]*\]\s*>\s*::\s*deserialize\b", code):
+            array_route = True
+        else:
+            array_route = False
+        calls = list(deserialize_call_re.finditer(code))
+        if not calls and not array_route:
+            return False
+        for call in calls:
+            path = re.sub(r"\s*::\s*", "::", call.group("path"))
+            path = path.replace("$crate", "crate")
+            base = path.rsplit("::", 1)[-1]
+            if path in {"Self", "self"}:
+                return False
+            if "::" not in path and base in index:
+                target = resolve_reader_target(path, item, reader)
+                if target is None or not passes(target):
+                    return False
+                continue
+            if is_free_form_map(path) or base in MAP_TYPES:
+                return False
+            if base in SCALAR_TYPES or base in SEQUENCE_TYPES:
+                continue
+            generic = call.group("args")
+            if generic is not None:
+                ok, _ = payload_proof(
+                    f"{path}<{generic}>", item
+                )
+                if not ok:
+                    return False
+                continue
+            target = resolve_reader_target(path, item, reader)
+            if target is None:
+                return False
+            if not passes(target):
+                return False
+        return True
+
+    def target_for_type(path, owner):
+        path = path.replace("$crate", "crate")
+        return resolve_item(index, path, owner, ambiguities)
+
+    def payload_proof(field, owner):
+        """Prove that an enum payload cannot consume arbitrary object keys."""
+        for flag in ("skip", "skip_deserializing"):
+            if has_serde_flag(field, flag):
+                return True, "field is skipped unconditionally"
+            if has_serde_flag(field, flag, include_conditional=True):
+                return False, f"conditional {flag} leaves the reader unproved"
+
+        custom = [
+            reader_type(value)
+            for key, value, conditional in serde_options(field)
+            if key == "deserialize_with" and not conditional
+        ]
+        if any(
+            key == "deserialize_with" and conditional
+            for key, _, conditional in serde_options(field)
+        ):
+            return False, "conditional deserialize_with leaves the reader unproved"
+
+        path, args = type_parts(field)
+        if path is None:
+            return False, "unsupported payload type syntax"
+
+        if custom:
+            if len(custom) != 1 or custom[0] is None:
+                return False, "custom deserializer path is not a source proof"
+            helper = canonical_path(custom[0])
+            helper_name = helper.rsplit("::", 1)[-1]
+            if helper_name in helper_targets:
+                if not helper_target_applies(helper_name, owner):
+                    return False, f"helper {helper} is outside its source module"
+                target = helper_targets[helper_name]
+                if target is None:
+                    return False, f"helper {helper} has conflicting macro contracts"
+                target_type, optional = target
+                if optional:
+                    target_type = f"Option<{target_type}>"
+                return payload_proof(target_type, owner)
+            elif helper in ABSENT_KEY_HELPERS or (
+                "::" not in helper
+                and helper_name in helper_forwarders
+                and helper_forwarder_applies(helper_name, owner)
+            ):
+                # These helpers forward the field's own type to Deserialize.
+                pass
+            elif helper in LOCAL_ID_HELPERS:
+                if path.rsplit("::", 1)[-1] not in SCALAR_TYPES:
+                    return False, f"helper {helper} has no scalar reader proof"
+            elif helper in DISTINCT_MAP_HELPERS and path.rsplit("::", 1)[-1] in MAP_TYPES:
+                return True, "distinct-key map is intentionally free-form"
+            else:
+                candidates = [
+                    function for function in helper_functions.get(helper_name, ())
+                    if function.path == owner.path
+                ]
+                if not candidates:
+                    candidates = helper_functions.get(helper_name, ())
+                if len(candidates) != 1 or not helper_function_passes(
+                    candidates[0], owner,
+                    allow_free_form=(
+                        is_free_form_map(path)
+                        or path.rsplit("::", 1)[-1] in MAP_TYPES
+                    ),
+                ):
+                    return False, f"custom deserializer {helper} has no forwarding proof"
+
+        # Names in the Rust type namespace can shadow prelude and standard
+        # container types. A local or uniquely imported declaration therefore
+        # gets its own reader proof before any outer-type shortcut is used.
+        base = path.rsplit("::", 1)[-1]
+        if "::" not in path and base in index:
+            target = target_for_type(path, owner)
+            if target is None:
+                return False, f"cannot resolve shadowed payload reader {path}"
+            if not passes(target):
+                return False, f"payload reader {path} lacks checked unknown-key refusal"
+            return True, f"payload reader {path} is checked"
+
+        if is_free_form_map(path):
+            return True, "explicit free-form map/value"
+        if path in {"[", "("}:
+            return True, "array or tuple reader rejects object input"
+        if base in SCALAR_TYPES or base in SEQUENCE_TYPES or base in MAP_TYPES:
+            return True, "scalar, sequence, or map outer reader"
+        if base == "PhantomData":
+            return True, "phantom reader has no object payload"
+        if base in OPTIONAL_TYPES or base in DELEGATING_TYPES:
+            if args is None or len(args) != 1:
+                return False, f"{base} payload has unsupported generic arity"
+            return payload_proof(args[0], owner)
+        if base == "Result":
+            if args is None or len(args) != 2:
+                return False, "Result payload has unsupported generic arity"
+            results = [payload_proof(arg, owner) for arg in args]
+            if all(ok for ok, _ in results):
+                return True, "both Result readers are checked"
+            return False, next(reason for ok, reason in results if not ok)
+        if base == "Cow":
+            if not args:
+                return False, "Cow payload has no borrowed target"
+            return payload_proof(args[-1], owner)
+
+        target = target_for_type(path, owner)
+        if target is None:
+            if "::" in path or path in index:
+                return False, f"cannot resolve payload reader {path}"
+            # A bare imported generic is outside this lexical census. It can
+            # be an object reader, so fail closed instead of fabricating a
+            # declaration or claiming a generic instantiation is safe.
+            return False, "cannot resolve bare generic/import statically"
+        if not passes(target):
+            return False, f"payload reader {path} lacks checked unknown-key refusal"
+        return True, f"payload reader {path} is checked"
+
+    def check_tuple_payloads(item, arms):
+        admitted = True
+        for arm in arms:
+            if arm.kind != "tuple":
+                continue
+            for field in arm.types:
+                result, reason = payload_proof(field, item)
+                if not result:
+                    admitted = False
+                    label = type_without_attributes(field) or "payload"
+                    arm_failures.append(
+                        (
+                            item.path,
+                            item.line,
+                            f"{item.name}::{arm.name}: payload {label}: {reason}",
+                        )
+                    )
+        return admitted
+
     def check_untagged_arms(item, arms):
-        """Check each payload reader; container deny reaches inline structs."""
+        """Check each untagged payload; container deny reaches inline structs."""
         admitted = True
         for arm in arms:
             if arm.kind == "struct" and not has_serde_flag(item.attrs, "deny_unknown_fields"):
@@ -486,38 +1306,82 @@ def main():
                     )
                 )
                 admitted = False
-            elif arm.kind == "tuple":
-                for field in arm.types:
-                    if any(has_serde_flag(field, flag) for flag in ("skip", "skip_deserializing")):
-                        continue
-                    for name in named_types(strip_variant_attributes(field)):
-                        target = resolve_item(index, name, item, ambiguities)
-                        if target is not None and not passes(target):
-                            admitted = False
-                        elif target is None and (name in index or "::" in name):
-                            admitted = False
+            elif arm.kind == "tuple" and not check_tuple_payloads(item, [arm]):
+                admitted = False
         return admitted
+
+    def transparent_field(item):
+        code = SOURCE_POLICY.mask_rust_non_code(item.body)
+        opening = re.search(
+            r"\bstruct\s+\$?\w+\s*(?:<[^{}]*>)?\s*(?P<delimiter>[({])",
+            code,
+        )
+        if opening is None:
+            return None
+        left = opening.start("delimiter")
+        delimiter = code[left]
+        right = ")" if delimiter == "(" else "}"
+        end = delimited_end(code, left, delimiter, right)
+        if end is None:
+            return None
+        if delimiter == "(":
+            fields = split_tuple_types(item.body[left + 1:end - 1])
+            return fields[0] if len(fields) == 1 else None
+
+        fields = [
+            field for field in split_metadata(item.body[left + 1:end - 1])
+            if strip_variant_attributes(field)
+        ]
+        if len(fields) != 1:
+            return None
+        field = fields[0]
+        field_code = SOURCE_POLICY.mask_rust_non_code(field)
+        cursor = 0
+        while True:
+            while cursor < len(field_code) and field_code[cursor].isspace():
+                cursor += 1
+            if SOURCE_POLICY.OUTER_ATTRIBUTE.match(field_code, cursor) is None:
+                break
+            attribute_end = SOURCE_POLICY.attribute_end(field_code, cursor)
+            if attribute_end is None:
+                return None
+            cursor = attribute_end
+        colon = field_code.find(":", cursor)
+        if colon < 0:
+            return None
+        return (field[:cursor] + field[colon + 1:]).strip()
+
+    def route_target(value, owner):
+        target_name = reader_type(value)
+        if not isinstance(target_name, str) or not target_name.strip():
+            return False
+        return payload_proof(target_name, owner)[0]
 
     def passes(item):
         if f"{item.path.as_posix()}:{item.name}" in EXCEPTIONS:
             return True
-        identity = (item.path.as_posix(), item.line, item.name)
+        identity = (item.path.as_posix(), item.start, item.name)
         if identity in checking:
-            return True
+            # A conversion/transparent cycle is not a finite key-refusal
+            # proof. A directly denied container is already the boundary for
+            # this recursive route; other conversion/transparent cycles have
+            # no finite reader proof and remain rejected.
+            if has_serde_flag(item.attrs, "deny_unknown_fields"):
+                return True
+            return False
         checking.add(identity)
         try:
+            manual = readers.get((item.path, item.name), ())
+            if manual:
+                return all(manual_reader_passes(item, reader) for reader in manual)
             if item.kind == "type":
                 target = alias_target(item)
                 if target is None:
                     return False
-                admitted = True
-                for name in named_types(target):
-                    target_item = resolve_item(index, name, item, ambiguities)
-                    if target_item is not None and not passes(target_item):
-                        admitted = False
-                    elif target_item is None and (name in index or "::" in name):
-                        admitted = False
-                return admitted
+                return payload_proof(target, item)[0]
+            if not derives_deserialize(item.attrs) and not item.reader_proven:
+                return False
+
             options = list(serde_options(item.attrs))
             if any(conditional and key in {
                 "from", "try_from", "transparent", "untagged", "tag", "content"
@@ -526,24 +1390,20 @@ def main():
             target = next((value for key, value, conditional in options
                            if key in {"from", "try_from"} and not conditional), None)
             if target is not None:
-                target = reader_type(target)
-                if not isinstance(target, str) or not target.strip():
-                    return False
-                admitted = True
-                for name in named_types(target):
-                    target_item = resolve_item(index, name, item, ambiguities)
-                    if target_item is not None and not passes(target_item):
-                        admitted = False
-                    elif target_item is None and (name in index or "::" in name):
-                        admitted = False
-                return admitted
+                return route_target(target, item)
+
             if has_serde_flag(item.attrs, "transparent"):
-                return True
+                field = transparent_field(item)
+                if field is None:
+                    return False
+                return payload_proof(field, item)[0]
+
             if any(key == "tag" for key, _, _ in options) and not any(
                 key == "content" for key, _, _ in options
             ):
                 units = [arm for arm in untagged_arms(item)
-                         if arm.untagged != "always" and (arm.kind == "unit" or arm.skipped_newtype)]
+                         if arm.untagged != "always"
+                         and (arm.kind == "unit" or arm.skipped_newtype)]
                 for arm in units:
                     arm_failures.append((
                         item.path, item.line,
@@ -553,7 +1413,10 @@ def main():
                     ))
                 if units:
                     return False
+
             if has_serde_flag(item.attrs, "deny_unknown_fields"):
+                if item.kind == "enum":
+                    return check_tuple_payloads(item, untagged_arms(item))
                 return True
             if has_serde_flag(item.attrs, "untagged"):
                 return check_untagged_arms(item, untagged_arms(item))
@@ -566,7 +1429,10 @@ def main():
             checking.discard(identity)
 
     for item in order:
-        if not derives_deserialize(item.attrs):
+        if not (
+            derives_deserialize(item.attrs)
+            or item.reader_proven
+        ):
             continue
         if not passes(item):
             failures.append((item.path, item.line, item.name))

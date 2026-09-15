@@ -505,6 +505,466 @@ class DenyCensusTests(unittest.TestCase):
                 '''})
                 self.assertEqual(status, 0 if admitted else 1, output)
 
+    def test_deny_follows_external_internal_adjacent_and_untagged_newtypes(self) -> None:
+        open_reader = '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+        '''
+        routes = {
+            "external": "deny_unknown_fields",
+            "internal": 'tag = "kind", deny_unknown_fields',
+            "adjacent": 'tag = "kind", content = "value", deny_unknown_fields',
+            "untagged": "untagged, deny_unknown_fields",
+        }
+        for route, metadata in routes.items():
+            with self.subTest(route=route):
+                status, output = self.run_census({"lib.rs": f'''
+                    {open_reader}
+                    #[derive(Deserialize)] #[serde({metadata})]
+                    enum Reader {{ A(Open) }}
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A", output)
+
+    def test_closed_scalar_sequence_and_free_form_payloads_remain_admitted(self) -> None:
+        routes = {
+            "external": "deny_unknown_fields",
+            "internal": 'tag = "kind", deny_unknown_fields',
+            "adjacent": 'tag = "kind", content = "value", deny_unknown_fields',
+            "untagged": "untagged, deny_unknown_fields",
+        }
+        payloads = {
+            "closed": "Closed",
+            "scalar": "u8",
+            "sequence": "Vec<u8>",
+            "free_form": "serde_json::Value",
+        }
+        for route, metadata in routes.items():
+            for name, payload in payloads.items():
+                with self.subTest(route=route, payload=name):
+                    status, output = self.run_census({"lib.rs": f'''
+                        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                        struct Closed {{ value: u8 }}
+                        #[derive(Deserialize)] #[serde({metadata})]
+                        enum Reader {{ A({payload}) }}
+                    '''})
+                    self.assertEqual(status, 0, output)
+
+    def test_free_form_map_custom_reader_remains_admitted(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            use std::collections::BTreeMap;
+            fn map_reader<'de, D>(deserializer: D) -> Result<BTreeMap<String, u8>, D::Error>
+            where D: serde::Deserializer<'de> {
+                BTreeMap::deserialize(deserializer)
+            }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "map_reader")] BTreeMap<String, u8>),
+            }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_optional_and_transparent_open_payloads_are_followed(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(transparent)]
+            struct Wrapper(Open);
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { Optional(Option<Open>), Wrapped(Wrapper) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::Optional", output)
+        self.assertIn("Reader::Wrapped", output)
+
+    def test_handwritten_denied_wire_proves_a_newtype_payload(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            struct Closed;
+            impl<'de> serde::Deserialize<'de> for Closed {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    #[derive(Deserialize)]
+                    #[serde(deny_unknown_fields)]
+                    struct Wire { value: u8 }
+                    let _ = Wire::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A(Closed) }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_handwritten_open_visitor_reader_fails_closed(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    d.deserialize_map(OpenVisitor)
+                }
+            }
+            struct OpenVisitor;
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A(Open) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_forwarding_deserializer_macro_still_follows_the_payload(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            macro_rules! selection_field_deserializer {
+                ($name:ident, $field:literal) => {
+                    fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+                    where D: serde::Deserializer<'de>, T: serde::Deserialize<'de> {
+                        T::deserialize(deserializer)
+                    }
+                };
+            }
+            selection_field_deserializer!(deserialize_open, "open");
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "deserialize_open")] Open),
+            }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_unproved_deserializer_macro_body_cannot_certify_a_payload(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            macro_rules! selection_field_deserializer {
+                ($name:ident, $field:literal) => {
+                    fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+                    where D: serde::Deserializer<'de>, T: serde::Deserialize<'de> {
+                        serde_json::Value::deserialize(deserializer)
+                            .map(|_| panic!("open"))
+                    }
+                };
+            }
+            selection_field_deserializer!(deserialize_closed, "closed");
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "deserialize_closed")] Closed),
+            }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_checked_geometry_macro_expands_its_actual_inner_reader(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            macro_rules! checked_feature_geometry {
+                ($name:ident, $raw:ident) => {
+                    #[derive(Serialize)] #[serde(transparent)]
+                    struct $name($raw);
+                    impl<'de> serde::Deserialize<'de> for $name {
+                        fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                            Ok(Self($raw::deserialize(d)?))
+                        }
+                    }
+                };
+            }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            checked_feature_geometry!(ClosedGeometry, Closed);
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A(ClosedGeometry) }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_checked_geometry_macro_without_raw_reader_proof_fails_closed(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            macro_rules! checked_feature_geometry {
+                ($name:ident, $raw:ident) => {
+                    #[derive(Serialize)] #[serde(transparent)]
+                    struct $name($raw);
+                    impl<'de> serde::Deserialize<'de> for $name {
+                        fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                            serde_json::Value::deserialize(d).map(|_| panic!("open"))
+                        }
+                    }
+                };
+            }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            checked_feature_geometry!(ClosedGeometry, Closed);
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A(ClosedGeometry) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_conflicting_deserializer_macro_contracts_do_not_admit_a_helper(self) -> None:
+        status, output = self.run_census({
+            "first.rs": '''
+                macro_rules! selection_field_deserializer {
+                    ($name:ident, $field:literal) => {
+                        fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+                        where D: serde::Deserializer<'de>, T: serde::Deserialize<'de> {
+                            T::deserialize(deserializer)
+                        }
+                    };
+                }
+            ''',
+            "second.rs": '''
+                macro_rules! selection_field_deserializer {
+                    ($name:ident, $field:literal) => {
+                        fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+                        where D: serde::Deserializer<'de>, T: serde::Deserialize<'de> {
+                            serde_json::Value::deserialize(deserializer)
+                                .map(|_| panic!("open"))
+                        }
+                    };
+                }
+                selection_field_deserializer!(deserialize_closed, "closed");
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Closed { value: u8 }
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader {
+                    A(#[serde(deserialize_with = "deserialize_closed")] Closed),
+                }
+            ''',
+        })
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_declared_id_macro_expansion_proves_qualified_payload(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            mod ids {
+                macro_rules! id_type {
+                    ($name:ident) => {
+                        #[derive(Deserialize)]
+                        #[serde(transparent)]
+                        struct $name(String);
+                    };
+                }
+                id_type!(ClosedId);
+            }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A(crate::ids::ClosedId) }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_recursive_conversion_routes_fail_closed_without_rejecting_denied_structs(self) -> None:
+        cycle_status, cycle_output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(try_from = "Second")]
+            struct First;
+            #[derive(Deserialize)] #[serde(try_from = "First")]
+            struct Second;
+        '''})
+        self.assertEqual(cycle_status, 1, cycle_output)
+        self.assertIn("First", cycle_output)
+        self.assertIn("Second", cycle_output)
+
+        terminating_status, terminating_output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Node { next: Option<Box<Node>> }
+        '''})
+        self.assertEqual(terminating_status, 0, terminating_output)
+
+        recursive_enum_status, recursive_enum_output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            enum Node { Next(Box<Node>), Leaf }
+        '''})
+        self.assertEqual(recursive_enum_status, 0, recursive_enum_output)
+
+    def test_unresolved_generic_payload_fails_closed(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            enum Reader<T> { A(T) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_local_type_names_cannot_impersonate_builtin_readers(self) -> None:
+        for name, declaration in (
+            ("Map", '''
+                struct Map;
+                impl<'de> serde::Deserialize<'de> for Map {
+                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+            '''),
+            ("Vec", '''
+                struct Vec<T>(T);
+                impl<'de, T> serde::Deserialize<'de> for Vec<T>
+                where T: serde::Deserialize<'de> {
+                    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        Ok(Self(T::deserialize(d)?))
+                    }
+                }
+            '''),
+        ):
+            with self.subTest(name=name):
+                status, output = self.run_census({"lib.rs": f'''
+                    {declaration}
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader {{ A({name}{"<u8>" if name == "Vec" else ""}) }}
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A", output)
+
+    def run_mutated_census(
+        self, files: dict[str, str], old: str, new: str
+    ) -> tuple[int, str]:
+        source = Path(__file__).with_name("check-deny-census.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(source.count(old), 1)
+        namespace = {
+            "__name__": "mutated_deny_census",
+            "__file__": str(Path(__file__).with_name("check-deny-census.py")),
+        }
+        exec(compile(source.replace(old, new), "<mutated-census>", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for name, content in files.items():
+                path = Path(directory) / "src" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                paths.append(path)
+            namespace["source_files"] = lambda: paths
+            namespace["EXCEPTIONS"] = {}
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                status = namespace["main"]()
+            return status, output.getvalue()
+
+    def test_mutations_prove_each_new_admission_check_is_load_bearing(self) -> None:
+        open_reader = '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+        '''
+        route_fixture = {"lib.rs": f'''
+            {open_reader}
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {{ A(Open) }}
+        '''}
+        fixed_status, fixed_output = self.run_census(route_fixture)
+        self.assertEqual(fixed_status, 1, fixed_output)
+        payload_old = '''if has_serde_flag(item.attrs, "deny_unknown_fields"):
+                if item.kind == "enum":
+                    return check_tuple_payloads(item, untagged_arms(item))
+                return True'''
+        payload_mutated, payload_output = self.run_mutated_census(
+            route_fixture, payload_old, '''if has_serde_flag(item.attrs, "deny_unknown_fields"):
+                return True'''
+        )
+        self.assertEqual(payload_mutated, 0, payload_output)
+
+        manual_old = '''if manual:
+                return all(manual_reader_passes(item, reader) for reader in manual)'''
+        manual_mutated, manual_output = self.run_mutated_census(
+            route_fixture, manual_old, '''if manual:
+                return True'''
+        )
+        self.assertEqual(manual_mutated, 0, manual_output)
+
+        cycle_fixture = {"lib.rs": '''
+            #[derive(Deserialize)] #[serde(try_from = "Second")]
+            struct First;
+            #[derive(Deserialize)] #[serde(try_from = "First")]
+            struct Second;
+        '''}
+        cycle_old = '''if identity in checking:
+            # A conversion/transparent cycle is not a finite key-refusal
+            # proof. A directly denied container is already the boundary for
+            # this recursive route; other conversion/transparent cycles have
+            # no finite reader proof and remain rejected.
+            if has_serde_flag(item.attrs, "deny_unknown_fields"):
+                return True
+            return False'''
+        cycle_mutated, cycle_output = self.run_mutated_census(
+            cycle_fixture, cycle_old, '''if identity in checking:
+            if has_serde_flag(item.attrs, "deny_unknown_fields"):
+                return True
+            return True'''
+        )
+        self.assertEqual(cycle_mutated, 0, cycle_output)
+
+        macro_fixture = {"lib.rs": '''
+            mod ids {
+                macro_rules! id_type {
+                    ($name:ident) => {
+                        #[derive(Deserialize)]
+                        #[serde(transparent)]
+                        struct $name(String);
+                    };
+                }
+                id_type!(ClosedId);
+            }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A(crate::ids::ClosedId) }
+        '''}
+        macro_old = "generated = macro_generated_items(path, raw_items[path], templates)"
+        macro_mutated, macro_output = self.run_mutated_census(
+            macro_fixture, macro_old, "generated = []"
+        )
+        self.assertEqual(macro_mutated, 1, macro_output)
+
+        generic_fixture = {"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            enum Reader<T> { A(T) }
+        '''}
+        generic_old = 'return False, "cannot resolve bare generic/import statically"'
+        generic_mutated, generic_output = self.run_mutated_census(
+            generic_fixture,
+            generic_old,
+            'return True, "unresolved bare generic/import (mutated)"',
+        )
+        self.assertEqual(generic_mutated, 0, generic_output)
+
+        bad_macro_fixture = {"lib.rs": '''
+            macro_rules! selection_field_deserializer {
+                ($name:ident, $field:literal) => {
+                    fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+                    where D: serde::Deserializer<'de>, T: serde::Deserialize<'de> {
+                        serde_json::Value::deserialize(deserializer)
+                            .map(|_| panic!("open"))
+                    }
+                };
+            }
+            selection_field_deserializer!(deserialize_closed, "closed");
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "deserialize_closed")] Closed),
+            }
+        '''}
+        macro_contract_old = '''if contracts.get(call.group("macro")) == "forward":
+                forwarders.add(name)'''
+        macro_contract_mutated, macro_contract_output = self.run_mutated_census(
+            bad_macro_fixture,
+            macro_contract_old,
+            '''if True:
+                forwarders.add(name)''',
+        )
+        self.assertEqual(macro_contract_mutated, 0, macro_contract_output)
+
 
 if __name__ == "__main__":
     unittest.main()
