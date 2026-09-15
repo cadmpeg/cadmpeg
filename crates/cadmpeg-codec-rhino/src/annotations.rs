@@ -11,7 +11,7 @@ use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
-use crate::settings::{utf16, Plane};
+use crate::settings::{utf16, Plane, UnitBinding};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -39,6 +39,33 @@ const V2_ANNOTATION_ARROW: Uuid = Uuid::from_canonical([
 const V5_TEXT_EXTRA: Uuid = Uuid::from_canonical([
     0xd9, 0x04, 0x90, 0xa5, 0xdb, 0x86, 0x49, 0xf8, 0xbd, 0xa1, 0x90, 0x80, 0xb1, 0xf4, 0xe9, 0x76,
 ]);
+
+/// The supported source grammars, before coordinate-unit admission.
+enum AnnotationClass {
+    Modern { leader: bool },
+    Legacy { leader: bool },
+    V2,
+    Dot { v2: bool },
+    V2Arrow,
+}
+
+impl AnnotationClass {
+    fn from_uuid(uuid: Uuid) -> Option<Self> {
+        match uuid {
+            TEXT => Some(Self::Modern { leader: false }),
+            LEADER => Some(Self::Modern { leader: true }),
+            LEGACY_TEXT => Some(Self::Legacy { leader: false }),
+            LEGACY_LEADER => Some(Self::Legacy { leader: true }),
+            crate::dimensions::V2_ANNOTATION
+            | crate::dimensions::V2_TEXT_OBJECT
+            | crate::dimensions::V2_LEADER => Some(Self::V2),
+            TEXT_DOT => Some(Self::Dot { v2: false }),
+            V2_TEXT_DOT => Some(Self::Dot { v2: true }),
+            V2_ANNOTATION_ARROW => Some(Self::V2Arrow),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -99,14 +126,21 @@ struct V5TextExtraRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized display flags"
-)]
 struct TextDotRecord {
     id: String,
     source_offset: u64,
     source_uuid: String,
+    #[serde(flatten)]
+    data: TextDotData,
+    links: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent serialized display flags"
+)]
+struct TextDotData {
     center: [f64; 3],
     height_points: i32,
     primary_text: String,
@@ -116,7 +150,6 @@ struct TextDotRecord {
     transparent: bool,
     bold: bool,
     italic: bool,
-    links: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -338,7 +371,7 @@ fn decode_dot(
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: f64,
-) -> Result<TextDotRecord, FramingError> {
+) -> Result<TextDotData, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
@@ -363,10 +396,7 @@ fn decode_dot(
         String::new()
     };
     reader.skip_remaining()?;
-    Ok(TextDotRecord {
-        id: String::new(),
-        source_offset: range.start as u64,
-        source_uuid: String::new(),
+    Ok(TextDotData {
         center,
         height_points,
         primary_text,
@@ -376,7 +406,6 @@ fn decode_dot(
         transparent: display & 2 != 0,
         bold: display & 4 != 0,
         italic: display & 8 != 0,
-        links: Vec::new(),
     })
 }
 
@@ -413,16 +442,13 @@ fn decode_v2_text_dot(
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: f64,
-) -> Result<TextDotRecord, FramingError> {
+) -> Result<TextDotData, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     v2_version(&mut reader, range.start, "text-dot")?;
     let center = v2_point(&mut reader, scale, range.start, "text-dot")?;
     let primary_text = utf16(&mut reader)?;
     reader.skip_remaining()?;
-    Ok(TextDotRecord {
-        id: String::new(),
-        source_offset: range.start as u64,
-        source_uuid: String::new(),
+    Ok(TextDotData {
         center,
         height_points: 0,
         primary_text,
@@ -432,7 +458,6 @@ fn decode_v2_text_dot(
         transparent: false,
         bold: false,
         italic: false,
-        links: Vec::new(),
     })
 }
 
@@ -477,15 +502,7 @@ fn annotation_record_dropped(
 
 /// Projects every supported general annotation into stable native records.
 pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
-    let Some(scale) = scan
-        .metadata
-        .settings
-        .units
-        .as_ref()
-        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
-    else {
-        return Ok(Vec::new());
-    };
+    let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut losses = Vec::new();
     let mut annotations = Vec::new();
     let mut dots = Vec::new();
@@ -494,12 +511,28 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
         let Some(object) = object.framed() else {
             continue;
         };
+        let Some(class) = AnnotationClass::from_uuid(object.class_uuid) else {
+            continue;
+        };
         let identity = &object.identity;
+        let Some(scale) = binding.neutral_scale() else {
+            annotation_record_dropped(
+                &mut losses,
+                &identity.source_id,
+                object.range.start,
+                object.class_uuid,
+                format!("no physical millimetre binding ({})", binding.label()),
+            );
+            continue;
+        };
         let link = format!("rhino:object:record#{source_order:06}");
         let key = source_key(identity, source_order);
         let source_uuid = identity.object_id.to_string();
         let mut v5_text_extra = None;
-        if matches!(object.class_uuid, TEXT | LEGACY_TEXT) {
+        if matches!(
+            class,
+            AnnotationClass::Modern { leader: false } | AnnotationClass::Legacy { leader: false }
+        ) {
             if let Some(extra) = object
                 .userdata
                 .iter()
@@ -519,226 +552,15 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                 }
             }
         }
-        if matches!(object.class_uuid, TEXT | LEADER) {
-            let leader = object.class_uuid == LEADER;
-            let (value, points) = match decode_annotation(
-                scan.data,
-                object.class_data_range.clone(),
-                scan.archive,
-                scale,
-                leader,
-            ) {
-                Ok(value) => value,
-                Err(error) => {
-                    annotation_record_dropped(
-                        &mut losses,
-                        &identity.source_id,
-                        object.range.start,
-                        object.class_uuid,
-                        error,
-                    );
-                    continue;
-                }
-            };
-            annotations.push(AnnotationRecord {
-                id: format!("rhino:document:annotation#{key}"),
-                source_offset: object.range.start as u64,
-                source_uuid: source_uuid.clone(),
-                kind: if leader {
-                    AnnotationKind::Leader
-                } else {
-                    AnnotationKind::Text
-                },
-                rich_text: value.rich_text,
-                plane_origin: value.plane.origin.0,
-                plane_x_axis: value.plane.xaxis.0,
-                plane_y_axis: value.plane.yaxis.0,
-                plane_z_axis: value.plane.zaxis.0,
-                plane_equation: value.plane.equation,
-                dimstyle_uuid: (!value.dimstyle_id.is_nil()).then(|| value.dimstyle_id.to_string()),
-                annotation_type: value.kind,
-                text_rectangle_width: value.text_rectangle_width,
-                text_rotation_radians: value.text_rotation_radians,
-                horizontal_alignment: value.horizontal_alignment,
-                vertical_alignment: value.vertical_alignment,
-                wrapped: value.wrapped,
-                horizontal_direction: value.horizontal_direction,
-                allow_text_scaling: value.allow_text_scaling,
-                legacy_text_display_mode: None,
-                legacy_user_text: None,
-                legacy_user_positioned_text: None,
-                legacy_style_index: None,
-                legacy_text_height: None,
-                legacy_justification: None,
-                v2_default_text: None,
-                v2_face_name: None,
-                v2_font_weight: None,
-                v2_text_height: None,
-                v5_text_extra,
-                leader_points: points,
-                links: vec![link],
-            });
-        } else if matches!(object.class_uuid, LEGACY_TEXT | LEGACY_LEADER) {
-            let leader = object.class_uuid == LEGACY_LEADER;
-            let value = match decode_legacy_annotation(
-                scan.data,
-                object.class_data_range.clone(),
-                scan.archive,
-                scale,
-            ) {
-                Ok(value) => value,
-                Err(error) => {
-                    annotation_record_dropped(
-                        &mut losses,
-                        &identity.source_id,
-                        object.range.start,
-                        object.class_uuid,
-                        error,
-                    );
-                    continue;
-                }
-            };
-            annotations.push(AnnotationRecord {
-                id: format!("rhino:document:annotation#{key}"),
-                source_offset: object.range.start as u64,
-                source_uuid: source_uuid.clone(),
-                kind: if leader {
-                    AnnotationKind::Leader
-                } else {
-                    AnnotationKind::Text
-                },
-                rich_text: value.rich_text,
-                plane_origin: value.plane.origin.0,
-                plane_x_axis: value.plane.xaxis.0,
-                plane_y_axis: value.plane.yaxis.0,
-                plane_z_axis: value.plane.zaxis.0,
-                plane_equation: value.plane.equation,
-                dimstyle_uuid: None,
-                annotation_type: value.kind,
-                text_rectangle_width: 0.0,
-                text_rotation_radians: 0.0,
-                horizontal_alignment: 0,
-                vertical_alignment: 0,
-                wrapped: false,
-                horizontal_direction: [value.plane.xaxis.0[0], value.plane.yaxis.0[0]],
-                allow_text_scaling: value.allow_text_scaling,
-                legacy_text_display_mode: Some(value.text_display_mode),
-                legacy_user_text: Some(value.user_text),
-                legacy_user_positioned_text: Some(value.user_positioned_text),
-                legacy_style_index: Some(value.dimstyle_index),
-                legacy_text_height: Some(value.text_height),
-                legacy_justification: Some(value.justification),
-                v2_default_text: None,
-                v2_face_name: None,
-                v2_font_weight: None,
-                v2_text_height: None,
-                v5_text_extra,
-                leader_points: value.points,
-                links: vec![link],
-            });
-        } else if matches!(
-            object.class_uuid,
-            crate::dimensions::V2_ANNOTATION
-                | crate::dimensions::V2_TEXT_OBJECT
-                | crate::dimensions::V2_LEADER
-        ) {
-            let value = match decode_v2_annotation(
-                scan.data,
-                object.class_data_range.clone(),
-                scale,
-                object.class_uuid,
-            ) {
-                Ok(value) => value,
-                Err(error) => {
-                    annotation_record_dropped(
-                        &mut losses,
-                        &identity.source_id,
-                        object.range.start,
-                        object.class_uuid,
-                        error,
-                    );
-                    continue;
-                }
-            };
-            let is_leader = object.class_uuid == crate::dimensions::V2_LEADER
-                || (object.class_uuid == crate::dimensions::V2_ANNOTATION && value.base.kind == 6);
-            let is_text = object.class_uuid == crate::dimensions::V2_TEXT_OBJECT
-                || (object.class_uuid == crate::dimensions::V2_ANNOTATION && value.base.kind == 7);
-            let kind = if is_leader {
-                AnnotationKind::Leader
-            } else if is_text {
-                AnnotationKind::Text
-            } else {
-                AnnotationKind::Annotation
-            };
-            let rich_text = crate::dimensions::v2_effective_text(&value.base);
-            let leader_points = if is_leader {
-                value.base.points.clone()
-            } else {
-                Vec::new()
-            };
-            annotations.push(AnnotationRecord {
-                id: format!("rhino:document:annotation#{key}"),
-                source_offset: object.range.start as u64,
-                source_uuid: source_uuid.clone(),
-                kind,
-                rich_text,
-                plane_origin: value.base.plane.origin.0,
-                plane_x_axis: value.base.plane.xaxis.0,
-                plane_y_axis: value.base.plane.yaxis.0,
-                plane_z_axis: value.base.plane.zaxis.0,
-                plane_equation: value.base.plane.equation,
-                dimstyle_uuid: None,
-                annotation_type: value.base.kind,
-                text_rectangle_width: 0.0,
-                text_rotation_radians: 0.0,
-                horizontal_alignment: 0,
-                vertical_alignment: 0,
-                wrapped: false,
-                horizontal_direction: [value.base.plane.xaxis.0[0], value.base.plane.yaxis.0[0]],
-                allow_text_scaling: false,
-                legacy_text_display_mode: None,
-                legacy_user_text: Some(value.base.user_text),
-                legacy_user_positioned_text: Some(value.base.user_positioned_text),
-                legacy_style_index: None,
-                legacy_text_height: None,
-                legacy_justification: None,
-                v2_default_text: Some(value.base.default_text),
-                v2_face_name: value.face_name,
-                v2_font_weight: value.font_weight,
-                v2_text_height: value.text_height,
-                v5_text_extra: None,
-                leader_points,
-                links: vec![link],
-            });
-        } else if matches!(object.class_uuid, TEXT_DOT | V2_TEXT_DOT) {
-            let decoded = if object.class_uuid == TEXT_DOT {
-                decode_dot(scan.data, object.class_data_range.clone(), scale)
-            } else {
-                decode_v2_text_dot(scan.data, object.class_data_range.clone(), scale)
-            };
-            let mut value = match decoded {
-                Ok(value) => value,
-                Err(error) => {
-                    annotation_record_dropped(
-                        &mut losses,
-                        &identity.source_id,
-                        object.range.start,
-                        object.class_uuid,
-                        error,
-                    );
-                    continue;
-                }
-            };
-            value.id = format!("rhino:document:text_dot#{key}");
-            value.source_offset = object.range.start as u64;
-            value.source_uuid = source_uuid;
-            value.links.push(link);
-            dots.push(value);
-        } else if object.class_uuid == V2_ANNOTATION_ARROW {
-            let (tail, head) =
-                match decode_v2_annotation_arrow(scan.data, object.class_data_range.clone(), scale)
-                {
+        match class {
+            AnnotationClass::Modern { leader } => {
+                let (value, points) = match decode_annotation(
+                    scan.data,
+                    object.class_data_range.clone(),
+                    scan.archive,
+                    scale,
+                    leader,
+                ) {
                     Ok(value) => value,
                     Err(error) => {
                         annotation_record_dropped(
@@ -751,14 +573,234 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                         continue;
                     }
                 };
-            arrows.push(AnnotationArrowRecord {
-                id: format!("rhino:document:annotation_arrow#{key}"),
-                source_offset: object.range.start as u64,
-                source_uuid,
-                tail,
-                head,
-                links: vec![link],
-            });
+                annotations.push(AnnotationRecord {
+                    id: format!("rhino:document:annotation#{key}"),
+                    source_offset: object.range.start as u64,
+                    source_uuid,
+                    kind: if leader {
+                        AnnotationKind::Leader
+                    } else {
+                        AnnotationKind::Text
+                    },
+                    rich_text: value.rich_text,
+                    plane_origin: value.plane.origin.0,
+                    plane_x_axis: value.plane.xaxis.0,
+                    plane_y_axis: value.plane.yaxis.0,
+                    plane_z_axis: value.plane.zaxis.0,
+                    plane_equation: value.plane.equation,
+                    dimstyle_uuid: (!value.dimstyle_id.is_nil())
+                        .then(|| value.dimstyle_id.to_string()),
+                    annotation_type: value.kind,
+                    text_rectangle_width: value.text_rectangle_width,
+                    text_rotation_radians: value.text_rotation_radians,
+                    horizontal_alignment: value.horizontal_alignment,
+                    vertical_alignment: value.vertical_alignment,
+                    wrapped: value.wrapped,
+                    horizontal_direction: value.horizontal_direction,
+                    allow_text_scaling: value.allow_text_scaling,
+                    legacy_text_display_mode: None,
+                    legacy_user_text: None,
+                    legacy_user_positioned_text: None,
+                    legacy_style_index: None,
+                    legacy_text_height: None,
+                    legacy_justification: None,
+                    v2_default_text: None,
+                    v2_face_name: None,
+                    v2_font_weight: None,
+                    v2_text_height: None,
+                    v5_text_extra,
+                    leader_points: points,
+                    links: vec![link],
+                });
+            }
+            AnnotationClass::Legacy { leader } => {
+                let value = match decode_legacy_annotation(
+                    scan.data,
+                    object.class_data_range.clone(),
+                    scan.archive,
+                    scale,
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        annotation_record_dropped(
+                            &mut losses,
+                            &identity.source_id,
+                            object.range.start,
+                            object.class_uuid,
+                            error,
+                        );
+                        continue;
+                    }
+                };
+                annotations.push(AnnotationRecord {
+                    id: format!("rhino:document:annotation#{key}"),
+                    source_offset: object.range.start as u64,
+                    source_uuid,
+                    kind: if leader {
+                        AnnotationKind::Leader
+                    } else {
+                        AnnotationKind::Text
+                    },
+                    rich_text: value.rich_text,
+                    plane_origin: value.plane.origin.0,
+                    plane_x_axis: value.plane.xaxis.0,
+                    plane_y_axis: value.plane.yaxis.0,
+                    plane_z_axis: value.plane.zaxis.0,
+                    plane_equation: value.plane.equation,
+                    dimstyle_uuid: None,
+                    annotation_type: value.kind,
+                    text_rectangle_width: 0.0,
+                    text_rotation_radians: 0.0,
+                    horizontal_alignment: 0,
+                    vertical_alignment: 0,
+                    wrapped: false,
+                    horizontal_direction: [value.plane.xaxis.0[0], value.plane.yaxis.0[0]],
+                    allow_text_scaling: value.allow_text_scaling,
+                    legacy_text_display_mode: Some(value.text_display_mode),
+                    legacy_user_text: Some(value.user_text),
+                    legacy_user_positioned_text: Some(value.user_positioned_text),
+                    legacy_style_index: Some(value.dimstyle_index),
+                    legacy_text_height: Some(value.text_height),
+                    legacy_justification: Some(value.justification),
+                    v2_default_text: None,
+                    v2_face_name: None,
+                    v2_font_weight: None,
+                    v2_text_height: None,
+                    v5_text_extra,
+                    leader_points: value.points,
+                    links: vec![link],
+                });
+            }
+            AnnotationClass::V2 => {
+                let value = match decode_v2_annotation(
+                    scan.data,
+                    object.class_data_range.clone(),
+                    scale,
+                    object.class_uuid,
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        annotation_record_dropped(
+                            &mut losses,
+                            &identity.source_id,
+                            object.range.start,
+                            object.class_uuid,
+                            error,
+                        );
+                        continue;
+                    }
+                };
+                let is_leader = object.class_uuid == crate::dimensions::V2_LEADER
+                    || (object.class_uuid == crate::dimensions::V2_ANNOTATION
+                        && value.base.kind == 6);
+                let is_text = object.class_uuid == crate::dimensions::V2_TEXT_OBJECT
+                    || (object.class_uuid == crate::dimensions::V2_ANNOTATION
+                        && value.base.kind == 7);
+                let kind = if is_leader {
+                    AnnotationKind::Leader
+                } else if is_text {
+                    AnnotationKind::Text
+                } else {
+                    AnnotationKind::Annotation
+                };
+                let rich_text = crate::dimensions::v2_effective_text(&value.base);
+                let leader_points = if is_leader {
+                    value.base.points
+                } else {
+                    Vec::new()
+                };
+                annotations.push(AnnotationRecord {
+                    id: format!("rhino:document:annotation#{key}"),
+                    source_offset: object.range.start as u64,
+                    source_uuid,
+                    kind,
+                    rich_text,
+                    plane_origin: value.base.plane.origin.0,
+                    plane_x_axis: value.base.plane.xaxis.0,
+                    plane_y_axis: value.base.plane.yaxis.0,
+                    plane_z_axis: value.base.plane.zaxis.0,
+                    plane_equation: value.base.plane.equation,
+                    dimstyle_uuid: None,
+                    annotation_type: value.base.kind,
+                    text_rectangle_width: 0.0,
+                    text_rotation_radians: 0.0,
+                    horizontal_alignment: 0,
+                    vertical_alignment: 0,
+                    wrapped: false,
+                    horizontal_direction: [
+                        value.base.plane.xaxis.0[0],
+                        value.base.plane.yaxis.0[0],
+                    ],
+                    allow_text_scaling: false,
+                    legacy_text_display_mode: None,
+                    legacy_user_text: Some(value.base.user_text),
+                    legacy_user_positioned_text: Some(value.base.user_positioned_text),
+                    legacy_style_index: None,
+                    legacy_text_height: None,
+                    legacy_justification: None,
+                    v2_default_text: Some(value.base.default_text),
+                    v2_face_name: value.face_name,
+                    v2_font_weight: value.font_weight,
+                    v2_text_height: value.text_height,
+                    v5_text_extra: None,
+                    leader_points,
+                    links: vec![link],
+                });
+            }
+            AnnotationClass::Dot { v2 } => {
+                let decoded = if v2 {
+                    decode_v2_text_dot(scan.data, object.class_data_range.clone(), scale)
+                } else {
+                    decode_dot(scan.data, object.class_data_range.clone(), scale)
+                };
+                let data = match decoded {
+                    Ok(value) => value,
+                    Err(error) => {
+                        annotation_record_dropped(
+                            &mut losses,
+                            &identity.source_id,
+                            object.range.start,
+                            object.class_uuid,
+                            error,
+                        );
+                        continue;
+                    }
+                };
+                dots.push(TextDotRecord {
+                    id: format!("rhino:document:text_dot#{key}"),
+                    source_offset: object.range.start as u64,
+                    source_uuid,
+                    data,
+                    links: vec![link],
+                });
+            }
+            AnnotationClass::V2Arrow => {
+                let (tail, head) = match decode_v2_annotation_arrow(
+                    scan.data,
+                    object.class_data_range.clone(),
+                    scale,
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        annotation_record_dropped(
+                            &mut losses,
+                            &identity.source_id,
+                            object.range.start,
+                            object.class_uuid,
+                            error,
+                        );
+                        continue;
+                    }
+                };
+                arrows.push(AnnotationArrowRecord {
+                    id: format!("rhino:document:annotation_arrow#{key}"),
+                    source_offset: object.range.start as u64,
+                    source_uuid,
+                    tail,
+                    head,
+                    links: vec![link],
+                });
+            }
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
@@ -884,6 +926,185 @@ mod tests {
         fields.extend(12_i32.to_le_bytes());
         let base = anonymous(3, &fields);
         anonymous(0, &base)
+    }
+
+    #[test]
+    fn complete_annotations_require_physical_units_and_keep_located_source_losses() {
+        use crate::test_support::test_dump as support;
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        let mut v2_text = v2_annotation_payload(7, &[], "text", "default", false);
+        v2_text.extend(utf16("Witness Sans"));
+        v2_text.extend(700_i32.to_le_bytes());
+        v2_text.extend(12.5_f64.to_le_bytes());
+        let mut dot = vec![0x10];
+        for coordinate in [1.0_f64, 2.0, 3.0] {
+            dot.extend(coordinate.to_le_bytes());
+        }
+        dot.extend(12_i32.to_le_bytes());
+        dot.extend(utf16("dot"));
+        dot.extend(utf16("Witness Sans"));
+        dot.extend(0_i32.to_le_bytes());
+        let mut v2_dot = vec![0x10];
+        for coordinate in [1.0_f64, 2.0, 3.0] {
+            v2_dot.extend(coordinate.to_le_bytes());
+        }
+        v2_dot.extend(utf16("V2 dot"));
+        let mut arrow = vec![0x10];
+        for coordinate in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0] {
+            arrow.extend(coordinate.to_le_bytes());
+        }
+        // Enumerate source UUIDs independently of AnnotationClass::from_uuid.
+        let fixtures = [
+            (
+                super::TEXT,
+                modern_annotation(false),
+                "annotations",
+                "plane_origin",
+            ),
+            (
+                super::LEADER,
+                modern_annotation(true),
+                "annotations",
+                "plane_origin",
+            ),
+            (
+                LEGACY_TEXT,
+                legacy_text_payload(),
+                "annotations",
+                "plane_origin",
+            ),
+            (
+                super::LEGACY_LEADER,
+                legacy_text_payload(),
+                "annotations",
+                "plane_origin",
+            ),
+            (
+                crate::dimensions::V2_ANNOTATION,
+                v2_annotation_payload(123, &[], "base", "default", false),
+                "annotations",
+                "plane_origin",
+            ),
+            (
+                crate::dimensions::V2_TEXT_OBJECT,
+                v2_text,
+                "annotations",
+                "plane_origin",
+            ),
+            (
+                crate::dimensions::V2_LEADER,
+                v2_annotation_payload(6, &[[1.0, 2.0], [3.0, 4.0]], "leader", "default", false),
+                "annotations",
+                "plane_origin",
+            ),
+            (super::TEXT_DOT, dot, "text_dots", "center"),
+            (V2_TEXT_DOT, v2_dot, "text_dots", "center"),
+            (V2_ANNOTATION_ARROW, arrow, "annotation_arrows", "tail"),
+        ];
+        let archive = ArchiveVersion::V8;
+        for (class, payload, arena, position_field) in fixtures {
+            for (unit, expected_scale, binding_label) in [
+                (Some(2), Some(1.0), "millimeters"),
+                (Some(3), Some(10.0), "millimeters"),
+                (Some(0), None, "native"),
+                (Some(255), None, "unavailable"),
+                (None, None, "unavailable"),
+            ] {
+                let object = object_record_with_payload(archive, 0x20, class.to_wire(), &payload);
+                let point = object_record_with_payload(
+                    archive,
+                    1,
+                    support::POINT_CLASS,
+                    &support::point_payload([1.0, 2.0, 3.0]),
+                );
+                let settings = unit
+                    .map(|unit| vec![support::units_record(archive, unit)])
+                    .unwrap_or_default();
+                let bytes = support::minimal_document(
+                    "80",
+                    &[
+                        support::table(archive, 0x1000_0014, &[]),
+                        support::table(archive, 0x1000_0015, &settings),
+                        support::table(archive, 0x1000_0013, &[object.clone(), point]),
+                    ],
+                );
+                let scan = crate::container::scan_owned(bytes.clone())
+                    .expect("annotation archive framing");
+                let source = scan.objects[0].framed().expect("framed annotation");
+                let decoded = crate::RhinoCodec
+                    .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                    .expect("complete annotation decode");
+                let ir: CadIr = serde_json::from_slice(
+                    &serde_json::to_vec(decoded.ir()).expect("annotation CADIR serialization"),
+                )
+                .expect("annotation CADIR admission");
+                let namespace = ir
+                    .native
+                    .namespace("rhino")
+                    .expect("Rhino native namespace");
+                let records = namespace.arenas().get(arena).map_or(&[][..], Vec::as_slice);
+                assert_eq!(
+                    records.len(),
+                    usize::from(expected_scale.is_some()),
+                    "class={class} unit={unit:?} losses={:?}",
+                    decoded.report().losses
+                );
+                let losses = decoded
+                    .report()
+                    .losses
+                    .iter()
+                    .filter(|loss| {
+                        loss.code == super::RhinoLossCode::AnnotationRecordDropped.kind()
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    losses.len(),
+                    usize::from(expected_scale.is_none()),
+                    "class={class} unit={unit:?}"
+                );
+                assert_eq!(
+                    decoded
+                        .source_fidelity()
+                        .retained_record("rhino:object:record#000000")
+                        .expect("retained annotation source")
+                        .data(),
+                    Some(object.as_slice())
+                );
+                if let Some(scale) = expected_scale {
+                    let record = serde_json::to_value(&records[0]).expect("annotation record JSON");
+                    assert_eq!(
+                        record[position_field][0], scale,
+                        "class={class} unit={unit:?}"
+                    );
+                    assert_eq!(record["source_offset"], source.range.start as u64);
+                    assert_eq!(
+                        record["links"],
+                        serde_json::json!(["rhino:object:record#000000"])
+                    );
+                    assert!(record.get("data").is_none());
+                    assert!(record["id"].as_str().is_some_and(|id| !id.is_empty()));
+                } else {
+                    let loss = losses[0];
+                    assert!(loss.message.contains(&source.identity.source_id));
+                    assert!(loss
+                        .message
+                        .contains(&format!("no physical millimetre binding ({binding_label})")));
+                    let provenance = loss.provenance.as_ref().expect("located annotation loss");
+                    assert_eq!(provenance.offset, source.range.start as u64);
+                    assert_eq!(
+                        provenance.tag.as_deref(),
+                        Some(
+                            format!(
+                                "ANNOTATION/source={}/class={class}",
+                                source.identity.source_id
+                            )
+                            .as_str()
+                        )
+                    );
+                }
+            }
+        }
     }
 
     #[test]
