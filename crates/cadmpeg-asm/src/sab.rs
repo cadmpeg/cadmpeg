@@ -212,6 +212,7 @@ pub fn payload_subtype_range(
                                     return Some(start..token_start);
                                 }
                             }
+                            Lexed::Terminator => return None,
                             _ => {}
                         }
                     }
@@ -589,6 +590,21 @@ fn frame_impl(
 mod tests {
     use super::{exact_identifier_at, frame, frame_history, payload_token};
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn subtype_lookup_rejects_a_record_terminator_before_its_close() {
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let mut bytes = b"\x0d\x01x\x0f\x0d\x01y\x0a\x10\x11".to_vec();
+            let records = frame(&bytes, 0, bytes.len(), width).unwrap();
+            assert_eq!(
+                super::payload_subtype_range(&bytes, &records[0], 0, width, "y"),
+                Some(7..8)
+            );
+            bytes[7] = 0x11;
+            assert!(frame(&bytes, 0, bytes.len(), width).is_err());
+            assert!(super::payload_subtype_range(&bytes, &records[0], 0, width, "y").is_none());
+        }
+    }
 
     #[test]
     fn framing_cannot_complete_a_token_from_bytes_after_its_limit() {
