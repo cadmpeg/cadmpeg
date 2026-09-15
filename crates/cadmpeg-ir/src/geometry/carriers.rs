@@ -107,6 +107,15 @@ impl NurbsPoles3 {
         }
     }
 
+    fn require_finite_points(&self) -> Result<(), NurbsError> {
+        match self {
+            Self::Polynomial { points } => require_finite_points_3("control_points", points),
+            Self::Rational { points } => {
+                require_finite_points_3("control_points", points.iter().map(|pole| &pole.point))
+            }
+        }
+    }
+
     /// Rational weights in pole order, absent on a polynomial curve.
     #[must_use]
     pub fn weights(&self) -> Option<Vec<f64>> {
@@ -153,6 +162,14 @@ impl NurbsPoles3 {
 ///
 /// A rational pole carries its weight in its own row, so a weight grid that
 /// does not cover the pole grid has no spelling.
+///
+/// Transposition requires admission as a [`NurbsSurface`].
+///
+/// ```compile_fail
+/// use cadmpeg_ir::geometry::NurbsPoleGrid;
+/// let mut grid = NurbsPoleGrid::Polynomial { rows: Vec::new() };
+/// grid.transpose();
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "form", rename_all = "snake_case")]
@@ -252,6 +269,18 @@ impl NurbsPoleGrid {
         }
     }
 
+    fn require_finite_points(&self) -> Result<(), NurbsError> {
+        match self {
+            Self::Polynomial { rows } => {
+                require_finite_points_3("control_points", rows.iter().flatten())
+            }
+            Self::Rational { rows } => require_finite_points_3(
+                "control_points",
+                rows.iter().flatten().map(|pole| &pole.point),
+            ),
+        }
+    }
+
     /// Rational weight rows, absent on a polynomial surface.
     #[must_use]
     pub fn weights(&self) -> Option<Vec<Vec<f64>>> {
@@ -262,14 +291,6 @@ impl NurbsPoleGrid {
                     .map(|row| row.iter().map(|pole| pole.weight.get()).collect())
                     .collect(),
             ),
-        }
-    }
-
-    /// Exchange the outer and inner grid index.
-    pub fn transpose(&mut self) {
-        match self {
-            Self::Polynomial { rows } => *rows = transpose_rows(rows),
-            Self::Rational { rows } => *rows = transpose_rows(rows),
         }
     }
 
@@ -535,9 +556,8 @@ impl BsplineSurface {
             for point in row.iter_mut() {
                 edit(point);
             }
-            require_finite_points_3("control_points", row)?;
+            require_finite_points_3("control_points", row.iter())?;
         }
-        require_rectangular_grid("control_points", &points)?;
         self.control_points = points;
         Ok(())
     }
@@ -603,18 +623,6 @@ impl From<NurbsError> for cadmpeg_core::CodecError {
     }
 }
 
-/// Exchange the outer and inner index of a rectangular row grid.
-fn transpose_rows<T: Clone>(rows: &[Vec<T>]) -> Vec<Vec<T>> {
-    let inner = rows.first().map_or(0, Vec::len);
-    (0..inner)
-        .map(|column| {
-            rows.iter()
-                .filter_map(|row| row.get(column).cloned())
-                .collect()
-        })
-        .collect()
-}
-
 fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usize, NurbsError> {
     pole_count
         .checked_add(degree as usize)
@@ -626,7 +634,7 @@ fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usi
 ///
 /// The grid is one object, so its rectangularity is one shape mint over that
 /// object, not a comparison between two independently stated lists.
-fn require_rectangular_grid(field: &str, rows: &[Vec<Point3>]) -> Result<(), NurbsError> {
+fn require_rectangular_grid<T>(field: &str, rows: &[Vec<T>]) -> Result<(), NurbsError> {
     let width = rows.first().map_or(0, Vec::len);
     for row in rows {
         require_length(&format!("{field} row"), row.len(), width)?;
@@ -657,9 +665,12 @@ fn require_finite_points_2(field: &str, points: &[Point2]) -> Result<(), NurbsEr
     }
 }
 
-fn require_finite_points_3(field: &str, points: &[Point3]) -> Result<(), NurbsError> {
+fn require_finite_points_3<'a>(
+    field: &str,
+    points: impl IntoIterator<Item = &'a Point3>,
+) -> Result<(), NurbsError> {
     if points
-        .iter()
+        .into_iter()
         .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
     {
         Ok(())
@@ -771,7 +782,6 @@ impl NurbsSurface {
             knots: v_knots,
             periodic: v_periodic,
         } = v;
-        let control_points = poles.points();
         let u_count = poles.u_count();
         let v_count = poles.v_count();
         if u_count <= u_degree as usize {
@@ -794,10 +804,11 @@ impl NurbsSurface {
             v_knots.len(),
             checked_knot_count("v", v_count, v_degree)?,
         )?;
-        require_rectangular_grid("control_points", &control_points)?;
-        for row in &control_points {
-            require_finite_points_3("control_points", row)?;
+        match &poles {
+            NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
+            NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
         }
+        poles.require_finite_points()?;
         require_nondecreasing_knots(&u_knots)
             .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
         require_nondecreasing_knots(&v_knots)
@@ -923,9 +934,7 @@ impl NurbsSurface {
     pub fn edit_control_points(&mut self, edit: impl FnMut(&mut Point3)) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
         poles.edit_points(edit);
-        for row in &poles.points() {
-            require_finite_points_3("control_points", row)?;
-        }
+        poles.require_finite_points()?;
         self.poles = poles;
         Ok(())
     }
@@ -984,7 +993,19 @@ impl NurbsSurface {
     /// Exchange the u and v parameter axes and transpose pole storage.
     /// The natural normal changes sign; `normal_reversed` remains unchanged.
     pub fn transpose_parameter_axes(&mut self) {
-        self.poles.transpose();
+        // Surface admission and every grid mutation preserve nonempty,
+        // rectangular rows. Raw pole grids do not expose this operation.
+        fn transpose<T: Copy>(rows: &[Vec<T>], width: usize) -> Vec<Vec<T>> {
+            (0..width)
+                .map(|column| rows.iter().map(|row| row[column]).collect())
+                .collect()
+        }
+
+        let width = self.v_count();
+        match &mut self.poles {
+            NurbsPoleGrid::Polynomial { rows } => *rows = transpose(rows, width),
+            NurbsPoleGrid::Rational { rows } => *rows = transpose(rows, width),
+        }
         std::mem::swap(&mut self.u_degree, &mut self.v_degree);
         std::mem::swap(&mut self.u_knots, &mut self.v_knots);
         std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);
@@ -1056,7 +1077,7 @@ impl NurbsCurve {
         periodic: bool,
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.len(), poles.len(), "control_points")?;
-        require_finite_points_3("control_points", &poles.points())?;
+        poles.require_finite_points()?;
         require_nondecreasing_knots(&knots)?;
         Ok(Self {
             degree,
@@ -1125,7 +1146,7 @@ impl NurbsCurve {
     pub fn edit_control_points(&mut self, edit: impl FnMut(&mut Point3)) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
         poles.edit_points(edit);
-        require_finite_points_3("control_points", &poles.points())?;
+        poles.require_finite_points()?;
         self.poles = poles;
         Ok(())
     }
