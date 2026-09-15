@@ -5,6 +5,11 @@ use std::io::{Cursor, Write};
 
 use zip::write::SimpleFileOptions;
 
+pub(crate) const GEOMETRY: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd"
+));
+
 pub(crate) const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"

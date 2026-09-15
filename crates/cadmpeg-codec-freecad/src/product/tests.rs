@@ -103,6 +103,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
             .collect::<Vec<_>>(),
         &[[1.0; 3], [2.0; 3]]
     );
+    assert_eq!(occurrence.element_visibility(), [true, false]);
     assert_eq!(result.ir().model.product_definitions.len(), 5);
     let component = result
         .ir()
@@ -1333,5 +1334,159 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
     assert!(
         error.to_string().contains("inconsistent link-array counts"),
         "{error}"
+    );
+}
+
+#[test]
+fn malformed_copy_on_change_integer_is_rejected_at_source_admission() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+<Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="abc"/></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("product decode rejects the malformed enum integer");
+    assert!(
+        error.to_string().contains("invalid enumeration Integer"),
+        "{error}"
+    );
+}
+
+#[test]
+fn visibility_cardinality_is_rejected_when_element_count_is_absent() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+<Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Occurrence"><Properties Count="3">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
+<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value="0"/></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let mut placements = 2_u32.to_le_bytes().to_vec();
+    for _ in 0..2 {
+        placements.extend(
+            [1.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
+    }
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("PlacementList", &placements),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect_err("product decode rejects inconsistent visibility cardinality");
+    assert!(
+        error.to_string().contains("inconsistent link-array counts"),
+        "{error}"
+    );
+}
+
+#[test]
+fn visibility_cardinality_matches_when_element_count_is_absent() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+<Object name="Prototype"><Properties Count="0"/></Object>
+<Object name="Occurrence"><Properties Count="3">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>
+<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList value="01"/></Property>
+</Properties></Object>
+</ObjectData></Document>"#;
+    let mut placements = 2_u32.to_le_bytes().to_vec();
+    for _ in 0..2 {
+        placements.extend(
+            [1.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
+        );
+    }
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("PlacementList", &placements),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("matching populated carriers remain legal without ElementCount");
+    let native = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<serde_json::Value>("product_nodes")
+        .expect("product nodes");
+    let occurrence = native
+        .iter()
+        .find(|record| record["kind"] == "occurrence")
+        .expect("link occurrence");
+    assert_eq!(
+        occurrence["element_visibility"],
+        serde_json::json!([true, false])
+    );
+    assert!(FcstdCodec.validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn preserves_unknown_numeric_copy_on_change_index() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="99"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("an unknown numeric enumeration index is source-valid");
+    let records = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    assert_eq!(records[0].copy_on_change(), Some("99"));
+    let occurrence = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("Occurrence"))
+        })
+        .expect("link occurrence");
+    assert_eq!(
+        occurrence
+            .link
+            .as_ref()
+            .expect("link state")
+            .copy_on_change()
+            .expect("copy-on-change state")
+            .policy,
+        cadmpeg_ir::CopyOnChangePolicy::Native("99".into())
     );
 }

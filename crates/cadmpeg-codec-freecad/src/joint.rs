@@ -952,4 +952,48 @@ pub(crate) mod tests {
             ));
         }
     }
+
+    #[test]
+    fn malformed_joint_float_is_rejected_at_source_admission() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+    <Objects Count="2"><Object type="Assembly::AssemblyObject" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+    <ObjectData Count="2">
+    <Object name="Base"><Properties Count="0"/></Object>
+    <Object name="Joint"><Properties Count="4">
+    <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Revolute"/></CustomEnumList></Property>
+    <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+    <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+    <Property name="Angle" type="App::PropertyAngle"><Float value="abc"/></Property>
+    </Properties></Object>
+    </ObjectData></Document>"#;
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("joint with malformed numeric scalar is rejected");
+        assert!(error.to_string().contains("invalid value"), "{error}");
+    }
+
+    #[test]
+    fn malformed_joint_bool_is_rejected_at_source_admission() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+    <Objects Count="2"><Object type="Assembly::AssemblyObject" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+    <ObjectData Count="2">
+    <Object name="Base"><Properties Count="0"/></Object>
+    <Object name="Joint"><Properties Count="4">
+    <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Revolute"/></CustomEnumList></Property>
+    <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+    <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+    <Property name="Suppressed" type="App::PropertyBool"><Bool value="maybe"/></Property>
+    </Properties></Object>
+    </ObjectData></Document>"#;
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect_err("joint with malformed boolean scalar is rejected");
+        assert!(error.to_string().contains("invalid value"), "{error}");
+    }
 }
