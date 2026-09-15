@@ -106,7 +106,7 @@ mod tests {
             (vec![entry(1, vec![2]), entry(2, vec![])], false),
             (vec![entry(1, vec![9])], false),
         ] {
-            let wire = serde_json::json!({"id":"table","index":0,"owner_property":null,"save_all":false,"threshold":0,"declared_count":entries.len(),"source_entry":null,"entries":entries});
+            let wire = serde_json::json!({"id":native_id("string-table", "0"),"index":0,"owner_property":null,"save_all":false,"threshold":0,"declared_count":entries.len(),"source_entry":null,"entries":entries});
             let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
             assert_eq!(result.is_ok(), valid);
             if let Ok(record) = result {
@@ -116,11 +116,45 @@ mod tests {
     }
 
     #[test]
+    fn string_table_admission_derives_and_checks_identity_from_index() {
+        let mut wire = serde_json::json!({
+            "id": native_id("string-table", "0"),
+            "index": 0,
+            "owner_property": null,
+            "save_all": false,
+            "threshold": 0,
+            "declared_count": 0,
+            "source_entry": null,
+            "entries": []
+        });
+        let table = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap();
+        assert_eq!(table.index, 0);
+        assert_eq!(table.id(), native_id("string-table", "0"));
+        assert_eq!(serde_json::to_value(&table).unwrap(), wire);
+
+        wire["id"] = serde_json::json!("fcstd:native:string-table#not-the-index");
+        let error = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap_err();
+        assert!(error.to_string().contains("string table id"));
+
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.native
+            .namespace_mut("fcstd")
+            .set_arena("string_tables", &[wire])
+            .unwrap();
+        let roundtrip: cadmpeg_ir::CadIr =
+            serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        let findings = crate::validate_native(&roundtrip);
+        assert!(findings.iter().any(|finding| {
+            finding.message.contains("string table id")
+                && finding.check == cadmpeg_ir::report::Check::NativeLinks
+        }));
+    }
+
+    #[test]
     fn string_tables_admit_numeric_positions_from_canonical_native_order() {
         let records = (0..12)
             .map(|index| {
                 super::StringTableRecord::try_new(
-                    native_id("string-table", index.to_string()),
                     index,
                     None,
                     false,
@@ -142,7 +176,7 @@ mod tests {
             tables
                 .as_slice()
                 .iter()
-                .map(|table| table.index)
+            .map(|table| table.index)
                 .collect::<Vec<_>>(),
             (0..12).collect::<Vec<_>>()
         );
@@ -166,7 +200,6 @@ mod tests {
                 .into_iter()
                 .map(|index| {
                     super::StringTableRecord::try_new(
-                        native_id("string-table", index.to_string()),
                         index,
                         None,
                         false,
@@ -420,8 +453,66 @@ mod tests {
             .contains("maps"));
         let wire = serde_json::json!([{"index": 1, "map_id": 0, "groups": []}]);
         let nodes: super::ElementMapNodes = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(nodes.root().index, 1);
         assert_eq!(serde_json::to_value(nodes).unwrap(), wire);
+    }
+
+    #[test]
+    fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
+        for indices in [vec![0], vec![2], vec![1, 1], vec![1, 3]] {
+            let wire = indices
+                .into_iter()
+                .map(|index| serde_json::json!({"index": index, "map_id": 0, "groups": []}))
+                .collect::<Vec<_>>();
+            let error = serde_json::from_value::<super::ElementMapNodes>(
+                serde_json::Value::Array(wire.clone()),
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("maps[") || error.to_string().contains("maps"));
+
+            let record = serde_json::json!({
+                "id": "fcstd:native:element-map#test",
+                "property": "fcstd:native:property#Shape",
+                "version": "1.0",
+                "hasher_index": null,
+                "source_entry": null,
+                "map_id": 0,
+                "declared_count": 0,
+                "postfixes": [],
+                "maps": wire
+            });
+            assert!(serde_json::from_value::<super::ElementMapRecord>(record.clone()).is_err());
+
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("element_maps", &[record])
+                .unwrap();
+            let roundtrip: cadmpeg_ir::CadIr =
+                serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+            let findings = crate::validate_native(&roundtrip);
+            assert!(findings.iter().any(|finding| {
+                finding.message.contains("maps[")
+                    && finding.check == cadmpeg_ir::report::Check::NativeLinks
+            }));
+        }
+    }
+
+    #[test]
+    fn element_map_declared_count_is_independent_xml_metadata() {
+        let wire = serde_json::json!({
+            "id": "fcstd:native:element-map#test",
+            "property": "fcstd:native:property#Shape",
+            "version": "1.0",
+            "hasher_index": null,
+            "source_entry": null,
+            "map_id": 0,
+            "declared_count": 999,
+            "postfixes": [],
+            "maps": [{"index": 1, "map_id": 0, "groups": []}]
+        });
+        let record = serde_json::from_value::<super::ElementMapRecord>(wire.clone()).unwrap();
+        assert_eq!(record.declared_count, 999);
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
     }
 
     #[test]
@@ -2744,10 +2835,8 @@ impl TryFrom<Vec<StringTableRecord>> for StringTables {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "StringTableRecordWire", into = "StringTableRecordWire")]
 pub struct StringTableRecord {
-    /// Stable table identity; the suffix is the zero-based `HasherIndex`.
-    pub id: String,
     /// Zero-based document table index referenced by shape properties.
-    pub index: usize,
+    index: usize,
     /// Owning property when the table is serialized beside its first use.
     pub owner_property: Option<String>,
     /// Whether all strings, rather than only marked strings, were persisted.
@@ -2762,7 +2851,6 @@ pub struct StringTableRecord {
 
 impl StringTableRecord {
     pub(crate) fn try_new(
-        id: String,
         index: usize,
         owner_property: Option<String>,
         save_all: bool,
@@ -2780,7 +2868,6 @@ impl StringTableRecord {
             }
         }
         Ok(Self {
-            id,
             index,
             owner_property,
             save_all,
@@ -2789,6 +2876,12 @@ impl StringTableRecord {
             entries,
         })
     }
+
+    /// Stable table identity derived from the document table index.
+    pub(crate) fn id(&self) -> String {
+        native_id("string-table", self.index.to_string())
+    }
+
     pub(crate) fn entries(&self) -> &[StringTableEntry] {
         &self.entries
     }
@@ -2814,9 +2907,10 @@ struct StringTableRecordWire {
 impl From<StringTableRecord> for StringTableRecordWire {
     fn from(value: StringTableRecord) -> Self {
         let declared_count = value.declared_count();
+        let index = value.index;
         Self {
-            id: value.id,
-            index: value.index,
+            id: native_id("string-table", index.to_string()),
+            index,
             owner_property: value.owner_property,
             save_all: value.save_all,
             threshold: value.threshold,
@@ -2831,11 +2925,17 @@ impl TryFrom<StringTableRecordWire> for StringTableRecord {
     type Error = String;
 
     fn try_from(wire: StringTableRecordWire) -> Result<Self, Self::Error> {
+        let expected_id = native_id("string-table", wire.index.to_string());
+        if wire.id != expected_id {
+            return Err(format!(
+                "string table id must be {expected_id} for index {}",
+                wire.index
+            ));
+        }
         if wire.declared_count != wire.entries.len() {
             return Err("string table declared_count must equal entries.len()".to_owned());
         }
         Self::try_new(
-            wire.id,
             wire.index,
             wire.owner_property,
             wire.save_all,
@@ -2876,7 +2976,8 @@ pub struct ElementMapRecord {
     pub source_entry: Option<String>,
     /// Native map identity.
     pub map_id: u64,
-    /// Declared native element-map size, including mapped names and child spans.
+    /// Optional XML element-map count retained as metadata; it does not frame
+    /// or have to equal the native map stream.
     pub declared_count: usize,
     /// Ordered postfix dictionary.
     pub postfixes: Vec<String>,
@@ -2885,8 +2986,13 @@ pub struct ElementMapRecord {
 }
 
 /// A nonempty sequence whose last node is the owning shape map.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<ElementMapNode>", into = "Vec<ElementMapNode>")]
+///
+/// The one-based node index belongs to the serialized sequence, so it is
+/// checked while that sequence is admitted and derived again when it is
+/// written. An admitted node cannot carry an index that disagrees with its
+/// position.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Vec<ElementMapNodeWire>")]
 pub struct ElementMapNodes(Vec<ElementMapNode>);
 
 impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
@@ -2897,6 +3003,54 @@ impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
             return Err("maps must contain a root node".to_owned());
         }
         Ok(Self(nodes))
+    }
+}
+
+impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
+    type Error = String;
+
+    fn try_from(wire_nodes: Vec<ElementMapNodeWire>) -> Result<Self, Self::Error> {
+        let mut nodes = Vec::with_capacity(wire_nodes.len());
+        for (position, wire) in wire_nodes.into_iter().enumerate() {
+            let expected_index = position
+                .checked_add(1)
+                .ok_or_else(|| "element-map node position exceeds index space".to_owned())?;
+            if wire.index != expected_index {
+                return Err(format!(
+                    "maps[{position}].index must equal {expected_index}, got {}",
+                    wire.index
+                ));
+            }
+            nodes.push(ElementMapNode {
+                map_id: wire.map_id,
+                groups: wire.groups,
+            });
+        }
+        Self::try_from(nodes)
+    }
+}
+
+impl Serialize for ElementMapNodes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeSeq;
+
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for (position, node) in self.0.iter().enumerate() {
+            let index = position.checked_add(1).ok_or_else(|| {
+                <S::Error as serde::ser::Error>::custom(
+                    "element-map node position exceeds index space",
+                )
+            })?;
+            sequence.serialize_element(&ElementMapNodeWireRef {
+                index,
+                map_id: node.map_id,
+                groups: &node.groups,
+            })?;
+        }
+        sequence.end()
     }
 }
 
@@ -2938,14 +3092,26 @@ impl std::ops::Index<usize> for ElementMapNodes {
 }
 
 /// One map node, including recursively referenced child maps.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ElementMapNode {
-    /// One-based map index in this serialization.
-    pub index: usize,
     /// Native node identity.
     pub map_id: u64,
     /// Ordered indexed-element groups.
     pub groups: Vec<ElementMapGroup>,
+}
+
+#[derive(Deserialize)]
+struct ElementMapNodeWire {
+    index: usize,
+    map_id: u64,
+    groups: Vec<ElementMapGroup>,
+}
+
+#[derive(Serialize)]
+struct ElementMapNodeWireRef<'a> {
+    index: usize,
+    map_id: u64,
+    groups: &'a [ElementMapGroup],
 }
 
 /// Persistent-name chains for one native topology kind.

@@ -493,10 +493,11 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .as_ref()
                 .is_some_and(|entry| !entry_names.contains(entry.as_str()))
         {
+            let table_id = table.id();
             findings.push(finding(
                 Check::ReferentialIntegrity,
-                format!("{} has a missing property or side-entry link", table.id),
-                Some(table.id.clone()),
+                format!("{table_id} has a missing property or side-entry link"),
+                Some(table_id),
             ));
         }
     }
@@ -638,17 +639,17 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_span_chain("physical archive", &physical, physical_end, &mut findings);
     let logical_owner_ids = property_ids
         .iter()
-        .copied()
-        .chain(gui_properties.iter().map(|record| record.id.as_str()))
+        .map(|id| (*id).to_owned())
+        .chain(gui_properties.iter().map(|record| record.id.clone()))
         .chain(
             gui_documents
                 .iter()
-                .flat_map(|document| document.states.iter().map(|record| record.id.as_str())),
+                .flat_map(|document| document.states.iter().map(|record| record.id.clone())),
         )
-        .chain(shape_payloads.iter().map(|record| record.id.as_str()))
-        .chain(string_tables.iter().map(|record| record.id.as_str()))
-        .chain(element_maps.iter().map(|record| record.id.as_str()))
-        .chain(entries.iter().map(|record| record.id.as_str()))
+        .chain(shape_payloads.iter().map(|record| record.id.clone()))
+        .chain(string_tables.iter().map(|record| record.id()))
+        .chain(element_maps.iter().map(|record| record.id.clone()))
+        .chain(entries.iter().map(|record| record.id.clone()))
         .collect::<HashSet<_>>();
     let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
     for span in &logical {
