@@ -761,24 +761,18 @@ pub(super) fn project(
         }
     }
 
-    // One session serves every body commit in this call. That is sound for
-    // the same reason the position maps above are: the per-body commit is
-    // the only writer of `ir` here, and it only appends. Each successful
-    // commit moves its identities into the session, so a later body still
-    // collides with an earlier body's ids and can resolve references into
-    // them — exactly what a per-commit index rebuild provided. The session
-    // is built at the first commit rather than up front so that files with
-    // no explicit B-rep, and bodies rejected before reaching commit, never
-    // pay for the identity index.
-    let mut commit_session: Option<CommitSession> = None;
+    // The session holds the document's exclusive borrow. Its identity index
+    // remains unbuilt until the first body reaches commit admission.
+    let mut commit_session = CommitSession::new(ir);
     for definition in body_definitions {
+        let ir = commit_session.document();
         let entry = definition.entry;
         let mut model_index = None;
         // The edge arena does grow — every committed body appends to it —
         // so this index lives for one body and is built on first use, where
         // it replaces a full-arena scan per distinct edge. Its `&str` keys
         // borrow from `ir`; the borrow must stay dead by the time the body
-        // commits below, or the commit's `&mut ir` will not compile.
+        // commits below, or the session's exclusive commit will not compile.
         let mut edges_by_curve: Option<BTreeMap<&str, Vec<usize>>> = None;
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
@@ -1258,8 +1252,7 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        let session = commit_session.get_or_insert_with(|| CommitSession::new(ir));
-        if session.commit_model(candidate, ir).is_err() {
+        if commit_session.commit_model(candidate).is_err() {
             losses.push(entity_loss(
                 entry,
                 "shell candidate failed neutral validation",

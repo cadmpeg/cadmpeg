@@ -472,116 +472,134 @@ enum CommittedIdentity {
 
 type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 
-/// Identity universe for one decode-scoped sequence of draft commits.
+/// An exclusive document borrow for a sequence of checked draft commits.
 ///
-/// A session is valid only while the associated [`CadIr`] is mutated through
-/// this session. Inserting a neutral or native record directly into `base`
-/// after construction makes the session stale; topology decoding observes this
-/// invariant by routing every topology draft through one session and performing
-/// no other record insertion during that phase.
+/// The identity index is built on the first lookup or commit. The document is
+/// available only for shared reads until the session ends, so another writer
+/// cannot invalidate the cached identities.
+///
+/// ```compile_fail
+/// use cadmpeg_ir::{document::CadIr, draft::CommitSession};
+/// let mut ir = CadIr::empty();
+/// let mut session = CommitSession::new(&mut ir);
+/// ir.model.points.clear();
+/// session.contains("test:model:point#1");
+/// ```
+///
+/// ```compile_fail
+/// use cadmpeg_ir::{document::CadIr, draft::CommitSession};
+/// let mut ir = CadIr::empty();
+/// let session = CommitSession::new(&mut ir);
+/// session.document().model.points.clear();
+/// ```
 #[derive(Debug)]
-pub struct CommitSession {
-    identities: CommittedIdentityIndex,
+pub struct CommitSession<'a> {
+    base: &'a mut CadIr,
+    identities: Option<CommittedIdentityIndex>,
 }
 
-impl CommitSession {
-    /// Builds an identity index over every neutral and native arena.
-    pub fn new(base: &CadIr) -> Self {
-        let mut identities = CommittedIdentityIndex::new();
-        macro_rules! collect_model_identities {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(for (index, entity) in base.model.$field.iter().enumerate() {
-                    Self::insert_neutral(
-                        &mut identities,
-                        entity.identity(),
-                        IdentitySlot {
-                            kind: <$ty as EntitySchema>::KIND,
-                            index,
-                        },
-                    );
-                })*
-            };
-        }
-        crate::document::arena_registry!(collect_model_identities);
-        for record in base
-            .native
-            .0
-            .values()
-            .flat_map(|namespace| namespace.arenas().values().flatten())
-        {
-            identities
-                .entry(identity_hash(record.id()))
-                .or_default()
-                .push(CommittedIdentity::Native(record.id().to_owned()));
-        }
-        Self { identities }
+fn index_committed_identities(base: &CadIr) -> CommittedIdentityIndex {
+    let mut identities = CommittedIdentityIndex::new();
+    macro_rules! collect_model_identities {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            $(for (index, entity) in base.model.$field.iter().enumerate() {
+                identities
+                    .entry(identity_hash(entity.identity()))
+                    .or_default()
+                    .push(CommittedIdentity::Neutral(IdentitySlot {
+                        kind: <$ty as EntitySchema>::KIND,
+                        index,
+                    }));
+            })*
+        };
     }
-
-    fn insert_neutral(identities: &mut CommittedIdentityIndex, identity: &str, slot: IdentitySlot) {
+    crate::document::arena_registry!(collect_model_identities);
+    for record in base
+        .native
+        .0
+        .values()
+        .flat_map(|namespace| namespace.arenas().values().flatten())
+    {
         identities
-            .entry(identity_hash(identity))
+            .entry(identity_hash(record.id()))
             .or_default()
-            .push(CommittedIdentity::Neutral(slot));
+            .push(CommittedIdentity::Native(record.id().to_owned()));
+    }
+    identities
+}
+
+fn committed_identity_contains(
+    base: &CadIr,
+    identities: &CommittedIdentityIndex,
+    identity: &str,
+) -> bool {
+    identities
+        .get(&identity_hash(identity))
+        .into_iter()
+        .flatten()
+        .any(|owner| match owner {
+            CommittedIdentity::Neutral(slot) => {
+                base.model.identity_at(slot.kind, slot.index) == Some(identity)
+            }
+            CommittedIdentity::Native(candidate) => candidate == identity,
+        })
+}
+
+impl<'a> CommitSession<'a> {
+    /// Exclusively borrows a document without scanning its identity arenas yet.
+    pub fn new(base: &'a mut CadIr) -> Self {
+        Self {
+            base,
+            identities: None,
+        }
     }
 
-    /// Reports whether `identity` is already owned by `base` or a
-    /// prior successful commit in this session.
+    /// Reads the current document, including every successful session commit.
+    pub fn document(&self) -> &CadIr {
+        self.base
+    }
+
+    /// Reports whether any neutral or native arena owns `identity`.
+    pub fn contains(&mut self, identity: &str) -> bool {
+        let identities = self
+            .identities
+            .get_or_insert_with(|| index_committed_identities(self.base));
+        committed_identity_contains(self.base, identities, identity)
+    }
+
+    /// Validates and commits one model draft into the borrowed document.
     ///
-    /// Identity ownership is kind-blind: this checks all neutral and native
-    /// arenas, not whether a record exists in one particular arena.
-    pub fn contains(&self, base: &CadIr, identity: &str) -> bool {
-        self.identities
-            .get(&identity_hash(identity))
-            .into_iter()
-            .flatten()
-            .any(|owner| match owner {
-                CommittedIdentity::Neutral(slot) => {
-                    base.model.identity_at(slot.kind, slot.index) == Some(identity)
-                }
-                CommittedIdentity::Native(candidate) => candidate == identity,
-            })
-    }
-
-    fn register_added(&mut self, model: &Model, checkpoint: &ModelCheckpoint) {
-        macro_rules! register_arenas {
+    /// A rejected draft leaves both the document and its cached identity
+    /// population unchanged and does not poison a later commit.
+    pub fn commit_model(&mut self, mut draft: ModelDraft) -> Result<(), DraftError> {
+        let identities = self
+            .identities
+            .get_or_insert_with(|| index_committed_identities(self.base));
+        draft.validate_with_contains(|identity| {
+            committed_identity_contains(self.base, identities, identity)
+        })?;
+        // Validation has succeeded. Register the admitted draft's append slots
+        // directly, before moving its arenas; no checkpoint slice can be absent.
+        macro_rules! register_draft {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(if let Some(added) = checkpoint.added::<$ty>(model) {
-                    for (offset, entity) in added.iter().enumerate() {
-                        Self::insert_neutral(
-                            &mut self.identities,
-                            entity.identity(),
-                            IdentitySlot {
-                                kind: <$ty as EntitySchema>::KIND,
-                                index: checkpoint.arena_len::<$ty>() + offset,
-                            },
-                        );
-                    }
+                $(for (offset, entity) in draft.model.$field.iter().enumerate() {
+                    identities
+                        .entry(identity_hash(entity.identity()))
+                        .or_default()
+                        .push(CommittedIdentity::Neutral(IdentitySlot {
+                            kind: <$ty as EntitySchema>::KIND,
+                            index: self.base.model.$field.len() + offset,
+                        }));
                 })*
             };
         }
-        crate::document::arena_registry!(register_arenas);
-    }
-
-    /// Validates and commits one model draft into `base`.
-    ///
-    /// Validation is completed before either destination is changed. On
-    /// success, the draft's owned identities are moved into this session. A
-    /// rejected draft therefore leaves both the document and the session
-    /// unchanged and does not poison a later commit.
-    pub fn commit_model(
-        &mut self,
-        mut draft: ModelDraft,
-        base: &mut CadIr,
-    ) -> Result<(), DraftError> {
-        draft.validate_with_contains(|identity| self.contains(base, identity))?;
-        let checkpoint = ModelCheckpoint::capture(&base.model);
+        crate::document::arena_registry!(register_draft);
         draft.commit_validated(
-            base,
+            self.base,
             &mut Annotations::default(),
             &mut Vec::new(),
             &mut TransferLedger::default(),
         );
-        self.register_added(&base.model, &checkpoint);
         Ok(())
     }
 }
@@ -775,12 +793,12 @@ mod tests {
     #[test]
     fn commit_session_matches_sequential_model_commits() {
         let mut session_ir = CadIr::empty();
-        let mut session = CommitSession::new(&session_ir);
+        let mut session = CommitSession::new(&mut session_ir);
         session
-            .commit_model(point_draft("test:model:point#1"), &mut session_ir)
+            .commit_model(point_draft("test:model:point#1"))
             .expect("first session commit");
         session
-            .commit_model(point_draft("test:model:point#2"), &mut session_ir)
+            .commit_model(point_draft("test:model:point#2"))
             .expect("second session commit");
 
         let mut sequential_ir = CadIr::empty();
@@ -797,14 +815,14 @@ mod tests {
     #[test]
     fn commit_session_rejects_cross_draft_identity_collision() {
         let mut ir = CadIr::empty();
-        let mut session = CommitSession::new(&ir);
+        let mut session = CommitSession::new(&mut ir);
         let identity = "test:model:point#cross-draft";
         session
-            .commit_model(point_draft(identity), &mut ir)
+            .commit_model(point_draft(identity))
             .expect("first session commit");
 
         assert_eq!(
-            session.commit_model(point_draft(identity), &mut ir),
+            session.commit_model(point_draft(identity)),
             Err(DraftError::IdentityCollision(identity.into()))
         );
         assert_eq!(ir.model.points.len(), 1);
@@ -815,10 +833,10 @@ mod tests {
         let identity = "test:model:point#existing";
         let mut ir = CadIr::empty();
         ir.model.points.push(point(identity));
-        let mut session = CommitSession::new(&ir);
+        let mut session = CommitSession::new(&mut ir);
 
         assert_eq!(
-            session.commit_model(point_draft(identity), &mut ir),
+            session.commit_model(point_draft(identity)),
             Err(DraftError::IdentityCollision(identity.into()))
         );
         assert_eq!(ir.model.points.len(), 1);
@@ -834,10 +852,10 @@ mod tests {
                 NativeRecord::new(identity, serde_json::Map::new()).expect("valid native identity")
             ],
         );
-        let mut session = CommitSession::new(&ir);
+        let mut session = CommitSession::new(&mut ir);
 
         assert_eq!(
-            session.commit_model(point_draft(identity), &mut ir),
+            session.commit_model(point_draft(identity)),
             Err(DraftError::IdentityCollision(identity.into()))
         );
         assert!(ir.model.points.is_empty());
@@ -848,10 +866,10 @@ mod tests {
         let owner = "test:model:vertex#missing";
         let target = "test:model:point#missing";
         let mut ir = CadIr::empty();
-        let mut session = CommitSession::new(&ir);
+        let mut session = CommitSession::new(&mut ir);
 
         assert_eq!(
-            session.commit_model(vertex_draft(owner, target), &mut ir),
+            session.commit_model(vertex_draft(owner, target)),
             Err(DraftError::UnresolvedReference {
                 owner: owner.into(),
                 target: target.into(),
@@ -864,12 +882,12 @@ mod tests {
     fn commit_session_resolves_reference_into_earlier_draft() {
         let point_id = "test:model:point#earlier";
         let mut ir = CadIr::empty();
-        let mut session = CommitSession::new(&ir);
+        let mut session = CommitSession::new(&mut ir);
         session
-            .commit_model(point_draft(point_id), &mut ir)
+            .commit_model(point_draft(point_id))
             .expect("point commit");
         session
-            .commit_model(vertex_draft("test:model:vertex#later", point_id), &mut ir)
+            .commit_model(vertex_draft("test:model:vertex#later", point_id))
             .expect("reference into committed draft resolves");
 
         assert_eq!(ir.model.points.len(), 1);
@@ -881,18 +899,18 @@ mod tests {
         let rejected_identity = "test:model:vertex#rejected";
         let mut ir = CadIr::empty();
         let before = ir.clone();
-        let mut session = CommitSession::new(&ir);
+        let mut session = CommitSession::new(&mut ir);
 
         assert!(session
-            .commit_model(
-                vertex_draft(rejected_identity, "test:model:point#never-committed"),
-                &mut ir,
-            )
+            .commit_model(vertex_draft(
+                rejected_identity,
+                "test:model:point#never-committed",
+            ))
             .is_err());
-        assert_eq!(ir, before);
+        assert_eq!(session.document(), &before);
 
         session
-            .commit_model(point_draft(rejected_identity), &mut ir)
+            .commit_model(point_draft(rejected_identity))
             .expect("rejected identity was not absorbed into the session");
         assert_eq!(ir.model.points.len(), 1);
     }
@@ -902,13 +920,13 @@ mod tests {
         let committed_identity = "test:model:point#committed";
         let rejected_identity = "test:model:point#rejected";
         let mut ir = CadIr::empty();
-        let mut session = CommitSession::new(&ir);
+        let mut session = CommitSession::new(&mut ir);
 
-        assert!(!session.contains(&ir, committed_identity));
+        assert!(!session.contains(committed_identity));
         session
-            .commit_model(point_draft(committed_identity), &mut ir)
+            .commit_model(point_draft(committed_identity))
             .expect("point commit");
-        assert!(session.contains(&ir, committed_identity));
+        assert!(session.contains(committed_identity));
 
         let mut rejected = ModelDraft::new();
         rejected
@@ -920,8 +938,8 @@ mod tests {
                 tolerance: None,
             })
             .expect("insert rejected vertex");
-        assert!(!session.contains(&ir, rejected_identity));
-        assert!(session.commit_model(rejected, &mut ir).is_err());
-        assert!(!session.contains(&ir, rejected_identity));
+        assert!(!session.contains(rejected_identity));
+        assert!(session.commit_model(rejected).is_err());
+        assert!(!session.contains(rejected_identity));
     }
 }
