@@ -1581,7 +1581,8 @@ fn rendering_material_reference_consumes_obsolete_mapping_channels() {
 #[test]
 fn texture_reads_minor_gates_before_future_suffix() {
     let bytes = texture_payload(2, &[0xaa, 0xbb]);
-    let value = parse_texture(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42)
+    let mut losses = Vec::new();
+    let value = parse_texture(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42, &mut losses)
         .expect("texture minor gates and suffix");
     assert_eq!(value.mapping_channel_id, 7);
     assert_eq!(value.legacy_file_path, "texture.png");
@@ -1594,6 +1595,41 @@ fn texture_reads_minor_gates_before_future_suffix() {
     );
     assert_eq!(value.treat_as_linear, Some(true));
     assert_eq!(value.source_offset, 42);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn texture_file_reference_checksum_warning_is_located() {
+    let mut bytes = texture_payload(2, &[]);
+    let reference = crate::test_support::test_dump::file_reference(
+        ArchiveVersion::V8,
+        "/full/source.3dm",
+        "source.3dm",
+    );
+    let reference_start = bytes
+        .windows(reference.len())
+        .position(|window| window == reference)
+        .expect("texture contains the expected file-reference child");
+    bytes[reference_start + reference.len() - 1] ^= 1;
+
+    let mut losses = Vec::new();
+    let value = parse_texture(&bytes, 0..bytes.len(), ArchiveVersion::V8, 42, &mut losses)
+        .expect("a nested checksum mismatch does not prevent texture admission");
+    assert!(value.file_reference.is_some());
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(
+        losses[0].code,
+        crate::loss::RhinoLossCode::IntegrityFailure.kind()
+    );
+    let provenance = losses[0]
+        .provenance
+        .as_ref()
+        .expect("texture checksum loss is located");
+    assert_eq!(provenance.offset, 42);
+    assert_eq!(
+        provenance.tag.as_deref(),
+        Some("PRESENTATION/TEXTURE/FILE_REFERENCE")
+    );
 }
 
 #[test]
@@ -1608,12 +1644,14 @@ fn texture_array_closes_after_class_items_and_future_suffix() {
     body.extend([0xcc, 0xdd]);
     let bytes = anonymous(4, &body);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("texture array bounds");
-    let values = texture_array(&bytes, &mut reader, ArchiveVersion::V8)
+    let mut losses = Vec::new();
+    let values = texture_array(&bytes, &mut reader, ArchiveVersion::V8, &mut losses)
         .expect("texture array child and suffix");
     assert_eq!(values.len(), 1);
     assert_eq!(values[0].legacy_file_path, "texture.png");
     assert_eq!(values[0].mapping_channel_id, 7);
     assert_eq!(reader.remaining(), 0);
+    assert!(losses.is_empty(), "{losses:?}");
 }
 
 #[test]

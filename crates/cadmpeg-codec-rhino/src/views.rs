@@ -5,6 +5,7 @@ use crate::loss::Diagnostics;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
 use crate::chunks::{
@@ -303,8 +304,9 @@ fn image_reference<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
+    warnings: &mut Diagnostics,
 ) -> Result<(ImageReference, std::ops::Range<usize>), FramingError> {
-    let value = crate::instances::file_reference(data, reader, archive, &mut Diagnostics::new())?;
+    let value = crate::instances::file_reference(data, reader, archive, warnings)?;
     let source_range = value.source_range.clone();
     Ok((
         ImageReference {
@@ -322,6 +324,7 @@ fn parse_trace_image(
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
     scale: f64,
+    warnings: &mut Diagnostics,
 ) -> Result<(TraceImage, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
@@ -343,7 +346,7 @@ fn parse_trace_image(
     let hidden = minor >= 2 && reader.bool()?;
     let filtered = minor >= 3 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 4 {
-        let (value, range) = image_reference(data, &mut reader, archive)?;
+        let (value, range) = image_reference(data, &mut reader, archive, warnings)?;
         (Some(value), Some(range))
     } else {
         (None, None)
@@ -370,6 +373,7 @@ fn parse_wallpaper(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
+    warnings: &mut Diagnostics,
 ) -> Result<(Wallpaper, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
@@ -384,7 +388,7 @@ fn parse_wallpaper(
     let grayscale = reader.bool()?;
     let hidden = minor >= 1 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 2 {
-        let (value, range) = image_reference(data, &mut reader, archive)?;
+        let (value, range) = image_reference(data, &mut reader, archive, warnings)?;
         (Some(value), Some(range))
     } else {
         (None, None)
@@ -399,6 +403,28 @@ fn parse_wallpaper(
         },
         file_reference_range,
     ))
+}
+
+fn append_file_reference_diagnostics(
+    losses: &mut Vec<LossNote>,
+    diagnostics: Diagnostics,
+    source_range: &std::ops::Range<usize>,
+    tag: &str,
+) {
+    for diagnostic in diagnostics {
+        let code = diagnostic
+            .code
+            .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
+        losses.push(
+            code.note(format!(
+                "file reference at offset {}: {}",
+                source_range.start, diagnostic.message
+            ))
+            .with_provenance(
+                SourceProvenance::root("rhino", source_range.start as u64).with_tag(tag),
+            ),
+        );
+    }
 }
 
 fn parse_cplane(
@@ -970,9 +996,23 @@ fn parse_view(
                 }
             }
             VIEW_TRACE_IMAGE if !child.short() => {
-                let (value, file_reference_range) =
-                    parse_trace_image(data, child.body().clone(), archive, scale)?;
-                let nested_children = file_reference_range.into_iter().collect::<Vec<_>>();
+                let mut file_reference_diagnostics = Diagnostics::new();
+                let (value, file_reference_range) = parse_trace_image(
+                    data,
+                    child.body().clone(),
+                    archive,
+                    scale,
+                    &mut file_reference_diagnostics,
+                )?;
+                if let Some(source_range) = file_reference_range.as_ref() {
+                    append_file_reference_diagnostics(
+                        &mut checksum_warnings,
+                        file_reference_diagnostics,
+                        source_range,
+                        "VIEW/TRACE_IMAGE/FILE_REFERENCE",
+                    );
+                }
+                let nested_children = file_reference_range.clone().into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
@@ -993,9 +1033,22 @@ fn parse_view(
                 });
             }
             VIEW_WALLPAPER_V3 if !child.short() => {
-                let (value, file_reference_range) =
-                    parse_wallpaper(data, child.body().clone(), archive)?;
-                let nested_children = file_reference_range.into_iter().collect::<Vec<_>>();
+                let mut file_reference_diagnostics = Diagnostics::new();
+                let (value, file_reference_range) = parse_wallpaper(
+                    data,
+                    child.body().clone(),
+                    archive,
+                    &mut file_reference_diagnostics,
+                )?;
+                if let Some(source_range) = file_reference_range.as_ref() {
+                    append_file_reference_diagnostics(
+                        &mut checksum_warnings,
+                        file_reference_diagnostics,
+                        source_range,
+                        "VIEW/WALLPAPER/FILE_REFERENCE",
+                    );
+                }
+                let nested_children = file_reference_range.clone().into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
@@ -1407,6 +1460,7 @@ mod tests {
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
+    use crate::loss::Diagnostics;
     use crate::test_support::test_dump::{
         anonymous_chunk, class_userdata_v2_with_direct_payload, crc_chunk, crc_chunk_excluding,
         file_reference, long_chunk, short_chunk, utf16_bytes,
@@ -1570,8 +1624,9 @@ mod tests {
         serialized_plane(&mut trace);
         trace.extend([0, 1, 1]);
         trace.extend([0xde, 0xad, 0xbe, 0xef]);
-        let (trace, _) =
-            parse_trace_image(&trace, 0..trace.len(), archive, 1.0).expect("trace image");
+        let mut warnings = Diagnostics::new();
+        let (trace, _) = parse_trace_image(&trace, 0..trace.len(), archive, 1.0, &mut warnings)
+            .expect("trace image");
         assert_eq!(trace.legacy_file_path, "trace-witness.png");
         assert_eq!([trace.width_mm, trace.height_mm], [42.0, 24.0]);
         assert!(!trace.grayscale);
@@ -1582,8 +1637,10 @@ mod tests {
         wallpaper.extend(utf16_bytes("wallpaper-witness.png"));
         wallpaper.extend([0, 1]);
         wallpaper.extend([0xca, 0xfe]);
+        let mut warnings = Diagnostics::new();
         let (wallpaper, _) =
-            parse_wallpaper(&wallpaper, 0..wallpaper.len(), archive).expect("wallpaper");
+            parse_wallpaper(&wallpaper, 0..wallpaper.len(), archive, &mut warnings)
+                .expect("wallpaper");
         assert_eq!(wallpaper.legacy_file_path, "wallpaper-witness.png");
         assert!(!wallpaper.grayscale && wallpaper.hidden);
         assert!(wallpaper.file_reference.is_none());
@@ -1907,6 +1964,36 @@ mod tests {
         let (views, losses) = parse(make_view(&trace, &wallpaper));
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
+
+        let mut corrupted_trace_reference = trace.clone();
+        let trace_chunk_header_len = if archive.uses_eight_byte_values() {
+            12
+        } else {
+            8
+        };
+        let nested_crc_offset =
+            trace_chunk_header_len + trace_reference_start + trace_reference_range.len() - 1;
+        corrupted_trace_reference[nested_crc_offset] ^= 1;
+        let (views, losses) = parse(make_view(&corrupted_trace_reference, &wallpaper));
+        assert_eq!(views.len(), 1);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::RhinoLossCode::IntegrityFailure.kind()
+        );
+        assert!(losses[0].message.contains("file reference"));
+        let provenance = losses[0]
+            .provenance
+            .as_ref()
+            .expect("nested checksum loss is located");
+        assert_eq!(
+            provenance.offset as usize,
+            4 + trace_chunk_header_len * 2 + trace_reference_start
+        );
+        assert_eq!(
+            provenance.tag.as_deref(),
+            Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
+        );
 
         let mut corrupted_trace = trace.clone();
         let trace_crc_offset = corrupted_trace.len() - 1;
