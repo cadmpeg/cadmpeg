@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Rigid transforms.
+//! Finite affine transforms.
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -239,60 +239,34 @@ impl Transform {
 
     /// Applies the inverse-transpose linear transform and normalizes the result.
     pub fn apply_normal(self, normal: Vector3) -> Option<Vector3> {
-        let inverse = self.try_inverse_affine().ok()?;
-        let transformed = Vector3::new(
-            inverse.rows[0][0] * normal.x
-                + inverse.rows[1][0] * normal.y
-                + inverse.rows[2][0] * normal.z,
-            inverse.rows[0][1] * normal.x
-                + inverse.rows[1][1] * normal.y
-                + inverse.rows[2][1] * normal.z,
-            inverse.rows[0][2] * normal.x
-                + inverse.rows[1][2] * normal.y
-                + inverse.rows[2][2] * normal.z,
-        );
-        let length = (transformed.x * transformed.x
-            + transformed.y * transformed.y
-            + transformed.z * transformed.z)
-            .sqrt();
-        (length.is_finite() && length > 0.0).then(|| {
-            Vector3::new(
-                transformed.x / length,
-                transformed.y / length,
-                transformed.z / length,
-            )
-        })
+        let inverse = self.inverse_linear().ok()?;
+        let transformed = [
+            inverse[0][0] * normal.x + inverse[1][0] * normal.y + inverse[2][0] * normal.z,
+            inverse[0][1] * normal.x + inverse[1][1] * normal.y + inverse[2][1] * normal.z,
+            inverse[0][2] * normal.x + inverse[1][2] * normal.y + inverse[2][2] * normal.z,
+        ];
+        if !transformed.iter().all(|value| value.is_finite()) {
+            return None;
+        }
+        let scale = transformed
+            .iter()
+            .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+        if scale == 0.0 {
+            return None;
+        }
+        let scaled = transformed.map(|value| value / scale);
+        let length = scaled.iter().map(|value| value * value).sum::<f64>().sqrt();
+        Some(Vector3::new(
+            scaled[0] / length,
+            scaled[1] / length,
+            scaled[2] / length,
+        ))
     }
 
     /// Inverts a finite affine transform with a nonsingular linear component.
     pub fn try_inverse_affine(self) -> Result<Self, TransformError> {
         let m = self.rows;
-        let determinant = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-            - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-        if !determinant.is_finite() {
-            return Err(TransformError::NonFinite);
-        }
-        if determinant == 0.0 {
-            return Err(TransformError::Singular);
-        }
-        let inverse_linear = [
-            [
-                (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / determinant,
-                (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / determinant,
-                (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / determinant,
-            ],
-            [
-                (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / determinant,
-                (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / determinant,
-                (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / determinant,
-            ],
-            [
-                (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / determinant,
-                (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / determinant,
-                (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / determinant,
-            ],
-        ];
+        let inverse_linear = self.inverse_linear()?;
         let translation = [m[0][3], m[1][3], m[2][3]];
         let mut rows = [[0.0; 4]; 3];
         for row in 0..3 {
@@ -305,11 +279,74 @@ impl Transform {
         }
         Self::affine(rows).ok_or(TransformError::NonFinite)
     }
+
+    fn inverse_linear(self) -> Result<[[f64; 3]; 3], TransformError> {
+        let mut matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
+        let mut inverse = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let mut columns = [0, 1, 2];
+        // Full pivoting avoids multiplying source coefficients into a determinant.
+        for column in 0..3 {
+            let mut pivot_row = column;
+            let mut pivot_column = column;
+            for row in column..3 {
+                for candidate in column..3 {
+                    if matrix[row][candidate].abs() > matrix[pivot_row][pivot_column].abs() {
+                        pivot_row = row;
+                        pivot_column = candidate;
+                    }
+                }
+            }
+            let pivot = matrix[pivot_row][pivot_column];
+            if pivot == 0.0 {
+                return Err(TransformError::Singular);
+            }
+            matrix.swap(column, pivot_row);
+            inverse.swap(column, pivot_row);
+            for row in &mut matrix {
+                row.swap(column, pivot_column);
+            }
+            columns.swap(column, pivot_column);
+            for value in &mut matrix[column] {
+                *value /= pivot;
+            }
+            for value in &mut inverse[column] {
+                *value /= pivot;
+            }
+            for row in 0..3 {
+                if row == column {
+                    continue;
+                }
+                let factor = matrix[row][column];
+                for entry in 0..3 {
+                    matrix[row][entry] =
+                        (-factor).mul_add(matrix[column][entry], matrix[row][entry]);
+                    inverse[row][entry] =
+                        (-factor).mul_add(inverse[column][entry], inverse[row][entry]);
+                }
+                matrix[row][column] = 0.0;
+            }
+            if !matrix
+                .iter()
+                .chain(&inverse)
+                .flatten()
+                .all(|value| value.is_finite())
+            {
+                return Err(TransformError::NonFinite);
+            }
+        }
+        let mut rows = [[0.0; 3]; 3];
+        for (row, source) in columns.into_iter().zip(inverse) {
+            rows[row] = source;
+        }
+        Ok(rows)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod numeric;
 
     #[test]
     fn composition_and_inverse_preserve_points_and_vectors() {

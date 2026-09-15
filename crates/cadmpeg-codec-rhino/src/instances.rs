@@ -218,9 +218,19 @@ impl InstanceDefinition {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InstanceReference {
     /// Referenced definition UUID.
-    pub(crate) definition_id: Uuid,
+    definition_id: Uuid,
     /// Affine transform in source length units.
-    pub(crate) transform: Transform,
+    transform: Transform,
+}
+
+impl InstanceReference {
+    pub(crate) fn definition_id(&self) -> Uuid {
+        self.definition_id
+    }
+
+    pub(crate) fn transform(&self) -> Transform {
+        self.transform
+    }
 }
 
 /// Result of scanning the instance-definition table.
@@ -1188,12 +1198,6 @@ pub(crate) fn parse_definitions(
     result
 }
 
-fn determinant3(rows: &[[f64; 4]; 4]) -> f64 {
-    rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
-        - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
-        + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0])
-}
-
 /// Parses a packed major-1 instance-reference payload.
 pub(crate) fn parse_reference(
     data: &[u8],
@@ -1222,31 +1226,41 @@ pub(crate) fn parse_reference(
     }
     let _bounds = bbox(&mut reader)?;
     reader.skip_remaining()?;
-    if !rows.iter().flatten().all(|value| value.is_finite()) {
-        return Err(FramingError::structural(
-            reader.position(),
-            "instance transform is not finite",
-        ));
-    }
     if rows[3] != [0.0, 0.0, 0.0, 1.0] {
         return Err(FramingError::structural(
             reader.position(),
             "instance transform is not affine",
         ));
     }
-    let determinant = determinant3(&rows);
-    if !determinant.is_finite() || determinant == 0.0 {
+    let transform = Transform::affine([rows[0], rows[1], rows[2]]).ok_or_else(|| {
+        FramingError::structural(reader.position(), "instance transform is not finite")
+    })?;
+    let inverse = transform.try_inverse_affine().map_err(|error| {
+        FramingError::structural(
+            reader.position(),
+            format!("instance transform inverse: {error}"),
+        )
+    })?;
+    let residual = inverse.compose(transform).map_err(|error| {
+        FramingError::structural(
+            reader.position(),
+            format!("instance transform inverse product: {error}"),
+        )
+    })?;
+    // ON_InstanceRef::SingularTransformationTolerance applies to inverse * source.
+    const EPS_INVERSE_IDENTITY: f64 = 1.0e-6;
+    if residual
+        .affine_rows()
+        .iter()
+        .flatten()
+        .zip(Transform::identity().affine_rows().iter().flatten())
+        .any(|(actual, expected)| (actual - expected).abs() > EPS_INVERSE_IDENTITY)
+    {
         return Err(FramingError::structural(
             reader.position(),
-            "instance transform is singular",
+            "instance transform inverse product is not identity",
         ));
     }
-    let Some(transform) = Transform::affine([rows[0], rows[1], rows[2]]) else {
-        return Err(FramingError::structural(
-            reader.position(),
-            "instance transform states rows the carrier refuses",
-        ));
-    };
     Ok(InstanceReference {
         definition_id,
         transform,

@@ -260,8 +260,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                 continue;
             }
         };
-        let transform = OccurrenceTransform::from_source(reference.transform, binding);
-        let definition = definition_id(reference.definition_id);
+        let transform = OccurrenceTransform::from_source(reference.transform(), binding);
+        let definition = definition_id(reference.definition_id());
         let object_record = format!("rhino:object:record#{source_order:06}");
         let parents = member_definitions
             .get(&identity.object_id)
@@ -277,7 +277,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
             identity.object_id.to_string()
         };
         let mut links = vec![object_record];
-        if definition_ids.contains(&reference.definition_id) {
+        if definition_ids.contains(&reference.definition_id()) {
             links.push(definition);
         }
         links.sort();
@@ -285,7 +285,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
             id: format!("rhino:product:occurrence#{key}"),
             source_offset: object.range.start as u64,
             source_uuid: identity.object_id.to_string(),
-            definition_uuid: reference.definition_id.to_string(),
+            definition_uuid: reference.definition_id().to_string(),
             transform,
             parent_definition_uuids: parents,
             name: identity.name.clone(),
