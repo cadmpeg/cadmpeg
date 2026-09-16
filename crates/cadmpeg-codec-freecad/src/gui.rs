@@ -479,7 +479,7 @@ fn transfer_schema_one(
                 color,
                 width,
                 &payload_prefixes,
-            )?;
+            );
         }
         if let Some(file) = values
             .get("LineColorArray")
@@ -520,7 +520,7 @@ fn transfer_schema_one(
                 color,
                 size,
                 &payload_prefixes,
-            )?;
+            );
         }
         if let Some(file) = values
             .get("PointColorArray")
@@ -914,7 +914,7 @@ fn transfer_edge_appearance(
     packed_color: u32,
     width: Option<f64>,
     payload_prefixes: &[String],
-) -> Result<(), CodecError> {
+) {
     let edges = ir
         .model
         .edges
@@ -927,7 +927,7 @@ fn transfer_edge_appearance(
         .map(|edge| edge.id.clone())
         .collect::<Vec<_>>();
     if edges.is_empty() {
-        return Ok(());
+        return;
     }
     let provider_key = provider_identity_key(provider_name);
     let appearance_id = edge_appearance_id(&provider_key);
@@ -971,7 +971,6 @@ fn transfer_edge_appearance(
             .into(),
         });
     }
-    Ok(())
 }
 
 fn transfer_vertex_appearance(
@@ -982,7 +981,7 @@ fn transfer_vertex_appearance(
     packed_color: u32,
     size: Option<f64>,
     payload_prefixes: &[String],
-) -> Result<(), CodecError> {
+) {
     let vertices = ir
         .model
         .vertices
@@ -995,7 +994,7 @@ fn transfer_vertex_appearance(
         .map(|vertex| vertex.id.clone())
         .collect::<Vec<_>>();
     if vertices.is_empty() {
-        return Ok(());
+        return;
     }
     let provider_key = provider_identity_key(provider_name);
     let appearance_id = vertex_appearance_id(&provider_key);
@@ -1039,7 +1038,6 @@ fn transfer_vertex_appearance(
             .into(),
         });
     }
-    Ok(())
 }
 
 fn gui_state(

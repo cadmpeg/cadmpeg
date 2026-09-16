@@ -428,7 +428,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
             .expect("required invariant")[0]
             .links
             .iter()
-            .map(|link| link.as_str())
+            .map(cadmpeg_ir::ids::Identity::as_str)
             .collect::<Vec<_>>(),
         vec![curve_id.to_string()]
     );

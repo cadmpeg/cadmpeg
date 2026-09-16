@@ -385,6 +385,73 @@ pub(super) fn macro_helper_route_at(
     call_uses_deserializer(arguments, bindings).then_some(known)
 }
 
+fn collect(
+    nodes: &[Node],
+    route: &HandImplSource,
+    index: &SourceIndex,
+    bindings: &BTreeSet<String>,
+    routes: &mut Vec<InputRoute>,
+    blocked: bool,
+) -> Result<(), String> {
+    for position in 0..nodes.len() {
+        if let Some(Node::Group(_, children)) = nodes.get(position) {
+            let preceding = position
+                .checked_sub(1)
+                .and_then(|index| atom_opt(nodes.get(index)));
+            if preceding == Some("!") && token_mentions_binding(children, bindings) {
+                return Err(format!(
+                    "{} {} hides the deserializer input inside an unknown macro: {}",
+                    route.path, route.name, route.body
+                ));
+            }
+        }
+        if let Some(receiver) = deserialize_receiver_at(nodes, position, bindings) {
+            if blocked {
+                return Err(format!(
+                    "{} {} hides an input route inside unsupported macro syntax: {}",
+                    route.path, route.name, route.body
+                ));
+            }
+            if !is_atom(nodes, position + 2, "?") {
+                return Err(format!(
+                    "{} {} has a macro route whose error is not propagated: {}",
+                    route.path, route.name, route.body
+                ));
+            }
+            routes.push(if receiver_is_keyless(route, &receiver, index) {
+                InputRoute::Keyless
+            } else if receiver_is_value(route, &receiver, index) {
+                InputRoute::Value
+            } else {
+                InputRoute::Wire(receiver)
+            });
+        }
+
+        if let Some(input_route) = macro_helper_route_at(nodes, position, bindings) {
+            if !is_atom(nodes, position + 2, "?") {
+                return Err(format!(
+                    "{} {} has a macro helper route whose error is not propagated: {}",
+                    route.path, route.name, route.body
+                ));
+            }
+            routes.push(input_route);
+        }
+        if let Some(Node::Group(_, children)) = nodes.get(position) {
+            let preceding = position
+                .checked_sub(1)
+                .and_then(|index| atom_opt(nodes.get(index)));
+            let child_blocked = blocked
+                || matches!(nodes.get(position), Some(Node::Group(Delimiter::Brace, _)))
+                || matches!(
+                    preceding,
+                    Some("!" | "if" | "match" | "for" | "while" | "loop")
+                );
+            collect(children, route, index, bindings, routes, child_blocked)?;
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn macro_input_routes(
     route: &HandImplSource,
     index: &SourceIndex,
@@ -392,72 +459,6 @@ pub(super) fn macro_input_routes(
     let bindings = &route.deserializer_bindings;
     let nodes = &route.method_nodes;
     let mut routes = Vec::new();
-    fn collect(
-        nodes: &[Node],
-        route: &HandImplSource,
-        index: &SourceIndex,
-        bindings: &BTreeSet<String>,
-        routes: &mut Vec<InputRoute>,
-        blocked: bool,
-    ) -> Result<(), String> {
-        for position in 0..nodes.len() {
-            if let Some(Node::Group(_, children)) = nodes.get(position) {
-                let preceding = position
-                    .checked_sub(1)
-                    .and_then(|index| atom_opt(nodes.get(index)));
-                if preceding == Some("!") && token_mentions_binding(children, bindings) {
-                    return Err(format!(
-                        "{} {} hides the deserializer input inside an unknown macro: {}",
-                        route.path, route.name, route.body
-                    ));
-                }
-            }
-            if let Some(receiver) = deserialize_receiver_at(nodes, position, bindings) {
-                if blocked {
-                    return Err(format!(
-                        "{} {} hides an input route inside unsupported macro syntax: {}",
-                        route.path, route.name, route.body
-                    ));
-                }
-                if !is_atom(nodes, position + 2, "?") {
-                    return Err(format!(
-                        "{} {} has a macro route whose error is not propagated: {}",
-                        route.path, route.name, route.body
-                    ));
-                }
-                routes.push(if receiver_is_keyless(route, &receiver, index) {
-                    InputRoute::Keyless
-                } else if receiver_is_value(route, &receiver, index) {
-                    InputRoute::Value
-                } else {
-                    InputRoute::Wire(receiver)
-                });
-            }
-
-            if let Some(input_route) = macro_helper_route_at(nodes, position, bindings) {
-                if !is_atom(nodes, position + 2, "?") {
-                    return Err(format!(
-                        "{} {} has a macro helper route whose error is not propagated: {}",
-                        route.path, route.name, route.body
-                    ));
-                }
-                routes.push(input_route);
-            }
-            if let Some(Node::Group(_, children)) = nodes.get(position) {
-                let preceding = position
-                    .checked_sub(1)
-                    .and_then(|index| atom_opt(nodes.get(index)));
-                let child_blocked = blocked
-                    || matches!(nodes.get(position), Some(Node::Group(Delimiter::Brace, _)))
-                    || matches!(
-                        preceding,
-                        Some("!" | "if" | "match" | "for" | "while" | "loop")
-                    );
-                collect(children, route, index, bindings, routes, child_blocked)?;
-            }
-        }
-        Ok(())
-    }
     collect(nodes, route, index, bindings, &mut routes, false)?;
     if routes.is_empty() {
         return Err(format!(

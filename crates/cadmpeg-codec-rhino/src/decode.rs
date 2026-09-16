@@ -1679,7 +1679,10 @@ impl<'a> DecodeContext<'a> {
                 let validation = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
                     cadmpeg_ir::admit(ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
                 });
-                if validation.as_ref().is_ok_and(|report| report.is_ok()) {
+                if validation
+                    .as_ref()
+                    .is_ok_and(cadmpeg_ir::ValidationReport::is_ok)
+                {
                     self.append_links(source_order, &links);
                     self.mark_decoded(source_order);
                     self.geometry_transferred = true;
@@ -4563,7 +4566,7 @@ fn scale_plane_pcurves(
                     pole.u *= scale;
                     pole.v *= scale;
                 })
-                .map_err(|error| crate::curves::error(0, &error.to_string()))?;
+                .map_err(|error| crate::curves::error(0, error.to_string()))?;
         }
     }
     Ok(())
@@ -4620,7 +4623,7 @@ fn stage_brep_procedural_surface(
                 context.unknown,
             )
         },
-        |error| crate::curves::error(0, &error.to_string()),
+        |error| crate::curves::error(0, error.to_string()),
     )?;
     let surface_id = cadmpeg_ir::ids::SurfaceId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
@@ -4644,7 +4647,7 @@ fn stage_brep_procedural_surface(
             surface_id.clone(),
             ProceduralSurface::new(procedural_id.clone(), definition, None),
         )
-        .map_err(|error| crate::curves::error(0, &error.to_string()))?;
+        .map_err(|error| crate::curves::error(0, error.to_string()))?;
     staged
         .draft
         .exactness(surface_id.to_string(), Exactness::Derived);

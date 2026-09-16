@@ -4603,7 +4603,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
                         losses.push(RhinoLossCode::PresentationRecordDropped.note(format!(
                             "light object at offset {} could not be transferred: {error}",
                             object.range.start
-                        )))
+                        )));
                     }
                 }
             } else {

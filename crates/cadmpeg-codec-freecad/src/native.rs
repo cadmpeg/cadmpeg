@@ -1453,7 +1453,7 @@ impl ProductNodeRecord {
             .map_or(&[], |node| node.array.scales.as_slice())
     }
 
-    /// Ordered per-element visibility values after FreeCAD bit-order decoding.
+    /// Ordered per-element visibility values after `FreeCAD` bit-order decoding.
     pub fn element_visibility(&self) -> &[bool] {
         self.occurrence()
             .map_or(&[], |node| node.array.visibility.as_slice())

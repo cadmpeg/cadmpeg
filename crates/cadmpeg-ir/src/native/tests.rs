@@ -68,7 +68,9 @@ fn typed_native_write_errors_identify_input_ordinal_without_replacing_the_arena(
     use crate::native::{NativeConvertError, NativeNamespace};
     let good = serde_json::json!({"id": "test:native:record#first", "value": 7});
     let mut namespace = NativeNamespace::default();
-    namespace.set_arena("records", &[good.clone()]).unwrap();
+    namespace
+        .set_arena("records", std::slice::from_ref(&good))
+        .unwrap();
     let before = namespace.clone();
     let error = namespace
         .set_arena("records", &[good, serde_json::json!({"value": 8})])

@@ -45,13 +45,14 @@ fn rendering(archive: ArchiveVersion, object: bool, corrupt: &str) -> Vec<u8> {
         archive,
         1,
         &material_body,
-        &[obsolete_start..obsolete_end],
+        std::slice::from_ref(&(obsolete_start..obsolete_end)),
         corrupt == "material",
     );
     let mut body = 1_i32.to_le_bytes().to_vec();
     let material_start = body.len();
     body.extend(material);
-    let mut children = Vec::from([material_start..body.len()]);
+    let mut children = Vec::new();
+    children.push(material_start..body.len());
     if object {
         let channel = anonymous(archive, 1, &channel_body, &[], corrupt == "channel");
         let mut mapping_body = [vec![0x11; 16], 1_i32.to_le_bytes().to_vec()].concat();
@@ -61,7 +62,7 @@ fn rendering(archive: ArchiveVersion, object: bool, corrupt: &str) -> Vec<u8> {
             archive,
             0,
             &mapping_body,
-            &[channel_start..mapping_body.len()],
+            std::slice::from_ref(&(channel_start..mapping_body.len())),
             corrupt == "mapping",
         );
         body.extend(1_i32.to_le_bytes());
@@ -136,7 +137,7 @@ fn complete_object_rendering_reports_nested_crc_without_losing_geometry_or_sourc
                 archive,
                 0x0200_8072,
                 &attributes_body,
-                &[rendering_start..rendering_start + rendering.len()],
+                std::slice::from_ref(&(rendering_start..rendering_start + rendering.len())),
             );
             let object_body = [
                 short_chunk(archive, 0x8200_0071, 1),

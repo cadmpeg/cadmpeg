@@ -119,8 +119,7 @@ pub(crate) fn transfer_neutral(
                 (None, Some(object)) => ReferenceTarget::Local(
                     neutral_ids
                         .get(object)
-                        .map(|id| id.as_str().to_owned())
-                        .unwrap_or_else(|| object.to_owned()),
+                        .map_or_else(|| object.to_owned(), |id| id.as_str().to_owned()),
                 ),
                 _ => {
                     return Err(CodecError::malformed(

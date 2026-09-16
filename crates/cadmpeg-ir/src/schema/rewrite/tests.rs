@@ -105,7 +105,7 @@ fn colliding_map_keys_and_invalid_targets_fail_without_changing_the_source() {
         .unwrap_err();
     assert!(error.to_string().contains("test:model:point#b"), "{error}");
     assert!(error.to_string().contains("collides"), "{error}");
-    let error = serde_json::to_value(identities(&source, |_| "".into())).unwrap_err();
+    let error = serde_json::to_value(identities(&source, |_| String::new())).unwrap_err();
     assert!(error.to_string().contains("invalid identity"), "{error}");
     assert_eq!(serde_json::to_value(&source).unwrap(), before);
 }
@@ -116,7 +116,7 @@ impl Serialize for SwallowsElementErrors {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut sequence = serializer.serialize_seq(Some(2))?;
         for id in &self.0 {
-            let _ = sequence.serialize_element(id);
+            sequence.serialize_element(id).ok();
         }
         sequence.end()
     }

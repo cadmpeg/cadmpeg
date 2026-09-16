@@ -640,7 +640,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_span_chain("physical archive", &physical, physical_end, &mut findings);
     let string_table_ids = string_tables
         .iter()
-        .map(|record| record.id())
+        .map(native::StringTableRecord::id)
         .collect::<Vec<_>>();
     let logical_owner_ids = property_ids
         .iter()

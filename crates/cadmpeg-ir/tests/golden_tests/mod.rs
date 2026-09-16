@@ -311,7 +311,7 @@ fn golden_files() -> Vec<PathBuf> {
         // enumeration errors must not turn into an empty contribution.
         if golden.is_dir() {
             collect_goldens(&golden, &mut found)
-                .unwrap_or_else(|error| panic!("cannot collect {golden:?}: {error}"));
+                .unwrap_or_else(|error| panic!("cannot collect {}: {error}", golden.display()));
         }
     }
     found.sort();

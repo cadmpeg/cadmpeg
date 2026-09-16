@@ -297,7 +297,7 @@ fn framing_error(error: FramingError) -> CodecError {
     }
 }
 
-fn checksum_children_warning(typecode: u32, offset: usize, error: FramingError) -> String {
+fn checksum_children_warning(typecode: u32, offset: usize, error: &FramingError) -> String {
     format!(
         "checksum child framing at offset {offset} for typecode {typecode:#x} could not be verified: {error}"
     )
@@ -337,7 +337,7 @@ fn checksum_warning(
         let children = match list_checksum_children(data, &chunk, archive) {
             Ok(children) => children,
             Err(error) => {
-                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+                return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
@@ -349,7 +349,7 @@ fn checksum_warning(
         let children = match mesh_checksum_children(data, &chunk, archive) {
             Ok(children) => children,
             Err(error) => {
-                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+                return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
@@ -358,7 +358,7 @@ fn checksum_warning(
         let children = match render_settings_checksum_children(data, &chunk, archive) {
             Ok(children) => children,
             Err(error) => {
-                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+                return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
@@ -367,7 +367,7 @@ fn checksum_warning(
         let children = match settings_attributes_checksum_children(data, &chunk, archive) {
             Ok(children) => children,
             Err(error) => {
-                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+                return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
@@ -376,7 +376,7 @@ fn checksum_warning(
         let children = match plugin_list_checksum_children(data, &chunk, archive) {
             Ok(children) => children,
             Err(error) => {
-                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+                return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
@@ -390,7 +390,7 @@ fn checksum_warning(
         ) {
             Ok(children) => children,
             Err(error) => {
-                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+                return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
@@ -399,7 +399,7 @@ fn checksum_warning(
         let children = match compressed_preview_checksum_children(data, &chunk, archive) {
             Ok(children) => children,
             Err(error) => {
-                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+                return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
@@ -408,7 +408,7 @@ fn checksum_warning(
         let children = match user_table_uuid_checksum_children(data, &chunk, archive) {
             Ok(children) => children,
             Err(error) => {
-                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+                return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;

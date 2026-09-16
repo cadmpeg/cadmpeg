@@ -231,7 +231,7 @@ struct JointRecordWire {
 /// Validate a joint parameter through the checked source-value carrier.
 ///
 /// Unknown parameter names remain native extension data. Known scalar names
-/// carry finite floating-point values. FreeCAD's `PropertyBool` reader stores
+/// carry finite floating-point values. `FreeCAD`'s `PropertyBool` reader stores
 /// true only for exact lowercase `true` and stores false for every other raw
 /// spelling, so the raw text is retained alongside that typed value.
 pub(crate) fn validate_parameter_value(name: &str, value: &str) -> Result<(), String> {

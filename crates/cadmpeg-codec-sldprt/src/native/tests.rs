@@ -444,7 +444,7 @@ fn native_load_rejects_edited_object_name_identity_from_json() {
 
     let mut object_id_edit = original;
     let current_object_id = object_id_edit["feature_input_names"][0]["object_id"].as_u64();
-    let forged_object_id = (current_object_id == Some(1)).then_some(2).unwrap_or(1);
+    let forged_object_id = if current_object_id == Some(1) { 2 } else { 1 };
     object_id_edit["feature_input_names"][0]["object_id"] = serde_json::json!(forged_object_id);
     let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(object_id_edit).unwrap();
     let error = crate::native::SldprtNative::load(&namespace).unwrap_err();

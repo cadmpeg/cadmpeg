@@ -368,7 +368,7 @@ pub(crate) fn reference_settings(archive: ArchiveVersion) -> Vec<u8> {
     anonymous_chunk_excluding(archive, 0, &body, std::slice::from_ref(&child))
 }
 
-/// Fixture class bytes and their nested checksum boundaries. DerefMut permits
+/// Fixture class bytes and their nested checksum boundaries. `DerefMut` permits
 /// the owner tests to make deliberate wire mutations before record framing.
 #[derive(Clone)]
 pub(crate) struct DefinitionPayload {
@@ -477,7 +477,8 @@ pub(crate) fn v5_definition_payload_with_paths(
     payload.push(u8::from(relative_path));
     let child_start = payload.len();
     payload.extend(unit_detail(archive, 2, 0.001));
-    let mut children = vec![child_start..payload.len()];
+    let mut children = Vec::new();
+    children.push(child_start..payload.len());
     payload.extend(1_i32.to_le_bytes());
     payload.extend(0_u32.to_le_bytes());
     if minor >= 7 {
@@ -504,7 +505,8 @@ pub(crate) fn v6_definition_payload(
     settings: bool,
 ) -> DefinitionPayload {
     let mut body = model_component_attributes(archive, id, 17, "modern definition");
-    let mut children = vec![0..body.len()];
+    let mut children = Vec::new();
+    children.push(0..body.len());
     body.extend(kind.to_le_bytes());
     let child_start = body.len();
     body.extend(unit_detail(archive, 8, 0.0254));
@@ -526,7 +528,8 @@ pub(crate) fn v6_definition_payload(
     body.push(u8::from(linked));
     if linked {
         let mut linked_body = file_reference(archive, "/full/source.3dm", "source.3dm");
-        let mut linked_children = vec![0..linked_body.len()];
+        let mut linked_children = Vec::new();
+        linked_children.push(0..linked_body.len());
         linked_body.extend(2_i32.to_le_bytes());
         linked_body.extend(2_u32.to_le_bytes());
         linked_body.push(u8::from(settings));

@@ -532,7 +532,8 @@ mod tests {
             serde_json::Value::Null,
             serde_json::json!({"z": [1.25, true, null], "a": "é\n\""}),
         ] {
-            let expected = serde_json::to_string_pretty(&value).unwrap() + "\n";
+            let expected =
+                serde_json::to_string_pretty(&value).expect("pretty JSON for the fixture") + "\n";
             assert_eq!(snapshot_text(&value), expected);
         }
     }

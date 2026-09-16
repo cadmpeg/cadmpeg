@@ -54,7 +54,7 @@ impl<'a> MeshExpand<'a> {
 
 /// Maps an expansion refusal to the mesh decoder error type.
 fn expansion_refused(offset: usize, refusal: &CodecError) -> GeometryError {
-    error(offset, &format!("mesh buffer expansion refused: {refusal}"))
+    error(offset, format!("mesh buffer expansion refused: {refusal}"))
 }
 
 /// `ON_Mesh` class UUID.
@@ -536,10 +536,10 @@ pub(crate) fn decode(
                 triangles,
                 decoded.normals,
             )
-            .map_err(|lanes| error(reader.position(), &lanes.to_string()))?,
+            .map_err(|lanes| error(reader.position(), lanes.to_string()))?,
             decoded.channels,
         )
-        .map_err(|err| error(reader.position(), &err.to_string()))?
+        .map_err(|err| error(reader.position(), err.to_string()))?
         .with_source_object(association),
         warnings: decoded.warnings,
         losses: decoded.losses,
@@ -909,10 +909,7 @@ fn read_buffer<'a>(
     }
     let buffer_limit = buffer_output_limit(expand);
     if declared > buffer_limit {
-        return Err(error(
-            reader.position() - 4,
-            &format!("invalid {name} size"),
-        ));
+        return Err(error(reader.position() - 4, format!("invalid {name} size")));
     }
     *decompressed_bytes = decompressed_bytes
         .checked_add(declared)
@@ -974,7 +971,7 @@ fn read_buffer<'a>(
             if source.window() != body {
                 return Err(error(
                     chunk.body().start,
-                    &format!(
+                    format!(
                         "expansion source window of {} bytes does not alias \
                          the {} byte compressed chunk body",
                         source.window().len(),
