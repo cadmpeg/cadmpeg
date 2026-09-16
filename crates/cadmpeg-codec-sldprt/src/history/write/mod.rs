@@ -121,7 +121,7 @@ pub(crate) fn apply_feature_name_changes(
 pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<features::FeatureInputRename>, CodecError> {
     let neutral_hash = feature_hash(&ir.model)?;
     let native_hash = native
         .as_ref()
@@ -151,7 +151,7 @@ pub(crate) fn prepare_features_for_write(
         return sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native);
     }
     match (neutral_changed, native_changed) {
-        (false, _) => Ok(()),
+        (false, _) => Ok(Vec::new()),
         (true, true) => {
             let projected_model = native
                 .as_ref()
@@ -160,7 +160,7 @@ pub(crate) fn prepare_features_for_write(
                 .map(|projection| projection.into_model().0)
                 .unwrap_or_default();
             if feature_hash(&projected_model)? == neutral_hash {
-                Ok(())
+                Ok(Vec::new())
             } else {
                 Err(CodecError::Malformed(
                     "conflicting neutral and native SLDPRT feature edits".into(),

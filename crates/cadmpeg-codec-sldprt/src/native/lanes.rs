@@ -13,9 +13,10 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
                 "SolidWorks feature-input class index does not match its native payload".into(),
             ));
         }
-        // Object-name identity is derived from the payload. The name value is the
-        // editable field the writer splices back into the payload, so it is not
-        // part of the identity this admission holds.
+        // Every field of an object-name record, the value included, states the
+        // payload bytes at `offset`. A rename is a write-side input, never an
+        // edit of a stored lane, so any disagreement here is a false statement
+        // about the payload and is refused.
         let expected_names =
             crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
         if lane.names.len() != expected_names.len()
@@ -34,6 +35,20 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "SolidWorks feature-input name structure does not match its native payload".into(),
             ));
+        }
+        if let Some((index, actual, expected)) = lane
+            .names
+            .iter()
+            .zip(&expected_names)
+            .enumerate()
+            .find_map(|(index, (actual, expected))| {
+                (actual.value != expected.value).then_some((index, actual, expected))
+            })
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
+                lane.id, actual.value, expected.value
+            )));
         }
         let mut entities = lane.sketch_entities.iter();
         for (index, position) in (0..lane.native_payload.len())

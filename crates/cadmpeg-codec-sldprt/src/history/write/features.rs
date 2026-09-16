@@ -22,10 +22,25 @@ use super::xml::{feature_xml_tag, valid_xml_name};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::records::FeatureSource;
 
+/// A write-side request to rewrite one serialized object name.
+///
+/// A stored `FeatureInputName::value` states the payload bytes at that record's
+/// offset and is never edited. A neutral feature rename is this distinct input,
+/// which the writer splices into the payload it emits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FeatureInputRename {
+    /// Identifier of the lane that owns the renamed object name.
+    pub(crate) lane: String,
+    /// Position of the renamed record in that lane's `names` arena.
+    pub(crate) name_index: usize,
+    /// The object name to write.
+    pub(crate) value: cadmpeg_core::text::NonBlankString,
+}
+
 pub(crate) fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
-    native: &mut crate::native::SldprtNative,
-) -> Result<(), CodecError> {
+    native: &crate::native::SldprtNative,
+) -> Result<Vec<FeatureInputRename>, CodecError> {
     let renames = features
         .iter()
         .filter_map(|feature| {
@@ -46,6 +61,7 @@ pub(crate) fn synchronize_feature_input_names(
         })
         .collect::<Vec<_>>();
 
+    let mut requested = Vec::new();
     for (old_name, new_name, input_class) in renames {
         let mut matches = Vec::<(usize, usize)>::new();
         for (lane_index, lane) in native.feature_input_lanes.iter().enumerate() {
@@ -70,9 +86,18 @@ pub(crate) fn synchronize_feature_input_names(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
             )));
         };
-        native.feature_input_lanes[*lane_index].names[*name_index].value = new_name;
+        let value = cadmpeg_core::text::NonBlankString::new(new_name).ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "SLDPRT feature-input name for {old_name:?} has no non-blank replacement"
+            ))
+        })?;
+        requested.push(FeatureInputRename {
+            lane: native.feature_input_lanes[*lane_index].id.clone(),
+            name_index: *name_index,
+            value,
+        });
     }
-    Ok(())
+    Ok(requested)
 }
 
 pub(crate) fn generated_feature_record_id(feature: &FeatureId) -> String {
@@ -132,7 +157,7 @@ pub(crate) fn sync_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<FeatureInputRename>, CodecError> {
     let features = &model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -140,7 +165,7 @@ pub(crate) fn sync_neutral_features(
                 history.features.retain(is_custom_property);
             }
         }
-        return Ok(());
+        return Ok(Vec::new());
     }
     let native = native.get_or_insert_with(|| crate::native::SldprtNative {
         feature_histories: vec![FeatureHistory {
@@ -189,7 +214,7 @@ pub(crate) fn sync_neutral_features(
         });
     }
 
-    synchronize_feature_input_names(features, native)?;
+    let renames = synchronize_feature_input_names(features, native)?;
 
     let generated_sources = generated_feature_source_ids(features, native)?;
     let parent_sources = features
@@ -488,7 +513,7 @@ pub(crate) fn sync_neutral_features(
     }
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
-    Ok(())
+    Ok(renames)
 }
 
 pub(crate) fn synchronize_neutral_feature_content(

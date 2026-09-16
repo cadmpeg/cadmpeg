@@ -1602,25 +1602,50 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_input_lanes[0].names[1].value = "Depth".into();
-    });
-    assert!(crate::resolved_features::validate::validate_native(decoded.ir()).is_empty());
+    let native = sldprt_native(decoded.ir());
+    let lane = &native.feature_input_lanes[0];
+    let scalars = lane.scalars.len();
+    let rename = crate::history::write::features::FeatureInputRename {
+        lane: lane.id.clone(),
+        name_index: 1,
+        value: cadmpeg_core::nonblank_literal!("Depth"),
+    };
 
-    let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
+    let payload = crate::writer::resolved_feature_payload(
+        lane,
+        &native.feature_histories,
+        std::slice::from_ref(&rename),
     )
     .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
+
+    let written = crate::resolved_features::names::object_names(&payload, &lane.id);
+    assert_eq!(written[1].value, "Depth");
+    assert_eq!(written[0].value, lane.names[0].value);
+    assert_eq!(written[2].value, lane.names[2].value);
     assert_eq!(
-        sldprt_native(regenerated.ir()).feature_input_lanes[0].names[1].value,
-        "Depth"
+        crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written).len(),
+        scalars
+    );
+}
+
+#[test]
+fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_payload() {
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let mut lane = native.feature_input_lanes[0].clone();
+    lane.names[1].value = "Depth".into();
+
+    let error = crate::writer::resolved_feature_payload(&lane, &native.feature_histories, &[])
+        .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("name value does not match its native payload"),
+        "{error}"
     );
 }
 

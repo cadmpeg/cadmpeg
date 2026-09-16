@@ -79,7 +79,7 @@ pub(crate) fn write_semantic_with_records(
         &feature_name_changes,
     );
     let ir = &normalized;
-    crate::history::prepare_features_for_write(ir, &mut native)?;
+    let feature_input_renames = crate::history::prepare_features_for_write(ir, &mut native)?;
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::prepare_parameters_for_write(
         ir,
@@ -222,7 +222,10 @@ pub(crate) fn write_semantic_with_records(
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
-        sections.push((section, resolved_feature_payload(lane, histories)?));
+        sections.push((
+            section,
+            resolved_feature_payload(lane, histories, &feature_input_renames)?,
+        ));
     }
     let opaque = opaque_blocks(
         ir,
@@ -1282,9 +1285,17 @@ fn patch_active_configuration_xml(
     Ok(Some(output.into_bytes()))
 }
 
+/// The bytes written for one feature-input lane.
+///
+/// Every object-name record states the payload bytes at its own offset, so the
+/// lane is written as it stands. `renames` carries the write-side object-name
+/// changes that `synchronize_feature_input_names` derived from the neutral
+/// feature names; the splice loop at the end of this function writes each one
+/// into the emitted payload.
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
+    renames: &[crate::history::write::features::FeatureInputRename],
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let expected_classes =
@@ -1295,10 +1306,8 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    // Object-name identity is derived from the payload and must still agree with
-    // it. The name value is the one editable field: a neutral feature rename
-    // reaches the lane through `synchronize_feature_input_names`, and the splice
-    // loop at the end of this function writes it back into the payload.
+    // Every field of an object-name record, the value included, states the
+    // payload bytes at `offset`.
     let expected_names =
         crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
     if lane.names.len() != expected_names.len()
@@ -1317,6 +1326,20 @@ fn resolved_feature_payload(
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited object-name structure",
             lane.id
+        )));
+    }
+    if let Some((index, actual, expected)) = lane
+        .names
+        .iter()
+        .zip(&expected_names)
+        .enumerate()
+        .find_map(|(index, (actual, expected))| {
+            (actual.value != expected.value).then_some((index, actual, expected))
+        })
+    {
+        return Err(CodecError::malformed(format_args!(
+            "feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
+            lane.id, actual.value, expected.value
         )));
     }
     let mut expected_lane = lane.clone();
@@ -1459,19 +1482,32 @@ fn resolved_feature_payload(
             }
         }
     }
-    for (name, expected) in lane.names.iter().zip(&expected_names).rev() {
-        if name.value == expected.value {
-            continue;
-        }
-        let utf16 = name.value.encode_utf16().collect::<Vec<_>>();
+    let mut lane_renames = renames
+        .iter()
+        .filter(|rename| rename.lane == lane.id)
+        .map(|rename| {
+            let name = lane.names.get(rename.name_index).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "feature-input lane {} has no object name {}",
+                    lane.id, rename.name_index
+                ))
+            })?;
+            Ok((name, rename))
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    // Descending offset order: a spliced name changes the length of the payload
+    // after it, and every remaining name sits before the one just written.
+    lane_renames.sort_by_key(|(name, _)| std::cmp::Reverse(name.offset));
+    for (name, rename) in lane_renames {
+        let utf16 = rename.value.as_str().encode_utf16().collect::<Vec<_>>();
         let length = u8::try_from(utf16.len()).map_err(|_| {
             CodecError::NotImplemented("feature-input object name exceeds 255 UTF-16 units".into())
         })?;
-        let start = usize::try_from(expected.offset).map_err(|_| {
+        let start = usize::try_from(name.offset).map_err(|_| {
             CodecError::Malformed("feature-input name offset exceeds address space".into())
         })?;
         let end = start
-            .checked_add(6 + expected.value.encode_utf16().count() * 2)
+            .checked_add(6 + name.value.encode_utf16().count() * 2)
             .ok_or_else(|| CodecError::Malformed("feature-input name range overflow".into()))?;
         if payload.get(start..start + 5) != Some(&[0x04, 0x80, 0xff, 0xfe, 0xff]) {
             return Err(CodecError::Malformed(
