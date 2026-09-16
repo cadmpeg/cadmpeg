@@ -182,6 +182,26 @@ pub(crate) fn marker_positions(b: &[u8]) -> Vec<usize> {
 /// A `0x10` with no open scope is a malformed stream and is refused: pinning
 /// the depth at zero would make every later marker read as one `b` owns.
 pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
+    let (out, balanced) = walk_owned_markers(b, int_width);
+    balanced.then_some(out)
+}
+
+impl crate::nurbs::subtypes::SubtypeScope<'_> {
+    /// Byte offsets of the B-spline markers the scope itself owns, relative to
+    /// the scope's own start.
+    ///
+    /// Total: the unbalanced stream that [`owned_marker_positions`] refuses is
+    /// a state this type cannot hold.
+    pub(crate) fn owned_marker_positions(&self, int_width: RefWidth) -> Vec<usize> {
+        walk_owned_markers(self.bytes(), int_width).0
+    }
+}
+
+/// The owned-marker walk, with the balance it observed.
+///
+/// The second element is `false` when the walk met a `0x10` that no `0x0f` in
+/// `b` matches. A balanced scope always answers `true`.
+fn walk_owned_markers(b: &[u8], int_width: RefWidth) -> (Vec<usize>, bool) {
     let mut out = Vec::new();
     let mut depth = 0usize;
     // The scope's own leading `0x0f` is skipped, so the close that matches it
@@ -193,7 +213,10 @@ pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Ve
             0x0f => depth += 1,
             0x10 => match depth.checked_sub(1) {
                 Some(next) => depth = next,
-                None => outer = outer.checked_sub(1)?,
+                None => match outer.checked_sub(1) {
+                    Some(next) => outer = next,
+                    None => return (out, false),
+                },
             },
             _ => {
                 if depth == 0 && marker_at(b, pos).is_some() {
@@ -206,7 +229,7 @@ pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Ve
             None => break,
         }
     }
-    Some(out)
+    (out, true)
 }
 
 /// Positions of the B-spline markers owned by a complete record's unique
@@ -222,7 +245,8 @@ pub(crate) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Op
         .filter(|(_, name)| *name != b"ref")
         .filter_map(|(start, _)| {
             let scope = crate::nurbs::subtypes::subtype_span(b, start, int_width)?;
-            let positions = owned_marker_positions(scope, int_width)?
+            let positions = scope
+                .owned_marker_positions(int_width)
                 .into_iter()
                 .map(|position| start + position)
                 .collect::<Vec<_>>();

@@ -252,6 +252,16 @@ pub(crate) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
 /// refused: pinning the depth at zero would make every later marker read as one
 /// this span owns.
 pub(crate) fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
+    let (out, balanced) = walk_owned_markers(toks);
+    balanced.then_some(out)
+}
+
+/// The owned-marker walk, with the balance it observed.
+///
+/// The second element is `false` when the walk met a `SubtypeClose` that no
+/// open in `toks` matches. A balanced stream always answers `true`, so a caller
+/// holding a [`SubtypeScope`] reads the first element alone.
+fn walk_owned_markers(toks: &[Token]) -> (Vec<usize>, bool) {
     let mut out = Vec::new();
     let mut depth = 0usize;
     // The span's own leading `SubtypeOpen` is skipped, so the close that
@@ -262,7 +272,10 @@ pub(crate) fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
             Token::SubtypeOpen => depth += 1,
             Token::SubtypeClose => match depth.checked_sub(1) {
                 Some(next) => depth = next,
-                None => outer = outer.checked_sub(1)?,
+                None => match outer.checked_sub(1) {
+                    Some(next) => outer = next,
+                    None => return (out, false),
+                },
             },
             _ => {
                 if depth == 0 && marker_at(toks, pos).is_some() {
@@ -271,7 +284,7 @@ pub(crate) fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
             }
         }
     }
-    Some(out)
+    (out, true)
 }
 
 /// Token indices and names of the subtype definitions `toks` itself owns: the
@@ -337,8 +350,8 @@ pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
 /// cache-bearing when it directly owns at least one B-spline marker. Multiple
 /// such scopes are ambiguous and are therefore rejected.
 ///
-/// A malformed token stream is refused, not worked around: the walk answers
-/// `None` rather than passing over the scope that stated it.
+/// A malformed token stream is refused, not worked around: `owned_subtype_defs`
+/// answers `None` rather than passing over the scope that stated it.
 pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
     let mut cache_bearing = Vec::new();
     for (start, _) in owned_subtype_defs(toks)?
@@ -348,12 +361,8 @@ pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
         let Some(scope) = subtype_span(toks, start) else {
             continue;
         };
-        // `owned_marker_positions` answers `None` for a malformed token
-        // stream. That refusal is carried out to the caller. It never reads
-        // as a well-formed scope owning no marker, which would leave this
-        // walk free to choose a different scope.
-        if !owned_marker_positions(scope)?.is_empty() {
-            cache_bearing.push(scope);
+        if !scope.owned_marker_positions().is_empty() {
+            cache_bearing.push(scope.tokens());
         }
     }
     match cache_bearing.as_slice() {
@@ -386,9 +395,45 @@ pub(crate) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Optio
     found.map(|(marker, _)| marker)
 }
 
-/// The token span of the balanced subtype scope opening at `start`, inclusive
-/// of both delimiters.
-pub(crate) fn subtype_span(toks: &[Token], start: usize) -> Option<&[Token]> {
+/// A balanced subtype scope in token space.
+///
+/// [`subtype_span`] is the only constructor: the field is private and the type
+/// has no `From` and no `Deref`. Every value therefore states one scope whose
+/// every `SubtypeClose` has a matching open within the span, and whose final
+/// token is the close that balances it. The walks that refuse an unbalanced
+/// stream are total over this type.
+///
+/// The field is not reachable from another module:
+///
+/// ```compile_fail
+/// use cadmpeg_asm::nurbs::toks::SubtypeScope;
+/// use cadmpeg_asm::sab::Token;
+///
+/// let toks = [Token::SubtypeOpen, Token::SubtypeClose];
+/// let scope = SubtypeScope(&toks[..]);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SubtypeScope<'a>(&'a [Token]);
+
+impl<'a> SubtypeScope<'a> {
+    /// The scope's tokens, both delimiters included.
+    pub fn tokens(&self) -> &'a [Token] {
+        self.0
+    }
+
+    /// Token indices of the `nubs`/`nurbs` markers the scope itself owns: those
+    /// outside every construction nested within it. The scope's outer
+    /// `SubtypeOpen` sets the initial nesting depth.
+    ///
+    /// Total: the unbalanced stream that [`owned_marker_positions`] refuses is
+    /// a state this type cannot hold.
+    pub fn owned_marker_positions(&self) -> Vec<usize> {
+        walk_owned_markers(self.0).0
+    }
+}
+
+/// The balanced subtype scope opening at `start`, inclusive of both delimiters.
+pub(crate) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<'_>> {
     let mut depth = 0usize;
     for (pos, token) in toks.iter().enumerate().skip(start) {
         match token {
@@ -396,7 +441,7 @@ pub(crate) fn subtype_span(toks: &[Token], start: usize) -> Option<&[Token]> {
             Token::SubtypeClose => {
                 depth = depth.checked_sub(1)?;
                 if depth == 0 {
-                    return toks.get(start..=pos);
+                    return toks.get(start..=pos).map(SubtypeScope);
                 }
             }
             _ => {}
@@ -460,7 +505,7 @@ pub fn payload_subtype_toks<'r>(
     if name != expected {
         return None;
     }
-    let span = subtype_span(&record.tokens, open)?;
+    let span = subtype_span(&record.tokens, open)?.tokens();
     span.get(2..span.len() - 1)
 }
 
@@ -516,7 +561,7 @@ impl SubtypeTable {
     /// The token span of definition `index`, sliced from its owning record.
     pub(crate) fn span(&self, index: usize) -> Option<&[Token]> {
         let (tokens, token_pos) = self.defs.get(index)?;
-        subtype_span(tokens, *token_pos)
+        subtype_span(tokens, *token_pos).map(|scope| scope.tokens())
     }
 }
 
@@ -652,7 +697,10 @@ mod tests {
             owned_construction_subtype(&toks),
             Some("exact_int_cur".to_string())
         );
-        assert_eq!(subtype_span(&toks, 2), Some(&toks[2..=5]));
+        assert_eq!(
+            subtype_span(&toks, 2).map(|scope| scope.tokens()),
+            Some(&toks[2..=5])
+        );
     }
 
     #[test]
@@ -669,6 +717,31 @@ mod tests {
         assert_eq!(owned_marker_positions(&toks), Some(vec![1]));
         assert_eq!(marker_at(&toks, 1), Some(BsplineMarker::Nubs));
         assert_eq!(marker_at(&toks, 3), Some(BsplineMarker::Nurbs));
+    }
+
+    #[test]
+    fn a_scope_yields_its_owned_markers_with_no_refusal_to_answer() {
+        // Two nested constructions inside one scope. The call binds a
+        // `Vec<usize>` directly: `SubtypeScope::owned_marker_positions` states
+        // no `Option`, because the type has already proven the balance the
+        // raw-stream walk refuses.
+        let toks = [
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            ident("nubs"),
+            Token::SubtypeOpen,
+            ident("ref"),
+            Token::SubtypeOpen,
+            ident("nurbs"),
+            Token::SubtypeClose,
+            Token::SubtypeClose,
+            ident("nurbs"),
+            Token::SubtypeClose,
+        ];
+        let scope = subtype_span(&toks, 0).expect("balanced scope");
+        let owned: Vec<usize> = scope.owned_marker_positions();
+        assert_eq!(owned, vec![2, 9]);
+        assert_eq!(scope.tokens(), &toks[..]);
     }
 
     #[test]

@@ -707,7 +707,7 @@ fn direct_subtype_reference(toks: &[Token]) -> Option<usize> {
         match token {
             Token::SubtypeOpen => {
                 if depth == 0 {
-                    let scope = crate::nurbs::toks::subtype_span(toks, position)?;
+                    let scope = crate::nurbs::toks::subtype_span(toks, position)?.tokens();
                     let index = match scope {
                         [Token::SubtypeOpen, Token::Long(index), Token::SubtypeClose]
                             if *index >= 0 =>
@@ -959,7 +959,7 @@ fn embedded_deformable(toks: &[Token], table: &SubtypeTable) -> Option<EmbeddedD
         let Some(Token::Long(index)) = toks.get(reference + 2) else {
             return None;
         };
-        let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?;
+        let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
         cur.set_pos(reference + reference_span.len());
         EmbeddedDeformableSource::NativeReference {
             flag,
@@ -1470,7 +1470,7 @@ pub fn rolling_ball_patch_layout(
     ];
     let (start, name_len) = find_owned_subtype_marker(bytes, &names, int_width)
         .map(|(start, name)| (start, name.len()))?;
-    let span = subtype_span(bytes, start, int_width)?;
+    let span = subtype_span(bytes, start, int_width)?.bytes();
     let payload_start = name_len + 3;
     let radii = (|| {
         let mut position = payload_start;
@@ -1520,7 +1520,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
         cur.take_bool()?;
         let reference = cur.pos();
         if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
-            let scope = crate::nurbs::toks::subtype_span(toks, reference)?;
+            let scope = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
             if let Some(curve) = owned_curve_cache_resolving_refs(scope, table) {
                 cur.set_pos(reference + scope.len());
                 return Some(curve);
@@ -1585,7 +1585,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
             if !compact_ref {
                 if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
                     // Inline subtype scope: resolve its solved curve cache.
-                    let scope = crate::nurbs::toks::subtype_span(toks, reference)?;
+                    let scope = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
                     let curve = owned_curve_cache_resolving_refs(scope, table)?;
                     cur.set_pos(reference + scope.len());
                     return Some(curve);
@@ -1597,7 +1597,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 return None;
             };
             let index = usize::try_from(*index).ok()?;
-            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?;
+            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
             cur.set_pos(reference + reference_span.len());
             table
                 .span(index)
@@ -2676,7 +2676,8 @@ fn support_slot_present(cur: &Cur<'_>, table: &SubtypeTable) -> bool {
         return false;
     };
     let start = probe.pos();
-    let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start) else {
+    let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start).map(|scope| scope.tokens())
+    else {
         return false;
     };
     let Some(Token::Ident(name)) = probe.toks().get(start + 1) else {
@@ -3132,7 +3133,7 @@ pub(crate) fn optional_embedded_surface_with_bounds(
                 return None;
             };
             let index = usize::try_from(*index).ok()?;
-            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?;
+            let reference_span = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
             cur.set_pos(reference + reference_span.len());
             let surface = table
                 .span(index)
@@ -3168,7 +3169,7 @@ pub(crate) fn optional_embedded_surface_with_bounds(
             cur.take_bool()?;
         }
         if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
-            let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?;
+            let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?.tokens();
             let surface = if let Some(surface) = owned_surface_cache_resolving_refs(scope, table) {
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     surface,
@@ -3372,7 +3373,7 @@ pub fn record_trailing_surface_bounds(toks: &[Token]) -> Option<[Option<f64>; 4]
     if !matches!(toks.get(position), Some(Token::SubtypeOpen)) {
         return None;
     }
-    let scope = crate::nurbs::toks::subtype_span(toks, position)?;
+    let scope = crate::nurbs::toks::subtype_span(toks, position)?.tokens();
     position += scope.len();
     if !matches!(toks.get(position), Some(Token::True | Token::False)) {
         return None;

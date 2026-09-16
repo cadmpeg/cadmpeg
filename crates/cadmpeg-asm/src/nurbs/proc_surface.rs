@@ -678,7 +678,7 @@ fn g2_blend_spl_sur(
 ) -> Option<DecodedProceduralSurface> {
     let names = ["g2_blend_spl_sur", "g2blnsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, two scalars, two sides in
@@ -2015,7 +2015,7 @@ fn loft_spl_sur(
     use cadmpeg_ir::geometry::LoftBridgeToken;
     let names = ["loft_spl_sur", "loftsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     // The modern name uses the revision-gated layout.
     if matches!(cur.peek(), Some(Token::Long(_))) && name == "loft_spl_sur" {
@@ -2211,7 +2211,7 @@ fn compound_loft_spl_sur(
     resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
     let (start, _) = toks::find_owned_subtype_marker(toks, &["cl_loft_spl_sur"])?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         return revision_compound_loft(span, resolver);
@@ -2304,7 +2304,7 @@ fn compound_loft_spl_sur(
 fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["scaled_cloft_spl_sur", "sclclftsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let singularity = cur.take_enum()?;
     let (shape, cache_fit_tolerance) = if cur.peek().is_some_and(Token::is_payload_ident) {
@@ -2583,7 +2583,7 @@ fn law_formula_resolving(
 fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["skin_spl_sur", "skinsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let surface_boolean = cur.take_enum()?;
     let surface_normal = cur.take_enum()?;
@@ -2668,7 +2668,7 @@ fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["law_spl_sur", "lawsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let parameter_ranges = if matches!(cur.peek(), Some(Token::Double(_))) {
         Some([
@@ -2764,7 +2764,7 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 pub(crate) fn sub_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["sub_spl_sur", "subsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let parameter_ranges = [
         [cur.take_f64()?, cur.take_f64()?],
@@ -2783,7 +2783,7 @@ pub(crate) fn sub_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 fn net_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["net_spl_sur", "netsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let sections = Box::new([loft_section(&mut cur)?, loft_section(&mut cur)?]);
     let mut frame_parameters = [0.0; 12];
@@ -2834,7 +2834,7 @@ fn sweep_spl_sur(
 ) -> Option<DecodedProceduralSurface> {
     let names = ["sweep_spl_sur", "sweep_sur", "sweepsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // The revision-gated layout belongs to `sweep_sur`.
@@ -3235,7 +3235,7 @@ fn taper_spl_sur(
     let kind = names
         .iter()
         .find_map(|(candidate, kind)| (*candidate == name).then_some(*kind))?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated form, stored by the orthogonal subtype's modern name.
@@ -3349,7 +3349,7 @@ fn taper_spl_sur(
 
 fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let (start, _) = toks::find_owned_subtype_marker(toks, &["comp_spl_sur"])?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
@@ -3472,7 +3472,7 @@ fn off_spl_sur(
     let names = ["off_spl_sur", "offsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let modern = name == "off_spl_sur";
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // The modern name uses the revision-gated layout.
@@ -3560,7 +3560,7 @@ fn rot_spl_sur(
 ) -> Option<DecodedProceduralSurface> {
     let names = ["rot_spl_sur", "rotsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, profile curve with two
@@ -3650,7 +3650,7 @@ fn sum_spl_sur(
 ) -> Option<DecodedProceduralSurface> {
     let names = ["sum_spl_sur", "sumsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, two curves each with two
@@ -3731,7 +3731,7 @@ fn sum_spl_sur(
 fn ruled_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["rule_sur", "rulesur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (first, first_end) = curve_block(span, cur.pos())?;
     cur.set_pos(first_end);
@@ -3753,7 +3753,7 @@ fn ruled_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["exact_spl_sur", "exactsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     if matches!(cur.peek(), Some(Token::Long(_))) {
         // Revision-gated layout: revision integer, shared tail, four optional
@@ -3837,7 +3837,7 @@ fn t_spl_sur(toks: &[Token], table: &SubtypeTable) -> Option<DecodedProceduralSu
     }
 
     let (start, _) = toks::find_owned_subtype_marker(toks, &["t_spl_sur"])?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (layout, type_code);
     if matches!(cur.peek(), Some(Token::Long(_))) {
@@ -4054,7 +4054,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::DeformableSurfaceData;
     let names = ["defm_spl_sur", "defmsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (support, revision_form_head) = if matches!(cur.peek(), Some(Token::Long(_))) {
         let revision = cur.take_long()?;
@@ -4231,7 +4231,7 @@ pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
     let names = ["helix_spl_circ", "helix_spl_line"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let circular = name == "helix_spl_circ";
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let current_layout = optional_helix_revision(&mut cur)?;
     let angle_range = [cur.take_range_value()?, cur.take_range_value()?];
