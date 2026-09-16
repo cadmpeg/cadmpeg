@@ -1633,15 +1633,34 @@ class DenyCensusTests(unittest.TestCase):
         )
         self.assertEqual(macro_mutated, 1, macro_output)
 
+        # A bare name that is not the reader's own generic parameter and
+        # resolves to no declaration keeps the lexical fail-closed route.
+        import_fixture = {"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            enum Reader { A(Foreign) }
+        '''}
+        import_old = 'return False, "cannot resolve bare generic/import statically"'
+        import_mutated, import_output = self.run_mutated_census(
+            import_fixture,
+            import_old,
+            'return True, "unresolved bare generic/import (mutated)"',
+        )
+        self.assertEqual(import_mutated, 0, import_output)
+
+        # A generic parameter with no default and no workspace instantiation
+        # names no reader, and the empty-candidate refusal is what says so.
         generic_fixture = {"lib.rs": '''
             #[derive(Deserialize)] #[serde(deny_unknown_fields)]
             enum Reader<T> { A(T) }
         '''}
-        generic_old = 'return False, "cannot resolve bare generic/import statically"'
+        generic_old = '''            return False, (
+                f"generic parameter {parameter} has no default and no "
+                f"workspace instantiation"
+            )'''
         generic_mutated, generic_output = self.run_mutated_census(
             generic_fixture,
             generic_old,
-            'return True, "unresolved bare generic/import (mutated)"',
+            '''            return True, "empty candidate set (mutated)"''',
         )
         self.assertEqual(generic_mutated, 0, generic_output)
 
@@ -1676,3 +1695,82 @@ class DenyCensusTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GenericParameterProofTests(unittest.TestCase):
+    """A generic payload parameter is proved over every type that reaches it."""
+
+    run_census = DenyCensusTests.run_census
+
+    CLOSED = '''
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Closed { value: u8 }
+    '''
+    OPEN = '''
+        #[derive(Deserialize)]
+        struct Open { value: u8 }
+    '''
+
+    def test_default_and_every_instantiation_are_proved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.CLOSED + '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct AlsoClosed { other: u8 }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader<T = Closed> { A(T) }
+            pub type Other = Reader<AlsoClosed>;
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_an_open_default_leaves_the_parameter_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.OPEN + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader<T = Open> { A(T) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("generic parameter T instantiated as Open", output)
+
+    def test_an_open_instantiation_leaves_the_parameter_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.CLOSED + self.OPEN + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader<T = Closed> { A(T) }
+            pub type Leak = Reader<Open>;
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("generic parameter T instantiated as Open", output)
+
+    def test_a_parameter_with_no_default_and_no_use_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader<T> { A(T) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("has no default and no workspace instantiation", output)
+
+    def test_an_instantiation_by_another_generic_parameter_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.CLOSED + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader<T = Closed> { A(T) }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Forwarder<U> { inner: Reader<U> }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn(
+            "instantiated with the generic parameter U of Forwarder", output
+        )
+
+    def test_an_uninhabited_instantiation_refuses_every_input(self) -> None:
+        status, output = self.run_census({"lib.rs": self.CLOSED + '''
+            #[derive(Deserialize)]
+            pub enum Never {}
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader<T = Closed> { A(T) }
+            pub type Sheet = Reader<Never>;
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_generic_parameters_reads_names_bounds_and_defaults(self) -> None:
+        item = census.Item(
+            Path("crates/ir/src/lib.rs"), 1, "enum", "Reader",
+            "", "pub enum Reader<'a, T: Clone = Closed, const N: usize> { A(T) }",
+        )
+        self.assertEqual(census.generic_parameters(item), [("T", "Closed")])
