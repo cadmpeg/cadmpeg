@@ -148,8 +148,14 @@ fn assert_fem_namespace(global: &[u8]) {
         .iter()
         .find(|record| record.fields().unwrap()["kind"] == "node")
         .unwrap();
-    assert_eq!(node.fields().unwrap()["source_entity"], "iges:entity:directory#1");
-    assert_eq!(node.fields().unwrap()["coordinates"], json!([1.0, 2.0, 3.0]));
+    assert_eq!(
+        node.fields().unwrap()["source_entity"],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(
+        node.fields().unwrap()["coordinates"],
+        json!([1.0, 2.0, 3.0])
+    );
 
     let element = fem
         .iter()
@@ -161,7 +167,10 @@ fn assert_fem_namespace(global: &[u8]) {
         element.fields().unwrap()["nodes"],
         json!(["iges:entity:directory#1"])
     );
-    assert_eq!(element.fields().unwrap()["element_type"], json!([66, 69, 65, 77]));
+    assert_eq!(
+        element.fields().unwrap()["element_type"],
+        json!([66, 69, 65, 77])
+    );
 
     let displacement = fem
         .iter()
@@ -340,5 +349,8 @@ fn incomplete_element_result_items_do_not_allocate_or_project_values() {
         .unwrap();
     let record = &result.ir().native.namespace("iges").unwrap().arenas()["fem_entities"][0];
     assert_eq!(record.fields().unwrap()["kind"], "element_results");
-    assert!(record.fields().unwrap()["elements"].as_array().unwrap().is_empty());
+    assert!(record.fields().unwrap()["elements"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }

@@ -410,7 +410,13 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
     let native = result.ir().native.namespace("iges").unwrap();
     let copious = &native.arenas()["copious_data"][0];
     assert_eq!(copious.fields().unwrap()["declared_tuple_count"], 2);
-    assert_eq!(copious.fields().unwrap()["tuples"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        copious.fields().unwrap()["tuples"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     let entity = native.arenas()["entities"]
         .iter()
         .find(|record| record.fields().unwrap()["directory_sequence"] == 1)

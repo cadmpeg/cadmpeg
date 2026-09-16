@@ -83,7 +83,10 @@ fn a_token_that_is_not_a_number_quarantines_only_that_parameter_data() {
         .as_array()
         .unwrap()
         .is_empty());
-    assert!(entity.fields().unwrap()["parameters"].as_array().unwrap().is_empty());
+    assert!(entity.fields().unwrap()["parameters"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(result.ir().model.points.is_empty());
 
     let quarantined = &native.arenas()["quarantined_parameter_records"];
@@ -230,7 +233,10 @@ fn a_declared_card_that_does_not_exist_quarantines_the_parameter_data() {
     let native = result.ir().native.namespace("iges").unwrap();
     let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].fields().unwrap()["defect"], "declared-card-missing");
+    assert_eq!(
+        quarantined[0].fields().unwrap()["defect"],
+        "declared-card-missing"
+    );
     assert_eq!(quarantined[0].fields().unwrap()["cards"], 0);
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
@@ -321,7 +327,10 @@ fn a_non_ascii_token_byte_quarantines_the_parameter_data() {
     let native = result.ir().native.namespace("iges").unwrap();
     let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].fields().unwrap()["defect"], "token-not-ascii");
+    assert_eq!(
+        quarantined[0].fields().unwrap()["defect"],
+        "token-not-ascii"
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
@@ -336,7 +345,10 @@ fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
     let native = result.ir().native.namespace("iges").unwrap();
     let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].fields().unwrap()["defect"], "delimiter-missing");
+    assert_eq!(
+        quarantined[0].fields().unwrap()["defect"],
+        "delimiter-missing"
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1

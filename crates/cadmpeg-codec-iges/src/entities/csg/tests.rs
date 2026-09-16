@@ -218,7 +218,13 @@ fn decode_types_swept_solids_and_balanced_boolean_postfix() {
     let trees = &native.arenas()["boolean_trees"];
     assert_eq!(trees.len(), 1);
     assert_eq!(trees[0].fields().unwrap()["declared_length"], 3);
-    assert_eq!(trees[0].fields().unwrap()["terms"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        trees[0].fields().unwrap()["terms"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
     let selected = &native.arenas()["selected_components"];
     assert_eq!(selected.len(), 1);
     assert_eq!(
@@ -335,7 +341,10 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
         .find(|instance| instance.id() == "iges:product:solid-instance#D63")
         .unwrap();
     assert_eq!(instance.fields().unwrap()["form"], 1);
-    assert_eq!(instance.fields().unwrap()["solid"], "iges:entity:directory#55");
+    assert_eq!(
+        instance.fields().unwrap()["solid"],
+        "iges:entity:directory#55"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

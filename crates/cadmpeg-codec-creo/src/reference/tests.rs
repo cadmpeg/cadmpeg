@@ -454,7 +454,10 @@ fn decode_transfers_equation_verified_model_reference_circles() {
     );
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["reference_circles"][0];
     assert_eq!(record.fields().unwrap()["entity_id"], 45);
-    assert_eq!(record.fields().unwrap()["center_source"], "endpoint_midpoint");
+    assert_eq!(
+        record.fields().unwrap()["center_source"],
+        "endpoint_midpoint"
+    );
     assert_annotation(
         &result.source_fidelity().annotations,
         record.id(),

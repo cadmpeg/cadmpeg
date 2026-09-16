@@ -38,7 +38,13 @@ fn decode_general_note_defaulted_final_string_claims_no_trailing_property_group(
 
     assert!(entity.fields().unwrap()["property_links"][0].is_null());
     assert_eq!(annotation.fields().unwrap()["declared_string_count"], 2);
-    assert_eq!(annotation.fields().unwrap()["strings"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        annotation.fields().unwrap()["strings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterCountOverdeclared),
         0
@@ -199,15 +205,17 @@ fn decode_v5_general_note_one_blank_string_as_null() {
     let v4 = IgesCodec
         .decode(&mut Cursor::new(file(global_v4)), &DecodeOptions::default())
         .unwrap();
-    let v4_text = &v4.ir().native.namespace("iges").unwrap().arenas()["annotations"][0].fields().unwrap()
-        ["strings"][0]["text"];
+    let v4_text = &v4.ir().native.namespace("iges").unwrap().arenas()["annotations"][0]
+        .fields()
+        .unwrap()["strings"][0]["text"];
     assert_eq!(v4_text[0], u64::from(b' '));
 
     let v5 = IgesCodec
         .decode(&mut Cursor::new(file(global_v5)), &DecodeOptions::default())
         .unwrap();
-    let v5_text = &v5.ir().native.namespace("iges").unwrap().arenas()["annotations"][0].fields().unwrap()
-        ["strings"][0];
+    let v5_text = &v5.ir().native.namespace("iges").unwrap().arenas()["annotations"][0]
+        .fields()
+        .unwrap()["strings"][0];
     assert_eq!(v5_text["declared_character_count"], 1);
     assert!(v5_text["text"].is_null());
 }
@@ -221,7 +229,13 @@ fn decode_general_note_preserves_non_simple_form() {
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
 
     assert_eq!(annotation.fields().unwrap()["form"], 7);
-    assert_eq!(annotation.fields().unwrap()["strings"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        annotation.fields().unwrap()["strings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -255,7 +269,10 @@ fn decode_general_note_accepts_each_standard_form_at_its_minimum_count() {
 
         assert_eq!(annotation.fields().unwrap()["form"], form);
         assert_eq!(
-            annotation.fields().unwrap()["strings"].as_array().unwrap().len(),
+            annotation.fields().unwrap()["strings"]
+                .as_array()
+                .unwrap()
+                .len(),
             count
         );
         assert!(
@@ -277,7 +294,13 @@ fn decode_general_note_keeps_primary_projection_when_trailing_groups_are_invalid
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
 
     assert_eq!(annotation.fields().unwrap()["form"], 7);
-    assert_eq!(annotation.fields().unwrap()["strings"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        annotation.fields().unwrap()["strings"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

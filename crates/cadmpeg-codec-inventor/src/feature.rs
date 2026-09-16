@@ -1169,8 +1169,11 @@ fn project_extrusion(
         .references()
         .iter()
         .map(|reference| {
-            let property =
-                resolve_property(source.identity.segment_token.as_str(), reference.index, index)?;
+            let property = resolve_property(
+                source.identity.segment_token.as_str(),
+                reference.index,
+                index,
+            )?;
             let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &property.kind
             else {
                 return None;
@@ -1273,7 +1276,11 @@ fn project_fillet(
         .references()
         .iter()
         .map(|reference| {
-            let set = resolve_property(source.identity.segment_token.as_str(), reference.index, index)?;
+            let set = resolve_property(
+                source.identity.segment_token.as_str(),
+                reference.index,
+                index,
+            )?;
             let PmDcFeaturePropertyKind::FilletEdgeSet {
                 edges,
                 radius,
@@ -1283,8 +1290,11 @@ fn project_fillet(
             else {
                 return None;
             };
-            let selection =
-                resolve_property(source.identity.segment_token.as_str(), selection.index, index)?;
+            let selection = resolve_property(
+                source.identity.segment_token.as_str(),
+                selection.index,
+                index,
+            )?;
             if !matches!(
                 selection.kind,
                 PmDcFeaturePropertyKind::WideEnumeration {
@@ -1292,7 +1302,12 @@ fn project_fillet(
                     value: 0
                 }
             ) || !matches!(
-                resolve_property(source.identity.segment_token.as_str(), continuity.index, index)?.kind,
+                resolve_property(
+                    source.identity.segment_token.as_str(),
+                    continuity.index,
+                    index
+                )?
+                .kind,
                 PmDcFeaturePropertyKind::Boolean { value: false, .. }
             ) {
                 return None;
@@ -1313,8 +1328,12 @@ fn project_fillet(
                 edges: EdgeSelection::Native(edge_collection.id()),
                 radius: RadiusSpec::Constant {
                     radius: cadmpeg_ir::scalar::PositiveLength::new(
-                        length_reference(source.identity.segment_token.as_str(), radius.index, index)?
-                            .get(),
+                        length_reference(
+                            source.identity.segment_token.as_str(),
+                            radius.index,
+                            index,
+                        )?
+                        .get(),
                     )?,
                 },
                 tangency_weight: None,
@@ -1542,7 +1561,11 @@ fn feature_result(
         .references()
         .iter()
         .map(|reference| {
-            let body = resolve_property(source.identity.segment_token.as_str(), reference.index, index)?;
+            let body = resolve_property(
+                source.identity.segment_token.as_str(),
+                reference.index,
+                index,
+            )?;
             matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
                 .then(|| cadmpeg_core::text::NonBlankString::new(body.id()))
                 .flatten()

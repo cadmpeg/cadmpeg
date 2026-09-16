@@ -163,7 +163,8 @@ fn current_per_object_mesh_userdata_reaches_object_presentation() {
 
     assert_point_and_retention(&result, &record);
     let mesh = object_presentation(&result)
-        .field("custom_render_mesh").unwrap()
+        .field("custom_render_mesh")
+        .unwrap()
         .expect("current per-object mesh settings");
     assert_eq!(mesh["version"], serde_json::json!([1, 5]));
     assert_eq!(mesh["compute_curvature"], serde_json::json!(false));
@@ -185,7 +186,8 @@ fn future_per_object_mesh_userdata_keeps_point_and_attributes() {
 
     assert_point_and_retention(&result, &record);
     assert!(object_presentation(&result)
-        .field("custom_render_mesh").unwrap()
+        .field("custom_render_mesh")
+        .unwrap()
         .is_none());
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("per-object mesh userdata") && loss.message.contains("unsupported")
@@ -207,7 +209,8 @@ fn malformed_per_object_mesh_userdata_keeps_point_and_attributes() {
 
     assert_point_and_retention(&result, &record);
     assert!(object_presentation(&result)
-        .field("custom_render_mesh").unwrap()
+        .field("custom_render_mesh")
+        .unwrap()
         .is_none());
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("per-object mesh userdata") && loss.message.contains("dropped")
@@ -229,7 +232,8 @@ fn obsolete_custom_mesh_userdata_reaches_object_presentation() {
 
     assert_point_and_retention(&result, &record);
     let mesh = object_presentation(&result)
-        .field("custom_render_mesh").unwrap()
+        .field("custom_render_mesh")
+        .unwrap()
         .expect("obsolete custom mesh settings");
     assert_eq!(mesh["version"], serde_json::json!([1, 5]));
     assert_eq!(mesh["custom_settings"], serde_json::json!(true));
@@ -252,7 +256,8 @@ fn malformed_obsolete_custom_mesh_userdata_keeps_point_and_attributes() {
 
     assert_point_and_retention(&result, &record);
     assert!(object_presentation(&result)
-        .field("custom_render_mesh").unwrap()
+        .field("custom_render_mesh")
+        .unwrap()
         .is_none());
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("obsolete custom mesh userdata") && loss.message.contains("dropped")

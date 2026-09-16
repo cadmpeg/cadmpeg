@@ -404,12 +404,14 @@ pub(crate) fn try_decode_geometry(
             let Some(support) = surfaces_by_xmt.get(&offset.state.support()).cloned() else {
                 continue;
             };
-            let procedural_id: ProceduralSurfaceId = scope.id(&cadmpeg_ir::identity_component!("offset"), oi);
+            let procedural_id: ProceduralSurfaceId =
+                scope.id(&cadmpeg_ir::identity_component!("offset"), oi);
             let (surface_id, cache_fit_tolerance) =
                 if let Some((surface, fit_tolerance)) = saved_offset_carriers.get(&offset.xmt) {
                     (surface.clone(), Some(*fit_tolerance))
                 } else {
-                    let surface_id: SurfaceId = scope.id(&cadmpeg_ir::identity_component!("offset-surf"), oi);
+                    let surface_id: SurfaceId =
+                        scope.id(&cadmpeg_ir::identity_component!("offset-surf"), oi);
                     annotations
                         .note(&surface_id, &source_stream, offset.pos as u64)
                         .tag("OFFSET_SURF");
@@ -480,8 +482,10 @@ pub(crate) fn try_decode_geometry(
         }
 
         for (bi, blend) in view.blend_surfaces.iter().copied().enumerate() {
-            let surface_id: SurfaceId = scope.id(&cadmpeg_ir::identity_component!("blend-surf"), bi);
-            let procedural_id: ProceduralSurfaceId = scope.id(&cadmpeg_ir::identity_component!("blend"), bi);
+            let surface_id: SurfaceId =
+                scope.id(&cadmpeg_ir::identity_component!("blend-surf"), bi);
+            let procedural_id: ProceduralSurfaceId =
+                scope.id(&cadmpeg_ir::identity_component!("blend"), bi);
             annotations
                 .note(&surface_id, &source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
@@ -695,9 +699,12 @@ pub(crate) fn try_decode_geometry(
                 .collect::<BTreeMap<_, _>>()
         };
         for (ci, construction) in intersection_constructions.into_iter().enumerate() {
-            let curve_id: CurveId = scope.id(&cadmpeg_ir::identity_component!("intersection-crv"), ci);
-            let procedural_id: ProceduralCurveId = scope.id(&cadmpeg_ir::identity_component!("intersection"), ci);
-            let unknown_id: UnknownId = IdScope::container().id(&cadmpeg_ir::identity_component!("parasolid"), si);
+            let curve_id: CurveId =
+                scope.id(&cadmpeg_ir::identity_component!("intersection-crv"), ci);
+            let procedural_id: ProceduralCurveId =
+                scope.id(&cadmpeg_ir::identity_component!("intersection"), ci);
+            let unknown_id: UnknownId =
+                IdScope::container().id(&cadmpeg_ir::identity_component!("parasolid"), si);
             let charted = charted_intersections.get(&construction.xmt);
             let uncharted = uncharted_intersections
                 .get(&construction.xmt)
@@ -1504,7 +1511,10 @@ pub(crate) fn topology_body_node_ids(
                 .chain(edge_ids)
                 .chain(vertex_ids)
                 .collect();
-            Some((scope.id::<BodyId>(&cadmpeg_ir::identity_component!("body"), body_xmt), ids))
+            Some((
+                scope.id::<BodyId>(&cadmpeg_ir::identity_component!("body"), body_xmt),
+                ids,
+            ))
         })
         .collect()
 }
@@ -1861,7 +1871,8 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
 
     let mut free_vertices = Vec::with_capacity(ir.model.points.len());
     for (index, point) in ir.model.points.iter().enumerate() {
-        let vertex_id: VertexId = derived.id(&cadmpeg_ir::identity_component!("point-vertex"), index);
+        let vertex_id: VertexId =
+            derived.id(&cadmpeg_ir::identity_component!("point-vertex"), index);
         annotations
             .note(&vertex_id, &stream, 0)
             .tag("derived_point_topology");

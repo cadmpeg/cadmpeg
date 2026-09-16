@@ -60,7 +60,10 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
             definitions[0].fields().unwrap()["language_statements"],
             json!([b"LET Z=0"])
         );
-        assert_eq!(definitions[0].fields().unwrap()["end_statement"], json!(b"ENDM"));
+        assert_eq!(
+            definitions[0].fields().unwrap()["end_statement"],
+            json!(b"ENDM")
+        );
 
         let instances = &native.arenas()["macro_instances"];
         assert_eq!(instances.len(), 1);

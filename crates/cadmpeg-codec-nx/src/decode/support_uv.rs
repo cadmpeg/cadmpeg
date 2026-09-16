@@ -2259,7 +2259,10 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         else {
             continue;
         };
-        let pcurve_id: PcurveId = source.scope.id(&cadmpeg_ir::identity_component!("intersection-pcurve-completed"), fin_xmt);
+        let pcurve_id: PcurveId = source.scope.id(
+            &cadmpeg_ir::identity_component!("intersection-pcurve-completed"),
+            fin_xmt,
+        );
         if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
             continue;
         }

@@ -3423,7 +3423,8 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             }
             let support = |fin_xmt: Option<crate::framing::xmt_reference::XmtTarget>| {
                 let fin_xmt = u32::from(fin_xmt?);
-                let coedge_id: CoedgeId = scope.id(&cadmpeg_ir::identity_component!("fin"), fin_xmt);
+                let coedge_id: CoedgeId =
+                    scope.id(&cadmpeg_ir::identity_component!("fin"), fin_xmt);
                 let coedge = model_index.coedges(coedge_id.as_str())?;
                 (&coedge.edge == edge_id).then_some(())?;
                 let loop_ = model_index.loops(coedge.owner_loop.as_str())?;
@@ -3521,7 +3522,10 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             continue;
         };
         let curve_id: CurveId = scope.id(&cadmpeg_ir::identity_component!("tolerant-curve"), xmt);
-        let procedural_id: ProceduralCurveId = scope.id(&cadmpeg_ir::identity_component!("tolerant-intersection"), xmt);
+        let procedural_id: ProceduralCurveId = scope.id(
+            &cadmpeg_ir::identity_component!("tolerant-intersection"),
+            xmt,
+        );
         let procedural = ProceduralCurve::new(
             procedural_id.clone(),
             ProceduralCurveDefinition::TolerantIntersection {

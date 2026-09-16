@@ -158,9 +158,7 @@ fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
     if let Some(namespace) = ir.native.namespace("iges") {
         if let Some(records) = namespace.arenas().get("entities") {
             for record in records {
-                if let Some(entity_type) =
-                    native_i64(record, "entity_type")
-                {
+                if let Some(entity_type) = native_i64(record, "entity_type") {
                     *counts.entry(format!("{entity_type}_entity")).or_insert(0) += 1;
                 }
             }
@@ -4248,7 +4246,8 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         matches!(entity_type, Some(100 | 102 | 104 | 110 | 112 | 126 | 130))
             || (entity_type == Some(106) && matches!(form, Some(1..=3 | 11..=13 | 63)))
     }) {
-        let Some(sequence) = native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
+        let Some(sequence) =
+            native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
         else {
             return Err(CodecError::Malformed(
                 "IGES native curve entity has no directory sequence".into(),
@@ -4268,10 +4267,10 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     }
     for record in native_entities.clone().filter(|record| {
         native_i64(record, "entity_type") == Some(116)
-            && native_i64(record, "subordinate_status")
-                != Some(1)
+            && native_i64(record, "subordinate_status") != Some(1)
     }) {
-        let Some(sequence) = native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
+        let Some(sequence) =
+            native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
         else {
             return Err(CodecError::Malformed(
                 "IGES native point entity has no directory sequence".into(),
@@ -4301,7 +4300,8 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198)
         )
     }) {
-        let Some(sequence) = native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
+        let Some(sequence) =
+            native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
         else {
             return Err(CodecError::Malformed(
                 "IGES native surface entity has no directory sequence".into(),

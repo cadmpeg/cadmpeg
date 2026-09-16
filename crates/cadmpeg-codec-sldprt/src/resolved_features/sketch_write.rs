@@ -45,11 +45,26 @@ pub(super) fn sketch_brep(
             "SLDPRT sketch identity is not identity key text: {error}"
         ))
     })?;
-    let body_id = BodyId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("body")));
-    let region_id = RegionId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("region")));
-    let shell_id = ShellId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("shell")));
-    let face_id = FaceId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("face")));
-    let surface_id = SurfaceId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("surface")));
+    let body_id = BodyId::compose(
+        &sketch_namespace(),
+        prefix.clone().colon(cadmpeg_ir::identity_key!("body")),
+    );
+    let region_id = RegionId::compose(
+        &sketch_namespace(),
+        prefix.clone().colon(cadmpeg_ir::identity_key!("region")),
+    );
+    let shell_id = ShellId::compose(
+        &sketch_namespace(),
+        prefix.clone().colon(cadmpeg_ir::identity_key!("shell")),
+    );
+    let face_id = FaceId::compose(
+        &sketch_namespace(),
+        prefix.clone().colon(cadmpeg_ir::identity_key!("face")),
+    );
+    let surface_id = SurfaceId::compose(
+        &sketch_namespace(),
+        prefix.clone().colon(cadmpeg_ir::identity_key!("surface")),
+    );
     let v_axis = normal.cross(u_axis);
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -245,16 +260,14 @@ pub(super) fn sketch_brep(
         let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
             continue;
         };
-        let point_id =
-PointId::compose(
+        let point_id = PointId::compose(
             &sketch_namespace(),
             prefix
                 .clone()
                 .colon(cadmpeg_ir::identity_key!("free-point"))
                 .colon(ordinal),
         );
-        let vertex_id =
-VertexId::compose(
+        let vertex_id = VertexId::compose(
             &sketch_namespace(),
             prefix
                 .clone()
@@ -271,24 +284,21 @@ VertexId::compose(
             point: point_id,
             tolerance: None,
         });
-        let edge_id =
-EdgeId::compose(
+        let edge_id = EdgeId::compose(
             &sketch_namespace(),
             prefix
                 .clone()
                 .colon(cadmpeg_ir::identity_key!("point-edge"))
                 .colon(ordinal),
         );
-        let loop_id =
-LoopId::compose(
+        let loop_id = LoopId::compose(
             &sketch_namespace(),
             prefix
                 .clone()
                 .colon(cadmpeg_ir::identity_key!("point-loop"))
                 .colon(ordinal),
         );
-        let coedge_id =
-CoedgeId::compose(
+        let coedge_id = CoedgeId::compose(
             &sketch_namespace(),
             prefix
                 .clone()

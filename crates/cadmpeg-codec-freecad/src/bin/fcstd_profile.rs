@@ -443,7 +443,10 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .into_iter()
         .flatten()
     {
-        if let Some(states) = record_field(record, "states").as_ref().and_then(Value::as_array) {
+        if let Some(states) = record_field(record, "states")
+            .as_ref()
+            .and_then(Value::as_array)
+        {
             for state in states {
                 if let Some(kind) = state.get("kind").and_then(Value::as_str) {
                     observed
@@ -476,7 +479,11 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace.arenas().get("entries").into_iter().flatten() {
-        if record_field(record, "role").as_ref().and_then(Value::as_str) == Some("thumbnail") {
+        if record_field(record, "role")
+            .as_ref()
+            .and_then(Value::as_str)
+            == Some("thumbnail")
+        {
             observed.presentation_constructs.insert("thumbnail".into());
         }
     }
@@ -704,7 +711,10 @@ fn exact_byte_coverage(ir: &CadIr) -> bool {
         .and_then(|namespace| namespace.arenas().get("byte_coverage"))
         .is_some_and(|records| {
             records.len() == 1
-                && record_field(&records[0], "exact").as_ref().and_then(Value::as_bool) == Some(true)
+                && record_field(&records[0], "exact")
+                    .as_ref()
+                    .and_then(Value::as_bool)
+                    == Some(true)
         })
 }
 

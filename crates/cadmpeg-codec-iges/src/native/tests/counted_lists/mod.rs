@@ -102,8 +102,14 @@ fn decode_stops_cursor_records_after_an_overlong_nested_count() {
             .clone();
         assert!(attributes.is_empty());
     }
-    assert_eq!(definitions[0].fields().unwrap()["declared_attribute_count"], 2);
-    assert_eq!(definitions[1].fields().unwrap()["declared_attribute_count"], 1);
+    assert_eq!(
+        definitions[0].fields().unwrap()["declared_attribute_count"],
+        2
+    );
+    assert_eq!(
+        definitions[1].fields().unwrap()["declared_attribute_count"],
+        1
+    );
 }
 
 #[test]
@@ -152,11 +158,17 @@ fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
 
     let assembly = &native.arenas()["solid_assemblies"][0];
     assert_eq!(assembly.fields().unwrap()["declared_count"], 2);
-    assert!(assembly.fields().unwrap()["items"].as_array().unwrap().is_empty());
+    assert!(assembly.fields().unwrap()["items"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 
     let network = &native.arenas()["network_definitions"][0];
     assert_eq!(network.fields().unwrap()["declared_member_count"], 99);
-    assert!(network.fields().unwrap()["members"].as_array().unwrap().is_empty());
+    assert!(network.fields().unwrap()["members"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(network.fields().unwrap()["type_flag"].is_null());
     assert!(network.fields().unwrap()["primary_reference_designator"].is_null());
     assert!(network.fields().unwrap()["display_template"].is_null());
@@ -169,7 +181,10 @@ fn decode_native_counted_lists_do_not_expose_partial_prefixes() {
     let copious = &native.arenas()["copious_data"][0];
     assert_eq!(copious.fields().unwrap()["declared_tuple_count"], 3);
     assert!(copious.fields().unwrap()["common_z"].is_number());
-    assert!(copious.fields().unwrap()["tuples"].as_array().unwrap().is_empty());
+    assert!(copious.fields().unwrap()["tuples"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 
     let property = |form| {
         native.arenas()["properties"]
@@ -207,7 +222,13 @@ fn decode_type_406_form_11_does_not_expose_a_partial_independent_prefix() {
     let entity = &native.arenas()["entities"][0];
     let property = &native.arenas()["properties"][0];
 
-    assert_eq!(entity.fields().unwrap()["parameters"].as_array().unwrap().len(), 10);
+    assert_eq!(
+        entity.fields().unwrap()["parameters"]
+            .as_array()
+            .unwrap()
+            .len(),
+        10
+    );
     assert_eq!(property.fields().unwrap()["declared_dependent_count"], 1);
     assert!(property.fields().unwrap()["independent_variables"]
         .as_array()
@@ -275,7 +296,10 @@ fn decode_definition_levels_stop_before_trailing_property_group() {
         "iges:entity:directory#3"
     );
     assert_eq!(levels.fields().unwrap()["declared_count"], 3);
-    assert_eq!(levels.fields().unwrap()["levels"], serde_json::json!([7, 0, 1]));
+    assert_eq!(
+        levels.fields().unwrap()["levels"],
+        serde_json::json!([7, 0, 1])
+    );
 }
 
 #[test]
@@ -579,9 +603,18 @@ fn decode_flow_counts_do_not_recover_incomplete_class_lists() {
         .as_array()
         .unwrap()
         .is_empty());
-    assert!(flow.fields().unwrap()["connections"].as_array().unwrap().is_empty());
-    assert!(flow.fields().unwrap()["joins"].as_array().unwrap().is_empty());
-    assert!(flow.fields().unwrap()["names"].as_array().unwrap().is_empty());
+    assert!(flow.fields().unwrap()["connections"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(flow.fields().unwrap()["joins"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(flow.fields().unwrap()["names"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(flow.fields().unwrap()["name_displays"]
         .as_array()
         .unwrap()
@@ -619,7 +652,9 @@ fn decode_flow_form18_keeps_zero_class_lists_before_trailing_groups() {
         .find(|record| record.id() == "iges:entity:directory#3")
         .unwrap();
     assert_eq!(
-        source.fields().unwrap()["association_links"].as_array().unwrap(),
+        source.fields().unwrap()["association_links"]
+            .as_array()
+            .unwrap(),
         &[serde_json::json!("iges:entity:directory#1")]
     );
     let flow = native.arenas()["associativities"]
@@ -811,7 +846,10 @@ fn decode_bounds_declared_drawing_counts_by_record_tokens() {
         .iter()
         .any(|loss| loss.message.contains("drawing view placements")));
     let drawings = &result.ir().native.namespace("iges").unwrap().arenas()["drawings"];
-    assert!(drawings[0].fields().unwrap()["views"].as_array().unwrap().is_empty());
+    assert!(drawings[0].fields().unwrap()["views"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -833,7 +871,10 @@ fn decode_bounds_declared_solid_counts_by_record_tokens() {
         .iter()
         .any(|loss| loss.message.contains("Boolean postfix length")));
     let trees = &result.ir().native.namespace("iges").unwrap().arenas()["boolean_trees"];
-    assert!(trees[0].fields().unwrap()["terms"].as_array().unwrap().is_empty());
+    assert!(trees[0].fields().unwrap()["terms"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -871,7 +912,8 @@ fn decode_text_score_forms_uses_counted_ranges_before_trailing_associations() {
             .iter()
             .find(|property| property.fields().unwrap()["form"] == form)
             .expect("text-score property")
-            .fields().unwrap();
+            .fields()
+            .unwrap();
         assert_eq!(property["property_kind"], kind);
         assert_eq!(property["ranges"].as_array().unwrap().len(), ranges);
     }
@@ -1014,7 +1056,10 @@ fn decode_dimensioned_geometry_stops_at_the_dimension_pointer() {
     let native = result.ir().native.namespace("iges").unwrap();
     let associativity = &native.arenas()["associativities"][0];
 
-    assert_eq!(associativity.fields().unwrap()["declared_geometry_count"], 2);
+    assert_eq!(
+        associativity.fields().unwrap()["declared_geometry_count"],
+        2
+    );
     assert!(associativity.fields().unwrap()["geometry"]
         .as_array()
         .unwrap()
@@ -1076,7 +1121,10 @@ fn decode_recalculable_dimension_reads_a_defaulted_final_tuple() {
     let native = result.ir().native.namespace("iges").unwrap();
     let associativity = &native.arenas()["associativities"][0];
 
-    assert_eq!(associativity.fields().unwrap()["declared_geometry_count"], 1);
+    assert_eq!(
+        associativity.fields().unwrap()["declared_geometry_count"],
+        1
+    );
     let fields = associativity.fields().unwrap();
     let geometry = fields["geometry"].as_array().unwrap();
     assert_eq!(geometry.len(), 1);
@@ -1187,7 +1235,8 @@ fn decode_complete_leader_and_island_lists_keep_every_declared_item() {
             .iter()
             .find(|record| record.fields().unwrap()["kind"] == kind)
             .expect("annotation")
-            .fields().unwrap()
+            .fields()
+            .unwrap()
     };
 
     assert_eq!(annotation("sectioned_area")["declared_island_count"], 1);

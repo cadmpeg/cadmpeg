@@ -339,7 +339,8 @@ mod tests {
                 u32::from_le_bytes(bytes[10..14].try_into().expect("planted schema")),
                 4
             );
-            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18).expect("carrier parses");
+            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18)
+                .expect("carrier parses");
             assert_eq!(carrier.header_state, 1);
             assert_eq!(carrier.header_kind, 2);
             assert_eq!(carrier.header_value, 3);
@@ -363,7 +364,8 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23).expect("carrier parses");
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23)
+            .expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
         assert_eq!(decoded.header.width.bytes(), 4);
@@ -383,7 +385,8 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17).expect("carrier parses");
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+            .expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
 
         assert_eq!(carrier.family, KernelFamily::Acis);
@@ -408,7 +411,8 @@ mod tests {
             let (ctx, view) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic carrier fits policy");
-            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17).expect("carrier parses");
+            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+                .expect("carrier parses");
             assert_eq!(carrier.family, KernelFamily::Acis);
             decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
         };
@@ -440,8 +444,14 @@ mod tests {
             let (ctx, view) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic carrier fits policy");
-            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, segment_version_major)
-                .expect("nearest footer frames");
+            let carrier = parse_carrier(
+                view,
+                &cadmpeg_ir::identity_key!("token"),
+                7,
+                100,
+                segment_version_major,
+            )
+            .expect("nearest footer frames");
             decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
         };
 
@@ -473,7 +483,8 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17).expect("carrier parses");
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17)
+            .expect("carrier parses");
         assert!(matches!(
             decode_test_carrier(&ctx, &carrier),
             Err(CodecError::Malformed(_))

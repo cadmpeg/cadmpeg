@@ -516,7 +516,8 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
     assert_eq!(views.len(), 1);
     assert_eq!(
         views[0]
-            .field("list_index").unwrap()
+            .field("list_index")
+            .unwrap()
             .and_then(|value| value.as_u64()),
         Some(1)
     );
@@ -588,7 +589,8 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
     assert_eq!(views.len(), 1);
     assert_eq!(
         views[0]
-            .field("list_index").unwrap()
+            .field("list_index")
+            .unwrap()
             .and_then(|value| value.as_u64()),
         Some(1)
     );
@@ -659,7 +661,8 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
     assert_eq!(views.len(), 1);
     assert_eq!(
         views[0]
-            .field("list_index").unwrap()
+            .field("list_index")
+            .unwrap()
             .and_then(|value| value.as_u64()),
         Some(1)
     );
@@ -776,7 +779,8 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
         assert_eq!(views.len(), 1, "invalid_end={has_invalid_end_marker}");
         assert_eq!(
             views[0]
-                .field("list_index").unwrap()
+                .field("list_index")
+                .unwrap()
                 .and_then(|value| value.as_u64()),
             Some(1),
             "invalid_end={has_invalid_end_marker}"
@@ -875,7 +879,8 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
     assert_eq!(views.len(), 2);
     assert_eq!(
         views[1]
-            .field("list_index").unwrap()
+            .field("list_index")
+            .unwrap()
             .and_then(|value| value.as_u64()),
         Some(1)
     );
@@ -977,7 +982,10 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
             views[0].field("list_kind").unwrap(),
             Some(serde_json::json!("active"))
         );
-        assert_eq!(views[0].field("list_index").unwrap(), Some(serde_json::json!(1)));
+        assert_eq!(
+            views[0].field("list_index").unwrap(),
+            Some(serde_json::json!(1))
+        );
         for (code, tag, offset) in [
             (
                 crate::loss::RhinoLossCode::IntegrityFailure,

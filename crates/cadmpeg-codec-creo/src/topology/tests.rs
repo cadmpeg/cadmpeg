@@ -399,8 +399,14 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(namespace.arenas()["topological_vertices"].len(), 4);
     assert_eq!(namespace.arenas()["half_edge_vertex_incidence"].len(), 12);
     assert_eq!(namespace.arenas()["face_components"].len(), 1);
-    assert_eq!(namespace.arenas()["half_edges"][0].fields().unwrap()["curve_id"], 10);
-    assert_eq!(namespace.arenas()["half_edges"][0].fields().unwrap()["side"], 0);
+    assert_eq!(
+        namespace.arenas()["half_edges"][0].fields().unwrap()["curve_id"],
+        10
+    );
+    assert_eq!(
+        namespace.arenas()["half_edges"][0].fields().unwrap()["side"],
+        0
+    );
 
     assert_eq!(model.points.len(), 4);
     assert_eq!(model.vertices.len(), 4);

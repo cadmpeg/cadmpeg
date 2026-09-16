@@ -222,7 +222,11 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         let entity = decoded.ir().native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|record| {
-                record.field("entity_type").unwrap().and_then(|value| value.as_i64()) == Some(126)
+                record
+                    .field("entity_type")
+                    .unwrap()
+                    .and_then(|value| value.as_i64())
+                    == Some(126)
             })
             .unwrap_or_else(|| panic!("{name}: missing Type 126 entity"));
         let fields = entity.fields().unwrap();
