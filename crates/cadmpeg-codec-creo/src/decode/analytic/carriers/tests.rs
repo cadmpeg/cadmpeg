@@ -469,14 +469,9 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
 #[test]
 fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    let section = crate::container::Section::new(
-        "VisibGeom".to_string(),
-        16,
-        48,
-        None,
-        &vec![0u8; 48],
-    )
-    .expect("section extent");
+    let section =
+        crate::container::Section::new("VisibGeom".to_string(), 16, 48, None, &vec![0u8; 48])
+            .expect("section extent");
     let end = section.end();
     scan.framing.sections.push(section);
 

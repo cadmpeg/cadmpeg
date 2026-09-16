@@ -2676,7 +2676,8 @@ fn support_slot_present(cur: &Cur<'_>, table: &SubtypeTable) -> bool {
         return false;
     };
     let start = probe.pos();
-    let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start).map(|scope| scope.tokens())
+    let Some(scope) =
+        crate::nurbs::toks::subtype_span(probe.toks(), start).map(|scope| scope.tokens())
     else {
         return false;
     };

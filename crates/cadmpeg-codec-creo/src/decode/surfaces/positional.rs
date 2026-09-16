@@ -200,10 +200,12 @@ pub(in super::super) fn transfer_positional_tori(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Some(section) = scan.framing.sections.iter().find(|section| {
-            row.offset >= section.offset()
-                && row.offset < section.end()
-        }) else {
+        let Some(section) = scan
+            .framing
+            .sections
+            .iter()
+            .find(|section| row.offset >= section.offset() && row.offset < section.end())
+        else {
             continue;
         };
         let geometry = if frame.major_radius() == 0.0 {

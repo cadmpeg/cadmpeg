@@ -622,14 +622,9 @@ fn a_section_extent_the_file_does_not_hold_is_not_a_section() {
     let data = b"#Geomlists\n0123";
 
     // One byte past the last byte of the file.
-    assert!(container::Section::new(
-        "Geomlists".to_string(),
-        0,
-        data.len() + 1,
-        None,
-        data
-    )
-    .is_none());
+    assert!(
+        container::Section::new("Geomlists".to_string(), 0, data.len() + 1, None, data).is_none()
+    );
 
     // An offset and a length that state no address between them: the end is
     // before the offset, which is what an overflowing `offset + length` leaves.
