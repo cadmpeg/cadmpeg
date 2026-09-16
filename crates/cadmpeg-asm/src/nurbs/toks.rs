@@ -336,14 +336,30 @@ pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
 /// A record can own auxiliary outer definitions before its carrier. A scope is
 /// cache-bearing when it directly owns at least one B-spline marker. Multiple
 /// such scopes are ambiguous and are therefore rejected.
+///
+/// A malformed token stream is refused, not worked around: the walk answers
+/// `None` rather than passing over the scope that stated it.
 pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
-    let mut candidates = owned_subtype_defs(toks)?
+    let mut cache_bearing = Vec::new();
+    for (start, _) in owned_subtype_defs(toks)?
         .into_iter()
         .filter(|(_, name)| *name != "ref")
-        .filter_map(|(start, _)| subtype_span(toks, start))
-        .filter(|scope| owned_marker_positions(scope).is_some_and(|owned| !owned.is_empty()));
-    let scope = candidates.next()?;
-    candidates.next().is_none().then_some(scope)
+    {
+        let Some(scope) = subtype_span(toks, start) else {
+            continue;
+        };
+        // `owned_marker_positions` answers `None` for a malformed token
+        // stream. That refusal is carried out to the caller. It never reads
+        // as a well-formed scope owning no marker, which would leave this
+        // walk free to choose a different scope.
+        if !owned_marker_positions(scope)?.is_empty() {
+            cache_bearing.push(scope);
+        }
+    }
+    match cache_bearing.as_slice() {
+        [scope] => Some(scope),
+        _ => None,
+    }
 }
 
 fn canonical_intcurve_kind(name: &str) -> &str {
@@ -653,6 +669,67 @@ mod tests {
         assert_eq!(owned_marker_positions(&toks), Some(vec![1]));
         assert_eq!(marker_at(&toks, 1), Some(BsplineMarker::Nubs));
         assert_eq!(marker_at(&toks, 3), Some(BsplineMarker::Nurbs));
+    }
+
+    #[test]
+    fn one_cache_bearing_scope_is_the_cache_scope_and_two_are_ambiguous() {
+        // `exactcur` owns a `nubs` marker; the `ref` scope is skipped by name.
+        let one = [
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            ident("nubs"),
+            Token::SubtypeClose,
+            Token::SubtypeOpen,
+            ident("ref"),
+            Token::Long(3),
+            Token::SubtypeClose,
+        ];
+        assert_eq!(owned_cache_scope(&one), Some(&one[0..=3]));
+
+        // A second scope owning a marker leaves no unique carrier.
+        let two = [
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            ident("nubs"),
+            Token::SubtypeClose,
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            ident("nurbs"),
+            Token::SubtypeClose,
+        ];
+        assert_eq!(owned_cache_scope(&two), None);
+
+        // A scope owning no marker is not a candidate, and leaves the one
+        // that does as the answer.
+        let bare = [
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            Token::SubtypeClose,
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            ident("nubs"),
+            Token::SubtypeClose,
+        ];
+        assert_eq!(owned_cache_scope(&bare), Some(&bare[3..=6]));
+    }
+
+    #[test]
+    fn an_unbalanced_close_refuses_the_cache_scope_rather_than_moving_to_another() {
+        // The stream states one close more than it opens, so no scope is
+        // chosen at all.
+        let toks = [
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            ident("nubs"),
+            Token::SubtypeClose,
+            Token::SubtypeClose,
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            ident("nurbs"),
+            Token::SubtypeClose,
+        ];
+        assert_eq!(owned_subtype_defs(&toks), None);
+        assert_eq!(owned_cache_scope(&toks), None);
     }
 
     #[test]
