@@ -601,24 +601,18 @@ pub(crate) fn field_value(payload: &[u8]) -> FeatureFieldValue {
                 .ok()
                 .and_then(|count| dimensions.checked_mul(count))
         });
-        let Some(slot_count) = slot_count.filter(|slot_count| {
-            dimensions_end > 1
-                && values_start > dimensions_end
-                && *slot_count
-                    <= payload
-                        .len()
-                        .saturating_sub(values_start)
-                        .saturating_mul(16)
-                        .max(crate::scalar::POSITIONAL_SLOT_TABLE_WIDTH)
+        let Some((slot_count, remaining)) = slot_count.and_then(|slot_count| {
+            scalar::admitted_scalar_body(payload, dimensions_end, values_start, slot_count)
+                .map(|remaining| (slot_count, remaining))
         }) else {
             return FeatureFieldValue::Raw(payload.to_vec());
         };
         let cache = scalar::ScalarCache::from_section(payload);
-        let decoded_values = decode_exact_scalars(&payload[values_start..], slot_count, &cache);
+        let decoded_values = decode_exact_scalars(remaining, slot_count, &cache);
         return FeatureFieldValue::ScalarArray {
             dimensions,
             count,
-            body: payload[values_start..].to_vec(),
+            body: remaining.to_vec(),
             decoded_values,
         };
     }

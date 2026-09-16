@@ -25,6 +25,40 @@ const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
 /// requires the cursor to consume the body exactly.
 pub(crate) const POSITIONAL_SLOT_TABLE_WIDTH: usize = 12;
 
+/// The remaining bytes of a scalar body whose declared slot count its own bytes
+/// can carry, or `None` when the record states no such body.
+///
+/// The record states its slot count before its values. Three things make a
+/// scalar body:
+///
+/// - `dimensions_end > 1 && values_start > dimensions_end`: both compact
+///   integers advanced, so the record states a shape.
+/// - `payload.get(values_start..)`: the values start inside the payload. A
+///   `values_start` past the end states no bytes at all, and the record is
+///   refused rather than read as "zero bytes remain".
+/// - The slot count fits those bytes. One slot decodes at least one byte --
+///   [`decode_in_lane`]'s shortest form consumes one -- and
+///   `decode_exact_scalars` requires the cursor to consume the body exactly, so
+///   a slot count above the remaining byte count states more slots than the
+///   bytes can carry. That one byte per slot is the bound the decoder enforces;
+///   nothing in the format states a denser one.
+///
+/// A slot count at or below [`POSITIONAL_SLOT_TABLE_WIDTH`] is admitted
+/// whatever the remaining byte count, because the widest fixed positional table
+/// the format defines is stated by a prototype body of any length and the exact
+/// proof that the bytes carry the slots is the decode itself.
+pub(crate) fn admitted_scalar_body(
+    payload: &[u8],
+    dimensions_end: usize,
+    values_start: usize,
+    slot_count: usize,
+) -> Option<&[u8]> {
+    (dimensions_end > 1 && values_start > dimensions_end).then_some(())?;
+    let remaining = payload.get(values_start..)?;
+    (slot_count <= remaining.len() || slot_count <= POSITIONAL_SLOT_TABLE_WIDTH)
+        .then_some(remaining)
+}
+
 pub(crate) const fn be_f64(bytes: [u8; 8]) -> f64 {
     assemble_f64_be(bytes)
 }
@@ -3355,5 +3389,54 @@ mod tests {
             decode_in_row_lane(&[0x0e, 0x18], 0, &cache),
             Some((-0.5, 1))
         );
+    }
+
+    #[test]
+    fn a_scalar_body_whose_values_start_past_the_payload_is_refused() {
+        let payload = [0x8au8, 0x02, 0x03, 0x10, 0x11, 0x12];
+
+        // One byte past the payload states no bytes at all. The record is
+        // refused rather than read as "zero bytes remain".
+        assert_eq!(
+            admitted_scalar_body(&payload, 2, payload.len() + 1, 1),
+            None
+        );
+        assert_eq!(admitted_scalar_body(&payload, 2, usize::MAX, 1), None);
+
+        // The values start at the end of the payload: no bytes remain, and only
+        // a slot count the fixed positional table covers is admitted.
+        assert_eq!(
+            admitted_scalar_body(&payload, 2, payload.len(), 0),
+            Some(&payload[payload.len()..])
+        );
+        assert_eq!(
+            admitted_scalar_body(&payload, 2, payload.len(), POSITIONAL_SLOT_TABLE_WIDTH),
+            Some(&payload[payload.len()..])
+        );
+        assert_eq!(
+            admitted_scalar_body(&payload, 2, payload.len(), POSITIONAL_SLOT_TABLE_WIDTH + 1),
+            None
+        );
+    }
+
+    #[test]
+    fn a_scalar_body_admits_one_slot_per_remaining_byte() {
+        let payload = [0x8au8, 0x02, 0x03, 0x10, 0x11, 0x12];
+        let remaining = payload.len() - 3;
+
+        assert_eq!(
+            admitted_scalar_body(&payload, 2, 3, remaining),
+            Some(&payload[3..])
+        );
+        // Above the remaining byte count and above the fixed positional table:
+        // the record states more slots than its own bytes can carry.
+        assert_eq!(
+            admitted_scalar_body(&payload, 2, 3, POSITIONAL_SLOT_TABLE_WIDTH + 1),
+            None
+        );
+
+        // A shape neither compact integer stated is not a scalar body.
+        assert_eq!(admitted_scalar_body(&payload, 1, 3, 1), None);
+        assert_eq!(admitted_scalar_body(&payload, 2, 2, 1), None);
     }
 }
