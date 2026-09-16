@@ -236,32 +236,26 @@ fn identity_statement(ids: &[String]) -> String {
     }
 }
 
-// Formatting into a temporary String keeps this loss renderer infallible.
-#[allow(clippy::format_push_string)]
+/// The sentence naming one carrier kind, or nothing when none is unresolved.
+fn carrier_clause(kind: &str, ids: &[String]) -> String {
+    if ids.is_empty() {
+        return String::new();
+    }
+    format!(" {kind} carriers: {}.", identity_statement(ids))
+}
+
 pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNote>) {
     let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_ids(ir);
     if unresolved_curves.is_empty() && unresolved_surfaces.is_empty() {
         return;
     }
-    let mut statement = format!(
-        "The transferred model retains {} unresolved curve carriers and {} unresolved surface carriers without exact procedural constructions.",
+    let statement = format!(
+        "The transferred model retains {} unresolved curve carriers and {} unresolved surface carriers without exact procedural constructions.{}{}",
         unresolved_curves.len(),
         unresolved_surfaces.len(),
+        carrier_clause("Curve", &unresolved_curves),
+        carrier_clause("Surface", &unresolved_surfaces),
     );
-    if !unresolved_curves.is_empty() {
-        let curve_carriers = format!(
-            " Curve carriers: {}.",
-            identity_statement(&unresolved_curves)
-        );
-        statement.push_str(&curve_carriers);
-    }
-    if !unresolved_surfaces.is_empty() {
-        let surface_carriers = format!(
-            " Surface carriers: {}.",
-            identity_statement(&unresolved_surfaces)
-        );
-        statement.push_str(&surface_carriers);
-    }
     losses.insert(0, CatiaLossCode::GeometryUnresolvedCarriers.note(statement));
 }
 

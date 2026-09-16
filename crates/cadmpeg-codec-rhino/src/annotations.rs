@@ -131,21 +131,119 @@ struct TextDotRecord {
     links: Vec<String>,
 }
 
+/// Whether the dot draws in front of the objects it overlaps.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(into = "bool")]
+enum DotDepth {
+    /// The dot is occluded by objects in front of it.
+    Occluded,
+    /// The dot draws over everything.
+    AlwaysOnTop,
+}
+
+/// Whether the dot paints its background.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(into = "bool")]
+enum DotBackground {
+    /// The background is filled.
+    Opaque,
+    /// The background is not painted.
+    Transparent,
+}
+
+/// The weight the dot renders its text at.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(into = "bool")]
+enum FontWeight {
+    /// The face's ordinary weight.
+    Regular,
+    /// The face's bold weight.
+    Bold,
+}
+
+/// The slant the dot renders its text at.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(into = "bool")]
+enum FontSlant {
+    /// Upright glyphs.
+    Upright,
+    /// Slanted glyphs.
+    Italic,
+}
+
+impl From<DotDepth> for bool {
+    fn from(value: DotDepth) -> Self {
+        matches!(value, DotDepth::AlwaysOnTop)
+    }
+}
+
+impl From<DotBackground> for bool {
+    fn from(value: DotBackground) -> Self {
+        matches!(value, DotBackground::Transparent)
+    }
+}
+
+impl From<FontWeight> for bool {
+    fn from(value: FontWeight) -> Self {
+        matches!(value, FontWeight::Bold)
+    }
+}
+
+impl From<FontSlant> for bool {
+    fn from(value: FontSlant) -> Self {
+        matches!(value, FontSlant::Italic)
+    }
+}
+
+/// The display word a V4 text dot carries, one bit per display property.
+#[derive(Debug, Clone, Copy)]
+struct DotDisplay(i32);
+
+impl DotDisplay {
+    fn depth(self) -> DotDepth {
+        if self.0 & 1 == 0 {
+            DotDepth::Occluded
+        } else {
+            DotDepth::AlwaysOnTop
+        }
+    }
+
+    fn background(self) -> DotBackground {
+        if self.0 & 2 == 0 {
+            DotBackground::Opaque
+        } else {
+            DotBackground::Transparent
+        }
+    }
+
+    fn weight(self) -> FontWeight {
+        if self.0 & 4 == 0 {
+            FontWeight::Regular
+        } else {
+            FontWeight::Bold
+        }
+    }
+
+    fn slant(self) -> FontSlant {
+        if self.0 & 8 == 0 {
+            FontSlant::Upright
+        } else {
+            FontSlant::Italic
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized display flags"
-)]
 struct TextDotData {
     center: [f64; 3],
     height_points: i32,
     primary_text: String,
     secondary_text: String,
     font_face: String,
-    always_on_top: bool,
-    transparent: bool,
-    bold: bool,
-    italic: bool,
+    always_on_top: DotDepth,
+    transparent: DotBackground,
+    bold: FontWeight,
+    italic: FontSlant,
 }
 
 #[derive(Debug, Serialize)]
@@ -392,7 +490,7 @@ fn decode_dot(
     let height_points = reader.i32()?;
     let primary_text = utf16(&mut reader)?;
     let font_face = utf16(&mut reader)?;
-    let display = reader.i32()?;
+    let display = DotDisplay(reader.i32()?);
     let secondary_text = if packed & 0x0f >= 1 {
         utf16(&mut reader)?
     } else {
@@ -405,10 +503,10 @@ fn decode_dot(
         primary_text,
         secondary_text,
         font_face,
-        always_on_top: display & 1 != 0,
-        transparent: display & 2 != 0,
-        bold: display & 4 != 0,
-        italic: display & 8 != 0,
+        always_on_top: display.depth(),
+        transparent: display.background(),
+        bold: display.weight(),
+        italic: display.slant(),
     })
 }
 
@@ -457,10 +555,10 @@ fn decode_v2_text_dot(
         primary_text,
         secondary_text: String::new(),
         font_face: String::new(),
-        always_on_top: false,
-        transparent: false,
-        bold: false,
-        italic: false,
+        always_on_top: DotDepth::Occluded,
+        transparent: DotBackground::Opaque,
+        bold: FontWeight::Regular,
+        italic: FontSlant::Upright,
     })
 }
 
@@ -1331,7 +1429,12 @@ mod tests {
         assert_eq!(dot.center, [10.0, 20.0, 30.0]);
         assert_eq!(dot.primary_text, "primary");
         assert_eq!(dot.secondary_text, "secondary");
-        assert!(dot.always_on_top && dot.transparent && dot.bold && dot.italic);
+        assert!(
+            bool::from(dot.always_on_top)
+                && bool::from(dot.transparent)
+                && bool::from(dot.bold)
+                && bool::from(dot.italic)
+        );
     }
 
     #[test]
@@ -1351,7 +1454,12 @@ mod tests {
         assert_eq!(dot.primary_text, "primary");
         assert_eq!(dot.secondary_text, "");
         assert_eq!(dot.font_face, "Courier New");
-        assert!(!dot.always_on_top && !dot.transparent && !dot.bold && !dot.italic);
+        assert!(
+            !bool::from(dot.always_on_top)
+                && !bool::from(dot.transparent)
+                && !bool::from(dot.bold)
+                && !bool::from(dot.italic)
+        );
     }
 
     #[test]
@@ -1367,7 +1475,12 @@ mod tests {
         assert_eq!(dot.primary_text, "V2 dot");
         assert_eq!(dot.height_points, 0);
         assert_eq!(dot.font_face, "");
-        assert!(!dot.always_on_top && !dot.transparent && !dot.bold && !dot.italic);
+        assert!(
+            !bool::from(dot.always_on_top)
+                && !bool::from(dot.transparent)
+                && !bool::from(dot.bold)
+                && !bool::from(dot.italic)
+        );
     }
 
     #[test]
