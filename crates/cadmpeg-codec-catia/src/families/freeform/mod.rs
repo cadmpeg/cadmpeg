@@ -583,12 +583,12 @@ pub(crate) fn try_decode_freeform_surfaces(
     )
     .ok()?;
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
-    let mut standalone_wires = append_consolidated_line_profiles(
-        &mut ir,
-        &mut annotations,
-        &scan.data,
-        &consolidated_records,
-    );
+    let line_profiles = consolidated_line_profiles(&scan.data, &consolidated_records);
+    let mut standalone_wires = line_profiles
+        .iter()
+        .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
+        .collect::<Vec<_>>();
+    append_consolidated_line_profiles(&mut ir, &mut annotations, line_profiles);
     for curve in b2_nurbs_curves {
         let id = CurveId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
@@ -1247,14 +1247,21 @@ fn standard_carrier_endpoint_loci(
     ])
 }
 
-/// Transfer every exact consolidated line carrier independently of its parameter chart.
-fn append_consolidated_line_profiles(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
+/// One exact consolidated line carrier: the curve it states, the wire interval
+/// it owns, and the record position it was read at.
+struct ConsolidatedLineProfile {
+    curve: Curve,
+    range: [f64; 2],
+    pos: usize,
+}
+
+/// Every exact consolidated line carrier the records state, independently of
+/// its parameter chart.
+fn consolidated_line_profiles(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Vec<(CurveId, [f64; 2], usize)> {
-    let mut standalone_wires = Vec::new();
+) -> Vec<ConsolidatedLineProfile> {
+    let mut profiles = Vec::new();
     for (index, line) in crate::families::b2::records::b2_line_profiles_from_records(data, records)
         .into_iter()
         .enumerate()
@@ -1269,25 +1276,39 @@ fn append_consolidated_line_profiles(
         ) else {
             continue;
         };
+        profiles.push(ConsolidatedLineProfile {
+            curve: Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
+                source_object: Some(cgm_source_key(
+                    "b2-03-0e-frame",
+                    format!("{:010}", line.pos),
+                )),
+            },
+            range: line.range.get(),
+            pos: line.pos,
+        });
+    }
+    profiles
+}
+
+/// Transfer every exact consolidated line carrier.
+fn append_consolidated_line_profiles(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    profiles: Vec<ConsolidatedLineProfile>,
+) {
+    for profile in profiles {
         annotate(
             annotations,
-            &id,
+            &profile.curve.id,
             "consolidated_b2_03_0e",
-            line.pos as u64,
+            profile.pos as u64,
             "line_profile_carrier",
             Exactness::ByteExact,
         );
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
-            source_object: Some(cgm_source_key(
-                "b2-03-0e-frame",
-                format!("{:010}", line.pos),
-            )),
-        });
-        standalone_wires.push((id, line.range.get(), line.pos));
+        ir.model.curves.push(profile.curve);
     }
-    standalone_wires
 }
 
 /// Append standalone freeform carriers and return the number of consolidated
@@ -1399,7 +1420,11 @@ pub(crate) fn append_freeform_surface_pools(
         );
     }
 
-    let _ = append_consolidated_line_profiles(ir, annotations, data, records);
+    append_consolidated_line_profiles(
+        ir,
+        annotations,
+        consolidated_line_profiles(data, records),
+    );
 
     for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let points = guide
@@ -3204,12 +3229,13 @@ mod tests {
     fn consolidated_line_profile_retains_its_stored_wire_interval() {
         let mut ir = CadIr::empty();
         let bytes = crate::test_support::b2_line_profile_stream();
-        let wires = append_consolidated_line_profiles(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-        );
+        let profiles =
+            consolidated_line_profiles(&bytes, &crate::wire::records::consolidated_records(&bytes));
+        let wires = profiles
+            .iter()
+            .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
+            .collect::<Vec<_>>();
+        append_consolidated_line_profiles(&mut ir, &mut AnnotationBuilder::new(), profiles);
         assert_eq!(wires.len(), 1);
         assert!(attach_standalone_wires(
             &mut ir,
@@ -3230,6 +3256,47 @@ mod tests {
         ir.finalize();
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
         assert!(validation.is_ok(), "{:?}", validation.findings);
+    }
+
+    #[test]
+    fn the_surface_pool_route_appends_the_line_profiles_the_standalone_route_appends() {
+        let bytes = crate::test_support::b2_line_profile_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+
+        let mut standalone = CadIr::empty();
+        append_consolidated_line_profiles(
+            &mut standalone,
+            &mut AnnotationBuilder::new(),
+            consolidated_line_profiles(&bytes, &records),
+        );
+
+        let mut pooled = CadIr::empty();
+        append_freeform_surface_pools(
+            &mut pooled,
+            &mut AnnotationBuilder::new(),
+            &bytes,
+            &records,
+            &HashMap::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("valid source object identity");
+
+        assert_eq!(standalone.model.curves.len(), 1);
+        assert_eq!(pooled.model.curves.len(), standalone.model.curves.len());
+        assert_eq!(
+            pooled
+                .model
+                .curves
+                .iter()
+                .map(|curve| curve.id.clone())
+                .collect::<Vec<_>>(),
+            standalone
+                .model
+                .curves
+                .iter()
+                .map(|curve| curve.id.clone())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
