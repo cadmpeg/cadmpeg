@@ -49,7 +49,7 @@ fn modern_linetype_record(archive: ArchiveVersion, always_model_distance: bool) 
             archive,
             0x2000_8078,
             &class,
-            &[0..class.len()],
+            std::slice::from_ref(&(0..class.len())),
         )
     }
 }
@@ -97,7 +97,7 @@ fn modern_hatch_pattern_record(
         archive,
         0x2000_8077,
         &class,
-        &[0..class.len()],
+        std::slice::from_ref(&(0..class.len())),
     )
 }
 
@@ -127,7 +127,7 @@ fn legacy_hatch_pattern_record(archive: ArchiveVersion) -> Vec<u8> {
             archive,
             0x2000_8077,
             &class,
-            &[0..class.len()],
+            std::slice::from_ref(&(0..class.len())),
         )
     }
 }

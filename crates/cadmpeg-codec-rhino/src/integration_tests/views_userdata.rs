@@ -164,7 +164,7 @@ fn view_with_child(archive: ArchiveVersion, child: Vec<u8>) -> Vec<u8> {
     )
 }
 
-fn trace_child(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
+fn trace_child(archive: ArchiveVersion, reference: &[u8]) -> Vec<u8> {
     let mut trace_body = vec![0x14];
     trace_body.extend(support::test_dump::utf16_bytes("trace-witness.png"));
     trace_body.extend(42.0_f64.to_le_bytes());
@@ -186,7 +186,7 @@ fn trace_child(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
     );
     trace_body.extend([0, 1, 1]);
     let reference_start = trace_body.len();
-    trace_body.extend(&reference);
+    trace_body.extend(reference);
     let trace_reference_range = reference_start..trace_body.len();
     let trace = support::test_dump::crc_chunk_excluding(
         archive,
@@ -197,7 +197,7 @@ fn trace_child(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
     trace
 }
 
-fn trace_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
+fn trace_view(archive: ArchiveVersion, reference: &[u8]) -> Vec<u8> {
     view_with_child(archive, trace_child(archive, reference))
 }
 
@@ -235,7 +235,7 @@ fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: boo
         let last = reference.len() - 1;
         reference[last] ^= 1;
     }
-    view_list_record(archive, 0x2000_8036, &[trace_view(archive, reference)])
+    view_list_record(archive, 0x2000_8036, &[trace_view(archive, &reference)])
 }
 
 fn document_with_views(archive: ArchiveVersion, views: Vec<u8>) -> Vec<u8> {
@@ -484,7 +484,7 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
     let archive = ArchiveVersion::V8;
     let malformed = trace_view(
         archive,
-        support::test_dump::file_reference_with_digest_warning_and_missing_second_digest(
+        &support::test_dump::file_reference_with_digest_warning_and_missing_second_digest(
             archive,
             "/trace/malformed.png",
             "malformed.png",
@@ -492,7 +492,7 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
     );
     let valid = trace_view(
         archive,
-        support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
+        &support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
     );
     let named_views = view_list_record(archive, 0x2000_8036, &[malformed, valid]);
     let bytes = support::test_dump::minimal_document(
@@ -564,7 +564,7 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
     );
     let valid = trace_view(
         archive,
-        support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
+        &support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
     );
     let named_views = view_list_record(archive, 0x2000_8036, &[malformed, valid]);
     let bytes = support::test_dump::minimal_document(
@@ -632,7 +632,7 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
         .last_mut()
         .expect("file-reference fixture has an outer checksum");
     *reference_crc ^= 1;
-    let trace = trace_child(archive, corrupt_reference.clone());
+    let trace = trace_child(archive, &corrupt_reference);
     let mut malformed_target = support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
     let target_crc = malformed_target
         .last_mut()
@@ -649,7 +649,7 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
     );
     let valid_view = trace_view(
         archive,
-        support::test_dump::file_reference(archive, "/trace/later.png", "later.png"),
+        &support::test_dump::file_reference(archive, "/trace/later.png", "later.png"),
     );
     let named_views = view_list_record(archive, 0x2000_8036, &[malformed_view.clone(), valid_view]);
     let document = document_with_views(archive, named_views.clone());
@@ -765,7 +765,7 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
         );
         let valid_view = trace_view(
             archive,
-            support::test_dump::file_reference(archive, "/trace/recovered.png", "recovered.png"),
+            &support::test_dump::file_reference(archive, "/trace/recovered.png", "recovered.png"),
         );
         let named_views =
             view_list_record(archive, 0x2000_8036, &[malformed_view.clone(), valid_view]);
@@ -861,7 +861,7 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
     let malformed_view = view_with_child(archive, malformed_userdata.clone());
     let valid_view = trace_view(
         archive,
-        support::test_dump::file_reference(
+        &support::test_dump::file_reference(
             archive,
             "/trace/userdata-later.png",
             "userdata-later.png",
@@ -951,12 +951,12 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
         let bad_target = support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
         let rejected = view_with_children(
             archive,
-            &[trace_child(archive, reference.clone()), bad_target],
+            &[trace_child(archive, &reference), bad_target],
             Some(support::test_dump::short_chunk(archive, 0xffff_ffff, 0)),
         );
         let later = trace_view(
             archive,
-            support::test_dump::file_reference(
+            &support::test_dump::file_reference(
                 archive,
                 "/trace/active-later.png",
                 "active-later.png",

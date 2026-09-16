@@ -307,8 +307,12 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": []}, "zz_bogus": {}}),
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": []}}),
     ] {
-        let read: cadmpeg_ir::native::Native = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(read).unwrap(), wire);
+        let read: cadmpeg_ir::native::Native =
+            serde_json::from_value(wire.clone()).expect("native store reads back");
+        assert_eq!(
+            serde_json::to_value(read).expect("native store writes back"),
+            wire
+        );
     }
     for wire in [
         serde_json::json!({"rhino": {"objects": []}, "zz_bogus": true}),
@@ -1537,7 +1541,7 @@ fn is_test_module(module: &syn::ItemMod) -> bool {
         let mut requires_test = false;
         attribute
             .parse_nested_meta(|meta| {
-                requires_test = cfg_requires_test(meta)?;
+                requires_test = cfg_requires_test(&meta)?;
                 Ok(())
             })
             .expect("every cfg attribute in the wire crates parses");
@@ -1551,7 +1555,7 @@ fn is_test_module(module: &syn::ItemMod) -> bool {
 /// drops modules enabled by a production feature in `any(test, ...)`. The
 /// recursive shape keeps only expressions that require `test` on every active
 /// branch. Unknown expressions are retained for the census.
-fn cfg_requires_test(meta: syn::meta::ParseNestedMeta<'_>) -> syn::Result<bool> {
+fn cfg_requires_test(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<bool> {
     if meta.path.is_ident("test") {
         return Ok(true);
     }
@@ -1560,7 +1564,7 @@ fn cfg_requires_test(meta: syn::meta::ParseNestedMeta<'_>) -> syn::Result<bool> 
         let mut requires_test = false;
         meta.parse_nested_meta(|nested| {
             has_argument = true;
-            requires_test |= cfg_requires_test(nested)?;
+            requires_test |= cfg_requires_test(&nested)?;
             Ok(())
         })?;
         return Ok(has_argument && requires_test);
@@ -1570,7 +1574,7 @@ fn cfg_requires_test(meta: syn::meta::ParseNestedMeta<'_>) -> syn::Result<bool> 
         let mut every_branch_requires_test = true;
         meta.parse_nested_meta(|nested| {
             has_argument = true;
-            every_branch_requires_test &= cfg_requires_test(nested)?;
+            every_branch_requires_test &= cfg_requires_test(&nested)?;
             Ok(())
         })?;
         return Ok(has_argument && every_branch_requires_test);
@@ -1579,7 +1583,7 @@ fn cfg_requires_test(meta: syn::meta::ParseNestedMeta<'_>) -> syn::Result<bool> 
         // `not(test)` is a production configuration. Retain it in the walk;
         // the source may be compiled outside the test configuration.
         meta.parse_nested_meta(|nested| {
-            let _ = cfg_requires_test(nested)?;
+            cfg_requires_test(&nested)?;
             Ok(())
         })?;
         return Ok(false);
@@ -1588,7 +1592,7 @@ fn cfg_requires_test(meta: syn::meta::ParseNestedMeta<'_>) -> syn::Result<bool> 
         let _: syn::Lit = meta.value()?.parse()?;
     } else if meta.input.peek(syn::token::Paren) {
         meta.parse_nested_meta(|nested| {
-            let _ = cfg_requires_test(nested)?;
+            cfg_requires_test(&nested)?;
             Ok(())
         })?;
     }
@@ -1726,8 +1730,8 @@ mod scanner_tests {
                 .expect("parse test-only module");
         assert!(is_test_module(&test_only));
 
-        let production: syn::ItemMod = syn::parse_str(r#"#[cfg(not(test))] mod production {}"#)
-            .expect("parse production module");
+        let production: syn::ItemMod =
+            syn::parse_str("#[cfg(not(test))] mod production {}").expect("parse production module");
         assert!(!is_test_module(&production));
     }
 
@@ -1753,13 +1757,13 @@ mod scanner_tests {
     #[test]
     fn macro_deserialize_census_accepts_a_named_lifetime() {
         let file: syn::File = syn::parse_str(
-            r#"
+            r"
                 macro_rules! make_reader {
                     ($name:ident) => {
                         impl<'wire> serde::Deserialize<'wire> for $name {}
                     };
                 }
-            "#,
+            ",
         )
         .expect("parse macro");
         let syn::Item::Macro(item) = &file.items[0] else {
@@ -1771,7 +1775,7 @@ mod scanner_tests {
     #[test]
     fn hand_impl_scanner_preserves_duplicate_impls_and_macro_routes() {
         let file: syn::File = syn::parse_str(
-            r#"
+            r"
                 impl<'wire> serde::Deserialize<'wire> for Manual {}
                 impl<'wire> serde::Deserialize<'wire> for Manual {}
                 mod nested {
@@ -1782,7 +1786,7 @@ mod scanner_tests {
                         impl<'wire> serde::Deserialize<'wire> for $name {}
                     };
                 }
-            "#,
+            ",
         )
         .expect("parse duplicate reader fixture");
         let mut found = Vec::new();
@@ -1799,7 +1803,7 @@ mod scanner_tests {
         assert_eq!(
             reader_routes::multiset_difference(
                 &found,
-                &vec![
+                &[
                     ("fixture.rs".to_owned(), "Manual".to_owned()),
                     ("fixture.rs".to_owned(), "$name".to_owned()),
                 ],

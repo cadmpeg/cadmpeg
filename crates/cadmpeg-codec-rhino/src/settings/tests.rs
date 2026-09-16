@@ -490,7 +490,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         archive,
         0x4000_8000,
         &section_style,
-        &[8..8 + model_attributes.len()],
+        std::slice::from_ref(&(8..8 + model_attributes.len())),
     ));
     payload.extend([36, 0, 37]);
     payload.extend(12_u32.to_le_bytes());
@@ -1133,7 +1133,7 @@ fn rendering_attributes_accept_nonempty_obsolete_material_mapping_channels() {
         archive,
         0x4000_8000,
         &material_body,
-        &[channel_start..channel_end],
+        std::slice::from_ref(&(channel_start..channel_end)),
     );
 
     let mut rendering_body = vec![1, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0];
@@ -1146,7 +1146,7 @@ fn rendering_attributes_accept_nonempty_obsolete_material_mapping_channels() {
         archive,
         0x4000_8000,
         &rendering_body,
-        &[material_start..material_end],
+        std::slice::from_ref(&(material_start..material_end)),
     );
 
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded rendering chunk");
@@ -1178,7 +1178,7 @@ fn future_linetype_extension_stops_at_unknown_code() {
         archive,
         0x4000_8000,
         &body,
-        &[8..8 + model_attributes.len()],
+        std::slice::from_ref(&(8..8 + model_attributes.len())),
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
     let mut warnings = Diagnostics::new();
@@ -1207,7 +1207,7 @@ fn embedded_linetype_accepts_unset_and_future_segment_tags() {
         archive,
         0x4000_8000,
         &body,
-        &[8..8 + model_attributes.len()],
+        std::slice::from_ref(&(8..8 + model_attributes.len())),
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
     let mut warnings = Diagnostics::new();
@@ -1261,7 +1261,7 @@ fn linetype_out_of_order_id_leaves_value_at_boundary() {
         archive,
         0x4000_8000,
         &body,
-        &[8..8 + model_attributes.len()],
+        std::slice::from_ref(&(8..8 + model_attributes.len())),
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
     let mut warnings = Diagnostics::new();
@@ -1285,7 +1285,7 @@ fn future_section_style_extension_stops_at_unknown_code() {
         archive,
         0x4000_8000,
         &body,
-        &[8..8 + model_attributes.len()],
+        std::slice::from_ref(&(8..8 + model_attributes.len())),
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
     let mut warnings = Diagnostics::new();
@@ -1315,7 +1315,7 @@ fn section_style_out_of_order_id_leaves_value_at_boundary() {
         archive,
         0x4000_8000,
         &body,
-        &[8..8 + model_attributes.len()],
+        std::slice::from_ref(&(8..8 + model_attributes.len())),
     );
     let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
     let mut warnings = Diagnostics::new();

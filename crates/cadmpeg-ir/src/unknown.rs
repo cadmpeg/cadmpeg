@@ -269,7 +269,7 @@ mod tests {
         let mut ir = crate::CadIr::empty();
         ir.native
             .namespace_mut("synthetic")
-            .set_arena("unknowns", &[record.clone()])
+            .set_arena("unknowns", std::slice::from_ref(&record))
             .unwrap();
         let parsed = crate::CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
         assert_eq!(parsed, ir);
@@ -279,7 +279,7 @@ mod tests {
             .unwrap()
             .arena_as::<UnknownRecord>("unknowns")
             .unwrap();
-        assert_eq!(raw, [record.clone()]);
+        assert_eq!(raw, std::slice::from_ref(&record));
         let error = parsed.native_unknowns("synthetic").unwrap_err();
         assert!(error.to_string().contains("unknown field"), "{error}");
 

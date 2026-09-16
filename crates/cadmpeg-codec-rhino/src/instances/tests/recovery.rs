@@ -182,7 +182,7 @@ fn duplicate_definitions_retain_every_record_and_locate_every_ambiguity() {
                     loss.provenance.as_ref().unwrap().offset
                 })
                 .collect();
-            actual.sort();
+            actual.sort_unstable();
             assert_eq!(actual, offsets);
             assert!(!decoded
                 .report()

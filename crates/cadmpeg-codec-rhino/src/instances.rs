@@ -1223,6 +1223,9 @@ pub(crate) fn parse_definitions(
 }
 
 /// Parses a packed major-1 instance-reference payload.
+// ON_InstanceRef::SingularTransformationTolerance applies to inverse * source.
+const EPS_INVERSE_IDENTITY: f64 = 1.0e-6;
+
 pub(crate) fn parse_reference(
     data: &[u8],
     range: Range<usize>,
@@ -1271,8 +1274,6 @@ pub(crate) fn parse_reference(
             format!("instance transform inverse product: {error}"),
         )
     })?;
-    // ON_InstanceRef::SingularTransformationTolerance applies to inverse * source.
-    const EPS_INVERSE_IDENTITY: f64 = 1.0e-6;
     if residual
         .affine_rows()
         .iter()

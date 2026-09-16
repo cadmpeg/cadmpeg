@@ -270,17 +270,19 @@ impl FcstdDocumentBuilder {
         );
         crate::writer::escape_xml(&self.label, &mut xml, true);
         xml.push_str("\"/></Property>\n  </Properties>\n");
-        xml.push_str(&format!(
+        let objects_open = format!(
             "  <Objects Count=\"{}\" Dependencies=\"1\">\n",
             self.objects.len()
-        ));
+        );
+        xml.push_str(&objects_open);
         for object in &self.objects {
             xml.push_str("    <ObjectDeps Name=\"");
             crate::writer::escape_xml(&object.name, &mut xml, true);
             if object.dependencies.is_empty() {
                 xml.push_str("\" Count=\"0\"/>\n");
             } else {
-                xml.push_str(&format!("\" Count=\"{}\">\n", object.dependencies.len()));
+                let dependency_count = format!("\" Count=\"{}\">\n", object.dependencies.len());
+                xml.push_str(&dependency_count);
                 for dependency in &object.dependencies {
                     xml.push_str("      <Dep Name=\"");
                     crate::writer::escape_xml(dependency, &mut xml, true);
@@ -294,21 +296,21 @@ impl FcstdDocumentBuilder {
             crate::writer::escape_xml(&object.type_name, &mut xml, true);
             xml.push_str("\" name=\"");
             crate::writer::escape_xml(&object.name, &mut xml, true);
-            xml.push_str(&format!("\" id=\"{}\"/>\n", index + 1));
+            let object_id = format!("\" id=\"{}\"/>\n", index + 1);
+            xml.push_str(&object_id);
         }
         xml.push_str("  </Objects>\n");
-        xml.push_str(&format!(
-            "  <ObjectData Count=\"{}\">\n",
-            self.objects.len()
-        ));
+        let object_data_open = format!("  <ObjectData Count=\"{}\">\n", self.objects.len());
+        xml.push_str(&object_data_open);
         for object in &self.objects {
             xml.push_str("    <Object name=\"");
             crate::writer::escape_xml(&object.name, &mut xml, true);
             xml.push_str("\">\n");
-            xml.push_str(&format!(
+            let properties_open = format!(
                 "      <Properties Count=\"{}\" TransientCount=\"0\">\n",
                 object.properties.len()
-            ));
+            );
+            xml.push_str(&properties_open);
             for property in &object.properties {
                 xml.push_str("        <Property name=\"");
                 crate::writer::escape_xml(&property.name, &mut xml, true);

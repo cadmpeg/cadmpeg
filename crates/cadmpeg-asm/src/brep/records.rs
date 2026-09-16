@@ -601,7 +601,7 @@ mod tests {
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
 
-    fn assert_empty_slot_refuses_extra_keys<T>(arena: &str, field: &str, record: serde_json::Value)
+    fn assert_empty_slot_refuses_extra_keys<T>(arena: &str, field: &str, record: &serde_json::Value)
     where
         T: serde::de::DeserializeOwned + serde::Serialize + std::fmt::Debug,
     {
@@ -614,7 +614,7 @@ mod tests {
             .unwrap()
             .arena_as(arena)
             .unwrap();
-        assert_eq!(serde_json::to_value(&typed[0]).unwrap(), record);
+        assert_eq!(&serde_json::to_value(&typed[0]).unwrap(), record);
 
         for extra in [
             serde_json::Value::Null,
@@ -646,7 +646,7 @@ mod tests {
         assert_empty_slot_refuses_extra_keys::<super::TolerantVertexTail>(
             "tolerant_vertex_tails",
             "evaluated_slot",
-            serde_json::json!({
+            &serde_json::json!({
                 "id": "f3d:asm:tolerant-vertex-tail#1",
                 "record_index": 1,
                 "vertex": "f3d:brep:entity#1",
@@ -661,7 +661,7 @@ mod tests {
         assert_empty_slot_refuses_extra_keys::<super::TolerantCoedgeParameters>(
             "tolerant_coedge_parameters",
             "extension",
-            serde_json::json!({
+            &serde_json::json!({
                 "id": "f3d:asm:tolerant-coedge-parameters#1",
                 "record_index": 1,
                 "coedge": "f3d:brep:entity#1",

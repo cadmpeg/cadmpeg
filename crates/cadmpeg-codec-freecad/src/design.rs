@@ -2326,23 +2326,22 @@ fn parse_constraints(
             .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
         let native_operands = operands
             .iter()
-            .filter_map(|(entity, position)| {
-                (*entity < 0 || resolve(*entity, *position).is_none()).then(|| {
-                    cadmpeg_core::text::NonBlankString::new(format!("position:{position}"))
-                        .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
-                                "{} constraint {} has an empty source operand kind",
-                                property.id,
-                                index + 1
-                            ))
-                        })
-                        .map(|native_kind| SketchNativeOperand {
-                            native_kind,
-                            field: None,
-                            object_index: u32::try_from(*entity).ok(),
-                            native_ref: None,
-                        })
-                })
+            .filter(|(entity, position)| *entity < 0 || resolve(*entity, *position).is_none())
+            .map(|(entity, position)| {
+                cadmpeg_core::text::NonBlankString::new(format!("position:{position}"))
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "{} constraint {} has an empty source operand kind",
+                            property.id,
+                            index + 1
+                        ))
+                    })
+                    .map(|native_kind| SketchNativeOperand {
+                        native_kind,
+                        field: None,
+                        object_index: u32::try_from(*entity).ok(),
+                        native_ref: None,
+                    })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
         let definition = (type_code == Some(15) && all_resolved)

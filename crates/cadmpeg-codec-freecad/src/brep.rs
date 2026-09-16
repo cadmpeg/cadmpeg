@@ -255,7 +255,7 @@ impl ShapeSet {
             }
         }
         for (position, polygon) in self.polygons_on_triangulations.iter().enumerate() {
-            if polygon.nodes.iter().any(|node| *node == 0) {
+            if polygon.nodes.contains(&0) {
                 return Err(format!(
                     "PolygonOnTriangulations[{position}] node indices must be one-based"
                 ));

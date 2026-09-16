@@ -212,7 +212,7 @@ pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[Topolo
             .filter(|occurrence| occurrence.property == map.property)
         {
             map.maps.bind_root_topology(
-                &occurrence.indexed_name,
+                occurrence.indexed_name,
                 occurrence.source_index,
                 &occurrence.topology_id,
             );
@@ -1403,9 +1403,8 @@ ChildCount 1\n\
 1 0 3 0 1 0 0\n\
 NameCount 0\n\
 EndMap\n";
-        let error = match parse_element_map(data, true) {
-            Ok(_) => panic!("forward child map index"),
-            Err(error) => error,
+        let Err(error) = parse_element_map(data, true) else {
+            panic!("forward child map index")
         };
         assert!(error.to_string().contains("mapIndex"), "{error}");
     }

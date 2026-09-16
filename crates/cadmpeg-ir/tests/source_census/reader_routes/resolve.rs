@@ -116,8 +116,7 @@ pub(super) fn module_source_path(
     candidates
         .into_iter()
         .next()
-        .map(|(path, _)| path.clone())
-        .unwrap_or_else(|| fallback.to_owned())
+        .map_or_else(|| fallback.to_owned(), |(path, _)| path.clone())
 }
 
 pub(super) fn module_context_path(

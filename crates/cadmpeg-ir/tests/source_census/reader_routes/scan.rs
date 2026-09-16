@@ -717,16 +717,8 @@ pub(super) fn scan_block(
                         control || !reachable,
                         false,
                     );
-                    if init.diverge.is_some() {
-                        scan_expr(
-                            &init.diverge.as_ref().expect("diverging initializer").1,
-                            route,
-                            index,
-                            &mut nested,
-                            scan,
-                            true,
-                            false,
-                        );
+                    if let Some(diverge) = &init.diverge {
+                        scan_expr(&diverge.1, route, index, &mut nested, scan, true, false);
                     }
                 }
                 let mut names = BTreeSet::new();

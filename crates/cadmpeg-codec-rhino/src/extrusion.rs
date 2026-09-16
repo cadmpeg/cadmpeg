@@ -765,7 +765,7 @@ fn anonymous_chunk(
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
-            &format!("expected anonymous {name} chunk"),
+            format!("expected anonymous {name} chunk"),
         ));
     }
     Ok(chunk)
@@ -845,7 +845,7 @@ fn increasing_interval(
     if value.iter().all(|entry| entry.is_finite()) && value[0] < value[1] {
         Ok(value)
     } else {
-        Err(error(offset, &format!("extrusion {name} is invalid")))
+        Err(error(offset, format!("extrusion {name} is invalid")))
     }
 }
 
@@ -858,7 +858,7 @@ fn require_unit(value: Vector3, offset: usize, name: &str) -> Result<(), Geometr
     {
         Ok(())
     } else {
-        Err(error(offset, &format!("{name} is not unit")))
+        Err(error(offset, format!("{name} is not unit")))
     }
 }
 
@@ -877,7 +877,7 @@ fn active_miter(present: bool, value: Vector3) -> Option<Vector3> {
 fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, GeometryError> {
     let length = value.norm();
     if !length.is_finite() || length <= 0.0 {
-        return Err(error(offset, &format!("{name} is invalid")));
+        return Err(error(offset, format!("{name} is invalid")));
     }
     Ok(value.scale(1.0 / length))
 }

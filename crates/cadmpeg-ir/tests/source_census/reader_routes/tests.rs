@@ -391,7 +391,7 @@ fn classify_fixture_reader(source: &str) -> Result<HandReaderClass, String> {
 
 fn open_reader_fixture(prefix: &str, route: &str) -> String {
     format!(
-        r#"
+        r"
                 {prefix}
                 struct Open;
                 impl<'de> serde::Deserialize<'de> for Open {{
@@ -406,7 +406,7 @@ fn open_reader_fixture(prefix: &str, route: &str) -> String {
                         {route}
                     }}
                 }}
-            "#
+            "
     )
 }
 
@@ -542,7 +542,7 @@ fn version_gate_must_directly_check_the_consumed_value() {
 
 #[test]
 fn manual_target_must_have_a_closed_consumed_route() {
-    let source = r#"
+    let source = r"
             struct Open;
             impl<'de> serde::Deserialize<'de> for Open {
                 fn deserialize<D: serde::Deserializer<'de>>(deserializer: D)
@@ -563,7 +563,7 @@ fn manual_target_must_have_a_closed_consumed_route() {
                     Ok(Self)
                 }
             }
-        "#;
+        ";
     let parsed = syn::parse_file(source).expect("parse manual target fixture");
     let mut index = SourceIndex::default();
     collect_source_items(&parsed.items, "fixture.rs", source, &[], &mut index);
@@ -608,16 +608,15 @@ fn scoped_wire_names_do_not_cross_module_boundaries() {
 fn exact_spans_and_macro_routes_are_isolated() {
     let source = "impl<'de> serde::Deserialize<'de> for First { fn deserialize<D>(d: D) -> Result<Self, D::Error> { todo!() } } impl<'de> serde::Deserialize<'de> for Second { fn deserialize<D>(d: D) -> Result<Self, D::Error> { todo!() } }";
     let file: syn::File = syn::parse_str(source).expect("parse adjacent impls");
-    let first = match &file.items[0] {
-        syn::Item::Impl(item) => item,
-        _ => panic!("first item is not an impl"),
+    let syn::Item::Impl(first) = &file.items[0] else {
+        panic!("first item is not an impl")
     };
     let first_text = source_span_text(source, first.span());
     assert!(first_text.contains("First"));
     assert!(!first_text.contains("Second"));
 
     let macro_file: syn::File = syn::parse_str(
-            r#"macro_rules! readers {
+            r"macro_rules! readers {
                 ($name:ident) => {
                     impl Serialize for $name { fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error> { todo!() } }
                     impl<'de> serde::Deserialize<'de> for $name {
@@ -626,7 +625,7 @@ fn exact_spans_and_macro_routes_are_isolated() {
                         }
                     }
                 };
-            }"#,
+            }",
         )
         .expect("parse macro route fixture");
     let syn::Item::Macro(item) = &macro_file.items[0] else {
@@ -644,7 +643,7 @@ fn exact_spans_and_macro_routes_are_isolated() {
     );
 
     let conditional_macro: syn::File = syn::parse_str(
-        r#"macro_rules! conditional_reader {
+        r"macro_rules! conditional_reader {
                 ($name:ident) => {
                     impl<'de> serde::Deserialize<'de> for $name {
                         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> {
@@ -655,7 +654,7 @@ fn exact_spans_and_macro_routes_are_isolated() {
                         }
                     }
                 };
-            }"#,
+            }",
     )
     .expect("parse conditional macro route fixture");
     let syn::Item::Macro(item) = &conditional_macro.items[0] else {
@@ -671,7 +670,7 @@ fn exact_spans_and_macro_routes_are_isolated() {
     );
 
     let opaque_macro: syn::File = syn::parse_str(
-        r#"macro_rules! opaque_reader {
+        r"macro_rules! opaque_reader {
                 ($name:ident) => {
                     impl<'de> serde::Deserialize<'de> for $name {
                         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> {
@@ -680,7 +679,7 @@ fn exact_spans_and_macro_routes_are_isolated() {
                         }
                     }
                 };
-            }"#,
+            }",
     )
     .expect("parse opaque macro route fixture");
     let syn::Item::Macro(item) = &opaque_macro.items[0] else {

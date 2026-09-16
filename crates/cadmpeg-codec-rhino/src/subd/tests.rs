@@ -850,7 +850,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
             .expect("required invariant")[0]
             .links
             .iter()
-            .map(|link| link.as_str())
+            .map(cadmpeg_ir::ids::Identity::as_str)
             .collect::<Vec<_>>(),
         vec![subd.id.to_string()]
     );

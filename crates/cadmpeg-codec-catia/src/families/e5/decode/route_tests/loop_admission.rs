@@ -36,10 +36,13 @@ fn loop_record(indices: &[usize]) -> E5Loop {
 fn loop_admission_retains_the_oriented_source_occurrences() {
     let source = loop_record(&[1, 0]);
     let plan = E5LoopPlan::admit(&source).expect("complete permutation");
-    assert!(std::ptr::eq(plan.source, &source));
+    assert!(std::ptr::eq(plan.source, &raw const source));
     assert_eq!(plan.members.len(), 2);
     for (planned, index) in plan.members.iter().zip([1, 0]) {
-        assert!(std::ptr::eq(planned.source, &source.members[index]));
+        assert!(std::ptr::eq(
+            planned.source,
+            &raw const source.members[index]
+        ));
         assert_eq!(planned.orientation.serialized_index, index);
         assert!(planned.orientation.reversed);
         assert_eq!(planned.id.as_str(), format!("catia:e5:coedge#7-{index}"));

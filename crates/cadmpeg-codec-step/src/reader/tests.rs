@@ -284,7 +284,7 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
         entity
             .links
             .iter()
-            .map(|link| link.as_str())
+            .map(cadmpeg_ir::ids::Identity::as_str)
             .collect::<Vec<_>>(),
         vec!["step:data:!vendor_target#1".to_string()]
     );
@@ -323,7 +323,7 @@ fn opaque_links_retain_typed_step_targets() {
         unknowns[0]
             .links
             .iter()
-            .map(|link| link.as_str())
+            .map(cadmpeg_ir::ids::Identity::as_str)
             .collect::<Vec<_>>(),
         vec!["step:data:curve#2".to_string()]
     );

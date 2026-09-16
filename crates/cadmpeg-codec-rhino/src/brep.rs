@@ -2544,7 +2544,7 @@ fn raw_array_start(
     {
         return Err(error(
             reader.position(),
-            &format!("{label} count exhausts payload before allocation"),
+            format!("{label} count exhausts payload before allocation"),
         ));
     }
     Ok(count)
@@ -2598,7 +2598,7 @@ fn position(value: Option<i32>) -> Option<usize> {
 fn slot(value: i32, len: usize, label: &str) -> Result<usize, GeometryError> {
     position(Some(value))
         .filter(|slot| *slot < len)
-        .ok_or_else(|| error(0, &format!("{label} reference is out of range")))
+        .ok_or_else(|| error(0, format!("{label} reference is out of range")))
 }
 
 /// Resolves a list of stored references against an array of `len` records.
@@ -2678,7 +2678,7 @@ fn unique(values: &[i32], label: &str) -> Result<(), GeometryError> {
     let mut seen = BTreeSet::new();
     for value in values {
         if !seen.insert(*value) {
-            return Err(error(0, &format!("{label} reference is duplicated")));
+            return Err(error(0, format!("{label} reference is duplicated")));
         }
     }
     Ok(())
@@ -2691,7 +2691,7 @@ fn finite_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
     let empty = (low == ON_UNSET_VALUE && high == ON_UNSET_POSITIVE_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_VALUE);
     if !(unset || empty || low.is_finite() && high.is_finite() && low < high) {
-        return Err(error(0, &format!("{label} is invalid")));
+        return Err(error(0, format!("{label} is invalid")));
     }
     Ok(())
 }
@@ -2701,7 +2701,7 @@ fn finite_tolerance(value: f64, label: &str) -> Result<(), GeometryError> {
         || value == ON_UNSET_POSITIVE_VALUE
         || value.is_finite() && value >= 0.0)
     {
-        return Err(error(0, &format!("{label} is invalid")));
+        return Err(error(0, format!("{label} is invalid")));
     }
     Ok(())
 }

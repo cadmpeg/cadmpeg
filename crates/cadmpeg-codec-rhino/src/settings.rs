@@ -2119,7 +2119,7 @@ fn parse_layer(
     // identity to expose for it, so retain the complete record for exact
     // source recovery while using its archive index and source offset for
     // internal disambiguation.
-    let mut source_requires_opaque = serialized_id.is_some_and(|id| id.is_nil());
+    let mut source_requires_opaque = serialized_id.is_some_and(super::wire::Uuid::is_nil);
     if let Some(descriptor) =
         userdata
             .iter()

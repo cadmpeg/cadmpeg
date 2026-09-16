@@ -1541,10 +1541,9 @@ fn try_decode_standard_populations(
             .report
             .losses
             .push(CatiaLossCode::TopologyBoundaryGraphNotEmitted.note(format!(
-            "The B-rep boundary graph was emitted for {} of {} source-closed standard populations.",
-            attached_topology_count,
-            population_count,
-        )));
+                "The B-rep boundary graph was emitted for {attached_topology_count} of \
+             {population_count} source-closed standard populations."
+            )));
     }
     let mut typed = TypedCounts::default();
     for surface in &merged.ir.model.surfaces {

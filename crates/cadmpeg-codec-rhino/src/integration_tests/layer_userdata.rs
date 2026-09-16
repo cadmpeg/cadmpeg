@@ -179,7 +179,7 @@ fn obsolete_mapping_rendering_with_version(
         archive,
         0x4000_8000,
         &material_body,
-        &[channel_start..channel_end],
+        std::slice::from_ref(&(channel_start..channel_end)),
     );
 
     let mut rendering_body = vec![1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
@@ -191,7 +191,7 @@ fn obsolete_mapping_rendering_with_version(
         archive,
         0x4000_8000,
         &rendering_body,
-        &[material_start..material_end],
+        std::slice::from_ref(&(material_start..material_end)),
     )
 }
 
@@ -211,7 +211,7 @@ fn embedded_linetype(archive: ArchiveVersion, segment_tags: [u32; 2]) -> Vec<u8>
         archive,
         0x4000_8000,
         &body,
-        &[8..8 + model_attributes.len()],
+        std::slice::from_ref(&(8..8 + model_attributes.len())),
     )
 }
 
@@ -536,7 +536,11 @@ fn duplicate_layer_indexes_keep_each_source_summary_entry() {
     assert_eq!(
         layer_entries
             .iter()
-            .filter(|(key, _)| key.as_str().ends_with(".index"))
+            .filter(|(key, _)| {
+                key.as_str()
+                    .rsplit_once('.')
+                    .is_some_and(|(_, tail)| tail == "index")
+            })
             .count(),
         2
     );

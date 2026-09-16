@@ -863,7 +863,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .expect("required invariant")[0]
             .links
             .iter()
-            .map(|link| link.as_str())
+            .map(cadmpeg_ir::ids::Identity::as_str)
             .collect::<Vec<_>>(),
         body_ids
     );
