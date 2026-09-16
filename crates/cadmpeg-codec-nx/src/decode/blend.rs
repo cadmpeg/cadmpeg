@@ -1205,7 +1205,7 @@ impl BlendContactSeedCache {
             self.entries.push(seed);
             return;
         }
-        let replacement = self
+        let Some(replacement) = self
             .entries
             .iter()
             .enumerate()
@@ -1215,7 +1215,9 @@ impl BlendContactSeedCache {
                     .total_cmp(&(second.parameter - seed.parameter).abs())
             })
             .map(|(index, _)| index)
-            .expect("the bounded contact seed cache is non-empty");
+        else {
+            return;
+        };
         self.entries[replacement] = seed;
     }
 }
@@ -2476,20 +2478,22 @@ pub(crate) fn subdivide_scalar_bezier_span(
     middle: f64,
 ) -> (ScalarBezierSpan, ScalarBezierSpan) {
     let mut levels = vec![span.controls];
-    while levels.last().is_some_and(|level| level.len() > 1) {
-        let next = levels
-            .last()
-            .expect("nonempty Bézier subdivision level")
+    while let Some(next) = levels.last().filter(|level| level.len() > 1).map(|level| {
+        level
             .windows(2)
             .map(|pair| (pair[0] + pair[1]) * 0.5)
-            .collect();
+            .collect::<Vec<_>>()
+    }) {
         levels.push(next);
     }
-    let first = levels.iter().map(|level| level[0]).collect();
+    let first = levels
+        .iter()
+        .filter_map(|level| level.first().copied())
+        .collect();
     let second = levels
         .iter()
         .rev()
-        .map(|level| *level.last().expect("nonempty Bézier subdivision level"))
+        .filter_map(|level| level.last().copied())
         .collect();
     (
         ScalarBezierSpan {

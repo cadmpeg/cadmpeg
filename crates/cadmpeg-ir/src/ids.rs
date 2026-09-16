@@ -290,10 +290,39 @@ impl IdentityComponent {
         Self(std::borrow::Cow::Borrowed(proof.value))
     }
 
+    /// This component, then `part`, with no separator.
+    ///
+    /// Both sides carry the component grammar, which no concatenation can
+    /// break, so the result needs no second admission.
+    #[must_use]
+    pub fn then(self, part: impl Into<Self>) -> Self {
+        let mut text = self.0.into_owned();
+        text.push_str(part.into().as_str());
+        Self(std::borrow::Cow::Owned(text))
+    }
+
     /// The component text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+macro_rules! identity_component_from_number {
+    ($($number:ty),* $(,)?) => {$(
+        impl From<$number> for IdentityComponent {
+            fn from(value: $number) -> Self {
+                Self(std::borrow::Cow::Owned(value.to_string()))
+            }
+        }
+    )*};
+}
+
+identity_component_from_number!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+
+impl From<&IdentityComponent> for IdentityComponent {
+    fn from(value: &IdentityComponent) -> Self {
+        value.clone()
     }
 }
 

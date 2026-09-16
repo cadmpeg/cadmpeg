@@ -129,7 +129,7 @@ pub(super) fn emit_topology(
         .collect();
     let mut bodies = BTreeMap::new();
     for body_xmt in body_xmts {
-        let id: BodyId = scope.id("body", body_xmt);
+        let id: BodyId = scope.id(&cadmpeg_ir::identity_component!("body"), body_xmt);
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
             annotate_node(annotations, &id, source_stream, node, "BODY");
         } else if let Some(shell) = body_shape_shells.iter().find(|shell| {
@@ -176,7 +176,7 @@ pub(super) fn emit_topology(
             }
             region.clone()
         } else {
-            let region: RegionId = scope.id("region", region_xmt);
+            let region: RegionId = scope.id(&cadmpeg_ir::identity_component!("region"), region_xmt);
             if let Some(region_node) = graph.get(NodeKind::Region, region_xmt) {
                 annotate_node(annotations, &region, source_stream, region_node, "REGION");
             } else {
@@ -204,7 +204,7 @@ pub(super) fn emit_topology(
             regions.insert(region_xmt, (region.clone(), body.clone()));
             region
         };
-        let shell_id: ShellId = scope.id("shell", node.xmt);
+        let shell_id: ShellId = scope.id(&cadmpeg_ir::identity_component!("shell"), node.xmt);
         annotate_node(annotations, &shell_id, source_stream, node, "SHELL");
         ir.model.shells.push(
             Shell::new(
@@ -217,7 +217,7 @@ pub(super) fn emit_topology(
                         let face_fields = face.face_fields()?;
                         (u32::from(face_fields.shell?) == node.xmt
                             && surfaces.contains_key(&u32::from(face_fields.surface?)))
-                        .then(|| scope.id::<FaceId>("face", face.xmt))
+                        .then(|| scope.id::<FaceId>(&cadmpeg_ir::identity_component!("face"), face.xmt))
                     })
                     .collect(),
                 Vec::new(),
@@ -263,7 +263,7 @@ pub(super) fn emit_topology(
             continue;
         };
         let tolerance = decoded_tolerance(fields.tolerance);
-        let vertex: VertexId = scope.id("vertex", node.xmt);
+        let vertex: VertexId = scope.id(&cadmpeg_ir::identity_component!("vertex"), node.xmt);
         annotate_node(annotations, &vertex, source_stream, node, "VERTEX");
         if tolerance.is_some() {
             annotations
@@ -348,9 +348,9 @@ pub(super) fn emit_topology(
                     ))
                 });
             if let Some((surface, pcurve, parameter_range, _fit_tolerance)) = lifted {
-                let carrier: CurveId = scope.id("edge-parametric-curve", node.xmt);
+                let carrier: CurveId = scope.id(&cadmpeg_ir::identity_component!("edge-parametric-curve"), node.xmt);
                 let construction: ProceduralCurveId =
-                    scope.id("edge-parametric-construction", node.xmt);
+                    scope.id(&cadmpeg_ir::identity_component!("edge-parametric-construction"), node.xmt);
                 annotations
                     .note(&carrier, source_stream, node.pos as u64)
                     .tag("PARAMETRIC_SURFACE_CURVE");
@@ -454,7 +454,7 @@ pub(super) fn emit_topology(
             continue;
         };
         let (mut start, mut end) = (start, end);
-        let id: EdgeId = scope.id("edge", node.xmt);
+        let id: EdgeId = scope.id(&cadmpeg_ir::identity_component!("edge"), node.xmt);
         annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations
@@ -530,7 +530,7 @@ pub(super) fn emit_topology(
         else {
             continue;
         };
-        let id: FaceId = scope.id("face", node.xmt);
+        let id: FaceId = scope.id(&cadmpeg_ir::identity_component!("face"), node.xmt);
         annotate_node(annotations, &id, source_stream, node, "FACE");
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations
@@ -576,7 +576,7 @@ pub(super) fn emit_topology(
         else {
             continue;
         };
-        let id: LoopId = scope.id("loop", node.xmt);
+        let id: LoopId = scope.id(&cadmpeg_ir::identity_component!("loop"), node.xmt);
         annotate_node(annotations, &id, source_stream, node, "LOOP");
         loop_specs.insert(node.xmt, (id.clone(), face));
         loops.insert(node.xmt, id);
@@ -593,7 +593,7 @@ pub(super) fn emit_topology(
                         .is_some_and(|target| loops.contains_key(&u32::from(target)))
                 })
         })
-        .map(|xmt| (*xmt, scope.id::<CoedgeId>("fin", xmt)))
+        .map(|xmt| (*xmt, scope.id::<CoedgeId>(&cadmpeg_ir::identity_component!("fin"), xmt)))
         .collect();
     // Preserve the endpoint proof only when the admitted carrier is the exact
     // intersection candidate consumed by the later attachment pass. A valid
@@ -741,7 +741,9 @@ pub(super) fn emit_topology(
         else {
             continue;
         };
-        let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
+        let Some(id) = fin_ids.get(&node.xmt).cloned() else {
+            continue;
+        };
         annotate_node(annotations, &id, source_stream, node, "FIN");
         let partner = fields
             .other
@@ -797,7 +799,7 @@ pub(super) fn emit_topology(
             if let Some((_support, geometry, parameter_range, fit_tolerance)) =
                 fallback_pcurves.get(&fin_xmt).cloned()
             {
-                let pcurve_id: PcurveId = scope.id("intersection-pcurve", fin_xmt);
+                let pcurve_id: PcurveId = scope.id(&cadmpeg_ir::identity_component!("intersection-pcurve"), fin_xmt);
                 annotations
                     .note(&pcurve_id, source_stream, node.pos as u64)
                     .tag("INTERSECTION_PCURVE");
@@ -938,7 +940,7 @@ pub(super) fn emit_topology(
         .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
         .collect();
     ir.model.vertices.retain(|vertex| {
-        !vertex.id.as_str().starts_with(scope.as_str()) || retained_vertices.contains(&vertex.id)
+        !vertex.id.as_str().starts_with(&scope.prefix()) || retained_vertices.contains(&vertex.id)
     });
     Ok(endpoint_witnesses)
 }
@@ -955,7 +957,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
     annotations: &mut AnnotationBuilder,
 ) {
     let scope = IdScope::stream(stream_index);
-    let unknown: UnknownId = IdScope::container().id("parasolid", stream_index);
+    let unknown: UnknownId = IdScope::container().id(&cadmpeg_ir::identity_component!("parasolid"), stream_index);
     for face in graph.of_kind(NodeKind::Face) {
         let Some(surface_xmt) = face
             .face_fields()
@@ -966,7 +968,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
         if surface_xmt <= 1 || surfaces.contains_key(&surface_xmt) {
             continue;
         }
-        let id: SurfaceId = scope.id("surface", format_args!("unknown-{surface_xmt}"));
+        let id: SurfaceId = scope.id(&cadmpeg_ir::identity_component!("surface"), cadmpeg_ir::identity_key!("unknown-").then(surface_xmt));
         annotations
             .note(&id, source_stream, face.pos as u64)
             .tag("UNRESOLVED_SURFACE_REFERENCE");
@@ -991,7 +993,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
         if curve_xmt <= 1 || curves.contains_key(&curve_xmt) || pcurves.contains_key(&curve_xmt) {
             continue;
         }
-        let id: CurveId = scope.id("curve", format_args!("unknown-{curve_xmt}"));
+        let id: CurveId = scope.id(&cadmpeg_ir::identity_component!("curve"), cadmpeg_ir::identity_key!("unknown-").then(curve_xmt));
         annotations
             .note(&id, source_stream, edge.pos as u64)
             .tag("UNRESOLVED_CURVE_REFERENCE");
@@ -1087,8 +1089,8 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         let geometry = &ir.model.curves[curve_index].geometry;
         curve_point_cache.point_with_budget(curve, geometry, parameter, geometry_budget)?
     };
-    let point: PointId = scope.id("point", format_args!("closed-edge-{}", edge.xmt));
-    let vertex: VertexId = scope.id("vertex", format_args!("closed-edge-{}", edge.xmt));
+    let point: PointId = scope.id(&cadmpeg_ir::identity_component!("point"), cadmpeg_ir::identity_key!("closed-edge-").then(edge.xmt));
+    let vertex: VertexId = scope.id(&cadmpeg_ir::identity_component!("vertex"), cadmpeg_ir::identity_key!("closed-edge-").then(edge.xmt));
     annotations
         .note(&point, source_stream, edge.pos as u64)
         .tag("CLOSED_EDGE_POINT");
@@ -1329,7 +1331,7 @@ pub(crate) fn retain_unknown_stream_data(
 }
 
 fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> UnknownRecord {
-    let id: UnknownId = IdScope::container().id("parasolid", si);
+    let id: UnknownId = IdScope::container().id(&cadmpeg_ir::identity_component!("parasolid"), si);
     let offset = stream.file_offset as u64;
     match data {
         Some(data) => UnknownRecord::retained(id, offset, data, Vec::new()),
