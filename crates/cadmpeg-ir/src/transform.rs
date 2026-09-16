@@ -200,7 +200,7 @@ impl ExactSignedSum {
         };
         let product = u128::from(left_significand) * u128::from(right_significand);
         let exponent = left_exponent + right_exponent;
-        let target = if left_negative != right_negative {
+        let target = if left_negative ^ right_negative {
             &mut self.negative
         } else {
             &mut self.positive
@@ -211,9 +211,9 @@ impl ExactSignedSum {
     fn finish(self) -> Option<ScaledValue> {
         let (negative, magnitude) = signed_difference(&self.positive, &self.negative)?;
         let word = magnitude.iter().rposition(|value| *value != 0)?;
-        let highest_bit = word * 64
-            + usize::try_from(63 - magnitude[word].leading_zeros())
-                .expect("u32 bit index fits usize");
+        // `checked_ilog2` answers `None` for a zero word, which `rposition`
+        // has already excluded; the `?` states that rather than asserting it.
+        let highest_bit = word * 64 + magnitude[word].checked_ilog2()? as usize;
         let keep = (highest_bit + 1).min(53);
         let mut significand = 0_u64;
         for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
@@ -288,7 +288,9 @@ fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
 
 fn scaled_finite(value: f64) -> Option<ScaledValue> {
     let (negative, significand, exponent) = finite_significand(value)?;
-    let highest_bit = 63 - significand.leading_zeros();
+    // A finite significand is never zero: the subnormal branch requires a
+    // nonzero fraction and the normal branch sets bit 52.
+    let highest_bit = significand.checked_ilog2()?;
     let bits = i32::try_from(highest_bit + 1).expect("f64 significand fits i32");
     Some(ScaledValue {
         sign: if negative { -1.0 } else { 1.0 },

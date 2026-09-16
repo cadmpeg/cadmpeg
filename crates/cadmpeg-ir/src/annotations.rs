@@ -315,10 +315,12 @@ impl AnnotationBuilder {
     pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
         let id = id.to_string();
         let fields = match self.annotations.exactness.remove(&id) {
-            Some(ExactnessNote::Entity { mut fields, .. })
-            | Some(ExactnessNote::Fields {
-                fields: NonEmptyMap(mut fields),
-            }) => {
+            Some(
+                ExactnessNote::Entity { mut fields, .. }
+                | ExactnessNote::Fields {
+                    fields: NonEmptyMap(mut fields),
+                },
+            ) => {
                 fields.retain(|_, value| *value != exactness);
                 fields
             }

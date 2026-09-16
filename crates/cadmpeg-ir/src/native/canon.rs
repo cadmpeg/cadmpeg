@@ -381,7 +381,7 @@ impl ser::SerializeMap for CanonMap {
     }
 }
 
-/// Ordinary struct members or one JSON value carried by RawValue's protocol.
+/// Ordinary struct members or one JSON value carried by `RawValue`'s protocol.
 pub(super) enum CanonStruct {
     Object(CanonMap),
     Raw(Option<Node>),

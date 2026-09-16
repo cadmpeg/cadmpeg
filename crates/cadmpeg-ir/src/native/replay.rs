@@ -148,7 +148,7 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
 ///
 /// A serializer may read a value more than once, or skip it. Consume the raw
 /// child before handing it over, then start a fresh parse for each read.
-/// Each parser reads only one container; RawValue scans its children without
+/// Each parser reads only one container; `RawValue` scans its children without
 /// the parser recursion limit. No parsed child tree is retained here.
 struct Replay<'a>(&'a str);
 

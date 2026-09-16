@@ -216,10 +216,10 @@ mod tests {
         );
 
         let control = r#"{"name":"text","signed":-9223372036854775808,"unsigned":18446744073709551615,"float":1.25,"true":true,"false":false,"null":null,"array":[{},[],{"name":"other"}],"object":{"name":"nested"}}"#;
-        let parsed: Object = serde_json::from_str(control).unwrap();
+        let parsed: Object = serde_json::from_str(control).expect("control object");
         assert_eq!(
             serde_json::Value::Object(parsed.0),
-            serde_json::from_str::<serde_json::Value>(control).unwrap(),
+            serde_json::from_str::<serde_json::Value>(control).expect("control value"),
         );
         for (wire, key) in [
             (r#"{"name":1,"name":2}"#, "name"),
@@ -227,7 +227,8 @@ mod tests {
             (r#"{"outer":{"nested":1,"nested":2}}"#, "nested"),
             (r#"{"outer":[{"nested":1,"nested":2}]}"#, "nested"),
         ] {
-            let error = serde_json::from_str::<Object>(wire).unwrap_err();
+            let error =
+                serde_json::from_str::<Object>(wire).expect_err("a restated key is refused");
             assert!(
                 error.to_string().contains(&format!("duplicate key {key}")),
                 "{error}"
@@ -245,8 +246,8 @@ mod tests {
 
     #[test]
     fn map_errors_name_the_source_key_and_refuse_duplicates_before_their_values() {
-        let admitted: Maps =
-            serde_json::from_str(r#"{"ordered":{"one":1},"hashed":{"two":2}}"#).unwrap();
+        let admitted: Maps = serde_json::from_str(r#"{"ordered":{"one":1},"hashed":{"two":2}}"#)
+            .expect("distinct keys are admitted");
         assert_eq!(admitted.ordered["one"], 1);
         assert_eq!(admitted.hashed["two"], 2);
         for map in ["ordered", "hashed"] {
@@ -270,7 +271,8 @@ mod tests {
                 ),
             ] {
                 let wire = format!(r#"{{"{map}":{{{entries}}},"{other}":{{}}}}"#);
-                let error = serde_json::from_str::<Maps>(&wire).unwrap_err();
+                let error =
+                    serde_json::from_str::<Maps>(&wire).expect_err("the map refuses this entry");
                 assert!(error.to_string().contains(expected), "{error}");
             }
         }

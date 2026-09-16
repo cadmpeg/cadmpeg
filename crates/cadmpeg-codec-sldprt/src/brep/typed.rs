@@ -141,6 +141,12 @@ impl Facts {
     /// Return whether the stream contains a closed typed BODY ownership set.
     /// FACE-to-SHELL closure is checked separately against compact bridge
     /// records because a stream may carry subordinate faces in another site.
+    ///
+    /// The decode routes read the face attributes through
+    /// [`Self::valid_ownership_face_attrs`]; this predicate exists for the
+    /// tests that assert closure without naming the attributes, and
+    /// `valid_ownership_maps` is private to this module.
+    #[cfg(test)]
     pub(crate) fn has_valid_ownership(&self) -> bool {
         self.valid_ownership_maps().is_some()
     }
