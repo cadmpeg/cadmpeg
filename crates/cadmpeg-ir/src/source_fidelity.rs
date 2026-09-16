@@ -447,9 +447,9 @@ impl SourceFidelity {
             .native
             .0
             .values()
-            .flat_map(|namespace| namespace.arenas().get("unknowns"))
+            .filter_map(|namespace| namespace.arenas().get("unknowns"))
             .flatten()
-            .map(|record| record.id())
+            .map(crate::native::NativeRecord::id)
             .collect();
         let mut retained = BTreeMap::new();
         for record in incoming {
