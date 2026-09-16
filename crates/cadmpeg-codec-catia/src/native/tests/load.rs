@@ -215,7 +215,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
         .get("value_blocks")
         .is_some_and(|blocks| blocks
             .iter()
-            .all(|block| !block.fields().contains_key("schema_selections"))));
+            .all(|block| !block.fields().unwrap().contains_key("schema_selections"))));
     assert_eq!(
         canonical_namespace
             .arenas()

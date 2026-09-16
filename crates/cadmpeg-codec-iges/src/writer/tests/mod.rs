@@ -533,12 +533,12 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
             .expect("generated document has the IGES namespace")
             .arenas()["entities"]
             .iter()
-            .find(|entity| entity.field("entity_type") == Some(entity_type.into()))
+            .find(|entity| entity.field("entity_type").unwrap() == Some(entity_type.into()))
             .map(|entity| {
                 (
-                    entity.field("subordinate_status"),
-                    entity.field("use_flag"),
-                    entity.field("hierarchy_status"),
+                    entity.field("subordinate_status").unwrap(),
+                    entity.field("use_flag").unwrap(),
+                    entity.field("hierarchy_status").unwrap(),
                 )
             })
             .expect("generated entity status exists")

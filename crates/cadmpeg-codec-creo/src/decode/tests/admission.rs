@@ -281,10 +281,10 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         (&associations[2], 7, 12, 1),
         (&associations[3], 8, 13, 1),
     ] {
-        assert_eq!(association.fields()["owner_feature_id"], 4);
-        assert_eq!(association.fields()["visible_surface_id"], visible_id);
-        assert_eq!(association.fields()["replay_surface_id"], replay_id);
-        assert_eq!(association.fields()["replay_ordinal"], ordinal);
+        assert_eq!(association.fields().unwrap()["owner_feature_id"], 4);
+        assert_eq!(association.fields().unwrap()["visible_surface_id"], visible_id);
+        assert_eq!(association.fields().unwrap()["replay_surface_id"], replay_id);
+        assert_eq!(association.fields().unwrap()["replay_ordinal"], ordinal);
     }
     assert_eq!(
         result
@@ -424,14 +424,14 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(states.len(), 7);
     let feature_40 = states
         .iter()
-        .filter(|state| state.fields()["feature_id"] == 40)
+        .filter(|state| state.fields().unwrap()["feature_id"] == 40)
         .collect::<Vec<_>>();
     assert_eq!(feature_40.len(), 2);
-    assert_eq!(feature_40[0].fields()["state_ordinal"], 0);
-    assert_eq!(feature_40[0].fields()["current"], false);
-    assert_eq!(feature_40[0].fields()["stored_name"], "xProtrusion id 40");
+    assert_eq!(feature_40[0].fields().unwrap()["state_ordinal"], 0);
+    assert_eq!(feature_40[0].fields().unwrap()["current"], false);
+    assert_eq!(feature_40[0].fields().unwrap()["stored_name"], "xProtrusion id 40");
     assert_eq!(
-        feature_40[0].fields()["stored_name_bytes"]
+        feature_40[0].fields().unwrap()["stored_name_bytes"]
             .as_array()
             .unwrap()
             .iter()
@@ -439,11 +439,11 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
             .collect::<Vec<_>>(),
         b"xProtrusion id 40"
     );
-    assert_eq!(feature_40[0].fields()["identifier_keyword"], "id");
-    assert_eq!(feature_40[0].fields()["display_state_conflict"], true);
-    assert_eq!(feature_40[1].fields()["state_ordinal"], 1);
-    assert_eq!(feature_40[1].fields()["current"], false);
-    assert_eq!(feature_40[1].fields()["display_state_conflict"], true);
+    assert_eq!(feature_40[0].fields().unwrap()["identifier_keyword"], "id");
+    assert_eq!(feature_40[0].fields().unwrap()["display_state_conflict"], true);
+    assert_eq!(feature_40[1].fields().unwrap()["state_ordinal"], 1);
+    assert_eq!(feature_40[1].fields().unwrap()["current"], false);
+    assert_eq!(feature_40[1].fields().unwrap()["display_state_conflict"], true);
     assert_eq!(result.ir().model.features.len(), 6);
     assert_eq!(
         result.ir().model.features[0].id.as_str(),

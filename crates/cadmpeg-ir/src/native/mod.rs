@@ -188,30 +188,38 @@ impl NativeRecord {
     /// This allocates a fresh [`Value`] tree on every call; read it once and
     /// reuse the map when inspecting more than one field, and prefer
     /// [`field`](Self::field) when one field is all that is wanted.
-    #[must_use]
-    pub fn fields(&self) -> Map<String, Value> {
-        // Both constructors render an object from admitted JSON values. Replay
-        // reads one container at a time, so the external parser's nesting limit
-        // cannot turn a stored field into absence.
-        let Value::Object(mut fields) = replay::emit(&self.json, serde_json::value::Serializer)
-            .expect("native constructors render valid JSON values")
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NativeConvertError`] when the stored record text does not
+    /// parse as a JSON object. Both constructors render one, so this is the
+    /// record's own invariant travelling with its value rather than an
+    /// assertion at the point of use.
+    pub fn fields(&self) -> Result<Map<String, Value>, NativeConvertError> {
+        // Replay reads one container at a time, so the external parser's
+        // nesting limit cannot turn a stored field into absence.
+        let Value::Object(mut fields) = replay::emit(&self.json, serde_json::value::Serializer)?
         else {
-            unreachable!("native constructors render an object")
+            return Err(NativeConvertError::NonObject);
         };
         fields.remove("id");
-        fields
+        Ok(fields)
     }
 
     /// Parse one codec-owned field.
     ///
     /// Only the named field is materialized; the rest of the record is scanned
     /// past without being built.
-    #[must_use]
-    pub fn field(&self, name: &str) -> Option<Value> {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NativeConvertError`] when the stored record text does not
+    /// parse as a JSON object.
+    pub fn field(&self, name: &str) -> Result<Option<Value>, NativeConvertError> {
         if name == "id" {
-            return None;
+            return Ok(None);
         }
-        replay::field(&self.json, name).expect("native constructors render valid JSON objects")
+        Ok(replay::field(&self.json, name)?)
     }
 
     /// Deserialize the record into a codec-owned typed record.

@@ -70,21 +70,21 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
         .unwrap();
     let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 2);
-    assert_eq!(annotations[0].fields()["kind"], "general_note");
+    assert_eq!(annotations[0].fields().unwrap()["kind"], "general_note");
     assert_eq!(
-        annotations[0].fields()["strings"].as_array().unwrap().len(),
+        annotations[0].fields().unwrap()["strings"].as_array().unwrap().len(),
         2
     );
-    assert_eq!(annotations[0].fields()["strings"][0]["text"][0], 65);
-    assert_eq!(annotations[0].fields()["strings"][1]["mirror"], 1);
-    assert_eq!(annotations[0].fields()["strings"][1]["vertical"], 1);
-    assert_eq!(annotations[1].fields()["kind"], "new_general_note");
-    assert_eq!(annotations[1].fields()["justification"], 2);
+    assert_eq!(annotations[0].fields().unwrap()["strings"][0]["text"][0], 65);
+    assert_eq!(annotations[0].fields().unwrap()["strings"][1]["mirror"], 1);
+    assert_eq!(annotations[0].fields().unwrap()["strings"][1]["vertical"], 1);
+    assert_eq!(annotations[1].fields().unwrap()["kind"], "new_general_note");
+    assert_eq!(annotations[1].fields().unwrap()["justification"], 2);
     assert_eq!(
-        annotations[1].fields()["strings"][0]["control_codes"][0],
+        annotations[1].fields().unwrap()["strings"][0]["control_codes"][0],
         84
     );
-    assert_eq!(annotations[1].fields()["strings"][0]["text"]["text"][3], 33);
+    assert_eq!(annotations[1].fields().unwrap()["strings"][0]["text"]["text"][3], 33);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -148,7 +148,7 @@ fn decode_accepts_and_retains_v5_0_kanji_general_note() {
         .unwrap();
     let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(
-        annotations[0].fields()["strings"][0]["text"],
+        annotations[0].fields().unwrap()["strings"][0]["text"],
         serde_json::json!([51, 52, 52, 49, 51, 66, 55, 65])
     );
     assert!(
@@ -182,7 +182,7 @@ fn decode_rejects_malformed_v5_0_kanji_general_note_text() {
         );
         let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
         assert_eq!(
-            annotations[0].fields()["strings"][0]["text"],
+            annotations[0].fields().unwrap()["strings"][0]["text"],
             serde_json::json!(text.as_bytes())
         );
     }
@@ -214,9 +214,9 @@ fn decode_applies_new_general_note_defaults_with_positive_metrics() {
         )
         .unwrap();
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
-    assert_eq!(annotation.fields()["kind"], "new_general_note");
-    assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 0);
-    assert!(annotation.fields()["strings"][0]["control_codes"].is_null());
+    assert_eq!(annotation.fields().unwrap()["kind"], "new_general_note");
+    assert_eq!(annotation.fields().unwrap()["strings"][0]["fixed_or_variable"], 0);
+    assert!(annotation.fields().unwrap()["strings"][0]["control_codes"].is_null());
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -233,8 +233,8 @@ fn decode_applies_variable_spacing_default() {
         )
         .unwrap();
     let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
-    assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 1);
-    assert!(annotation.fields()["strings"][0]["character_spacing"].is_null());
+    assert_eq!(annotation.fields().unwrap()["strings"][0]["fixed_or_variable"], 1);
+    assert!(annotation.fields().unwrap()["strings"][0]["character_spacing"].is_null());
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -949,31 +949,31 @@ fn decode_types_every_leader_arrow_form_and_segment_chain() {
     assert_eq!(annotations.len(), 12);
     let mut forms = Vec::new();
     for annotation in annotations {
-        assert_eq!(annotation.fields()["kind"], "leader");
-        forms.push(annotation.fields()["form"].as_i64().unwrap());
-        assert_eq!(annotation.fields()["arrowhead"][2], 3.0);
+        assert_eq!(annotation.fields().unwrap()["kind"], "leader");
+        forms.push(annotation.fields().unwrap()["form"].as_i64().unwrap());
+        assert_eq!(annotation.fields().unwrap()["arrowhead"][2], 3.0);
         assert_eq!(
-            annotation.fields()["segment_tails"]
+            annotation.fields().unwrap()["segment_tails"]
                 .as_array()
                 .unwrap()
                 .len(),
             2
         );
-        assert_eq!(annotation.fields()["segment_tails"][1][1], 4.0);
+        assert_eq!(annotation.fields().unwrap()["segment_tails"][1][1], 4.0);
     }
     forms.sort_unstable();
     assert_eq!(forms, (1..=12).collect::<Vec<_>>());
     let no_arrow = annotations
         .iter()
-        .find(|annotation| annotation.fields()["form"] == 4)
+        .find(|annotation| annotation.fields().unwrap()["form"] == 4)
         .unwrap();
-    assert_eq!(no_arrow.fields()["arrowhead_size"][0], 0.0);
+    assert_eq!(no_arrow.fields().unwrap()["arrowhead_size"][0], 0.0);
     let circle = annotations
         .iter()
-        .find(|annotation| annotation.fields()["form"] == 5)
+        .find(|annotation| annotation.fields().unwrap()["form"] == 5)
         .unwrap();
-    assert_eq!(circle.fields()["arrowhead_size"][0], 2.0);
-    assert_eq!(circle.fields()["arrowhead_size"][1], 2.0);
+    assert_eq!(circle.fields().unwrap()["arrowhead_size"][0], 2.0);
+    assert_eq!(circle.fields().unwrap()["arrowhead_size"][1], 2.0);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -992,7 +992,7 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
     let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     let kinds = annotations
         .iter()
-        .filter_map(|annotation| annotation.fields()["kind"].as_str().map(str::to_owned))
+        .filter_map(|annotation| annotation.fields().unwrap()["kind"].as_str().map(str::to_owned))
         .collect::<Vec<_>>();
     assert_eq!(
         kinds
@@ -1024,20 +1024,20 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
     );
     let point = annotations
         .iter()
-        .find(|annotation| annotation.fields()["kind"] == "point_dimension")
+        .find(|annotation| annotation.fields().unwrap()["kind"] == "point_dimension")
         .unwrap();
-    assert_eq!(point.fields()["note"], "iges:presentation:annotation#D1");
-    assert_eq!(point.fields()["leader"], "iges:presentation:annotation#D3");
-    assert_eq!(point.fields()["enclosure"], "iges:entity:directory#7");
+    assert_eq!(point.fields().unwrap()["note"], "iges:presentation:annotation#D1");
+    assert_eq!(point.fields().unwrap()["leader"], "iges:presentation:annotation#D3");
+    assert_eq!(point.fields().unwrap()["enclosure"], "iges:entity:directory#7");
     let radius = annotations
         .iter()
         .find(|annotation| {
-            annotation.fields()["kind"] == "radius_dimension" && annotation.fields()["form"] == 1
+            annotation.fields().unwrap()["kind"] == "radius_dimension" && annotation.fields().unwrap()["form"] == 1
         })
         .unwrap();
-    assert_eq!(radius.fields()["center"][0], 10.0);
+    assert_eq!(radius.fields().unwrap()["center"][0], 10.0);
     assert_eq!(
-        radius.fields()["leaders"][1],
+        radius.fields().unwrap()["leaders"][1],
         "iges:presentation:annotation#D9"
     );
     assert!(result
@@ -1065,7 +1065,7 @@ fn decode_types_angular_curve_diameter_flag_and_label_annotations() {
     ] {
         assert!(annotations
             .iter()
-            .any(|annotation| annotation.fields()["kind"] == kind));
+            .any(|annotation| annotation.fields().unwrap()["kind"] == kind));
     }
     assert!(result
         .report()
@@ -1085,24 +1085,24 @@ fn decode_types_general_symbol_components_and_section_fill_definition() {
     let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     let symbol = annotations
         .iter()
-        .find(|annotation| annotation.fields()["kind"] == "general_symbol")
+        .find(|annotation| annotation.fields().unwrap()["kind"] == "general_symbol")
         .unwrap();
-    assert_eq!(symbol.fields()["note"], "iges:presentation:annotation#D1");
-    assert_eq!(symbol.fields()["declared_geometry_count"], 1);
-    assert_eq!(symbol.fields()["declared_leader_count"], 1);
-    assert_eq!(symbol.fields()["geometry"][0], "iges:entity:directory#3");
+    assert_eq!(symbol.fields().unwrap()["note"], "iges:presentation:annotation#D1");
+    assert_eq!(symbol.fields().unwrap()["declared_geometry_count"], 1);
+    assert_eq!(symbol.fields().unwrap()["declared_leader_count"], 1);
+    assert_eq!(symbol.fields().unwrap()["geometry"][0], "iges:entity:directory#3");
     assert_eq!(
-        symbol.fields()["leaders"][0],
+        symbol.fields().unwrap()["leaders"][0],
         "iges:presentation:annotation#D5"
     );
     let section = annotations
         .iter()
-        .find(|annotation| annotation.fields()["kind"] == "sectioned_area")
+        .find(|annotation| annotation.fields().unwrap()["kind"] == "sectioned_area")
         .unwrap();
-    assert_eq!(section.fields()["boundary"], "iges:entity:directory#9");
-    assert_eq!(section.fields()["fill_pattern"], 2);
-    assert_eq!(section.fields()["pattern_spacing"], 1.0);
-    assert_eq!(section.fields()["islands"][0], "iges:entity:directory#11");
+    assert_eq!(section.fields().unwrap()["boundary"], "iges:entity:directory#9");
+    assert_eq!(section.fields().unwrap()["fill_pattern"], 2);
+    assert_eq!(section.fields().unwrap()["pattern_spacing"], 1.0);
+    assert_eq!(section.fields().unwrap()["islands"][0], "iges:entity:directory#11");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1126,17 +1126,17 @@ fn decode_general_symbol_standard_forms_preserves_form_in_iges_4_0_and_5_0() {
                 .unwrap();
             let symbol = result.ir().native.namespace("iges").unwrap().arenas()["annotations"]
                 .iter()
-                .find(|annotation| annotation.fields()["kind"] == "general_symbol")
+                .find(|annotation| annotation.fields().unwrap()["kind"] == "general_symbol")
                 .unwrap();
             assert_eq!(
                 result.report().dialects().unwrap().primary().declared()["effective_version"],
                 version
             );
-            assert_eq!(symbol.fields()["form"], form);
-            assert_eq!(symbol.fields()["note"], "iges:presentation:annotation#D1");
-            assert_eq!(symbol.fields()["geometry"][0], "iges:entity:directory#3");
+            assert_eq!(symbol.fields().unwrap()["form"], form);
+            assert_eq!(symbol.fields().unwrap()["note"], "iges:presentation:annotation#D1");
+            assert_eq!(symbol.fields().unwrap()["geometry"][0], "iges:entity:directory#3");
             assert_eq!(
-                symbol.fields()["leaders"][0],
+                symbol.fields().unwrap()["leaders"][0],
                 "iges:presentation:annotation#D5"
             );
             assert!(result
@@ -1159,9 +1159,9 @@ fn decode_general_symbol_implementor_form_is_admitted_in_iges_5_0() {
         .unwrap();
     let symbol = result.ir().native.namespace("iges").unwrap().arenas()["annotations"]
         .iter()
-        .find(|annotation| annotation.fields()["kind"] == "general_symbol")
+        .find(|annotation| annotation.fields().unwrap()["kind"] == "general_symbol")
         .unwrap();
-    assert_eq!(symbol.fields()["form"], 5001);
+    assert_eq!(symbol.fields().unwrap()["form"], 5001);
     assert!(result
         .report()
         .losses
@@ -1180,10 +1180,10 @@ fn decode_type230_form1_preserves_inverted_crosshatching() {
     let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 1);
     let section = &annotations[0];
-    assert_eq!(section.fields()["kind"], "sectioned_area");
-    assert_eq!(section.fields()["form"], 1);
-    assert!(section.fields()["boundary"].is_null());
-    assert_eq!(section.fields()["islands"][0], "iges:entity:directory#1");
+    assert_eq!(section.fields().unwrap()["kind"], "sectioned_area");
+    assert_eq!(section.fields().unwrap()["form"], 1);
+    assert!(section.fields().unwrap()["boundary"].is_null());
+    assert_eq!(section.fields().unwrap()["islands"][0], "iges:entity:directory#1");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1205,9 +1205,9 @@ fn decode_type230_form1_is_admitted_in_iges_5_0() {
         "5.0"
     );
     let section = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
-    assert_eq!(section.fields()["form"], 1);
-    assert!(section.fields()["boundary"].is_null());
-    assert_eq!(section.fields()["islands"][0], "iges:entity:directory#1");
+    assert_eq!(section.fields().unwrap()["form"], 1);
+    assert!(section.fields().unwrap()["boundary"].is_null());
+    assert_eq!(section.fields().unwrap()["islands"][0], "iges:entity:directory#1");
     assert!(!result
         .report()
         .losses

@@ -3279,7 +3279,7 @@ mod tests {
         assert_eq!(records.len(), 8);
         let kinds = records
             .iter()
-            .filter_map(|record| record.field("payload"))
+            .filter_map(|record| record.field("payload").unwrap())
             .filter_map(|payload| {
                 payload
                     .get("kind")

@@ -400,7 +400,7 @@ fn decode_retains_both_ruled_surface_developability_values_in_native_parameters(
             .find(|entity| entity.id() == "iges:entity:directory#5")
             .unwrap();
         assert_eq!(
-            entity.fields()["parameters"][4]["value"]["value"],
+            entity.fields().unwrap()["parameters"][4]["value"]["value"],
             developable_flag
         );
         assert!(result

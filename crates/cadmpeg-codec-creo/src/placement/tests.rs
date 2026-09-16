@@ -1364,8 +1364,8 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         .expect("decode");
     let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
-    assert_eq!(sketches[0].fields()["source_section"], "FeatDefs");
-    let placement = &sketches[0].fields()["section_3d"];
+    assert_eq!(sketches[0].fields().unwrap()["source_section"], "FeatDefs");
+    let placement = &sketches[0].fields().unwrap()["section_3d"];
     assert_eq!(placement["sketch_plane_entity_id"], 769);
     assert_eq!(placement["sketch_plane_flip"], true);
     assert_eq!(placement["reference_plane_entity_ids"][0], 5);

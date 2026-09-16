@@ -123,9 +123,9 @@ fn container_and_native_arena_retain_contour_entries() {
         .expect("decode");
     let contours = &result.ir().native.namespace("creo").unwrap().arenas()["surface_contours"];
     assert_eq!(contours.len(), 2);
-    assert_eq!(contours[0].fields()["surface_id"], 7);
-    assert_eq!(contours[0].fields()["curve_header_id"], 0x210);
-    assert_eq!(contours[0].fields()["separator_reference"], 15);
+    assert_eq!(contours[0].fields().unwrap()["surface_id"], 7);
+    assert_eq!(contours[0].fields().unwrap()["curve_header_id"], 0x210);
+    assert_eq!(contours[0].fields().unwrap()["separator_reference"], 15);
     assert_eq!(
         result.source_fidelity().annotations.provenance[contours[0].id()]
             .tag
