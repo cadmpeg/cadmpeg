@@ -1456,15 +1456,19 @@ fn map_law_expression(
             endpoints,
             parameters,
         } => {
+            // `prefix` ends on the `law` component and `path` starts a new
+            // one, so the two are joined by a colon. `then` concatenates, and
+            // using it here read `law` and `primary` as the single component
+            // `lawprimary`, which two different component pairs can spell.
             let id = match scope {
                 LawExpressionScope::Surface(prefix) => brep_id!(
                     format,
                     CurveId,
                     "procedural_surface",
-                    prefix.then(path).then(cadmpeg_ir::identity_key!(":edge"))
+                    prefix.colon(path).then(cadmpeg_ir::identity_key!(":edge"))
                 ),
                 LawExpressionScope::Curve(prefix) => {
-                    brep_id!(format, CurveId, "procedural_curve", prefix.then(path))
+                    brep_id!(format, CurveId, "procedural_curve", prefix.colon(path))
                 }
             };
             out.curves.push(Curve {
