@@ -315,20 +315,17 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let definitions = &namespace.arenas()["feature_definitions"];
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].id(), "creo:featdefs:feature_definition#40");
-    assert_eq!(definitions[0].fields().unwrap()["definition_id"], 40);
+    assert_eq!(definitions[0].fields()["definition_id"], 40);
     assert_eq!(
-        definitions[0].fields().unwrap()["body"]
-            .as_array()
-            .unwrap()
-            .len(),
+        definitions[0].fields()["body"].as_array().unwrap().len(),
         definition_length
     );
     let sketches = &namespace.arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].id(), "creo:featdefs:sketch#40");
-    assert_eq!(sketches[0].fields().unwrap()["definition_id"], 40);
-    assert!(sketches[0].fields().unwrap()["owner_feature_id"].is_null());
-    let sketch_fields = sketches[0].fields().unwrap();
+    assert_eq!(sketches[0].fields()["definition_id"], 40);
+    assert!(sketches[0].fields()["owner_feature_id"].is_null());
+    let sketch_fields = sketches[0].fields();
     let headers = sketch_fields["table_headers"]
         .as_array()
         .expect("table headers");
@@ -726,7 +723,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(parameters[2].properties["value_token"], "0104fef2");
 
     let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
-    let sketch_fields = sketches[0].fields().unwrap();
+    let sketch_fields = sketches[0].fields();
     let dimensions = sketch_fields["dimensions"]
         .as_array()
         .expect("native dimensions");
@@ -1000,10 +997,10 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .expect("recipe feature");
     let rows = &result.ir().native.namespace("creo").unwrap().arenas()["depdb_recipe_rows"];
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].fields().unwrap()["owner_feature_id"], 8053);
-    assert_eq!(rows[0].fields().unwrap()["header"][0], 0);
+    assert_eq!(rows[0].fields()["owner_feature_id"], 8053);
+    assert_eq!(rows[0].fields()["header"][0], 0);
     assert_eq!(
-        rows[0].fields().unwrap()["body"].as_array().map(Vec::len),
+        rows[0].fields()["body"].as_array().map(Vec::len),
         Some(scan.features.depdb_recipe_rows[0].body.len())
     );
     assert_eq!(feature.name, None);
@@ -1084,7 +1081,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
     assert_eq!(operation_states.len(), 2);
     assert!(operation_states
         .iter()
-        .all(|state| state.fields().unwrap()["recipe_conflict"] == true));
+        .all(|state| state.fields()["recipe_conflict"] == true));
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. })

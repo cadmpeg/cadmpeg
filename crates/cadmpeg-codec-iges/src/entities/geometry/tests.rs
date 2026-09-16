@@ -415,14 +415,14 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
     }
     let flashes = &result.ir().native.namespace("iges").unwrap().arenas()["flashes"];
     assert_eq!(flashes.len(), 5);
-    assert_eq!(flashes[0].fields().unwrap()["form"], 0);
+    assert_eq!(flashes[0].fields()["form"], 0);
     assert_eq!(
-        flashes[0].fields().unwrap()["reference_entity"],
+        flashes[0].fields()["reference_entity"],
         "iges:entity:directory#11"
     );
-    assert_eq!(flashes[2].fields().unwrap()["dimension_1"], 10.0);
-    assert_eq!(flashes[2].fields().unwrap()["dimension_2"], 20.0);
-    assert_eq!(flashes[2].fields().unwrap()["rotation"], 0.5);
+    assert_eq!(flashes[2].fields()["dimension_1"], 10.0);
+    assert_eq!(flashes[2].fields()["dimension_2"], 20.0);
+    assert_eq!(flashes[2].fields()["rotation"], 0.5);
     assert!(
         result.report().losses.is_empty(),
         "{:?}",
@@ -723,7 +723,7 @@ fn type_123_accepts_a_finite_non_unit_direction() {
         .unwrap();
     let direction = &result.ir().native.namespace("iges").unwrap().arenas()["directions"][0];
     assert_eq!(
-        direction.fields().unwrap()["components"],
+        direction.fields()["components"],
         serde_json::json!([2.0, -3.0, 4.0])
     );
     assert_eq!(result.report().losses.len(), 1);
@@ -1173,10 +1173,7 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
         );
         assert!(result.report().losses.is_empty());
         let native = result.ir().native.namespace("iges").unwrap();
-        assert_eq!(
-            native.arenas()["entities"][0].fields().unwrap()["form"],
-            form
-        );
+        assert_eq!(native.arenas()["entities"][0].fields()["form"], form);
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }

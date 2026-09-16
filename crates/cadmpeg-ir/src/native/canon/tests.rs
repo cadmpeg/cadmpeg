@@ -143,7 +143,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         assert_eq!(read.id.as_str(), "test:native:record#raw");
         assert_eq!(read.raw.get(), expected.to_string());
         let stored = &namespace.arenas()["records"][0];
-        assert_eq!(stored.field("raw").unwrap(), Some(expected));
+        assert_eq!(stored.field("raw"), Some(expected));
     }
 
     let raw = RawValue::from_string(r#"{"value":7,"id":"test:native:record#raw"}"#.to_owned())
@@ -153,7 +153,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         .set_arena("records", &[raw])
         .expect("raw object record");
     assert_eq!(
-        namespace.arenas()["records"][0].field("value").unwrap(),
+        namespace.arenas()["records"][0].field("value"),
         Some(serde_json::json!(7))
     );
 
@@ -180,7 +180,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         )
         .expect("an ordinary map is not the RawValue struct protocol");
     assert_eq!(
-        namespace.arenas()["records"][0].field("value").unwrap(),
+        namespace.arenas()["records"][0].field("value"),
         Some(ordinary)
     );
 }

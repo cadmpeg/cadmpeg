@@ -197,10 +197,10 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     let wire = serde_json::to_value(&document).unwrap();
     let admitted = serde_json::from_value::<crate::CadIr>(wire).unwrap();
     let record = &admitted.native.namespace("future").unwrap().arenas()["records"][0];
-    assert_eq!(record.fields().unwrap(), fields);
-    assert_eq!(record.field("nested").unwrap(), Some(nested));
-    assert_eq!(record.field("missing").unwrap(), None);
-    assert_eq!(record.field("id").unwrap(), None);
+    assert_eq!(record.fields(), fields);
+    assert_eq!(record.field("nested"), Some(nested));
+    assert_eq!(record.field("missing"), None);
+    assert_eq!(record.field("id"), None);
     assert_eq!(record.to_typed::<Record>().unwrap(), typed);
     assert_eq!(
         serde_json::to_string(&admitted).unwrap(),

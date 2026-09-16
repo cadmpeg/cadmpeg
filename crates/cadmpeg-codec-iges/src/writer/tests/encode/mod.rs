@@ -54,11 +54,7 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 .and_then(|namespace| namespace.arenas().get("entities"))
                 .is_some_and(|entities| {
                     entities.iter().any(|record| {
-                        record
-                            .field("entity_type")
-                            .unwrap()
-                            .and_then(|value| value.as_i64())
-                            == Some(102)
+                        record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
                     })
                 }),
             "{version:?} output has no Type 102 entity"
@@ -324,18 +320,10 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
 
         let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
         assert!(entities.iter().any(|record| {
-            record
-                .field("entity_type")
-                .unwrap()
-                .and_then(|value| value.as_i64())
-                == Some(108)
+            record.field("entity_type").and_then(|value| value.as_i64()) == Some(108)
         }));
         assert!(!entities.iter().any(|record| {
-            record
-                .field("entity_type")
-                .unwrap()
-                .and_then(|value| value.as_i64())
-                == Some(190)
+            record.field("entity_type").and_then(|value| value.as_i64()) == Some(190)
         }));
     }
 }
@@ -685,18 +673,10 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
     assert!(entities.iter().any(|record| {
-        record
-            .field("entity_type")
-            .unwrap()
-            .and_then(|value| value.as_i64())
-            == Some(190)
+        record.field("entity_type").and_then(|value| value.as_i64()) == Some(190)
     }));
     assert!(entities.iter().any(|record| {
-        record
-            .field("entity_type")
-            .unwrap()
-            .and_then(|value| value.as_i64())
-            == Some(128)
+        record.field("entity_type").and_then(|value| value.as_i64()) == Some(128)
     }));
 }
 
@@ -1252,8 +1232,8 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
     let parameter = |ir: &CadIr, entity_type: i64, index: usize| {
         ir.native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
-            .find(|entity| entity.field("entity_type").unwrap() == Some(entity_type.into()))
-            .and_then(|entity| entity.field("parameters").unwrap())
+            .find(|entity| entity.field("entity_type") == Some(entity_type.into()))
+            .and_then(|entity| entity.field("parameters"))
             .and_then(|parameters| parameters.as_array().cloned())
             .and_then(|parameters| parameters.get(index).cloned())
             .and_then(|parameter| parameter["value"]["value"].as_i64())
@@ -1270,13 +1250,10 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
     let brep = regenerate(explicit_tetrahedron_solid_file());
     let edge_list = brep.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
-        .find(|entity| entity.field("entity_type").unwrap() == Some(504.into()))
+        .find(|entity| entity.field("entity_type") == Some(504.into()))
         .expect("generated B-rep has an edge list");
-    assert_eq!(
-        edge_list.field("subordinate_status").unwrap(),
-        Some(1.into())
-    );
-    assert_eq!(edge_list.field("hierarchy_status").unwrap(), Some(1.into()));
+    assert_eq!(edge_list.field("subordinate_status"), Some(1.into()));
+    assert_eq!(edge_list.field("hierarchy_status"), Some(1.into()));
 }
 
 #[test]
@@ -1911,16 +1888,15 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
     let entities = &round_trip.ir().native.namespace("iges").unwrap().arenas()["entities"];
     let loop_sequences = entities
         .iter()
-        .filter(|entity| entity.field("entity_type").unwrap() == Some(510.into()))
+        .filter(|entity| entity.field("entity_type") == Some(510.into()))
         .count();
     assert_eq!(loop_sequences, 2);
     let loop_sequences = entities
         .iter()
-        .filter(|entity| entity.field("entity_type").unwrap() == Some(508.into()))
+        .filter(|entity| entity.field("entity_type") == Some(508.into()))
         .map(|entity| {
             entity
                 .field("directory_sequence")
-                .unwrap()
                 .unwrap()
                 .as_i64()
                 .unwrap()
@@ -1928,9 +1904,9 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .collect::<Vec<_>>();
     let face_parameters = entities
         .iter()
-        .filter(|entity| entity.field("entity_type").unwrap() == Some(510.into()))
+        .filter(|entity| entity.field("entity_type") == Some(510.into()))
         .find_map(|entity| {
-            let parameters = entity.field("parameters").unwrap()?;
+            let parameters = entity.field("parameters")?;
             let values = parameters.as_array()?;
             (values.get(2)?["value"]["value"].as_i64() == Some(2)).then_some(parameters)
         })

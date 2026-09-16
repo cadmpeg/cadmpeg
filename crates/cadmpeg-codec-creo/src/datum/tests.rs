@@ -526,8 +526,8 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
     );
     let cylinders = &result.ir().native.namespace("creo").unwrap().arenas()["datum_cylinders"];
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].fields().unwrap()["datum_id"], 8);
-    assert_eq!(cylinders[0].fields().unwrap()["radius"], 0.75);
+    assert_eq!(cylinders[0].fields()["datum_id"], 8);
+    assert_eq!(cylinders[0].fields()["radius"], 0.75);
     assert_eq!(
         result.report().coverage()["transferred_active_datum_cylinder_count"],
         1
@@ -554,10 +554,10 @@ fn decode_transfers_exact_datum_plane_carrier() {
         .unwrap();
     assert!(result.report().geometry_transferred());
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["datum_planes"];
-    assert_eq!(records[0].fields().unwrap()["datum_id"], 4);
-    assert_eq!(records[0].fields().unwrap()["owner_feature_id"], 1);
-    assert_eq!(records[0].fields().unwrap()["normal"][1], 1.0);
-    assert_eq!(records[0].fields().unwrap()["plane_offset"], 0.0);
+    assert_eq!(records[0].fields()["datum_id"], 4);
+    assert_eq!(records[0].fields()["owner_feature_id"], 1);
+    assert_eq!(records[0].fields()["normal"][1], 1.0);
+    assert_eq!(records[0].fields()["plane_offset"], 0.0);
     assert_eq!(result.ir().model.surfaces.len(), 1);
     assert_eq!(result.ir().model.features.len(), 1);
     let feature = &result.ir().model.features[0];

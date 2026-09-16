@@ -571,7 +571,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .arenas_mut()
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
-    let mut orphan_fields = orphan.fields().unwrap();
+    let mut orphan_fields = orphan.fields();
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
     *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields)
         .expect("valid native identity");

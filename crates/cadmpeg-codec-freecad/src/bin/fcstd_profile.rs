@@ -386,9 +386,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .into_iter()
         .flatten()
     {
-        let Some(fields) = record_fields(record) else {
-            continue;
-        };
+        let fields = record.fields();
         insert_string(&fields, "form", &mut observed.shape_forms);
         insert_map_keys(&fields, "curves_2d", &mut observed.curves_2d);
         insert_map_keys(&fields, "curves_3d", &mut observed.curves_3d);
@@ -396,9 +394,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         insert_map_keys(&fields, "topology", &mut observed.topology);
     }
     for record in namespace.arenas().get("applications").into_iter().flatten() {
-        let Some(fields) = record_fields(record) else {
-            continue;
-        };
+        let fields = record.fields();
         insert_string(&fields, "type_name", &mut observed.application_types);
         if fields.get("inert_payload").and_then(Value::as_bool) == Some(true) {
             observed
@@ -423,9 +419,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace.arenas().get("drawings").into_iter().flatten() {
-        let Some(fields) = record_fields(record) else {
-            continue;
-        };
+        let fields = record.fields();
         insert_string(&fields, "kind", &mut observed.drawing_types);
         if fields
             .get("side_entries")
@@ -443,10 +437,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .into_iter()
         .flatten()
     {
-        if let Some(states) = record_field(record, "states")
-            .as_ref()
-            .and_then(Value::as_array)
-        {
+        if let Some(states) = record.field("states").as_ref().and_then(Value::as_array) {
             for state in states {
                 if let Some(kind) = state.get("kind").and_then(Value::as_str) {
                     observed
@@ -462,7 +453,10 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .into_iter()
         .flatten()
     {
-        if record_field(record, "expanded").is_some_and(|value| !value.is_null()) {
+        if record
+            .field("expanded")
+            .is_some_and(|value| !value.is_null())
+        {
             observed.presentation_constructs.insert("tree_state".into());
         }
     }
@@ -472,18 +466,14 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .into_iter()
         .flatten()
     {
-        if let Some(Value::String(name)) = record_field(record, "name") {
+        if let Some(Value::String(name)) = record.field("name") {
             observed
                 .presentation_constructs
                 .insert(format!("view_property:{name}"));
         }
     }
     for record in namespace.arenas().get("entries").into_iter().flatten() {
-        if record_field(record, "role")
-            .as_ref()
-            .and_then(Value::as_str)
-            == Some("thumbnail")
-        {
+        if record.field("role").as_ref().and_then(Value::as_str) == Some("thumbnail") {
             observed.presentation_constructs.insert("thumbnail".into());
         }
     }
@@ -495,7 +485,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         .collect::<Vec<_>>();
     let product_node_fields = product_nodes
         .iter()
-        .filter_map(|record| record_fields(record))
+        .map(|record| record.fields())
         .collect::<Vec<_>>();
     for fields in &product_node_fields {
         if let Some(Value::String(kind)) = fields.get("kind") {
@@ -538,9 +528,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace.arenas().get("joints").into_iter().flatten() {
-        let Some(fields) = record_fields(record) else {
-            continue;
-        };
+        let fields = record.fields();
         insert_string(&fields, "kind", &mut observed.joint_kinds);
         if fields
             .get("references")
@@ -666,25 +654,6 @@ fn collect_feature_branches(
     }
 }
 
-/// The fields of one native record, absent when its text does not read.
-///
-/// A record the profile cannot read contributes no observation, which is what
-/// every caller below does with an absent field anyway.
-fn record_fields(record: &cadmpeg_ir::NativeRecord) -> Option<serde_json::Map<String, Value>> {
-    let Ok(fields) = record.fields() else {
-        return None;
-    };
-    Some(fields)
-}
-
-/// One field of a native record, absent when its text does not read.
-fn record_field(record: &cadmpeg_ir::NativeRecord, name: &str) -> Option<Value> {
-    let Ok(value) = record.field(name) else {
-        return None;
-    };
-    value
-}
-
 fn insert_string(
     fields: &serde_json::Map<String, Value>,
     name: &str,
@@ -711,10 +680,7 @@ fn exact_byte_coverage(ir: &CadIr) -> bool {
         .and_then(|namespace| namespace.arenas().get("byte_coverage"))
         .is_some_and(|records| {
             records.len() == 1
-                && record_field(&records[0], "exact")
-                    .as_ref()
-                    .and_then(Value::as_bool)
-                    == Some(true)
+                && records[0].field("exact").as_ref().and_then(Value::as_bool) == Some(true)
         })
 }
 
@@ -744,7 +710,7 @@ fn logical_side_entries(
         .into_iter()
         .flatten()
         .filter_map(|record| {
-            let fields = record_fields(record)?;
+            let fields = record.fields();
             let name = fields.get("name")?.as_str()?;
             let digest = fields.get("sha256")?.as_str()?;
             Some((name.to_owned(), digest.to_owned()))
@@ -765,13 +731,11 @@ fn property_value_attribute(
         .get("properties")?
         .iter()
         .find(|record| {
-            let Some(fields) = record_fields(record) else {
-                return false;
-            };
+            let fields = record.fields();
             fields.get("owner").and_then(Value::as_str) == Some(owner)
                 && fields.get("name").and_then(Value::as_str) == Some(property_name)
-        })
-        .and_then(|record| record_field(record, "values"))?
+        })?
+        .field("values")?
         .as_array()?
         .iter()
         .find(|value| value.get("order").and_then(Value::as_u64) == Some(value_order as u64))?
@@ -823,7 +787,7 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         .get("objects")
         .into_iter()
         .flatten()
-        .find_map(|record| match record_field(record, "type_name") {
+        .find_map(|record| match record.field("type_name") {
             Some(Value::String(value)) => Some(value),
             _ => None,
         })

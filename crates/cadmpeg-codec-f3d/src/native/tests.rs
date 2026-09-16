@@ -109,7 +109,7 @@ fn diff_reports_design_material_assignment_changes() {
         .arenas_mut()
         .get_mut("design_material_assignments")
         .unwrap()[0];
-    let mut assignment_fields = assignment.fields().unwrap();
+    let mut assignment_fields = assignment.fields();
     assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
     *assignment = cadmpeg_ir::NativeRecord::new(assignment.id().to_string(), assignment_fields)
         .expect("valid native identity");

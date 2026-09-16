@@ -25,9 +25,9 @@ fn scan_discovers_labeled_curve_prototypes() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_prototypes"];
-    assert_eq!(records[0].fields().unwrap()["curve_id"], 7);
-    assert_eq!(records[0].fields().unwrap()["type_byte"], 8);
-    assert_eq!(records[0].fields().unwrap()["generating_feature_id"], 4);
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["type_byte"], 8);
+    assert_eq!(records[0].fields()["generating_feature_id"], 4);
 }
 
 #[test]
@@ -49,15 +49,15 @@ fn scan_discovers_curve_halfedge_topology() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let row = &result.ir().native.namespace("creo").unwrap().arenas()["curve_topology_rows"][0];
-    assert_eq!(row.fields().unwrap()["curve_id"], 7);
-    assert_eq!(row.fields().unwrap()["type_byte"], 8);
-    assert_eq!(row.fields().unwrap()["feature_id"], 4);
-    assert_eq!(row.fields().unwrap()["directions"][0], 1);
-    assert_eq!(row.fields().unwrap()["directions"][1], 0xf6);
-    assert_eq!(row.fields().unwrap()["faces"][0], 10);
-    assert_eq!(row.fields().unwrap()["faces"][1], 11);
-    assert_eq!(row.fields().unwrap()["next_edges"][0], 7);
-    assert_eq!(row.fields().unwrap()["next_edges"][1], 7);
+    assert_eq!(row.fields()["curve_id"], 7);
+    assert_eq!(row.fields()["type_byte"], 8);
+    assert_eq!(row.fields()["feature_id"], 4);
+    assert_eq!(row.fields()["directions"][0], 1);
+    assert_eq!(row.fields()["directions"][1], 0xf6);
+    assert_eq!(row.fields()["faces"][0], 10);
+    assert_eq!(row.fields()["faces"][1], 11);
+    assert_eq!(row.fields()["next_edges"][0], 7);
+    assert_eq!(row.fields()["next_edges"][1], 7);
     assert_eq!(
         result.source_fidelity().annotations.provenance["creo:visibgeom:curve_topology#7"]
             .tag
@@ -179,26 +179,23 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["curve_parameters"][0];
-    assert_eq!(record.fields().unwrap()["curve_id"], 7);
-    assert_eq!(record.fields().unwrap()["type_byte"], 8);
+    assert_eq!(record.fields()["curve_id"], 7);
+    assert_eq!(record.fields()["type_byte"], 8);
     assert_eq!(
-        record.fields().unwrap()["body"].as_array().unwrap().len(),
+        record.fields()["body"].as_array().unwrap().len(),
         parameters.body.len()
     );
-    assert_eq!(record.fields().unwrap()["scalar_values"][2], 3.0);
-    assert_eq!(record.fields().unwrap()["scalar_tokens"][2]["offset"], 5);
-    assert_eq!(record.fields().unwrap()["scalar_tokens"][2]["raw"][0], 0x46);
-    assert_eq!(record.fields().unwrap()["skipped_references"][0], 256);
-    assert_eq!(record.fields().unwrap()["references"][0]["entity_id"], 256);
-    assert_eq!(record.fields().unwrap()["references"][0]["offset"], 2);
-    assert_eq!(record.fields().unwrap()["opaque_spans"][0]["offset"], 13);
-    assert_eq!(record.fields().unwrap()["opaque_spans"][0]["raw"][0], 0xff);
-    assert_eq!(record.fields().unwrap()["suffix"], "unique");
-    assert!(record
-        .fields()
-        .unwrap()
-        .contains_key("suffix_candidate_count"));
-    assert!(record.fields().unwrap()["suffix_candidate_count"].is_null());
+    assert_eq!(record.fields()["scalar_values"][2], 3.0);
+    assert_eq!(record.fields()["scalar_tokens"][2]["offset"], 5);
+    assert_eq!(record.fields()["scalar_tokens"][2]["raw"][0], 0x46);
+    assert_eq!(record.fields()["skipped_references"][0], 256);
+    assert_eq!(record.fields()["references"][0]["entity_id"], 256);
+    assert_eq!(record.fields()["references"][0]["offset"], 2);
+    assert_eq!(record.fields()["opaque_spans"][0]["offset"], 13);
+    assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0xff);
+    assert_eq!(record.fields()["suffix"], "unique");
+    assert!(record.fields().contains_key("suffix_candidate_count"));
+    assert!(record.fields()["suffix_candidate_count"].is_null());
     assert_eq!(
         result.source_fidelity().annotations.provenance["creo:visibgeom:curve_parameter#7"]
             .tag
@@ -253,7 +250,7 @@ fn absent_pcurve_faces_remain_zero_in_native_records() {
         let records = &decoded.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
         assert_eq!(records.len(), 1);
         assert_eq!(
-            serde_json::to_string(&records[0].fields().unwrap()["faces"]).unwrap(),
+            serde_json::to_string(&records[0].fields()["faces"]).unwrap(),
             "[0,11]"
         );
     }
@@ -285,9 +282,9 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].id(), "creo:visibgeom:pcurve_endpoints#7");
-    assert_eq!(records[0].fields().unwrap()["faces"][0], 10);
-    assert_eq!(records[0].fields().unwrap()["faces"][1], 11);
-    assert_eq!(records[0].fields().unwrap()["source_form"], "positional");
+    assert_eq!(records[0].fields()["faces"][0], 10);
+    assert_eq!(records[0].fields()["faces"][1], 11);
+    assert_eq!(records[0].fields()["source_form"], "positional");
 
     let mut mismatched_topology = scan.curves.topology_rows.clone();
     mismatched_topology[0].type_byte = 1;
@@ -441,14 +438,11 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc_curve_coordinates"];
-    assert_eq!(records[0].fields().unwrap()["curve_id"], 7);
-    assert_eq!(records[0].fields().unwrap()["values_mm"][1], -3.0);
-    assert_eq!(records[0].fields().unwrap()["tokens"][1]["offset"], 10);
-    assert_eq!(records[0].fields().unwrap()["tokens"][1]["length"], 8);
-    assert_eq!(
-        records[0].fields().unwrap()["opaque_spans"][1]["raw"][0],
-        0xff
-    );
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["values_mm"][1], -3.0);
+    assert_eq!(records[0].fields()["tokens"][1]["offset"], 10);
+    assert_eq!(records[0].fields()["tokens"][1]["length"], 8);
+    assert_eq!(records[0].fields()["opaque_spans"][1]["raw"][0], 0xff);
 }
 
 #[test]
@@ -519,13 +513,10 @@ fn scan_validates_fc05_circle_from_record_points() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc05_circles"];
-    assert_eq!(records[0].fields().unwrap()["curve_id"], 7);
-    assert_eq!(records[0].fields().unwrap()["radius_mm"], 1.0);
-    assert_eq!(
-        records[0].fields().unwrap()["sample_direction_row_frame"][0],
-        1.0
-    );
-    assert_eq!(records[0].fields().unwrap()["parameter_sign"], 1);
+    assert_eq!(records[0].fields()["curve_id"], 7);
+    assert_eq!(records[0].fields()["radius_mm"], 1.0);
+    assert_eq!(records[0].fields()["sample_direction_row_frame"][0], 1.0);
+    assert_eq!(records[0].fields()["parameter_sign"], 1);
 }
 
 #[test]
@@ -633,13 +624,11 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         .expect("decode");
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas()["prototype_pcurves"][0].fields().unwrap()["curve_id"],
+        namespace.arenas()["prototype_pcurves"][0].fields()["curve_id"],
         44
     );
     assert_eq!(
-        namespace.arenas()["curve_prototype_topology"][0]
-            .fields()
-            .unwrap()["faces"][1],
+        namespace.arenas()["curve_prototype_topology"][0].fields()["faces"][1],
         11
     );
 }

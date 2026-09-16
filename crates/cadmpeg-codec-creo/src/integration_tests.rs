@@ -213,7 +213,7 @@ fn featdefs_pipeline_retains_solver_relations_and_resolved_dimension_inputs() {
     let result = decode(build_prt("integration", &[("FeatDefs", payload)]));
     let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
-    let fields = sketches[0].fields().unwrap();
+    let fields = sketches[0].fields();
     let headers = fields["table_headers"].as_array().unwrap();
     assert!(headers
         .iter()

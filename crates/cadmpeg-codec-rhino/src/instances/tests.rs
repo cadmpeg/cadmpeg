@@ -394,12 +394,9 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .namespace("rhino")
         .expect("Rhino native namespace")
         .arenas()["external_references"][0];
-    assert_eq!(external.fields().unwrap()["full_path"], "/full/source.3dm");
-    assert_eq!(
-        external.fields().unwrap()["relative_path"],
-        "relative/source.3dm"
-    );
-    assert_eq!(external.fields().unwrap()["relative_path_preferred"], true);
+    assert_eq!(external.fields()["full_path"], "/full/source.3dm");
+    assert_eq!(external.fields()["relative_path"], "relative/source.3dm");
+    assert_eq!(external.fields()["relative_path_preferred"], true);
     assert!(result.source_fidelity().retained_records().is_empty());
 
     let full_carrier = class_userdata(
@@ -586,7 +583,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .namespace("rhino")
         .expect("Rhino native namespace")
         .arenas()["external_references"][0];
-    assert_eq!(future_external.fields().unwrap()["relative_path"], "");
+    assert_eq!(future_external.fields()["relative_path"], "");
     let future_retained = future_result
         .source_fidelity()
         .retained_records()
@@ -896,11 +893,11 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
     assert_eq!(native.arenas()["product_definitions"].len(), 1);
     assert_eq!(native.arenas()["product_occurrences"].len(), 2);
     assert_eq!(
-        native.arenas()["product_occurrences"][0].fields().unwrap()["definition_uuid"],
+        native.arenas()["product_occurrences"][0].fields()["definition_uuid"],
         Uuid::from_wire(definition_id).to_string()
     );
     assert_eq!(
-        native.arenas()["product_occurrences"][0].fields().unwrap()["transform_units"],
+        native.arenas()["product_occurrences"][0].fields()["transform_units"],
         "millimeter"
     );
     assert!(result.report().losses.iter().any(|loss| loss.code

@@ -278,7 +278,6 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
             .find(|label| {
                 label
                     .field("value")
-                    .unwrap()
                     .and_then(|value| value.as_str().map(str::to_owned))
                     .as_deref()
                     == Some(value)
@@ -300,7 +299,6 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
                 .filter(|record| {
                     record
                         .field("operation_label")
-                        .unwrap()
                         .is_some_and(|value| value.as_str() == Some(operation_label))
                 })
                 .collect::<Vec<_>>();
