@@ -3253,18 +3253,10 @@ fn parsed_named_surface_value(
                 .ok()
                 .and_then(|count| dimensions.checked_mul(count))
         });
-        let mut array = slot_count
-            .filter(|slot_count| {
-                dimensions_end > 1
-                    && values_start > dimensions_end
-                    && *slot_count
-                        <= body
-                            .len()
-                            .saturating_sub(values_start)
-                            .saturating_mul(2)
-                            .max(crate::scalar::POSITIONAL_SLOT_TABLE_WIDTH)
-            })
-            .and_then(|_| arrays::DimensionedScalars::empty(dimensions, count))?;
+        let remaining = slot_count.and_then(|slot_count| {
+            crate::scalar::admitted_scalar_body(body, dimensions_end, values_start, slot_count)
+        })?;
+        let mut array = arrays::DimensionedScalars::empty(dimensions, count)?;
         let slot_count = array.values().len();
         let spline_slots = matches!(
             name,
@@ -3276,15 +3268,14 @@ fn parsed_named_surface_value(
                 | "tangts"
                 | "end_tangts"
         )
-        .then(|| named_spline_scalar_slots(family, name, &body[values_start..], slot_count, cache));
+        .then(|| named_spline_scalar_slots(family, name, remaining, slot_count, cache));
         if let Some(slots) = spline_slots {
             array.fill_tokens(slots)?;
         } else if name == "local_sys" {
-            let values =
-                sequential_named_local_system_slots(&body[values_start..], slot_count, cache)?;
+            let values = sequential_named_local_system_slots(remaining, slot_count, cache)?;
             array.fill_values(values)?;
         } else {
-            array.fill_values(scalar_slots(&body[values_start..], slot_count, cache))?;
+            array.fill_values(scalar_slots(remaining, slot_count, cache))?;
         }
         return Some(SurfaceNamedValue::ScalarArray(array));
     }
