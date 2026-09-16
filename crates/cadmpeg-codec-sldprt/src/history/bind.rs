@@ -388,7 +388,9 @@ pub(crate) fn derive_feature_outputs(
             .iter_mut()
             .filter(|feature| feature.native_ref.as_deref() == Some(native_ref))
         {
-            let body = cadmpeg_ir::ids::BodyId::mint(body.clone()).expect("identity grammar");
+            let Ok(body) = cadmpeg_ir::ids::BodyId::mint(body.clone()) else {
+                continue;
+            };
             if !feature.evaluation.outputs().contains(&body) {
                 let mut outputs = feature.evaluation.outputs().clone();
                 outputs.push(body);

@@ -2053,7 +2053,7 @@ fn try_decode_brep<'a>(
     }
     bind_opaque_geometry(
         &mut decoded,
-        &UnknownId::mint(streams[selected].section.native_id()).expect("identity grammar"),
+        &streams[selected].section.native_id(),
     );
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(&streams[selected].name()) {
@@ -2066,7 +2066,7 @@ fn try_decode_brep<'a>(
         alternate.qualify_ids(&site)?;
         bind_opaque_geometry(
             &mut alternate,
-            &UnknownId::mint(streams[first].section.native_id()).expect("identity grammar"),
+            &streams[first].section.native_id(),
         );
         if let Some(index) = configuration_index(&streams[first].name()) {
             configuration_bodies.push((
@@ -2165,11 +2165,10 @@ fn ensure_display_appearance(
     }) {
         return existing.id.clone();
     }
-    let id = AppearanceId::mint(format!(
-        "sldprt:appearance:displaylist#{section_ordinal}:{}",
-        definition.record_offset
-    ))
-    .expect("identity grammar");
+    let id = AppearanceId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "displaylist"),
+        cadmpeg_ir::ids::IdentityKey::from(section_ordinal).colon(definition.record_offset),
+    );
     crate::annotations::note(
         annotations,
         id.as_str().to_owned(),
@@ -2665,11 +2664,17 @@ fn build_geometry_ir(
             |site| format!("@{site}"),
         );
         let face_color = owned_face_color.value;
-        let id = AppearanceId::mint(format!(
-            "sldprt:appearance:entity53#{}{}",
-            face_color.color_attr, site
-        ))
-        .expect("identity grammar");
+        // The site qualifier is admitted once here and appended as a key tail,
+        // so the colour id and its binding below share one proof.
+        let site = cadmpeg_ir::ids::IdentityKeyTail::try_new(site).map_err(|error| {
+            CodecError::malformed(format_args!(
+                "SLDPRT colour site qualifier is not identity key text: {error}"
+            ))
+        })?;
+        let id = AppearanceId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "entity53"),
+            cadmpeg_ir::ids::IdentityKey::from(face_color.color_attr).with_tail(&site),
+        );
         crate::annotations::note(
             &mut annotations,
             id.as_str().to_owned(),
@@ -2699,21 +2704,27 @@ fn build_geometry_ir(
             });
         }
         if let Some(target) = face_color.target {
-            let binding_id = format!(
-                "sldprt:appearance:binding#face:{}:{}{}",
-                face_color.face_attr, face_color.color_attr, site
+            let binding_id = cadmpeg_ir::ids::AppearanceBindingId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "binding"),
+                cadmpeg_ir::identity_key!("face:")
+                    .then(face_color.face_attr)
+                    .colon(face_color.color_attr)
+                    .with_tail(&site),
             );
+            let target = cadmpeg_ir::ids::FaceId::mint(target).map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "SLDPRT colour target is not an identity: {error}"
+                ))
+            })?;
             if !ir
                 .model
                 .appearance_bindings
                 .iter()
-                .any(|binding| binding.id.as_str() == binding_id)
+                .any(|binding| binding.id == binding_id)
             {
                 ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: binding_id.try_into().expect("valid identity"),
-                    target: AppearanceTarget::Face(
-                        cadmpeg_ir::ids::FaceId::mint(target).expect("identity grammar"),
-                    ),
+                    id: binding_id,
+                    target: AppearanceTarget::Face(target),
                     appearance: id,
                     source_entity_id: Some(face_color.face_attr.to_string()),
                     object_type: Some("Face".into()),
@@ -2724,8 +2735,10 @@ fn build_geometry_ir(
         }
     }
     for (index, definition) in appearance_definitions.into_iter().enumerate() {
-        let id = AppearanceId::mint(format!("sldprt:appearance:material#{index}"))
-            .expect("identity grammar");
+        let id = AppearanceId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "material"),
+            index,
+        );
         crate::annotations::note(
             &mut annotations,
             id.as_str().to_owned(),
@@ -2813,13 +2826,12 @@ fn build_geometry_ir(
                     &mut annotations,
                 );
                 ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: format!(
-                        "sldprt:appearance:binding#display:{}:{}",
-                        display.ordinal(),
-                        table_index
-                    )
-                    .try_into()
-                    .expect("valid identity"),
+                    id: cadmpeg_ir::ids::AppearanceBindingId::compose(
+                        &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "binding"),
+                        cadmpeg_ir::identity_key!("display:")
+                            .then(display.ordinal())
+                            .colon(table_index),
+                    ),
                     target: AppearanceTarget::Tessellation(id.clone()),
                     appearance,
                     source_entity_id: Some(format!(
@@ -2839,17 +2851,20 @@ fn build_geometry_ir(
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
                 })?);
         }
-        let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
+        let display_id = UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),
+            display.ordinal(),
+        );
         crate::annotations::note(
             &mut annotations,
-            display_id.clone(),
+            display_id.as_str().to_owned(),
             display_stream,
             0,
             "displaylist_tessellation",
             Exactness::Unknown,
         );
         unknowns.push(UnknownRecord::retained(
-            UnknownId::mint(display_id).expect("identity grammar"),
+            display_id,
             0,
             display.payload().to_vec(),
             display_links,
@@ -2900,39 +2915,43 @@ fn build_geometry_ir(
     }
     let mut annotations = annotation_builder.build();
     for source_block in &scan.blocks {
-        if unknowns.iter().any(|record| {
-            record.id().as_str() == format!("sldprt:file:block#{}", source_block.offset)
-        }) {
+        let id = UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
+            source_block.offset,
+        );
+        if unknowns.iter().any(|record| record.id() == &id) {
             continue;
         }
-        let id = format!("sldprt:file:block#{}", source_block.offset);
         crate::annotations::note(
             &mut annotations,
-            id.clone(),
+            id.as_str().to_owned(),
             source_block.section.source_stream(),
             source_block.offset as u64,
             source_block.family.label(),
             Exactness::ByteExact,
         );
         unknowns.push(UnknownRecord::retained(
-            UnknownId::mint(id).expect("identity grammar"),
+            id,
             0,
             source_block.payload.clone(),
             Vec::new(),
         ));
     }
     for source_stream in &scan.compound_streams {
-        let id = format!("sldprt:file:compound-stream#{}", source_stream.directory_id);
+        let id = UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "file", "compound-stream"),
+            source_stream.directory_id,
+        );
         crate::annotations::note(
             &mut annotations,
-            id.clone(),
+            id.as_str().to_owned(),
             &source_stream.path,
             0,
             container::payload_family(&source_stream.payload).label(),
             Exactness::ByteExact,
         );
         unknowns.push(UnknownRecord::retained(
-            UnknownId::mint(id).expect("identity grammar"),
+            id,
             0,
             source_stream.payload.clone(),
             Vec::new(),
@@ -3313,15 +3332,10 @@ fn build_metadata_ir(
 
     if let Some(site) = container::select_active_parasolid_site(scan) {
         let name = site.name();
-        let (id, offset) = match site.section {
-            container::Section::Block(block) => (
-                format!("sldprt:file:block#{}", block.offset),
-                block.offset as u64,
-            ),
-            container::Section::Compound(stream) => (
-                format!("sldprt:file:compound-stream#{}", stream.directory_id),
-                0,
-            ),
+        let id = site.section.native_id();
+        let offset = match site.section {
+            container::Section::Block(block) => block.offset as u64,
+            container::Section::Compound(_) => 0,
         };
         attributes.insert(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),
@@ -3333,14 +3347,14 @@ fn build_metadata_ir(
         );
         crate::annotations::note(
             &mut annotations,
-            id.clone(),
+            id.as_str().to_owned(),
             site.source_stream(),
             0,
             "parasolid_stream",
             Exactness::Unknown,
         );
         unknowns.push(UnknownRecord::retained(
-            UnknownId::mint(id).expect("identity grammar"),
+            id,
             offset,
             site.payload.to_vec(),
             Vec::new(),
@@ -4239,10 +4253,10 @@ fn assign_configuration_bodies(
         ir.model
             .configurations
             .push(cadmpeg_ir::features::DesignConfiguration {
-                id: cadmpeg_ir::features::ConfigurationId::mint(format!(
-                    "sldprt:model:configuration#partition:{source_index}"
-                ))
-                .expect("identity grammar"),
+                id: cadmpeg_ir::features::ConfigurationId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "model", "configuration"),
+                    cadmpeg_ir::identity_key!("partition:").then(source_index),
+                ),
                 ordinal,
                 active: false,
                 source_index: Some(source_index),
@@ -4593,7 +4607,10 @@ fn preserve_source_image(
         Exactness::ByteExact,
     );
     unknowns.push(UnknownRecord::retained(
-        UnknownId::mint("sldprt:file:source-image#0").expect("identity grammar"),
+        UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
+            cadmpeg_ir::identity_key!("0"),
+        ),
         0,
         scan.source_image.to_vec(),
         Vec::new(),

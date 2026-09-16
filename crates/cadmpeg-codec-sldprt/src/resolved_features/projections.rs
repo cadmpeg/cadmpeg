@@ -454,8 +454,13 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .id
                 .rsplit_once('#')
                 .map_or(relation.id.as_str(), |(_, key)| key);
-            let id = ParameterId::mint(format!("sldprt:model:parameter#reference:{relation_key}"))
-                .expect("identity grammar");
+            let Ok(relation_key) = cadmpeg_ir::ids::IdentityKey::try_new(relation_key) else {
+                continue;
+            };
+            let id = ParameterId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
+                cadmpeg_ir::identity_key!("reference:").then(relation_key),
+            );
             if !parameter_ids.insert(id.clone()) {
                 continue;
             }

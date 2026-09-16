@@ -19,6 +19,11 @@ use std::io::Write;
 
 const EPS_SKETCH_WRITE_GEOMETRY: f64 = 1.0e-9;
 
+/// The namespace every identity a written sketch generates is composed under.
+fn sketch_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
+    cadmpeg_ir::identity_namespace!("generated", "sldprt", "sketch")
+}
+
 pub(super) fn sketch_brep(
     source: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
@@ -30,13 +35,21 @@ pub(super) fn sketch_brep(
         ))
     })?;
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let sketch_key = sketch.id.as_str().replace('%', "%25").replace('#', "%23");
-    let prefix = format!("generated:sldprt:sketch#{sketch_key}");
-    let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
-    let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
-    let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
-    let face_id = FaceId::mint(format!("{prefix}:face")).expect("identity grammar");
-    let surface_id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
+    // The sketch identity is escaped into one key here, once, and every
+    // generated id below is that key with a `:`-separated part appended.
+    let prefix = cadmpeg_ir::ids::IdentityKey::try_new(
+        sketch.id.as_str().replace('%', "%25").replace('#', "%23"),
+    )
+    .map_err(|error| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "SLDPRT sketch identity is not identity key text: {error}"
+        ))
+    })?;
+    let body_id = BodyId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("body")));
+    let region_id = RegionId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("region")));
+    let shell_id = ShellId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("shell")));
+    let face_id = FaceId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("face")));
+    let surface_id = SurfaceId::compose(&sketch_namespace(), prefix.clone().colon(cadmpeg_ir::identity_key!("surface")));
     let v_axis = normal.cross(u_axis);
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -105,8 +118,13 @@ pub(super) fn sketch_brep(
                 "source-less SLDPRT sketch profile {profile_index} is not a closed endpoint chain"
             )));
         }
-        let loop_id =
-            LoopId::mint(format!("{prefix}:loop:{profile_index}")).expect("identity grammar");
+        let loop_id = LoopId::compose(
+            &sketch_namespace(),
+            prefix
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("loop"))
+                .colon(profile_index),
+        );
         face_loops.push(loop_id.clone());
         let mut ring: Option<cadmpeg_ir::topology::LoopRing> = None;
         for (use_index, entity_use) in profile.iter().enumerate() {
@@ -155,12 +173,30 @@ pub(super) fn sketch_brep(
                     entity.id()
                 )));
             }
-            let curve_id = CurveId::mint(format!("{prefix}:curve:{profile_index}:{use_index}"))
-                .expect("identity grammar");
-            let edge_id = EdgeId::mint(format!("{prefix}:edge:{profile_index}:{use_index}"))
-                .expect("identity grammar");
-            let coedge_id = CoedgeId::mint(format!("{prefix}:coedge:{profile_index}:{use_index}"))
-                .expect("identity grammar");
+            let curve_id = CurveId::compose(
+                &sketch_namespace(),
+                prefix
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("curve"))
+                    .colon(profile_index)
+                    .colon(use_index),
+            );
+            let edge_id = EdgeId::compose(
+                &sketch_namespace(),
+                prefix
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("edge"))
+                    .colon(profile_index)
+                    .colon(use_index),
+            );
+            let coedge_id = CoedgeId::compose(
+                &sketch_namespace(),
+                prefix
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("coedge"))
+                    .colon(profile_index)
+                    .colon(use_index),
+            );
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: generated.curve,
@@ -210,9 +246,21 @@ pub(super) fn sketch_brep(
             continue;
         };
         let point_id =
-            PointId::mint(format!("{prefix}:free-point:{ordinal}")).expect("identity grammar");
+PointId::compose(
+            &sketch_namespace(),
+            prefix
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("free-point"))
+                .colon(ordinal),
+        );
         let vertex_id =
-            VertexId::mint(format!("{prefix}:free-vertex:{ordinal}")).expect("identity grammar");
+VertexId::compose(
+            &sketch_namespace(),
+            prefix
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("free-vertex"))
+                .colon(ordinal),
+        );
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: lift_point(position, origin, u_axis, v_axis),
@@ -224,11 +272,29 @@ pub(super) fn sketch_brep(
             tolerance: None,
         });
         let edge_id =
-            EdgeId::mint(format!("{prefix}:point-edge:{ordinal}")).expect("identity grammar");
+EdgeId::compose(
+            &sketch_namespace(),
+            prefix
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("point-edge"))
+                .colon(ordinal),
+        );
         let loop_id =
-            LoopId::mint(format!("{prefix}:point-loop:{ordinal}")).expect("identity grammar");
+LoopId::compose(
+            &sketch_namespace(),
+            prefix
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("point-loop"))
+                .colon(ordinal),
+        );
         let coedge_id =
-            CoedgeId::mint(format!("{prefix}:point-coedge:{ordinal}")).expect("identity grammar");
+CoedgeId::compose(
+            &sketch_namespace(),
+            prefix
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("point-coedge"))
+                .colon(ordinal),
+        );
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
@@ -432,7 +498,7 @@ fn generated_sketch_curve(
 fn sketch_vertex(
     ir: &mut cadmpeg_ir::CadIr,
     vertices: &mut HashMap<(u64, u64), VertexId>,
-    prefix: &str,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
     position: Point2,
     origin: Point3,
     u_axis: Vector3,
@@ -448,8 +514,20 @@ fn sketch_vertex(
     }
     let key = (position.u.to_bits(), position.v.to_bits());
     let ordinal = vertices.len();
-    let point_id = PointId::mint(format!("{prefix}:point:{ordinal}")).expect("identity grammar");
-    let vertex_id = VertexId::mint(format!("{prefix}:vertex:{ordinal}")).expect("identity grammar");
+    let point_id = PointId::compose(
+        &sketch_namespace(),
+        prefix
+            .clone()
+            .colon(cadmpeg_ir::identity_key!("point"))
+            .colon(ordinal),
+    );
+    let vertex_id = VertexId::compose(
+        &sketch_namespace(),
+        prefix
+            .clone()
+            .colon(cadmpeg_ir::identity_key!("vertex"))
+            .colon(ordinal),
+    );
     ir.model.points.push(Point {
         id: point_id.clone(),
         position: lift_point(position, origin, u_axis, v_axis),

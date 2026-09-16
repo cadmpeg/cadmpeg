@@ -19,7 +19,7 @@ pub(crate) fn attributes(
         scan_vectors(
             section,
             b"moBBoxCenterData_c",
-            "bounding_envelope",
+            &cadmpeg_ir::identity_component!("bounding_envelope"),
             4,
             4,
             true,
@@ -29,7 +29,7 @@ pub(crate) fn attributes(
         scan_vectors(
             section,
             b"moDefaultRefPlnData_c",
-            "default_reference_plane",
+            &cadmpeg_ir::identity_component!("default_reference_plane"),
             9,
             0,
             false,
@@ -80,7 +80,7 @@ fn scan_transformed_reference_plane(
         out.push(attribute(
             section,
             offset,
-            "transformed_reference_plane",
+            &cadmpeg_ir::identity_component!("transformed_reference_plane"),
             TOKEN,
             vec![
                 AttributeValue::Vector(values[..3].iter().map(|value| value * 1000.0).collect()),
@@ -136,7 +136,7 @@ fn scan_length_user_units(
         out.push(attribute(
             section,
             offset,
-            "source_linear_unit_name",
+            &cadmpeg_ir::identity_component!("source_linear_unit_name"),
             TOKEN,
             vec![AttributeValue::String(value)],
             annotations,
@@ -169,7 +169,7 @@ fn scan_units_xml(
         out.push(attribute(
             section,
             node.range().start,
-            "source_linear_unit_code",
+            &cadmpeg_ir::identity_component!("source_linear_unit_code"),
             b"SW_UnitsLinear",
             vec![AttributeValue::Integer(code)],
             annotations,
@@ -181,7 +181,7 @@ fn scan_units_xml(
 fn scan_vectors(
     section: Section<'_>,
     token: &[u8],
-    name: &str,
+    name: &cadmpeg_ir::ids::IdentityComponent,
     count: usize,
     skip: usize,
     all_lengths: bool,
@@ -236,7 +236,7 @@ fn scan_part(section: Section<'_>, out: &mut Vec<SourceAttribute>, annotations: 
         out.push(attribute(
             section,
             offset,
-            "part_record",
+            &cadmpeg_ir::identity_component!("part_record"),
             TOKEN,
             vec![
                 AttributeValue::Integer(id as i64),
@@ -273,7 +273,7 @@ fn scan_configuration_manager(
         out.push(attribute(
             section,
             offset,
-            "configuration_manager",
+            &cadmpeg_ir::identity_component!("configuration_manager"),
             TOKEN,
             vec![
                 AttributeValue::Integer(minor as i64),
@@ -288,28 +288,31 @@ fn scan_configuration_manager(
 fn attribute(
     section: Section<'_>,
     offset: usize,
-    name: &str,
+    name: &cadmpeg_ir::ids::IdentityComponent,
     token: &[u8],
     values: Vec<AttributeValue>,
     annotations: &mut Annotations,
 ) -> SourceAttribute {
-    let id = AttributeId::mint(format!(
-        "sldprt:metadata:{name}#{}:{offset}",
-        section.ordinal()
-    ))
-    .expect("identity grammar");
+    let id = AttributeId::compose(
+        &cadmpeg_ir::ids::IdentityNamespace::from_components(
+            &cadmpeg_ir::identity_component!("sldprt"),
+            &cadmpeg_ir::identity_component!("metadata"),
+            name,
+        ),
+        cadmpeg_ir::ids::IdentityKey::from(section.ordinal()).colon(offset),
+    );
     crate::annotations::note(
         annotations,
         id.as_str().to_owned(),
         section.source_stream(),
         offset as u64,
-        std::str::from_utf8(token).unwrap_or(name),
+        std::str::from_utf8(token).unwrap_or(name.as_str()),
         Exactness::ByteExact,
     );
     SourceAttribute {
         id,
         target: AttributeTarget::Document,
-        name: name.into(),
+        name: name.as_str().into(),
         values,
     }
 }

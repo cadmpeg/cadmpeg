@@ -263,12 +263,16 @@ impl<'a> Section<'a> {
         }
     }
 
-    pub(crate) fn native_id(self) -> String {
+    pub(crate) fn native_id(self) -> cadmpeg_ir::ids::UnknownId {
         match self {
-            Self::Block(block) => format!("sldprt:file:block#{}", block.offset),
-            Self::Compound(stream) => {
-                format!("sldprt:file:compound-stream#{}", stream.directory_id)
-            }
+            Self::Block(block) => cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
+                block.offset,
+            ),
+            Self::Compound(stream) => cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "file", "compound-stream"),
+                stream.directory_id,
+            ),
         }
     }
 

@@ -459,8 +459,18 @@ pub(crate) fn apply_to_parameters(
             .max()
             .map_or(0, |ordinal| ordinal.saturating_add(1));
         parameters.push(DesignParameter {
-            id: ParameterId::mint(format!("sldprt:model:parameter#pmi:{}", record.guid))
-                .expect("identity grammar"),
+            id: ParameterId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
+                cadmpeg_ir::identity_key!("pmi:").then(
+                    cadmpeg_ir::ids::IdentityKey::try_new(record.guid.clone()).map_err(
+                        |error| {
+                            cadmpeg_core::CodecError::malformed(format_args!(
+                                "SLDPRT PMI record guid is not identity key text: {error}"
+                            ))
+                        },
+                    )?,
+                ),
+            ),
             owner: Some(owner.id.clone()),
             ordinal,
             name: name.to_string(),
@@ -520,7 +530,7 @@ pub(crate) fn dimensions(
         collect_dimensions(
             source.payload(),
             source.source_stream(),
-            &source.native_id(),
+            source.native_id().as_str(),
             annotations,
             losses,
             &mut records,
