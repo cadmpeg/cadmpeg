@@ -1306,7 +1306,7 @@ fn schema_sidecar_and_json_envelope() {
     assert!(sidecar.status.success());
     let stdout = String::from_utf8_lossy(&sidecar.stdout);
     assert!(stdout.contains("fidelity\tSourceFidelity\tyes"), "{stdout}");
-    assert!(stdout.contains("ir_sha256\tstring\tyes"), "{stdout}");
+    assert!(stdout.contains("ir_sha256\tSha256Digest\tyes"), "{stdout}");
 
     let json = cadmpeg()
         .args(["query", "schema", "--json", "types", "model.faces"])
