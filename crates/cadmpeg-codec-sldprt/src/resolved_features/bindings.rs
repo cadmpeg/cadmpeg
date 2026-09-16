@@ -112,14 +112,18 @@ pub(crate) fn bind_pattern_inputs(
                 starts.get(start_index + 1).is_some_and(|(_, candidate)| {
                     candidate.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
                 });
-            let pattern_object_logical_end = || {
+            // The end of this pattern's object is the next object name's
+            // offset, or the end of the payload when this is the last one.
+            // Both are inside `native_payload`: an object name states the
+            // payload bytes at its own offset, and `SldprtNative::load`
+            // refuses a name whose offset the payload does not state.
+            let pattern_object_end = || {
                 let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);
                 starts
                     .get(next)
                     .and_then(|(offset, _)| usize::try_from(*offset).ok())
                     .unwrap_or(lane.native_payload.len())
             };
-            let pattern_object_end = || pattern_object_logical_end().min(lane.native_payload.len());
             if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
             {
@@ -295,7 +299,7 @@ pub(crate) fn bind_pattern_inputs(
                                 feature,
                                 lane,
                                 start,
-                                pattern_object_logical_end(),
+                                pattern_object_end(),
                             )
                         })
                     {
