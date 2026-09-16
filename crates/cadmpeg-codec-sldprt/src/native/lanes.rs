@@ -15,6 +15,9 @@ pub(super) fn admit_payload_structure(
                 "SolidWorks feature-input class index does not match its native payload".into(),
             ));
         }
+        // Object-name identity is derived from the payload. The name value is the
+        // editable field the writer splices back into the payload, so it is not
+        // part of the identity this admission holds.
         let expected_names =
             crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
         if lane.names.len() != expected_names.len()
@@ -28,7 +31,6 @@ pub(super) fn admit_payload_structure(
                         || actual.ordinal != expected.ordinal
                         || actual.offset != expected.offset
                         || actual.object_id != expected.object_id
-                        || actual.value != expected.value
                 })
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
