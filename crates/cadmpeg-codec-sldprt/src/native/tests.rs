@@ -679,3 +679,37 @@ fn native_load_refuses_every_object_name_value_edit_and_leaves_the_scalar_arena_
         );
     }
 }
+
+#[test]
+fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(document_with_named_scalars()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
+    let payload_length = original["feature_input_lanes"][0]["native_payload"]
+        .as_str()
+        .map(str::len)
+        .or_else(|| {
+            original["feature_input_lanes"][0]["native_payload"]
+                .as_array()
+                .map(Vec::len)
+        })
+        .expect("a lane states its payload");
+    assert!(payload_length > 0);
+
+    for forged in [u64::MAX, payload_length as u64 + 1] {
+        let mut edit = original.clone();
+        edit["feature_input_names"][0]["offset"] = serde_json::json!(forged);
+        let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(edit).unwrap();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("name structure does not match its native payload"),
+            "an object name offset outside the payload was admitted: {error}"
+        );
+    }
+}
