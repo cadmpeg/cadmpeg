@@ -1264,11 +1264,13 @@ pub(crate) fn coarse_model_surface_parameters(
     let [u_samples, v_samples] = coarse_surface_sample_counts(index, surface, 0);
     let mut best = None;
     let mut best_distance = f64::INFINITY;
-    for ui in 0..u_samples {
-        for vi in 0..v_samples {
+    for ui in 0..u_samples.get() {
+        for vi in 0..v_samples.get() {
             let parameters = Point2::new(
-                u_domain[0] + (u_domain[1] - u_domain[0]) * ui as f64 / (u_samples - 1) as f64,
-                v_domain[0] + (v_domain[1] - v_domain[0]) * vi as f64 / (v_samples - 1) as f64,
+                u_domain[0]
+                    + (u_domain[1] - u_domain[0]) * ui as f64 / u_samples.intervals() as f64,
+                v_domain[0]
+                    + (v_domain[1] - v_domain[0]) * vi as f64 / v_samples.intervals() as f64,
             );
             let Some(candidate) = model_surface_point_by_id_with_budget(
                 index,
@@ -1291,37 +1293,86 @@ pub(crate) fn coarse_model_surface_parameters(
     best
 }
 
+/// The number of samples the coarse parameter search takes along one surface
+/// direction.
+///
+/// `coarse_model_surface_parameters` walks the direction's domain in
+/// `get() - 1` equal intervals. One sample states no interval and two state
+/// only the two domain ends, so the floor is three: the two ends and the
+/// midpoint, two intervals.
+///
+/// The ceiling is nine, the count every route with no control-point count to
+/// read already takes -- the recursion-depth limit, a surface the index does
+/// not hold, a procedural construction the index does not hold, and every
+/// solved geometry that is not a NURBS surface. A direction with more control
+/// points than that is sampled at the density of a direction whose control
+/// points are unknown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CoarseSampleCount(usize);
+
+impl CoarseSampleCount {
+    /// Two intervals: both domain ends and the midpoint.
+    const FLOOR: usize = 3;
+
+    /// The count taken when the control-point count is unknown.
+    const CEILING: usize = 9;
+
+    /// The count for a direction carrying `control_points` control points: one
+    /// sample per control point and one more, held inside the floor and the
+    /// ceiling.
+    pub(crate) fn for_control_points(control_points: usize) -> Self {
+        match control_points {
+            0 | 1 => Self(Self::FLOOR),
+            2..=8 => Self(control_points + 1),
+            _ => Self(Self::CEILING),
+        }
+    }
+
+    /// The count taken where no control-point count is there to read.
+    pub(crate) const fn unknown() -> Self {
+        Self(Self::CEILING)
+    }
+
+    /// The number of samples, at least [`Self::FLOOR`].
+    pub(crate) fn get(self) -> usize {
+        self.0
+    }
+
+    /// The number of equal intervals the samples divide the domain into, at
+    /// least two.
+    pub(crate) fn intervals(self) -> usize {
+        self.0 - 1
+    }
+}
+
 fn coarse_surface_sample_counts(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     depth: usize,
-) -> [usize; 2] {
+) -> [CoarseSampleCount; 2] {
     if depth >= 32 {
-        return [9, 9];
+        return [CoarseSampleCount::unknown(); 2];
     }
     let Some(carrier) = index.surfaces(surface.as_str()) else {
-        return [9, 9];
+        return [CoarseSampleCount::unknown(); 2];
     };
     match &carrier.geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            let sample_count = |count: usize| count.saturating_add(1).clamp(3, 9);
-            [sample_count(nurbs.u_count()), sample_count(nurbs.v_count())]
-        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => [
+            CoarseSampleCount::for_control_points(nurbs.u_count()),
+            CoarseSampleCount::for_control_points(nurbs.v_count()),
+        ],
         SurfaceGeometry::Procedural { construction, .. } => {
             let Some(procedural) = index.procedural_surfaces(construction.as_str()) else {
-                return [9, 9];
+                return [CoarseSampleCount::unknown(); 2];
             };
             match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    let support = definition_payload.support();
-                    {
-                        coarse_surface_sample_counts(index, support, depth + 1)
-                    }
+                    coarse_surface_sample_counts(index, definition_payload.support(), depth + 1)
                 }
-                _ => [9, 9],
+                _ => [CoarseSampleCount::unknown(); 2],
             }
         }
-        SurfaceGeometry::Solved(_) => [9, 9],
+        SurfaceGeometry::Solved(_) => [CoarseSampleCount::unknown(); 2],
     }
 }
 
@@ -2315,6 +2366,51 @@ pub(crate) fn normalize_pcurve_parameters(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_coarse_sample_count_holds_the_floor_the_range_and_the_ceiling() {
+        // Below the floor: no control point and one control point both state
+        // the floor, because `control_points + 1` is one or two and neither
+        // states two intervals.
+        assert_eq!(CoarseSampleCount::for_control_points(0).get(), 3);
+        assert_eq!(CoarseSampleCount::for_control_points(1).get(), 3);
+
+        // In range: one sample per control point and one more.
+        for control_points in 2..=8usize {
+            assert_eq!(
+                CoarseSampleCount::for_control_points(control_points).get(),
+                control_points + 1
+            );
+        }
+
+        // Above the ceiling.
+        assert_eq!(CoarseSampleCount::for_control_points(9).get(), 9);
+        assert_eq!(CoarseSampleCount::for_control_points(usize::MAX).get(), 9);
+
+        // Every count divides its domain into at least two intervals, so the
+        // consumer's division has no zero divisor to state.
+        for control_points in [0, 1, 2, 5, 8, 9, usize::MAX] {
+            assert!(CoarseSampleCount::for_control_points(control_points).intervals() >= 2);
+        }
+        assert_eq!(CoarseSampleCount::unknown().get(), 9);
+    }
+
+    #[test]
+    fn a_surface_the_index_does_not_hold_and_the_depth_limit_both_sample_at_the_ceiling() {
+        let absent =
+            SurfaceId::mint("test:model:entity#synthetic:absent-surface").expect("identity grammar");
+        let ir = CadIr::empty();
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+
+        assert_eq!(
+            coarse_surface_sample_counts(&index, &absent, 0),
+            [CoarseSampleCount::unknown(); 2]
+        );
+        assert_eq!(
+            coarse_surface_sample_counts(&index, &absent, 32),
+            [CoarseSampleCount::unknown(); 2]
+        );
+    }
 
     #[test]
     fn pointwise_offset_rejection_preserves_the_adaptive_budget() {
