@@ -58,6 +58,8 @@ const TCODE_LINEAR_DIMENSION: u32 = 0x0020_0006;
 const TCODE_ANGULAR_DIMENSION: u32 = 0x0020_0007;
 const TCODE_RADIAL_DIMENSION: u32 = 0x0020_0008;
 const TCODE_ANNOTATION_LEADER: u32 = 0x0020_0005;
+/// Byte length of the CRC16 a V1 legacy wrapper shares with its final stuff child.
+const SHARED_CRC16_LEN: usize = 2;
 const TCODE_RHINOIO_OBJECT_NURBS_CURVE: u32 = 0x0002_0008;
 const TCODE_RHINOIO_OBJECT_NURBS_SURFACE: u32 = 0x0002_0009;
 const TCODE_RHINOIO_OBJECT_BREP: u32 = 0x0002_000b;
@@ -563,8 +565,25 @@ fn child_with_type(
     typecode: u32,
 ) -> Result<Option<crate::chunks::Chunk>, CodecError> {
     let mut offset = range.start;
-    // A V1 legacy wrapper and its final stuff child share the wrapper CRC16.
-    let end = range.end.saturating_add(2).min(data.len());
+    // A V1 legacy wrapper and its final stuff child share the wrapper CRC16, so
+    // the scan runs to two bytes past the wrapper body. `chunk_at` refuses a
+    // chunk that ends past its parent, so every admitted `range.end` is inside
+    // `data`; the subtraction states that and refuses the case it excludes
+    // rather than folding it onto the archive length. The bound below extends a
+    // fixed format constant over a proven buffer length; it shortens no extent
+    // the archive states.
+    let available = data.len().checked_sub(range.end).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "rhino V1 legacy wrapper body ends at {} in a {}-byte archive",
+            range.end,
+            data.len()
+        ))
+    })?;
+    let end = if available >= SHARED_CRC16_LEN {
+        range.end + SHARED_CRC16_LEN
+    } else {
+        data.len()
+    };
     while offset < end {
         let chunk = chunk_at(data, offset, end, ArchiveVersion::V1, false).map_err(malformed)?;
         if chunk.typecode == typecode {
