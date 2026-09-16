@@ -41,11 +41,7 @@
         "vertices": [],
         "view_presentations": []
       },
-      "native": {
-        "nx": {
-          "unknowns": []
-        }
-      },
+      "native": {},
       "source": {
         "attributes": {
           "deltas_streams": "0",

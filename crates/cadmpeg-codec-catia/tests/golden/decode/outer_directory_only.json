@@ -75,7 +75,11 @@
         "preview_images": [],
         "reference_signature_cohorts": [],
         "schema_configuration_row_chains": [],
-        "unknowns": [],
+        "unknowns": [
+          {
+            "id": "catia:payload:unknown#container"
+          }
+        ],
         "value_blocks": [],
         "value_schema_selections": [],
         "zero_entity_edge_strides": [],
@@ -507,6 +511,30 @@
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {
+        "catia:payload:unknown#container": {
+          "entity": "unknown",
+          "scope": "entity"
+        }
+      },
+      "provenance": {
+        "catia:payload:unknown#container": {
+          "offset": 0,
+          "stream": "catia:CATPart",
+          "tag": "catia:unknown"
+        }
+      }
+    },
+    "retained_records": {
+      "catia:payload:unknown#container": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAAAkAAAAf291dGVyIGxvZ2ljYWwgc3RyZWFtQ0FUSUFfVjUgQ0IwMDAxAAAAAAAAAAAAAAAAAAAAABRSAG8AbwB0AFMAdABvAHIAYQBnAGUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAAUAAAAFAAAAAAAAAAAQ0JfX0VORA==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:CATPart"
+      }
+    }
   }
 }

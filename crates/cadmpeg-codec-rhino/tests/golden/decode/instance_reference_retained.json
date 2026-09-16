@@ -43,6 +43,7 @@
     "native": {
       "rhino": {
         "annotation_settings": [],
+        "annotations": [],
         "applications": [],
         "construction_planes": [],
         "dimension_styles": [],
@@ -140,6 +141,7 @@
         "render_settings": [],
         "revisions": [],
         "setting_records": [],
+        "text_dots": [],
         "text_styles": [],
         "texture_mappings": [],
         "unknowns": [
@@ -205,18 +207,19 @@
       },
       {
         "code": {
-          "code": "container.instance-definition-degraded",
-          "kind": "decode_diagnostic",
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
           "namespace": "rhino",
-          "scope": "namespaced"
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
-        "message": "retained 1 malformed, ambiguous, or checksum-degraded instance-definition record(s); first: instance definition CRC mismatch at offset 179",
+        "message": "instance-definition record at offset 111: instance definition CRC mismatch at offset 179",
         "provenance": {
           "format": "rhino",
           "offset": 111,
           "tag": "INSTANCE_DEFINITION_TABLE"
         },
-        "severity": "warning"
+        "severity": "error"
       },
       {
         "code": {
@@ -232,6 +235,17 @@
           "tag": "OBJECT_RECORD/class=f9cfb638-b9d4-4340-87e3-c56e7865d96a/type=0x00001000"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "CRC mismatch at offset 111 for typecode 0x20008076: expected 0x0, got 0xf46c4ebe",
+        "severity": "error"
       },
       {
         "code": {
@@ -261,7 +275,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "f9cfb638-b9d4-4340-87e3-c56e7865d96a: instance retained: document units are unavailable",
+        "message": "f9cfb638-b9d4-4340-87e3-c56e7865d96a: instance retained: document has no physical millimetre binding (unavailable)",
         "severity": "warning"
       }
     ],
@@ -282,7 +296,7 @@
           "retention": "inline"
         },
         "offset": 534,
-        "stream": "source"
+        "stream": ""
       }
     }
   }

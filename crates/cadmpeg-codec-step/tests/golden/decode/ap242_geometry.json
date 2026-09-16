@@ -871,7 +871,7 @@
           "retention": "inline"
         },
         "offset": 2448,
-        "stream": "source"
+        "stream": ""
       },
       "step:data:styled_item#43": {
         "bytes": {
@@ -879,7 +879,7 @@
           "retention": "inline"
         },
         "offset": 2505,
-        "stream": "source"
+        "stream": ""
       }
     }
   }

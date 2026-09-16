@@ -86,11 +86,7 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "creo": {
-        "unknowns": []
-      }
-    },
+    "native": {},
     "source": {
       "attributes": {
         "expanded_section_byte_count": "0",

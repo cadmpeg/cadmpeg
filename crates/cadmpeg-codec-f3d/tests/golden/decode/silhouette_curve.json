@@ -576,7 +576,6 @@
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
         "transform_hints": [],
-        "unknowns": [],
         "vertex_ownerships": [
           {
             "id": "f3d:asm:vertex-ownership#13",

@@ -2943,7 +2943,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": ""
       }
     }
   }

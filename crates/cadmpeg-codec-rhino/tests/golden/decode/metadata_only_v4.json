@@ -43,6 +43,7 @@
     "native": {
       "rhino": {
         "annotation_settings": [],
+        "annotations": [],
         "applications": [],
         "construction_planes": [],
         "dimension_styles": [],
@@ -80,6 +81,7 @@
         "render_settings": [],
         "revisions": [],
         "setting_records": [],
+        "text_dots": [],
         "text_styles": [],
         "texture_mappings": [],
         "unknowns": [
@@ -186,7 +188,7 @@
           "namespace": "rhino",
           "scope": "namespaced"
         },
-        "message": "c3101a1d-f157-11d3-bfe7-0010830122f0: simple geometry retained because document units are unavailable",
+        "message": "c3101a1d-f157-11d3-bfe7-0010830122f0: simple geometry retained because the document has no physical millimetre binding (unavailable)",
         "severity": "warning"
       }
     ],
@@ -207,7 +209,7 @@
           "retention": "inline"
         },
         "offset": 87,
-        "stream": "source"
+        "stream": ""
       }
     }
   }

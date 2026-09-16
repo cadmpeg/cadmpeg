@@ -422,7 +422,7 @@
       "provenance": {
         "sldprt:appearance:entity53#900": {
           "offset": 26,
-          "stream": "partition body",
+          "stream": "Contents/Config-0-Partition",
           "tag": "00_53_color"
         },
         "sldprt:brep:body#0": {
@@ -555,7 +555,7 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "sldprt"
+        "stream": "source"
       }
     }
   }
