@@ -156,10 +156,11 @@ fn a_strip_span_past_the_vertex_lane_refuses_the_recognised_table() {
 }
 
 #[test]
-fn a_zero_face_header_carries_the_table_it_does_not_state() {
+fn a_zero_face_header_states_no_display_face_and_refuses_nothing() {
     // Two zero counts state no mesh, not an empty one. The primary writes that
-    // header over a face whose descriptor table still holds a mesh, and
-    // `body_display_list.sldprt` is one such document.
+    // header over a face whose descriptor table still holds a mesh --
+    // `body_display_list.sldprt` is one such document -- and the marker then
+    // states no display face rather than contradicting the bytes below it.
     let mut payload = Vec::new();
     class(&mut payload, "uoTempFaceTessData_c", &[]);
     payload.extend(0_u32.to_le_bytes());
@@ -171,7 +172,7 @@ fn a_zero_face_header_carries_the_table_it_does_not_state() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("a zero display-face header states no mesh and refuses nothing");
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert!(decoded.ir().model.tessellations.is_empty());
 }
 
 #[test]
