@@ -508,7 +508,10 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         native.arenas()["colors"][0].id(),
         "iges:presentation:color#D13"
     );
-    assert_eq!(native.arenas()["colors"][0].fields().unwrap()["red_percent"], 20.0);
+    assert_eq!(
+        native.arenas()["colors"][0].fields().unwrap()["red_percent"],
+        20.0
+    );
     assert_eq!(native.arenas()["display_attributes"].len(), 7);
     assert!(
         result.report().losses.is_empty(),
@@ -605,7 +608,10 @@ fn decode_types_template_and_visible_blank_line_fonts() {
         line_fonts[0].fields().unwrap()["template"],
         "iges:entity:directory#1"
     );
-    assert_eq!(line_fonts[1].fields().unwrap()["kind"], "visible_blank_pattern");
+    assert_eq!(
+        line_fonts[1].fields().unwrap()["kind"],
+        "visible_blank_pattern"
+    );
     assert_eq!(line_fonts[1].fields().unwrap()["segment_count"], 5);
     assert_eq!(
         line_fonts[1].fields().unwrap()["hexadecimal_pattern"]
@@ -790,7 +796,10 @@ fn decode_accepts_v5_relative_directory_line_weights() {
 
     let display = &result.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
     assert_eq!(display.fields().unwrap()["line_weight_number"], 3);
-    assert_eq!(display.fields().unwrap()["line_weight_mm"], serde_json::Value::Null);
+    assert_eq!(
+        display.fields().unwrap()["line_weight_mm"],
+        serde_json::Value::Null
+    );
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::LineWeightScaleUnavailable.kind()
             || loss.code == crate::loss::IgesLossCode::DisplayDataNotProjected.kind()
@@ -821,7 +830,10 @@ fn decode_distinguishes_absolute_and_incremental_text_templates() {
     assert_eq!(incremental.fields().unwrap()["mirror"], 1);
     assert_eq!(incremental.fields().unwrap()["vertical"], 1);
     assert_eq!(incremental.fields().unwrap()["origin_or_increment"][0], 2.0);
-    assert_eq!(incremental.fields().unwrap()["origin_or_increment"][1], -1.0);
+    assert_eq!(
+        incremental.fields().unwrap()["origin_or_increment"][1],
+        -1.0
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -843,8 +855,17 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
         .iter()
         .find(|font| font.fields().unwrap()["font_code"] == 101)
         .unwrap();
-    assert_eq!(base.fields().unwrap()["characters"].as_array().unwrap().len(), 2);
-    assert_eq!(base.fields().unwrap()["characters"][0]["character_code"], 65);
+    assert_eq!(
+        base.fields().unwrap()["characters"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        base.fields().unwrap()["characters"][0]["character_code"],
+        65
+    );
     assert_eq!(
         base.fields().unwrap()["characters"][0]["motions"]
             .as_array()
@@ -857,7 +878,10 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
         base.fields().unwrap()["characters"][0]["motions"][1]["pen_up"],
         false
     );
-    assert_eq!(base.fields().unwrap()["characters"][1]["declared_motion_count"], 0);
+    assert_eq!(
+        base.fields().unwrap()["characters"][1]["declared_motion_count"],
+        0
+    );
     let modification = fonts
         .iter()
         .find(|font| font.fields().unwrap()["font_code"] == 102)

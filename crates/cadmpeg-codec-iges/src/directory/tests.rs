@@ -122,7 +122,10 @@ fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
         let losses = &result.report().losses;
         assert!(native.arenas()["entities"].is_empty(), "{status}");
         assert_eq!(quarantined.len(), 1, "{status}");
-        assert_eq!(quarantined[0].fields().unwrap()["defect"], "status-number-invalid");
+        assert_eq!(
+            quarantined[0].fields().unwrap()["defect"],
+            "status-number-invalid"
+        );
         assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
         assert_eq!(
             losses[0].code,

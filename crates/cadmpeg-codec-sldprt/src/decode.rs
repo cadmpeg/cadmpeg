@@ -2051,10 +2051,7 @@ fn try_decode_brep<'a>(
     if active_stream.is_none() {
         decoded.qualify_ids(&selected_site_key)?;
     }
-    bind_opaque_geometry(
-        &mut decoded,
-        &streams[selected].section.native_id(),
-    );
+    bind_opaque_geometry(&mut decoded, &streams[selected].section.native_id());
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(&streams[selected].name()) {
         configuration_bodies.push((
@@ -2064,10 +2061,7 @@ fn try_decode_brep<'a>(
     }
     for (site, first, mut alternate) in decoded_sites {
         alternate.qualify_ids(&site)?;
-        bind_opaque_geometry(
-            &mut alternate,
-            &streams[first].section.native_id(),
-        );
+        bind_opaque_geometry(&mut alternate, &streams[first].section.native_id());
         if let Some(index) = configuration_index(&streams[first].name()) {
             configuration_bodies.push((
                 index,

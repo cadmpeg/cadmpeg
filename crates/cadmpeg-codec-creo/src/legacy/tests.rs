@@ -781,7 +781,9 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(strings.len(), 2);
     let principal = strings
         .iter()
-        .find(|record| record.field("name").unwrap() == Some(serde_json::json!("principal_sys_units")))
+        .find(|record| {
+            record.field("name").unwrap() == Some(serde_json::json!("principal_sys_units"))
+        })
         .expect("principal-unit string");
     let encoded = strings
         .iter()
@@ -886,7 +888,9 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         Some(serde_json::json!({"form": "scalar", "value": 2.0}))
     );
     assert_eq!(
-        native.arenas()["legacy_type_11_values"][0].field("payload").unwrap(),
+        native.arenas()["legacy_type_11_values"][0]
+            .field("payload")
+            .unwrap(),
         Some(serde_json::json!({
             "form": "array",
             "dimensions": [1],
@@ -894,7 +898,9 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         }))
     );
     assert_eq!(
-        native.arenas()["legacy_type_11_values"][0].field("parent").unwrap(),
+        native.arenas()["legacy_type_11_values"][0]
+            .field("parent")
+            .unwrap(),
         Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
     );
 }
@@ -934,19 +940,27 @@ fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
     assert_eq!(native.arenas()["legacy_type_3_values"].len(), 2);
     assert_eq!(native.arenas()["legacy_type_4_values"].len(), 1);
     assert_eq!(
-        native.arenas()["legacy_type_3_values"][0].field("payload").unwrap(),
+        native.arenas()["legacy_type_3_values"][0]
+            .field("payload")
+            .unwrap(),
         Some(serde_json::json!({"form": "null"}))
     );
     assert_eq!(
-        native.arenas()["legacy_type_3_values"][1].field("payload").unwrap(),
+        native.arenas()["legacy_type_3_values"][1]
+            .field("payload")
+            .unwrap(),
         Some(serde_json::json!({"form": "utf8", "text": "texture-name"}))
     );
     assert_eq!(
-        native.arenas()["legacy_type_4_values"][0].field("payload").unwrap(),
+        native.arenas()["legacy_type_4_values"][0]
+            .field("payload")
+            .unwrap(),
         Some(serde_json::json!({"form": "utf8", "text": "NULL"}))
     );
     assert_eq!(
-        native.arenas()["legacy_type_4_values"][0].field("parent").unwrap(),
+        native.arenas()["legacy_type_4_values"][0]
+            .field("parent")
+            .unwrap(),
         Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
     );
 }

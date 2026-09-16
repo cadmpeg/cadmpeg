@@ -1173,7 +1173,10 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
         );
         assert!(result.report().losses.is_empty());
         let native = result.ir().native.namespace("iges").unwrap();
-        assert_eq!(native.arenas()["entities"][0].fields().unwrap()["form"], form);
+        assert_eq!(
+            native.arenas()["entities"][0].fields().unwrap()["form"],
+            form
+        );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }

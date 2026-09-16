@@ -395,7 +395,10 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         .expect("Rhino native namespace")
         .arenas()["external_references"][0];
     assert_eq!(external.fields().unwrap()["full_path"], "/full/source.3dm");
-    assert_eq!(external.fields().unwrap()["relative_path"], "relative/source.3dm");
+    assert_eq!(
+        external.fields().unwrap()["relative_path"],
+        "relative/source.3dm"
+    );
     assert_eq!(external.fields().unwrap()["relative_path_preferred"], true);
     assert!(result.source_fidelity().retained_records().is_empty());
 

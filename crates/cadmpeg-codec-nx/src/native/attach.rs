@@ -132,7 +132,8 @@ fn attach_container_payloads(
         let Some(bytes) = scan.container.data.get(start..end) else {
             continue;
         };
-        let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("container-entry")).id(&cadmpeg_ir::identity_component!("opaque"), ordinal);
+        let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("container-entry"))
+            .id(&cadmpeg_ir::identity_component!("opaque"), ordinal);
         annotations
             .note(&id, &annotation_stream, offset)
             .tag(content.label());
@@ -161,8 +162,10 @@ fn attach_indexed_om_unknowns(
         match &section.store {
             crate::om::IndexedStore::Fixed { records } => {
                 for (record_index, record) in records.iter().enumerate() {
-                    let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("om-section-").then(section_index))
-                        .id(&cadmpeg_ir::identity_component!("record"), record_index);
+                    let id: UnknownId = IdScope::native(
+                        cadmpeg_ir::identity_component!("om-section-").then(section_index),
+                    )
+                    .id(&cadmpeg_ir::identity_component!("record"), record_index);
                     let offset = entry_offset + record.offset as u64;
                     annotations
                         .note(&id, &annotation_stream, offset)
@@ -182,8 +185,10 @@ fn attach_indexed_om_unknowns(
                 for (record_index, record) in
                     std::iter::once(control).chain(records.iter()).enumerate()
                 {
-                    let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("om-section-").then(section_index))
-                        .id(&cadmpeg_ir::identity_component!("block"), record_index);
+                    let id: UnknownId = IdScope::native(
+                        cadmpeg_ir::identity_component!("om-section-").then(section_index),
+                    )
+                    .id(&cadmpeg_ir::identity_component!("block"), record_index);
                     let offset = entry_offset + record.offset as u64;
                     annotations
                         .note(&id, &annotation_stream, offset)
@@ -251,13 +256,10 @@ pub(crate) fn attach(
             .note(&attribute.id, &annotation_stream, attribute.source_offset)
             .tag("Attribute");
         annotations.exactness(&attribute.id, Exactness::ByteExact);
-        let id: AttributeId = extended_id(
-            attribute.id.as_str(),
-            &cadmpeg_ir::identity_key!("neutral"),
-        )
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!("NX part attribute id is not an identity"))
-        })?;
+        let id: AttributeId =
+            extended_id(attribute.id.as_str(), &cadmpeg_ir::identity_key!("neutral")).ok_or_else(
+                || CodecError::malformed(format_args!("NX part attribute id is not an identity")),
+            )?;
         annotations
             .note(id.as_str(), &annotation_stream, attribute.source_offset)
             .tag("Attribute");
@@ -320,7 +322,9 @@ pub(crate) fn attach(
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     if !model.om.configurations.is_empty() {
         for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
-            let id: ConfigurationId = IdScope::native(cadmpeg_ir::identity_component!("arrangements")).id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
+            let id: ConfigurationId =
+                IdScope::native(cadmpeg_ir::identity_component!("arrangements"))
+                    .id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
             let active_attribute_use = model
                 .om
                 .configuration_attribute_uses
@@ -516,12 +520,15 @@ fn attach_rm_appearances(
             definition,
             &annotation_stream,
         )?;
-        let binding_id: AppearanceBindingId = IdScope::native(cadmpeg_ir::identity_component!("appearance-binding"))
-            .id(&cadmpeg_ir::identity_component!("rmfastload-color"), native_entity_key(&binding.source_id).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "NX RMFASTLOAD_COLOR_ASSIGNMENT source id is not identity key text"
-                ))
-            })?);
+        let binding_id: AppearanceBindingId =
+            IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
+                &cadmpeg_ir::identity_component!("rmfastload-color"),
+                native_entity_key(&binding.source_id).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "NX RMFASTLOAD_COLOR_ASSIGNMENT source id is not identity key text"
+                    ))
+                })?,
+            );
         annotations
             .note(
                 binding_id.as_str(),
@@ -577,12 +584,15 @@ fn attach_rm_appearances(
             definition,
             &annotation_stream,
         )?;
-        let binding_id: AppearanceBindingId = IdScope::native(cadmpeg_ir::identity_component!("appearance-binding"))
-            .id(&cadmpeg_ir::identity_component!("rmfastload-face-color"), native_entity_key(&binding.face_id).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "NX RMFASTLOAD_FACE_COLOR_ASSIGNMENT face id is not identity key text"
-                ))
-            })?);
+        let binding_id: AppearanceBindingId =
+            IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
+                &cadmpeg_ir::identity_component!("rmfastload-face-color"),
+                native_entity_key(&binding.face_id).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "NX RMFASTLOAD_FACE_COLOR_ASSIGNMENT face id is not identity key text"
+                    ))
+                })?,
+            );
         annotations
             .note(
                 binding_id.as_str(),
@@ -626,12 +636,14 @@ fn ensure_rm_color_appearance(
     if let Some(id) = appearances.get(&definition.id) {
         return Ok(id.clone());
     }
-    let id: AppearanceId =
-        IdScope::native(cadmpeg_ir::identity_component!("appearance")).id(&cadmpeg_ir::identity_component!("rmfastload-color"), native_entity_key(&definition.id).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "NX RMFASTLOAD_COLOR_APPEARANCE definition id is not identity key text"
-                ))
-            })?);
+    let id: AppearanceId = IdScope::native(cadmpeg_ir::identity_component!("appearance")).id(
+        &cadmpeg_ir::identity_component!("rmfastload-color"),
+        native_entity_key(&definition.id).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "NX RMFASTLOAD_COLOR_APPEARANCE definition id is not identity key text"
+            ))
+        })?,
+    );
     annotations
         .note(id.as_str(), annotation_stream, definition.source_offset)
         .tag("RMFASTLOAD_COLOR_APPEARANCE");
@@ -872,7 +884,8 @@ fn attach_jpeg_preview_assets(
         else {
             continue;
         };
-        let native_ref: UnknownId = IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
+        let native_ref: UnknownId =
+            IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations
                 .note(native_ref.as_str(), &stream, source_offset)
@@ -1953,10 +1966,8 @@ fn attach_feature_operations(
                 .id
                 .strip_prefix("nx:feature-history:operation-label#")
                 .unwrap_or(label.id.as_str());
-            let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!(
-                "feature-history"
-            ))
-            .try_id(&cadmpeg_ir::identity_component!("feature"), key)?;
+            let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+                .try_id(&cadmpeg_ir::identity_component!("feature"), key)?;
             Some((label.id.as_str(), id))
         })
         .collect::<BTreeMap<_, _>>();
@@ -4044,7 +4055,8 @@ fn attach_sketch_graph(
         .id
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
-    let sketch_id: SketchId = IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id(&cadmpeg_ir::identity_component!("sketch"), operation_key)?;
+    let sketch_id: SketchId = IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+        .try_id(&cadmpeg_ir::identity_component!("sketch"), operation_key)?;
     let operation_fixed_points = sources
         .fixed_points
         .iter()
@@ -4085,7 +4097,8 @@ fn attach_sketch_graph(
             entities.push((
                 pair.source_offset,
                 SketchEntity::new(
-                    IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id::<SketchEntityId>(
+                    IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+                        .try_id::<SketchEntityId>(
                         &cadmpeg_ir::identity_component!("sketch-entity"),
                         format!("coordinate-pair-{pair_key}"),
                     )?,
@@ -4256,7 +4269,8 @@ fn attach_sketch_graph(
         entities.push((
             source_offset,
             SketchEntity::new(
-                IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id::<SketchEntityId>(
+                IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+                    .try_id::<SketchEntityId>(
                     &cadmpeg_ir::identity_component!("sketch-entity"),
                     format!("point-{entity_key}"),
                 )?,
@@ -4360,7 +4374,8 @@ fn native_fixed_point_entities(
         entities.push((
             point.source_offset,
             SketchEntity::new(
-                IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id::<SketchEntityId>(
+                IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+                    .try_id::<SketchEntityId>(
                     &cadmpeg_ir::identity_component!("sketch-entity"),
                     format!("fixed-point-{point_key}"),
                 )?,
@@ -4799,7 +4814,9 @@ fn parasolid_topology_attribute_contexts<'a>(
                 .map(|entity| ParasolidTopologyAttributeContext {
                     reference,
                     entity,
-                    id_suffix: multiple_entities.then(|| entity_suffix_key(entity)).flatten(),
+                    id_suffix: multiple_entities
+                        .then(|| entity_suffix_key(entity))
+                        .flatten(),
                     target: target.clone(),
                 })
                 .collect::<Vec<_>>()

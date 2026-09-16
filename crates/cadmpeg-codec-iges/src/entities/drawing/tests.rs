@@ -606,7 +606,10 @@ fn decode_types_orthographic_and_perspective_views() {
         .unwrap();
     let views = &result.ir().native.namespace("iges").unwrap().arenas()["views"];
     assert_eq!(views.len(), 3);
-    assert_eq!(views[0].fields().unwrap()["projection"], "orthographic_parallel");
+    assert_eq!(
+        views[0].fields().unwrap()["projection"],
+        "orthographic_parallel"
+    );
     assert!(views[0].fields().unwrap()["scale"].is_null());
     assert_eq!(
         views[0].fields().unwrap()["clipping_planes"]
@@ -710,9 +713,15 @@ fn decode_types_view_visibility_and_display_overrides() {
     );
     assert!(visibility[0].fields().unwrap()["displays"][0]["line_font"].is_null());
     assert_eq!(visibility[1].fields().unwrap()["form"], 4);
-    assert_eq!(visibility[1].fields().unwrap()["displays"][0]["line_font"], 1);
+    assert_eq!(
+        visibility[1].fields().unwrap()["displays"][0]["line_font"],
+        1
+    );
     assert_eq!(visibility[1].fields().unwrap()["displays"][0]["color"], 2);
-    assert_eq!(visibility[1].fields().unwrap()["displays"][0]["line_weight"], 3);
+    assert_eq!(
+        visibility[1].fields().unwrap()["displays"][0]["line_weight"],
+        3
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -822,7 +831,10 @@ fn decode_view_visibility_entity_count_requirement_follows_dialect() {
     let visibility = &v5.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
     assert_eq!(visibility.len(), 1);
     assert_eq!(
-        visibility[0].fields().unwrap()["displays"].as_array().unwrap().len(),
+        visibility[0].fields().unwrap()["displays"]
+            .as_array()
+            .unwrap()
+            .len(),
         1
     );
     assert!(visibility[0].fields().unwrap()["entities"]
@@ -841,12 +853,27 @@ fn decode_preserves_ordered_segmented_view_display() {
         .unwrap();
     let segmented =
         &result.ir().native.namespace("iges").unwrap().arenas()["segmented_visibility"][0];
-    assert_eq!(segmented.fields().unwrap()["blocks"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        segmented.fields().unwrap()["blocks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert_eq!(segmented.fields().unwrap()["blocks"][0]["breakpoint"], 0.5);
-    assert_eq!(segmented.fields().unwrap()["blocks"][0]["color"]["kind"], "omitted");
+    assert_eq!(
+        segmented.fields().unwrap()["blocks"][0]["color"]["kind"],
+        "omitted"
+    );
     assert_eq!(segmented.fields().unwrap()["blocks"][1]["breakpoint"], 1.0);
-    assert_eq!(segmented.fields().unwrap()["blocks"][1]["color"]["value"], 2);
-    assert_eq!(segmented.fields().unwrap()["blocks"][1]["line_font"]["value"], 3);
+    assert_eq!(
+        segmented.fields().unwrap()["blocks"][1]["color"]["value"],
+        2
+    );
+    assert_eq!(
+        segmented.fields().unwrap()["blocks"][1]["line_font"]["value"],
+        3
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -925,7 +952,10 @@ fn decode_types_view_list_with_required_back_pointers() {
         .find(|value| value.fields().unwrap()["kind"] == "view_list")
         .unwrap();
     assert_eq!(view_list.fields().unwrap()["declared_visible_count"], 1);
-    assert_eq!(view_list.fields().unwrap()["view"], "iges:entity:directory#1");
+    assert_eq!(
+        view_list.fields().unwrap()["view"],
+        "iges:entity:directory#1"
+    );
     assert_eq!(
         view_list.fields().unwrap()["visible_entities"][0],
         "iges:entity:directory#5"
@@ -962,7 +992,10 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
         .find(|value| value.fields().unwrap()["kind"] == "view_list")
         .unwrap();
     assert_eq!(view_list.fields().unwrap()["declared_visible_count"], 1);
-    assert_eq!(view_list.fields().unwrap()["view"], "iges:entity:directory#1");
+    assert_eq!(
+        view_list.fields().unwrap()["view"],
+        "iges:entity:directory#1"
+    );
     assert_eq!(
         view_list.fields().unwrap()["visible_entities"][0],
         "iges:entity:directory#5"

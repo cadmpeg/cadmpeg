@@ -97,7 +97,10 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(tables[0].fields().unwrap()["entry_ids"][0], 7);
     assert_eq!(tables[0].fields().unwrap()["entry_ids"][1], 9);
     assert_eq!(tables[0].fields().unwrap()["entries"][0]["class_id"], 200);
-    assert_eq!(tables[0].fields().unwrap()["entries"][0]["source_entity_id"], 1);
+    assert_eq!(
+        tables[0].fields().unwrap()["entries"][0]["source_entity_id"],
+        1
+    );
     assert_eq!(tables[0].fields().unwrap()["entries"][1]["prefixed"], true);
     assert_annotation(
         &result.source_fidelity().annotations,
@@ -444,7 +447,10 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     assert_eq!(fields[0].fields().unwrap()["choice_label"], "blend_choice");
     assert_eq!(fields[0].fields().unwrap()["name"], "values");
     assert_eq!(fields[0].fields().unwrap()["value"]["kind"], "scalar_array");
-    assert_eq!(fields[0].fields().unwrap()["value"]["decoded_values"][2], 3.0);
+    assert_eq!(
+        fields[0].fields().unwrap()["value"]["decoded_values"][2],
+        3.0
+    );
 }
 
 #[test]
@@ -534,12 +540,18 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     assert_eq!(records[0].fields().unwrap()["ordinal"], 0);
     assert_eq!(records[0].fields().unwrap()["loop_id"], 42);
     assert_eq!(records[0].fields().unwrap()["field_bytes"][0][0], 1);
-    assert_eq!(records[0].fields().unwrap()["boundary"], "reference_continue");
+    assert_eq!(
+        records[0].fields().unwrap()["boundary"],
+        "reference_continue"
+    );
     assert_eq!(records[0].fields().unwrap()["boundary_reference"], 96);
     assert_eq!(records[1].fields().unwrap()["ordinal"], 1);
     assert_eq!(records[1].fields().unwrap()["loop_id"], 43);
     assert_eq!(
-        records[1].fields().unwrap()["field_bytes"].as_array().unwrap().len(),
+        records[1].fields().unwrap()["field_bytes"]
+            .as_array()
+            .unwrap()
+            .len(),
         5
     );
     assert_eq!(records[1].fields().unwrap()["boundary"], "named_record");
@@ -880,7 +892,10 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         configuration[0].fields().unwrap()["pointer_kind"],
         "entity_reference"
     );
-    assert_eq!(configuration[0].fields().unwrap()["table_entity_id"], 0x0123);
+    assert_eq!(
+        configuration[0].fields().unwrap()["table_entity_id"],
+        0x0123
+    );
     assert_eq!(
         decoded.ir().source.as_ref().unwrap().attributes["configuration_state"],
         "driver_table_unresolved"

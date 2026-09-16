@@ -134,13 +134,12 @@ impl Brep {
         // The site qualifier is admitted once, here, as a key tail. Appending
         // an admitted tail to an admitted key cannot leave the grammar, so no
         // identity below is rebuilt from text.
-        let tail = cadmpeg_ir::ids::IdentityKeyTail::try_new(format!("@{site}")).map_err(
-            |error| {
+        let tail =
+            cadmpeg_ir::ids::IdentityKeyTail::try_new(format!("@{site}")).map_err(|error| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT site qualifier is not identity key text: {error}"
                 ))
-            },
-        )?;
+            })?;
         let qualify = |value: &str| {
             value.split_once('#').map_or_else(
                 || value.to_owned(),
@@ -186,9 +185,8 @@ impl Brep {
             face.id = qualified(&face.id, &tail);
             face.shell = qualified(&face.shell, &tail);
             face.surface = qualified(&face.surface, &tail);
-            let qualify_loop = |id: &cadmpeg_ir::ids::LoopId| -> cadmpeg_ir::ids::LoopId {
-                qualified(id, &tail)
-            };
+            let qualify_loop =
+                |id: &cadmpeg_ir::ids::LoopId| -> cadmpeg_ir::ids::LoopId { qualified(id, &tail) };
             face.loops = match &face.loops {
                 cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
                     cadmpeg_ir::topology::FaceLoops::unspecified(
@@ -247,9 +245,7 @@ impl Brep {
         }
         for edge in &mut self.edges {
             edge.id = qualified(&edge.id, &tail);
-            edge.map_curve(|curve| {
-                qualified(curve, &tail)
-            });
+            edge.map_curve(|curve| qualified(curve, &tail));
             edge.start = qualified(&edge.start, &tail);
             edge.end = qualified(&edge.end, &tail);
         }
@@ -291,9 +287,7 @@ impl Brep {
                     definition_payload.set_spine(spine);
                 }
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    definition_payload.set_support(
-                        qualified(definition_payload.support(), &tail),
-                    );
+                    definition_payload.set_support(qualified(definition_payload.support(), &tail));
                 }
                 _ => {}
             });
@@ -513,11 +507,13 @@ fn pcurve_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
 
 /// The component split of one native shell: `<shell>.component-<ordinal>`.
 fn shell_component(shell: &ShellId, component: usize) -> ShellId {
-    ShellId::from(cadmpeg_ir::ids::Identity::from(shell.clone()).with_key_tail(
-        &cadmpeg_ir::ids::IdentityKeyTail::empty()
-            .then(cadmpeg_ir::identity_key!(".component-"))
-            .then(component),
-    ))
+    ShellId::from(
+        cadmpeg_ir::ids::Identity::from(shell.clone()).with_key_tail(
+            &cadmpeg_ir::ids::IdentityKeyTail::empty()
+                .then(cadmpeg_ir::identity_key!(".component-"))
+                .then(component),
+        ),
+    )
 }
 
 /// Append the site qualifier to one typed identity's key.
@@ -532,13 +528,22 @@ where
 }
 
 fn id_face(a: u16) -> FaceId {
-    FaceId::compose(&cadmpeg_ir::identity_namespace!("sldprt", "brep", "face"), a)
+    FaceId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "face"),
+        a,
+    )
 }
 fn id_surf(a: u16) -> SurfaceId {
-    SurfaceId::compose(&cadmpeg_ir::identity_namespace!("sldprt", "brep", "surf"), a)
+    SurfaceId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "surf"),
+        a,
+    )
 }
 fn id_loop(a: u16) -> LoopId {
-    LoopId::compose(&cadmpeg_ir::identity_namespace!("sldprt", "brep", "loop"), a)
+    LoopId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "loop"),
+        a,
+    )
 }
 fn id_coedge(a: u16) -> CoedgeId {
     CoedgeId::compose(
@@ -547,7 +552,10 @@ fn id_coedge(a: u16) -> CoedgeId {
     )
 }
 fn id_edge(a: u16) -> EdgeId {
-    EdgeId::compose(&cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"), a)
+    EdgeId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"),
+        a,
+    )
 }
 fn id_curve(a: u16) -> CurveId {
     CurveId::compose(
@@ -1538,15 +1546,9 @@ fn decode_graph(
                 point: point_id,
                 tolerance: None,
             });
-            (
-                vertex_id.clone(),
-                vertex_id,
-            )
+            (vertex_id.clone(), vertex_id)
         } else {
-            (
-                id_vertex(start_v),
-                id_vertex(end_v),
-            )
+            (id_vertex(start_v), id_vertex(end_v))
         };
         if resolved_endpoints {
             let position = |vertex_use: u16| {
@@ -1760,9 +1762,7 @@ fn decode_graph(
                     id: id_coedge(ce_attr),
                     owner_loop: id_loop(*loop_attr),
                     edge: id_edge(edge_attr),
-                    radial_next: partner.unwrap_or_else(|| {
-                        id_coedge(ce_attr)
-                    }),
+                    radial_next: partner.unwrap_or_else(|| id_coedge(ce_attr)),
                     sense,
                     use_curve: None,
                     pcurves,
@@ -1777,10 +1777,7 @@ fn decode_graph(
             if !kept_loops.contains(loop_attr) {
                 continue;
             }
-            let coedges: Vec<CoedgeId> = ring
-                .iter()
-                .map(|a| id_coedge(*a))
-                .collect();
+            let coedges: Vec<CoedgeId> = ring.iter().map(|a| id_coedge(*a)).collect();
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations
                 .note(id_loop(*loop_attr), &source_stream, off as u64)
@@ -1985,11 +1982,7 @@ fn decode_graph(
                 });
                 if let Some((offset, support)) = resolved_offset {
                     let construction = ProceduralSurfaceId::compose(
-                        &cadmpeg_ir::identity_namespace!(
-                            "sldprt",
-                            "brep",
-                            "offset-construction"
-                        ),
+                        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "offset-construction"),
                         f.bridge_attr,
                     );
                     emit_offset_surface(
@@ -2266,8 +2259,7 @@ fn decode_graph(
                             .collect::<HashSet<_>>();
                         for face in &mut out.faces {
                             if face_ids.contains(face.id.as_str()) {
-                                face.shell =
-                                    shell_id.clone();
+                                face.shell = shell_id.clone();
                             }
                         }
                         out.shells.push(

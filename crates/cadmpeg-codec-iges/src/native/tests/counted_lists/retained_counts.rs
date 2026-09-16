@@ -201,7 +201,10 @@ fn decode_overdeclared_line_font_pattern_reserves_the_hexadecimal_suffix() {
     let font = &native.arenas()["line_fonts"][0];
 
     assert_eq!(font.fields().unwrap()["segment_count"], 3);
-    assert!(font.fields().unwrap()["lengths"].as_array().unwrap().is_empty());
+    assert!(font.fields().unwrap()["lengths"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(font.fields().unwrap()["hexadecimal_pattern"].is_null());
 }
 
@@ -215,7 +218,10 @@ fn decode_overdeclared_line_font_pattern_claims_no_length_as_its_suffix() {
     let font = &native.arenas()["line_fonts"][0];
 
     assert_eq!(font.fields().unwrap()["segment_count"], 5);
-    assert!(font.fields().unwrap()["lengths"].as_array().unwrap().is_empty());
+    assert!(font.fields().unwrap()["lengths"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(font.fields().unwrap()["hexadecimal_pattern"].is_null());
 }
 
@@ -370,7 +376,10 @@ fn decode_overdeclared_property_lists_charge_the_loss_and_read_no_value() {
         let native = result.ir().native.namespace("iges").unwrap();
         let property = &native.arenas()["properties"][0];
         assert!(
-            property.fields().unwrap()[list].as_array().unwrap().is_empty(),
+            property.fields().unwrap()[list]
+                .as_array()
+                .unwrap()
+                .is_empty(),
             "form {form} {list} must not be read"
         );
     }
@@ -416,7 +425,8 @@ fn decode_overdeclared_flag_note_and_general_label_charge_the_loss_and_read_no_l
         let annotation = native.arenas()["annotations"]
             .iter()
             .find(|record| {
-                record.fields().unwrap()["source_entity"] == format!("iges:entity:directory#{sequence}")
+                record.fields().unwrap()["source_entity"]
+                    == format!("iges:entity:directory#{sequence}")
             })
             .expect("annotation");
         assert!(

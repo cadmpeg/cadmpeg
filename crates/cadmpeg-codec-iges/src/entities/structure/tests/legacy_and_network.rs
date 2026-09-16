@@ -13,7 +13,10 @@ fn decode_resolves_legacy_text_node_font_pointer() {
         .find(|value| value.fields().unwrap()["kind"] == "legacy_text_node")
         .unwrap();
     assert_eq!(text.fields().unwrap()["font_characteristic"], -1);
-    assert_eq!(text.fields().unwrap()["font_definition"], "iges:entity:directory#1");
+    assert_eq!(
+        text.fields().unwrap()["font_definition"],
+        "iges:entity:directory#1"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -38,22 +41,37 @@ fn decode_preserves_recalculable_dimension_geometry_points() {
         "iges:entity:directory#11"
     );
     assert_eq!(associativity.fields().unwrap()["orientation_flag"], 4);
-    assert_eq!(associativity.fields().unwrap()["declared_geometry_count"], 2);
     assert_eq!(
-        associativity.fields().unwrap()["geometry"].as_array().unwrap().len(),
+        associativity.fields().unwrap()["declared_geometry_count"],
+        2
+    );
+    assert_eq!(
+        associativity.fields().unwrap()["geometry"]
+            .as_array()
+            .unwrap()
+            .len(),
         2
     );
     assert_eq!(
         associativity.fields().unwrap()["geometry"][0]["geometry"],
         "iges:entity:directory#7"
     );
-    assert_eq!(associativity.fields().unwrap()["geometry"][0]["location_flag"], 0);
+    assert_eq!(
+        associativity.fields().unwrap()["geometry"][0]["location_flag"],
+        0
+    );
     assert_eq!(
         associativity.fields().unwrap()["geometry"][1]["geometry"],
         "iges:entity:directory#9"
     );
-    assert_eq!(associativity.fields().unwrap()["geometry"][1]["location_flag"], 1);
-    assert_eq!(associativity.fields().unwrap()["geometry"][1]["point"][0], 4.0);
+    assert_eq!(
+        associativity.fields().unwrap()["geometry"][1]["location_flag"],
+        1
+    );
+    assert_eq!(
+        associativity.fields().unwrap()["geometry"][1]["point"][0],
+        4.0
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -88,7 +106,10 @@ fn decode_types_fundamental_units_and_property_owner() {
         )
         .unwrap();
     let units = &result.ir().native.namespace("iges").unwrap().arenas()["units_data"][0];
-    assert_eq!(units.fields().unwrap()["units"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        units.fields().unwrap()["units"].as_array().unwrap().len(),
+        3
+    );
     assert_eq!(units.fields().unwrap()["units"][0]["unit_type"][0], 76);
     assert_eq!(
         units.fields().unwrap()["units"][0]["unit_value"],
@@ -99,7 +120,10 @@ fn decode_types_fundamental_units_and_property_owner() {
         units.fields().unwrap()["units"][2]["scale_factor"],
         0.017_453_292_519_943_295
     );
-    assert_eq!(units.fields().unwrap()["owners"][0], "iges:entity:directory#1");
+    assert_eq!(
+        units.fields().unwrap()["owners"][0],
+        "iges:entity:directory#1"
+    );
     let owner = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
     assert_eq!(
         owner.fields().unwrap()["property_links"][0],
@@ -251,7 +275,10 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         .find(|definition| definition.id() == "iges:product:subfigure-definition#D7")
         .unwrap();
     assert_eq!(parent.fields().unwrap()["depth"], 1);
-    assert_eq!(parent.fields().unwrap()["members"][0], "iges:entity:directory#5");
+    assert_eq!(
+        parent.fields().unwrap()["members"][0],
+        "iges:entity:directory#5"
+    );
     let instances = &native.arenas()["subfigure_instances"];
     assert_eq!(instances.len(), 2);
     let child = instances
@@ -289,7 +316,10 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         .unwrap();
     assert_eq!(leaf.fields().unwrap()["root"], false);
     assert_eq!(leaf.fields().unwrap()["member"], "iges:entity:directory#1");
-    assert_eq!(leaf.fields().unwrap()["neutral_links"][0], "iges:model:curve#D1");
+    assert_eq!(
+        leaf.fields().unwrap()["neutral_links"][0],
+        "iges:model:curve#D1"
+    );
     assert_eq!(
         leaf.fields().unwrap()["world_transform"],
         nested.fields().unwrap()["world_transform"]
@@ -546,7 +576,10 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
-    assert_eq!(expansion.fields().unwrap()["issues"][0], "malformed_placement");
+    assert_eq!(
+        expansion.fields().unwrap()["issues"][0],
+        "malformed_placement"
+    );
     let loss = result
         .report()
         .losses
@@ -665,7 +698,10 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
-    assert_eq!(expansion.fields().unwrap()["issues"][0], "malformed_definition");
+    assert_eq!(
+        expansion.fields().unwrap()["issues"][0],
+        "malformed_definition"
+    );
     let losses = result
         .report()
         .losses
@@ -687,12 +723,16 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
         .iter()
         .find(|entity| entity.id() == "iges:entity:directory#7")
         .unwrap();
-    assert_eq!(dangling.fields().unwrap()["references"][0]["resolution"], "dangling");
+    assert_eq!(
+        dangling.fields().unwrap()["references"][0]["resolution"],
+        "dangling"
+    );
     assert!(native.arenas()["subfigure_definitions"]
         .iter()
         .find(|definition| definition.id() == "iges:product:subfigure-definition#D7")
         .unwrap()
-        .fields().unwrap()["members"][0]
+        .fields()
+        .unwrap()["members"][0]
         .is_null());
 }
 
@@ -711,7 +751,10 @@ fn decode_does_not_infer_roots_from_malformed_network_definition_members() {
     assert!(native.arenas()["product_occurrences"].is_empty());
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
-    assert_eq!(expansion.fields().unwrap()["issues"][0], "malformed_definition");
+    assert_eq!(
+        expansion.fields().unwrap()["issues"][0],
+        "malformed_definition"
+    );
     let loss = result
         .report()
         .losses
@@ -895,7 +938,10 @@ fn container_only_preserves_raw_occurrence_expansion_without_structure_admission
     let expansion = &native.arenas()["product_occurrence_expansion"][0];
     assert_eq!(expansion.fields().unwrap()["emitted"], 3);
     assert_eq!(expansion.fields().unwrap()["truncated"], false);
-    assert!(expansion.fields().unwrap()["issues"].as_array().unwrap().is_empty());
+    assert!(expansion.fields().unwrap()["issues"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(!result
         .report()
         .losses
@@ -915,7 +961,10 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
     let definition = &native.arenas()["network_definitions"][0];
     assert_eq!(definition.id(), "iges:product:network-definition#D1");
     assert_eq!(definition.fields().unwrap()["type_flag"], 1);
-    assert_eq!(definition.fields().unwrap()["declared_connect_point_count"], 2);
+    assert_eq!(
+        definition.fields().unwrap()["declared_connect_point_count"],
+        2
+    );
     assert_eq!(
         definition.fields().unwrap()["connect_points"]
             .as_array()
@@ -1163,9 +1212,15 @@ fn decode_preserves_owned_network_connect_points() {
     assert_eq!(points[0].fields().unwrap()["type_flag"], 101);
     assert_eq!(points[0].fields().unwrap()["function_identifier"][0], 80);
     assert_eq!(points[0].fields().unwrap()["function_identifier"][1], 49);
-    assert_eq!(points[0].fields().unwrap()["owner"], "iges:entity:directory#3");
+    assert_eq!(
+        points[0].fields().unwrap()["owner"],
+        "iges:entity:directory#3"
+    );
     assert_eq!(points[1].fields().unwrap()["position"][2], 3.0);
-    assert_eq!(points[1].fields().unwrap()["owner"], "iges:entity:directory#7");
+    assert_eq!(
+        points[1].fields().unwrap()["owner"],
+        "iges:entity:directory#7"
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1246,7 +1301,9 @@ fn decode_reports_occurrence_issue_for_rejected_subfigure_definition() {
     let native = result.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["product_occurrences"].is_empty());
     assert_eq!(
-        native.arenas()["product_occurrence_expansion"][0].fields().unwrap()["issues"],
+        native.arenas()["product_occurrence_expansion"][0]
+            .fields()
+            .unwrap()["issues"],
         serde_json::json!(["malformed_placement"])
     );
 }
@@ -1275,7 +1332,9 @@ fn invalid_network_metadata_does_not_hide_a_rejected_definition() {
     let native = result.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["product_occurrences"].is_empty());
     assert_eq!(
-        native.arenas()["product_occurrence_expansion"][0].fields().unwrap()["issues"],
+        native.arenas()["product_occurrence_expansion"][0]
+            .fields()
+            .unwrap()["issues"],
         serde_json::json!(["malformed_placement"])
     );
 }

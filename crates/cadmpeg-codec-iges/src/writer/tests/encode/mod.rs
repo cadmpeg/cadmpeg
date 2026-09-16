@@ -54,7 +54,11 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 .and_then(|namespace| namespace.arenas().get("entities"))
                 .is_some_and(|entities| {
                     entities.iter().any(|record| {
-                        record.field("entity_type").unwrap().and_then(|value| value.as_i64()) == Some(102)
+                        record
+                            .field("entity_type")
+                            .unwrap()
+                            .and_then(|value| value.as_i64())
+                            == Some(102)
                     })
                 }),
             "{version:?} output has no Type 102 entity"
@@ -320,10 +324,18 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
 
         let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
         assert!(entities.iter().any(|record| {
-            record.field("entity_type").unwrap().and_then(|value| value.as_i64()) == Some(108)
+            record
+                .field("entity_type")
+                .unwrap()
+                .and_then(|value| value.as_i64())
+                == Some(108)
         }));
         assert!(!entities.iter().any(|record| {
-            record.field("entity_type").unwrap().and_then(|value| value.as_i64()) == Some(190)
+            record
+                .field("entity_type")
+                .unwrap()
+                .and_then(|value| value.as_i64())
+                == Some(190)
         }));
     }
 }
@@ -673,10 +685,18 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
     assert!(entities.iter().any(|record| {
-        record.field("entity_type").unwrap().and_then(|value| value.as_i64()) == Some(190)
+        record
+            .field("entity_type")
+            .unwrap()
+            .and_then(|value| value.as_i64())
+            == Some(190)
     }));
     assert!(entities.iter().any(|record| {
-        record.field("entity_type").unwrap().and_then(|value| value.as_i64()) == Some(128)
+        record
+            .field("entity_type")
+            .unwrap()
+            .and_then(|value| value.as_i64())
+            == Some(128)
     }));
 }
 
@@ -1252,7 +1272,10 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
         .iter()
         .find(|entity| entity.field("entity_type").unwrap() == Some(504.into()))
         .expect("generated B-rep has an edge list");
-    assert_eq!(edge_list.field("subordinate_status").unwrap(), Some(1.into()));
+    assert_eq!(
+        edge_list.field("subordinate_status").unwrap(),
+        Some(1.into())
+    );
     assert_eq!(edge_list.field("hierarchy_status").unwrap(), Some(1.into()));
 }
 
@@ -1896,7 +1919,8 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .filter(|entity| entity.field("entity_type").unwrap() == Some(508.into()))
         .map(|entity| {
             entity
-                .field("directory_sequence").unwrap()
+                .field("directory_sequence")
+                .unwrap()
                 .unwrap()
                 .as_i64()
                 .unwrap()

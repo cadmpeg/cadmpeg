@@ -194,7 +194,10 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(record.fields().unwrap()["opaque_spans"][0]["offset"], 13);
     assert_eq!(record.fields().unwrap()["opaque_spans"][0]["raw"][0], 0xff);
     assert_eq!(record.fields().unwrap()["suffix"], "unique");
-    assert!(record.fields().unwrap().contains_key("suffix_candidate_count"));
+    assert!(record
+        .fields()
+        .unwrap()
+        .contains_key("suffix_candidate_count"));
     assert!(record.fields().unwrap()["suffix_candidate_count"].is_null());
     assert_eq!(
         result.source_fidelity().annotations.provenance["creo:visibgeom:curve_parameter#7"]
@@ -442,7 +445,10 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     assert_eq!(records[0].fields().unwrap()["values_mm"][1], -3.0);
     assert_eq!(records[0].fields().unwrap()["tokens"][1]["offset"], 10);
     assert_eq!(records[0].fields().unwrap()["tokens"][1]["length"], 8);
-    assert_eq!(records[0].fields().unwrap()["opaque_spans"][1]["raw"][0], 0xff);
+    assert_eq!(
+        records[0].fields().unwrap()["opaque_spans"][1]["raw"][0],
+        0xff
+    );
 }
 
 #[test]
@@ -515,7 +521,10 @@ fn scan_validates_fc05_circle_from_record_points() {
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc05_circles"];
     assert_eq!(records[0].fields().unwrap()["curve_id"], 7);
     assert_eq!(records[0].fields().unwrap()["radius_mm"], 1.0);
-    assert_eq!(records[0].fields().unwrap()["sample_direction_row_frame"][0], 1.0);
+    assert_eq!(
+        records[0].fields().unwrap()["sample_direction_row_frame"][0],
+        1.0
+    );
     assert_eq!(records[0].fields().unwrap()["parameter_sign"], 1);
 }
 
@@ -628,7 +637,9 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         44
     );
     assert_eq!(
-        namespace.arenas()["curve_prototype_topology"][0].fields().unwrap()["faces"][1],
+        namespace.arenas()["curve_prototype_topology"][0]
+            .fields()
+            .unwrap()["faces"][1],
         11
     );
 }

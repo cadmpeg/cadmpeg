@@ -171,7 +171,10 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
     });
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_ne!(
-        record.fields().unwrap()["scalar_frames"].as_array().unwrap().len(),
+        record.fields().unwrap()["scalar_frames"]
+            .as_array()
+            .unwrap()
+            .len(),
         2
     );
     assert_eq!(
@@ -278,7 +281,10 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields().unwrap()["surface_id"], 7);
-    assert_eq!(records[0].fields().unwrap()["surface_family"], "torus_or_sphere");
+    assert_eq!(
+        records[0].fields().unwrap()["surface_family"],
+        "torus_or_sphere"
+    );
     assert_eq!(records[0].fields().unwrap()["boundary"], "compound_close");
     assert_eq!(
         records[0].fields().unwrap()["slots"][0]["value"],
@@ -288,7 +294,10 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
         .into_iter()
         .enumerate()
     {
-        assert_eq!(records[0].fields().unwrap()["slots"][0]["raw"][index], expected);
+        assert_eq!(
+            records[0].fields().unwrap()["slots"][0]["raw"][index],
+            expected
+        );
     }
     assert_eq!(records[0].fields().unwrap()["slots"][0]["length"], 7);
     assert_eq!(
@@ -298,8 +307,14 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
             .len(),
         0
     );
-    assert_eq!(records[0].fields().unwrap()["terminal_scalar_frame"]["offset"], 0);
-    assert_eq!(records[0].fields().unwrap()["scalar_frames"][0]["offset"], 0);
+    assert_eq!(
+        records[0].fields().unwrap()["terminal_scalar_frame"]["offset"],
+        0
+    );
+    assert_eq!(
+        records[0].fields().unwrap()["scalar_frames"][0]["offset"],
+        0
+    );
     assert_eq!(
         records[0].fields().unwrap()["terminal_scalar_frame"]["slots"]
             .as_array()
@@ -585,7 +600,10 @@ fn decode_preserves_unframed_surface_parameter_spans() {
     assert_eq!(record.fields().unwrap()["opaque_spans"][0]["raw"][0], 0x11);
     assert_eq!(record.fields().unwrap()["opaque_spans"][1]["offset"], 2);
     assert_eq!(record.fields().unwrap()["opaque_spans"][1]["length"], 2);
-    assert_eq!(record.fields().unwrap()["terminal_scalar_frame"]["offset"], 4);
+    assert_eq!(
+        record.fields().unwrap()["terminal_scalar_frame"]["offset"],
+        4
+    );
     let record_fields = record.fields().unwrap();
     let frames = record_fields["scalar_frames"].as_array().unwrap();
     assert_eq!(frames.len(), 2);
@@ -619,7 +637,9 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         .expect("decode");
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas()["plane_local_systems"][0].fields().unwrap()["surface_id"],
+        namespace.arenas()["plane_local_systems"][0]
+            .fields()
+            .unwrap()["surface_id"],
         7
     );
     assert_eq!(

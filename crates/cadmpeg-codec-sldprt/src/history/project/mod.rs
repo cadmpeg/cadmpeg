@@ -640,10 +640,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                         let canonical = canonical_plane_id(candidate.id.as_str())?;
                         (same_scalar(tangent.norm(), 0.0)
                             && same_scalar(signed_distance.abs(), distance.get().abs()))
-                        .then_some((
-                            canonical,
-                            distance.get().abs().copysign(signed_distance),
-                        ))
+                        .then_some((canonical, distance.get().abs().copysign(signed_distance)))
                     });
                 let mut candidates_by_root = HashMap::new();
                 for (candidate, distance) in candidates {

@@ -1421,8 +1421,16 @@ fn project_constraint(
                     entities: members.iter().map(|entity| entity.id().clone()).collect(),
                     parameter: None,
                     operands: vec![
-                        native_operand(constraint, cadmpeg_core::nonblank_literal!("entity"), entity),
-                        native_operand(constraint, cadmpeg_core::nonblank_literal!("center"), center),
+                        native_operand(
+                            constraint,
+                            cadmpeg_core::nonblank_literal!("entity"),
+                            entity,
+                        ),
+                        native_operand(
+                            constraint,
+                            cadmpeg_core::nonblank_literal!("center"),
+                            center,
+                        ),
                     ],
                 },
                 None,
@@ -1519,7 +1527,11 @@ fn project_geometry(
             let [start, end] = points.references() else {
                 return None;
             };
-            let start = resolve_point(entity.identity.segment_token.as_str(), start.index, entities)?;
+            let start = resolve_point(
+                entity.identity.segment_token.as_str(),
+                start.index,
+                entities,
+            )?;
             let end = resolve_point(entity.identity.segment_token.as_str(), end.index, entities)?;
             if !line_carrier_matches(*origin, *direction, start, end) {
                 return None;
@@ -1533,7 +1545,11 @@ fn project_geometry(
             )
         }
         PmDcSketchEntityKind::Circle { center, radius, .. } => {
-            let center = resolve_point(entity.identity.segment_token.as_str(), center.index, entities)?;
+            let center = resolve_point(
+                entity.identity.segment_token.as_str(),
+                center.index,
+                entities,
+            )?;
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                     center: neutral_point(center),
@@ -1549,7 +1565,11 @@ fn project_geometry(
             minor_radius,
             ..
         } => {
-            let center = resolve_point(entity.identity.segment_token.as_str(), center.index, entities)?;
+            let center = resolve_point(
+                entity.identity.segment_token.as_str(),
+                center.index,
+                entities,
+            )?;
             let norm = major_direction[0].hypot(major_direction[1]);
             if !norm.is_finite() || norm <= f64::EPSILON {
                 return None;
@@ -2182,10 +2202,24 @@ mod tests {
             entities.push(line);
         }
         transform.header.source_index = 0;
-        let transform = Located::new(transform, type_id_string(TRANSFORM_TYPE), &cadmpeg_ir::identity_key!("segment"), 0);
-        let direction = Located::new(direction, type_id_string(DIRECTION_TYPE), &cadmpeg_ir::identity_key!("segment"), 1);
-        let located_sketch =
-            Located::new(sketch.clone(), type_id_string(SKETCH_TYPE), &cadmpeg_ir::identity_key!("segment"), 2);
+        let transform = Located::new(
+            transform,
+            type_id_string(TRANSFORM_TYPE),
+            &cadmpeg_ir::identity_key!("segment"),
+            0,
+        );
+        let direction = Located::new(
+            direction,
+            type_id_string(DIRECTION_TYPE),
+            &cadmpeg_ir::identity_key!("segment"),
+            1,
+        );
+        let located_sketch = Located::new(
+            sketch.clone(),
+            type_id_string(SKETCH_TYPE),
+            &cadmpeg_ir::identity_key!("segment"),
+            2,
+        );
         let entities = entities
             .into_iter()
             .enumerate()
@@ -2247,7 +2281,12 @@ mod tests {
         });
         sketch.entities =
             PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
-        inventory.sketches[0] = Located::new(sketch, type_id_string(SKETCH_TYPE), &cadmpeg_ir::identity_key!("segment"), 2);
+        inventory.sketches[0] = Located::new(
+            sketch,
+            type_id_string(SKETCH_TYPE),
+            &cadmpeg_ir::identity_key!("segment"),
+            2,
+        );
         let incomplete = project(&inventory, &[]);
         assert_eq!(incomplete.unresolved_sketches, 1);
         assert_eq!(incomplete.unresolved_constraints, 1);

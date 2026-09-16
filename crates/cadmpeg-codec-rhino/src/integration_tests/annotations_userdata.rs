@@ -122,7 +122,10 @@ fn assert_text_and_retention<'a>(
     record: &[u8],
 ) -> &'a cadmpeg_ir::native::NativeRecord {
     let annotation = annotation(result);
-    assert_eq!(annotation.field("kind").unwrap(), Some(serde_json::json!("text")));
+    assert_eq!(
+        annotation.field("kind").unwrap(),
+        Some(serde_json::json!("text"))
+    );
     let retained = result
         .source_fidelity()
         .retained_record("rhino:object:record#000000")
@@ -144,7 +147,8 @@ fn current_v5_text_extra_reaches_annotation_native_fields() {
 
     let annotation = assert_text_and_retention(&result, &record);
     let extra = annotation
-        .field("v5_text_extra").unwrap()
+        .field("v5_text_extra")
+        .unwrap()
         .expect("current V5 text extra");
     assert_eq!(extra["parent_text_uuid"], serde_json::Value::Null);
     assert_eq!(extra["draw_mask"], serde_json::json!(true));

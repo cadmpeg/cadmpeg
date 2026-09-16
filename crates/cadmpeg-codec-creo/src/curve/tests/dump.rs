@@ -40,7 +40,10 @@ fn decode_preserves_counted_curve_expression_programs() {
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields().unwrap()["entity_id"], 0x094c);
-    assert_eq!(records[0].fields().unwrap()["lines"][2]["text"], "theta=w*t*360");
+    assert_eq!(
+        records[0].fields().unwrap()["lines"][2]["text"],
+        "theta=w*t*360"
+    );
     assert_eq!(
         records[0].fields().unwrap()["assignments"][2]["target"]["name"],
         "theta"
@@ -50,7 +53,10 @@ fn decode_preserves_counted_curve_expression_programs() {
         "w"
     );
     assert_eq!(records[0].fields().unwrap()["assignments"][0]["value"], 5.0);
-    assert_eq!(records[0].fields().unwrap()["local_system"]["dimensions"], 4);
+    assert_eq!(
+        records[0].fields().unwrap()["local_system"]["dimensions"],
+        4
+    );
     assert_eq!(result.ir().model.features.len(), 1);
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Helix {
@@ -286,8 +292,14 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields().unwrap()["solve_blocks"][0]["variables"][0], "width");
-    assert_eq!(native.fields().unwrap()["solve_blocks"][0]["variables"][1], "height");
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["variables"][0],
+        "width"
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["variables"][1],
+        "height"
+    );
     assert_eq!(
         native.fields().unwrap()["solve_blocks"][0]["equations"][0]["left"],
         "width"
@@ -415,8 +427,14 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields().unwrap()["solve_blocks"][0]["solutions"][0], 6.0);
-    assert_eq!(native.fields().unwrap()["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][0],
+        6.0
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][1],
+        4.0
+    );
     assert_eq!(
         result
             .report()
@@ -468,8 +486,14 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     );
 
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields().unwrap()["solve_blocks"][0]["solutions"][0], 6.0);
-    assert_eq!(native.fields().unwrap()["solve_blocks"][0]["solutions"][1], 4.0);
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][0],
+        6.0
+    );
+    assert_eq!(
+        native.fields().unwrap()["solve_blocks"][0]["solutions"][1],
+        4.0
+    );
     assert_eq!(
         result.report().coverage_count(
             crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
@@ -587,7 +611,10 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
         native.fields().unwrap()["assignments"][0]["target"]["kind"],
         "scoped_symbol"
     );
-    assert_eq!(native.fields().unwrap()["assignments"][0]["target"]["name"], "d7:0");
+    assert_eq!(
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "d7:0"
+    );
     assert_eq!(
         native.fields().unwrap()["assignments"][1]["target"]["name"],
         "width:fid_25:cid_12"
@@ -633,7 +660,10 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
         native.fields().unwrap()["assignments"][0]["target"]["kind"],
         "system_symbol"
     );
-    assert_eq!(native.fields().unwrap()["assignments"][0]["target"]["name"], "d42");
+    assert_eq!(
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "d42"
+    );
     assert_eq!(
         native.fields().unwrap()["assignments"][0]["target"]["family"],
         "dimension"
@@ -944,7 +974,10 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     };
     assert!((copy.get() - 76.2).abs() < 1.0e-12);
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"][0];
-    assert_eq!(native.fields().unwrap()["assignments"][0]["target"]["name"], "span");
+    assert_eq!(
+        native.fields().unwrap()["assignments"][0]["target"]["name"],
+        "span"
+    );
     assert_eq!(
         native.fields().unwrap()["assignments"][0]["target"]["declared_unit"],
         "inch"
@@ -959,7 +992,10 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
         "length:-1,mass:1,time:-2,angle:0,temperature:0"
     );
     assert_eq!(parameters[2].value, None);
-    assert_eq!(native.fields().unwrap()["assignments"][2]["value"]["value"], 2_000.0);
+    assert_eq!(
+        native.fields().unwrap()["assignments"][2]["value"]["value"],
+        2_000.0
+    );
     assert_eq!(
         native.fields().unwrap()["assignments"][2]["value"]["length_power"],
         -1
@@ -1010,7 +1046,8 @@ fn decode_transfers_curve_expression_conditional_activation() {
         .namespace("creo")
         .expect("Creo native data")
         .arenas()["curve_expressions"][0]
-        .fields().unwrap();
+        .fields()
+        .unwrap();
     let native_assignments = curve_expression_fields["assignments"]
         .as_array()
         .expect("assignments");
@@ -1131,7 +1168,8 @@ fn decode_transfers_reassigned_curve_expression_names_without_identity_collision
             .namespace("creo")
             .expect("Creo native data")
             .arenas()["curve_expressions"][0]
-            .fields().unwrap()["assignments"]
+            .fields()
+            .unwrap()["assignments"]
             .as_array()
             .expect("assignments")
             .len(),

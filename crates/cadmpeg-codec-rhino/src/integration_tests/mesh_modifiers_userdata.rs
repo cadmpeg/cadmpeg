@@ -150,7 +150,8 @@ fn current_mesh_modifier_xml_reaches_each_native_field() {
         assert_point_and_retention(&result, &record);
         let modifiers = result.ir().native.namespace("rhino").unwrap().arenas()
             ["object_presentation"][0]
-            .field("mesh_modifiers").unwrap()
+            .field("mesh_modifiers")
+            .unwrap()
             .expect("current mesh modifier");
         assert!(modifiers.get(label).is_some(), "missing {label} modifier");
         assert_valid(&result);
@@ -172,7 +173,8 @@ fn future_mesh_modifier_xml_keeps_object_and_drops_only_modifier() {
         assert_point_and_retention(&result, &record);
         assert!(
             result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"][0]
-                .field("mesh_modifiers").unwrap()
+                .field("mesh_modifiers")
+                .unwrap()
                 .is_none()
         );
         assert!(result.report().losses.iter().any(|loss| {
@@ -199,7 +201,8 @@ fn malformed_mesh_modifier_xml_keeps_object_and_drops_only_modifier() {
         assert_point_and_retention(&result, &record);
         assert!(
             result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"][0]
-                .field("mesh_modifiers").unwrap()
+                .field("mesh_modifiers")
+                .unwrap()
                 .is_none()
         );
         assert!(result.report().losses.iter().any(|loss| {
