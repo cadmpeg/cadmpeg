@@ -572,13 +572,15 @@ fn child_with_type(
     // rather than folding it onto the archive length. The bound below extends a
     // fixed format constant over a proven buffer length; it shortens no extent
     // the archive states.
-    let available = data.len().checked_sub(range.end).ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "rhino V1 legacy wrapper body ends at {} in a {}-byte archive",
-            range.end,
-            data.len()
-        ))
-    })?;
+    let available = data
+        .len()
+        .checked_sub(range.end)
+        .ok_or(FramingError::OutOfBounds {
+            offset: range.start,
+            end: range.end,
+            bound: data.len(),
+        })
+        .map_err(malformed)?;
     let end = if available >= SHARED_CRC16_LEN {
         range.end + SHARED_CRC16_LEN
     } else {
