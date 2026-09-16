@@ -214,18 +214,30 @@
       },
       {
         "code": {
-          "code": "container.instance-definition-degraded",
-          "kind": "decode_diagnostic",
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
           "namespace": "rhino",
-          "scope": "namespaced"
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
-        "message": "retained 1 malformed, ambiguous, or checksum-degraded instance-definition record(s); first: instance definition CRC mismatch at offset 227",
+        "message": "instance-definition record at offset 159: instance definition CRC mismatch at offset 227",
         "provenance": {
           "format": "rhino",
           "offset": 159,
           "tag": "INSTANCE_DEFINITION_TABLE"
         },
-        "severity": "warning"
+        "severity": "error"
+      },
+      {
+        "code": {
+          "code": "container.integrity-failure",
+          "kind": "integrity_failure",
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "CRC mismatch at offset 159 for typecode 0x20008076: expected 0x0, got 0xf46c4ebe",
+        "severity": "error"
       },
       {
         "code": {
@@ -266,7 +278,7 @@
           "retention": "inline"
         },
         "offset": 582,
-        "stream": "source"
+        "stream": ""
       }
     }
   }

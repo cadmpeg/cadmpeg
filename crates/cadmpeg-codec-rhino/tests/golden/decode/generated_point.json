@@ -345,7 +345,7 @@
           "retention": "inline"
         },
         "offset": 622,
-        "stream": "source"
+        "stream": ""
       }
     }
   }

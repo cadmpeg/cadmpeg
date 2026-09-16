@@ -742,7 +742,7 @@
           "retention": "inline"
         },
         "offset": 177,
-        "stream": "source"
+        "stream": ""
       },
       "rhino:object:record#000001": {
         "bytes": {
@@ -750,7 +750,7 @@
           "retention": "inline"
         },
         "offset": 314,
-        "stream": "source"
+        "stream": ""
       },
       "rhino:object:record#000002": {
         "bytes": {
@@ -758,7 +758,7 @@
           "retention": "inline"
         },
         "offset": 659,
-        "stream": "source"
+        "stream": ""
       },
       "rhino:object:record#000003": {
         "bytes": {
@@ -766,7 +766,7 @@
           "retention": "inline"
         },
         "offset": 840,
-        "stream": "source"
+        "stream": ""
       },
       "rhino:object:record#000004": {
         "bytes": {
@@ -774,7 +774,7 @@
           "retention": "inline"
         },
         "offset": 1197,
-        "stream": "source"
+        "stream": ""
       },
       "rhino:object:record#000005": {
         "bytes": {
@@ -782,7 +782,7 @@
           "retention": "inline"
         },
         "offset": 1418,
-        "stream": "source"
+        "stream": ""
       }
     }
   }

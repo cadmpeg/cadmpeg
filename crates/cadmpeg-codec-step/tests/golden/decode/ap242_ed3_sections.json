@@ -193,7 +193,7 @@
           "retention": "inline"
         },
         "offset": 397,
-        "stream": "source"
+        "stream": ""
       },
       "step:file:signature#0": {
         "bytes": {
@@ -201,7 +201,7 @@
           "retention": "inline"
         },
         "offset": 451,
-        "stream": "source"
+        "stream": ""
       }
     }
   }

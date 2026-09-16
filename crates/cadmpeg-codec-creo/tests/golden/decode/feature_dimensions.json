@@ -471,8 +471,7 @@
             "trim_vertices": [],
             "variables": []
           }
-        ],
-        "unknowns": []
+        ]
       }
     },
     "source": {

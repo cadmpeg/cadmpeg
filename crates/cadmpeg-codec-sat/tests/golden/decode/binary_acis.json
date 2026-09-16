@@ -135,7 +135,6 @@
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
         "transform_hints": [],
-        "unknowns": [],
         "vertex_ownerships": [],
         "wire_topologies": []
       }

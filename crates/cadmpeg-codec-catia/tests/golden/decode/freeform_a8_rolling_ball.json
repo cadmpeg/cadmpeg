@@ -630,7 +630,7 @@
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close.",
+        "message": "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object id (0): . The records stay inside retained record catia:payload:unknown#freeform.",
         "severity": "blocking"
       }
     ],

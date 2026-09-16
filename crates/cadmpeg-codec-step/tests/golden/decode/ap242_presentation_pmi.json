@@ -122,8 +122,7 @@
             "source_id": "#2",
             "source_type": "GEOMETRIC_REPRESENTATION_CONTEXT+GLOBAL_UNIT_ASSIGNED_CONTEXT+REPRESENTATION_CONTEXT"
           }
-        ],
-        "unknowns": []
+        ]
       }
     },
     "source": {
