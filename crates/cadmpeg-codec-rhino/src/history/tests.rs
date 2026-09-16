@@ -262,7 +262,16 @@ fn full_history_document_retains_geometry_without_a_physical_binding() {
             let source = result
                 .source_fidelity()
                 .retained_record(&source_id)
-                .unwrap_or_else(|| panic!("history source {source_id} was not retained; keys={:?}", result.source_fidelity().retained_records().keys().collect::<Vec<_>>()));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "history source {source_id} was not retained; keys={:?}",
+                        result
+                            .source_fidelity()
+                            .retained_records()
+                            .keys()
+                            .collect::<Vec<_>>()
+                    )
+                });
             assert_eq!(source.data(), Some(history_record.as_slice()));
             assert!(result.report().losses.iter().any(|loss| {
                 loss.code == crate::loss::RhinoLossCode::HistoryGeometryNotTransferred.kind()

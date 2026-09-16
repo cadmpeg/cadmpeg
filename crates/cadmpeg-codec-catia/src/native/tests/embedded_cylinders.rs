@@ -167,4 +167,3 @@ fn native_namespace_withholds_duplicate_embedded_pcurve_support_identity() {
     };
     assert_eq!(run.support_bindings, [None, None]);
 }
-

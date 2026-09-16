@@ -421,7 +421,8 @@ fn decode_e5_stream_transfers_circle_carrier() {
     ));
     assert!(result.ir().native_unknowns("catia").unwrap()[0]
         .links
-        .iter().any(|link| link.as_str() == "catia:e5:surf#0"));
+        .iter()
+        .any(|link| link.as_str() == "catia:e5:surf#0"));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }

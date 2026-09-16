@@ -674,7 +674,10 @@ mod tests {
             schema["properties"]["format"]["$ref"],
             "#/$defs/CodecFormat"
         );
-        assert_eq!(schema["$defs"]["CodecFormat"]["oneOf"].as_array().unwrap(), variants);
+        assert_eq!(
+            schema["$defs"]["CodecFormat"]["oneOf"].as_array().unwrap(),
+            variants
+        );
     }
 
     #[test]

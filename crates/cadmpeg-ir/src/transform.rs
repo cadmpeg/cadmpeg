@@ -261,15 +261,16 @@ fn signed_difference(
     positive: &[u64; EXACT_SUM_WORDS],
     negative: &[u64; EXACT_SUM_WORDS],
 ) -> Option<(bool, [u64; EXACT_SUM_WORDS])> {
-    let (larger, smaller, is_negative) = positive
-        .iter()
-        .zip(negative)
-        .rev()
-        .find_map(|(left, right)| match left.cmp(right) {
-            std::cmp::Ordering::Greater => Some((positive, negative, false)),
-            std::cmp::Ordering::Less => Some((negative, positive, true)),
-            std::cmp::Ordering::Equal => None,
-        })?;
+    let (larger, smaller, is_negative) =
+        positive
+            .iter()
+            .zip(negative)
+            .rev()
+            .find_map(|(left, right)| match left.cmp(right) {
+                std::cmp::Ordering::Greater => Some((positive, negative, false)),
+                std::cmp::Ordering::Less => Some((negative, positive, true)),
+                std::cmp::Ordering::Equal => None,
+            })?;
     let mut magnitude = [0; EXACT_SUM_WORDS];
     let mut borrow = false;
     for index in 0..EXACT_SUM_WORDS {
