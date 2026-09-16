@@ -119,7 +119,7 @@ pub(crate) fn decode_cache_resolving_refs<T>(
         let target = *table.get(index)?;
         seen.push(index);
         if let Some(decoded) = decode_cache_resolving_refs(
-            subtype_span(active_bytes, target, int_width)?,
+            subtype_span(active_bytes, target, int_width)?.bytes(),
             active_bytes,
             tables,
             seen,
@@ -283,10 +283,37 @@ pub(crate) fn subtype_refs(bytes: &[u8], int_width: RefWidth) -> Vec<usize> {
     refs
 }
 
+/// A balanced subtype scope in byte space.
+///
+/// [`subtype_span`] is the only constructor: the field is private and the type
+/// has no `From` and no `Deref`. Every value therefore states one scope that
+/// tokenizes end to end at the width it was walked at, whose every `0x10` has a
+/// matching `0x0f` within the span, and whose final token is the close that
+/// balances it. The marker walk that refuses an unbalanced stream
+/// ([`crate::nurbs::reader::owned_marker_positions`]) is total over this type.
+///
+/// The field is not reachable from another module:
+///
+/// ```compile_fail
+/// use cadmpeg_asm::nurbs::subtypes::SubtypeScope;
+///
+/// let bytes = [0x0fu8, 0x10];
+/// let scope = SubtypeScope(&bytes[..]);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SubtypeScope<'a>(&'a [u8]);
+
+impl<'a> SubtypeScope<'a> {
+    /// The scope's bytes, both delimiters included.
+    pub fn bytes(&self) -> &'a [u8] {
+        self.0
+    }
+}
+
 /// The byte span of the subtype definition that opens at `start`: from its
 /// `0x0f` opening through the matching `0x10` close, nested definitions
 /// included.
-pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<&[u8]> {
+pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<SubtypeScope<'_>> {
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
@@ -295,7 +322,7 @@ pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<&
             0x10 => {
                 depth = depth.checked_sub(1)?;
                 if depth == 0 {
-                    return bytes.get(start..=pos);
+                    return bytes.get(start..=pos).map(SubtypeScope);
                 }
             }
             _ => {}
@@ -374,6 +401,28 @@ mod ownership_tests {
                 .as_deref(),
                 Some("defm_int_cur")
             );
+        }
+    }
+
+    /// A byte scope answers its owned markers with no refusal to answer: the
+    /// call binds a `Vec<usize>` directly, because `subtype_span` has already
+    /// proven the balance the raw-stream walk refuses.
+    #[test]
+    fn a_byte_scope_yields_its_owned_markers_with_no_refusal_to_answer() {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
+            let mut bytes = Vec::new();
+            open(&mut bytes, b"exact_int_cur");
+            let owned_marker = bytes.len();
+            bytes.extend_from_slice(b"\x0d\x04nubs");
+            open(&mut bytes, b"ref");
+            bytes.extend_from_slice(b"\x0d\x05nurbs");
+            bytes.push(0x10);
+            bytes.push(0x10);
+
+            let scope = subtype_span(&bytes, 0, int_width).expect("balanced scope");
+            let owned: Vec<usize> = scope.owned_marker_positions(int_width);
+            assert_eq!(owned, vec![owned_marker]);
+            assert_eq!(scope.bytes(), bytes.as_slice());
         }
     }
 }

@@ -43,7 +43,8 @@ pub(crate) fn cyl_spl_sur(
 ) -> Option<DecodedProceduralSurface> {
     let names = ["cyl_spl_sur", "cylsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let scope = toks::subtype_span(toks, start)?;
+    let span = scope.tokens();
     let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the directrix as a nested intcurve scope
     // and ends with the shared revision-gated surface tail, so its cache is
@@ -107,7 +108,8 @@ pub(crate) fn cyl_spl_sur(
         let interval = [cur.take_f64()?, cur.take_f64()?];
         let direction = cur.take_vector3()?;
         let native_position = cur.take_position()?;
-        let cache_fit_tolerance = toks::owned_marker_positions(span)?
+        let cache_fit_tolerance = scope
+            .owned_marker_positions()
             .into_iter()
             .filter_map(|at| surface_block(span, at))
             .next_back()
@@ -242,7 +244,7 @@ pub(crate) fn decode_rolling_ball_surface(
             ));
         }
         take_bool(bytes, position)?;
-        let scope = subtype_span(bytes, *position, int_width)?;
+        let scope = subtype_span(bytes, *position, int_width)?.bytes();
         let surface = reference_context
             .and_then(|(active_bytes, tables)| {
                 decode_owned_surface_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
@@ -296,7 +298,7 @@ pub(crate) fn decode_rolling_ball_curve(
     let kind = take_native_ident(bytes, position)?;
     if kind == "intcurve" {
         take_bool(bytes, position)?;
-        let scope = subtype_span(bytes, *position, int_width)?;
+        let scope = subtype_span(bytes, *position, int_width)?.bytes();
         let curve = reference_context
             .and_then(|(active_bytes, tables)| {
                 decode_owned_curve_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
@@ -487,7 +489,7 @@ pub(crate) fn rolling_ball_surface(
             ));
         }
         cur.take_bool()?;
-        let scope = toks::subtype_span(toks, cur.pos())?;
+        let scope = toks::subtype_span(toks, cur.pos())?.tokens();
         let surface = reference_context
             .and_then(|table| crate::nurbs::core::owned_surface_cache_resolving_refs(scope, table))
             .or_else(|| crate::nurbs::core::owned_surface_cache(scope))?;
@@ -539,7 +541,7 @@ pub(crate) fn rolling_ball_curve(
     let kind = cur.take_ident()?;
     if kind == "intcurve" {
         cur.take_bool()?;
-        let scope = toks::subtype_span(toks, cur.pos())?;
+        let scope = toks::subtype_span(toks, cur.pos())?.tokens();
         let curve = reference_context
             .and_then(|table| crate::nurbs::core::owned_curve_cache_resolving_refs(scope, table))
             .or_else(|| crate::nurbs::core::owned_curve_cache(scope))
@@ -1060,7 +1062,7 @@ pub(crate) fn var_blend_spl_sur(
         }
         _ => return None,
     };
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = cur.take_long()?;
     let sides = Box::new([
@@ -1424,7 +1426,7 @@ pub(crate) fn vertex_blend_spl_sur(
 ) -> Option<DecodedProceduralSurface> {
     let names = ["VBL_SURF", "vertexblendsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the revision integer before the
     // boundary count; boundary names are ident tokens and boundary payloads
@@ -1496,7 +1498,7 @@ pub(crate) fn full_rb_blend_spl_sur(
     ];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let has_third = name == "sss_blend_spl_sur" || name == "sssblndsur";
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let definition_index = cur.take_long()?;
     let sides = Box::new([
@@ -1576,7 +1578,7 @@ pub(crate) fn full_rb_blend_spl_sur(
 pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["rb_blend_spl_sur", "rbblnsur", "pipe_spl_sur", "pipesur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
-    let span = toks::subtype_span(toks, start)?;
+    let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let mut supports = [None, None];
     let mut support_count = 0usize;

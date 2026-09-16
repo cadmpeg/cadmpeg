@@ -578,7 +578,8 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         inner,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
-    .unwrap();
+    .unwrap()
+    .bytes();
     assert_eq!(span, subtype.as_slice());
 }
 
@@ -617,6 +618,7 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
             cadmpeg_asm::kernel_header::RefWidth::Eight,
         )
         .unwrap()
+        .bytes()
         .to_vec()
     };
     let solved = decoded
@@ -649,7 +651,8 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         inner,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
-    .unwrap();
+    .unwrap()
+    .bytes();
     assert_eq!(span, original.as_slice());
 }
 

@@ -193,6 +193,7 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .expect("subtype span")
+    .bytes()
     .to_vec()
 }
 
@@ -216,6 +217,7 @@ pub(crate) fn synthetic_revision_surface_subtype_span(smbh: &[u8]) -> Vec<u8> {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap()
+    .bytes()
     .to_vec()
 }
 
