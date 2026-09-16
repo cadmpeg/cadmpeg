@@ -23,7 +23,7 @@ pub(crate) fn named_scalars(
         .iter()
         .filter_map(|name| {
             let name_offset = usize::try_from(name.offset).ok()?;
-            let value_offset = scalar_value_offset(payload, name_offset, &name.value)?;
+            let value_offset = scalar_value_offset(payload, name_offset)?;
             let value = View::f64_le_at(payload, value_offset)?;
             let trailer_offset = value_offset.checked_add(8)?;
             let object_id = View::u32_le_at(payload, trailer_offset + 3)?;
@@ -51,10 +51,16 @@ pub(crate) fn named_scalars(
         .collect()
 }
 
-fn scalar_value_offset(payload: &[u8], name_offset: usize, name: &str) -> Option<usize> {
+/// The scalar payload offset that follows the serialized object name at
+/// `name_offset`.
+///
+/// The name length comes from the payload's own length byte, so the offset is a
+/// function of the retained bytes alone and never of a stored name value.
+fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
+    let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(name.encode_utf16().count().checked_mul(2)?)?;
+        .checked_add(units.checked_mul(2)?)?;
     let value_offset = header_offset.checked_add(SCALAR_HEADER.len())?;
     if payload.get(header_offset..value_offset) == Some(SCALAR_HEADER) {
         return Some(value_offset);

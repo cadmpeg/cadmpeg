@@ -446,6 +446,70 @@ fn native_load_rejects_edited_object_name_identity_from_json() {
 }
 
 #[test]
+fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit() {
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
+
+    let control: cadmpeg_ir::NativeNamespace = serde_json::from_value(original.clone()).unwrap();
+    crate::native::SldprtNative::load(&control).expect("the unedited namespace loads");
+
+    let stated = original["feature_input_names"][0]["value"]
+        .as_str()
+        .expect("fixture admits an object name")
+        .to_string();
+    assert!(!original["feature_input_scalars"]
+        .as_array()
+        .expect("fixture admits a scalar arena")
+        .is_empty());
+
+    let mut scalar_edit = original.clone();
+    let offset = scalar_edit["feature_input_scalars"][0]["offset"]
+        .as_u64()
+        .expect("a scalar states its payload offset");
+    scalar_edit["feature_input_scalars"][0]["offset"] = serde_json::json!(offset + 7);
+    let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(scalar_edit).unwrap();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+    assert!(
+        error.to_string().contains("scalar index does not match"),
+        "edited scalar offset was admitted: {error}"
+    );
+
+    let mut object_id_edit = original.clone();
+    let current = object_id_edit["feature_input_names"][0]["object_id"].as_u64();
+    object_id_edit["feature_input_names"][0]["object_id"] =
+        serde_json::json!(if current == Some(1) { 2 } else { 1 });
+    let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(object_id_edit).unwrap();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+    assert!(
+        error.to_string().contains("name structure does not match"),
+        "edited object identifier was admitted: {error}"
+    );
+
+    let same_length = "z".repeat(stated.encode_utf16().count());
+    assert_ne!(same_length, stated);
+    for forged in [same_length, format!("{stated}-longer")] {
+        let mut value_edit = original.clone();
+        value_edit["feature_input_names"][0]["value"] = serde_json::json!(forged);
+        let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(value_edit).unwrap();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("name value does not match its native payload"),
+            "edited object name {forged:?} was admitted or refused elsewhere: {error}"
+        );
+    }
+}
+
+#[test]
 fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
     let decoded = SldprtCodec
         .decode(
