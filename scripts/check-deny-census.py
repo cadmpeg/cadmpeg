@@ -1227,6 +1227,64 @@ class Arm:
         self.skipped_newtype = skipped_newtype
 
 
+GENERIC_HEADER_RE = re.compile(
+    r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?:struct|enum|type)\s+[A-Za-z_$]\w*\s*<"
+)
+
+
+def generic_parameters(item):
+    """Return the item's declared type parameters as ``(name, default)``.
+
+    Lifetimes and const parameters cannot name a reader, so they are not
+    returned. A header this parser cannot read returns an empty list, which
+    keeps the caller on its fail-closed route.
+    """
+    opening = GENERIC_HEADER_RE.match(item.body)
+    if opening is None:
+        return []
+    end = generic_end(item.body, opening.end() - 1)
+    if end is None:
+        return []
+    parameters = []
+    for part in split_tuple_types(item.body[opening.end():end - 1]):
+        if part.startswith("'") or part.startswith("const "):
+            continue
+        name, _, default = part.partition("=")
+        # A bound belongs to the parameter, not to its default.
+        name = name.split(":", 1)[0].strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", name):
+            return []
+        parameters.append((name, default.strip() or None))
+    return parameters
+
+
+def generic_arguments(name, position, items):
+    """Return every argument a workspace declaration states at ``position``.
+
+    Only declarations are read. A function signature forwards its caller's
+    parameter and instantiates no reader, so it is not a source of arguments
+    here; a declaration that supplies fewer arguments than ``position``
+    leaves the parameter on its default and contributes nothing.
+    """
+    use = re.compile(rf"\b{re.escape(name)}\s*<")
+    arguments = []
+    for item in items:
+        header = GENERIC_HEADER_RE.match(item.body)
+        own_header = header.end() - 1 if header is not None else None
+        for match in use.finditer(item.body):
+            if match.end() - 1 == own_header:
+                # The declaration's own header states parameters, not
+                # arguments; its default is read by the caller.
+                continue
+            end = generic_end(item.body, match.end() - 1)
+            if end is None:
+                continue
+            parts = split_tuple_types(item.body[match.end():end - 1])
+            if position < len(parts):
+                arguments.append((parts[position], item))
+    return arguments
+
+
 def type_without_attributes(text):
     """Return a field or tuple type after its leading serde attributes."""
     code = strip_variant_attributes(text).strip()
@@ -1878,6 +1936,44 @@ def main():
             path = imported
         return resolve_item(index, path, owner, ambiguities)
 
+    def generic_parameter_proof(owner, parameter, position, default):
+        """Prove every type the workspace can put in one generic parameter.
+
+        A generic parameter names no reader of its own. The set that can
+        reach it is the declared default plus the argument every workspace
+        declaration states at this position; each is proved against the
+        declaration that spells it, so its own imports resolve it. An empty
+        set, or one argument this census cannot resolve, keeps the parameter
+        unproved — the parameter is never called safe because its other
+        instantiations are.
+        """
+        candidates = [] if default is None else [(default, owner)]
+        candidates.extend(generic_arguments(owner.name, position, order))
+        if not candidates:
+            return False, (
+                f"generic parameter {parameter} has no default and no "
+                f"workspace instantiation"
+            )
+        for candidate, source in candidates:
+            argument, _ = type_parts(candidate)
+            if argument is not None and "::" not in argument:
+                if any(
+                    name == argument for name, _ in generic_parameters(source)
+                ):
+                    return False, (
+                        f"generic parameter {parameter} is instantiated with "
+                        f"the generic parameter {argument} of {source.name}"
+                    )
+            ok, reason = payload_proof(candidate, source)
+            if not ok:
+                return False, (
+                    f"generic parameter {parameter} instantiated as "
+                    f"{candidate.strip()}: {reason}"
+                )
+        return True, (
+            f"every instantiation of generic parameter {parameter} is checked"
+        )
+
     def payload_proof(field, owner):
         """Prove that an enum payload cannot consume arbitrary object keys."""
         for flag in ("skip", "skip_deserializing"):
@@ -1992,6 +2088,19 @@ def main():
                 )
             if "::" in path or path in index:
                 return False, f"cannot resolve payload reader {path}"
+            parameters = generic_parameters(owner)
+            position = next(
+                (
+                    at
+                    for at, (parameter, _) in enumerate(parameters)
+                    if parameter == path
+                ),
+                None,
+            )
+            if position is not None:
+                return generic_parameter_proof(
+                    owner, path, position, parameters[position][1]
+                )
             # A bare imported generic is outside this lexical census. It can
             # be an object reader, so fail closed instead of fabricating a
             # declaration or claiming a generic instantiation is safe.
