@@ -409,5 +409,5 @@ fn from_typed_matches_value_tree_canonical_text() {
 
     let native = NativeRecord::from_typed(&record).unwrap();
     assert_eq!(native.id(), id);
-    assert_eq!(&*native.json, expected);
+    assert_eq!(serde_json::to_string(&native).unwrap(), expected);
 }

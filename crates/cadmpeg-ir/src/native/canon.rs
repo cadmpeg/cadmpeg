@@ -1,59 +1,53 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Streaming canonical JSON for typed native records.
+//! Canonical [`serde_json::Value`] construction for typed native records.
 //!
-//! Renders exactly the text `serde_json::to_string` produces for the
-//! [`serde_json::Value`] tree of a record — compact, with recursively
-//! sorted object keys and the `Value` scalar conventions (a non-finite
-//! float is `null`, an `f32` widens to `f64` before rendering, an integer
-//! map key becomes its decimal string) — without building the tree. Only
-//! objects buffer their members, for the sort; scalars and sequences
-//! append as they are visited. Object keys must be distinct.
+//! Builds exactly the value `serde_json::to_value` produces for a record —
+//! the `Value` scalar conventions apply (a non-finite float is `null`, an
+//! `f32` widens to `f64`, an integer map key becomes its decimal string) —
+//! and adds the two admissions the plain value serializer does not make:
+//! object keys must be distinct, and a `RawValue` payload is read through
+//! one-container replay, so a record nested deeper than the JSON parser's
+//! recursion limit is still admitted.
 #![deny(clippy::disallowed_methods)]
 
 use serde::ser::{self, Serialize};
-use std::collections::BTreeMap;
+use serde_json::{Map, Value};
 
 // serde_json's RawValue Serialize protocol. The RawValue owner fixtures check
 // this spelling against the dependency's actual serializer.
 const RAW_VALUE_STRUCT: &str = "$serde_json::private::RawValue";
 
-/// One serialized value: rendered text, or a buffered object kept apart so
-/// the record assembler can hoist its `id` member.
+/// One serialized value: any value, or an object kept apart so the record
+/// assembler can hoist its `id` member.
 pub(super) enum Node {
-    /// Any non-object value, fully rendered.
-    Text(String),
-    /// An object's members, rendered per raw (unescaped) key.
-    Object(BTreeMap<String, String>),
+    /// Any non-object value.
+    Value(Value),
+    /// An object's members, keyed by raw (unescaped) key.
+    Object(Map<String, Value>),
 }
 
 impl Node {
-    /// Render this value as canonical JSON text.
-    pub(super) fn render(self) -> String {
+    /// This value.
+    pub(super) fn into_value(self) -> Value {
         match self {
-            Node::Text(text) => text,
-            Node::Object(entries) => render_object(&entries),
+            Node::Value(value) => value,
+            Node::Object(entries) => Value::Object(entries),
         }
+    }
+
+    /// Render this value as canonical JSON text: the tests' oracle for what a
+    /// record carrying this node serializes to.
+    #[cfg(test)]
+    pub(super) fn render(self) -> String {
+        self.into_value().to_string()
     }
 }
 
-/// Render buffered object members in sorted key order.
-fn render_object(entries: &BTreeMap<String, String>) -> String {
-    let mut out = String::from("{");
-    for (ordinal, (key, value)) in entries.iter().enumerate() {
-        if ordinal > 0 {
-            out.push(',');
-        }
-        out.push_str(&escape_key(key));
-        out.push(':');
-        out.push_str(value);
-    }
-    out.push('}');
-    out
-}
-
-/// Render a raw key as a JSON string.
-fn escape_key(key: &str) -> String {
-    serde_json::Value::String(key.to_owned()).to_string()
+/// An externally tagged variant: `{"Variant": payload}`.
+fn tagged(variant: &str, payload: Value) -> Node {
+    let mut entries = Map::new();
+    entries.insert(variant.to_owned(), payload);
+    Node::Value(Value::Object(entries))
 }
 
 /// The canonical-value serializer. Every `serialize_*` returns a [`Node`].
@@ -73,66 +67,64 @@ impl ser::Serializer for CanonValue {
     type SerializeStructVariant = CanonVariantMap;
 
     fn serialize_bool(self, value: bool) -> Result<Node, Error> {
-        Ok(Node::Text(if value { "true" } else { "false" }.to_owned()))
+        Ok(Node::Value(Value::Bool(value)))
     }
 
     fn serialize_i8(self, value: i8) -> Result<Node, Error> {
-        Ok(Node::Text(value.to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_i16(self, value: i16) -> Result<Node, Error> {
-        Ok(Node::Text(value.to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_i32(self, value: i32) -> Result<Node, Error> {
-        Ok(Node::Text(value.to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_i64(self, value: i64) -> Result<Node, Error> {
-        Ok(Node::Text(value.to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_i128(self, value: i128) -> Result<Node, Error> {
         if let Ok(value) = i64::try_from(value) {
-            return Ok(Node::Text(value.to_string()));
+            return Ok(Node::Value(Value::from(value)));
         }
         if let Ok(value) = u64::try_from(value) {
-            return Ok(Node::Text(value.to_string()));
+            return Ok(Node::Value(Value::from(value)));
         }
         Err(ser::Error::custom("number out of range"))
     }
 
     fn serialize_u8(self, value: u8) -> Result<Node, Error> {
-        Ok(Node::Text(value.to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_u16(self, value: u16) -> Result<Node, Error> {
-        Ok(Node::Text(value.to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_u32(self, value: u32) -> Result<Node, Error> {
-        Ok(Node::Text(value.to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_u64(self, value: u64) -> Result<Node, Error> {
-        Ok(Node::Text(value.to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_u128(self, value: u128) -> Result<Node, Error> {
         if let Ok(value) = u64::try_from(value) {
-            return Ok(Node::Text(value.to_string()));
+            return Ok(Node::Value(Value::from(value)));
         }
         Err(ser::Error::custom("number out of range"))
     }
 
     fn serialize_f32(self, value: f32) -> Result<Node, Error> {
-        Ok(Node::Text(
-            serde_json::Value::from(f64::from(value)).to_string(),
-        ))
+        Ok(Node::Value(Value::from(f64::from(value))))
     }
 
     fn serialize_f64(self, value: f64) -> Result<Node, Error> {
-        Ok(Node::Text(serde_json::Value::from(value).to_string()))
+        Ok(Node::Value(Value::from(value)))
     }
 
     fn serialize_char(self, value: char) -> Result<Node, Error> {
@@ -140,23 +132,17 @@ impl ser::Serializer for CanonValue {
     }
 
     fn serialize_str(self, value: &str) -> Result<Node, Error> {
-        Ok(Node::Text(serde_json::to_string(value)?))
+        Ok(Node::Value(Value::String(value.to_owned())))
     }
 
     fn serialize_bytes(self, value: &[u8]) -> Result<Node, Error> {
-        let mut out = String::from("[");
-        for (ordinal, byte) in value.iter().enumerate() {
-            if ordinal > 0 {
-                out.push(',');
-            }
-            out.push_str(&byte.to_string());
-        }
-        out.push(']');
-        Ok(Node::Text(out))
+        Ok(Node::Value(Value::Array(
+            value.iter().copied().map(Value::from).collect(),
+        )))
     }
 
     fn serialize_none(self) -> Result<Node, Error> {
-        Ok(Node::Text("null".to_owned()))
+        Ok(Node::Value(Value::Null))
     }
 
     fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<Node, Error> {
@@ -164,11 +150,11 @@ impl ser::Serializer for CanonValue {
     }
 
     fn serialize_unit(self) -> Result<Node, Error> {
-        Ok(Node::Text("null".to_owned()))
+        Ok(Node::Value(Value::Null))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Node, Error> {
-        Ok(Node::Text("null".to_owned()))
+        Ok(Node::Value(Value::Null))
     }
 
     fn serialize_unit_variant(
@@ -195,15 +181,12 @@ impl ser::Serializer for CanonValue {
         variant: &'static str,
         value: &T,
     ) -> Result<Node, Error> {
-        let inner = value.serialize(CanonValue)?.render();
-        Ok(Node::Text(format!("{{{}:{inner}}}", escape_key(variant))))
+        let inner = value.serialize(CanonValue)?.into_value();
+        Ok(tagged(variant, inner))
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<CanonSeq, Error> {
-        Ok(CanonSeq {
-            out: String::from("["),
-            any: false,
-        })
+        Ok(CanonSeq { out: Vec::new() })
     }
 
     fn serialize_tuple(self, len: usize) -> Result<CanonSeq, Error> {
@@ -229,7 +212,7 @@ impl ser::Serializer for CanonValue {
 
     fn serialize_map(self, _len: Option<usize>) -> Result<CanonMap, Error> {
         Ok(CanonMap {
-            entries: BTreeMap::new(),
+            entries: Map::new(),
             key: None,
         })
     }
@@ -256,10 +239,9 @@ impl ser::Serializer for CanonValue {
     }
 }
 
-/// A sequence rendered in visit order.
+/// A sequence collected in visit order.
 pub(super) struct CanonSeq {
-    out: String,
-    any: bool,
+    out: Vec<Value>,
 }
 
 impl ser::SerializeSeq for CanonSeq {
@@ -267,18 +249,13 @@ impl ser::SerializeSeq for CanonSeq {
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
-        let rendered = value.serialize(CanonValue)?.render();
-        if self.any {
-            self.out.push(',');
-        }
-        self.any = true;
-        self.out.push_str(&rendered);
+        let element = value.serialize(CanonValue)?.into_value();
+        self.out.push(element);
         Ok(())
     }
 
-    fn end(mut self) -> Result<Node, Error> {
-        self.out.push(']');
-        Ok(Node::Text(self.out))
+    fn end(self) -> Result<Node, Error> {
+        Ok(Node::Value(Value::Array(self.out)))
     }
 }
 
@@ -323,28 +300,26 @@ impl ser::SerializeTupleVariant for CanonVariantSeq {
     }
 
     fn end(self) -> Result<Node, Error> {
-        let inner = ser::SerializeSeq::end(self.seq)?.render();
-        Ok(Node::Text(format!(
-            "{{{}:{inner}}}",
-            escape_key(self.variant)
-        )))
+        let inner = ser::SerializeSeq::end(self.seq)?.into_value();
+        Ok(tagged(self.variant, inner))
     }
 }
 
-/// An object's distinct members, buffered raw-key to rendered-value.
+/// An object's distinct members, keyed by raw (unescaped) key.
 pub(super) struct CanonMap {
-    entries: BTreeMap<String, String>,
+    entries: Map<String, Value>,
     key: Option<String>,
 }
 
 impl CanonMap {
     fn insert<T: Serialize + ?Sized>(&mut self, key: String, value: &T) -> Result<(), Error> {
         match self.entries.entry(key) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(value.serialize(CanonValue)?.render());
+            serde_json::map::Entry::Vacant(entry) => {
+                let value = value.serialize(CanonValue)?.into_value();
+                entry.insert(value);
                 Ok(())
             }
-            std::collections::btree_map::Entry::Occupied(entry) => {
+            serde_json::map::Entry::Occupied(entry) => {
                 Err(ser::Error::custom(format!("duplicate key {}", entry.key())))
             }
         }
@@ -445,11 +420,8 @@ impl ser::SerializeStructVariant for CanonVariantMap {
     }
 
     fn end(self) -> Result<Node, Error> {
-        let inner = ser::SerializeMap::end(self.map)?.render();
-        Ok(Node::Text(format!(
-            "{{{}:{inner}}}",
-            escape_key(self.variant)
-        )))
+        let inner = ser::SerializeMap::end(self.map)?.into_value();
+        Ok(tagged(self.variant, inner))
     }
 }
 

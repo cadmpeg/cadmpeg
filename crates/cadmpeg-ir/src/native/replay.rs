@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Replay stored JSON text into a serializer or a single field.
+//! Replay stored JSON text into a serializer.
 //!
-//! [`emit`] drives a serializer from the parse; [`field`] materializes one
-//! member while skipping the rest.
+//! [`emit`] drives a serializer from the parse, reading one container at a
+//! time so a value nested deeper than the parser's recursion limit is still
+//! admitted.
 
 use std::borrow::Cow;
 use std::fmt;
 
 use serde::{de, ser};
-use serde_json::{value::RawValue, Value};
+use serde_json::value::RawValue;
 
 /// Emit the JSON value held in `json` into `serializer`.
 ///
@@ -18,53 +19,6 @@ pub(super) fn emit<S: ser::Serializer>(json: &str, serializer: S) -> Result<S::O
         .map_err(de_to_ser)?;
     deserializer.end().map_err(de_to_ser)?;
     Ok(emitted)
-}
-
-/// Parse the `name` member of the JSON object held in `json`.
-///
-pub(super) fn field(json: &str, name: &str) -> Result<Option<Value>, serde_json::Error> {
-    let mut deserializer = serde_json::Deserializer::from_str(json);
-    let found = de::Deserializer::deserialize_map(&mut deserializer, PickField(name))?;
-    deserializer.end()?;
-    Ok(found)
-}
-
-/// Read an owned type from a constructor-produced canonical JSON record.
-///
-/// Common records use the direct parser. Deeper records go through replay's
-/// one-container reads, then the Value deserializer, which has no JSON nesting
-/// ceiling. The cutoff is a conservative fast-path bound, not an admission
-/// limit. Scanning avoids materializing a second tree for every typed read.
-pub(super) fn parse<T: de::DeserializeOwned>(json: &str) -> Result<T, serde_json::Error> {
-    const DIRECT_JSON_DEPTH: usize = 64;
-    let mut depth = 0;
-    let mut bytes = json.bytes();
-    while let Some(byte) = bytes.next() {
-        match byte {
-            b'"' => {
-                while let Some(quoted) = bytes.next() {
-                    match quoted {
-                        b'\\' => {
-                            bytes.next();
-                        }
-                        b'"' => break,
-                        _ => {}
-                    }
-                }
-            }
-            b'[' | b'{' => {
-                depth += 1;
-                if depth > DIRECT_JSON_DEPTH {
-                    return T::deserialize(emit(json, serde_json::value::Serializer)?);
-                }
-            }
-            // The input is a complete object written by the native
-            // constructors; a closing container always has an opening one.
-            b']' | b'}' => depth -= 1,
-            _ => {}
-        }
-    }
-    serde_json::from_str(json)
 }
 
 fn ser_to_de<S: ser::Error, D: de::Error>(error: S) -> D {
@@ -193,38 +147,11 @@ impl<'de> de::Visitor<'de> for Key {
     }
 }
 
-/// Materializes one named member of a JSON object and discards the others.
-struct PickField<'a>(&'a str);
-
-impl<'de> de::Visitor<'de> for PickField<'_> {
-    type Value = Option<Value>;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a JSON object")
-    }
-
-    fn visit_map<A: de::MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
-        let mut found = None;
-        // Every remaining key is read even once the member is found, because
-        // the deserializer checks that the object was consumed to its closing
-        // brace. Skipping a value costs a scan and no allocation.
-        while let Some(key) = access.next_key_seed(Key)? {
-            if found.is_none() && key.as_ref() == self.0 {
-                let raw = access.next_value::<&RawValue>()?;
-                found = Some(emit(raw.get(), serde_json::value::Serializer).map_err(ser_to_de)?);
-            } else {
-                access.next_value::<de::IgnoredAny>()?;
-            }
-        }
-        Ok(found)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{emit, field};
+    use super::emit;
     use serde_json::Value;
 
     const TEXT: &str = concat!(
@@ -255,30 +182,4 @@ mod tests {
         assert_eq!(serde_json::to_value(&member).unwrap(), expected);
     }
 
-    #[test]
-    fn direct_and_deep_typed_reads_preserve_container_depth_and_quoted_brackets() {
-        for depth in [0, 31, 63, 64, 65, 127, 128, 140] {
-            let mut nested = serde_json::json!({"value": "[\\\"{}]", "number": u64::MAX});
-            for _ in 0..depth {
-                nested = Value::Array(vec![nested]);
-            }
-            let expected = serde_json::json!({"[\\\"{}]": nested});
-            let text = expected.to_string();
-            assert_eq!(super::parse::<Value>(&text).unwrap(), expected, "{depth}");
-        }
-    }
-
-    /// Picking one member matches parsing the whole object and removing it,
-    /// including for absent members and for keys carrying escapes.
-    #[test]
-    fn picks_the_member_a_full_parse_would_yield() {
-        let whole = serde_json::from_str::<serde_json::Map<String, Value>>(TEXT).unwrap();
-        for name in ["id", "a", "b", "é key", "z", "missing", ""] {
-            assert_eq!(
-                field(TEXT, name).unwrap(),
-                whole.get(name).cloned(),
-                "{name}"
-            );
-        }
-    }
 }
