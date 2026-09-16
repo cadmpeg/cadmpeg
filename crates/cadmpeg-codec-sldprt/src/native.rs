@@ -810,12 +810,9 @@ impl SldprtNative {
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        // Store and load share the byte-backed lane admission boundary. This
-        // keeps direct native callers from writing a name/class/entity index
-        // that a later load would reject, while preserving namespace
-        // atomicity on failure. Store-specific binding checks below retain
-        // their more precise diagnostics for the remaining relationships.
-        lanes::admit_payload_structure(self)?;
+        // Load admits every record against the lane payload it is derived from;
+        // that is the boundary a hand-written namespace crosses. Store holds the
+        // relations between records that no single payload derives.
         for history in &self.feature_histories {
             if let Some(record) = history
                 .configurations
@@ -1029,14 +1026,6 @@ impl SldprtNative {
                 .iter()
                 .map(|record| (record.id(), record))
                 .collect::<std::collections::HashMap<_, _>>();
-            for record in &lane.sketch_entities {
-                if let Err(error) = record.validate_against_payload(&lane.native_payload) {
-                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                        "sketch input entity {}: {error}",
-                        record.id()
-                    )));
-                }
-            }
             for scalar in &lane.scalars {
                 let resolved_operands =
                     crate::resolved_features::operands::resolve_scalar_operand_markers(
