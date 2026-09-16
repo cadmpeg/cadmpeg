@@ -265,3 +265,40 @@ fn candidate_contexts_share_edge_row_storage() {
     drop(candidates);
     assert_eq!(Arc::strong_count(&base.analysis), 1);
 }
+
+#[test]
+fn face_options_hold_the_retained_face_in_ascending_order() {
+    for (retained, others) in [
+        (3usize, vec![]),
+        (3, vec![5, 9]),
+        (7, vec![1, 4]),
+        (5, vec![1, 9]),
+        (0, vec![0usize; 0]),
+    ] {
+        let options = FaceOptions::new(retained, others.clone());
+        let mut expected = others;
+        expected.push(retained);
+        expected.sort_unstable();
+        assert_eq!(options.iter().collect::<Vec<_>>(), expected);
+        assert_eq!(options.count(), expected.len());
+        assert_eq!(options.first, expected[0]);
+    }
+}
+
+#[test]
+fn a_repeated_slot_with_one_admitted_face_takes_it_without_a_search() {
+    let serialized = [[0usize, 0]];
+    let allowed = vec![vec![0usize]];
+    let solved = unique_duplicate_face_assignment(&serialized, &allowed, 1, |_| true);
+    assert_eq!(solved, Some(vec![[0, 0]]));
+}
+
+#[test]
+fn a_repeated_slot_with_two_admitted_faces_resolves_to_the_one_valid_assignment() {
+    let serialized = [[0usize, 0]];
+    let allowed = vec![vec![0usize, 1]];
+    let solved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |assignment| {
+        assignment[0][1] == 1
+    });
+    assert_eq!(solved, Some(vec![[0, 1]]));
+}
