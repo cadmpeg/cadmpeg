@@ -952,9 +952,18 @@ struct FaceOptions {
 }
 
 impl FaceOptions {
-    /// Merge the retained serialized face into `others`, which is ascending,
-    /// holds no repeat and does not hold `retained`.
-    fn new(retained: usize, mut others: Vec<usize>) -> Self {
+    /// The slot's options: `retained`, which is always admitted, together with
+    /// `admitted` in ascending order and without repeats.
+    ///
+    /// `admitted` states the faces the slot allows, in any order, with or
+    /// without repeats, and with or without `retained` among them.
+    fn from_admitted(retained: usize, admitted: impl IntoIterator<Item = usize>) -> Self {
+        let mut others = admitted
+            .into_iter()
+            .filter(|face| *face != retained)
+            .collect::<Vec<_>>();
+        others.sort_unstable();
+        others.dedup();
         let at = others.partition_point(|face| *face < retained);
         if at == 0 {
             return Self {
@@ -1058,14 +1067,7 @@ where
     let mut branches = Vec::new();
     for edge in unresolved {
         let retained = assignment[edge][0];
-        let mut others = allowed_faces[edge]
-            .iter()
-            .copied()
-            .filter(|face| *face != retained)
-            .collect::<Vec<_>>();
-        others.sort_unstable();
-        others.dedup();
-        let options = FaceOptions::new(retained, others);
+        let options = FaceOptions::from_admitted(retained, allowed_faces[edge].iter().copied());
         if options.rest.is_empty() {
             assignment[edge][1] = options.first;
         } else {

@@ -275,7 +275,7 @@ fn face_options_hold_the_retained_face_in_ascending_order() {
         (5, vec![1, 9]),
         (0, vec![0usize; 0]),
     ] {
-        let options = FaceOptions::new(retained, others.clone());
+        let options = FaceOptions::from_admitted(retained, others.clone());
         let mut expected = others;
         expected.push(retained);
         expected.sort_unstable();
@@ -283,6 +283,26 @@ fn face_options_hold_the_retained_face_in_ascending_order() {
         assert_eq!(options.count(), expected.len());
         assert_eq!(options.first, expected[0]);
     }
+}
+
+#[test]
+fn face_options_order_and_deduplicate_the_admitted_faces_they_are_given() {
+    // Unsorted, with a repeat, and holding `retained` itself. The type does
+    // the filter, the sort and the dedup, so the caller states none of them.
+    let options = FaceOptions::from_admitted(5, [9usize, 1, 5, 9, 1, 3]);
+
+    assert_eq!(options.iter().collect::<Vec<_>>(), vec![1, 3, 5, 9]);
+    assert_eq!(options.count(), 4);
+    assert_eq!(options.first, 1);
+
+    // `retained` smaller than every admitted face, still unsorted and repeated.
+    let options = FaceOptions::from_admitted(0, [4usize, 2, 4]);
+    assert_eq!(options.iter().collect::<Vec<_>>(), vec![0, 2, 4]);
+
+    // Nothing admitted beyond the retained face.
+    let options = FaceOptions::from_admitted(7, [7usize, 7]);
+    assert_eq!(options.iter().collect::<Vec<_>>(), vec![7]);
+    assert_eq!(options.count(), 1);
 }
 
 #[test]
