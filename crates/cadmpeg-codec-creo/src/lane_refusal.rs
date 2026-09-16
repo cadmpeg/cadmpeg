@@ -37,13 +37,10 @@ impl LaneRefusals {
         }
     }
 
-    /// Record one refusal against the record that stated it.
-    pub(crate) fn note(
-        &mut self,
-        record: impl std::fmt::Display,
-        error: &cadmpeg_ir::geometry::NurbsError,
-    ) {
-        self.records.push(format!("{record}: {error}"));
+    /// Record one refusal against the record that stated it, with the reason
+    /// the reader refused it.
+    pub(crate) fn note(&mut self, record: impl std::fmt::Display, reason: &dyn std::fmt::Display) {
+        self.records.push(format!("{record}: {reason}"));
     }
 
     /// Take every refusal recorded so far, in reader order, and leave the sink
