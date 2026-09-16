@@ -9,24 +9,28 @@
 
 use std::fmt;
 
-use cadmpeg_ir::ids::IdentityError;
+use cadmpeg_ir::identity_key;
 use cadmpeg_ir::ids::{
-    AppearanceId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId,
-    ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
+    AppearanceBindingId, AppearanceId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey,
+    LoopId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
+    SurfaceId, VertexId,
 };
 
 /// A decoded number an identity key may be spelled with.
+///
+/// A decimal spelling is an identity key by construction, so the conversion
+/// answers [`IdentityKey`] and no minter has a failing branch.
 pub(crate) trait Ordinal: Copy {
-    /// The decimal spelling of this number.
-    fn spelling(self) -> String;
+    /// The decimal spelling of this number, as an identity key.
+    fn key(self) -> IdentityKey;
 
     /// This number read as a Directory sequence, if it is one.
     fn sequence(self) -> Option<u32>;
 }
 
 impl Ordinal for u32 {
-    fn spelling(self) -> String {
-        self.to_string()
+    fn key(self) -> IdentityKey {
+        IdentityKey::from(self)
     }
 
     fn sequence(self) -> Option<u32> {
@@ -35,8 +39,8 @@ impl Ordinal for u32 {
 }
 
 impl Ordinal for usize {
-    fn spelling(self) -> String {
-        self.to_string()
+    fn key(self) -> IdentityKey {
+        IdentityKey::from(self)
     }
 
     fn sequence(self) -> Option<u32> {
@@ -45,8 +49,8 @@ impl Ordinal for usize {
 }
 
 impl Ordinal for i64 {
-    fn spelling(self) -> String {
-        self.to_string()
+    fn key(self) -> IdentityKey {
+        IdentityKey::from(self)
     }
 
     fn sequence(self) -> Option<u32> {
@@ -57,8 +61,10 @@ impl Ordinal for i64 {
 /// A fixed word this crate spells identity keys with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Word {
+    Body,
     BoundedPlane,
     End,
+    Face,
     FreeGeometry,
     ImplicitOuter,
     LegacySingleParent,
@@ -69,47 +75,26 @@ pub(crate) enum Word {
 }
 
 impl Word {
-    const ALL: [Self; 9] = [
-        Self::BoundedPlane,
-        Self::End,
-        Self::FreeGeometry,
-        Self::ImplicitOuter,
-        Self::LegacySingleParent,
-        Self::PlacedDirectrix,
-        Self::PlacedGeneratrix,
-        Self::PlacedSource,
-        Self::Start,
-    ];
-
-    const fn text(self) -> &'static str {
+    /// This word as an identity key.
+    ///
+    /// Every arm is a literal the `identity_key!` macro admits during const
+    /// evaluation, so a word that breaks the key grammar fails `cargo check`.
+    fn key(self) -> IdentityKey {
         match self {
-            Self::BoundedPlane => "bounded-plane",
-            Self::End => "end",
-            Self::FreeGeometry => "free-geometry",
-            Self::ImplicitOuter => "implicit-outer",
-            Self::LegacySingleParent => "legacy-single-parent",
-            Self::PlacedDirectrix => "placed-directrix",
-            Self::PlacedGeneratrix => "placed-generatrix",
-            Self::PlacedSource => "placed-source",
-            Self::Start => "start",
+            Self::Body => identity_key!("body"),
+            Self::BoundedPlane => identity_key!("bounded-plane"),
+            Self::End => identity_key!("end"),
+            Self::Face => identity_key!("face"),
+            Self::FreeGeometry => identity_key!("free-geometry"),
+            Self::ImplicitOuter => identity_key!("implicit-outer"),
+            Self::LegacySingleParent => identity_key!("legacy-single-parent"),
+            Self::PlacedDirectrix => identity_key!("placed-directrix"),
+            Self::PlacedGeneratrix => identity_key!("placed-generatrix"),
+            Self::PlacedSource => identity_key!("placed-source"),
+            Self::Start => identity_key!("start"),
         }
     }
 }
-
-const _: () = {
-    let mut word = 0;
-    while word < Word::ALL.len() {
-        let bytes = Word::ALL[word].text().as_bytes();
-        assert!(!bytes.is_empty());
-        let mut index = 0;
-        while index < bytes.len() {
-            assert!(bytes[index] != b'#');
-            assert!(bytes[index] > b' ' && bytes[index] < 0x7f);
-            index += 1;
-        }
-        word += 1;
-    }
-};
 
 /// An identity key built only from decoded numbers and [`Word`]s.
 ///
@@ -118,7 +103,7 @@ const _: () = {
 /// came from asks the stem instead of parsing the minted text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Stem {
-    key: String,
+    key: IdentityKey,
     origin: Option<u32>,
 }
 
@@ -126,7 +111,7 @@ impl Stem {
     /// The key of one Directory entry: `D{sequence}`.
     pub(crate) fn directory(sequence: impl Ordinal) -> Self {
         Self {
-            key: format!("D{}", sequence.spelling()),
+            key: identity_key!("D").then(sequence.key()),
             origin: sequence.sequence(),
         }
     }
@@ -134,7 +119,7 @@ impl Stem {
     /// A key that is one fixed word.
     pub(crate) fn word(word: Word) -> Self {
         Self {
-            key: word.text().to_owned(),
+            key: word.key(),
             origin: None,
         }
     }
@@ -145,7 +130,7 @@ impl Stem {
     /// such a record is a derivation of the entry, not its whole neutral form.
     pub(crate) fn word_directory(word: Word, sequence: impl Ordinal) -> Self {
         Self {
-            key: format!("{}-D{}", word.text(), sequence.spelling()),
+            key: word.key().dash(identity_key!("D").then(sequence.key())),
             origin: None,
         }
     }
@@ -153,7 +138,7 @@ impl Stem {
     /// A key that is one decoded number.
     pub(crate) fn number(value: impl Ordinal) -> Self {
         Self {
-            key: value.spelling(),
+            key: value.key(),
             origin: None,
         }
     }
@@ -163,32 +148,41 @@ impl Stem {
         self.origin
     }
 
+    /// This stem's identity key.
+    pub(crate) fn key(&self) -> IdentityKey {
+        self.key.clone()
+    }
+
     /// A child keyed by a Directory sequence: `{self}:D{sequence}`.
     pub(crate) fn child(&self, sequence: impl Ordinal) -> Self {
-        self.derive(format!("{}:D{}", self.key, sequence.spelling()))
+        self.derive(
+            self.key
+                .clone()
+                .colon(identity_key!("D").then(sequence.key())),
+        )
     }
 
     /// A child keyed by an ordinal: `{self}:{index}`.
     pub(crate) fn slot(&self, index: impl Ordinal) -> Self {
-        self.derive(format!("{}:{}", self.key, index.spelling()))
+        self.derive(self.key.clone().colon(index.key()))
     }
 
     /// A named part of this key: `{self}:{word}`.
     pub(crate) fn part(&self, word: Word) -> Self {
-        self.derive(format!("{}:{}", self.key, word.text()))
+        self.derive(self.key.clone().colon(word.key()))
     }
 
     /// A named derivation of this key: `{self}-{word}`.
     pub(crate) fn tail(&self, word: Word) -> Self {
-        self.derive(format!("{}-{}", self.key, word.text()))
+        self.derive(self.key.clone().dash(word.key()))
     }
 
     /// A numbered derivation of this key: `{self}-{index}`.
     pub(crate) fn tail_index(&self, index: impl Ordinal) -> Self {
-        self.derive(format!("{}-{}", self.key, index.spelling()))
+        self.derive(self.key.clone().dash(index.key()))
     }
 
-    fn derive(&self, key: String) -> Self {
+    fn derive(&self, key: IdentityKey) -> Self {
         Self {
             key,
             origin: self.origin,
@@ -198,20 +192,19 @@ impl Stem {
 
 impl fmt::Display for Stem {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.key)
+        formatter.write_str(self.key.as_str())
     }
 }
 
-/// The one place the identity grammar is proved, for every id this crate mints.
-fn mint<T: TryFrom<String, Error = IdentityError>>(namespace: &str, stem: &Stem) -> T {
-    T::try_from(format!("iges:{namespace}#{stem}")).expect("a stem is a valid identity key")
-}
-
+/// Declare one minter over a const-admitted `iges:{scope}:{kind}` namespace.
 macro_rules! minter {
-    ($(#[$meta:meta])* $name:ident, $ty:ty, $namespace:literal) => {
+    ($(#[$meta:meta])* $name:ident, $ty:ty, $scope:literal, $kind:literal) => {
         $(#[$meta])*
         pub(crate) fn $name(stem: &Stem) -> $ty {
-            mint($namespace, stem)
+            <$ty>::compose(
+                &cadmpeg_ir::identity_namespace!("iges", $scope, $kind),
+                stem.key(),
+            )
         }
     };
 }
@@ -220,95 +213,118 @@ minter!(
     /// The body named by this key.
     body,
     BodyId,
-    "model:body"
+    "model",
+    "body"
 );
 minter!(
     /// The coedge named by this key.
     coedge,
     CoedgeId,
-    "model:coedge"
+    "model",
+    "coedge"
 );
 minter!(
     /// The curve named by this key.
     curve,
     CurveId,
-    "model:curve"
+    "model",
+    "curve"
 );
 minter!(
     /// The edge named by this key.
     edge,
     EdgeId,
-    "model:edge"
+    "model",
+    "edge"
 );
 minter!(
     /// The face named by this key.
     face,
     FaceId,
-    "model:face"
+    "model",
+    "face"
 );
 minter!(
     /// The loop named by this key.
     r#loop,
     LoopId,
-    "model:loop"
+    "model",
+    "loop"
 );
 minter!(
     /// The pcurve named by this key.
     pcurve,
     PcurveId,
-    "model:pcurve"
+    "model",
+    "pcurve"
 );
 minter!(
     /// The point named by this key.
     point,
     PointId,
-    "model:point"
+    "model",
+    "point"
 );
 minter!(
     /// The procedural curve named by this key.
     procedural_curve,
     ProceduralCurveId,
-    "model:procedural-curve"
+    "model",
+    "procedural-curve"
 );
 minter!(
     /// The procedural surface named by this key.
     procedural_surface,
     ProceduralSurfaceId,
-    "model:procedural-surface"
+    "model",
+    "procedural-surface"
 );
 minter!(
     /// The region named by this key.
     region,
     RegionId,
-    "model:region"
+    "model",
+    "region"
 );
 minter!(
     /// The shell named by this key.
     shell,
     ShellId,
-    "model:shell"
+    "model",
+    "shell"
 );
 minter!(
     /// The surface named by this key.
     surface,
     SurfaceId,
-    "model:surface"
+    "model",
+    "surface"
 );
 minter!(
     /// The vertex named by this key.
     vertex,
     VertexId,
-    "model:vertex"
+    "model",
+    "vertex"
 );
 minter!(
     /// The appearance named by this Directory colour definition key.
     appearance_color,
     AppearanceId,
-    "appearance:color"
+    "appearance",
+    "color"
 );
 minter!(
     /// The appearance named by this standard colour number.
     appearance_standard,
     AppearanceId,
-    "appearance:standard"
+    "appearance",
+    "standard"
+);
+minter!(
+    /// The appearance binding named by this key.
+    appearance_binding,
+    AppearanceBindingId,
+    "model",
+    "appearance-binding"
 );

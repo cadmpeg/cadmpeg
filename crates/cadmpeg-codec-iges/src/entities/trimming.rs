@@ -1226,12 +1226,15 @@ fn split_homogeneous_pcurve(
             .collect::<Vec<_>>();
         levels.push(next);
     }
-    let left = levels.iter().map(|level| level[0]).collect::<Vec<_>>();
+    let left = levels
+        .iter()
+        .map(|level| level.first().copied())
+        .collect::<Option<Vec<_>>>()?;
     let right = levels
         .iter()
         .rev()
-        .map(|level| *level.last().expect("nonempty de Casteljau level"))
-        .collect::<Vec<_>>();
+        .map(|level| level.last().copied())
+        .collect::<Option<Vec<_>>>()?;
     Some((left, right))
 }
 
