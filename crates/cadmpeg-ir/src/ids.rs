@@ -395,6 +395,38 @@ impl IdentityKey {
         Self(std::borrow::Cow::Owned(encoded))
     }
 
+    /// Encode arbitrary source text as key text, keeping every character the
+    /// key grammar admits literal.
+    ///
+    /// `#` and every Unicode whitespace character become `%HH` per UTF-8 byte,
+    /// `%` becomes `%25` so no encoded spelling aliases a literal one, and
+    /// empty input becomes `%EMPTY`. Text that is already key text and carries
+    /// no `%` keeps its spelling, so this encodes an id without renaming the
+    /// ids that already have keys. Use [`encode_segment`](Self::encode_segment)
+    /// instead for one component of a composed key, which must also escape the
+    /// separators.
+    #[must_use]
+    pub fn encode_key_text(value: &str) -> Self {
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        if value.is_empty() {
+            return Self(std::borrow::Cow::Owned("%EMPTY".to_owned()));
+        }
+        let mut encoded = String::with_capacity(value.len());
+        for character in value.chars() {
+            if character == '%' || character == '#' || character.is_whitespace() {
+                let mut buffer = [0u8; 4];
+                for byte in character.encode_utf8(&mut buffer).as_bytes() {
+                    encoded.push('%');
+                    encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                    encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+                }
+            } else {
+                encoded.push(character);
+            }
+        }
+        Self(std::borrow::Cow::Owned(encoded))
+    }
+
     /// Copy this key with ASCII letters converted to lowercase.
     #[must_use]
     pub fn to_ascii_lowercase(&self) -> Self {
