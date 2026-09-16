@@ -591,3 +591,91 @@ fn native_load_rejects_duplicate_history_ordinals_from_json() {
         assert!(error.to_string().contains(message), "{arena}: {error}");
     }
 }
+
+/// The document used for the object-name edit tests: one feature-input lane
+/// whose object names and scalar arena both derive from the same payload.
+fn document_with_named_scalars() -> Vec<u8> {
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source
+}
+
+#[test]
+fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(document_with_named_scalars()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("sldprt").unwrap();
+    let mut typed = crate::native::SldprtNative::load(namespace).unwrap();
+
+    // Byte five of an object-name record is its UTF-16 length; the name's own
+    // `value` and every later record's offset derive from it.
+    let length_byte = usize::try_from(typed.feature_input_lanes[0].names[0].offset).unwrap() + 5;
+    let stated = typed.feature_input_lanes[0].native_payload[length_byte];
+    typed.feature_input_lanes[0].native_payload[length_byte] = stated + 1;
+
+    let mut forged = cadmpeg_ir::NativeNamespace::default();
+    typed.store(&mut forged).unwrap();
+    let error = crate::native::SldprtNative::load(&forged).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("name structure does not match its native payload"),
+        "a forged name length byte was admitted: {error}"
+    );
+}
+
+#[test]
+fn native_load_refuses_every_object_name_value_edit_and_leaves_the_scalar_arena_alone() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(document_with_named_scalars()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
+    let stated = original["feature_input_names"][0]["value"]
+        .as_str()
+        .expect("fixture admits an object name")
+        .to_string();
+    let lane = original["feature_input_names"][0]["parent"]
+        .as_str()
+        .expect("a name states its lane")
+        .to_string();
+    let ordinal = original["feature_input_names"][0]["ordinal"]
+        .as_u64()
+        .expect("a name states its position in the lane");
+    let scalars = original["feature_input_scalars"].clone();
+    assert!(!scalars
+        .as_array()
+        .expect("fixture admits a scalar arena")
+        .is_empty());
+
+    let same_length = "z".repeat(stated.encode_utf16().count());
+    assert_ne!(same_length, stated);
+    let shorter = "z".to_string();
+    assert!(shorter.encode_utf16().count() < stated.encode_utf16().count());
+    for forged in [same_length, format!("{stated}-longer"), shorter] {
+        let mut edit = original.clone();
+        edit["feature_input_names"][0]["value"] = serde_json::json!(forged);
+        assert_eq!(
+            edit["feature_input_scalars"], scalars,
+            "the value edit moved the scalar arena"
+        );
+        let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(edit).unwrap();
+        let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+        assert!(
+            error.to_string().contains(&format!(
+                "name value does not match its native payload: lane {lane} name {ordinal} states {forged:?}, its payload states {stated:?}"
+            )),
+            "edited object name {forged:?} was admitted or refused elsewhere: {error}"
+        );
+    }
+}
