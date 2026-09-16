@@ -939,6 +939,50 @@ pub(crate) fn repeated_face_endpoint_closures(
     )
 }
 
+/// The admitted second faces for one repeated edge incidence slot.
+///
+/// The serialized face is always retained, so the set is never empty. The type
+/// states that: it holds the smallest admitted face and the ascending
+/// remainder, and there is no spelling of it with no face at all.
+struct FaceOptions {
+    /// The smallest admitted face.
+    first: usize,
+    /// The remaining admitted faces, ascending and all greater than `first`.
+    rest: Vec<usize>,
+}
+
+impl FaceOptions {
+    /// Merge the retained serialized face into `others`, which is ascending,
+    /// holds no repeat and does not hold `retained`.
+    fn new(retained: usize, mut others: Vec<usize>) -> Self {
+        let at = others.partition_point(|face| *face < retained);
+        if at == 0 {
+            return Self {
+                first: retained,
+                rest: others,
+            };
+        }
+        // `others[0]` is smaller than `retained`, so it is the smallest face.
+        // Removing it shifts the insertion point of `retained` down by one.
+        let first = others.remove(0);
+        others.insert(at - 1, retained);
+        Self {
+            first,
+            rest: others,
+        }
+    }
+
+    /// How many faces this slot admits. Never zero.
+    fn count(&self) -> usize {
+        self.rest.len() + 1
+    }
+
+    /// The admitted faces, ascending.
+    fn iter(&self) -> impl Iterator<Item = usize> + '_ {
+        std::iter::once(self.first).chain(self.rest.iter().copied())
+    }
+}
+
 pub(crate) fn unique_duplicate_face_assignment<F>(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
@@ -951,7 +995,7 @@ where
     const MAX_STATES: usize = 4_096;
 
     pub(crate) fn search<F>(
-        branches: &[(usize, Vec<usize>)],
+        branches: &[(usize, FaceOptions)],
         at: usize,
         assignment: &mut [[usize; 2]],
         states: &mut usize,
@@ -976,7 +1020,7 @@ where
         }
         *states += 1;
         let (edge, options) = &branches[at];
-        for &face in options {
+        for face in options.iter() {
             assignment[*edge][1] = face;
             search(
                 branches,
@@ -1013,22 +1057,22 @@ where
     let mut assignment = serialized.to_vec();
     let mut branches = Vec::new();
     for edge in unresolved {
-        let mut options = vec![assignment[edge][0]];
-        options.extend(
-            allowed_faces[edge]
-                .iter()
-                .copied()
-                .filter(|face| *face != assignment[edge][0]),
-        );
-        options.sort_unstable();
-        options.dedup();
-        match options.as_slice() {
-            [] => unreachable!("the serialized face is always retained"),
-            [face] => assignment[edge][1] = *face,
-            _ => branches.push((edge, options)),
+        let retained = assignment[edge][0];
+        let mut others = allowed_faces[edge]
+            .iter()
+            .copied()
+            .filter(|face| *face != retained)
+            .collect::<Vec<_>>();
+        others.sort_unstable();
+        others.dedup();
+        let options = FaceOptions::new(retained, others);
+        if options.rest.is_empty() {
+            assignment[edge][1] = options.first;
+        } else {
+            branches.push((edge, options));
         }
     }
-    branches.sort_unstable_by_key(|(edge, options)| (options.len(), *edge));
+    branches.sort_unstable_by_key(|(edge, options)| (options.count(), *edge));
     let mut states = 0;
     let mut exhausted = false;
     let mut solutions = Vec::new();

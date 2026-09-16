@@ -1742,17 +1742,14 @@ fn try_decode_standard_population(
     let mut plane_faces = 0usize;
     let mut typed = TypedCounts::default();
     for (i, record) in records.iter().enumerate() {
-        let crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) = record
-        else {
-            let crate::families::standard::records::StandardSurfaceRecord::Freeform {
+        let prefix = match record {
+            crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) => prefix,
+            crate::families::standard::records::StandardSurfaceRecord::Freeform {
                 pos,
                 tag,
                 forward,
                 ..
-            } = record
-            else {
-                unreachable!()
-            };
+            } => {
             let id = SurfaceId::compose(
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
                 i,
@@ -1791,6 +1788,7 @@ fn try_decode_standard_population(
                 procedural_surface_plans.push((i, id, *tag, procedure));
             }
             continue;
+            }
         };
         // A bridged plane parameter record contains the same `00 33 32`
         // marker as its SurfacicReps carrier.  One carrier exists per tag.
