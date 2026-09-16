@@ -51,6 +51,15 @@ fn keyed_attributes(
     kept
 }
 
+/// The key a history record id carries: the ordinal of the section it was read
+/// from and its position in that section.
+///
+/// Composed from the two integers, so the key is key text by construction and
+/// the projection recovers it from the id without a fallible re-parse.
+pub(crate) fn history_record_key(source: usize, ordinal: usize) -> cadmpeg_ir::ids::IdentityKey {
+    cadmpeg_ir::ids::IdentityKey::from(source).colon(ordinal)
+}
+
 pub(crate) fn histories(
     scan: &ContainerScan,
     annotations: &mut Annotations,
@@ -72,7 +81,10 @@ pub(crate) fn histories(
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
                 .enumerate()
                 .map(|(ordinal, node)| {
-                    let id = format!("sldprt:history:configuration#{source}:{ordinal}");
+                    let id = format!(
+                        "sldprt:history:configuration#{}",
+                        history_record_key(source, ordinal)
+                    );
                     crate::annotations::note(
                         annotations,
                         id.clone(),
@@ -124,7 +136,10 @@ pub(crate) fn histories(
                 .map(|(ordinal, node)| {
                     (
                         node.range().start,
-                        format!("sldprt:history:feature#{source}:{ordinal}"),
+                        format!(
+                            "sldprt:history:feature#{}",
+                            history_record_key(source, ordinal)
+                        ),
                     )
                 })
                 .collect::<HashMap<_, _>>();
@@ -249,7 +264,10 @@ pub(crate) fn histories(
                 .map(|(ordinal, node)| {
                     (
                         node.range().start,
-                        format!("sldprt:history:configuration#{source}:{ordinal}"),
+                        format!(
+                            "sldprt:history:configuration#{}",
+                            history_record_key(source, ordinal)
+                        ),
                     )
                 })
                 .collect::<HashMap<_, _>>();

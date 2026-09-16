@@ -147,14 +147,15 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> LayerClassification {
         .sections()
         .flat_map(|section| {
             section.ps_streams().iter().map(move |stream| {
-                let name = section.name().unwrap_or("unnamed");
+                // A nameless section states its absence by omission: the site
+                // key and the stream offset already separate two of them.
+                let carrier = section.name().map_or_else(
+                    || format!("{}+{}", section.site_key(), stream.offset),
+                    |name| format!("{}:{name}+{}", section.site_key(), stream.offset),
+                );
                 (
                     stream.header.schema.clone(),
-                    cadmpeg_parasolid::Carrier::new(format!(
-                        "{}:{name}+{}",
-                        section.site_key(),
-                        stream.offset
-                    )),
+                    cadmpeg_parasolid::Carrier::new(carrier),
                 )
             })
         })

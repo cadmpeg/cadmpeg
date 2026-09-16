@@ -1203,34 +1203,23 @@ pub(crate) fn neutral_feature_id(native_id: &str) -> FeatureId {
 
 /// The identity key of one native configuration id, escaped as a feature id is.
 fn configuration_identity_key(native_id: &str) -> cadmpeg_ir::ids::IdentityKey {
-    let key = native_id
-        .strip_prefix("sldprt:history:configuration#")
-        .map_or_else(
-            || native_id.replace('%', "%25").replace('#', "%23"),
-            str::to_owned,
-        );
-    match cadmpeg_ir::ids::IdentityKey::try_new(key) {
-        Ok(key) => key,
-        Err(_) => cadmpeg_ir::identity_key!("unnamed"),
-    }
+    cadmpeg_ir::ids::IdentityKey::encode_key_text(
+        native_id
+            .strip_prefix("sldprt:history:configuration#")
+            .unwrap_or(native_id),
+    )
 }
 
 /// The identity key of one native feature id.
 ///
-/// A minted history id contributes its key directly. Any other id is escaped
-/// on `%` and `#`, the two characters an identity holds that the key grammar
-/// refuses. An id that is still not key text — empty, or carrying whitespace
-/// no identity holds — has no key of its own and takes `unnamed`, which the
-/// document's duplicate-identity check then reports.
+/// A minted history id carries the key `super::history_record_key` composed
+/// from its two integers, and contributes it directly. Any other id is encoded
+/// as key text, which escapes `%` and `#` exactly as before and has no refusal:
+/// every native id has a key of its own.
 fn feature_identity_key(native_id: &str) -> cadmpeg_ir::ids::IdentityKey {
-    let key = native_id
-        .strip_prefix("sldprt:history:feature#")
-        .map_or_else(
-            || native_id.replace('%', "%25").replace('#', "%23"),
-            str::to_owned,
-        );
-    match cadmpeg_ir::ids::IdentityKey::try_new(key) {
-        Ok(key) => key,
-        Err(_) => cadmpeg_ir::identity_key!("unnamed"),
-    }
+    cadmpeg_ir::ids::IdentityKey::encode_key_text(
+        native_id
+            .strip_prefix("sldprt:history:feature#")
+            .unwrap_or(native_id),
+    )
 }
