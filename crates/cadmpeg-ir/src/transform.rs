@@ -209,11 +209,7 @@ impl ExactSignedSum {
     }
 
     fn finish(self) -> Option<ScaledValue> {
-        let (negative, magnitude) = match compare_words(&self.positive, &self.negative) {
-            std::cmp::Ordering::Greater => (false, subtract_words(&self.positive, &self.negative)),
-            std::cmp::Ordering::Less => (true, subtract_words(&self.negative, &self.positive)),
-            std::cmp::Ordering::Equal => return None,
-        };
+        let (negative, magnitude) = signed_difference(&self.positive, &self.negative)?;
         let word = magnitude.iter().rposition(|value| *value != 0)?;
         let highest_bit = word * 64
             + usize::try_from(63 - magnitude[word].leading_zeros())
@@ -254,31 +250,35 @@ impl ExactSignedSum {
     }
 }
 
-fn compare_words(
-    left: &[u64; EXACT_SUM_WORDS],
-    right: &[u64; EXACT_SUM_WORDS],
-) -> std::cmp::Ordering {
-    left.iter()
-        .zip(right)
+/// Returns the sign and the magnitude of `positive - negative`, or `None` when
+/// the two accumulators are equal.
+///
+/// The comparison that names the larger accumulator is the only route to the
+/// subtraction below, so the minuend is never the smaller side and the loop
+/// cannot leave a borrow in the highest word. Splitting the comparison from the
+/// subtraction would state that relation as an assertion instead of holding it.
+fn signed_difference(
+    positive: &[u64; EXACT_SUM_WORDS],
+    negative: &[u64; EXACT_SUM_WORDS],
+) -> Option<(bool, [u64; EXACT_SUM_WORDS])> {
+    let (larger, smaller, is_negative) = positive
+        .iter()
+        .zip(negative)
         .rev()
-        .find_map(|(left, right)| (left != right).then(|| left.cmp(right)))
-        .unwrap_or(std::cmp::Ordering::Equal)
-}
-
-fn subtract_words(
-    left: &[u64; EXACT_SUM_WORDS],
-    right: &[u64; EXACT_SUM_WORDS],
-) -> [u64; EXACT_SUM_WORDS] {
-    let mut result = [0; EXACT_SUM_WORDS];
+        .find_map(|(left, right)| match left.cmp(right) {
+            std::cmp::Ordering::Greater => Some((positive, negative, false)),
+            std::cmp::Ordering::Less => Some((negative, positive, true)),
+            std::cmp::Ordering::Equal => None,
+        })?;
+    let mut magnitude = [0; EXACT_SUM_WORDS];
     let mut borrow = false;
     for index in 0..EXACT_SUM_WORDS {
-        let (difference, first_borrow) = left[index].overflowing_sub(right[index]);
+        let (difference, first_borrow) = larger[index].overflowing_sub(smaller[index]);
         let (difference, second_borrow) = difference.overflowing_sub(u64::from(borrow));
-        result[index] = difference;
+        magnitude[index] = difference;
         borrow = first_borrow || second_borrow;
     }
-    debug_assert!(!borrow);
-    result
+    Some((is_negative, magnitude))
 }
 
 fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
