@@ -1073,7 +1073,12 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 })?;
             table_record_count = table_record_count
                 .checked_add(1)
-                .expect("document record budget bounds table count");
+                .filter(|count| *count <= record_limit)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "document table record budget of {record_limit} exceeded"
+                    ))
+                })?;
             let record = Record::from_chunk(&child);
             let opaque = table_base(chunk.typecode) == TCODE_USER
                 || !record_is_allowed(chunk.typecode, record.typecode, record.is_short());
