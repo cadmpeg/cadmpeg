@@ -115,7 +115,7 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
     let quarantined = &native.arenas()["quarantined_directory_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:directory#3");
-    let fields = quarantined[0].fields().unwrap();
+    let fields = quarantined[0].fields();
     assert_eq!(fields["section"], "directory-entry");
     assert_eq!(fields["sequence"], 3);
     assert_eq!(fields["source_offset"], first_card);
@@ -167,7 +167,7 @@ fn every_directory_defect_key_names_its_own_failure() {
         let native = result.ir().native.namespace("iges").unwrap();
         let quarantined = &native.arenas()["quarantined_directory_records"];
         assert_eq!(quarantined.len(), 1, "{defect}");
-        assert_eq!(quarantined[0].fields().unwrap()["defect"], defect);
+        assert_eq!(quarantined[0].fields()["defect"], defect);
         assert_eq!(
             code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
             1,
@@ -190,7 +190,7 @@ fn v4_blank_no_default_directory_fields_quarantine_the_record() {
         let quarantined = &native.arenas()["quarantined_directory_records"];
         assert_eq!(quarantined.len(), 1, "card {card_index}, field {field}");
         assert_eq!(
-            quarantined[0].fields().unwrap()["defect"],
+            quarantined[0].fields()["defect"],
             "field-blank-not-allowed",
             "card {card_index}, field {field}"
         );
@@ -220,7 +220,7 @@ fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:directory#5");
-    let fields = quarantined[0].fields().unwrap();
+    let fields = quarantined[0].fields();
     assert_eq!(fields["cards"], 1);
     assert_eq!(fields["defect"], "unpaired-card");
     assert_eq!(fields["bytes"].as_array().unwrap().len(), 80);

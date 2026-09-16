@@ -127,7 +127,7 @@ fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: 
     let presentation =
         &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(presentation.len(), 1);
-    assert!(presentation[0].field("layer_index").unwrap().is_some());
+    assert!(presentation[0].field("layer_index").is_some());
     let retained = result
         .source_fidelity()
         .retained_record("rhino:object:record#000000")
@@ -151,7 +151,6 @@ fn current_mesh_modifier_xml_reaches_each_native_field() {
         let modifiers = result.ir().native.namespace("rhino").unwrap().arenas()
             ["object_presentation"][0]
             .field("mesh_modifiers")
-            .unwrap()
             .expect("current mesh modifier");
         assert!(modifiers.get(label).is_some(), "missing {label} modifier");
         assert_valid(&result);
@@ -174,7 +173,6 @@ fn future_mesh_modifier_xml_keeps_object_and_drops_only_modifier() {
         assert!(
             result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"][0]
                 .field("mesh_modifiers")
-                .unwrap()
                 .is_none()
         );
         assert!(result.report().losses.iter().any(|loss| {
@@ -202,7 +200,6 @@ fn malformed_mesh_modifier_xml_keeps_object_and_drops_only_modifier() {
         assert!(
             result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"][0]
                 .field("mesh_modifiers")
-                .unwrap()
                 .is_none()
         );
         assert!(result.report().losses.iter().any(|loss| {

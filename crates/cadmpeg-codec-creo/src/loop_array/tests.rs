@@ -155,8 +155,8 @@ fn container_and_native_arenas_retain_loop_roster() {
     assert_eq!(namespace.arenas()["loop_array_frames"].len(), 1);
     let records = &namespace.arenas()["loop_array_records"];
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].fields().unwrap()["lo_id"], 1);
-    assert_eq!(records[0].fields().unwrap()["next_lo_ptr"], 7);
+    assert_eq!(records[0].fields()["lo_id"], 1);
+    assert_eq!(records[0].fields()["next_lo_ptr"], 7);
     assert_eq!(
         result.source_fidelity().annotations.provenance[records[0].id()]
             .tag

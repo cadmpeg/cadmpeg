@@ -543,16 +543,16 @@ fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
         .arenas()["boundary_vertex_sewing"];
 
     assert!(records.iter().any(|record| {
-        record.fields().unwrap()["sewn"] == true
-            && record.fields().unwrap()["source_endpoints"]
+        record.fields()["sewn"] == true
+            && record.fields()["source_endpoints"]
                 .as_array()
                 .is_some_and(|endpoints| endpoints.len() > 1)
     }));
     let sewn = records
         .iter()
-        .find(|record| record.fields().unwrap()["sewn"] == true)
+        .find(|record| record.fields()["sewn"] == true)
         .expect("a boundary coordinate gap is recorded as sewn");
-    let fields = sewn.fields().unwrap();
+    let fields = sewn.fields();
     assert_eq!(fields["source_entity"], "iges:entity:directory#13");
     assert_eq!(fields["tolerance"], 0.01);
     let endpoints = fields["source_endpoints"].as_array().unwrap();

@@ -250,7 +250,7 @@ fn parameter_card_count_includes_comment_card_payload() {
         .unwrap();
 
     let entity = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
-    let fields = entity.fields().unwrap();
+    let fields = entity.fields();
     assert_eq!(fields["parameter_line_count"], 2);
     let retained_comment = fields["comment"].as_array().unwrap();
     assert_eq!(retained_comment.len(), 128 - "116,1,2,3,0;".len());

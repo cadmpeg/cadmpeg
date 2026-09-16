@@ -35,9 +35,9 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
         .expect("the output has an IGES namespace")
         .arenas()["entities"]
         .iter()
-        .find(|record| record.field("entity_type").unwrap() == Some(104.into()))
+        .find(|record| record.field("entity_type") == Some(104.into()))
         .expect("the output has a Type 104 entity");
-    assert_eq!(conic.field("form").unwrap(), Some(1.into()));
+    assert_eq!(conic.field("form"), Some(1.into()));
     assert!(round_trip.report().losses.is_empty());
     assert_eq!(
         round_trip.report().dialects().unwrap().primary().declared()["effective_version"],

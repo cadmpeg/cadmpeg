@@ -409,19 +409,13 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 
     let native = result.ir().native.namespace("iges").unwrap();
     let copious = &native.arenas()["copious_data"][0];
-    assert_eq!(copious.fields().unwrap()["declared_tuple_count"], 2);
-    assert_eq!(
-        copious.fields().unwrap()["tuples"]
-            .as_array()
-            .unwrap()
-            .len(),
-        2
-    );
+    assert_eq!(copious.fields()["declared_tuple_count"], 2);
+    assert_eq!(copious.fields()["tuples"].as_array().unwrap().len(), 2);
     let entity = native.arenas()["entities"]
         .iter()
-        .find(|record| record.fields().unwrap()["directory_sequence"] == 1)
+        .find(|record| record.fields()["directory_sequence"] == 1)
         .expect("copious entity");
-    assert!(entity.fields().unwrap()["association_links"]
+    assert!(entity.fields()["association_links"]
         .as_array()
         .unwrap()
         .is_empty());
@@ -459,7 +453,7 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
     let native = points.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["copious_data"].len(), 1);
     assert_eq!(
-        native.arenas()["copious_data"][0].fields().unwrap()["tuples"][0][5],
+        native.arenas()["copious_data"][0].fields()["tuples"][0][5],
         1.0
     );
     assert!(points.report().losses.is_empty());

@@ -92,16 +92,13 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     );
     let tables = &result.ir().native.namespace("creo").unwrap().arenas()["feature_entity_tables"];
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].fields().unwrap()["owner_feature_id"], 4);
-    assert_eq!(tables[0].fields().unwrap()["table_class_id"], 29);
-    assert_eq!(tables[0].fields().unwrap()["entry_ids"][0], 7);
-    assert_eq!(tables[0].fields().unwrap()["entry_ids"][1], 9);
-    assert_eq!(tables[0].fields().unwrap()["entries"][0]["class_id"], 200);
-    assert_eq!(
-        tables[0].fields().unwrap()["entries"][0]["source_entity_id"],
-        1
-    );
-    assert_eq!(tables[0].fields().unwrap()["entries"][1]["prefixed"], true);
+    assert_eq!(tables[0].fields()["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields()["table_class_id"], 29);
+    assert_eq!(tables[0].fields()["entry_ids"][0], 7);
+    assert_eq!(tables[0].fields()["entry_ids"][1], 9);
+    assert_eq!(tables[0].fields()["entries"][0]["class_id"], 200);
+    assert_eq!(tables[0].fields()["entries"][0]["source_entity_id"], 1);
+    assert_eq!(tables[0].fields()["entries"][1]["prefixed"], true);
     assert_annotation(
         &result.source_fidelity().annotations,
         tables[0].id(),
@@ -310,16 +307,16 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     let entities = &namespace.arenas()["feature_entities"];
     assert_eq!(entities.len(), 3);
     assert_eq!(entities[0].id(), "creo:allfeatur:entity#0");
-    assert_eq!(entities[0].fields().unwrap()["type_byte"], 0);
-    assert_eq!(entities[0].fields().unwrap()["name"], "Sld_Features");
+    assert_eq!(entities[0].fields()["type_byte"], 0);
+    assert_eq!(entities[0].fields()["name"], "Sld_Features");
     let references = &namespace.arenas()["feature_entity_references"];
     assert_eq!(references.len(), 2);
     let forward = references
         .iter()
-        .find(|reference| reference.fields().unwrap()["target_entity_id"] == 2)
+        .find(|reference| reference.fields()["target_entity_id"] == 2)
         .expect("forward reference");
-    assert_eq!(forward.fields().unwrap()["source_entity_id"], 1);
-    assert_eq!(forward.fields().unwrap()["target_resolved"], true);
+    assert_eq!(forward.fields()["source_entity_id"], 1);
+    assert_eq!(forward.fields()["target_resolved"], true);
     assert_annotation(
         &result.source_fidelity().annotations,
         entities[0].id(),
@@ -435,22 +432,19 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
         .expect("decode");
     let namespace = result.ir().native.namespace("creo").unwrap();
     let rows = &namespace.arenas()["feature_rows"];
-    assert_eq!(rows[0].fields().unwrap()["owner_feature_id"], 4);
-    assert_eq!(rows[0].fields().unwrap()["header"][0], 0xeb);
-    assert_eq!(rows[0].fields().unwrap()["header"][1], 0x04);
-    assert_eq!(rows[0].fields().unwrap()["body"][0], 0xeb);
-    assert_eq!(rows[0].fields().unwrap()["body"][14], 0xe0);
+    assert_eq!(rows[0].fields()["owner_feature_id"], 4);
+    assert_eq!(rows[0].fields()["header"][0], 0xeb);
+    assert_eq!(rows[0].fields()["header"][1], 0x04);
+    assert_eq!(rows[0].fields()["body"][0], 0xeb);
+    assert_eq!(rows[0].fields()["body"][14], 0xe0);
     let choices = &namespace.arenas()["feature_choices"];
-    assert_eq!(choices[0].fields().unwrap()["owner_feature_id"], 4);
-    assert_eq!(choices[0].fields().unwrap()["label"], "blend_choice");
+    assert_eq!(choices[0].fields()["owner_feature_id"], 4);
+    assert_eq!(choices[0].fields()["label"], "blend_choice");
     let fields = &namespace.arenas()["feature_choice_fields"];
-    assert_eq!(fields[0].fields().unwrap()["choice_label"], "blend_choice");
-    assert_eq!(fields[0].fields().unwrap()["name"], "values");
-    assert_eq!(fields[0].fields().unwrap()["value"]["kind"], "scalar_array");
-    assert_eq!(
-        fields[0].fields().unwrap()["value"]["decoded_values"][2],
-        3.0
-    );
+    assert_eq!(fields[0].fields()["choice_label"], "blend_choice");
+    assert_eq!(fields[0].fields()["name"], "values");
+    assert_eq!(fields[0].fields()["value"]["kind"], "scalar_array");
+    assert_eq!(fields[0].fields()["value"]["decoded_values"][2], 3.0);
 }
 
 #[test]
@@ -492,12 +486,12 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         .expect("decode");
     let tables = &result.ir().native.namespace("creo").unwrap().arenas()["feature_geometry_tables"];
     assert_eq!(tables.len(), 3);
-    assert_eq!(tables[0].fields().unwrap()["owner_feature_id"], 4);
-    assert_eq!(tables[0].fields().unwrap()["kind"], "edge_ids");
-    assert_eq!(tables[0].fields().unwrap()["declared_count"], 3);
-    assert_eq!(tables[0].fields().unwrap()["entity_class_id"], 0x53);
-    assert_eq!(tables[2].fields().unwrap()["entry_ids"][0], 42);
-    assert_eq!(tables[2].fields().unwrap()["entry_ids"][1], 43);
+    assert_eq!(tables[0].fields()["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields()["kind"], "edge_ids");
+    assert_eq!(tables[0].fields()["declared_count"], 3);
+    assert_eq!(tables[0].fields()["entity_class_id"], 0x53);
+    assert_eq!(tables[2].fields()["entry_ids"][0], 42);
+    assert_eq!(tables[2].fields()["entry_ids"][1], 43);
     assert_annotation(
         &result.source_fidelity().annotations,
         tables[0].id(),
@@ -536,25 +530,19 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_loop_history_entries"];
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].fields().unwrap()["owner_feature_id"], 4);
-    assert_eq!(records[0].fields().unwrap()["ordinal"], 0);
-    assert_eq!(records[0].fields().unwrap()["loop_id"], 42);
-    assert_eq!(records[0].fields().unwrap()["field_bytes"][0][0], 1);
+    assert_eq!(records[0].fields()["owner_feature_id"], 4);
+    assert_eq!(records[0].fields()["ordinal"], 0);
+    assert_eq!(records[0].fields()["loop_id"], 42);
+    assert_eq!(records[0].fields()["field_bytes"][0][0], 1);
+    assert_eq!(records[0].fields()["boundary"], "reference_continue");
+    assert_eq!(records[0].fields()["boundary_reference"], 96);
+    assert_eq!(records[1].fields()["ordinal"], 1);
+    assert_eq!(records[1].fields()["loop_id"], 43);
     assert_eq!(
-        records[0].fields().unwrap()["boundary"],
-        "reference_continue"
-    );
-    assert_eq!(records[0].fields().unwrap()["boundary_reference"], 96);
-    assert_eq!(records[1].fields().unwrap()["ordinal"], 1);
-    assert_eq!(records[1].fields().unwrap()["loop_id"], 43);
-    assert_eq!(
-        records[1].fields().unwrap()["field_bytes"]
-            .as_array()
-            .unwrap()
-            .len(),
+        records[1].fields()["field_bytes"].as_array().unwrap().len(),
         5
     );
-    assert_eq!(records[1].fields().unwrap()["boundary"], "named_record");
+    assert_eq!(records[1].fields()["boundary"], "named_record");
     assert_annotation(
         &result.source_fidelity().annotations,
         records[0].id(),
@@ -607,9 +595,9 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
         .expect("decode");
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_affected_ids"];
     assert_eq!(records.len(), 3);
-    assert_eq!(records[0].fields().unwrap()["owner_feature_id"], 4);
-    assert_eq!(records[0].fields().unwrap()["kind"], "geometry");
-    assert_eq!(records[0].fields().unwrap()["ids"][1], 128);
+    assert_eq!(records[0].fields()["owner_feature_id"], 4);
+    assert_eq!(records[0].fields()["kind"], "geometry");
+    assert_eq!(records[0].fields()["ids"][1], 128);
 }
 
 #[test]
@@ -657,8 +645,8 @@ fn scan_partitions_allfeatur_positional_round_operands() {
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_replay_affected_ids"];
-    assert_eq!(records[0].fields().unwrap()["geometry_extent"], "explicit");
-    assert_eq!(records[0].fields().unwrap()["edge_ids"][0], 9);
+    assert_eq!(records[0].fields()["geometry_extent"], "explicit");
+    assert_eq!(records[0].fields()["edge_ids"][0], 9);
 }
 
 #[test]
@@ -684,9 +672,9 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         .expect("decode");
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_loop_restore_directions"];
-    assert_eq!(records[0].fields().unwrap()["value"], 0);
-    assert_eq!(records[1].fields().unwrap()["value"], 167);
-    assert_eq!(records[2].fields().unwrap()["value"], 1);
+    assert_eq!(records[0].fields()["value"], 0);
+    assert_eq!(records[1].fields()["value"], 167);
+    assert_eq!(records[2].fields()["value"], 1);
     let feature = result
         .ir()
         .model
@@ -785,7 +773,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
-    assert_eq!(records[0].fields().unwrap()["source_section"], "DEPDB_DATA");
+    assert_eq!(records[0].fields()["source_section"], "DEPDB_DATA");
     assert_annotation(
         &result.source_fidelity().annotations,
         "creo:featdefs:feature_definition#2",
@@ -849,8 +837,8 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
     let configuration = &decoded.ir().native.namespace("creo").unwrap().arenas()["configuration"];
     assert_eq!(configuration.len(), 1);
     assert_eq!(configuration[0].id(), "creo:family_info:driver_table#root");
-    assert_eq!(configuration[0].fields().unwrap()["pointer_kind"], "null");
-    assert!(configuration[0].fields().unwrap()["table_entity_id"].is_null());
+    assert_eq!(configuration[0].fields()["pointer_kind"], "null");
+    assert!(configuration[0].fields()["table_entity_id"].is_null());
     assert_eq!(
         decoded.ir().source.as_ref().unwrap().attributes["configuration_state"],
         "none"
@@ -889,13 +877,10 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         .expect("decode referenced family table");
     let configuration = &decoded.ir().native.namespace("creo").unwrap().arenas()["configuration"];
     assert_eq!(
-        configuration[0].fields().unwrap()["pointer_kind"],
+        configuration[0].fields()["pointer_kind"],
         "entity_reference"
     );
-    assert_eq!(
-        configuration[0].fields().unwrap()["table_entity_id"],
-        0x0123
-    );
+    assert_eq!(configuration[0].fields()["table_entity_id"], 0x0123);
     assert_eq!(
         decoded.ir().source.as_ref().unwrap().attributes["configuration_state"],
         "driver_table_unresolved"

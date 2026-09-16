@@ -572,11 +572,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 .and_then(|namespace| namespace.arenas().get("entities"))
                 .is_some_and(|entities| {
                     entities.iter().any(|entity| {
-                        entity
-                            .field("entity_type")
-                            .expect("generated entity reads")
-                            .and_then(|value| value.as_i64())
-                            == Some(122)
+                        entity.field("entity_type").and_then(|value| value.as_i64()) == Some(122)
                     })
                 }),
             "{version:?}: output has no Type 122 entity"

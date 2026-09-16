@@ -142,23 +142,14 @@ fn body(
     }
 }
 
-/// One integer field of a native entity record.
-///
-/// A record whose text does not read names no entity type, form, status or
-/// sequence, which is what every caller below asks it for.
-fn native_i64(record: &cadmpeg_ir::NativeRecord, name: &str) -> Option<i64> {
-    let Ok(value) = record.field(name) else {
-        return None;
-    };
-    value?.as_i64()
-}
-
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     if let Some(namespace) = ir.native.namespace("iges") {
         if let Some(records) = namespace.arenas().get("entities") {
             for record in records {
-                if let Some(entity_type) = native_i64(record, "entity_type") {
+                if let Some(entity_type) =
+                    record.field("entity_type").and_then(|value| value.as_i64())
+                {
                     *counts.entry(format!("{entity_type}_entity")).or_insert(0) += 1;
                 }
             }
@@ -4196,7 +4187,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         .flatten()
         .find(|record| {
             !matches!(
-                native_i64(record, "entity_type"),
+                record.field("entity_type").and_then(|value| value.as_i64()),
                 Some(
                     100 | 102
                         | 104
@@ -4234,20 +4225,25 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             )
         })
     {
-        let entity_type = native_i64(record, "entity_type").unwrap_or_default();
+        let entity_type = record
+            .field("entity_type")
+            .and_then(|value| value.as_i64())
+            .unwrap_or_default();
         return Err(CodecError::NotImplemented(format!(
             "IGES semantic writer does not encode native entity type {entity_type}"
         )));
     }
     let mut native_entities = namespace.arenas().get("entities").into_iter().flatten();
     for record in native_entities.clone().filter(|record| {
-        let entity_type = native_i64(record, "entity_type");
-        let form = native_i64(record, "form");
+        let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
+        let form = record.field("form").and_then(|value| value.as_i64());
         matches!(entity_type, Some(100 | 102 | 104 | 110 | 112 | 126 | 130))
             || (entity_type == Some(106) && matches!(form, Some(1..=3 | 11..=13 | 63)))
     }) {
-        let Some(sequence) =
-            native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
+        let Some(sequence) = record
+            .field("directory_sequence")
+            .and_then(|value| value.as_i64())
+            .and_then(|value| u32::try_from(value).ok())
         else {
             return Err(CodecError::Malformed(
                 "IGES native curve entity has no directory sequence".into(),
@@ -4266,11 +4262,16 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         }
     }
     for record in native_entities.clone().filter(|record| {
-        native_i64(record, "entity_type") == Some(116)
-            && native_i64(record, "subordinate_status") != Some(1)
+        record.field("entity_type").and_then(|value| value.as_i64()) == Some(116)
+            && record
+                .field("subordinate_status")
+                .and_then(|value| value.as_i64())
+                != Some(1)
     }) {
-        let Some(sequence) =
-            native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
+        let Some(sequence) = record
+            .field("directory_sequence")
+            .and_then(|value| value.as_i64())
+            .and_then(|value| u32::try_from(value).ok())
         else {
             return Err(CodecError::Malformed(
                 "IGES native point entity has no directory sequence".into(),
@@ -4290,18 +4291,20 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     }
     let has_native_surface = native_entities.clone().any(|record| {
         matches!(
-            native_i64(record, "entity_type"),
+            record.field("entity_type").and_then(|value| value.as_i64()),
             Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198)
         )
     });
     for record in native_entities.clone().filter(|record| {
         matches!(
-            native_i64(record, "entity_type"),
+            record.field("entity_type").and_then(|value| value.as_i64()),
             Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198)
         )
     }) {
-        let Some(sequence) =
-            native_i64(record, "directory_sequence").and_then(|value| u32::try_from(value).ok())
+        let Some(sequence) = record
+            .field("directory_sequence")
+            .and_then(|value| value.as_i64())
+            .and_then(|value| u32::try_from(value).ok())
         else {
             return Err(CodecError::Malformed(
                 "IGES native surface entity has no directory sequence".into(),
@@ -4321,7 +4324,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     }
     let has_native_topology = native_entities.any(|record| {
         matches!(
-            native_i64(record, "entity_type"),
+            record.field("entity_type").and_then(|value| value.as_i64()),
             Some(141..=144 | 186 | 502 | 504 | 508 | 510 | 514)
         )
     });

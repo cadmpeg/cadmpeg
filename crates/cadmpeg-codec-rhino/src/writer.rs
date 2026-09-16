@@ -715,10 +715,7 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     let opaque = namespace.arenas().get("opaque_records");
     let generated_comment = opaque.is_some_and(|records| {
         records.iter().any(|record| {
-            // A record whose text does not parse is not the generated comment.
-            let Ok(fields) = record.fields() else {
-                return false;
-            };
+            let fields = record.fields();
             record.id() == "rhino:source:opaque#comment"
                 && fields.get("typecode").and_then(serde_json::Value::as_str) == Some("0x00000001")
                 && fields.get("data").and_then(serde_json::Value::as_str)
@@ -728,11 +725,11 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     if (opaque.is_some() && !generated_comment)
         || opaque.is_some_and(|records| {
             records.iter().any(|record| {
-                let Ok(typecode) = record.field("typecode") else {
-                    return true;
-                };
                 !matches!(
-                    typecode.as_ref().and_then(serde_json::Value::as_str),
+                    record
+                        .field("typecode")
+                        .as_ref()
+                        .and_then(serde_json::Value::as_str),
                     Some("0x00000001" | "0xa0000026" | "0x20008031" | "0x20008050")
                 )
             })
@@ -760,10 +757,8 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     }
     namespace.arenas().get("unknowns").is_none_or(|records| {
         records.iter().all(|record| {
-            let Ok(links) = record.field("links") else {
-                return false;
-            };
-            links
+            record
+                .field("links")
                 .as_ref()
                 .and_then(serde_json::Value::as_array)
                 .is_some_and(|links| {
@@ -787,10 +782,7 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
 }
 
 fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
-    // A record whose text does not parse is not the default layer.
-    let Ok(fields) = record.fields() else {
-        return false;
-    };
+    let fields = record.fields();
     json_i64(&fields, "archive_index") == Some(0)
         && json_i64(&fields, "linetype_index") == Some(-1)
         && json_i64(&fields, "material_index") == Some(-1)
@@ -802,10 +794,7 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
-    // A record whose text does not parse is not the default presentation.
-    let Ok(fields) = record.fields() else {
-        return false;
-    };
+    let fields = record.fields();
     json_i64(&fields, "layer_index") == Some(0)
         && json_i64(&fields, "material_index") == Some(-1)
         && json_i64(&fields, "linetype_index") == Some(-1)

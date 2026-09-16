@@ -47,14 +47,8 @@ fn scan_preserves_linear_extrusion_type_variants() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let rows = &result.ir().native.namespace("creo").unwrap().arenas()["surface_rows"];
-    assert_eq!(
-        rows[0].fields().unwrap()["surface_variant"],
-        "ruled_surface"
-    );
-    assert_eq!(
-        rows[1].fields().unwrap()["surface_variant"],
-        "tabulated_cylinder"
-    );
+    assert_eq!(rows[0].fields()["surface_variant"], "ruled_surface");
+    assert_eq!(rows[1].fields()["surface_variant"], "tabulated_cylinder");
 }
 
 #[test]
@@ -97,10 +91,10 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
         .expect("decode");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()
         ["tabulated_cylinder_curve_replays"][0];
-    assert_eq!(native.fields().unwrap()["surface_id"], 7);
-    assert_eq!(native.fields().unwrap()["control_point_ids"][2], 34);
-    assert_eq!(native.fields().unwrap()["control_point_bodies"][3][8], 0x46);
-    assert_eq!(native.fields().unwrap()["control_points"][2][0], -3.0);
+    assert_eq!(native.fields()["surface_id"], 7);
+    assert_eq!(native.fields()["control_point_ids"][2], 34);
+    assert_eq!(native.fields()["control_point_bodies"][3][8], 0x46);
+    assert_eq!(native.fields()["control_points"][2][0], -3.0);
     assert_eq!(
         result.source_fidelity().annotations.provenance[native.id()]
             .tag
@@ -211,14 +205,8 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
-    assert_eq!(
-        native.fields().unwrap()["torus_outline_frame"]["selector"],
-        80
-    );
-    assert_eq!(
-        native.fields().unwrap()["torus_outline_frame"]["values"][5],
-        52.5
-    );
+    assert_eq!(native.fields()["torus_outline_frame"]["selector"], 80);
+    assert_eq!(native.fields()["torus_outline_frame"]["values"][5], 52.5);
 }
 
 #[test]
@@ -275,15 +263,15 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         let native =
             &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
         assert_eq!(
-            native.fields().unwrap()["torus_radius_overrides"]["radius1"],
+            native.fields()["torus_radius_overrides"]["radius1"],
             0.499_999_999_999_999_94
         );
         assert_eq!(
-            native.fields().unwrap()["torus_radius_overrides"]["radius2"],
+            native.fields()["torus_radius_overrides"]["radius2"],
             expected_radius2
         );
         assert_eq!(
-            native.fields().unwrap()["torus_radius_overrides"]["radius2_encoding"],
+            native.fields()["torus_radius_overrides"]["radius2_encoding"],
             match expected_encoding {
                 TorusRadius2Encoding::Direct => "direct",
                 TorusRadius2Encoding::OuterRingDifference => "outer_ring_difference",
@@ -357,13 +345,10 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         .expect("decode");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_eq!(
-        native.fields().unwrap()["cone_half_angle_override"]["radians"],
+        native.fields()["cone_half_angle_override"]["radians"],
         expected
     );
-    assert_eq!(
-        native.fields().unwrap()["cone_half_angle_override"]["offset"],
-        3
-    );
+    assert_eq!(native.fields()["cone_half_angle_override"]["offset"], 3);
 }
 
 #[test]
@@ -709,139 +694,58 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_prototypes"][0];
-    assert_eq!(native.fields().unwrap()["declared_family"], "cylinder");
-    assert_eq!(native.fields().unwrap()["family"], "cylinder");
+    assert_eq!(native.fields()["declared_family"], "cylinder");
+    assert_eq!(native.fields()["family"], "cylinder");
+    assert_eq!(native.fields()["parameters"][0]["name"], "local_sys");
     assert_eq!(
-        native.fields().unwrap()["parameters"][0]["name"],
-        "local_sys"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][0]["value_kind"],
+        native.fields()["parameters"][0]["value_kind"],
         "scalar_array"
     );
+    assert_eq!(native.fields()["parameters"][0]["scalar_dimensions"], 4);
+    assert_eq!(native.fields()["parameters"][0]["scalar_values"][0], 1.0);
+    assert_eq!(native.fields()["parameters"][1]["name"], "radius");
+    assert_eq!(native.fields()["parameters"][1]["body"][0], 0xe4);
+    assert_eq!(native.fields()["parameters"][2]["compact_values"][0], 7);
+    assert_eq!(native.fields()["parameters"][2]["compact_values"][1], 8);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][0], 128);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][1], 129);
+    assert_eq!(native.fields()["parameters"][3]["compact_values"][2], 130);
+    assert_eq!(native.fields()["parameters"][4]["name"], "id");
+    assert_eq!(native.fields()["parameters"][4]["compact_values"][0], 15);
+    assert_eq!(native.fields()["parameters"][5]["name"], "degree");
+    assert_eq!(native.fields()["parameters"][5]["compact_values"][0], 3);
+    assert_eq!(native.fields()["parameters"][6]["name"], "params");
+    assert_eq!(native.fields()["parameters"][6]["compact_values"][2], 1);
+    assert_eq!(native.fields()["parameters"][7]["name"], "flip");
     assert_eq!(
-        native.fields().unwrap()["parameters"][0]["scalar_dimensions"],
-        4
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][0]["scalar_values"][0],
-        1.0
-    );
-    assert_eq!(native.fields().unwrap()["parameters"][1]["name"], "radius");
-    assert_eq!(native.fields().unwrap()["parameters"][1]["body"][0], 0xe4);
-    assert_eq!(
-        native.fields().unwrap()["parameters"][2]["compact_values"][0],
-        7
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][2]["compact_values"][1],
-        8
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][3]["compact_values"][0],
-        128
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][3]["compact_values"][1],
-        129
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][3]["compact_values"][2],
-        130
-    );
-    assert_eq!(native.fields().unwrap()["parameters"][4]["name"], "id");
-    assert_eq!(
-        native.fields().unwrap()["parameters"][4]["compact_values"][0],
-        15
-    );
-    assert_eq!(native.fields().unwrap()["parameters"][5]["name"], "degree");
-    assert_eq!(
-        native.fields().unwrap()["parameters"][5]["compact_values"][0],
-        3
-    );
-    assert_eq!(native.fields().unwrap()["parameters"][6]["name"], "params");
-    assert_eq!(
-        native.fields().unwrap()["parameters"][6]["compact_values"][2],
-        1
-    );
-    assert_eq!(native.fields().unwrap()["parameters"][7]["name"], "flip");
-    assert_eq!(
-        native.fields().unwrap()["parameters"][7]["value_kind"],
+        native.fields()["parameters"][7]["value_kind"],
         "compact_int"
     );
+    assert_eq!(native.fields()["parameters"][7]["compact_values"][0], 1);
+    assert_eq!(native.fields()["parameters"][7]["body"][0], 0xf1);
+    assert_eq!(native.fields()["parameters"][8]["name"], "dum_array");
+    assert_eq!(native.fields()["parameters"][8]["value_kind"], "opaque");
     assert_eq!(
-        native.fields().unwrap()["parameters"][7]["compact_values"][0],
-        1
-    );
-    assert_eq!(native.fields().unwrap()["parameters"][7]["body"][0], 0xf1);
-    assert_eq!(
-        native.fields().unwrap()["parameters"][8]["name"],
-        "dum_array"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][8]["value_kind"],
-        "opaque"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][9]["name"],
+        native.fields()["parameters"][9]["name"],
         "frst_cntr_crv_hdr_ptr"
     );
+    assert_eq!(native.fields()["parameters"][9]["compact_values"][0], 47);
+    assert_eq!(native.fields()["parameters"][10]["name"], "trv");
+    assert_eq!(native.fields()["parameters"][10]["compact_values"][0], 0);
+    assert_eq!(native.fields()["parameters"][11]["name"], "frst_cntr_ptr");
+    assert_eq!(native.fields()["parameters"][11]["compact_values"][0], 48);
+    assert_eq!(native.fields()["parameters"][12]["name"], "envlp");
+    assert_eq!(native.fields()["parameters"][12]["value_kind"], "opaque");
+    assert_eq!(native.fields()["parameters"][13]["name"], "outline");
+    assert_eq!(native.fields()["parameters"][13]["value_kind"], "opaque");
+    assert_eq!(native.fields()["parameters"][14]["name"], "next_cntr_ptr");
+    assert_eq!(native.fields()["parameters"][14]["compact_values"][0], 49);
+    assert_eq!(native.fields()["parameters"][15]["name"], "srf_flip_dat");
+    assert_eq!(native.fields()["parameters"][15]["value_kind"], "opaque");
+    assert_eq!(native.fields()["parameters"][16]["name"], "tan_spline");
+    assert_eq!(native.fields()["parameters"][16]["value_kind"], "empty");
     assert_eq!(
-        native.fields().unwrap()["parameters"][9]["compact_values"][0],
-        47
-    );
-    assert_eq!(native.fields().unwrap()["parameters"][10]["name"], "trv");
-    assert_eq!(
-        native.fields().unwrap()["parameters"][10]["compact_values"][0],
-        0
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][11]["name"],
-        "frst_cntr_ptr"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][11]["compact_values"][0],
-        48
-    );
-    assert_eq!(native.fields().unwrap()["parameters"][12]["name"], "envlp");
-    assert_eq!(
-        native.fields().unwrap()["parameters"][12]["value_kind"],
-        "opaque"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][13]["name"],
-        "outline"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][13]["value_kind"],
-        "opaque"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][14]["name"],
-        "next_cntr_ptr"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][14]["compact_values"][0],
-        49
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][15]["name"],
-        "srf_flip_dat"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][15]["value_kind"],
-        "opaque"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][16]["name"],
-        "tan_spline"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][16]["value_kind"],
-        "empty"
-    );
-    assert_eq!(
-        native.fields().unwrap()["parameters"][16]["body"]
+        native.fields()["parameters"][16]["body"]
             .as_array()
             .map(Vec::len),
         Some(0)

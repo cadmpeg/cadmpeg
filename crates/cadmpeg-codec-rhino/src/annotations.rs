@@ -1227,11 +1227,11 @@ mod tests {
             .expect("Rhino namespace")
             .arenas()["annotations"][0];
         assert_eq!(
-            record.field("legacy_user_text").unwrap(),
+            record.field("legacy_user_text"),
             Some(serde_json::json!("legacy text"))
         );
         assert_eq!(
-            record.field("legacy_text_height").unwrap(),
+            record.field("legacy_text_height"),
             Some(serde_json::json!(1.5))
         );
     }
@@ -1311,7 +1311,7 @@ mod tests {
             ]
         );
         assert!(records.iter().all(|record| {
-            record.field("source_uuid").unwrap()
+            record.field("source_uuid")
                 == Some(serde_json::json!(Uuid::from_wire(duplicate_id).to_string()))
         }));
     }
