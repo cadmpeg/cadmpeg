@@ -172,6 +172,13 @@ fn element_map_child_admission_checks_constructors_and_wire_fields() {
         "1 0 not-an-int 1 0 ;postfix 0",
         "1 0 2147483648 1 0 ;postfix 0",
         "1 0 3 not-an-int 0 ;postfix 0",
+        // The string-id list starts with `0` and appends decimal ids
+        // separated by periods.
+        "1 0 3 1 0 ;postfix 1",
+        "1 0 3 1 0 ;postfix 1.2",
+        "1 0 3 1 0 ;postfix 0.",
+        "1 0 3 1 0 ;postfix 0.not-an-int",
+        "1 0 3 1 0 ;postfix 0.2.",
     ] {
         assert!(
             super::ElementMapNodes::try_from(vec![node(descriptor)]).is_err(),

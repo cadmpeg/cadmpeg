@@ -57,7 +57,7 @@ impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
                     };
                     let mut fields = descriptor.split_ascii_whitespace();
                     let words: [Option<&str>; 7] = std::array::from_fn(|_| fields.next());
-                    let [Some(index), Some(offset), Some(count), Some(tag), Some(map), Some(_), Some(_)] =
+                    let [Some(index), Some(offset), Some(count), Some(tag), Some(map), Some(_), Some(string_ids)] =
                         words
                     else {
                         return Err(format!(
@@ -68,6 +68,15 @@ impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
                     if fields.next().is_some() {
                         return Err(format!(
                             "{} descriptor must contain seven fields",
+                            location()
+                        ));
+                    }
+                    let mut string_ids = string_ids.split('.');
+                    if string_ids.next() != Some("0")
+                        || string_ids.any(|id| id.parse::<i64>().is_err())
+                    {
+                        return Err(format!(
+                            "{} has an invalid child string-id list",
                             location()
                         ));
                     }
