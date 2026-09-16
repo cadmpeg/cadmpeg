@@ -156,6 +156,25 @@ fn a_strip_span_past_the_vertex_lane_refuses_the_recognised_table() {
 }
 
 #[test]
+fn a_zero_face_header_carries_the_table_it_does_not_state() {
+    // Two zero counts state no mesh, not an empty one. The primary writes that
+    // header over a face whose descriptor table still holds a mesh, and
+    // `body_display_list.sldprt` is one such document.
+    let mut payload = Vec::new();
+    class(&mut payload, "uoTempFaceTessData_c", &[]);
+    payload.extend(0_u32.to_le_bytes());
+    payload.extend(0_u32.to_le_bytes());
+    payload.extend(table());
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("a zero display-face header states no mesh and refuses nothing");
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+}
+
+#[test]
 fn a_declared_face_count_disagreement_refuses_the_display_face() {
     // The face header states one strip and one triangle for the table that
     // follows. A header stating two triangles over the same table contradicts

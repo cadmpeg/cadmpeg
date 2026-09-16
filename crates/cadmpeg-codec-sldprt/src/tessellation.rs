@@ -510,24 +510,32 @@ pub(crate) fn section_display_faces(
         let Some(tables) = parse_table_sequence(payload, start, limit)? else {
             continue;
         };
-        // The face header states the mesh of its first table. A disagreement is
-        // a contradiction inside bytes that are present, so it takes the same
-        // disposition as a lane disagreement inside the same table.
+        // The face header states the mesh of its first table when it states a
+        // mesh at all. Two zero counts state none: the primary writes that
+        // header over a face whose descriptor table still holds a mesh, so
+        // reading it as "zero triangles" would refuse a document the primary
+        // writes. A stated, positive count that disagrees with the table below
+        // it is a contradiction inside bytes that are present, and takes the
+        // same disposition as a lane disagreement inside the same table.
         let [(table_start, _, first_mesh), ..] = tables.as_slice() else {
             return Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "sldprt display-face header at byte {header} states no table"
             )));
         };
-        let parsed_triangles = first_mesh.triangle_count();
-        let parsed_strips = first_mesh.strip_count();
-        if usize::try_from(triangle_count).ok() != Some(parsed_triangles)
-            || usize::try_from(strip_count).ok() != Some(parsed_strips)
-        {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "sldprt display-face table at byte {table_start}: header states {triangle_count} \
-                 triangle(s) and {strip_count} strip(s); the parsed mesh has {parsed_triangles} \
-                 triangle(s) and {parsed_strips} strip(s)"
-            )));
+        let stated_mesh =
+            (triangle_count != 0 || strip_count != 0).then_some((triangle_count, strip_count));
+        if let Some((triangle_count, strip_count)) = stated_mesh {
+            let parsed_triangles = first_mesh.triangle_count();
+            let parsed_strips = first_mesh.strip_count();
+            if usize::try_from(triangle_count).ok() != Some(parsed_triangles)
+                || usize::try_from(strip_count).ok() != Some(parsed_strips)
+            {
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                    "sldprt display-face table at byte {table_start}: header states \
+                     {triangle_count} triangle(s) and {strip_count} strip(s); the parsed mesh has \
+                     {parsed_triangles} triangle(s) and {parsed_strips} strip(s)"
+                )));
+            }
         }
         for (start, end, mesh) in tables {
             let (Some(table), Some(metadata)) =
