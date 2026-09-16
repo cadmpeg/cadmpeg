@@ -6,11 +6,9 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 pub(crate) fn type_id_string(value: [u8; 16]) -> String {
-    use std::fmt::Write as _;
-
     let mut result = String::with_capacity(32);
     for byte in value {
-        write!(result, "{byte:02x}").expect("writing to a string cannot fail");
+        result.push_str(&format!("{byte:02x}"));
     }
     result
 }
@@ -450,6 +448,11 @@ impl<V> PmDcPairedMap<V> {
         Some(Self {
             items: paired_items(metadata, entries)?,
         })
+    }
+
+    /// The map that carries no metadata and no entries.
+    pub(crate) fn empty() -> Self {
+        Self { items: None }
     }
 
     pub(crate) fn metadata(&self) -> Option<[u32; 2]> {

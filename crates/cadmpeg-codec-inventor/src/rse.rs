@@ -7,6 +7,7 @@ use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStrea
 use cadmpeg_container::compression::inflate_zlib_exact;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::ids::IdentityKey;
 
 use crate::database::{
     parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionTable, RseDatabase,
@@ -39,7 +40,7 @@ impl StorageBand {
 
 /// Exact suffix shared by one `RSe` metadata and bulk stream.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct SegmentToken(String);
+pub(crate) struct SegmentToken(IdentityKey);
 
 /// Which of the two `RSe` streams a segment name introduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,13 +57,18 @@ impl SegmentToken {
             'B' => SegmentPrefix::Bulk,
             _ => return None,
         };
-        if token.is_empty() {
+        let Ok(token) = IdentityKey::try_new(token) else {
             return None;
-        }
-        Some((prefix, Self(token.into())))
+        };
+        Some((prefix, Self(token)))
     }
 
     pub(crate) fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// This token as an identity key.
+    pub(crate) fn key(&self) -> &IdentityKey {
         &self.0
     }
 }
@@ -610,7 +616,9 @@ fn parse_bulk_stream<'a>(
     }
     let mut prefix = [0; 16];
     prefix.copy_from_slice(&header[envelope::PREFIX..envelope::FORM]);
-    let form = BulkForm(View::u16_le_at(header, envelope::FORM).expect("18-byte bulk header"));
+    let form = BulkForm(View::u16_le_at(header, envelope::FORM).ok_or_else(|| {
+        CodecError::Malformed("RSe bulk envelope form field is out of range".into())
+    })?);
     let compressed = source
         .child(source.start() + header.len(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;

@@ -178,11 +178,10 @@ pub(crate) fn project_occurrences(
         };
 
         occurrences.push(Occurrence {
-            id: OccurrenceId::mint(format!(
-                "inventor:assembly:instance#{}",
-                source.occurrence_id
-            ))
-            .expect("identity grammar"),
+            id: OccurrenceId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
+                source.occurrence_id,
+            ),
             prototype: PrototypeReference::External {
                 document: reference.document(),
                 object: None,

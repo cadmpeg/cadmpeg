@@ -288,7 +288,7 @@ pub(crate) fn inventory(
                     inventory.parameters.push(Located::new(
                         value,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 })
@@ -297,7 +297,7 @@ pub(crate) fn inventory(
                     inventory.expressions.push(Located::new(
                         value,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 })
@@ -306,7 +306,7 @@ pub(crate) fn inventory(
                     inventory.expressions.push(Located::new(
                         value,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 })
@@ -315,7 +315,7 @@ pub(crate) fn inventory(
                     inventory.expressions.push(Located::new(
                         value,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 })
@@ -324,7 +324,7 @@ pub(crate) fn inventory(
                     inventory.expressions.push(Located::new(
                         value,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 })
@@ -333,7 +333,7 @@ pub(crate) fn inventory(
                     inventory.units.push(Located::new(
                         value,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 })
@@ -342,7 +342,7 @@ pub(crate) fn inventory(
                     inventory.units.push(Located::new(
                         value,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 })
@@ -403,7 +403,7 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
             continue;
         }
         let Some(unit) = resolve_unit(
-            &parameter.identity.segment_token,
+            parameter.identity.segment_token.as_str(),
             parameter.unit.index,
             &units,
         ) else {
@@ -413,7 +413,7 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
         let mut dependencies = Vec::new();
         let mut visiting = HashSet::new();
         let Some(expression) = render_expression(
-            &parameter.identity.segment_token,
+            parameter.identity.segment_token.as_str(),
             parameter.formula.index,
             &expressions,
             &units,
@@ -495,11 +495,10 @@ fn close_parameter_graph(parameters: Vec<DesignParameter>) -> (Vec<DesignParamet
 }
 
 fn parameter_id(parameter: &PmDcParameter) -> ParameterId {
-    ParameterId::mint(format!(
-        "inventor:design:parameter#{}-{}",
-        parameter.identity.segment_token, parameter.identity.record_ordinal
-    ))
-    .expect("identity grammar")
+    ParameterId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "design", "parameter"),
+        parameter.identity.key(),
+    )
 }
 
 struct ResolvedUnit {
@@ -1094,7 +1093,7 @@ mod tests {
 
     #[test]
     fn projects_closed_parameter_dependencies_and_units() {
-        let token = "segment".to_string();
+        let token = cadmpeg_ir::identity_key!("segment");
         let base = Located::new(
             PmDcUnitPayload {
                 save_version_major: 22,

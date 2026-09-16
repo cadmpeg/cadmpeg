@@ -37,7 +37,9 @@ impl KernelFamily {
 
 #[derive(Debug)]
 pub(crate) struct ActiveCarrier<'a> {
-    pub(crate) segment_token: String,
+    pub(crate) segment_token: cadmpeg_ir::ids::IdentityKey,
+    /// Length of the carrier window, which is never empty.
+    pub(crate) carrier_len: std::num::NonZeroU64,
     pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) family: KernelFamily,
@@ -175,7 +177,7 @@ pub(crate) fn select_active_carrier<'a>(
     };
     match parse_carrier(
         record.payload,
-        segment.pair.token.as_str(),
+        segment.pair.token.key(),
         record.ordinal,
         record.payload_offset,
         version,
@@ -187,7 +189,7 @@ pub(crate) fn select_active_carrier<'a>(
 
 fn parse_carrier<'a>(
     payload: View<'a>,
-    segment_token: &str,
+    segment_token: &cadmpeg_ir::ids::IdentityKey,
     record_ordinal: u32,
     record_payload_offset: u64,
     segment_version_major: u8,
@@ -223,6 +225,14 @@ fn parse_carrier<'a>(
             payload.start() + carrier_end,
         )
         .ok_or_else(|| CodecError::Malformed("Inventor kernel-carrier range is invalid".into()))?;
+    // The carrier window is what the record holds between its header and its
+    // footer. Admitting its length here is what gives every reader a nonzero
+    // length instead of a check at the point of use.
+    let Some(carrier_len) = std::num::NonZeroU64::new(carrier.window().len() as u64) else {
+        return Err(CodecError::Malformed(
+            "Inventor kernel-carrier record holds no carrier bytes".into(),
+        ));
+    };
     let header = parse_kernel_header(family, carrier.window()).map(Box::new);
     let mut offset = carrier_end;
     let selected_key = read_u32(bytes, offset, "carrier selected key")?;
@@ -257,7 +267,8 @@ fn parse_carrier<'a>(
         ));
     }
     Ok(ActiveCarrier {
-        segment_token: segment_token.into(),
+        segment_token: segment_token.clone(),
+        carrier_len,
         record_ordinal,
         segment_version_major,
         family,
@@ -328,7 +339,7 @@ mod tests {
                 u32::from_le_bytes(bytes[10..14].try_into().expect("planted schema")),
                 4
             );
-            let carrier = parse_carrier(view, "token", 7, 100, 18).expect("carrier parses");
+            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18).expect("carrier parses");
             assert_eq!(carrier.header_state, 1);
             assert_eq!(carrier.header_kind, 2);
             assert_eq!(carrier.header_value, 3);
@@ -341,7 +352,7 @@ mod tests {
         let mut malformed = bytes;
         *malformed.last_mut().expect("footer byte") = 0;
         with_view(&malformed, |view| {
-            assert!(parse_carrier(view, "token", 7, 100, 18).is_err());
+            assert!(parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 18).is_err());
         });
     }
 
@@ -352,7 +363,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, "token", 7, 100, 23).expect("carrier parses");
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 23).expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
         assert_eq!(decoded.header.width.bytes(), 4);
@@ -372,7 +383,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17).expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
 
         assert_eq!(carrier.family, KernelFamily::Acis);
@@ -397,7 +408,7 @@ mod tests {
             let (ctx, view) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic carrier fits policy");
-            let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17).expect("carrier parses");
             assert_eq!(carrier.family, KernelFamily::Acis);
             decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
         };
@@ -429,7 +440,7 @@ mod tests {
             let (ctx, view) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic carrier fits policy");
-            let carrier = parse_carrier(view, "token", 7, 100, segment_version_major)
+            let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, segment_version_major)
                 .expect("nearest footer frames");
             decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes")
         };
@@ -446,7 +457,7 @@ mod tests {
         let bytes = carrier_fixture(b"not a kernel carrier", 14);
         with_view(&bytes, |view| {
             assert!(matches!(
-                parse_carrier(view, "token", 7, 100, 14),
+                parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 14),
                 Err(CodecError::Malformed(_))
             ));
         });
@@ -462,7 +473,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic carrier fits policy");
-        let carrier = parse_carrier(view, "token", 7, 100, 17).expect("carrier parses");
+        let carrier = parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, 100, 17).expect("carrier parses");
         assert!(matches!(
             decode_test_carrier(&ctx, &carrier),
             Err(CodecError::Malformed(_))

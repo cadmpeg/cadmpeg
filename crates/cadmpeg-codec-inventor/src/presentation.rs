@@ -7,8 +7,7 @@ use std::num::NonZeroUsize;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::topology::Color;
 
 use crate::assembly::count_unresolved;
@@ -258,12 +257,10 @@ fn project_default_bindings(
     let bindings = bodies
         .iter()
         .map(|body| AppearanceBinding {
-            id: format!(
-                "inventor:presentation:body-default#{}",
-                &sha256_hex(body.as_str().as_bytes())[..16]
-            )
-            .try_into()
-            .expect("valid identity"),
+            id: AppearanceBindingId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
+                short_digest_key(body.as_str().as_bytes()),
+            ),
             target: AppearanceTarget::Body(body.clone()),
             appearance: appearance.clone(),
             source_entity_id: Some(format!(
@@ -377,11 +374,10 @@ fn project_face_bindings(
                 style.identity.record_ordinal,
             ))
             .or_insert_with(|| {
-                let id = AppearanceId::mint(format!(
-                    "inventor:presentation:face-color#{}-{}",
-                    style.identity.segment_token, style.identity.record_ordinal
-                ))
-                .expect("identity grammar");
+                let id = AppearanceId::compose(
+                    &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-color"),
+                    style.identity.key(),
+                );
                 projection.appearances.push(Appearance {
                     id: id.clone(),
                     name: None,
@@ -399,12 +395,10 @@ fn project_face_bindings(
             })
             .clone();
         projection.bindings.push(AppearanceBinding {
-            id: format!(
-                "inventor:presentation:face-override#{}",
-                &sha256_hex(face_id.as_str().as_bytes())[..16]
-            )
-            .try_into()
-            .expect("valid identity"),
+            id: AppearanceBindingId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
+                short_digest_key(face_id.as_str().as_bytes()),
+            ),
             target: AppearanceTarget::Face(face_id.clone()),
             appearance: appearance_id,
             source_entity_id: Some(format!(
@@ -445,7 +439,7 @@ pub(crate) fn inventory<'a>(
             continue;
         };
         for record in &table.records {
-            let token = segment.pair.token.as_str();
+            let token = segment.pair.token.key();
             let ordinal = record.ordinal;
             let parsed = match record.type_id {
                 DEFAULT_STYLE_TYPE => {
@@ -978,12 +972,20 @@ impl<'a> Cursor<'a> {
     }
 }
 
+/// The first eight digest bytes of `bytes`, as sixteen lowercase hex digits.
+///
+/// A hexadecimal digit is identity-key text, so the key is built from the
+/// digest bytes rather than sliced back out of a rendered string.
+fn short_digest_key(bytes: &[u8]) -> cadmpeg_ir::ids::IdentityKey {
+    let digest = cadmpeg_ir::hash::sha256(bytes);
+    cadmpeg_ir::ids::IdentityKey::hex_byte(digest[0]).with_hex_bytes(&digest[1..8])
+}
+
 fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
     bytes
         .iter()
         .fold(String::with_capacity(bytes.len() * 2), |mut value, byte| {
-            write!(value, "{byte:02x}").expect("writing to String cannot fail");
+            value.push_str(&format!("{byte:02x}"));
             value
         })
 }
@@ -1075,13 +1077,13 @@ mod tests {
             default_styles: vec![Located::new(
                 default,
                 type_id_string(DEFAULT_STYLE_TYPE),
-                "segment",
+                &cadmpeg_ir::identity_key!("segment"),
                 0,
             )],
             rendering_styles: vec![Located::new(
                 style,
                 type_id_string(RENDERING_STYLE_TYPE),
-                "segment",
+                &cadmpeg_ir::identity_key!("segment"),
                 8,
             )],
             graphics_faces: Vec::new(),
@@ -1272,7 +1274,7 @@ mod tests {
                 values: [0; 2],
             },
             type_id_string(GRAPHICS_FACE_TYPE),
-            "graphics",
+            &cadmpeg_ir::identity_key!("graphics"),
             2,
         );
         let collection = Located::new(
@@ -1288,7 +1290,7 @@ mod tests {
                 .expect("valid reference list"),
             },
             type_id_string(GRAPHICS_STYLE_COLLECTION_TYPE),
-            "graphics",
+            &cadmpeg_ir::identity_key!("graphics"),
             4,
         );
         let style = Located::new(
@@ -1304,7 +1306,7 @@ mod tests {
                 terminal_state: 0,
             },
             type_id_string(GRAPHICS_PRIMARY_COLOR_STYLE_TYPE),
-            "graphics",
+            &cadmpeg_ir::identity_key!("graphics"),
             6,
         );
         let inventory = PresentationInventory {

@@ -206,11 +206,13 @@ fn decode_container<'a>(
                                     ctx.copy_retained(bytes, "retain Inventor preview asset")?;
                                 ir.model.assets.push(
                                     Asset::try_new(
-                                        AssetId::mint(format!(
-                                            "inventor:document:asset#preview-{}",
-                                            ir.model.assets.len()
-                                        ))
-                                        .expect("identity grammar"),
+                                        AssetId::compose(
+                                            &cadmpeg_ir::identity_namespace!(
+                                                "inventor", "document", "asset"
+                                            ),
+                                            cadmpeg_ir::identity_key!("preview-")
+                                                .then(ir.model.assets.len()),
+                                        ),
                                         Some("document preview".into()),
                                         Some(media_type.into()),
                                         AssetContent::Embedded {
@@ -529,8 +531,10 @@ fn decode_container<'a>(
     ));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {
-            id: ProductDefinitionId::mint("inventor:document:product#root")
-                .expect("identity grammar"),
+            id: ProductDefinitionId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
+                cadmpeg_ir::identity_key!("root"),
+            ),
             kind: if document_kind == DocumentKind::Assembly {
                 ProductDefinitionKind::LinkGroup
             } else {
@@ -859,7 +863,7 @@ fn decode_container<'a>(
         },
         ActiveCarrierState::Selected(carrier) => ActiveCarrierRecord::Selected {
             id: "inventor:kernel:active-carrier#root".into(),
-            segment_token: carrier.segment_token.clone(),
+            segment_token: carrier.segment_token.as_str().to_owned(),
             record_ordinal: carrier.record_ordinal,
             segment_version_major: carrier.segment_version_major,
             family: carrier.family,
@@ -867,8 +871,7 @@ fn decode_container<'a>(
             header_kind: carrier.header_kind,
             header_value: carrier.header_value,
             schema: carrier.schema,
-            carrier_len: std::num::NonZeroU64::new(carrier.bytes.window().len() as u64)
-                .expect("a selected Inventor carrier has a nonempty window"),
+            carrier_len: carrier.carrier_len,
             carrier_offset: carrier.carrier_offset,
             carrier_sha256: sha256_hex(carrier.bytes.window()),
             selected_key: carrier.selected_key,
@@ -940,7 +943,7 @@ fn decode_container<'a>(
                     "inventor:presentation:default-style#{}-{}",
                     style.identity.segment_token, style.identity.record_ordinal
                 ),
-                segment_token: style.identity.segment_token.clone(),
+                segment_token: style.identity.segment_token.as_str().to_owned(),
                 record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
@@ -965,7 +968,7 @@ fn decode_container<'a>(
                     "inventor:presentation:rendering-style#{}-{}",
                     style.identity.segment_token, style.identity.record_ordinal
                 ),
-                segment_token: style.identity.segment_token.clone(),
+                segment_token: style.identity.segment_token.as_str().to_owned(),
                 record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
@@ -1014,7 +1017,7 @@ fn decode_container<'a>(
                 .inspect_err(|detail| {
                     presentation_inventory.issues.push(RecordIssue {
                         family: RecordIssueFamily::Presentation,
-                        segment_token: style.identity.segment_token.clone(),
+                        segment_token: style.identity.segment_token.as_str().to_owned(),
                         record_ordinal: style.identity.record_ordinal,
                         detail: detail.clone(),
                     });
@@ -1030,7 +1033,7 @@ fn decode_container<'a>(
                 "inventor:presentation:graphics-face#{}-{}",
                 face.identity.segment_token, face.identity.record_ordinal
             ),
-            segment_token: face.identity.segment_token.clone(),
+            segment_token: face.identity.segment_token.as_str().to_owned(),
             record_ordinal: face.identity.record_ordinal,
             segment_version_major: face.segment_version_major,
             header_value: face.header_value,
@@ -1055,7 +1058,7 @@ fn decode_container<'a>(
                 "inventor:presentation:graphics-style-collection#{}-{}",
                 collection.identity.segment_token, collection.identity.record_ordinal
             ),
-            segment_token: collection.identity.segment_token.clone(),
+            segment_token: collection.identity.segment_token.as_str().to_owned(),
             record_ordinal: collection.identity.record_ordinal,
             segment_version_major: collection.segment_version_major,
             style_references: collection.style_references.clone(),
@@ -1069,7 +1072,7 @@ fn decode_container<'a>(
                 "inventor:presentation:graphics-primary-color#{}-{}",
                 style.identity.segment_token, style.identity.record_ordinal
             ),
-            segment_token: style.identity.segment_token.clone(),
+            segment_token: style.identity.segment_token.as_str().to_owned(),
             record_ordinal: style.identity.record_ordinal,
             segment_version_major: style.segment_version_major,
             header_value: style.header_value,
@@ -1544,11 +1547,10 @@ fn decode_container<'a>(
             source_fidelity.retain_unknown_records(
                 format!("RSeStorage/B{}:expanded", carrier.segment_token),
                 [UnknownRecord::retained(
-                    UnknownId::mint(format!(
-                        "inventor:kernel:carrier#{}-{}",
-                        carrier.segment_token, carrier.record_ordinal
-                    ))
-                    .expect("identity grammar"),
+                    UnknownId::compose(
+                        &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
+                        carrier.segment_token.clone().dash(carrier.record_ordinal),
+                    ),
                     carrier.carrier_offset,
                     data,
                     vec![active_carrier.id().to_owned()],
