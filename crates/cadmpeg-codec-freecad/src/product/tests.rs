@@ -1489,4 +1489,15 @@ fn preserves_unknown_numeric_copy_on_change_index() {
             .policy,
         cadmpeg_ir::CopyOnChangePolicy::Native("99".into())
     );
+    let restored = cadmpeg_ir::CadIr::from_json(
+        &serde_json::to_string(result.ir()).expect("CADIR serialization"),
+    )
+    .expect("complete CADIR admission");
+    let restored_records = restored
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    assert_eq!(restored_records[0].copy_on_change(), Some("99"));
 }

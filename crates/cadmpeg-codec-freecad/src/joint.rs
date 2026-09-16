@@ -119,12 +119,15 @@ pub(crate) fn transfer(
             .into_iter()
             .flatten()
             .collect::<BTreeMap<_, _>>();
-        output.push(JointRecord {
-            id: crate::native::native_id("joint", &object.name),
-            object: object.id.clone(),
-            body,
-            parameters,
-        });
+        output.push(
+            JointRecord::try_new(
+                crate::native::native_id("joint", &object.name),
+                object.id.clone(),
+                body,
+                parameters,
+            )
+            .map_err(CodecError::Malformed)?,
+        );
     }
     Ok(output)
 }
@@ -143,37 +146,18 @@ pub(crate) fn transfer_neutral(
     records
         .iter()
         .filter_map(|record| {
-            if let Some((name, error)) = record.parameters.iter().find_map(|(name, value)| {
-                crate::native::joint::validate_parameter_value(name, value)
-                    .err()
-                    .map(|error| (name, error))
-            }) {
-                return Some(Err(malformed(format!(
-                    "joint {} parameter {name}: {error}",
-                    record.id,
-                ))));
-            }
-            let bool_value = |name: &str| {
-                record
-                    .parameters
-                    .get(name)
-                    .and_then(|value| parse_bool(value))
-            };
-            let scalar = |name: &str| {
-                record
-                    .parameters
-                    .get(name)
-                    .and_then(|value| value.parse().ok())
-            };
+            let parameters = record.parameters();
+            let bool_value = |name: &str| parameters.bool_value(name);
+            let scalar = |name: &str| parameters.scalar_value(name);
             let enabled_limits =
                 |minimum: &str, maximum: &str, enable_min: &str, enable_max: &str, scale: f64| {
                     let minimum = bool_value(enable_min)
-                        .unwrap_or(false)
+                        .is_some_and(|enabled| enabled)
                         .then(|| scalar(minimum))
                         .flatten()
                         .map(|value: f64| value * scale);
                     let maximum = bool_value(enable_max)
-                        .unwrap_or(false)
+                        .is_some_and(|enabled| enabled)
                         .then(|| scalar(maximum))
                         .flatten()
                         .map(|value: f64| value * scale);
@@ -252,7 +236,7 @@ pub(crate) fn transfer_neutral(
                     JointConnector {
                         operand: operand(reference.as_ref()?)?,
                         frame: placement.transform(),
-                        detached: bool_value("Detach1").unwrap_or(false),
+                        detached: bool_value("Detach1").is_some_and(|value| value),
                     },
                     None,
                 ),
@@ -279,19 +263,19 @@ pub(crate) fn transfer_neutral(
                             JointConnector {
                                 operand: operand(first.reference.as_ref()?)?,
                                 frame: first.placement.transform(),
-                                detached: bool_value("Detach1").unwrap_or(false),
+                                detached: bool_value("Detach1").is_some_and(|value| value),
                             },
                             JointConnector {
                                 operand: operand(second.reference.as_ref()?)?,
                                 frame: second.placement.transform(),
-                                detached: bool_value("Detach2").unwrap_or(false),
+                                detached: bool_value("Detach2").is_some_and(|value| value),
                             },
                         ],
                         Some([first.offset.transform(), second.offset.transform()]),
                     )
                 }
             };
-            joint.suppressed = bool_value("Suppressed").unwrap_or(false);
+            joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
             joint.native_ref = Some(record.id.clone());
             Some(Ok(joint))
         })
@@ -363,14 +347,6 @@ fn joint_kind(
             linear_limits,
         },
     })
-}
-
-fn parse_bool(value: &str) -> Option<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
-    }
 }
 
 fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
@@ -755,10 +731,7 @@ pub(crate) mod tests {
             ["A.Face1", "A.Edge2"]
         );
         assert_eq!(joints[0].placements()[1][0][3], 2.0);
-        assert_eq!(
-            joints[0].parameters.get("Suppressed").map(String::as_str),
-            Some("true")
-        );
+        assert_eq!(joints[0].parameters().raw("Suppressed"), Some("true"));
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
         assert!(matches!(
@@ -1016,8 +989,17 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn malformed_joint_bool_is_rejected_at_source_admission() {
-        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+    fn primary_bool_values_are_retained_and_projected_exactly() {
+        for (raw, expected) in [
+            ("true", true),
+            ("false", false),
+            ("1", false),
+            ("0", false),
+            ("TRUE", false),
+            ("maybe", false),
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
     <Objects Count="2"><Object type="Assembly::AssemblyObject" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
     <ObjectData Count="2">
     <Object name="Base"><Properties Count="0"/></Object>
@@ -1025,15 +1007,41 @@ pub(crate) mod tests {
     <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Revolute"/></CustomEnumList></Property>
     <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
     <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
-    <Property name="Suppressed" type="App::PropertyBool"><Bool value="maybe"/></Property>
+    <Property name="Suppressed" type="App::PropertyBool"><Bool value="{raw}"/></Property>
     </Properties></Object>
-    </ObjectData></Document>"#;
-        let error = FcstdCodec
-            .decode(
-                &mut Cursor::new(archive(document)),
-                &DecodeOptions::default(),
+    </ObjectData></Document>"#
+            );
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .expect("primary bool values remain source-admissible");
+            let joints = result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .expect("native")
+                .arena_as::<crate::native::joint::JointRecord>("joints")
+                .expect("joints");
+            assert_eq!(joints[0].parameters().raw("Suppressed"), Some(raw));
+            assert_eq!(
+                joints[0].parameters().bool_value("Suppressed"),
+                Some(expected)
+            );
+            assert_eq!(result.ir().model.assembly_joints[0].suppressed, expected);
+            let restored = cadmpeg_ir::CadIr::from_json(
+                &serde_json::to_string(result.ir()).expect("CADIR serialization"),
             )
-            .expect_err("joint with malformed boolean scalar is rejected");
-        assert!(error.to_string().contains("invalid value"), "{error}");
+            .expect("complete CADIR admission");
+            let restored_joints = restored
+                .native
+                .namespace("fcstd")
+                .expect("native")
+                .arena_as::<crate::native::joint::JointRecord>("joints")
+                .expect("joints");
+            assert_eq!(restored_joints[0].parameters().raw("Suppressed"), Some(raw));
+            assert_eq!(restored.model.assembly_joints[0].suppressed, expected);
+        }
     }
 }
