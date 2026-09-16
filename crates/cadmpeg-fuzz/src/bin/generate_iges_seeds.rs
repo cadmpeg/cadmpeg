@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generates bounded IGES 5.3 seeds from fixed-field and entity semantics.
 
-use std::fmt::Write as _;
 use std::fs;
 
 include!("../seed_paths.rs");
@@ -20,7 +19,7 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Vec<u8> {
 
 fn directory_card(fields: [&str; 9], sequence: u32) -> Vec<u8> {
     let data = fields.into_iter().fold(String::new(), |mut data, field| {
-        write!(data, "{field:>8}").expect("required invariant");
+        data.push_str(&format!("{field:>8}"));
         data
     });
     card(data.as_bytes(), b'D', sequence)
@@ -36,12 +35,10 @@ fn parameter_card(data: &[u8], directory_sequence: u32, sequence: u32) -> Vec<u8
 
 fn prefix() -> Vec<u8> {
     let mut bytes = card(b"cadmpeg generated fuzz seed", b'S', 1);
+    // A card ordinal is one-based and bounded by the fixed global section, so
+    // the ordinal carries its own width.
     for (index, chunk) in GLOBAL.chunks(72).enumerate() {
-        bytes.extend(card(
-            chunk,
-            b'G',
-            u32::try_from(index + 1).expect("required invariant"),
-        ));
+        bytes.extend(card(chunk, b'G', index as u32 + 1));
     }
     bytes
 }
@@ -114,14 +111,15 @@ fn trimmed_plane() -> Vec<u8> {
     bytes
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
     let directory = seed_dir("seeds/iges_container");
-    fs::create_dir_all(&directory).expect("required invariant");
+    fs::create_dir_all(&directory)?;
     for (name, bytes) in [
         ("point_5_3", point()),
         ("trimmed_plane_5_3", trimmed_plane()),
     ] {
-        fs::write(directory.join(name), &bytes).expect("required invariant");
+        fs::write(directory.join(name), &bytes)?;
         println!("iges/{name} ({} bytes)", bytes.len());
     }
+    Ok(())
 }

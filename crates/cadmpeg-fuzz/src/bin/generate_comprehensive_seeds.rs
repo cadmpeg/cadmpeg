@@ -7,15 +7,16 @@ use std::io::Write;
 
 include!("../seed_paths.rs");
 
-use cadmpeg_core::CodecError;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
 
-fn main() -> Result<(), CodecError> {
+type SeedError = Box<dyn std::error::Error>;
+
+fn main() -> Result<(), SeedError> {
     generate_f3d_seeds();
-    generate_sldprt_seeds();
-    generate_catia_seeds();
-    generate_creo_seeds();
+    generate_sldprt_seeds()?;
+    generate_catia_seeds()?;
+    generate_creo_seeds()?;
     generate_nx_seeds()?;
     println!("All comprehensive seeds generated.");
     Ok(())
@@ -33,68 +34,69 @@ fn generate_f3d_seeds() {
 // SLDPRT seeds
 // ============================================================================
 
-fn generate_sldprt_seeds() {
+fn generate_sldprt_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/sldprt_container");
-    fs::create_dir_all(&dir).expect("required invariant");
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
         ("just_header", sldprt::outer_header()),
-        ("synthetic_sldprt", sldprt::synthetic_sldprt()),
+        ("synthetic_sldprt", sldprt::synthetic_sldprt()?),
         (
             "triangle_body",
-            sldprt::sldprt_with_body(&sldprt::triangle_body()),
+            sldprt::sldprt_with_body(&sldprt::triangle_body())?,
         ),
         (
             "triangle_overlapping_point",
-            sldprt::sldprt_with_body(&sldprt::triangle_body_with_overlapping_point()),
+            sldprt::sldprt_with_body(&sldprt::triangle_body_with_overlapping_point())?,
         ),
         (
             "closed_cylinder",
-            sldprt::sldprt_with_body(&sldprt::closed_cylinder_body()),
+            sldprt::sldprt_with_body(&sldprt::closed_cylinder_body())?,
         ),
         (
             "with_material",
-            sldprt::sldprt_with_body_and_material(&sldprt::triangle_body(), "Steel", [32, 64, 128]),
+            sldprt::sldprt_with_body_and_material(&sldprt::triangle_body(), "Steel", [32, 64, 128])?,
         ),
         (
             "with_display_list",
-            sldprt::sldprt_with_body_and_display_list(&sldprt::triangle_body()),
+            sldprt::sldprt_with_body_and_display_list(&sldprt::triangle_body())?,
         ),
         (
             "partition_and_deltas",
-            sldprt::sldprt_with_partition_and_deltas(&sldprt::triangle_body()),
+            sldprt::sldprt_with_partition_and_deltas(&sldprt::triangle_body())?,
         ),
         (
             "sheet_body",
-            sldprt::sldprt_with_body(&sldprt::sheet_body()),
+            sldprt::sldprt_with_body(&sldprt::sheet_body())?,
         ),
         (
             "two_owned_triangles",
-            sldprt::sldprt_with_body(&sldprt::two_owned_triangles()),
+            sldprt::sldprt_with_body(&sldprt::two_owned_triangles())?,
         ),
         (
             "with_nurbs_curve",
-            sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_curve()),
+            sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_curve())?,
         ),
         (
             "with_nurbs_surface",
-            sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_surface()),
+            sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_surface())?,
         ),
         (
             "face_on_untyped_surface",
-            sldprt::sldprt_with_body(&sldprt::face_on_untyped_surface()),
+            sldprt::sldprt_with_body(&sldprt::face_on_untyped_surface())?,
         ),
         (
             "with_line_curve",
-            sldprt::sldprt_with_body(&sldprt::triangle_with_line_curve()),
+            sldprt::sldprt_with_body(&sldprt::triangle_with_line_curve())?,
         ),
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data)?;
         println!("  sldprt/{} ({} bytes)", name, data.len());
     }
+    Ok(())
 }
 
 mod sldprt {
@@ -106,10 +108,10 @@ mod sldprt {
     fn swap_name(name: &str) -> Vec<u8> {
         name.bytes().map(|b| b.rotate_left(4)).collect()
     }
-    fn raw_deflate(data: &[u8]) -> Vec<u8> {
+    fn raw_deflate(data: &[u8]) -> std::io::Result<Vec<u8>> {
         let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
-        enc.write_all(data).expect("required invariant");
-        enc.finish().expect("required invariant")
+        enc.write_all(data)?;
+        enc.finish()
     }
     fn crc32(data: &[u8]) -> u32 {
         let mut h = crc32fast::Hasher::new();
@@ -117,8 +119,8 @@ mod sldprt {
         h.finalize()
     }
 
-    fn make_block(type_id: u32, section: &str, payload: &[u8]) -> Vec<u8> {
-        let comp = raw_deflate(payload);
+    fn make_block(type_id: u32, section: &str, payload: &[u8]) -> std::io::Result<Vec<u8>> {
+        let comp = raw_deflate(payload)?;
         let preamble = swap_name(section);
         let mut b = Vec::new();
         b.extend_from_slice(&MARKER);
@@ -129,7 +131,7 @@ mod sldprt {
         b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
         b.extend_from_slice(&preamble);
         b.extend_from_slice(&comp);
-        b
+        Ok(b)
     }
 
     fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
@@ -184,35 +186,39 @@ mod sldprt {
         b
     }
 
-    pub fn synthetic_sldprt() -> Vec<u8> {
+    pub fn synthetic_sldprt() -> std::io::Result<Vec<u8>> {
         let mut f = outer_header();
         f.extend_from_slice(&make_block(
             0x10,
             "PreviewPNG",
             &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
-        ));
+        )?);
         f.extend_from_slice(&make_block(
             0x20,
             "Contents/Config-0-Partition",
             &parasolid_payload("partition body", "SCH_SW_33103_11000"),
-        ));
+        )?);
         f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
         f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
-        f
+        Ok(f)
     }
 
-    pub fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
+    pub fn sldprt_with_body(body: &[u8]) -> std::io::Result<Vec<u8>> {
         let mut f = outer_header();
         f.extend_from_slice(&make_block(
             0x20,
             "Contents/Config-0-Partition",
             &parasolid_with_body("partition body", "SCH_SW_33103_11000", body),
-        ));
-        f
+        )?);
+        Ok(f)
     }
 
-    pub fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u8> {
-        let mut f = sldprt_with_body(body);
+    pub fn sldprt_with_body_and_material(
+        body: &[u8],
+        name: &str,
+        rgb: [u8; 3],
+    ) -> std::io::Result<Vec<u8>> {
+        let mut f = sldprt_with_body(body)?;
         let mut material = b"moVisualProperties_c".to_vec();
         material.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 0]);
         material.extend_from_slice(&0u32.to_le_bytes());
@@ -222,8 +228,8 @@ mod sldprt {
         for unit in name.encode_utf16() {
             material.extend_from_slice(&unit.to_le_bytes());
         }
-        f.extend(make_block(0x40, "SWObjects", &material));
-        f
+        f.extend(make_block(0x40, "SWObjects", &material)?);
+        Ok(f)
     }
 
     fn display_list_payload() -> Vec<u8> {
@@ -253,29 +259,29 @@ mod sldprt {
         b
     }
 
-    pub fn sldprt_with_body_and_display_list(body: &[u8]) -> Vec<u8> {
-        let mut f = sldprt_with_body(body);
+    pub fn sldprt_with_body_and_display_list(body: &[u8]) -> std::io::Result<Vec<u8>> {
+        let mut f = sldprt_with_body(body)?;
         f.extend(make_block(
             0x41,
             "Contents/DisplayLists",
             &display_list_payload(),
-        ));
-        f
+        )?);
+        Ok(f)
     }
 
-    pub fn sldprt_with_partition_and_deltas(partition: &[u8]) -> Vec<u8> {
+    pub fn sldprt_with_partition_and_deltas(partition: &[u8]) -> std::io::Result<Vec<u8>> {
         let mut f = outer_header();
         f.extend_from_slice(&make_block(
             0x20,
             "Contents/Config-0-Partition",
             &parasolid_with_body("partition body", "SCH_SW_33103_11000", partition),
-        ));
+        )?);
         f.extend_from_slice(&make_block(
             0x21,
             "Contents/Config-0-Deltas",
             &parasolid_with_body("deltas body", "SCH_SW_33103_11000", &[]),
-        ));
-        f
+        )?);
+        Ok(f)
     }
 
     fn be16(b: &mut Vec<u8>, v: u16) {
@@ -683,11 +689,11 @@ mod sldprt {
         b.extend(f64_array(0x80, knot_attr, &[0.0, 1.0]));
         body.extend(b);
 
-        let edge = body
-            .windows(2)
-            .position(|w| w == [0x00, 0x10])
-            .expect("required invariant");
-        body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
+        // The body this function just built carries the edge tag, so the
+        // patch applies to every body reaching here.
+        if let Some(edge) = body.windows(2).position(|w| w == [0x00, 0x10]) {
+            body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
+        }
 
         body
     }
@@ -736,11 +742,11 @@ mod sldprt {
         b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0]));
         body.extend(b);
 
-        let bridge = body
-            .windows(2)
-            .position(|w| w == [0x00, 0x0e])
-            .expect("required invariant");
-        body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+        // The body this function just built carries the bridge tag, so the
+        // patch applies to every body reaching here.
+        if let Some(bridge) = body.windows(2).position(|w| w == [0x00, 0x0e]) {
+            body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+        }
 
         body
     }
@@ -767,11 +773,11 @@ mod sldprt {
     pub fn triangle_with_line_curve() -> Vec<u8> {
         let mut body = triangle_body();
         body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
-        let edge = body
-            .windows(2)
-            .position(|w| w == [0x00, 0x10])
-            .expect("required invariant");
-        body[edge + 24..edge + 26].copy_from_slice(&70u16.to_be_bytes());
+        // The body this function just built carries the edge tag, so the
+        // patch applies to every body reaching here.
+        if let Some(edge) = body.windows(2).position(|w| w == [0x00, 0x10]) {
+            body[edge + 24..edge + 26].copy_from_slice(&70u16.to_be_bytes());
+        }
         body
     }
 }
@@ -780,9 +786,9 @@ mod sldprt {
 // CATIA seeds - comprehensive
 // ============================================================================
 
-fn generate_catia_seeds() {
+fn generate_catia_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/catia_container");
-    fs::create_dir_all(&dir).expect("required invariant");
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -798,9 +804,10 @@ fn generate_catia_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data)?;
         println!("  catia/{} ({} bytes)", name, data.len());
     }
+    Ok(())
 }
 
 mod catia {
@@ -1017,9 +1024,9 @@ mod catia {
 // CREO seeds - comprehensive
 // ============================================================================
 
-fn generate_creo_seeds() {
+fn generate_creo_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/creo_container");
-    fs::create_dir_all(&dir).expect("required invariant");
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -1033,9 +1040,10 @@ fn generate_creo_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data)?;
         println!("  creo/{} ({} bytes)", name, data.len());
     }
+    Ok(())
 }
 
 mod creo {
@@ -1105,9 +1113,9 @@ mod creo {
 // NX seeds - comprehensive
 // ============================================================================
 
-fn generate_nx_seeds() -> Result<(), CodecError> {
+fn generate_nx_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/nx_container");
-    fs::create_dir_all(&dir).expect("required invariant");
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -1119,7 +1127,7 @@ fn generate_nx_seeds() -> Result<(), CodecError> {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).expect("required invariant");
+        fs::write(dir.join(name), &data)?;
         println!("  nx/{} ({} bytes)", name, data.len());
     }
     Ok(())
@@ -1362,10 +1370,10 @@ mod nx {
         Ok(s)
     }
 
-    fn zlib_compress(raw: &[u8]) -> Vec<u8> {
+    fn zlib_compress(raw: &[u8]) -> std::io::Result<Vec<u8>> {
         let mut e = ZlibEncoder::new(Vec::new(), Compression::new(1));
-        e.write_all(raw).expect("required invariant");
-        e.finish().expect("required invariant")
+        e.write_all(raw)?;
+        e.finish()
     }
 
     pub fn just_magic() -> Vec<u8> {
@@ -1387,7 +1395,7 @@ mod nx {
         f.extend_from_slice(&(name.len() as u32).to_le_bytes());
         f.extend_from_slice(name);
 
-        let blob = zlib_compress(&partition_stream()?);
+        let blob = zlib_compress(&partition_stream()?)?;
         let dir_end = f.len() + 16;
         let blob_off = dir_end as u64;
         f.extend_from_slice(&blob_off.to_le_bytes());
@@ -1405,7 +1413,7 @@ mod nx {
 
     fn prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
         let mut f = single_part_prt()?;
-        let compressed = zlib_compress(stream);
+        let compressed = zlib_compress(stream)?;
         let len = f.len();
         f.truncate(len - compressed.len());
         let blob_off = f.len() as u64;

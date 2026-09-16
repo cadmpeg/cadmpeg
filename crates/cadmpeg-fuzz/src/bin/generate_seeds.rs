@@ -12,66 +12,68 @@ use zip::CompressionMethod;
 const SEED_LINEAR_TOLERANCE: f64 = 1.0e-6;
 const SEED_ANGULAR_TOLERANCE: f64 = 1.0e-10;
 
-fn main() {
+type SeedError = Box<dyn std::error::Error>;
+
+fn main() -> Result<(), SeedError> {
     let seeds = [
-        ("empty_zip", empty_zip()),
-        ("bare_zip_with_txt", bare_zip_with_txt()),
+        ("empty_zip", empty_zip()?),
+        ("bare_zip_with_txt", bare_zip_with_txt()?),
         (
             "synthetic_smbh_header_only",
-            f3d_with_smbh(&synthetic_smbh()),
+            f3d_with_smbh(&synthetic_smbh())?,
         ),
         (
             "synthetic_geometry",
-            f3d_with_smbh(&synthetic_geometry_smbh()),
+            f3d_with_smbh(&synthetic_geometry_smbh())?,
         ),
-        ("synthetic_mixed", f3d_with_smbh(&synthetic_mixed_smbh())),
+        ("synthetic_mixed", f3d_with_smbh(&synthetic_mixed_smbh())?),
         (
             "synthetic_with_pcurve",
-            f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh()),
+            f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh()?)?,
         ),
-        ("full_f3d_with_smbh", synthetic_f3d(true)),
-        ("full_f3d_smb_only", synthetic_f3d(false)),
-        ("corrupt_zip_magic", corrupt_zip_magic()),
-        ("truncated_smbh", truncated_smbh()),
+        ("full_f3d_with_smbh", synthetic_f3d(true)?),
+        ("full_f3d_smb_only", synthetic_f3d(false)?),
+        ("corrupt_zip_magic", corrupt_zip_magic()?),
+        ("truncated_smbh", truncated_smbh()?),
         (
             "binary_file4_width",
-            f3d_with_smbh(&synthetic_binary_file4()),
+            f3d_with_smbh(&synthetic_binary_file4())?,
         ),
     ];
 
     for directory in ["seeds/f3d_container", "seeds/f3d_roundtrip"] {
         let seeds_dir = seed_dir(directory);
-        fs::create_dir_all(&seeds_dir).expect("create seeds dir");
+        fs::create_dir_all(&seeds_dir)?;
         for (name, data) in &seeds {
             let path = seeds_dir.join(name);
-            fs::write(&path, data).expect("write seed");
+            fs::write(&path, data)?;
             println!("wrote {} ({} bytes)", path.display(), data.len());
         }
     }
+    Ok(())
 }
 
-fn empty_zip() -> Vec<u8> {
+fn empty_zip() -> Result<Vec<u8>, SeedError> {
     let zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    zip.finish().expect("required invariant").into_inner()
+    Ok(zip.finish()?.into_inner())
 }
 
-fn bare_zip_with_txt() -> Vec<u8> {
+fn bare_zip_with_txt() -> Result<Vec<u8>, SeedError> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("readme.txt", stored)
-        .expect("required invariant");
-    zip.write_all(b"hello").expect("required invariant");
-    zip.finish().expect("required invariant").into_inner()
+    zip.start_file("readme.txt", stored)?;
+    zip.write_all(b"hello")?;
+    Ok(zip.finish()?.into_inner())
 }
 
-fn corrupt_zip_magic() -> Vec<u8> {
-    let mut data = empty_zip();
+fn corrupt_zip_magic() -> Result<Vec<u8>, SeedError> {
+    let mut data = empty_zip()?;
     data[0] = 0xFF;
     data[1] = 0xFF;
-    data
+    Ok(data)
 }
 
-fn truncated_smbh() -> Vec<u8> {
+fn truncated_smbh() -> Result<Vec<u8>, SeedError> {
     let mut smbh = synthetic_smbh();
     smbh.truncate(60);
     f3d_with_smbh(&smbh)
@@ -325,23 +327,25 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     out
 }
 
-fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
+fn synthetic_geometry_with_pcurve_smbh() -> Result<Vec<u8>, SeedError> {
     let mut bytes = synthetic_geometry_smbh();
-    let start = find_record_stream_start(&bytes).expect("required invariant");
-    let limit = find_delta_state_offset(&bytes).expect("required invariant");
+    let start = find_record_stream_start(&bytes)
+        .ok_or("synthetic geometry holds no ASM record stream")?;
+    let limit =
+        find_delta_state_offset(&bytes).ok_or("synthetic geometry holds no delta_state")?;
     let records = frame_records(&bytes, start, limit);
     let coedge = &records[7];
     let record = &mut bytes[coedge.0..coedge.0 + coedge.1];
     let pcurve_ref_tag = record
         .iter()
         .rposition(|b| *b == 0x0c)
-        .expect("required invariant");
+        .ok_or("synthetic coedge record holds no reference tag")?;
     record[pcurve_ref_tag + 1..pcurve_ref_tag + 9].copy_from_slice(&19i64.to_le_bytes());
 
     let delta = bytes[..]
         .windows(b"delta_state".len())
         .position(|w| w == b"delta_state")
-        .expect("required invariant")
+        .ok_or("synthetic geometry holds no delta_state")?
         - 2;
     let mut pcurve = Vec::new();
     t_ident(&mut pcurve, "pcurve");
@@ -351,7 +355,7 @@ fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
     pcurve.extend_from_slice(&generated_pcurve_block());
     t_end(&mut pcurve);
     bytes.splice(delta..delta, pcurve);
-    bytes
+    Ok(bytes)
 }
 
 fn generated_pcurve_block() -> Vec<u8> {
@@ -538,56 +542,46 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
     out
 }
 
-fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
+fn f3d_with_smbh(smbh: &[u8]) -> Result<Vec<u8>, SeedError> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored)
-        .expect("required invariant");
-    zip.write_all(b"synthetic-manifest")
-        .expect("required invariant");
-    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
-        .expect("required invariant");
-    zip.write_all(smbh).expect("required invariant");
-    zip.finish().expect("required invariant").into_inner()
+    zip.start_file("Manifest.dat", stored)?;
+    zip.write_all(b"synthetic-manifest")?;
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)?;
+    zip.write_all(smbh)?;
+    Ok(zip.finish()?.into_inner())
 }
 
-fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
+fn synthetic_f3d(include_smbh: bool) -> Result<Vec<u8>, SeedError> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     let folder = "FusionAssetName[Active]";
-    zip.start_file("Manifest.dat", stored)
-        .expect("required invariant");
-    zip.write_all(b"synthetic-manifest")
-        .expect("required invariant");
+    zip.start_file("Manifest.dat", stored)?;
+    zip.write_all(b"synthetic-manifest")?;
 
     if include_smbh {
-        zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)
-            .expect("required invariant");
-        zip.write_all(&synthetic_smbh())
-            .expect("required invariant");
+        zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)?;
+        zip.write_all(&synthetic_smbh())?;
     }
 
     let mut smb = synthetic_smbh();
     smb.truncate(60);
-    zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)
-        .expect("required invariant");
-    zip.write_all(&smb).expect("required invariant");
+    zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)?;
+    zip.write_all(&smb)?;
 
     zip.start_file(
         format!("{folder}/FusionDesignSegmentType1/BulkStream.dat"),
         stored,
-    )
-    .expect("required invariant");
-    zip.write_all(b"design-bulk").expect("required invariant");
+    )?;
+    zip.write_all(b"design-bulk")?;
 
-    zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored)
-        .expect("required invariant");
-    zip.write_all(b"\x89PNG").expect("required invariant");
+    zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored)?;
+    zip.write_all(b"\x89PNG")?;
 
-    let cursor = zip.finish().expect("required invariant");
-    cursor.into_inner()
+    let cursor = zip.finish()?;
+    Ok(cursor.into_inner())
 }
 
 fn find_record_stream_start(bytes: &[u8]) -> Option<usize> {
