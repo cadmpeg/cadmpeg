@@ -674,8 +674,123 @@ pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::Sldp
 
 #[cfg(test)]
 mod tests {
-    use super::{generated_feature_record_id, neutral_feature_id};
+    use super::{generated_feature_record_id, neutral_feature_id, sync_neutral_features};
+    use crate::test_support::{
+        make_block, plan_inherited_write, resolved_feature_classes_with_ids, sldprt_native,
+        sldprt_with_body, triangle_body,
+    };
+    use crate::SldprtCodec;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::FeatureId;
+    use std::io::Cursor;
+
+    /// A document whose one history feature is linked to one serialized object
+    /// name through a feature-input class declaration, so a neutral rename has
+    /// a name to reach.
+    fn document_with_one_linked_object_name() -> Vec<u8> {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+        ));
+        source.extend(make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]),
+        ));
+        source
+    }
+
+    #[test]
+    fn a_neutral_feature_rename_reaches_the_written_object_name_and_survives_a_round_trip() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        assert_eq!(
+            decoded.ir().model.features[0].name.as_deref(),
+            Some("MatrizL1")
+        );
+        assert_eq!(
+            sldprt_native(decoded.ir()).feature_input_lanes[0].names[0].value,
+            "MatrizL1"
+        );
+
+        let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+        {
+            let mut edit = decoded.ir_mut();
+            edit.model.features[0].name = Some("PatternRenamed".into());
+        }
+        let mut encoded = Vec::new();
+        plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut encoded)
+            .expect("the renamed model writes");
+
+        let regenerated = SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("the written document decodes");
+        let native = sldprt_native(regenerated.ir());
+        assert_eq!(
+            native.feature_input_lanes[0].names[0].value,
+            "PatternRenamed"
+        );
+        assert_eq!(native.feature_histories[0].features[0].name, "PatternRenamed");
+        assert_eq!(
+            native.feature_histories[0].features[0]
+                .input_class
+                .as_deref(),
+            Some("moLPattern_c")
+        );
+        assert_eq!(
+            regenerated.ir().model.features[0].name.as_deref(),
+            Some("PatternRenamed")
+        );
+    }
+
+    #[test]
+    fn a_rename_of_an_object_name_two_lanes_state_is_refused_naming_the_name() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        let mut model = decoded.ir().model.clone();
+        model.features[0].name = Some("PatternRenamed".into());
+
+        let mut native = sldprt_native(decoded.ir());
+        let mut second = native.feature_input_lanes[0].clone();
+        second.id = format!("{}-second", second.id);
+        native.feature_input_lanes.push(second);
+
+        let error = sync_neutral_features(&model, &[], &[], &mut Some(native))
+            .expect_err("two lanes state the same object name");
+        assert_eq!(
+            error.to_string(),
+            "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
+        );
+    }
+
+    #[test]
+    fn a_rename_to_a_blank_feature_name_is_refused_naming_the_name() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        let mut model = decoded.ir().model.clone();
+        model.features[0].name = Some(" ".into());
+
+        let error = sync_neutral_features(&model, &[], &[], &mut Some(sldprt_native(decoded.ir())))
+            .expect_err("a blank object name is not writable");
+        assert_eq!(
+            error.to_string(),
+            "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"
+        );
+    }
 
     #[test]
     fn generated_feature_identities_escape_embedded_separators() {
