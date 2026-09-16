@@ -278,6 +278,7 @@ mod tests {
             [
                 "source.dialect-unverified",
                 "source.route-fell-through",
+                "source.annotation-identity-collision",
                 "geometry.carrier-summary",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",
