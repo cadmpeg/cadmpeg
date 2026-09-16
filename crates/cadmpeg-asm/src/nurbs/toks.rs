@@ -247,14 +247,23 @@ pub(crate) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
 /// Token indices of the `nubs`/`nurbs` markers `toks` itself owns: those
 /// outside every construction nested within it. The span's outer
 /// `SubtypeOpen` sets the initial nesting depth.
-pub(crate) fn owned_marker_positions(toks: &[Token]) -> Vec<usize> {
+///
+/// A `SubtypeClose` with no open scope is a malformed token stream and is
+/// refused: pinning the depth at zero would make every later marker read as one
+/// this span owns.
+pub(crate) fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
     let mut out = Vec::new();
     let mut depth = 0usize;
-    let start = usize::from(matches!(toks.first(), Some(Token::SubtypeOpen)));
-    for (pos, token) in toks.iter().enumerate().skip(start) {
+    // The span's own leading `SubtypeOpen` is skipped, so the close that
+    // matches it is the one close this walk admits at depth zero.
+    let mut outer = usize::from(matches!(toks.first(), Some(Token::SubtypeOpen)));
+    for (pos, token) in toks.iter().enumerate().skip(outer) {
         match token {
             Token::SubtypeOpen => depth += 1,
-            Token::SubtypeClose => depth = depth.saturating_sub(1),
+            Token::SubtypeClose => match depth.checked_sub(1) {
+                Some(next) => depth = next,
+                None => outer = outer.checked_sub(1)?,
+            },
             _ => {
                 if depth == 0 && marker_at(toks, pos).is_some() {
                     out.push(pos);
@@ -262,14 +271,17 @@ pub(crate) fn owned_marker_positions(toks: &[Token]) -> Vec<usize> {
             }
         }
     }
-    out
+    Some(out)
 }
 
 /// Token indices and names of the subtype definitions `toks` itself owns: the
 /// `SubtypeOpen`s at the outermost nesting level whose next token is an
 /// identifier, in order, `ref` included. A definition inside a nested scope
 /// belongs to that scope's construction, not to `toks`.
-pub(crate) fn owned_subtype_defs(toks: &[Token]) -> Vec<(usize, &str)> {
+///
+/// A `SubtypeClose` with no open scope is a malformed token stream and is
+/// refused.
+pub(crate) fn owned_subtype_defs(toks: &[Token]) -> Option<Vec<(usize, &str)>> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     for (pos, token) in toks.iter().enumerate() {
@@ -282,11 +294,11 @@ pub(crate) fn owned_subtype_defs(toks: &[Token]) -> Vec<(usize, &str)> {
                 }
                 depth += 1;
             }
-            Token::SubtypeClose => depth = depth.saturating_sub(1),
+            Token::SubtypeClose => depth = depth.checked_sub(1)?,
             _ => {}
         }
     }
-    owned
+    Some(owned)
 }
 
 /// Token index of the first subtype definition `toks` owns whose name matches
@@ -300,7 +312,7 @@ pub(crate) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
 ) -> Option<(usize, &'n str)> {
-    let owned = owned_subtype_defs(toks);
+    let owned = owned_subtype_defs(toks)?;
     names.iter().copied().find_map(|name| {
         owned
             .iter()
@@ -312,7 +324,7 @@ pub(crate) fn find_owned_subtype_marker<'n>(
 /// The construction `toks` is, under its modern name: the first subtype
 /// definition `toks` owns other than `ref`, canonicalized.
 pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
-    owned_subtype_defs(toks)
+    owned_subtype_defs(toks)?
         .into_iter()
         .map(|(_, name)| name)
         .find(|name| *name != "ref")
@@ -325,11 +337,11 @@ pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
 /// cache-bearing when it directly owns at least one B-spline marker. Multiple
 /// such scopes are ambiguous and are therefore rejected.
 pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
-    let mut candidates = owned_subtype_defs(toks)
+    let mut candidates = owned_subtype_defs(toks)?
         .into_iter()
         .filter(|(_, name)| *name != "ref")
         .filter_map(|(start, _)| subtype_span(toks, start))
-        .filter(|scope| !owned_marker_positions(scope).is_empty());
+        .filter(|scope| owned_marker_positions(scope).is_some_and(|owned| !owned.is_empty()));
     let scope = candidates.next()?;
     candidates.next().is_none().then_some(scope)
 }
@@ -618,7 +630,7 @@ mod tests {
             Token::SubtypeClose,
             Token::SubtypeClose,
         ];
-        assert_eq!(owned_subtype_defs(&toks), vec![(0, "exactcur")]);
+        assert_eq!(owned_subtype_defs(&toks), Some(vec![(0, "exactcur")]));
         assert_eq!(subtype_refs(&toks), vec![3]);
         assert_eq!(
             owned_construction_subtype(&toks),
@@ -638,8 +650,27 @@ mod tests {
         ];
         // Leading open is the span's own scope: the first `nubs` is owned, the
         // `nurbs` inside the nested scope is not.
-        assert_eq!(owned_marker_positions(&toks), vec![1]);
+        assert_eq!(owned_marker_positions(&toks), Some(vec![1]));
         assert_eq!(marker_at(&toks, 1), Some(BsplineMarker::Nubs));
         assert_eq!(marker_at(&toks, 3), Some(BsplineMarker::Nurbs));
+    }
+
+    #[test]
+    fn one_unbalanced_close_refuses_the_owned_walks() {
+        // One close more than the stream opens. Everything after it sits
+        // outside every scope, so a walk that pinned the depth at zero
+        // reported the trailing `nurbs` as a marker this span owns.
+        let toks = [
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            Token::SubtypeOpen,
+            ident("ref"),
+            Token::SubtypeClose,
+            Token::SubtypeClose,
+            Token::SubtypeClose,
+            ident("nurbs"),
+        ];
+        assert_eq!(owned_marker_positions(&toks), None);
+        assert_eq!(owned_subtype_defs(&toks), None);
     }
 }

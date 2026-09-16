@@ -107,7 +107,7 @@ pub(crate) fn cyl_spl_sur(
         let interval = [cur.take_f64()?, cur.take_f64()?];
         let direction = cur.take_vector3()?;
         let native_position = cur.take_position()?;
-        let cache_fit_tolerance = toks::owned_marker_positions(span)
+        let cache_fit_tolerance = toks::owned_marker_positions(span)?
             .into_iter()
             .filter_map(|at| surface_block(span, at))
             .next_back()

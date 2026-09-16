@@ -4412,7 +4412,7 @@ fn procedural_resolving_refs(
     // Follow references for records whose own construction is absent. A record
     // with an undecoded construction keeps its native data; its references
     // belong to that construction's supports.
-    if toks::owned_subtype_defs(toks)
+    if toks::owned_subtype_defs(toks)?
         .iter()
         .any(|(_, name)| *name != "ref")
     {

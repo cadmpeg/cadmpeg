@@ -727,7 +727,7 @@ fn direct_subtype_reference(toks: &[Token]) -> Option<usize> {
                 }
                 depth += 1;
             }
-            Token::SubtypeClose => depth = depth.saturating_sub(1),
+            Token::SubtypeClose => depth = depth.checked_sub(1)?,
             _ => {}
         }
     }
@@ -816,7 +816,7 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Pcur
 }
 
 fn direct_pcurve_after_curve(toks: &[Token]) -> Option<PcurveNurbs> {
-    let position = crate::nurbs::toks::owned_marker_positions(toks)
+    let position = crate::nurbs::toks::owned_marker_positions(toks)?
         .into_iter()
         .next()?;
     let (_, end) = curve_block(toks, position)?;
@@ -866,7 +866,7 @@ fn procedural_curve_recursive(
     // tolerance; later blocks belong to nested construction machinery
     // (support surfaces, blend spines, progenitors) and are not the carrier.
     let cache_scope = crate::nurbs::toks::owned_cache_scope(toks).unwrap_or(toks);
-    let positions = crate::nurbs::toks::owned_marker_positions(cache_scope);
+    let positions = crate::nurbs::toks::owned_marker_positions(cache_scope)?;
     let solved = if vector_offset.is_some() || subset.is_some() || compound.is_some() {
         positions
             .into_iter()
