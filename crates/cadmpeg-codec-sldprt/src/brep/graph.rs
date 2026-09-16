@@ -23,7 +23,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -131,6 +131,16 @@ pub(crate) struct OwnedFaceColor {
 impl Brep {
     /// Qualify every document-arena identity and internal reference by one site key.
     pub(crate) fn qualify_ids(&mut self, site: &str) -> Result<(), cadmpeg_core::CodecError> {
+        // The site qualifier is admitted once, here, as a key tail. Appending
+        // an admitted tail to an admitted key cannot leave the grammar, so no
+        // identity below is rebuilt from text.
+        let tail = cadmpeg_ir::ids::IdentityKeyTail::try_new(format!("@{site}")).map_err(
+            |error| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "SLDPRT site qualifier is not identity key text: {error}"
+                ))
+            },
+        )?;
         let qualify = |value: &str| {
             value.split_once('#').map_or_else(
                 || value.to_owned(),
@@ -138,42 +148,32 @@ impl Brep {
             )
         };
         for body in &mut self.bodies {
-            body.id = qualify(body.id.as_str())
-                .try_into()
-                .expect("qualified identity");
+            body.id = qualified(&body.id, &tail);
             body.regions
                 .iter_mut()
-                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
+                .for_each(|id| *id = qualified(id, &tail));
         }
         for region in &mut self.regions {
-            region.id = qualify(region.id.as_str())
-                .try_into()
-                .expect("qualified identity");
-            region.body = qualify(region.body.as_str())
-                .try_into()
-                .expect("qualified identity");
+            region.id = qualified(&region.id, &tail);
+            region.body = qualified(&region.body, &tail);
             region
                 .shells
                 .iter_mut()
-                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
+                .for_each(|id| *id = qualified(id, &tail));
         }
         for shell in &mut self.shells {
-            shell.id = qualify(shell.id.as_str())
-                .try_into()
-                .expect("qualified identity");
-            shell.region = qualify(shell.region.as_str())
-                .try_into()
-                .expect("qualified identity");
+            shell.id = qualified(&shell.id, &tail);
+            shell.region = qualified(&shell.region, &tail);
             shell
                 .edit_topology(|faces, wire_edges, free_vertices| {
                     for id in faces {
-                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
+                        *id = qualified(id, &tail);
                     }
                     for id in wire_edges {
-                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
+                        *id = qualified(id, &tail);
                     }
                     for id in free_vertices {
-                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
+                        *id = qualified(id, &tail);
                     }
                 })
                 .map_err(|error| {
@@ -183,17 +183,11 @@ impl Brep {
                 })?;
         }
         for face in &mut self.faces {
-            face.id = qualify(face.id.as_str())
-                .try_into()
-                .expect("qualified identity");
-            face.shell = qualify(face.shell.as_str())
-                .try_into()
-                .expect("qualified identity");
-            face.surface = qualify(face.surface.as_str())
-                .try_into()
-                .expect("qualified identity");
+            face.id = qualified(&face.id, &tail);
+            face.shell = qualified(&face.shell, &tail);
+            face.surface = qualified(&face.surface, &tail);
             let qualify_loop = |id: &cadmpeg_ir::ids::LoopId| -> cadmpeg_ir::ids::LoopId {
-                qualify(id.as_str()).try_into().expect("qualified identity")
+                qualified(id, &tail)
             };
             face.loops = match &face.loops {
                 cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
@@ -210,40 +204,26 @@ impl Brep {
             };
         }
         for loop_ in &mut self.loops {
-            loop_.id = qualify(loop_.id.as_str())
-                .try_into()
-                .expect("qualified identity");
-            loop_.face = qualify(loop_.face.as_str())
-                .try_into()
-                .expect("qualified identity");
+            loop_.id = qualified(&loop_.id, &tail);
+            loop_.face = qualified(&loop_.face, &tail);
             match &mut loop_.boundary {
                 cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, pcurves } => {
-                    *vertex = qualify(vertex.as_str())
-                        .try_into()
-                        .expect("qualified identity");
+                    *vertex = qualified(vertex, &tail);
                     for pcurve in pcurves {
-                        pcurve.pcurve = qualify(pcurve.pcurve.as_str())
-                            .try_into()
-                            .expect("qualified identity");
+                        pcurve.pcurve = qualified(&pcurve.pcurve, &tail);
                     }
                 }
                 cadmpeg_ir::topology::LoopBoundary::Ring(ring) => {
                     let mut coedges = ring.coedges().to_vec();
                     let mut vertex_uses = ring.vertex_uses().to_vec();
                     for id in &mut coedges {
-                        *id = qualify(id.as_str()).try_into().expect("qualified identity");
+                        *id = qualified(id, &tail);
                     }
                     for vertex_use in &mut vertex_uses {
-                        vertex_use.vertex = qualify(vertex_use.vertex.as_str())
-                            .try_into()
-                            .expect("qualified identity");
-                        vertex_use.after = qualify(vertex_use.after.as_str())
-                            .try_into()
-                            .expect("qualified identity");
+                        vertex_use.vertex = qualified(&vertex_use.vertex, &tail);
+                        vertex_use.after = qualified(&vertex_use.after, &tail);
                         for pcurve in &mut vertex_use.pcurves {
-                            pcurve.pcurve = qualify(pcurve.pcurve.as_str())
-                                .try_into()
-                                .expect("qualified identity");
+                            pcurve.pcurve = qualified(&pcurve.pcurve, &tail);
                         }
                     }
                     *ring = cadmpeg_ir::topology::LoopRing::new(coedges, vertex_uses).map_err(
@@ -257,125 +237,81 @@ impl Brep {
             }
         }
         for coedge in &mut self.coedges {
-            coedge.id = qualify(coedge.id.as_str())
-                .try_into()
-                .expect("qualified identity");
-            coedge.owner_loop = qualify(coedge.owner_loop.as_str())
-                .try_into()
-                .expect("qualified identity");
-            coedge.edge = qualify(coedge.edge.as_str())
-                .try_into()
-                .expect("qualified identity");
-            coedge.radial_next = qualify(coedge.radial_next.as_str())
-                .try_into()
-                .expect("qualified identity");
+            coedge.id = qualified(&coedge.id, &tail);
+            coedge.owner_loop = qualified(&coedge.owner_loop, &tail);
+            coedge.edge = qualified(&coedge.edge, &tail);
+            coedge.radial_next = qualified(&coedge.radial_next, &tail);
             for use_ in &mut coedge.pcurves {
-                use_.pcurve = qualify(use_.pcurve.as_str())
-                    .try_into()
-                    .expect("qualified identity");
+                use_.pcurve = qualified(&use_.pcurve, &tail);
             }
         }
         for edge in &mut self.edges {
-            edge.id = qualify(edge.id.as_str())
-                .try_into()
-                .expect("qualified identity");
+            edge.id = qualified(&edge.id, &tail);
             edge.map_curve(|curve| {
-                qualify(curve.as_str())
-                    .try_into()
-                    .expect("qualified identity")
+                qualified(curve, &tail)
             });
-            edge.start = qualify(edge.start.as_str())
-                .try_into()
-                .expect("qualified identity");
-            edge.end = qualify(edge.end.as_str())
-                .try_into()
-                .expect("qualified identity");
+            edge.start = qualified(&edge.start, &tail);
+            edge.end = qualified(&edge.end, &tail);
         }
         for vertex in &mut self.vertices {
-            vertex.id = qualify(vertex.id.as_str())
-                .try_into()
-                .expect("qualified identity");
-            vertex.point = qualify(vertex.point.as_str())
-                .try_into()
-                .expect("qualified identity");
+            vertex.id = qualified(&vertex.id, &tail);
+            vertex.point = qualified(&vertex.point, &tail);
         }
         self.points.iter_mut().for_each(|point| {
-            point.id = qualify(point.id.as_str())
-                .try_into()
-                .expect("qualified identity");
+            point.id = qualified(&point.id, &tail);
         });
         for surface in &mut self.surfaces {
-            surface.id = qualify(surface.id.as_str())
-                .try_into()
-                .expect("qualified identity");
+            surface.id = qualified(&surface.id, &tail);
             match &mut surface.geometry {
                 SurfaceGeometry::Procedural { construction, .. } => {
-                    *construction = qualify(construction.as_str())
-                        .try_into()
-                        .expect("qualified identity");
+                    *construction = qualified(construction, &tail);
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: Some(record),
                 }) => {
-                    *record = qualify(record.as_str())
-                        .try_into()
-                        .expect("qualified identity");
+                    *record = qualified(record, &tail);
                 }
                 SurfaceGeometry::Solved(_) => {}
             }
         }
         for procedural in &mut self.procedural_surfaces {
-            procedural.id = qualify(procedural.id.as_str())
-                .try_into()
-                .expect("qualified identity");
+            procedural.id = qualified(&procedural.id, &tail);
             procedural.edit_definition(|definition| match definition {
                 ProceduralSurfaceDefinition::Blend(definition_payload) => {
                     let mut supports = definition_payload.supports().clone();
                     let mut spine = definition_payload.spine().clone();
 
                     for support in supports.iter_mut().flatten() {
-                        support.surface = qualify(support.surface.as_str())
-                            .try_into()
-                            .expect("qualified identity");
+                        support.surface = qualified(&support.surface, &tail);
                     }
                     if let Some(spine) = &mut spine {
-                        *spine = qualify(spine.as_str())
-                            .try_into()
-                            .expect("qualified identity");
+                        *spine = qualified(spine, &tail);
                     }
                     definition_payload.set_supports(supports);
                     definition_payload.set_spine(spine);
                 }
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
                     definition_payload.set_support(
-                        qualify(definition_payload.support().as_str())
-                            .try_into()
-                            .expect("qualified identity"),
+                        qualified(definition_payload.support(), &tail),
                     );
                 }
                 _ => {}
             });
         }
         for curve in &mut self.curves {
-            curve.id = qualify(curve.id.as_str())
-                .try_into()
-                .expect("qualified identity");
+            curve.id = qualified(&curve.id, &tail);
             if let CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(record),
             }) = &mut curve.geometry
             {
-                *record = qualify(record.as_str())
-                    .try_into()
-                    .expect("qualified identity");
+                *record = qualified(record, &tail);
             }
         }
         self.pcurves.iter_mut().for_each(|pcurve| {
-            pcurve.id = qualify(pcurve.id.as_str())
-                .try_into()
-                .expect("qualified identity");
+            pcurve.id = qualified(&pcurve.id, &tail);
         });
         for record in &mut self.unknowns {
-            let id = UnknownId::mint(qualify(record.id().as_str())).expect("identity grammar");
+            let id = qualified(record.id(), &tail);
             record.set_id(id);
             record
                 .links_mut()
@@ -389,9 +325,7 @@ impl Brep {
             color.site_key = Some(site.to_owned());
         }
         for atom in &mut self.face_atoms {
-            atom.face = qualify(atom.face.as_str())
-                .try_into()
-                .expect("qualified identity");
+            atom.face = qualified(&atom.face, &tail);
         }
         for modifier in &mut self.body_modifiers {
             if let Some(target) = &mut modifier.target {
@@ -440,6 +374,12 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
         }
     }
 
+    // The walk moves over borrowed keys, so the face each key names is looked
+    // up rather than rebuilt from its text.
+    let faces_by_key = candidates
+        .iter()
+        .map(|face| (face.as_str(), face))
+        .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
     let mut components = Vec::new();
     for face in &candidates {
@@ -449,7 +389,10 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
         let mut component = Vec::new();
         let mut pending = vec![face.as_str()];
         while let Some(current) = pending.pop() {
-            component.push(FaceId::mint(current.to_string()).expect("identity grammar"));
+            let Some(face) = faces_by_key.get(current) else {
+                continue;
+            };
+            component.push((*face).clone());
             for &neighbor in neighbors.get(current).into_iter().flatten() {
                 if assigned.insert(neighbor) {
                     pending.push(neighbor);
@@ -548,35 +491,93 @@ pub(crate) struct Stats {
     pub(crate) synthetic_body_grouping: bool,
 }
 
-fn id_face(a: u16) -> String {
-    format!("sldprt:brep:face#{a}")
+/// The `sldprt:brep` shell namespace, which three routes mint under.
+fn shell_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
+    cadmpeg_ir::identity_namespace!("sldprt", "brep", "shell")
 }
-fn id_surf(a: u16) -> String {
-    format!("sldprt:brep:surf#{a}")
+
+/// The `sldprt:brep` region namespace.
+fn region_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
+    cadmpeg_ir::identity_namespace!("sldprt", "brep", "region")
 }
-fn id_loop(a: u16) -> String {
-    format!("sldprt:brep:loop#{a}")
+
+/// The `sldprt:brep` body namespace.
+fn body_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
+    cadmpeg_ir::identity_namespace!("sldprt", "brep", "body")
 }
-fn id_coedge(a: u16) -> String {
-    format!("sldprt:brep:coedge#{a}")
+
+/// The `sldprt:brep` pcurve namespace.
+fn pcurve_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
+    cadmpeg_ir::identity_namespace!("sldprt", "brep", "pcurve")
 }
-fn id_edge(a: u16) -> String {
-    format!("sldprt:brep:edge#{a}")
+
+/// The component split of one native shell: `<shell>.component-<ordinal>`.
+fn shell_component(shell: &ShellId, component: usize) -> ShellId {
+    ShellId::from(cadmpeg_ir::ids::Identity::from(shell.clone()).with_key_tail(
+        &cadmpeg_ir::ids::IdentityKeyTail::empty()
+            .then(cadmpeg_ir::identity_key!(".component-"))
+            .then(component),
+    ))
 }
-fn id_curve(a: u16) -> String {
-    format!("sldprt:brep:curve#{a}")
+
+/// Append the site qualifier to one typed identity's key.
+///
+/// The tail carries the key grammar, and appending it to an admitted key
+/// keeps it, so this operation has no failing branch.
+fn qualified<T>(id: &T, site: &cadmpeg_ir::ids::IdentityKeyTail) -> T
+where
+    T: Clone + Into<cadmpeg_ir::ids::Identity> + From<cadmpeg_ir::ids::Identity>,
+{
+    T::from(id.clone().into().with_key_tail(site))
 }
-fn id_vertex(a: u16) -> String {
-    format!("sldprt:brep:vertex#{a}")
+
+fn id_face(a: u16) -> FaceId {
+    FaceId::compose(&cadmpeg_ir::identity_namespace!("sldprt", "brep", "face"), a)
 }
-fn id_point(a: u16) -> String {
-    format!("sldprt:brep:point#{a}")
+fn id_surf(a: u16) -> SurfaceId {
+    SurfaceId::compose(&cadmpeg_ir::identity_namespace!("sldprt", "brep", "surf"), a)
 }
-fn id_closed_point(edge: u16) -> String {
-    format!("sldprt:brep:point#closed-circle-{edge}")
+fn id_loop(a: u16) -> LoopId {
+    LoopId::compose(&cadmpeg_ir::identity_namespace!("sldprt", "brep", "loop"), a)
 }
-fn id_closed_vertex(edge: u16) -> String {
-    format!("sldprt:brep:vertex#closed-circle-{edge}")
+fn id_coedge(a: u16) -> CoedgeId {
+    CoedgeId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge"),
+        a,
+    )
+}
+fn id_edge(a: u16) -> EdgeId {
+    EdgeId::compose(&cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"), a)
+}
+fn id_curve(a: u16) -> CurveId {
+    CurveId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
+        a,
+    )
+}
+fn id_vertex(a: u16) -> VertexId {
+    VertexId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
+        a,
+    )
+}
+fn id_point(a: u16) -> PointId {
+    PointId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "point"),
+        a,
+    )
+}
+fn id_closed_point(edge: u16) -> PointId {
+    PointId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "point"),
+        cadmpeg_ir::identity_key!("closed-circle-").then(edge),
+    )
+}
+fn id_closed_vertex(edge: u16) -> VertexId {
+    VertexId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
+        cadmpeg_ir::identity_key!("closed-circle-").then(edge),
+    )
 }
 
 /// One face-use's decoded loops: ordered coedge rings, keyed by loop attr.
@@ -683,12 +684,17 @@ fn resolve_sweep_surface(
 }
 
 fn id_hidden_support_surface(attr: u16) -> SurfaceId {
-    SurfaceId::mint(format!("sldprt:brep:hidden-support-surf#{attr}")).expect("identity grammar")
+    SurfaceId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "hidden-support-surf"),
+        attr,
+    )
 }
 
 fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
-    ProceduralSurfaceId::mint(format!("sldprt:brep:offset-support-construction#{attr}"))
-        .expect("identity grammar")
+    ProceduralSurfaceId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "offset-support-construction"),
+        attr,
+    )
 }
 
 fn emit_offset_surface(
@@ -777,7 +783,7 @@ fn ensure_surface_support(
         if let Some(carrier) = carriers.surface(attr) {
             let id = emitted_face_surface_by_carrier.get(&attr).map_or_else(
                 || id_hidden_support_surface(attr),
-                |bridge| SurfaceId::mint(id_surf(*bridge)).expect("identity grammar"),
+                |bridge| id_surf(*bridge),
             );
             if !out.surfaces.iter().any(|surface| surface.id == id)
                 && !emitted_face_surface_by_carrier.contains_key(&attr)
@@ -811,7 +817,7 @@ fn ensure_surface_support(
             )?;
             let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
                 || id_hidden_support_surface(attr),
-                |bridge| SurfaceId::mint(id_surf(*bridge)).expect("identity grammar"),
+                |bridge| id_surf(*bridge),
             );
             if !emitted_face_surface_by_carrier.contains_key(&attr)
                 && !out.surfaces.iter().any(|candidate| candidate.id == surface)
@@ -831,7 +837,7 @@ fn ensure_surface_support(
         } else {
             let surface = emitted_face_surface_by_carrier.get(&attr).map_or_else(
                 || id_hidden_support_surface(attr),
-                |bridge| SurfaceId::mint(id_surf(*bridge)).expect("identity grammar"),
+                |bridge| id_surf(*bridge),
             );
             if !emitted_face_surface_by_carrier.contains_key(&attr)
                 && !out.surfaces.iter().any(|candidate| candidate.id == surface)
@@ -1459,7 +1465,7 @@ fn decode_graph(
             .tag("00_1d");
         let [x, y, z] = rec.xyz_m;
         out.points.push(Point {
-            id: PointId::mint(id_point(a)).expect("identity grammar"),
+            id: id_point(a),
             position: cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
             source_object: None,
         });
@@ -1475,8 +1481,8 @@ fn decode_graph(
             .note(id_vertex(a), &source_stream, rec.offset as u64)
             .tag("00_12");
         out.vertices.push(Vertex {
-            id: VertexId::mint(id_vertex(a)).expect("identity grammar"),
-            point: PointId::mint(id_point(point_attr)).expect("identity grammar"),
+            id: id_vertex(a),
+            point: id_point(point_attr),
             tolerance: None,
         });
     }
@@ -1523,23 +1529,23 @@ fn decode_graph(
                 .tag("derived_closed_circle_seam");
             annotations.exactness(&vertex_id, Exactness::Derived);
             out.points.push(Point {
-                id: PointId::mint(point_id.clone()).expect("identity grammar"),
+                id: point_id.clone(),
                 position,
                 source_object: None,
             });
             out.vertices.push(Vertex {
-                id: VertexId::mint(vertex_id.clone()).expect("identity grammar"),
-                point: PointId::mint(point_id).expect("identity grammar"),
+                id: vertex_id.clone(),
+                point: point_id,
                 tolerance: None,
             });
             (
-                VertexId::mint(vertex_id.clone()).expect("identity grammar"),
-                VertexId::mint(vertex_id).expect("identity grammar"),
+                vertex_id.clone(),
+                vertex_id,
             )
         } else {
             (
-                VertexId::mint(id_vertex(start_v)).expect("identity grammar"),
-                VertexId::mint(id_vertex(end_v)).expect("identity grammar"),
+                id_vertex(start_v),
+                id_vertex(end_v),
             )
         };
         if resolved_endpoints {
@@ -1582,7 +1588,7 @@ fn decode_graph(
                             annotations.exactness(id_curve(curve_attr), Exactness::Derived);
                         }
                     }
-                    curve = Some(CurveId::mint(id_curve(curve_attr)).expect("identity grammar"));
+                    curve = Some(id_curve(curve_attr));
                 }
                 _ => {
                     if emitted_curves.insert(curve_attr) {
@@ -1592,14 +1598,14 @@ fn decode_graph(
                             .tag("unknown_curve");
                         annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         out.curves.push(Curve {
-                            id: CurveId::mint(id_curve(curve_attr)).expect("identity grammar"),
+                            id: id_curve(curve_attr),
                             source_object: None,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                                 record: None,
                             }),
                         });
                     }
-                    curve = Some(CurveId::mint(id_curve(curve_attr)).expect("identity grammar"));
+                    curve = Some(id_curve(curve_attr));
                     out.stats.unknown_curve_edges += 1;
                 }
             }
@@ -1609,7 +1615,7 @@ fn decode_graph(
             .note(id_edge(e), &source_stream, off as u64)
             .tag("00_10");
         out.edges.push(Edge {
-            id: EdgeId::mint(id_edge(e)).expect("identity grammar"),
+            id: id_edge(e),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve,
                 parameter_range.map(|(range, _)| range),
@@ -1662,7 +1668,7 @@ fn decode_graph(
                     .get(&twin)
                     .filter(|tw| tw.refs[5] == ce_attr)
                     .filter(|_| emitted_coedges.contains(&twin))
-                    .map(|_| CoedgeId::mint(id_coedge(twin)).expect("identity grammar"));
+                    .map(|_| id_coedge(twin));
                 annotations
                     .note(id_coedge(ce_attr), &source_stream, ce.offset as u64)
                     .tag("00_11");
@@ -1692,9 +1698,10 @@ fn decode_graph(
                             *edge_endpoint_positions.get(&edge_attr)?,
                             pcurve_refusal,
                         )?;
-                        let id =
-                            PcurveId::mint(format!("sldprt:brep:pcurve#intersection:{ce_attr}"))
-                                .expect("identity grammar");
+                        let id = PcurveId::compose(
+                            &pcurve_namespace(),
+                            cadmpeg_ir::identity_key!("intersection:").then(ce_attr),
+                        );
                         let offset = curve_carrier.offset;
                         annotations
                             .note(&id, &source_stream, offset as u64)
@@ -1750,11 +1757,11 @@ fn decode_graph(
                     };
                 }
                 out.coedges.push(Coedge {
-                    id: CoedgeId::mint(id_coedge(ce_attr)).expect("identity grammar"),
-                    owner_loop: LoopId::mint(id_loop(*loop_attr)).expect("identity grammar"),
-                    edge: EdgeId::mint(id_edge(edge_attr)).expect("identity grammar"),
+                    id: id_coedge(ce_attr),
+                    owner_loop: id_loop(*loop_attr),
+                    edge: id_edge(edge_attr),
                     radial_next: partner.unwrap_or_else(|| {
-                        CoedgeId::mint(id_coedge(ce_attr)).expect("identity grammar")
+                        id_coedge(ce_attr)
                     }),
                     sense,
                     use_curve: None,
@@ -1772,7 +1779,7 @@ fn decode_graph(
             }
             let coedges: Vec<CoedgeId> = ring
                 .iter()
-                .map(|a| CoedgeId::mint(id_coedge(*a)).expect("identity grammar"))
+                .map(|a| id_coedge(*a))
                 .collect();
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations
@@ -1782,8 +1789,8 @@ fn decode_graph(
                 continue;
             };
             out.loops.push(Loop {
-                id: LoopId::mint(id_loop(*loop_attr)).expect("identity grammar"),
-                face: FaceId::mint(id_face(f.bridge_attr)).expect("identity grammar"),
+                id: id_loop(*loop_attr),
+                face: id_face(f.bridge_attr),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
         }
@@ -1860,7 +1867,7 @@ fn decode_graph(
             .loops
             .iter()
             .filter(|(la, _)| loop_set.contains(la))
-            .map(|(la, _)| LoopId::mint(id_loop(*la)).expect("identity grammar"))
+            .map(|(la, _)| id_loop(*la))
             .collect();
         if loops.is_empty() {
             continue;
@@ -1886,7 +1893,7 @@ fn decode_graph(
                         if let SurfaceGeometry::Solved(solved) = &geometry {
                             annotate_surface_frame(
                                 &mut annotations,
-                                &id_surf(f.bridge_attr),
+                                id_surf(f.bridge_attr).as_str(),
                                 solved,
                             )?;
                         }
@@ -1897,7 +1904,7 @@ fn decode_graph(
                     }
                 }
                 out.surfaces.push(Surface {
-                    id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
+                    id: id_surf(f.bridge_attr),
                     source_object: None,
                     geometry,
                 });
@@ -1977,16 +1984,19 @@ fn decode_graph(
                     Some((blend, first, second))
                 });
                 if let Some((offset, support)) = resolved_offset {
-                    let construction = ProceduralSurfaceId::mint(format!(
-                        "sldprt:brep:offset-construction#{}",
-                        f.bridge_attr
-                    ))
-                    .expect("identity grammar");
+                    let construction = ProceduralSurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!(
+                            "sldprt",
+                            "brep",
+                            "offset-construction"
+                        ),
+                        f.bridge_attr,
+                    );
                     emit_offset_surface(
                         &mut out,
                         &mut annotations,
                         &source_stream,
-                        SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
+                        id_surf(f.bridge_attr),
                         construction,
                         support,
                         offset,
@@ -2000,13 +2010,12 @@ fn decode_graph(
                                 .note(id_curve(blend.spine), &source_stream, carrier.offset as u64)
                                 .tag("blend_spine");
                         }
-                        CurveId::mint(id_curve(blend.spine)).expect("identity grammar")
+                        id_curve(blend.spine)
                     });
-                    let procedural_id = ProceduralSurfaceId::mint(format!(
-                        "sldprt:brep:blend-construction#{}",
-                        f.bridge_attr
-                    ))
-                    .expect("identity grammar");
+                    let procedural_id = ProceduralSurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!("sldprt", "brep", "blend-construction"),
+                        f.bridge_attr,
+                    );
                     let admitted_payload =
                         cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
                             [
@@ -2040,7 +2049,7 @@ fn decode_graph(
                         .note(id_surf(f.bridge_attr), &source_stream, blend.offset as u64)
                         .tag("00_38");
                     out.surfaces.push(Surface {
-                        id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
+                        id: id_surf(f.bridge_attr),
                         source_object: None,
                         geometry,
                     });
@@ -2063,7 +2072,7 @@ fn decode_graph(
                         annotations.exactness(id_surf(f.bridge_attr), exactness);
                     }
                     out.surfaces.push(Surface {
-                        id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
+                        id: id_surf(f.bridge_attr),
                         source_object: None,
                         geometry: SurfaceGeometry::Solved(geometry),
                     });
@@ -2074,7 +2083,7 @@ fn decode_graph(
                         .tag("unknown_surface");
                     annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                     out.surfaces.push(Surface {
-                        id: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
+                        id: id_surf(f.bridge_attr),
                         source_object: None,
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                             record: None,
@@ -2087,17 +2096,16 @@ fn decode_graph(
             .note(id_face(f.bridge_attr), &source_stream, surf_off as u64)
             .tag("00_0e");
         out.faces.push(Face {
-            id: FaceId::mint(id_face(f.bridge_attr)).expect("identity grammar"),
-            shell: ShellId::mint(format!(
-                "sldprt:brep:shell#{}",
+            id: id_face(f.bridge_attr),
+            shell: ShellId::compose(
+                &shell_namespace(),
                 bridge_shell
                     .get(&f.bridge_attr)
                     .copied()
                     .or_else(|| bridge_group.get(&f.bridge_attr).copied().map(|v| v as u16))
-                    .unwrap_or(0)
-            ))
-            .expect("identity grammar"),
-            surface: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
+                    .unwrap_or(0),
+            ),
+            surface: id_surf(f.bridge_attr),
             sense: surface_sense(f.sense, surface_orientation_reversed),
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
@@ -2129,7 +2137,8 @@ fn decode_graph(
                     == Some(appearance.value.face_attr)
             })
             .map(|face| id_face(face.bridge_attr))
-            .filter(|face| emitted_faces.contains_key(face.as_str()));
+            .filter(|face| emitted_faces.contains_key(face.as_str()))
+            .map(|face| face.into_string());
     }
     let mut bound_faces = HashSet::new();
     out.face_atoms = entity_facts
@@ -2167,9 +2176,9 @@ fn decode_graph(
     out.stats.synthetic_body_grouping = grouping.is_synthetic();
 
     for (group, body_record) in grouping.groups().into_iter().enumerate() {
-        let body_id = body_record.map_or_else(
-            || "sldprt:brep:body#0".to_string(),
-            |r| format!("sldprt:brep:body#{}", r.attr),
+        let body_id = BodyId::compose(
+            &body_namespace(),
+            body_record.map_or(0_u16, |record| record.attr),
         );
         let mut annotate_group = |id: &str, source: Option<(usize, &str)>| {
             let (offset, tag, exactness) = source.map_or(
@@ -2180,39 +2189,39 @@ fn decode_graph(
             annotations.exactness(id, exactness);
         };
         annotate_group(
-            &body_id,
+            body_id.as_str(),
             body_record.map(|record| (record.offset, "00_51_body")),
         );
         let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
         let mut body_regions = Vec::new();
         if native_regions.is_empty() {
-            let region_id = format!("sldprt:brep:region#{group}");
-            let native_shell_id = format!("sldprt:brep:shell#{group}");
-            annotate_group(&region_id, None);
+            let region_id = RegionId::compose(&region_namespace(), group);
+            let native_shell_id = ShellId::compose(&shell_namespace(), group);
+            annotate_group(region_id.as_str(), None);
             let mut region_shells = Vec::new();
-            for (component, faces) in shell_face_components(&out, &native_shell_id)
+            for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                 .into_iter()
                 .enumerate()
             {
                 let shell_id = if component == 0 {
                     native_shell_id.clone()
                 } else {
-                    format!("{native_shell_id}.component-{component}")
+                    shell_component(&native_shell_id, component)
                 };
-                annotate_group(&shell_id, None);
+                annotate_group(shell_id.as_str(), None);
                 let face_ids = faces
                     .iter()
                     .map(cadmpeg_ir::ids::FaceId::as_str)
                     .collect::<HashSet<_>>();
                 for face in &mut out.faces {
                     if face_ids.contains(face.id.as_str()) {
-                        face.shell = ShellId::mint(shell_id.clone()).expect("identity grammar");
+                        face.shell = shell_id.clone();
                     }
                 }
                 out.shells.push(
                     match Shell::new(
-                        ShellId::mint(shell_id.clone()).expect("identity grammar"),
-                        RegionId::mint(region_id.clone()).expect("identity grammar"),
+                        shell_id.clone(),
+                        region_id.clone(),
                         faces,
                         Vec::new(),
                         Vec::new(),
@@ -2223,32 +2232,32 @@ fn decode_graph(
                         }
                     },
                 );
-                region_shells.push(ShellId::mint(shell_id).expect("identity grammar"));
+                region_shells.push(shell_id);
             }
             out.regions.push(Region {
-                id: RegionId::mint(region_id.clone()).expect("identity grammar"),
-                body: BodyId::mint(body_id.clone()).expect("identity grammar"),
+                id: region_id.clone(),
+                body: body_id.clone(),
                 shells: region_shells,
             });
-            body_regions.push(RegionId::mint(region_id).expect("identity grammar"));
+            body_regions.push(region_id);
         } else {
             for region in native_regions {
-                let region_id = format!("sldprt:brep:region#{}", region.attr);
-                annotate_group(&region_id, Some((region.offset, "00_51_region")));
+                let region_id = RegionId::compose(&region_namespace(), region.attr);
+                annotate_group(region_id.as_str(), Some((region.offset, "00_51_region")));
                 let mut region_shells = Vec::new();
                 for shell in &region.shells {
-                    let native_shell_id = format!("sldprt:brep:shell#{}", shell.attr);
-                    for (component, faces) in shell_face_components(&out, &native_shell_id)
+                    let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
+                    for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                         .into_iter()
                         .enumerate()
                     {
                         let shell_id = if component == 0 {
                             native_shell_id.clone()
                         } else {
-                            format!("{native_shell_id}.component-{component}")
+                            shell_component(&native_shell_id, component)
                         };
                         annotate_group(
-                            &shell_id,
+                            shell_id.as_str(),
                             (component == 0).then_some((shell.offset, "00_51_shell")),
                         );
                         let face_ids = faces
@@ -2258,13 +2267,13 @@ fn decode_graph(
                         for face in &mut out.faces {
                             if face_ids.contains(face.id.as_str()) {
                                 face.shell =
-                                    ShellId::mint(shell_id.clone()).expect("identity grammar");
+                                    shell_id.clone();
                             }
                         }
                         out.shells.push(
                             match Shell::new(
-                                ShellId::mint(shell_id.clone()).expect("identity grammar"),
-                                RegionId::mint(region_id.clone()).expect("identity grammar"),
+                                shell_id.clone(),
+                                region_id.clone(),
                                 faces,
                                 Vec::new(),
                                 Vec::new(),
@@ -2275,19 +2284,19 @@ fn decode_graph(
                                 }
                             },
                         );
-                        region_shells.push(ShellId::mint(shell_id).expect("identity grammar"));
+                        region_shells.push(shell_id);
                     }
                 }
                 out.regions.push(Region {
-                    id: RegionId::mint(region_id.clone()).expect("identity grammar"),
-                    body: BodyId::mint(body_id.clone()).expect("identity grammar"),
+                    id: region_id.clone(),
+                    body: body_id.clone(),
                     shells: region_shells,
                 });
-                body_regions.push(RegionId::mint(region_id).expect("identity grammar"));
+                body_regions.push(region_id);
             }
         }
         out.bodies.push(Body {
-            id: BodyId::mint(body_id).expect("identity grammar"),
+            id: body_id,
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
             regions: body_regions,
             transform: None,
@@ -2752,11 +2761,7 @@ fn derive_planar_pcurves(
             }
             _ => continue,
         };
-        let id = PcurveId::mint(format!(
-            "sldprt:brep:pcurve#{}",
-            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
-        ))
-        .expect("identity grammar");
+        let id = PcurveId::compose(&pcurve_namespace(), coedge.id.key());
         let pcurve = Pcurve {
             id: id.clone(),
             geometry,
@@ -3066,11 +3071,10 @@ fn derive_cylindrical_pcurves(
             }
             _ => continue,
         };
-        let id = PcurveId::mint(format!(
-            "sldprt:brep:pcurve#cylinder:{}",
-            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
-        ))
-        .expect("identity grammar");
+        let id = PcurveId::compose(
+            &pcurve_namespace(),
+            cadmpeg_ir::identity_key!("cylinder:").then(coedge.id.key()),
+        );
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -3530,11 +3534,10 @@ fn derive_revolved_circle_pcurves(
         ) else {
             continue;
         };
-        let id = PcurveId::mint(format!(
-            "sldprt:brep:pcurve#revolved-circle:{}",
-            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
-        ))
-        .expect("identity grammar");
+        let id = PcurveId::compose(
+            &pcurve_namespace(),
+            cadmpeg_ir::identity_key!("revolved-circle:").then(coedge.id.key()),
+        );
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -3678,11 +3681,10 @@ fn derive_spherical_pcurves(
         } else {
             continue;
         };
-        let id = PcurveId::mint(format!(
-            "sldprt:brep:pcurve#sphere:{}",
-            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
-        ))
-        .expect("identity grammar");
+        let id = PcurveId::compose(
+            &pcurve_namespace(),
+            cadmpeg_ir::identity_key!("sphere:").then(coedge.id.key()),
+        );
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -3838,16 +3840,15 @@ fn derive_nurbs_isoparametric_pcurves(
             }
             _ => continue,
         };
-        let id = PcurveId::mint(format!(
-            "sldprt:brep:pcurve#{}:{}",
+        let id = PcurveId::compose(
+            &pcurve_namespace(),
             if cache {
-                "nurbs-surface-cache"
+                cadmpeg_ir::identity_key!("nurbs-surface-cache:")
             } else {
-                "nurbs-isoparametric"
-            },
-            coedge.id.as_str().rsplit('#').next().unwrap_or("0")
-        ))
-        .expect("identity grammar");
+                cadmpeg_ir::identity_key!("nurbs-isoparametric:")
+            }
+            .then(coedge.id.key()),
+        );
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -5448,15 +5449,18 @@ fn synthesize_cylinder_seams(
             direction.y / norm,
             direction.z / norm,
         );
-        let suffix = face_id.as_str().rsplit('#').next().unwrap_or("0");
-        let curve_id =
-            CurveId::mint(format!("sldprt:brep:curve#seam:{suffix}")).expect("identity grammar");
-        let edge_id =
-            EdgeId::mint(format!("sldprt:brep:edge#seam:{suffix}")).expect("identity grammar");
-        let seam_a = CoedgeId::mint(format!("sldprt:brep:coedge#seam:{suffix}:0"))
-            .expect("identity grammar");
-        let seam_b = CoedgeId::mint(format!("sldprt:brep:coedge#seam:{suffix}:1"))
-            .expect("identity grammar");
+        let suffix = cadmpeg_ir::identity_key!("seam:").then(face_id.key());
+        let curve_id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
+            suffix.clone(),
+        );
+        let edge_id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"),
+            suffix.clone(),
+        );
+        let coedge_namespace = cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge");
+        let seam_a = CoedgeId::compose(&coedge_namespace, suffix.clone().colon(0_u16));
+        let seam_b = CoedgeId::compose(&coedge_namespace, suffix.colon(1_u16));
         for id in [
             curve_id.as_str(),
             edge_id.as_str(),
@@ -5654,14 +5658,10 @@ fn synthesize_sphere_seams(
                 vertex_point.position = point;
             }
         }
-        let suffix = out.edges[edge_index]
-            .id
-            .as_str()
-            .rsplit('#')
-            .next()
-            .unwrap_or("0");
-        let curve_id = CurveId::mint(format!("sldprt:brep:curve#sphere-seam:{suffix}"))
-            .expect("identity grammar");
+        let curve_id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
+            cadmpeg_ir::identity_key!("sphere-seam:").then(out.edges[edge_index].id.key()),
+        );
         annotations
             .note(curve_id.as_str(), source_stream, 0)
             .tag("derived_sphere_seam");
@@ -5777,21 +5777,29 @@ fn synthesize_sphere_seams(
             continue;
         };
 
-        let curve_id = CurveId::mint(format!("sldprt:brep:curve#sphere-seam-face:{face_index}"))
-            .expect("identity grammar");
-        let edge_id = EdgeId::mint(format!("sldprt:brep:edge#sphere-seam-face:{face_index}"))
-            .expect("identity grammar");
-        let coedge_id = CoedgeId::mint(format!("sldprt:brep:coedge#sphere-seam-face:{face_index}"))
-            .expect("identity grammar");
-        let pcurve_id = PcurveId::mint(format!("sldprt:brep:pcurve#sphere-seam-face:{face_index}"))
-            .expect("identity grammar");
+        let seam_face_key = cadmpeg_ir::identity_key!("sphere-seam-face:").then(face_index);
+        let curve_id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "curve"),
+            seam_face_key.clone(),
+        );
+        let edge_id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "edge"),
+            seam_face_key.clone(),
+        );
+        let coedge_id = CoedgeId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "brep", "coedge"),
+            seam_face_key.clone(),
+        );
+        let pcurve_id = PcurveId::compose(&pcurve_namespace(), seam_face_key.clone());
         let pole_vertex = pole_vertex.unwrap_or_else(|| {
-            let point_id =
-                PointId::mint(format!("sldprt:brep:point#sphere-seam-face:{face_index}"))
-                    .expect("identity grammar");
-            let vertex_id =
-                VertexId::mint(format!("sldprt:brep:vertex#sphere-seam-face:{face_index}"))
-                    .expect("identity grammar");
+            let point_id = PointId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "brep", "point"),
+                seam_face_key.clone(),
+            );
+            let vertex_id = VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
+                seam_face_key.clone(),
+            );
             for id in [point_id.as_str(), vertex_id.as_str()] {
                 annotations
                     .note(id, source_stream, 0)
@@ -5877,7 +5885,7 @@ fn synthesize_sphere_seams(
 
 fn emit_curve(out: &mut Brep, carrier: &CurveCarrier) {
     out.curves.push(Curve {
-        id: CurveId::mint(id_curve(carrier.attr)).expect("identity grammar"),
+        id: id_curve(carrier.attr),
         source_object: None,
         geometry: carrier.geometry.clone(),
     });
