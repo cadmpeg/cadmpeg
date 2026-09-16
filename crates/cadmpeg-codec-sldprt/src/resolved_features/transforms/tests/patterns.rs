@@ -399,6 +399,32 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
+    // The lane's last two object names bind to the payload's last two hundred
+    // bytes: `PathSketch` at 500 owns 500..600 and `NextFeature` at 600 owns
+    // 600..700. Both objects are zeros, so they state no reference-plane frame,
+    // no compact edge-vector marker and no temporary axis, and every
+    // `bind_pattern_inputs` call below binds nothing from either.
+    for (start, end) in [(500usize, 600usize), (600, 700)] {
+        let object = &lane.native_payload[start..end];
+        assert_eq!(
+            crate::resolved_features::reference_geometry::explicit_reference_plane_frame(object)
+                .expect("a zero object states no frame"),
+            None
+        );
+        assert!(!object
+            .windows(crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER.len())
+            .any(|window| window
+                == crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER));
+        assert_eq!(
+            crate::resolved_features::axes::temporary_axis_reference(
+                &lane.native_payload,
+                start,
+                end
+            ),
+            None
+        );
+    }
+
     let model_feature = |id: &str, native_ref: &str, definition| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
@@ -445,12 +471,37 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         ),
     ];
 
+    // The lane's last two object names bind to objects no pattern class owns.
+    // `PathSketch` at 500 is a `moProfileFeature_c`, so the walk binds nothing
+    // from `500..600`: the path feature keeps the sketch definition the test
+    // gave it and takes no dependency of its own. `NextFeature` at 600 states
+    // no input class and has no model feature, so nothing the walk produces
+    // can name it, and every dependency the pattern takes is a feature this
+    // fixture states.
+    let objects_at_500_and_600_bind_nothing = |features: &[Feature]| {
+        assert!(matches!(
+            features[1].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+        ));
+        assert!(features[1].dependencies.as_slice().is_empty());
+        let known = features
+            .iter()
+            .map(|feature| feature.id.clone())
+            .collect::<Vec<_>>();
+        assert!(features[0]
+            .dependencies
+            .as_slice()
+            .iter()
+            .all(|id| known.contains(id)));
+    };
+
     bind_pattern_inputs(
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
     )
     .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
 
     assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -474,6 +525,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         std::slice::from_ref(&lane),
     )
     .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
 
     assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -511,6 +563,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         &[ambiguous_lane],
     )
     .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
     assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
@@ -539,6 +592,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         std::slice::from_ref(&lane),
     )
     .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
         features[0].evaluation.definition()
     else {
@@ -579,6 +633,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         std::slice::from_ref(&lane),
     )
     .unwrap();
+    objects_at_500_and_600_bind_nothing(&features);
     assert!(matches!(&(features[0].evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
