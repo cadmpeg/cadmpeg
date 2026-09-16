@@ -926,16 +926,20 @@ mod tests {
     #[test]
     fn a_planar_saved_spline_is_sketch_geometry_and_states_no_refusal() {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        assert!(super::saved_spline_sketch_geometry(&planar_or_offset_spline(0.0), &mut refusal)
-            .is_some());
+        assert!(
+            super::saved_spline_sketch_geometry(&planar_or_offset_spline(0.0), &mut refusal)
+                .is_some()
+        );
         assert!(refusal.take_records().is_empty());
     }
 
     #[test]
     fn a_non_planar_saved_spline_states_the_control_point_that_left_the_sketch_plane() {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        assert!(super::saved_spline_sketch_geometry(&planar_or_offset_spline(2.0), &mut refusal)
-            .is_none());
+        assert!(
+            super::saved_spline_sketch_geometry(&planar_or_offset_spline(2.0), &mut refusal)
+                .is_none()
+        );
         let records = refusal.take_records();
         assert_eq!(records.len(), 1);
         let record = &records[0];

@@ -736,7 +736,10 @@ mod tests {
             native.feature_input_lanes[0].names[0].value,
             "PatternRenamed"
         );
-        assert_eq!(native.feature_histories[0].features[0].name, "PatternRenamed");
+        assert_eq!(
+            native.feature_histories[0].features[0].name,
+            "PatternRenamed"
+        );
         assert_eq!(
             native.feature_histories[0].features[0]
                 .input_class

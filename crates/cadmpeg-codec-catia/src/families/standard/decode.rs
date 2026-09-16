@@ -1750,44 +1750,45 @@ fn try_decode_standard_population(
                 forward,
                 ..
             } => {
-            let id = SurfaceId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
-                i,
-            );
-            let geometry =
-                freeform_geometries
-                    .get(tag)
-                    .cloned()
-                    .unwrap_or(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: None,
-                    }));
-            face_bindings.push((id.clone(), *forward, *pos));
-            surface_annotations.push((
-                id.clone(),
-                "MainDataStream+SurfacicReps",
-                *pos,
-                "surfacic_reps_freeform_alias".to_string(),
-                if freeform_procedural_surfaces.contains_key(tag) || e5_freeform_tags.contains(tag)
-                {
-                    Exactness::ByteExact
-                } else if matches!(
+                let id = SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
+                    i,
+                );
+                let geometry =
+                    freeform_geometries
+                        .get(tag)
+                        .cloned()
+                        .unwrap_or(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                            record: None,
+                        }));
+                face_bindings.push((id.clone(), *forward, *pos));
+                surface_annotations.push((
+                    id.clone(),
+                    "MainDataStream+SurfacicReps",
+                    *pos,
+                    "surfacic_reps_freeform_alias".to_string(),
+                    if freeform_procedural_surfaces.contains_key(tag)
+                        || e5_freeform_tags.contains(tag)
+                    {
+                        Exactness::ByteExact
+                    } else if matches!(
+                        geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+                    ) {
+                        Exactness::Unknown
+                    } else {
+                        Exactness::ByteExact
+                    },
+                ));
+                surfaces.push(Surface {
+                    id: id.clone(),
                     geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-                ) {
-                    Exactness::Unknown
-                } else {
-                    Exactness::ByteExact
-                },
-            ));
-            surfaces.push(Surface {
-                id: id.clone(),
-                geometry,
-                source_object: Some(cgm_source("carrier", *tag)),
-            });
-            if let Some(procedure) = freeform_procedural_surfaces.get(tag).cloned() {
-                procedural_surface_plans.push((i, id, *tag, procedure));
-            }
-            continue;
+                    source_object: Some(cgm_source("carrier", *tag)),
+                });
+                if let Some(procedure) = freeform_procedural_surfaces.get(tag).cloned() {
+                    procedural_surface_plans.push((i, id, *tag, procedure));
+                }
+                continue;
             }
         };
         // A bridged plane parameter record contains the same `00 33 32`
