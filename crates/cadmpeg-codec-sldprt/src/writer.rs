@@ -1295,6 +1295,10 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
+    // Object-name identity is derived from the payload and must still agree with
+    // it. The name value is the one editable field: a neutral feature rename
+    // reaches the lane through `synchronize_feature_input_names`, and the splice
+    // loop at the end of this function writes it back into the payload.
     let expected_names =
         crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
     if lane.names.len() != expected_names.len()
@@ -1308,7 +1312,6 @@ fn resolved_feature_payload(
                     || actual.ordinal != expected.ordinal
                     || actual.offset != expected.offset
                     || actual.object_id != expected.object_id
-                    || actual.value != expected.value
             })
     {
         return Err(CodecError::NotImplemented(format!(
