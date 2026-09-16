@@ -46,6 +46,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
         [10.0, 20.0],
         [0.0, 10.0],
+        &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("equal-span NURBS translation") else {
@@ -66,6 +67,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             line,
             [10.0, 20.0],
             [0.0, 10.0],
+            &"test record",
             &mut crate::nurbs::LaneRefusals::new()
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -81,6 +83,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
             [10.0, 20.0],
             [12.0, 18.0],
+            &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -91,6 +94,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         [10.0, 20.0],
         [0.0, 2.0],
+        &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("positive affine NURBS mapping") else {
@@ -108,6 +112,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             )),
             [10.0, 20.0],
             [0.0, 2.0],
+            &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -857,6 +862,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 1.0, 0.0],
         1.0e-300,
         [0.0, 1.0],
+        &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .is_none());
@@ -874,6 +880,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 0.0, 1.0],
         [0.0, 1.0e300],
         [0.0, 1.0],
+        &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .is_none());
@@ -893,6 +900,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 0.0, 1.0],
         [0.0, 4096.0 * std::f64::consts::FRAC_PI_2],
         [0.0, 1.0],
+        &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .is_none());

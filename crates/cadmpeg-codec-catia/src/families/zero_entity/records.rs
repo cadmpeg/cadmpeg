@@ -812,6 +812,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                         &carrier_geometry,
                         pcurve,
                         support.uv_endpoints?,
+                        &format_args!("zero-entity support record at byte {}", record.pos),
                         refusal,
                     )
                 }) {
@@ -1366,6 +1367,7 @@ fn zero_entity_support_pcurve(
 pub(crate) fn zero_entity_neutral_pcurve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let (u_scale, v_scale) = match surface {
@@ -1410,7 +1412,7 @@ pub(crate) fn zero_entity_neutral_pcurve(
                 nurbs.periodic(),
             ),
             refusal,
-            "zero-entity pcurve scaled onto its surface parameters",
+            format_args!("zero-entity pcurve scaled onto its surface parameters: {record}"),
         )?,
     })
 }
@@ -1419,6 +1421,7 @@ fn zero_entity_model_curve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
     uv_endpoints: [[f64; 2]; 2],
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
@@ -1478,7 +1481,7 @@ fn zero_entity_model_curve(
                         false,
                     ),
                     refusal,
-                    "zero-entity planar edge curve lifted from its pcurve",
+                    format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
                 )?)),
                 parameters,
             ))
@@ -2127,7 +2130,7 @@ fn zero_entity_nurbs_surface(
                 false,
             ),
             refusal,
-            "zero-entity NURBS surface record",
+            format_args!("zero-entity NURBS surface record at byte {record}"),
         )?,
     )))
 }
@@ -2665,6 +2668,7 @@ mod tests {
             &surface,
             &pcurve,
             endpoints,
+            &"test support record",
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("cone latitude");
@@ -2739,7 +2743,12 @@ mod tests {
             .expect("valid CylinderSurface fixture"),
         ));
         assert_eq!(
-            zero_entity_neutral_pcurve(&cylinder, &pcurve, &mut crate::nurbs::LaneRefusals::new()),
+            zero_entity_neutral_pcurve(
+                &cylinder,
+                &pcurve,
+                &"test support record",
+                &mut crate::nurbs::LaneRefusals::new()
+            ),
             Some(test_pcurve(vec![
                 Point2::new(1.0, 3.0),
                 Point2::new(2.0, 5.0),
@@ -2758,7 +2767,12 @@ mod tests {
             .expect("valid ConeSurface fixture"),
         ));
         let Some(PcurveGeometry::Nurbs { nurbs }) =
-            zero_entity_neutral_pcurve(&cone, &pcurve, &mut crate::nurbs::LaneRefusals::new())
+            zero_entity_neutral_pcurve(
+                &cone,
+                &pcurve,
+                &"test support record",
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
         else {
             panic!("neutral cone pcurve")
         };
@@ -2776,7 +2790,12 @@ mod tests {
             .expect("valid TorusSurface fixture"),
         ));
         let Some(PcurveGeometry::Nurbs { nurbs }) =
-            zero_entity_neutral_pcurve(&torus, &pcurve, &mut crate::nurbs::LaneRefusals::new())
+            zero_entity_neutral_pcurve(
+                &torus,
+                &pcurve,
+                &"test support record",
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
         else {
             panic!("neutral torus pcurve")
         };

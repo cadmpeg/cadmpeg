@@ -68,6 +68,7 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
         [0.0, 0.0, 1.0],
         2.0,
         [[-1.0, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
+        &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("exact revolution cache");
@@ -92,6 +93,7 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
         [0.0, 0.0, 1.0],
         2.0,
         [[-0.5, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
+        &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
     .is_none());

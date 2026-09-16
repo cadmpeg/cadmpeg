@@ -139,6 +139,7 @@ pub(crate) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
 /// `sqrt(2) / 2`.
 pub(crate) fn profile_nurbs(
     geometry: &CurveGeometry,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsCurve> {
     let (center, axis, major, major_radius, minor_radius) = match geometry {
@@ -211,7 +212,7 @@ pub(crate) fn profile_nurbs(
     ) {
         Ok(curve) => Some(curve),
         Err(error) => {
-            refusal.note("sldprt sweep profile arc", &error);
+            refusal.note(format_args!("sldprt sweep profile arc: {record}"), &error);
             None
         }
     }
@@ -224,6 +225,7 @@ pub(crate) fn swept_nurbs(
     direction: Vector3,
     v_start: f64,
     v_end: f64,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
@@ -262,7 +264,10 @@ pub(crate) fn swept_nurbs(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            refusal.note("sldprt swept ruled surface patch", &error);
+            refusal.note(
+                format_args!("sldprt swept ruled surface patch: {record}"),
+                &error,
+            );
             None
         }
     }
@@ -275,6 +280,7 @@ pub(crate) fn spun_nurbs(
     profile: &NurbsCurve,
     base: Point3,
     axis: Vector3,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     use std::f64::consts::{FRAC_PI_2, PI};
@@ -356,7 +362,7 @@ pub(crate) fn spun_nurbs(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            refusal.note("sldprt spun surface patch", &error);
+            refusal.note(format_args!("sldprt spun surface patch: {record}"), &error);
             None
         }
     }
@@ -475,7 +481,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(&geometry, &mut crate::lane_refusal::LaneRefusals::new())
+        let curve = profile_nurbs(
+            &geometry,
+            &"test profile",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
             .expect("ellipse NURBS");
 
         assert_eq!(curve.degree(), 2);
@@ -506,7 +516,11 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(&geometry, &mut crate::lane_refusal::LaneRefusals::new())
+        let curve = profile_nurbs(
+            &geometry,
+            &"test profile",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
             .expect("circle NURBS");
 
         for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {
@@ -594,6 +608,7 @@ mod tests {
             &profile,
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
+            &"test spun construction",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
         .expect("valid spun surface");
@@ -641,6 +656,7 @@ mod tests {
             Vector3::new(0.0, 1.0, 0.0),
             -2.0,
             3.0,
+            &"test swept construction",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
         .expect("swept surface");
@@ -669,6 +685,7 @@ mod tests {
             Vector3::new(1.0, 0.0, 0.0),
             0.0,
             f64::MAX,
+            &"sweep construction at byte 16 for surface attr 3",
             &mut refusal,
         );
         let second = swept_nurbs(
@@ -676,6 +693,7 @@ mod tests {
             Vector3::new(1.0, 0.0, 0.0),
             0.0,
             f64::MAX,
+            &"sweep construction at byte 64 for surface attr 9",
             &mut refusal,
         );
         assert!(first.is_none(), "the refused ruling states no surface");

@@ -787,6 +787,10 @@ pub(crate) fn try_decode_zero_entity(
                         crate::families::zero_entity::records::zero_entity_neutral_pcurve(
                             surface_geometry,
                             &pcurve,
+                            &format_args!(
+                                "zero-entity support record #{} at byte {}",
+                                support.record_ordinal, support.pos
+                            ),
                             refusal,
                         )
                     else {

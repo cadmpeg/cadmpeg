@@ -2473,7 +2473,10 @@ pub(crate) fn e5_boundary_curve(
                     nurbs.periodic(),
                 ),
                 refusal,
-                "e5 boundary curve lifted from its pcurve",
+                format_args!(
+                    "e5 boundary curve lifted from the pcurve on surface record {}",
+                    native_pcurve.surface_record_id()
+                ),
             )?)),
             range,
         ));
@@ -2520,7 +2523,10 @@ pub(crate) fn e5_boundary_curve(
                     nurbs.periodic(),
                 ),
                 refusal,
-                "e5 boundary curve lifted from its pcurve",
+                format_args!(
+                    "e5 boundary curve lifted from the pcurve on surface record {}",
+                    native_pcurve.surface_record_id()
+                ),
             )?)),
             range,
         ));
