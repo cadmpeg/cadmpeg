@@ -101,19 +101,17 @@ struct RecordShape<'a> {
 
 /// One source-native record with a stable identity and codec-owned fields.
 ///
-/// The codec-owned fields are held as the record's canonical JSON text rather
-/// than as a parsed [`Value`] tree. A `Value` tree spends a separately
-/// allocated map node, key string, and enum cell on every field at every depth,
-/// which costs roughly an order of magnitude more memory than the equivalent
-/// JSON and scatters it across the heap. Retained source populations reach
-/// hundreds of thousands of records carrying deeply nested arrays, so the
-/// parsed form is materialized per record on demand and never kept resident.
-#[derive(Debug, Clone)]
+/// The record holds the value it was constructed from. `serde_json::Map` is
+/// key-sorted, so the stored map is already in canonical order and the record
+/// renders its canonical text — `id` first, then the other keys sorted — on
+/// demand through [`Serialize`]. Reading a field is a map lookup and has no
+/// failing branch.
+#[derive(Debug, Clone, PartialEq)]
 pub struct NativeRecord {
-    /// Globally unique record identity, also the leading `id` member of `json`.
+    /// Globally unique record identity, serialized as the leading `id` member.
     id: crate::ids::Identity,
-    /// Canonical JSON object text with `id` first and the other keys sorted.
-    json: Box<str>,
+    /// Codec-owned fields in canonical key order, never holding `id`.
+    fields: Map<String, Value>,
 }
 
 impl NativeRecord {
@@ -135,45 +133,24 @@ impl NativeRecord {
     ) -> Self {
         let id = id.into();
         fields.remove("id");
-        let json = Self::canonical_json(id.as_str(), &fields);
-        Self { id, json }
+        Self { id, fields }
     }
 
     /// Build a record by serializing one codec-owned typed record.
     ///
-    /// Streams the record into canonical text — the bytes
-    /// [`canonical_json`](Self::canonical_json) renders for the record's
-    /// [`Value`] tree — without materializing that tree.
+    /// The canonical serializer admits what the plain value serializer does
+    /// not: object keys must be distinct, and a `RawValue` payload is read
+    /// through one-container replay rather than a recursion-limited parse.
     fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
         let canon::Node::Object(mut fields) = record.serialize(canon::CanonValue)? else {
             return Err(NativeConvertError::NonObject);
         };
-        let Some(id_json) = fields.remove("id") else {
+        let Some(Value::String(id)) = fields.remove("id") else {
             return Err(NativeConvertError::MissingId);
         };
-        if !id_json.starts_with('"') {
-            return Err(NativeConvertError::MissingId);
-        }
-        let id = crate::ids::Identity::new(serde_json::from_str::<String>(&id_json)?)?;
-        let mut json = String::with_capacity(
-            8 + id_json.len()
-                + fields
-                    .iter()
-                    .map(|(key, value)| key.len() + value.len() + 4)
-                    .sum::<usize>(),
-        );
-        json.push_str("{\"id\":");
-        json.push_str(&id_json);
-        for (key, value) in &fields {
-            json.push(',');
-            json.push_str(&serde_json::to_string(key)?);
-            json.push(':');
-            json.push_str(value);
-        }
-        json.push('}');
         Ok(Self {
-            id,
-            json: json.into_boxed_str(),
+            id: crate::ids::Identity::new(id)?,
+            fields,
         })
     }
 
@@ -183,74 +160,49 @@ impl NativeRecord {
         self.id.as_str()
     }
 
-    /// Parse the codec-owned fields, excluding `id`.
+    /// The codec-owned fields, excluding `id`.
     ///
-    /// This allocates a fresh [`Value`] tree on every call; read it once and
-    /// reuse the map when inspecting more than one field, and prefer
-    /// [`field`](Self::field) when one field is all that is wanted.
+    /// This clones the stored map; read it once and reuse it when inspecting
+    /// more than one field, and prefer [`field`](Self::field) when one field is
+    /// all that is wanted.
     #[must_use]
     pub fn fields(&self) -> Map<String, Value> {
-        // Both constructors render an object from admitted JSON values. Replay
-        // reads one container at a time, so the external parser's nesting limit
-        // cannot turn a stored field into absence.
-        let Value::Object(mut fields) = replay::emit(&self.json, serde_json::value::Serializer)
-            .expect("native constructors render valid JSON values")
-        else {
-            unreachable!("native constructors render an object")
-        };
-        fields.remove("id");
-        fields
+        self.fields.clone()
     }
 
-    /// Parse one codec-owned field.
+    /// One codec-owned field.
     ///
-    /// Only the named field is materialized; the rest of the record is scanned
-    /// past without being built.
+    /// `id` is not a codec-owned field and is never answered here.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<Value> {
-        if name == "id" {
-            return None;
-        }
-        replay::field(&self.json, name).expect("native constructors render valid JSON objects")
+        self.fields.get(name).cloned()
     }
 
     /// Deserialize the record into a codec-owned typed record.
     fn to_typed<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
-        replay::parse(&self.json).map_err(|source| NativeConvertError::ReadRecord {
-            id: self.id.clone(),
-            source,
+        let mut record = self.fields.clone();
+        record.insert("id".to_owned(), Value::String(self.id.as_str().to_owned()));
+        serde_json::from_value(Value::Object(record)).map_err(|source| {
+            NativeConvertError::ReadRecord {
+                id: self.id.clone(),
+                source,
+            }
         })
-    }
-
-    /// Render `id` and `fields` as canonical record text.
-    fn canonical_json(id: &str, fields: &Map<String, Value>) -> Box<str> {
-        let mut json = String::from("{\"id\":");
-        json.push_str(&Value::String(id.to_owned()).to_string());
-        for (key, value) in fields {
-            json.push(',');
-            json.push_str(&Value::String(key.clone()).to_string());
-            json.push(':');
-            json.push_str(&value.to_string());
-        }
-        json.push('}');
-        json.into_boxed_str()
-    }
-}
-
-impl PartialEq for NativeRecord {
-    fn eq(&self, other: &Self) -> bool {
-        self.json == other.json
     }
 }
 
 impl Serialize for NativeRecord {
-    /// Replays the stored text member for member through `serializer` rather
-    /// than splicing it, so the record honours the caller's formatting:
-    /// `to_string_pretty` must indent a native record the same way it indents
-    /// every other document entity. It preserves the constructors' order:
-    /// `id` first, then the codec-owned fields by key.
+    /// Writes the record member for member through `serializer`, so it honours
+    /// the caller's formatting: `to_string_pretty` must indent a native record
+    /// the same way it indents every other document entity. It writes the
+    /// constructors' order: `id` first, then the codec-owned fields by key.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        replay::emit(&self.json, serializer)
+        let mut map = serializer.serialize_map(Some(self.fields.len() + 1))?;
+        serde::ser::SerializeMap::serialize_entry(&mut map, "id", self.id.as_str())?;
+        for (key, value) in &self.fields {
+            serde::ser::SerializeMap::serialize_entry(&mut map, key, value)?;
+        }
+        serde::ser::SerializeMap::end(map)
     }
 }
 
