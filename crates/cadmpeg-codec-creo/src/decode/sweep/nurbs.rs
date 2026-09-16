@@ -260,11 +260,19 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<SketchGeometry> {
     let nurbs = saved_spline_nurbs(spline, refusal)?;
-    if !nurbs
+    if let Some((index, point)) = nurbs
         .control_points()
         .iter()
-        .all(|point| point.z.abs() <= EPS_PLANAR_COORDINATE)
+        .enumerate()
+        .find(|(_, point)| point.z.abs() > EPS_PLANAR_COORDINATE)
     {
+        refusal.note(
+            format!("{} sketch geometry record", saved_spline_record(spline)),
+            &format_args!(
+                "control point {index} is not on the sketch plane: z states {}",
+                point.z
+            ),
+        );
         return None;
     }
     match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
@@ -897,6 +905,52 @@ mod tests {
         assert!(translated_nurbs_curve(&curve, [f64::MAX, 0.0, 0.0]).is_none());
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
     }
+    fn planar_or_offset_spline(z: f64) -> crate::feature::FeatureSavedSpline {
+        crate::feature::FeatureSavedSpline {
+            entity_id: Some(11),
+            declared_point_count: Some(2),
+            interpolation_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, z]],
+            interpolation_points_body: Vec::new(),
+            endpoint_tangents: Some(crate::feature::definitions::DecodedField {
+                value: [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                body: Vec::new(),
+            }),
+            parameters: Some(crate::feature::definitions::DecodedField {
+                value: vec![0.0, 1.0],
+                body: Vec::new(),
+            }),
+            offset: 64,
+        }
+    }
+
+    #[test]
+    fn a_planar_saved_spline_is_sketch_geometry_and_states_no_refusal() {
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        assert!(super::saved_spline_sketch_geometry(&planar_or_offset_spline(0.0), &mut refusal)
+            .is_some());
+        assert!(refusal.take_records().is_empty());
+    }
+
+    #[test]
+    fn a_non_planar_saved_spline_states_the_control_point_that_left_the_sketch_plane() {
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        assert!(super::saved_spline_sketch_geometry(&planar_or_offset_spline(2.0), &mut refusal)
+            .is_none());
+        let records = refusal.take_records();
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert!(
+            record.starts_with(
+                "creo saved-spline entity 11 at offset 64 sketch geometry record: control point "
+            ),
+            "{record}"
+        );
+        assert!(
+            record.contains("is not on the sketch plane: z states "),
+            "{record}"
+        );
+    }
+
     #[test]
     fn saved_spline_records_name_the_entity_and_its_offset() {
         let mut spline = crate::feature::FeatureSavedSpline {
