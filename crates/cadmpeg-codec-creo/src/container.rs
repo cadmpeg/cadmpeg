@@ -149,19 +149,63 @@ impl Layout {
 }
 
 /// One enumerated binary section.
+///
+/// The extent is a fact of the type. [`Section::new`] is the only constructor
+/// and it admits a section only when `offset..end` is a region of the file the
+/// scan read, so no reader re-derives the sum and none of them can overflow.
+///
+/// `offset` and `length` are private, so a struct literal outside this module
+/// and its descendants does not compile and there is no spelling of a section
+/// whose extent the file does not hold.
 #[derive(Debug, Clone)]
 pub struct Section {
     /// Raw name as it appeared in the header, when decorated.
     pub raw_name: String,
     /// Byte offset of the section header within the file.
-    pub offset: usize,
+    offset: usize,
     /// Payload length in bytes (header to the next section, or EOF).
-    pub length: usize,
+    length: usize,
     /// Expanded payload length from the TOC, excluding the section header.
     pub expanded_length: Option<usize>,
 }
 
 impl Section {
+    /// The section whose payload is `data[offset..end]`, or `None` when that is
+    /// not a region of `data`: an end before the offset, or past the last byte
+    /// of the file.
+    pub(crate) fn new(
+        raw_name: String,
+        offset: usize,
+        end: usize,
+        expanded_length: Option<usize>,
+        data: &[u8],
+    ) -> Option<Self> {
+        Some(Self {
+            raw_name,
+            offset,
+            length: data.get(offset..end)?.len(),
+            expanded_length,
+        })
+    }
+
+    /// Byte offset of the section header within the file.
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Payload length in bytes.
+    pub fn length(&self) -> usize {
+        self.length
+    }
+
+    /// Byte offset one past the section's last byte.
+    ///
+    /// Plain `+`: [`Section::new`] admitted the sum, so it is a byte offset of
+    /// the file the scan read.
+    pub fn end(&self) -> usize {
+        self.offset + self.length
+    }
+
     /// Normalized section name.
     pub fn name(&self) -> &str {
         normalize_name(&self.raw_name)
@@ -599,12 +643,7 @@ fn scan_sections(data: &[u8], body_start: usize) -> Result<Vec<Section>, CodecEr
     let mut sections = Vec::with_capacity(hits.len());
     for (idx, (hdr_off, raw)) in hits.iter().enumerate() {
         let end = hits.get(idx + 1).map_or(data.len(), |(next, _)| *next);
-        sections.push(Section {
-            raw_name: raw.clone(),
-            offset: *hdr_off,
-            length: end.saturating_sub(*hdr_off),
-            expanded_length: None,
-        });
+        sections.extend(Section::new(raw.clone(), *hdr_off, end, None, data));
     }
     Ok(sections)
 }
@@ -679,24 +718,23 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
             let Some(marker_end) = offset.checked_add(marker.len()) else {
                 continue;
             };
-            if length < marker.len()
-                || data.get(offset..marker_end) != Some(marker.as_slice())
-                || offset
-                    .checked_add(length)
-                    .is_none_or(|end| end > data.len())
-            {
+            let Some(end) = offset.checked_add(length) else {
+                continue;
+            };
+            if length < marker.len() || data.get(offset..marker_end) != Some(marker.as_slice()) {
                 continue;
             }
-            sections.push(Section {
+            sections.extend(Section::new(
                 raw_name,
                 offset,
-                length,
-                expanded_length: Some(expanded_length),
-            });
+                end,
+                Some(expanded_length),
+                data,
+            ));
         }
     }
-    sections.sort_by_key(|section| section.offset);
-    sections.dedup_by_key(|section| section.offset);
+    sections.sort_by_key(|section| section.offset());
+    sections.dedup_by_key(|section| section.offset());
     sections
 }
 
@@ -811,23 +849,22 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
         let Some(marker_end) = offset.checked_add(marker.len()) else {
             continue;
         };
-        if length < marker.len()
-            || data.get(offset..marker_end) != Some(marker.as_slice())
-            || offset
-                .checked_add(length)
-                .is_none_or(|end| end > data.len())
-        {
+        let Some(end) = offset.checked_add(length) else {
+            continue;
+        };
+        if length < marker.len() || data.get(offset..marker_end) != Some(marker.as_slice()) {
             continue;
         }
-        sections.push(Section {
-            raw_name: raw_name.to_string(),
+        sections.extend(Section::new(
+            raw_name.to_string(),
             offset,
-            length,
-            expanded_length: None,
-        });
+            end,
+            None,
+            data,
+        ));
     }
-    sections.sort_by_key(|section| section.offset);
-    sections.dedup_by_key(|section| section.offset);
+    sections.sort_by_key(|section| section.offset());
+    sections.dedup_by_key(|section| section.offset());
     sections
 }
 
@@ -841,8 +878,8 @@ fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> 
                 return None;
             }
             let header_length = section.raw_name.len().checked_add(2)?;
-            let source_offset = section.offset.checked_add(header_length)?;
-            let end = section.offset.checked_add(section.length)?;
+            let source_offset = section.offset().checked_add(header_length)?;
+            let end = section.offset().checked_add(section.length())?;
             let payload = data.get(source_offset..end)?;
             if !payload.starts_with(UNIX_COMPRESS_MAGIC) {
                 return None;
@@ -865,8 +902,8 @@ pub(crate) fn expanded_section_for<'a>(
 ) -> Option<&'a ExpandedSection> {
     scan.framing.expanded_sections.iter().find(|expanded| {
         expanded.name == section.name()
-            && expanded.source_offset > section.offset
-            && expanded.source_offset < section.offset.saturating_add(section.length)
+            && expanded.source_offset > section.offset()
+            && expanded.source_offset < section.end()
     })
 }
 
@@ -880,18 +917,18 @@ pub(crate) fn section_region<'a>(
     data: &'a [u8],
     section: &Section,
 ) -> Result<&'a [u8], CodecError> {
-    let declared_end = section.offset as u128 + section.length as u128;
+    let declared_end = section.offset() as u128 + section.length() as u128;
     if declared_end > data.len() as u128 {
         return Err(CodecError::malformed(format!(
             "creo section `{}` at offset {} declares length {}, so it ends at {declared_end}, \
              past the file length {}",
             section.raw_name,
-            section.offset,
-            section.length,
+            section.offset(),
+            section.length(),
             data.len(),
         )));
     }
-    Ok(&data[section.offset..section.offset + section.length])
+    Ok(&data[section.offset()..section.end()])
 }
 
 fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
@@ -981,10 +1018,10 @@ fn identify_layout(
         if section.name() != "DEPDB_DATA" {
             return false;
         }
-        let Some(header_end) = section.offset.checked_add(section.raw_name.len() + 2) else {
+        let Some(header_end) = section.offset().checked_add(section.raw_name.len() + 2) else {
             return false;
         };
-        let Some(section_end) = section.offset.checked_add(section.length) else {
+        let Some(section_end) = section.offset().checked_add(section.length()) else {
             return false;
         };
         data.get(header_end..section_end)
@@ -1125,7 +1162,7 @@ fn native_model_name(
             let value = &region[name_start..value_end];
             if let Ok(name) = std::str::from_utf8(value) {
                 if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
-                    return Ok(Some((name.to_owned(), section.offset + name_start)));
+                    return Ok(Some((name.to_owned(), section.offset() + name_start)));
                 }
             }
             from = value_end + 1;
@@ -1158,9 +1195,9 @@ fn family_table(
     else {
         return Ok(None);
     };
-    let end = section.offset + section_region(data, section)?.len();
+    let end = section.offset() + section_region(data, section)?.len();
     let label = b"drv_tbl_ptr\0";
-    let Some(label_offset) = find(data, label, section.offset) else {
+    let Some(label_offset) = find(data, label, section.offset()) else {
         return Ok(None);
     };
     let offset = label_offset + label.len();
@@ -1218,7 +1255,7 @@ fn surface_rows(data: &[u8], sections: &[Section]) -> Result<Vec<SurfaceRow>, Co
     for section in sections {
         let section_bytes = section_region(data, section)?;
         rows.extend(surface::rows(section_bytes).into_iter().map(|mut row| {
-            row.offset += section.offset;
+            row.offset += section.offset();
             row
         }));
     }
@@ -1243,7 +1280,7 @@ fn cross_section_surface_rows(
             surface::cross_section_rows(payload)
                 .into_iter()
                 .map(|mut row| {
-                    row.offset += section.offset;
+                    row.offset += section.offset();
                     row
                 }),
         );
@@ -1271,10 +1308,10 @@ fn surface_prototype_records(
             surface::named_prototype_records(section_bytes)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
+                    record.offset += section.offset();
                     for parameter in &mut record.parameters {
-                        parameter.offset += section.offset;
-                        parameter.value_offset += section.offset;
+                        parameter.offset += section.offset();
+                        parameter.value_offset += section.offset();
                     }
                     record
                 }),
@@ -1295,8 +1332,8 @@ fn surface_parameters(
             surface::parameter_records(section_bytes)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.body_offset += section.offset;
+                    record.offset += section.offset();
+                    record.body_offset += section.offset();
                     record
                 }),
         );
@@ -1322,8 +1359,8 @@ fn cross_section_surface_parameters(
             surface::cross_section_parameter_records(payload)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.body_offset += section.offset;
+                    record.offset += section.offset();
+                    record.body_offset += section.offset();
                     record
                 }),
         );
@@ -1343,9 +1380,9 @@ fn surface_contours(
             surface::contour_records(section_bytes)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.envelope_offset += section.offset;
-                    record.surface_row_offset += section.offset;
+                    record.offset += section.offset();
+                    record.envelope_offset += section.offset();
+                    record.surface_row_offset += section.offset();
                     record
                 }),
         );
@@ -1371,9 +1408,9 @@ fn cross_section_surface_contours(
             surface::cross_section_contour_records(payload)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.envelope_offset += section.offset;
-                    record.surface_row_offset += section.offset;
+                    record.offset += section.offset();
+                    record.envelope_offset += section.offset();
+                    record.surface_row_offset += section.offset();
                     record
                 }),
         );
@@ -1389,15 +1426,15 @@ fn loop_array_scan(data: &[u8], sections: &[Section]) -> Result<LoopArrayScan, C
         let payload = section_region(data, section)?;
         let scan = loop_array::scan(payload);
         frames.extend(scan.frames.into_iter().map(|mut frame| {
-            frame.offset += section.offset;
-            frame.prototype_end += section.offset;
-            frame.end += section.offset;
+            frame.offset += section.offset();
+            frame.prototype_end += section.offset();
+            frame.end += section.offset();
             frame
         }));
         records.extend(scan.records.into_iter().map(|mut record| {
-            record.frame_offset += section.offset;
-            record.offset += section.offset;
-            record.body_offset += section.offset;
+            record.frame_offset += section.offset();
+            record.offset += section.offset();
+            record.body_offset += section.offset();
             record
         }));
     }
@@ -1417,8 +1454,8 @@ fn tabulated_cylinder_curve_replays(
             surface::tabulated_cylinder_curve_replays(section_bytes)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.surface_row_offset += section.offset;
+                    record.offset += section.offset();
+                    record.surface_row_offset += section.offset();
                     record
                 }),
         );
@@ -1436,8 +1473,8 @@ fn plane_local_systems(
         let section_bytes = section_region(data, section)?;
         systems.extend(surface::plane_local_systems(section_bytes).into_iter().map(
             |mut system| {
-                system.row_offset += section.offset;
-                system.offset += section.offset;
+                system.row_offset += section.offset();
+                system.offset += section.offset();
                 system
             },
         ));
@@ -1463,8 +1500,8 @@ fn cross_section_plane_local_systems(
             surface::cross_section_plane_local_systems(payload)
                 .into_iter()
                 .map(|mut system| {
-                    system.row_offset += section.offset;
-                    system.offset += section.offset;
+                    system.row_offset += section.offset();
+                    system.offset += section.offset();
                     system
                 }),
         );
@@ -1482,8 +1519,8 @@ fn plane_envelopes(
         let section_bytes = section_region(data, section)?;
         envelopes.extend(surface::plane_envelopes(section_bytes).into_iter().map(
             |mut envelope| {
-                envelope.row_offset += section.offset;
-                envelope.offset += section.offset;
+                envelope.row_offset += section.offset();
+                envelope.offset += section.offset();
                 envelope
             },
         ));
@@ -1509,7 +1546,7 @@ fn cross_section_plane_envelopes(
             surface::cross_section_plane_envelopes(payload)
                 .into_iter()
                 .map(|mut envelope| {
-                    envelope.offset += section.offset;
+                    envelope.offset += section.offset();
                     envelope
                 }),
         );
@@ -1526,7 +1563,7 @@ fn curve_prototypes(data: &[u8], sections: &[Section]) -> Result<Vec<CurveProtot
             curve::prototypes(section_bytes)
                 .into_iter()
                 .map(|mut prototype| {
-                    prototype.offset += section.offset;
+                    prototype.offset += section.offset();
                     prototype
                 }),
         );
@@ -1547,22 +1584,22 @@ fn curve_expressions(
             curve::expression_records_with_model_name(section_bytes, model_name)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.expression_offset += section.offset;
+                    record.offset += section.offset();
+                    record.expression_offset += section.offset();
                     for line in &mut record.lines {
-                        line.offset += section.offset;
+                        line.offset += section.offset();
                     }
                     for assignment in &mut record.assignments {
-                        assignment.offset += section.offset;
+                        assignment.offset += section.offset();
                     }
                     for block in &mut record.solve_blocks {
-                        block.offset += section.offset;
-                        block.for_offset += section.offset;
+                        block.offset += section.offset();
+                        block.for_offset += section.offset();
                         for equation in &mut block.equations {
-                            equation.offset += section.offset;
+                            equation.offset += section.offset();
                         }
                         for assignment in &mut block.assignments {
-                            assignment.offset += section.offset;
+                            assignment.offset += section.offset();
                         }
                     }
                     record
@@ -1585,9 +1622,9 @@ fn curve_parameters(
             curve::parameter_records_with_face_ids(section_bytes, Some(face_ids))
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.body_offset += section.offset;
-                    record.suffix_offset += section.offset;
+                    record.offset += section.offset();
+                    record.body_offset += section.offset();
+                    record.suffix_offset += section.offset();
                     record
                 }),
         );
@@ -1608,7 +1645,7 @@ fn two_chart_pcurves(
             curve::two_chart_pcurve_samples(section_bytes, Some(face_ids))
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
+                    record.offset += section.offset();
                     record
                 }),
         );
@@ -1633,7 +1670,7 @@ fn prototype_pcurves(
             curve::prototype_pcurve_endpoints(section_bytes)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
+                    record.offset += section.offset();
                     record
                 }),
         );
@@ -1653,7 +1690,7 @@ fn curve_prototype_topology(
             curve::prototype_topology(section_bytes)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
+                    record.offset += section.offset();
                     record
                 }),
         );
@@ -1674,7 +1711,7 @@ fn curve_topology_rows(
             curve::topology_rows_with_face_ids(section_bytes, Some(face_ids))
                 .into_iter()
                 .map(|mut row| {
-                    row.offset += section.offset;
+                    row.offset += section.offset();
                     row
                 }),
         );
@@ -1700,7 +1737,7 @@ fn cross_section_curve_rows(
             curve::depdb_cross_section_rows(payload)
                 .into_iter()
                 .map(|mut row| {
-                    row.offset += section.offset;
+                    row.offset += section.offset();
                     row
                 }),
         );
@@ -1723,7 +1760,7 @@ fn cross_section_curve_prototypes(
             continue;
         }
         records.extend(curve::prototypes(payload).into_iter().map(|mut record| {
-            record.offset += section.offset;
+            record.offset += section.offset();
             record
         }));
     }
@@ -1739,11 +1776,11 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Result<Vec<DatumPlaneRecor
     {
         let section_bytes = section_region(data, section)?;
         planes.extend(datum::planes(section_bytes).into_iter().map(|mut plane| {
-            plane.offset_in_payload += section.offset;
+            plane.offset_in_payload += section.offset();
             plane
         }));
         if let Some(mut plane) = datum::named_plane(section_bytes) {
-            plane.offset_in_payload += section.offset;
+            plane.offset_in_payload += section.offset();
             planes.push(plane);
         }
     }
@@ -1762,7 +1799,7 @@ fn datum_cylinders(data: &[u8], sections: &[Section]) -> Result<Vec<DatumCylinde
             datum::cylinders(section_bytes)
                 .into_iter()
                 .map(|mut cylinder| {
-                    cylinder.offset_in_payload += section.offset;
+                    cylinder.offset_in_payload += section.offset();
                     cylinder
                 }),
         );
@@ -1915,10 +1952,10 @@ fn feature_entity_tables(
             feature::entity_tables(section_bytes, &feature_ids, &surface_ids)
                 .into_iter()
                 .map(|mut table| {
-                    table.offset += section.offset;
+                    table.offset += section.offset();
                     for entry in &mut table.entries {
-                        entry.offset += section.offset;
-                        entry.end_offset += section.offset;
+                        entry.offset += section.offset();
+                        entry.end_offset += section.offset();
                     }
                     table
                 }),
@@ -1940,7 +1977,7 @@ fn feature_rows(
         .filter(|section| section.name() == "AllFeatur")
     {
         let section_bytes = section_region(data, section)?;
-        rows.extend(feature::rows(section_bytes, &feature_ids, section.offset));
+        rows.extend(feature::rows(section_bytes, &feature_ids, section.offset()));
     }
     rows.sort_by_key(|row| row.offset);
     Ok(rows)
@@ -1960,7 +1997,7 @@ fn feature_entity_graph(
     // The payload follows the `#<name>\n` section header. A section without
     // that newline carries no header, so the whole region is the payload.
     let header_length = find(section_bytes, b"\n", 0).map_or(0, |newline| newline + 1);
-    let payload_start = section.offset + header_length;
+    let payload_start = section.offset() + header_length;
     let (mut entities, mut references) = feature::entity_graph(&section_bytes[header_length..]);
     for entity in &mut entities {
         entity.offset += payload_start;
@@ -2067,7 +2104,7 @@ fn feature_definitions(
             })
             .into_iter()
             .map(|mut definition| {
-                offset_feature_definition(&mut definition, section.offset);
+                offset_feature_definition(&mut definition, section.offset());
                 definition
             }),
         );
@@ -2080,7 +2117,7 @@ fn feature_definitions(
                 if let Some(mut definition) =
                     feature::depdb_section_definition(payload, Some(operation.feature_id))
                 {
-                    offset_feature_definition(&mut definition, section.offset);
+                    offset_feature_definition(&mut definition, section.offset());
                     if let Some(existing) = definitions
                         .iter_mut()
                         .find(|existing| existing.offset == definition.offset)
@@ -2116,8 +2153,8 @@ fn section_owner_ranges(sections: &[Section], feature_rows: &[FeatureRow]) -> Ve
         .filter(|section| section.name() == "DEPDB_DATA")
         .map(|section| {
             (
-                section.offset,
-                section.offset.saturating_add(section.length),
+                section.offset(),
+                section.end(),
             )
         })
         .collect::<Vec<_>>();
@@ -2144,7 +2181,7 @@ fn positional_replay_definitions(
             feature::positional_replay_definitions(section_bytes)
                 .into_iter()
                 .map(|mut definition| {
-                    offset_feature_definition(&mut definition, section.offset);
+                    offset_feature_definition(&mut definition, section.offset());
                     definition
                 }),
         );
@@ -2167,8 +2204,8 @@ fn feature_operations(
             feature::operations(section_bytes)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.state_offset += section.offset;
+                    record.offset += section.offset();
+                    record.state_offset += section.offset();
                     record
                 }),
         );
@@ -2197,7 +2234,7 @@ fn feature_reference_names(
             feature::reference_names(section_region(data, section)?)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
+                    record.offset += section.offset();
                     record
                 }),
         );
@@ -2219,8 +2256,8 @@ fn feature_operation_states(
             feature::operation_states(section_bytes)
                 .into_iter()
                 .map(|mut record| {
-                    record.offset += section.offset;
-                    record.state_offset += section.offset;
+                    record.offset += section.offset();
+                    record.state_offset += section.offset();
                     record
                 }),
         );
@@ -2270,10 +2307,10 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Result<Vec<FeatureRow
             rows.push(FeatureRow {
                 feature_id: operation.feature_id,
                 root_schema_class: operation.root_schema_class(),
-                stream_offset: section.offset,
+                stream_offset: section.offset(),
                 body,
-                body_offset: section.offset + body_start,
-                offset: section.offset + operation.offset,
+                body_offset: section.offset() + body_start,
+                offset: section.offset() + operation.offset,
             });
             body_start = body_end;
         }
@@ -2359,20 +2396,20 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
     if let Some(framing) = &mut legacy_ascii {
         let initial_end = sections
             .first()
-            .map_or(data.len(), |section| section.offset);
+            .map_or(data.len(), |section| section.offset());
         let mut scopes = Vec::with_capacity(sections.len() + 1);
         scopes.push(framing.object_offset..initial_end);
         for section in &sections {
             let region = section_region(&data, section)?;
             let Some(payload_start) = section
-                .offset
+                .offset()
                 .checked_add(section.raw_name.len())
                 .and_then(|start| start.checked_add(2))
             else {
                 continue;
             };
             if legacy::starts_with_declaration(&data, payload_start) {
-                scopes.push(section.offset..section.offset + region.len());
+                scopes.push(section.offset()..section.offset() + region.len());
             }
         }
         framing.persistence = legacy::scan(&data, scopes)?;
@@ -2437,13 +2474,13 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
                 .into_iter()
                 .chain(reference::line3d_lines(payload))
                 .map(|mut line| {
-                    line.offset += section.offset;
+                    line.offset += section.offset();
                     line
                 }),
         );
         reference_circles.extend(reference::arc_z_circles(payload).into_iter().map(
             |mut circle| {
-                circle.offset += section.offset;
+                circle.offset += section.offset();
                 circle
             },
         ));
@@ -2452,7 +2489,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
                 .into_iter()
                 .chain(reference::positional_conics(payload))
                 .map(|mut conic| {
-                    conic.offset += section.offset;
+                    conic.offset += section.offset();
                     conic
                 }),
         );
@@ -2495,8 +2532,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
             loop_array_sections.push(section.clone());
         }
     }
-    loop_array_sections.sort_by_key(|section| section.offset);
-    loop_array_sections.dedup_by_key(|section| section.offset);
+    loop_array_sections.sort_by_key(|section| section.offset());
+    loop_array_sections.dedup_by_key(|section| section.offset());
     let loop_arrays = loop_array_scan(&data, &loop_array_sections)?;
     let mut nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections)?;
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
@@ -2877,7 +2914,7 @@ pub fn summarize(
         .iter()
         .map(|s| {
             let mut attributes = BTreeMap::new();
-            attributes.insert("offset".to_string(), s.offset.to_string());
+            attributes.insert("offset".to_string(), s.offset().to_string());
             if s.raw_name != s.name() {
                 attributes.insert("raw_name".to_string(), s.raw_name.clone());
             }
@@ -2892,10 +2929,10 @@ pub fn summarize(
                 name: s.name().to_string(),
                 role: s.role().into(),
                 storage: expanded.map_or_else(
-                    || EntryStorage::verbatim(VerbatimLabel::None, s.length as u64),
+                    || EntryStorage::verbatim(VerbatimLabel::None, s.length() as u64),
                     |expanded| EntryStorage::Compressed {
                         method: CompressionMethod::UnixCompress,
-                        stored: Some(s.length as u64),
+                        stored: Some(s.length() as u64),
                         expanded: Some((expanded.data.len() + s.raw_name.len() + 2) as u64),
                     },
                 ),

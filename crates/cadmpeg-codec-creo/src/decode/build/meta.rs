@@ -73,8 +73,8 @@ pub(in super::super) fn source_meta(
             format!("{prefix}.role"),
             cadmpeg_core::container::ContainerRole::from(section.role()).to_string(),
         );
-        attributes.insert(format!("{prefix}.offset"), section.offset.to_string());
-        attributes.insert(format!("{prefix}.length"), section.length.to_string());
+        attributes.insert(format!("{prefix}.offset"), section.offset().to_string());
+        attributes.insert(format!("{prefix}.length"), section.length().to_string());
     }
     if let Some(c) = scan.framing.census.srf_array_count {
         attributes.insert("srf_array_count".to_string(), c.to_string());

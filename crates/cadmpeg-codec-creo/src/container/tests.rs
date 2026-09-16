@@ -618,37 +618,54 @@ fn inspect_summary_has_layout_and_census_notes() {
 }
 
 #[test]
-fn a_section_length_one_byte_past_the_file_is_refused() {
+fn a_section_extent_the_file_does_not_hold_is_not_a_section() {
     let data = b"#Geomlists\n0123";
-    let section = container::Section {
-        raw_name: "Geomlists".to_string(),
-        offset: 0,
-        length: data.len() + 1,
-        expanded_length: None,
-    };
 
-    let refusal = container::section_region(data, &section).unwrap_err();
-    let message = refusal.to_string();
+    // One byte past the last byte of the file.
+    assert!(container::Section::new(
+        "Geomlists".to_string(),
+        0,
+        data.len() + 1,
+        None,
+        data
+    )
+    .is_none());
 
-    // The refusal names the section and both extents, so a short file never
-    // decodes a shortened region.
-    assert!(message.contains("Geomlists"), "{message}");
-    assert!(message.contains(&(data.len() + 1).to_string()), "{message}");
-    assert!(message.contains(&data.len().to_string()), "{message}");
+    // An offset and a length that state no address between them: the end is
+    // before the offset, which is what an overflowing `offset + length` leaves.
+    assert!(
+        container::Section::new("Geomlists".to_string(), usize::MAX - 3, 12, None, data).is_none()
+    );
 }
 
 #[test]
 fn a_section_that_ends_on_the_last_byte_is_admitted() {
     let data = b"#Geomlists\n0123";
-    let section = container::Section {
-        raw_name: "Geomlists".to_string(),
-        offset: 0,
-        length: data.len(),
-        expanded_length: None,
-    };
+    let section = container::Section::new("Geomlists".to_string(), 0, data.len(), None, data)
+        .expect("section extent");
 
+    assert_eq!(section.offset(), 0);
+    assert_eq!(section.length(), data.len());
+    assert_eq!(section.end(), data.len());
     assert_eq!(
         container::section_region(data, &section).unwrap(),
         data.as_slice()
     );
+}
+
+#[test]
+fn bytes_shorter_than_the_file_the_section_was_scanned_from_are_refused_by_name() {
+    let data = b"#Geomlists\n0123";
+    let section = container::Section::new("Geomlists".to_string(), 0, data.len(), None, data)
+        .expect("section extent");
+
+    // `section_region` takes the bytes as a parameter, so a caller can pass
+    // bytes other than the file the scan read. That is the one state the
+    // section's own extent does not rule out.
+    let refusal = container::section_region(&data[..data.len() - 1], &section).unwrap_err();
+    let message = refusal.to_string();
+
+    assert!(message.contains("Geomlists"), "{message}");
+    assert!(message.contains(&data.len().to_string()), "{message}");
+    assert!(message.contains(&(data.len() - 1).to_string()), "{message}");
 }

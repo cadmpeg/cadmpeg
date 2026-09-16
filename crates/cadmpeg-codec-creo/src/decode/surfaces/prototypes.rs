@@ -157,12 +157,12 @@ pub(in super::super) fn surface_prototype_frame_bounds(
     section: &crate::container::Section,
     prototype_offset: usize,
 ) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
-    let section_end = section_declared_end(section)?;
+    let section_end = section.end();
     if scan.framing.data.is_empty() {
-        return Ok(Some((section.offset, section_end)));
+        return Ok(Some((section.offset(), section_end)));
     }
     let payload = crate::container::section_region(&scan.framing.data, section)?;
-    let Some(relative_prototype_offset) = prototype_offset.checked_sub(section.offset) else {
+    let Some(relative_prototype_offset) = prototype_offset.checked_sub(section.offset()) else {
         return Ok(None);
     };
     let mut matches = crate::surface::complete_surface_array_bounds(payload)
@@ -182,31 +182,17 @@ pub(in super::super) fn surface_prototype_frame_bounds(
     )))
 }
 
-/// Declared end of a section, refusing an extent that does not fit an address.
-fn section_declared_end(
-    section: &crate::container::Section,
-) -> Result<usize, cadmpeg_core::CodecError> {
-    section.offset.checked_add(section.length).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format!(
-            "section {} states offset {} and length {}, which do not form an address",
-            section.name(),
-            section.offset,
-            section.length
-        ))
-    })
-}
-
 /// Absolute address of an offset inside one section payload.
 fn frame_bound(
     section: &crate::container::Section,
     relative: usize,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    section.offset.checked_add(relative).ok_or_else(|| {
+    section.offset().checked_add(relative).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed(format!(
             "section {} states offset {} and a surface array bound at {relative}, which do not \
              form an address",
             section.name(),
-            section.offset
+            section.offset()
         ))
     })
 }
@@ -272,8 +258,8 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             _ => continue,
         };
         let Some(section) = scan.framing.sections.iter().find(|section| {
-            record.offset >= section.offset
-                && record.offset < section.offset.saturating_add(section.length)
+            record.offset >= section.offset()
+                && record.offset < section.end()
         }) else {
             continue;
         };
@@ -520,15 +506,15 @@ pub(in super::super) fn transfer_positional_spline_replays(
             .sections
             .iter()
             .filter(|section| {
-                row.offset >= section.offset
-                    && row.offset < section.offset.saturating_add(section.length)
+                row.offset >= section.offset()
+                    && row.offset < section.end()
             })
             .collect::<Vec<_>>();
         let [section] = sections.as_slice() else {
             continue;
         };
         let payload = crate::container::section_region(&scan.framing.data, section)?;
-        let Some(relative_row_offset) = row.offset.checked_sub(section.offset) else {
+        let Some(relative_row_offset) = row.offset.checked_sub(section.offset()) else {
             continue;
         };
         let relative_row = {
@@ -541,12 +527,12 @@ pub(in super::super) fn transfer_positional_spline_replays(
             .rows
             .iter()
             .filter(|candidate| {
-                candidate.offset >= section.offset
-                    && candidate.offset < section.offset.saturating_add(section.length)
+                candidate.offset >= section.offset()
+                    && candidate.offset < section.end()
             })
             .filter_map(|candidate| {
                 let mut candidate = candidate.clone();
-                candidate.offset = candidate.offset.checked_sub(section.offset)?;
+                candidate.offset = candidate.offset.checked_sub(section.offset())?;
                 Some(candidate)
             })
             .collect::<Vec<_>>();

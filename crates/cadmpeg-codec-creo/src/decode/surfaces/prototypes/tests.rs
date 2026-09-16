@@ -598,35 +598,17 @@ ${}
 }
 
 #[test]
-fn section_extent_that_does_not_form_an_address_is_refused_by_name() {
-    let section = crate::container::Section {
-        raw_name: "ND:0:VisibGeom:0".to_owned(),
-        offset: usize::MAX - 3,
-        length: 16,
-        expanded_length: None,
-    };
-
-    let error = super::section_declared_end(&section).expect_err("overrun extent is refused");
-
-    let message = error.to_string();
-    assert!(message.contains("VisibGeom"), "{message}");
-    assert!(message.contains(&(usize::MAX - 3).to_string()), "{message}");
-    assert!(message.contains("16"), "{message}");
-}
-
-#[test]
 fn in_range_section_extent_states_its_declared_end() {
-    let section = crate::container::Section {
-        raw_name: "ND:0:VisibGeom:0".to_owned(),
-        offset: 32,
-        length: 16,
-        expanded_length: None,
-    };
+    let section = crate::container::Section::new(
+        "ND:0:VisibGeom:0".to_owned(),
+        32,
+        48,
+        None,
+        &vec![0u8; 48],
+    )
+    .expect("section extent");
 
-    assert_eq!(
-        super::section_declared_end(&section).expect("declared end"),
-        48
-    );
+    assert_eq!(section.end(), 48);
     assert_eq!(super::frame_bound(&section, 8).expect("frame bound"), 40);
     let error = super::frame_bound(&section, usize::MAX).expect_err("overrun bound is refused");
     assert!(error.to_string().contains("VisibGeom"));

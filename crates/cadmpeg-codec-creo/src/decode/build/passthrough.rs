@@ -62,7 +62,9 @@ pub(in super::super) fn preserve_passthrough_sections(
                 };
                 (
                     &section_bytes[marker_offset..],
-                    section.offset.saturating_add(marker_offset),
+                    // `marker_offset` is a position inside the section's own
+                    // payload, so the sum is a byte offset of the file.
+                    section.offset() + marker_offset,
                     "jpeg_thumbnail",
                     Exactness::ByteExact,
                 )
@@ -70,7 +72,7 @@ pub(in super::super) fn preserve_passthrough_sections(
         } else {
             (
                 section_bytes,
-                section.offset,
+                section.offset(),
                 "psb_geometry_section",
                 Exactness::Unknown,
             )
@@ -104,7 +106,7 @@ pub(in super::super) fn legacy_source_stream<'a>(
         .sections
         .iter()
         .find(|section| {
-            offset >= section.offset && offset < section.offset.saturating_add(section.length)
+            offset >= section.offset() && offset < section.end()
         })
         .map_or("legacy_ascii", |section| section.name())
 }
