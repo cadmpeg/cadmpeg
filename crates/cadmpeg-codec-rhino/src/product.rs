@@ -495,7 +495,7 @@ mod tests {
         let records = &ir.native.namespace("rhino").unwrap().arenas()["product_occurrences"];
         assert_eq!(records.len(), 1);
         assert_eq!(
-            records[0].field("source_offset"),
+            records[0].field("source_offset").unwrap(),
             Some(serde_json::json!(scan.objects[3].range().start))
         );
         let losses = decoded

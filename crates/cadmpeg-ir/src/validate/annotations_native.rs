@@ -297,7 +297,9 @@ pub(super) fn check_native_links(
     for namespace in ir.native.0.values() {
         for (arena, records) in namespace.arenas() {
             for record in records {
-                let Some(value) = record.field("links") else {
+                // A record whose text does not parse carries no link to
+                // check; the arena's own admission reports that record.
+                let Ok(Some(value)) = record.field("links") else {
                     continue;
                 };
                 if arena != "unknowns"

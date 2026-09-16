@@ -468,7 +468,7 @@ fn registered_userdata_future_payload_is_retained_by_table_owner() {
     assert_eq!(lights.len(), 1);
     assert_eq!(
         lights[0]
-            .field("name")
+            .field("name").unwrap()
             .and_then(|value| value.as_str().map(str::to_owned)),
         Some("key".to_owned())
     );
@@ -609,11 +609,11 @@ fn registered_material_userdata_future_payload_is_retained_by_table_owner() {
     assert_eq!(materials.len(), 1);
     assert_eq!(
         materials[0]
-            .field("name")
+            .field("name").unwrap()
             .and_then(|value| value.as_str().map(str::to_owned)),
         Some("steel".to_owned())
     );
-    assert!(materials[0].field("physically_based").is_none());
+    assert!(materials[0].field("physically_based").unwrap().is_none());
     let retained = result
         .source_fidelity()
         .retained_records()
@@ -750,7 +750,7 @@ fn registered_dimension_style_userdata_future_payload_is_retained_by_table_owner
     assert_eq!(dimension_styles.len(), 1);
     assert_eq!(
         dimension_styles[0]
-            .field("name")
+            .field("name").unwrap()
             .and_then(|value| value.as_str().map(str::to_owned)),
         Some("legacy dimension style".to_owned())
     );
@@ -885,12 +885,12 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
     assert_eq!(materials.len(), 1);
     assert_eq!(
         materials[0]
-            .field("name")
+            .field("name").unwrap()
             .and_then(|value| value.as_str().map(str::to_owned)),
         Some("rdk material".to_owned())
     );
     assert!(materials[0]
-        .field("rdk_instance_uuid")
+        .field("rdk_instance_uuid").unwrap()
         .and_then(|value| value.as_str().map(str::to_owned))
         .is_none());
     let retained = result
@@ -993,7 +993,7 @@ fn object_user_string_userdata_future_payload_is_retained_with_typed_geometry() 
     assert_eq!(presentation.len(), 1);
     assert_ne!(
         presentation[0]
-            .field("user_strings")
+            .field("user_strings").unwrap()
             .and_then(|value| value.as_array().map(|values| !values.is_empty())),
         Some(true)
     );
@@ -1427,17 +1427,17 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
     assert_eq!(texture_mappings.len(), 1);
     assert_eq!(
         texture_mappings[0]
-            .field("name")
+            .field("name").unwrap()
             .and_then(|value| value.as_str().map(str::to_owned)),
         Some("custom mesh mapping".to_owned())
     );
     assert_eq!(
         texture_mappings[0]
-            .field("primitive_class_uuid")
+            .field("primitive_class_uuid").unwrap()
             .and_then(|value| value.as_str().map(str::to_owned)),
         Some(crate::wire::Uuid::from_wire(crate::test_support::MESH_CLASS).to_string())
     );
-    assert!(texture_mappings[0].field("mapping_crc").is_none());
+    assert!(texture_mappings[0].field("mapping_crc").unwrap().is_none());
     assert_eq!(result.ir().model.points.len(), 1);
     assert!(result
         .report()

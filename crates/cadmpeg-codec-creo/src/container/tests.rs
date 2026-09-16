@@ -542,30 +542,30 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     let rows = &result.ir().native.namespace("creo").unwrap().arenas()["nonvisible_surface_rows"];
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id(), "creo:novisgeom:surface_row#8");
-    assert_eq!(rows[0].fields()["source_section"], "NovisGeom");
+    assert_eq!(rows[0].fields().unwrap()["source_section"], "NovisGeom");
     let namespace = result.ir().native.namespace("creo").unwrap();
     let surface_parameters = &namespace.arenas()["nonvisible_surface_parameters"];
     assert_eq!(
         surface_parameters[0].id(),
         "creo:novisgeom:surface_parameter#8"
     );
-    assert_eq!(surface_parameters[0].fields()["slots"][0]["value"], 1.0);
+    assert_eq!(surface_parameters[0].fields().unwrap()["slots"][0]["value"], 1.0);
     let surface_prototypes = &namespace.arenas()["nonvisible_surface_prototypes"];
     assert!(surface_prototypes[0]
         .id()
         .starts_with("creo:novisgeom:surface_prototype#"));
     assert_eq!(
-        surface_prototypes[0].fields()["source_section"],
+        surface_prototypes[0].fields().unwrap()["source_section"],
         "NovisGeom"
     );
     let prototypes = &namespace.arenas()["nonvisible_curve_prototypes"];
-    assert_eq!(prototypes[0].fields()["curve_id"], 7);
-    assert_eq!(prototypes[0].fields()["source_section"], "NovisGeom");
+    assert_eq!(prototypes[0].fields().unwrap()["curve_id"], 7);
+    assert_eq!(prototypes[0].fields().unwrap()["source_section"], "NovisGeom");
     let parameters = &namespace.arenas()["nonvisible_curve_parameters"];
     assert_eq!(parameters[0].id(), "creo:novisgeom:curve_parameter#7");
     let topology = &namespace.arenas()["nonvisible_curve_topology_rows"];
     assert_eq!(topology[0].id(), "creo:novisgeom:curve_topology#7");
-    assert_eq!(topology[0].fields()["faces"][0], 12);
+    assert_eq!(topology[0].fields().unwrap()["faces"][0], 12);
 }
 
 #[test]

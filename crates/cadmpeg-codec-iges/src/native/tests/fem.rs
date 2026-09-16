@@ -122,17 +122,17 @@ fn assert_fem_topologies(global: &[u8], topologies: &[(i64, usize, &str)]) {
         let element = fem
             .iter()
             .find(|record| {
-                record.fields()["kind"] == "finite_element"
-                    && record.fields()["topology_type"] == topology_type
+                record.fields().unwrap()["kind"] == "finite_element"
+                    && record.fields().unwrap()["topology_type"] == topology_type
             })
             .unwrap();
-        assert_eq!(element.fields()["declared_node_count"], node_count);
+        assert_eq!(element.fields().unwrap()["declared_node_count"], node_count);
         assert_eq!(
-            element.fields()["nodes"].as_array().unwrap().len(),
+            element.fields().unwrap()["nodes"].as_array().unwrap().len(),
             node_count
         );
         assert_eq!(
-            element.fields()["element_type"],
+            element.fields().unwrap()["element_type"],
             json!(element_type.as_bytes())
         );
     }
@@ -146,75 +146,75 @@ fn assert_fem_namespace(global: &[u8]) {
 
     let node = fem
         .iter()
-        .find(|record| record.fields()["kind"] == "node")
+        .find(|record| record.fields().unwrap()["kind"] == "node")
         .unwrap();
-    assert_eq!(node.fields()["source_entity"], "iges:entity:directory#1");
-    assert_eq!(node.fields()["coordinates"], json!([1.0, 2.0, 3.0]));
+    assert_eq!(node.fields().unwrap()["source_entity"], "iges:entity:directory#1");
+    assert_eq!(node.fields().unwrap()["coordinates"], json!([1.0, 2.0, 3.0]));
 
     let element = fem
         .iter()
-        .find(|record| record.fields()["kind"] == "finite_element")
+        .find(|record| record.fields().unwrap()["kind"] == "finite_element")
         .unwrap();
-    assert_eq!(element.fields()["topology_type"], 1);
-    assert_eq!(element.fields()["declared_node_count"], 1);
+    assert_eq!(element.fields().unwrap()["topology_type"], 1);
+    assert_eq!(element.fields().unwrap()["declared_node_count"], 1);
     assert_eq!(
-        element.fields()["nodes"],
+        element.fields().unwrap()["nodes"],
         json!(["iges:entity:directory#1"])
     );
-    assert_eq!(element.fields()["element_type"], json!([66, 69, 65, 77]));
+    assert_eq!(element.fields().unwrap()["element_type"], json!([66, 69, 65, 77]));
 
     let displacement = fem
         .iter()
-        .find(|record| record.fields()["kind"] == "nodal_displacement_rotation")
+        .find(|record| record.fields().unwrap()["kind"] == "nodal_displacement_rotation")
         .unwrap();
     assert_eq!(
-        displacement.fields()["case_descriptions"],
+        displacement.fields().unwrap()["case_descriptions"],
         json!(["iges:entity:directory#5"])
     );
     assert_eq!(
-        displacement.fields()["nodes"][0]["translations"],
+        displacement.fields().unwrap()["nodes"][0]["translations"],
         json!([[0.1, 0.2, 0.3]])
     );
     assert_eq!(
-        displacement.fields()["nodes"][0]["rotations"],
+        displacement.fields().unwrap()["nodes"][0]["rotations"],
         json!([[0.01, 0.02, 0.03]])
     );
 
     let nodal_results = fem
         .iter()
-        .find(|record| record.fields()["kind"] == "nodal_results")
+        .find(|record| record.fields().unwrap()["kind"] == "nodal_results")
         .unwrap();
-    assert_eq!(nodal_results.fields()["expected_value_count"], 3);
+    assert_eq!(nodal_results.fields().unwrap()["expected_value_count"], 3);
     assert_eq!(
-        nodal_results.fields()["nodes"][0]["values"],
+        nodal_results.fields().unwrap()["nodes"][0]["values"],
         json!([1.0, 2.0, 3.0])
     );
 
     let element_results = fem
         .iter()
-        .find(|record| record.fields()["kind"] == "element_results")
+        .find(|record| record.fields().unwrap()["kind"] == "element_results")
         .unwrap();
-    assert_eq!(element_results.fields()["expected_value_count"], 3);
+    assert_eq!(element_results.fields().unwrap()["expected_value_count"], 3);
     assert_eq!(
-        element_results.fields()["elements"][0]["element"],
+        element_results.fields().unwrap()["elements"][0]["element"],
         "iges:entity:directory#3"
     );
     assert_eq!(
-        element_results.fields()["elements"][0]["report_locations"],
+        element_results.fields().unwrap()["elements"][0]["report_locations"],
         json!([0])
     );
     assert_eq!(
-        element_results.fields()["elements"][0]["values"],
+        element_results.fields().unwrap()["elements"][0]["values"],
         json!([4.0, 5.0, 6.0])
     );
 
     let load = fem
         .iter()
-        .find(|record| record.fields()["kind"] == "nodal_load_constraint")
+        .find(|record| record.fields().unwrap()["kind"] == "nodal_load_constraint")
         .unwrap();
-    assert_eq!(load.fields()["node"], "iges:entity:directory#1");
+    assert_eq!(load.fields().unwrap()["node"], "iges:entity:directory#1");
     assert_eq!(
-        load.fields()["case_references"],
+        load.fields().unwrap()["case_references"],
         json!(["iges:entity:directory#7"])
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -274,10 +274,10 @@ fn finite_element_missing_node_keeps_its_declared_slot() {
         .unwrap();
     let element = result.ir().native.namespace("iges").unwrap().arenas()["fem_entities"]
         .iter()
-        .find(|record| record.fields()["kind"] == "finite_element")
+        .find(|record| record.fields().unwrap()["kind"] == "finite_element")
         .unwrap();
     assert_eq!(
-        element.fields()["nodes"],
+        element.fields().unwrap()["nodes"],
         json!(["iges:entity:directory#1", null])
     );
 }
@@ -315,10 +315,10 @@ fn finite_element_additional_property_group_is_retained_on_generic_entity() {
         .unwrap();
     let entity = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
-        .find(|record| record.fields()["directory_sequence"] == 5)
+        .find(|record| record.fields().unwrap()["directory_sequence"] == 5)
         .unwrap();
     assert_eq!(
-        entity.fields()["property_links"],
+        entity.fields().unwrap()["property_links"],
         json!(["iges:entity:directory#3"])
     );
 }
@@ -339,6 +339,6 @@ fn incomplete_element_result_items_do_not_allocate_or_project_values() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let record = &result.ir().native.namespace("iges").unwrap().arenas()["fem_entities"][0];
-    assert_eq!(record.fields()["kind"], "element_results");
-    assert!(record.fields()["elements"].as_array().unwrap().is_empty());
+    assert_eq!(record.fields().unwrap()["kind"], "element_results");
+    assert!(record.fields().unwrap()["elements"].as_array().unwrap().is_empty());
 }

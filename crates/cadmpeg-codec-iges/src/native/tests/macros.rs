@@ -51,27 +51,27 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
         let native = result.ir().native.namespace("iges").unwrap();
         let definitions = &native.arenas()["macro_definitions"];
         assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].fields()["defined_entity_type"], 621);
+        assert_eq!(definitions[0].fields().unwrap()["defined_entity_type"], 621);
         assert_eq!(
-            definitions[0].fields()["macro_statement"],
+            definitions[0].fields().unwrap()["macro_statement"],
             json!(b"306,MACRO,621,X,Y")
         );
         assert_eq!(
-            definitions[0].fields()["language_statements"],
+            definitions[0].fields().unwrap()["language_statements"],
             json!([b"LET Z=0"])
         );
-        assert_eq!(definitions[0].fields()["end_statement"], json!(b"ENDM"));
+        assert_eq!(definitions[0].fields().unwrap()["end_statement"], json!(b"ENDM"));
 
         let instances = &native.arenas()["macro_instances"];
         assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].fields()["entity_type"], 621);
+        assert_eq!(instances[0].fields().unwrap()["entity_type"], 621);
         assert_eq!(
-            instances[0].fields()["macro_definition"],
+            instances[0].fields().unwrap()["macro_definition"],
             "iges:entity:directory#1"
         );
-        assert!(instances[0].fields()["macro_library"].is_null());
+        assert!(instances[0].fields().unwrap()["macro_library"].is_null());
         assert_eq!(
-            instances[0].fields()["parameters"]
+            instances[0].fields().unwrap()["parameters"]
                 .as_array()
                 .unwrap()
                 .len(),
@@ -151,9 +151,9 @@ fn macro_instance_retains_a_type416_library_reference() {
         .unwrap();
     let instances = &result.ir().native.namespace("iges").unwrap().arenas()["macro_instances"];
     assert_eq!(instances.len(), 1);
-    assert!(instances[0].fields()["macro_definition"].is_null());
+    assert!(instances[0].fields().unwrap()["macro_definition"].is_null());
     assert_eq!(
-        instances[0].fields()["macro_library"],
+        instances[0].fields().unwrap()["macro_library"],
         "iges:entity:directory#3"
     );
 }

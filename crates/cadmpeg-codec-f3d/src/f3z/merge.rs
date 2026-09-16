@@ -449,7 +449,7 @@ fn typed_fields(
     };
     macro_rules! typed {
         ($type:path) => {{
-            let mut value = Value::Object(record.fields());
+            let mut value = Value::Object(record.fields()?);
             let Value::Object(fields) = &mut value else {
                 return Err(cadmpeg_ir::native::NativeConvertError::NonObject);
             };
@@ -483,7 +483,7 @@ fn typed_fields(
         "persistent_design_links" => typed!(crate::records::PersistentDesignLink),
         "persistent_subentity_tags" => typed!(crate::records::PersistentSubentityTag),
         "sketch_curve_links" => typed!(crate::records::SketchCurveLink),
-        _ => record.fields(),
+        _ => record.fields()?,
     })
 }
 

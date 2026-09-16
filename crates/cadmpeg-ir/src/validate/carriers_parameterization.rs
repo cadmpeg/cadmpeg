@@ -861,7 +861,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .filter_map(|namespace| namespace.arenas().get("unknowns"))
         .flatten()
     {
-        if let Some(serde_json::Value::Array(links)) = record.field("links") {
+        if let Ok(Some(serde_json::Value::Array(links))) = record.field("links") {
             for link in links {
                 if let serde_json::Value::String(link) = link {
                     native_links.push(link);

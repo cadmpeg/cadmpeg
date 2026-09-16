@@ -95,10 +95,10 @@ fn eight_digit_directory_status_supplies_four_two_digit_fields() {
         .unwrap();
     let entity = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
 
-    assert_eq!(entity.fields()["blank_status"], 1);
-    assert_eq!(entity.fields()["subordinate_status"], 2);
-    assert_eq!(entity.fields()["use_flag"], 3);
-    assert_eq!(entity.fields()["hierarchy_status"], 4);
+    assert_eq!(entity.fields().unwrap()["blank_status"], 1);
+    assert_eq!(entity.fields().unwrap()["subordinate_status"], 2);
+    assert_eq!(entity.fields().unwrap()["use_flag"], 3);
+    assert_eq!(entity.fields().unwrap()["hierarchy_status"], 4);
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
         let losses = &result.report().losses;
         assert!(native.arenas()["entities"].is_empty(), "{status}");
         assert_eq!(quarantined.len(), 1, "{status}");
-        assert_eq!(quarantined[0].fields()["defect"], "status-number-invalid");
+        assert_eq!(quarantined[0].fields().unwrap()["defect"], "status-number-invalid");
         assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
         assert_eq!(
             losses[0].code,
@@ -169,13 +169,13 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
     );
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["directions"].len(), 1);
-    let direction_fields = native.arenas()["directions"][0].fields();
+    let direction_fields = native.arenas()["directions"][0].fields().unwrap();
     let components = direction_fields["components"].as_array().unwrap();
     assert_eq!(components[0], 2.0);
     assert_eq!(components[1], -3.0);
     assert_eq!(components[2], 4.0);
     assert_eq!(
-        native.arenas()["directions"][0].fields()["physically_dependent"],
+        native.arenas()["directions"][0].fields().unwrap()["physically_dependent"],
         true
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());

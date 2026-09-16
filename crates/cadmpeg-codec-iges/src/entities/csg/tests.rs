@@ -105,18 +105,18 @@ fn decode_types_all_csg_primitive_solids_and_defaults() {
         .iter()
         .find(|solid| solid.id() == "iges:solid:primitive#D1")
         .unwrap();
-    assert_eq!(block.fields()["kind"], "block");
-    assert_eq!(block.fields()["dimensions"]["x_length"], 2.0);
-    assert_eq!(block.fields()["origin"][0], 1.0);
+    assert_eq!(block.fields().unwrap()["kind"], "block");
+    assert_eq!(block.fields().unwrap()["dimensions"]["x_length"], 2.0);
+    assert_eq!(block.fields().unwrap()["origin"][0], 1.0);
     let default_block = solids
         .iter()
         .find(|solid| solid.id() == "iges:solid:primitive#D3")
         .unwrap();
-    assert!(default_block.fields()["origin"][0].is_null());
+    assert!(default_block.fields().unwrap()["origin"][0].is_null());
     assert_eq!(
         solids
             .iter()
-            .map(|solid| solid.fields()["kind"].as_str().unwrap().to_owned())
+            .map(|solid| solid.fields().unwrap()["kind"].as_str().unwrap().to_owned())
             .collect::<std::collections::BTreeSet<_>>(),
         std::collections::BTreeSet::from(
             [
@@ -202,30 +202,30 @@ fn decode_types_swept_solids_and_balanced_boolean_postfix() {
         .iter()
         .find(|solid| solid.id() == "iges:solid:procedural#D5")
         .unwrap();
-    assert_eq!(open_revolution.fields()["kind"], "revolution");
-    assert_eq!(open_revolution.fields()["form"], 0);
-    assert_eq!(open_revolution.fields()["amount"], 0.5);
+    assert_eq!(open_revolution.fields().unwrap()["kind"], "revolution");
+    assert_eq!(open_revolution.fields().unwrap()["form"], 0);
+    assert_eq!(open_revolution.fields().unwrap()["amount"], 0.5);
     let closed_revolution = procedural
         .iter()
         .find(|solid| solid.id() == "iges:solid:procedural#D7")
         .unwrap();
-    assert_eq!(closed_revolution.fields()["form"], 1);
+    assert_eq!(closed_revolution.fields().unwrap()["form"], 1);
     let extrusion = procedural
         .iter()
         .find(|solid| solid.id() == "iges:solid:procedural#D9")
         .unwrap();
-    assert_eq!(extrusion.fields()["kind"], "linear_extrusion");
+    assert_eq!(extrusion.fields().unwrap()["kind"], "linear_extrusion");
     let trees = &native.arenas()["boolean_trees"];
     assert_eq!(trees.len(), 1);
-    assert_eq!(trees[0].fields()["declared_length"], 3);
-    assert_eq!(trees[0].fields()["terms"].as_array().unwrap().len(), 3);
+    assert_eq!(trees[0].fields().unwrap()["declared_length"], 3);
+    assert_eq!(trees[0].fields().unwrap()["terms"].as_array().unwrap().len(), 3);
     let selected = &native.arenas()["selected_components"];
     assert_eq!(selected.len(), 1);
     assert_eq!(
-        selected[0].fields()["boolean_tree"],
+        selected[0].fields().unwrap()["boolean_tree"],
         "iges:solid:boolean-tree#D15"
     );
-    assert_eq!(selected[0].fields()["selection_point"][0], 1.0);
+    assert_eq!(selected[0].fields().unwrap()["selection_point"][0], 1.0);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -316,26 +316,26 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
         .iter()
         .find(|tree| tree.id() == "iges:solid:boolean-tree#D59")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(tree.fields()["form"], 1);
+    assert_eq!(tree.fields().unwrap()["form"], 1);
     assert_eq!(
-        tree.fields()["terms"][0]["entity"],
+        tree.fields().unwrap()["terms"][0]["entity"],
         "iges:entity:directory#55"
     );
     let assembly = result.ir().native.namespace("iges").unwrap().arenas()["solid_assemblies"]
         .iter()
         .find(|assembly| assembly.id() == "iges:product:solid-assembly#D61")
         .unwrap();
-    assert_eq!(assembly.fields()["form"], 1);
+    assert_eq!(assembly.fields().unwrap()["form"], 1);
     assert_eq!(
-        assembly.fields()["items"][0]["item"],
+        assembly.fields().unwrap()["items"][0]["item"],
         "iges:entity:directory#55"
     );
     let instance = result.ir().native.namespace("iges").unwrap().arenas()["solid_instances"]
         .iter()
         .find(|instance| instance.id() == "iges:product:solid-instance#D63")
         .unwrap();
-    assert_eq!(instance.fields()["form"], 1);
-    assert_eq!(instance.fields()["solid"], "iges:entity:directory#55");
+    assert_eq!(instance.fields().unwrap()["form"], 1);
+    assert_eq!(instance.fields().unwrap()["solid"], "iges:entity:directory#55");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -449,12 +449,12 @@ fn decode_validates_selected_component_parameter_pointer() {
             .unwrap()
     };
     assert_eq!(
-        component(5).fields()["boolean_tree"],
+        component(5).fields().unwrap()["boolean_tree"],
         "iges:solid:boolean-tree#D1"
     );
     assert!([7, 9, 11, 13]
         .into_iter()
-        .all(|sequence| component(sequence).fields()["boolean_tree"].is_null()));
+        .all(|sequence| component(sequence).fields().unwrap()["boolean_tree"].is_null()));
 
     for (sequence, resolution) in [
         (5, "resolved"),
@@ -467,7 +467,7 @@ fn decode_validates_selected_component_parameter_pointer() {
             .iter()
             .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
             .unwrap();
-        let reference = &entity.fields()["references"][0];
+        let reference = &entity.fields().unwrap()["references"][0];
         assert_eq!(reference["kind"], "parameter");
         assert_eq!(reference["parameter_index"], 1);
         assert_eq!(reference["expected"], "type-180-form-0-or-1");

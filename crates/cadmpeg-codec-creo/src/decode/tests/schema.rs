@@ -1224,7 +1224,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_revolution_extents"];
-    assert_eq!(records[0].fields()["kind"], "full_turn");
+    assert_eq!(records[0].fields().unwrap()["kind"], "full_turn");
 }
 
 #[test]

@@ -336,7 +336,7 @@ fn compiled_hand_readers_keep_their_admission_boundaries() {
     }))
     .expect("NativeRecord's open field reader admits codec-owned fields");
     assert_eq!(
-        native.field("codec_field"),
+        native.field("codec_field").unwrap(),
         Some(serde_json::json!({"preserved": true}))
     );
 

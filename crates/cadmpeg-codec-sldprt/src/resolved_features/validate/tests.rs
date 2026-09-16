@@ -96,7 +96,7 @@ fn native_validation_rejects_orphan_history_records() {
         .get_mut("features")
         .unwrap()[0]
         .clone();
-    let mut orphan_fields = orphan.fields();
+    let mut orphan_fields = orphan.fields().unwrap();
     orphan_fields.insert(
         "parent".into(),
         serde_json::Value::String("missing-history".into()),
