@@ -486,7 +486,7 @@ mod tests {
             &"test profile",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-            .expect("ellipse NURBS");
+        .expect("ellipse NURBS");
 
         assert_eq!(curve.degree(), 2);
         assert_eq!(curve.control_points().len(), 9);
@@ -521,7 +521,7 @@ mod tests {
             &"test profile",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
-            .expect("circle NURBS");
+        .expect("circle NURBS");
 
         for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {
             let point = eval_curve(&curve, parameter);

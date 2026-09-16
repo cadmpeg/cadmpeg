@@ -1328,14 +1328,12 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    if let Some((index, actual, expected)) = lane
-        .names
-        .iter()
-        .zip(&expected_names)
-        .enumerate()
-        .find_map(|(index, (actual, expected))| {
-            (actual.value != expected.value).then_some((index, actual, expected))
-        })
+    if let Some((index, actual, expected)) =
+        lane.names.iter().zip(&expected_names).enumerate().find_map(
+            |(index, (actual, expected))| {
+                (actual.value != expected.value).then_some((index, actual, expected))
+            },
+        )
     {
         return Err(CodecError::malformed(format_args!(
             "feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",

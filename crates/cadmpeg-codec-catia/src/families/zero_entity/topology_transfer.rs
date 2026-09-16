@@ -178,9 +178,7 @@ pub(crate) fn transfer_closed_face_topology(
                         let geometry = super::records::zero_entity_neutral_pcurve(
                             surface_geometry,
                             pcurve,
-                            &format_args!(
-                                "zero-entity support record #{support_record_ordinal}"
-                            ),
+                            &format_args!("zero-entity support record #{support_record_ordinal}"),
                             refusal,
                         )?;
                         let parameter_range = pcurve_parameter_range(&geometry)?;
