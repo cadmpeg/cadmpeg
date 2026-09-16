@@ -449,10 +449,27 @@ mod tests {
             });
             wire[field] = value;
             assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
-            wire["copy_on_change"] = serde_json::json!("Owned");
+            wire["copy_on_change"] = serde_json::json!("2");
             let admitted =
                 serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(admitted).unwrap()[field], wire[field]);
+        }
+
+        for raw in ["Owned", "abc", ""] {
+            let mut wire = serde_json::json!({
+                "id": "link", "object": "object", "kind": "occurrence",
+                "members": [], "element_transforms": [], "element_scales": [],
+                "linked_subelements": [], "element_visibility": [], "element_objects": [],
+                "copy_on_change": raw,
+            });
+            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["copy_on_change"] = serde_json::json!("+00099");
+            let admitted = serde_json::from_value::<super::ProductNodeRecord>(wire.clone())
+                .expect("numeric future policies retain their spelling");
+            assert_eq!(
+                serde_json::to_value(admitted).unwrap()["copy_on_change"],
+                "+00099"
+            );
         }
     }
 
@@ -1276,11 +1293,35 @@ impl LinkArray {
     }
 }
 
+/// A source `LinkCopyOnChange` enumeration index with its exact spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CopyOnChangePolicy {
+    raw: String,
+    index: i64,
+}
+
+impl CopyOnChangePolicy {
+    pub(crate) fn from_raw(raw: String) -> Result<Self, String> {
+        let index = raw
+            .parse::<i64>()
+            .map_err(|_| "copy-on-change policy must be a signed integer".to_owned())?;
+        Ok(Self { raw, index })
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.raw
+    }
+
+    pub(crate) fn index(&self) -> i64 {
+        self.index
+    }
+}
+
 /// Copy-on-change policy and its dependent payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CopyOnChange {
-    /// Persisted policy name or numeric code.
-    pub policy: String,
+    /// Admitted persisted policy index.
+    policy: CopyOnChangePolicy,
     /// Original tracked object.
     pub source: Option<LinkTarget>,
     /// Internal ownership group.
@@ -1292,6 +1333,16 @@ pub struct CopyOnChange {
 impl CopyOnChange {
     pub(crate) fn from_wire(
         policy: Option<String>,
+        source: Option<LinkTarget>,
+        group: Option<LinkTarget>,
+        touched: Option<bool>,
+    ) -> Result<Option<Self>, String> {
+        let policy = policy.map(CopyOnChangePolicy::from_raw).transpose()?;
+        Self::from_admitted(policy, source, group, touched)
+    }
+
+    pub(crate) fn from_admitted(
+        policy: Option<CopyOnChangePolicy>,
         source: Option<LinkTarget>,
         group: Option<LinkTarget>,
         touched: Option<bool>,
@@ -1424,6 +1475,13 @@ impl ProductNodeRecord {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
             .map(|copy| copy.policy.as_str())
+    }
+
+    /// Admitted copy-on-change policy, including its parsed source index.
+    pub(crate) fn copy_on_change_policy(&self) -> Option<&CopyOnChangePolicy> {
+        self.occurrence()
+            .and_then(|node| node.copy_on_change.as_ref())
+            .map(|copy| &copy.policy)
     }
 
     /// Original object tracked by copy-on-change.

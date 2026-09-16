@@ -25,6 +25,89 @@ impl PairedJointFamily {
     }
 }
 
+/// A checked joint parameter value that retains its source spelling.
+#[derive(Debug, Clone, PartialEq)]
+enum JointParameter {
+    Scalar { raw: String, value: f64 },
+    Boolean { raw: String, value: bool },
+    Native { raw: String },
+}
+
+impl JointParameter {
+    fn from_raw(name: &str, raw: String) -> Result<Self, String> {
+        match name {
+            "Angle" | "AngleMin" | "AngleMax" | "Distance" | "Distance2" | "LengthMin"
+            | "LengthMax" => {
+                let value = raw
+                    .parse::<f64>()
+                    .map_err(|_| format!("joint parameter {name} has an invalid value {raw:?}"))?;
+                if !value.is_finite() {
+                    return Err(format!(
+                        "joint parameter {name} has an invalid value {raw:?}"
+                    ));
+                }
+                Ok(Self::Scalar { raw, value })
+            }
+            "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax"
+            | "Detach1" | "Detach2" | "Suppressed" => Ok(Self::Boolean {
+                value: raw == "true",
+                raw,
+            }),
+            _ => Ok(Self::Native { raw }),
+        }
+    }
+
+    fn raw(&self) -> &str {
+        match self {
+            Self::Scalar { raw, .. } | Self::Boolean { raw, .. } | Self::Native { raw } => raw,
+        }
+    }
+}
+
+/// Checked joint parameters with lossless source text.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct JointParameters(BTreeMap<String, JointParameter>);
+
+impl JointParameters {
+    fn from_raw(parameters: BTreeMap<String, String>, joint_id: &str) -> Result<Self, String> {
+        parameters
+            .into_iter()
+            .map(|(name, raw)| {
+                let parameter = JointParameter::from_raw(&name, raw)
+                    .map_err(|error| format!("joint {joint_id}: {error}"))?;
+                Ok((name, parameter))
+            })
+            .collect::<Result<BTreeMap<_, _>, String>>()
+            .map(Self)
+    }
+
+    fn into_raw(self) -> BTreeMap<String, String> {
+        self.0
+            .into_iter()
+            .map(|(name, value)| (name, value.raw().to_owned()))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn raw(&self, name: &str) -> Option<&str> {
+        self.0.get(name).map(JointParameter::raw)
+    }
+
+    pub(crate) fn bool_value(&self, name: &str) -> Option<bool> {
+        match self.0.get(name) {
+            Some(JointParameter::Boolean { value, .. }) => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn scalar_value(&self, name: &str) -> Option<f64> {
+        match self.0.get(name) {
+            Some(JointParameter::Scalar { value, .. }) => Some(*value),
+            _ => None,
+        }
+    }
+}
+
 /// One assembly joint or grounded-object constraint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "JointRecordWire", into = "JointRecordWire")]
@@ -36,7 +119,7 @@ pub struct JointRecord {
     /// Grounded object or paired connectors.
     pub body: JointBody,
     /// Joint scalar, limit, detach, enable, and suppression properties.
-    pub parameters: BTreeMap<String, String>,
+    parameters: JointParameters,
 }
 
 /// Joint payload discriminated by grounded vs paired connectors.
@@ -72,6 +155,25 @@ pub struct JointConnectorRecord {
 }
 
 impl JointRecord {
+    pub(crate) fn try_new(
+        id: String,
+        object: String,
+        body: JointBody,
+        parameters: BTreeMap<String, String>,
+    ) -> Result<Self, String> {
+        let parameters = JointParameters::from_raw(parameters, &id)?;
+        Ok(Self {
+            id,
+            object,
+            body,
+            parameters,
+        })
+    }
+
+    pub(crate) fn parameters(&self) -> &JointParameters {
+        &self.parameters
+    }
+
     /// Persisted joint family code, or `grounded`.
     pub fn kind(&self) -> &str {
         match &self.body {
@@ -126,29 +228,14 @@ struct JointRecordWire {
     parameters: BTreeMap<String, String>,
 }
 
-/// Validate the lexical value of a known joint parameter.
+/// Validate a joint parameter through the checked source-value carrier.
 ///
-/// Unknown parameter names remain native extension data. Known names are
-/// emitted by FreeCAD with either a finite floating-point scalar or one of the
-/// four boolean spellings accepted by the source XML reader.
+/// Unknown parameter names remain native extension data. Known scalar names
+/// carry finite floating-point values. FreeCAD's `PropertyBool` reader stores
+/// true only for exact lowercase `true` and stores false for every other raw
+/// spelling, so the raw text is retained alongside that typed value.
 pub(crate) fn validate_parameter_value(name: &str, value: &str) -> Result<(), String> {
-    let valid = match name {
-        "Angle" | "AngleMin" | "AngleMax" | "Distance" | "Distance2" | "LengthMin"
-        | "LengthMax" => value.parse::<f64>().is_ok_and(f64::is_finite),
-        "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
-        | "Detach2" | "Suppressed" => matches!(
-            value.to_ascii_lowercase().as_str(),
-            "true" | "false" | "1" | "0"
-        ),
-        _ => return Ok(()),
-    };
-    if valid {
-        Ok(())
-    } else {
-        Err(format!(
-            "joint parameter {name} has an invalid value {value:?}"
-        ))
-    }
+    JointParameter::from_raw(name, value.to_owned()).map(|_| ())
 }
 
 impl From<JointRecord> for JointRecordWire {
@@ -170,7 +257,7 @@ impl From<JointRecord> for JointRecordWire {
             references,
             placements,
             offsets,
-            parameters: value.parameters,
+            parameters: value.parameters.into_raw(),
         }
     }
 }
@@ -179,10 +266,7 @@ impl TryFrom<JointRecordWire> for JointRecord {
     type Error = String;
 
     fn try_from(wire: JointRecordWire) -> Result<Self, Self::Error> {
-        for (name, value) in &wire.parameters {
-            validate_parameter_value(name, value)
-                .map_err(|error| format!("joint {}: {error}", wire.id))?;
-        }
+        let parameters = JointParameters::from_raw(wire.parameters, &wire.id)?;
         let body = if wire.kind == "grounded" {
             let [placement] = <[_; 1]>::try_from(wire.placements)
                 .map_err(|_| "grounded joint must carry exactly one placement".to_owned())?;
@@ -239,7 +323,7 @@ impl TryFrom<JointRecordWire> for JointRecord {
             id: wire.id,
             object: wire.object,
             body,
-            parameters: wire.parameters,
+            parameters,
         })
     }
 }
@@ -319,15 +403,16 @@ mod tests {
                 .try_into()
                 .unwrap(),
         };
-        let record = JointRecord {
-            id: "joint".into(),
-            object: "object".into(),
-            body: JointBody::Pair {
+        let record = JointRecord::try_new(
+            "joint".into(),
+            "object".into(),
+            JointBody::Pair {
                 kind: PairedJointFamily::new("CustomCoupling".into()).unwrap(),
                 connectors: [connector.clone(), connector],
             },
-            parameters: BTreeMap::new(),
-        };
+            BTreeMap::new(),
+        )
+        .unwrap();
         let wire = serde_json::to_value(&record).unwrap();
         assert_eq!(wire["kind"], "CustomCoupling");
         assert_eq!(
@@ -344,7 +429,7 @@ mod tests {
     #[test]
     fn wire_admission_rejects_invalid_known_parameter_values() {
         let identity = cadmpeg_ir::transform::Transform::identity().rows();
-        for (name, value) in [("Angle", "abc"), ("Angle", "NaN"), ("Suppressed", "maybe")] {
+        for (name, value) in [("Angle", "abc"), ("Angle", "NaN")] {
             let parameters =
                 serde_json::Map::from_iter([(name.to_owned(), serde_json::json!(value))]);
             let wire = serde_json::json!({
@@ -372,8 +457,60 @@ mod tests {
                 "offsets": [identity, identity],
                 "parameters": parameters
             });
-            serde_json::from_value::<JointRecord>(wire)
+            let record = serde_json::from_value::<JointRecord>(wire.clone())
                 .expect("valid known parameter values remain admissible");
+            if name == "Angle" {
+                assert_eq!(record.parameters().scalar_value(name), Some(15.5));
+            }
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
         }
+    }
+
+    #[test]
+    fn bool_parameters_follow_primary_restore_and_retain_raw_text() {
+        let identity = cadmpeg_ir::transform::Transform::identity().rows();
+        for (raw, expected) in [
+            ("true", true),
+            ("false", false),
+            ("1", false),
+            ("0", false),
+            ("TRUE", false),
+            ("maybe", false),
+        ] {
+            let wire = serde_json::json!({
+                "id": "joint",
+                "object": "object",
+                "kind": "Fixed",
+                "references": [null, null],
+                "placements": [identity, identity],
+                "offsets": [identity, identity],
+                "parameters": {"Suppressed": raw}
+            });
+            let record = serde_json::from_value::<JointRecord>(wire.clone())
+                .expect("primary bool spellings remain admissible");
+            assert_eq!(record.parameters().raw("Suppressed"), Some(raw));
+            assert_eq!(record.parameters().bool_value("Suppressed"), Some(expected));
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn unknown_parameter_names_retain_their_wire_text() {
+        let identity = cadmpeg_ir::transform::Transform::identity().rows();
+        let wire = serde_json::json!({
+            "id": "joint",
+            "object": "object",
+            "kind": "Fixed",
+            "references": [null, null],
+            "placements": [identity, identity],
+            "offsets": [identity, identity],
+            "parameters": {"FutureJointSetting": "vendor spelling"}
+        });
+        let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
+        assert_eq!(
+            record.parameters().raw("FutureJointSetting"),
+            Some("vendor spelling")
+        );
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
     }
 }

@@ -9,8 +9,8 @@ use std::num::NonZeroUsize;
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
-    ContainerNode, LinkArrayCardinality, LinkOccurrence, ObjectRecord, ProductNode,
-    ProductNodeRecord, PropertyRecord,
+    ContainerNode, CopyOnChangePolicy as NativeCopyOnChangePolicy, LinkArrayCardinality,
+    LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -121,7 +121,7 @@ pub(crate) fn transfer(
                     })
                     .unwrap_or_default(),
                 claim_child,
-                copy_on_change: crate::native::CopyOnChange::from_wire(
+                copy_on_change: crate::native::CopyOnChange::from_admitted(
                     copy_on_change,
                     copy_on_change_source,
                     copy_on_change_group,
@@ -333,7 +333,7 @@ pub(crate) fn transfer_neutral(
             });
             let scale = [x?, y?, z?];
             let copy_on_change = record
-                .copy_on_change()
+                .copy_on_change_policy()
                 .map(|policy| {
                     Ok::<_, CodecError>(CopyOnChange {
                         policy: copy_on_change_policy(policy),
@@ -592,13 +592,13 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<NonZeroUsize, CodecErr
     Ok(count)
 }
 
-fn copy_on_change_policy(value: &str) -> CopyOnChangePolicy {
-    match value.to_ascii_lowercase().as_str() {
-        "disabled" | "0" => CopyOnChangePolicy::Disabled,
-        "enabled" | "1" => CopyOnChangePolicy::Enabled,
-        "owned" | "2" => CopyOnChangePolicy::Owned,
-        "tracking" | "3" => CopyOnChangePolicy::Tracking,
-        _ => CopyOnChangePolicy::Native(value.to_owned()),
+fn copy_on_change_policy(value: &NativeCopyOnChangePolicy) -> CopyOnChangePolicy {
+    match value.index() {
+        0 => CopyOnChangePolicy::Disabled,
+        1 => CopyOnChangePolicy::Enabled,
+        2 => CopyOnChangePolicy::Owned,
+        3 => CopyOnChangePolicy::Tracking,
+        _ => CopyOnChangePolicy::Native(value.as_str().to_owned()),
     }
 }
 
@@ -975,7 +975,9 @@ fn integer_property(properties: &[&PropertyRecord], name: &str) -> Result<Option
     })
 }
 
-fn copy_on_change_property(properties: &[&PropertyRecord]) -> Result<Option<String>, CodecError> {
+fn copy_on_change_property(
+    properties: &[&PropertyRecord],
+) -> Result<Option<NativeCopyOnChangePolicy>, CodecError> {
     let Some(property) = unique_property(properties, "LinkCopyOnChange")? else {
         return Ok(None);
     };
@@ -991,13 +993,14 @@ fn copy_on_change_property(properties: &[&PropertyRecord]) -> Result<Option<Stri
             property.id
         ))
     })?;
-    raw.parse::<i64>().map_err(|_| {
-        malformed(format!(
-            "product property {} has an invalid enumeration Integer value",
-            property.id
-        ))
-    })?;
-    Ok(Some(raw.to_owned()))
+    NativeCopyOnChangePolicy::from_raw(raw.to_owned())
+        .map(Some)
+        .map_err(|_| {
+            malformed(format!(
+                "product property {} has an invalid enumeration Integer value",
+                property.id
+            ))
+        })
 }
 
 fn linked_target(
