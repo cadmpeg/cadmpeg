@@ -11,6 +11,20 @@ use crate::psb::{compact_int, short_form_float};
 
 const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
 
+/// The widest fixed positional slot table the format defines: the twelve-slot
+/// positional `local_sys` of a surface prototype, whose slots 0 to 2 and 6 to 8
+/// hold the two support directions and whose slots 9 to 11 hold the origin.
+/// Read from `docs/formats/creo_prt.md`: "The body then contains exactly one
+/// complete twelve-slot positional `local_sys`", and the ND-layout paragraph
+/// that numbers those slots.
+///
+/// A scalar body states its slots with compact and absent encodings, so one
+/// remaining byte can state a complete table. A declared slot count at or below
+/// this width is therefore admitted whatever the remaining byte count; the
+/// exact proof that the bytes carry the slots is `decode_exact_scalars`, which
+/// requires the cursor to consume the body exactly.
+pub(crate) const POSITIONAL_SLOT_TABLE_WIDTH: usize = 12;
+
 pub(crate) const fn be_f64(bytes: [u8; 8]) -> f64 {
     assemble_f64_be(bytes)
 }
