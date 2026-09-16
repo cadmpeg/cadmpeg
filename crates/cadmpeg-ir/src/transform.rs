@@ -142,7 +142,33 @@ impl Default for ExactSignedSum {
 struct ScaledValue {
     sign: f64,
     mantissa: f64,
+    /// The power of two that scales `mantissa` back to the value.
+    ///
+    /// The range is
+    /// `EXACT_PRODUCT_EXPONENT + 1 ..= EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS * 64 + 1`,
+    /// that is `-2147..=2077`. Two constructors produce it, and neither reads
+    /// an exponent from outside:
+    ///
+    /// - `scaled_finite` states `MIN_SIGNIFICAND_EXPONENT + biased + bits`. The
+    ///   biased field of a finite `f64` is at most 2045 and `bits` is the
+    ///   significand width, 1 to 53, so this reaches `-1073..=1024`.
+    /// - `ExactSignedSum::finish` states
+    ///   `EXACT_PRODUCT_EXPONENT + highest_bit + 1`, and `+ 2` in its
+    ///   rounding-carry arm. `highest_bit` indexes an accumulator
+    ///   `EXACT_SUM_WORDS` words of 64 bits wide, so it is at most
+    ///   `EXACT_SUM_WORDS * 64 - 1`.
+    ///
+    /// A difference of two exponents is therefore at most 4224 in magnitude,
+    /// and the subtraction that rescales one value into another's frame is
+    /// plain arithmetic.
     exponent: i32,
+}
+
+impl ScaledValue {
+    /// The value, rescaled into the frame whose exponent is `scale_exponent`.
+    fn scaled_by(self, scale_exponent: i32) -> f64 {
+        self.sign * self.mantissa * 2.0_f64.powi(self.exponent - scale_exponent)
+    }
 }
 
 /// The sign, the integer significand, and the significand's exponent biased by
@@ -492,13 +518,7 @@ impl Transform {
             .iter()
             .filter_map(|value| value.map(|value| value.exponent))
             .max()?;
-        let scaled = values.map(|value| {
-            value.map_or(0.0, |value| {
-                value.sign
-                    * value.mantissa
-                    * 2.0_f64.powi(value.exponent.saturating_sub(scale_exponent))
-            })
-        });
+        let scaled = values.map(|value| value.map_or(0.0, |value| value.scaled_by(scale_exponent)));
         let length = scaled.iter().map(|value| value * value).sum::<f64>().sqrt();
         if !length.is_finite() || length == 0.0 {
             return None;
