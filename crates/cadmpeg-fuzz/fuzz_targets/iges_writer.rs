@@ -94,9 +94,10 @@ fuzz_target!(|data: &[u8]| {
             .source
             .as_mut()
             .expect("IGES decode supplies source metadata");
-        source
-            .attributes
-            .insert("iges_fuzz_edit".into(), "edited".into());
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("iges_fuzz_edit"),
+            "edited".into(),
+        );
     }
 
     let replay = encoder

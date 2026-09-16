@@ -75,7 +75,7 @@ fuzz_target!(|data: &[u8]| {
         5 => {
             // Create face with no loops
             if !ir.model.faces.is_empty() {
-                ir.model.faces[0].loops.clear();
+                ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
             }
         }
         6 => {
@@ -113,7 +113,10 @@ fuzz_target!(|data: &[u8]| {
             let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
             let stream = StreamHandle::new(cadmpeg_ir::stream_name!("fuzz:nonexistent"));
             annotations.note("nonexistent", &stream, u64::MAX);
-            source_fidelity.annotations.append(annotations.build());
+            source_fidelity
+                .annotations
+                .append(annotations.build())
+                .expect("annotation arena append");
         }
         12 => {
             if let Some(edge) = ir.model.edges.first().cloned() {

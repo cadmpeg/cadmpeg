@@ -211,8 +211,12 @@ jobs:
         # The fuzz crate declares its own `[workspace]`, so every other job
         # skips it; a refactor that moves a codec's internals silently rots the
         # harnesses' imports. A stable `check` catches that drift without the
-        # nightly toolchain `cargo fuzz build` needs.
-        run: cargo check --manifest-path crates/cadmpeg-fuzz/Cargo.toml
+        # nightly toolchain `cargo fuzz build` needs. `--all-targets` reaches
+        # every harness and seed binary, and `--keep-going` reports all of them
+        # rather than stopping at the first.
+        run: |
+          cargo check --manifest-path crates/cadmpeg-fuzz/Cargo.toml \
+            --all-targets --keep-going
 
       - name: Single-codec CLI feature gate
         # Per-codec optional deps must keep a one-feature binary compiling.
