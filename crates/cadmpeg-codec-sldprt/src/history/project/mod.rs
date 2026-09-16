@@ -256,10 +256,10 @@ pub(crate) fn project_semantic_notes(
         .map(|feature| {
             let key = feature_identity_key(&feature.id);
             cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-                id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(format!(
-                    "sldprt:semantic-annotation:note#{key}"
-                ))
-                .expect("identity grammar"),
+                id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "semantic-annotation", "note"),
+                    key,
+                ),
                 object: feature.id.clone(),
                 kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
                 runtime_type: feature.kind.clone(),
@@ -438,8 +438,10 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             same_scalar(distance.get(), 0.0).then_some((feature.id.clone(), reference.clone()))
         })
         .collect::<HashMap<_, _>>();
-    let canonical_plane_id = |id: &str| {
-        let mut current = FeatureId::mint(id.to_owned()).expect("identity grammar");
+    let canonical_plane_id = |id: &str| -> Option<FeatureId> {
+        let Ok(mut current) = FeatureId::mint(id.to_owned()) else {
+            return None;
+        };
         let mut visited = HashSet::new();
         while visited.insert(current.clone()) {
             let Some(parent) = zero_offset_parents.get(&current).cloned() else {
@@ -447,7 +449,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             };
             current = parent;
         }
-        current
+        Some(current)
     };
     for feature in features.iter_mut() {
         let explicit_native_reference = feature.source_properties.contains_key("Reference")
@@ -635,10 +637,11 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                             displacement.z
                                 - candidate_normal.z * signed_distance / candidate_normal_length,
                         );
+                        let canonical = canonical_plane_id(candidate.id.as_str())?;
                         (same_scalar(tangent.norm(), 0.0)
                             && same_scalar(signed_distance.abs(), distance.get().abs()))
                         .then_some((
-                            canonical_plane_id(candidate.id.as_str()),
+                            canonical,
                             distance.get().abs().copysign(signed_distance),
                         ))
                     });
@@ -808,8 +811,10 @@ pub(crate) fn custom_property_attributes(histories: &[FeatureHistory]) -> Vec<So
         .map(|feature| {
             let key = feature_identity_key(&feature.id);
             SourceAttribute {
-                id: AttributeId::mint(format!("sldprt:history:custom-property#{key}"))
-                    .expect("identity grammar"),
+                id: AttributeId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "history", "custom-property"),
+                    key,
+                ),
                 target: AttributeTarget::Document,
                 name: feature.name.clone(),
                 values: feature
@@ -963,19 +968,10 @@ pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<Design
         .iter()
         .flat_map(|history| &history.configurations)
         .map(|configuration| DesignConfiguration {
-            id: ConfigurationId::mint(format!(
-                "sldprt:model:configuration#{}",
-                configuration
-                    .id
-                    .strip_prefix("sldprt:history:configuration#")
-                    .map_or_else(
-                        || std::borrow::Cow::Owned(
-                            configuration.id.replace('%', "%25").replace('#', "%23")
-                        ),
-                        std::borrow::Cow::Borrowed
-                    )
-            ))
-            .expect("identity grammar"),
+            id: ConfigurationId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "model", "configuration"),
+                configuration_identity_key(&configuration.id),
+            ),
             ordinal: configuration.ordinal,
             active: false,
             source_index: configuration.source_index,
@@ -1188,8 +1184,10 @@ pub(crate) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
 }
 
 pub(crate) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> ParameterId {
-    let key = feature_identity_key(&feature.id);
-    ParameterId::mint(format!("sldprt:model:parameter#{key}:{ordinal}")).expect("identity grammar")
+    ParameterId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
+        feature_identity_key(&feature.id).colon(ordinal),
+    )
 }
 
 pub(crate) fn native_definition(feature: &Feature) -> FeatureDefinition {
@@ -1200,15 +1198,42 @@ pub(crate) fn native_definition(feature: &Feature) -> FeatureDefinition {
 }
 
 pub(crate) fn neutral_feature_id(native_id: &str) -> FeatureId {
-    let key = feature_identity_key(native_id);
-    FeatureId::mint(format!("sldprt:model:feature#{key}")).expect("identity grammar")
+    FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "model", "feature"),
+        feature_identity_key(native_id),
+    )
 }
 
-fn feature_identity_key(native_id: &str) -> std::borrow::Cow<'_, str> {
-    native_id
+/// The identity key of one native configuration id, escaped as a feature id is.
+fn configuration_identity_key(native_id: &str) -> cadmpeg_ir::ids::IdentityKey {
+    let key = native_id
+        .strip_prefix("sldprt:history:configuration#")
+        .map_or_else(
+            || native_id.replace('%', "%25").replace('#', "%23"),
+            str::to_owned,
+        );
+    match cadmpeg_ir::ids::IdentityKey::try_new(key) {
+        Ok(key) => key,
+        Err(_) => cadmpeg_ir::identity_key!("unnamed"),
+    }
+}
+
+/// The identity key of one native feature id.
+///
+/// A minted history id contributes its key directly. Any other id is escaped
+/// on `%` and `#`, the two characters an identity holds that the key grammar
+/// refuses. An id that is still not key text — empty, or carrying whitespace
+/// no identity holds — has no key of its own and takes `unnamed`, which the
+/// document's duplicate-identity check then reports.
+fn feature_identity_key(native_id: &str) -> cadmpeg_ir::ids::IdentityKey {
+    let key = native_id
         .strip_prefix("sldprt:history:feature#")
         .map_or_else(
-            || std::borrow::Cow::Owned(native_id.replace('%', "%25").replace('#', "%23")),
-            std::borrow::Cow::Borrowed,
-        )
+            || native_id.replace('%', "%25").replace('#', "%23"),
+            str::to_owned,
+        );
+    match cadmpeg_ir::ids::IdentityKey::try_new(key) {
+        Ok(key) => key,
+        Err(_) => cadmpeg_ir::identity_key!("unnamed"),
+    }
 }

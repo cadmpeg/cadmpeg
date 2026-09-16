@@ -143,6 +143,14 @@ use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
 /// Retained-record id of the whole source part, the byte-replay baseline.
 const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";
 
+/// The identity of the retained source image, composed from its literal parts.
+fn source_image_id() -> UnknownId {
+    UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
+        cadmpeg_ir::identity_key!("0"),
+    )
+}
+
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
@@ -414,10 +422,7 @@ fn source_records<'a>(
         .collect::<Result<Vec<_>, cadmpeg_ir::native::NativeConvertError>>()?;
     if let Some(source) = source_fidelity.retained_record(SOURCE_IMAGE_ID) {
         records.push(SourceRecord {
-            id: SOURCE_IMAGE_ID
-                .to_owned()
-                .try_into()
-                .expect("valid identity"),
+            id: source_image_id(),
             sha256: source.sha256(),
             data: source.data(),
         });

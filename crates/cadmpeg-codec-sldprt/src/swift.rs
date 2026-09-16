@@ -706,8 +706,12 @@ fn project_with_topology(
             {
                 Some(id.clone())
             } else {
-                let id =
-                    PmiId::mint(format!("{}:datum-system", id.as_str())).expect("identity grammar");
+                let id = PmiId::from(
+                    cadmpeg_ir::ids::Identity::from(id.clone()).with_key_tail(
+                        &cadmpeg_ir::ids::IdentityKeyTail::empty()
+                            .then(cadmpeg_ir::identity_key!(":datum-system")),
+                    ),
+                );
                 datum_systems.push((tolerance.references.clone(), id.clone()));
                 projected.push(PmiAnnotation {
                     id: id.clone(),
@@ -807,11 +811,12 @@ fn project_lower_profile_tier(
 ) -> Option<PmiAnnotation> {
     let magnitude = finite_nonnegative(entity.doubles.get("ToleranceLowerTier").copied()?)?;
     Some(PmiAnnotation {
-        id: PmiId::mint(format!(
-            "{}:lower-tier",
-            pmi_id(&reference.id)?.into_string()
-        ))
-        .expect("identity grammar"),
+        id: PmiId::from(
+            cadmpeg_ir::ids::Identity::from(pmi_id(&reference.id)?).with_key_tail(
+                &cadmpeg_ir::ids::IdentityKeyTail::empty()
+                    .then(cadmpeg_ir::identity_key!(":lower-tier")),
+            ),
+        ),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
         visible: None,
         targets: targets(entity, feature_index, topology)?,
