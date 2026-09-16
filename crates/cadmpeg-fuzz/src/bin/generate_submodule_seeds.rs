@@ -12,53 +12,57 @@ use cadmpeg_core::CodecError;
 const EPS_SEED_GEOMETRY_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_SEED_GEOMETRY_DEGENERATE: f64 = 1.0e-10;
 
-fn main() -> Result<(), CodecError> {
-    generate_acis_header_seed();
-    generate_f3d_submodule_seeds();
-    generate_sldprt_submodule_seeds();
-    generate_catia_submodule_seeds();
-    generate_creo_submodule_seeds();
-    generate_nx_submodule_seeds();
+type SeedError = Box<dyn std::error::Error>;
+
+fn main() -> Result<(), SeedError> {
+    generate_acis_header_seed()?;
+    generate_f3d_submodule_seeds()?;
+    generate_sldprt_submodule_seeds()?;
+    generate_catia_submodule_seeds()?;
+    generate_creo_submodule_seeds()?;
+    generate_nx_submodule_seeds()?;
     generate_inventor_submodule_seeds()?;
-    generate_rhino_submodule_seeds();
+    generate_rhino_submodule_seeds()?;
     println!("All sub-module seeds generated.");
     Ok(())
 }
 
-fn generate_acis_header_seed() {
+fn generate_acis_header_seed() -> Result<(), SeedError> {
     let mut header = b"ACIS BinaryFile".to_vec();
     for value in [21_800_u32, 0, 0, 0] {
         header.extend_from_slice(&value.to_le_bytes());
     }
     for value in ["Synthetic", "ACIS 218", "2000-01-01"] {
         header.push(0x07);
-        header.push(u8::try_from(value.len()).expect("short synthetic string"));
+        header.push(u8::try_from(value.len())?);
         header.extend_from_slice(value.as_bytes());
     }
     for value in [1.0_f64, EPS_SEED_GEOMETRY_COARSE_GEOMETRY, EPS_SEED_GEOMETRY_DEGENERATE] {
         header.push(0x06);
         header.extend_from_slice(&value.to_le_bytes());
     }
-    write_seed("seeds/acis_header", "minimal", &header);
+    write_seed("seeds/acis_header", "minimal", &header)?;
+    Ok(())
 }
 
-fn write_seed(dir: &str, name: &str, data: &[u8]) {
+fn write_seed(dir: &str, name: &str, data: &[u8]) -> std::io::Result<()> {
     let path = seed_dir(dir);
-    fs::create_dir_all(&path).expect("required invariant");
-    fs::write(path.join(name), data).expect("required invariant");
+    fs::create_dir_all(&path)?;
+    fs::write(path.join(name), data)?;
     println!("  {}/{} ({} bytes)", dir, name, data.len());
+    Ok(())
 }
 
 // ============================================================================
 // F3D sub-module seeds
 // ============================================================================
 
-fn generate_f3d_submodule_seeds() {
+fn generate_f3d_submodule_seeds() -> Result<(), SeedError> {
     // ASM header seed
     let mut asm_header = Vec::new();
     asm_header.extend_from_slice(b"ASM BinaryFile");
     asm_header.extend_from_slice(&[0u8; 16]);
-    write_seed("seeds/f3d_asm_header", "minimal", &asm_header);
+    write_seed("seeds/f3d_asm_header", "minimal", &asm_header)?;
 
     // SAB frame seed (minimal record stream)
     let sab_frame = vec![
@@ -66,7 +70,7 @@ fn generate_f3d_submodule_seeds() {
         0x01, 0x00, 0x00, 0x00, // record type
         0x00, 0x00, 0x00, 0x00, // payload
     ];
-    write_seed("seeds/f3d_sab_frame", "minimal", &sab_frame);
+    write_seed("seeds/f3d_sab_frame", "minimal", &sab_frame)?;
 
     // NURBS surface cache seed
     let nurbs_surface = vec![
@@ -75,7 +79,7 @@ fn generate_f3d_submodule_seeds() {
         0x00, 0x00, 0x00, 0x00, // degree u
         0x00, 0x00, 0x00, 0x00, // degree v
     ];
-    write_seed("seeds/f3d_nurbs_surfaces", "minimal", &nurbs_surface);
+    write_seed("seeds/f3d_nurbs_surfaces", "minimal", &nurbs_surface)?;
 
     // NURBS curve cache seed
     let nurbs_curve = vec![
@@ -83,7 +87,7 @@ fn generate_f3d_submodule_seeds() {
         0x01, 0x00, 0x00, 0x00, // curve type
         0x03, 0x00, 0x00, 0x00, // degree
     ];
-    write_seed("seeds/f3d_nurbs_curves", "minimal", &nurbs_curve);
+    write_seed("seeds/f3d_nurbs_curves", "minimal", &nurbs_curve)?;
 
     // NURBS pcurve cache seed
     let nurbs_pcurve = vec![
@@ -91,21 +95,22 @@ fn generate_f3d_submodule_seeds() {
         0x00, 0x00, 0x00, 0x00, // surface ref
         0x00, 0x00, 0x00, 0x00, // curve ref
     ];
-    write_seed("seeds/f3d_nurbs_pcurves", "minimal", &nurbs_pcurve);
+    write_seed("seeds/f3d_nurbs_pcurves", "minimal", &nurbs_pcurve)?;
+    Ok(())
 }
 
 // ============================================================================
 // SolidWorks sub-module seeds
 // ============================================================================
 
-fn generate_sldprt_submodule_seeds() {
+fn generate_sldprt_submodule_seeds() -> Result<(), SeedError> {
     // Parasolid stream seed (minimal valid stream)
     let parasolid = vec![
         0x00, 0x00, 0x00, 0x00, // padding
         b'P', b'a', b'r', b'a', b's', b'o', b'l', b'i', b'd', // magic
         0x00, 0x00, 0x00, 0x00, // version
     ];
-    write_seed("seeds/sldprt_parasolid", "minimal", &parasolid);
+    write_seed("seeds/sldprt_parasolid", "minimal", &parasolid)?;
 
     // Topology scan seed (minimal body with magic)
     let topology = vec![
@@ -113,7 +118,7 @@ fn generate_sldprt_submodule_seeds() {
         0x01, 0x00, 0x00, 0x00, // record count
         0x00, 0x00, 0x00, 0x00, // record type
     ];
-    write_seed("seeds/sldprt_topology", "minimal", &topology);
+    write_seed("seeds/sldprt_topology", "minimal", &topology)?;
 
     // Entity scan seed
     let entity = vec![
@@ -121,21 +126,21 @@ fn generate_sldprt_submodule_seeds() {
         0x01, 0x00, 0x00, 0x00, // entity count
         0x00, 0x00, 0x00, 0x00, // entity type
     ];
-    write_seed("seeds/sldprt_entity", "minimal", &entity);
+    write_seed("seeds/sldprt_entity", "minimal", &entity)?;
 
     // Spline curve carriers seed
     let spline_curves = vec![
         0x01, 0x00, 0x00, 0x00, // count
         0x00, 0x00, 0x00, 0x00, // carrier type
     ];
-    write_seed("seeds/sldprt_spline_curves", "minimal", &spline_curves);
+    write_seed("seeds/sldprt_spline_curves", "minimal", &spline_curves)?;
 
     // Spline surface carriers seed
     let spline_surfaces = vec![
         0x01, 0x00, 0x00, 0x00, // count
         0x00, 0x00, 0x00, 0x00, // carrier type
     ];
-    write_seed("seeds/sldprt_spline_surfaces", "minimal", &spline_surfaces);
+    write_seed("seeds/sldprt_spline_surfaces", "minimal", &spline_surfaces)?;
 
     // Container scan seed (reuse from main generator)
     let container = vec![
@@ -146,29 +151,30 @@ fn generate_sldprt_submodule_seeds() {
         0x00, 0x00, 0x00, 0x00, // raw len
         0x00, 0x00, 0x00, 0x00, // name len
     ];
-    write_seed("seeds/sldprt_container_scan", "minimal", &container);
+    write_seed("seeds/sldprt_container_scan", "minimal", &container)?;
 
     // PMISemanticDataDB MessagePack seeds for sldprt_pmi.
     write_seed(
         "seeds/sldprt_pmi",
         "minimal",
         &sldprt_pmi_seed(&[("Linear", 0.025)], false, false),
-    );
+    )?;
     write_seed(
         "seeds/sldprt_pmi",
         "array16",
         &sldprt_pmi_seed(&[("Linear", 0.025); 16], false, false),
-    );
+    )?;
     write_seed(
         "seeds/sldprt_pmi",
         "reordered",
         &sldprt_pmi_seed(&[("Linear", 0.025)], true, false),
-    );
+    )?;
     write_seed(
         "seeds/sldprt_pmi",
         "malformed",
         &sldprt_pmi_seed(&[("Linear", 0.025)], false, true),
-    );
+    )?;
+    Ok(())
 }
 
 fn sldprt_pmi_seed(items: &[(&str, f64)], reorder: bool, truncate: bool) -> Vec<u8> {
@@ -238,7 +244,7 @@ fn sldprt_pmi_seed(items: &[(&str, f64)], reorder: bool, truncate: bool) -> Vec<
 // CATIA sub-module seeds
 // ============================================================================
 
-fn generate_catia_submodule_seeds() {
+fn generate_catia_submodule_seeds() -> Result<(), SeedError> {
     // Geometry vertices seed
     let vertices = vec![
         0x01, 0x00, 0x00, 0x00, // vertex count
@@ -246,14 +252,14 @@ fn generate_catia_submodule_seeds() {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // y
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // z
     ];
-    write_seed("seeds/catia_geometry_vertices", "minimal", &vertices);
+    write_seed("seeds/catia_geometry_vertices", "minimal", &vertices)?;
 
     // Geometry surfaces seed
     let surfaces = vec![
         0x01, 0x00, 0x00, 0x00, // surface count
         0x00, 0x00, 0x00, 0x00, // surface type
     ];
-    write_seed("seeds/catia_geometry_surfaces", "minimal", &surfaces);
+    write_seed("seeds/catia_geometry_surfaces", "minimal", &surfaces)?;
 
     // A8 surfaces seed
     let a8_surfaces = vec![
@@ -261,59 +267,59 @@ fn generate_catia_submodule_seeds() {
         0x02, 0x00, 0x00, 0x00, // type
         0x03, 0x00, 0x00, 0x00, // degree
     ];
-    write_seed("seeds/catia_a8_surfaces", "minimal", &a8_surfaces);
+    write_seed("seeds/catia_a8_surfaces", "minimal", &a8_surfaces)?;
 
     // A5 surfaces seed
     let a5_surfaces = vec![
         0x01, 0x00, 0x00, 0x00, // count
         0x05, 0x00, 0x00, 0x00, // type
     ];
-    write_seed("seeds/catia_a5_surfaces", "minimal", &a5_surfaces);
+    write_seed("seeds/catia_a5_surfaces", "minimal", &a5_surfaces)?;
 
     // B5 topology seed
     let b5 = vec![
         0x00, 0x00, 0x00, 0x00, // padding
         0x01, 0x00, 0x00, 0x00, // record count
     ];
-    write_seed("seeds/catia_b5", "minimal", &b5);
+    write_seed("seeds/catia_b5", "minimal", &b5)?;
 
     // E5 topology seed
     let e5 = vec![
         0x00, 0x00, 0x00, 0x00, // padding
         0x01, 0x00, 0x00, 0x00, // record count
     ];
-    write_seed("seeds/catia_e5", "minimal", &e5);
+    write_seed("seeds/catia_e5", "minimal", &e5)?;
 
     // Zero entity seed
     let zero_entity = vec![
         0x00, 0x00, 0x00, 0x00, // padding
         0x00, 0x00, 0x00, 0x00, // entity count
     ];
-    write_seed("seeds/catia_zero_entity", "minimal", &zero_entity);
+    write_seed("seeds/catia_zero_entity", "minimal", &zero_entity)?;
 
     // Container directory seed
     let container_dir = vec![
         0x00, 0x00, 0x00, 0x00, // padding
         0x01, 0x00, 0x00, 0x00, // directory count
     ];
-    write_seed("seeds/catia_container_dir", "minimal", &container_dir);
+    write_seed("seeds/catia_container_dir", "minimal", &container_dir)?;
 
     let catalog_entries = ["CATCatalogManager", "catalogManager", "catalogLinks", ""];
     let mut catalog = vec![0x7c, 0x02, 0, 0, 0, 0];
-    catalog.push(0x80 + u8::try_from(catalog_entries.len() + 1).expect("prefix count"));
+    catalog.push(0x80 + u8::try_from(catalog_entries.len() + 1)?);
     for entry in catalog_entries {
-        catalog.push(u8::try_from(entry.len() + 1).expect("short catalog entry"));
+        catalog.push(u8::try_from(entry.len() + 1)?);
         catalog.extend_from_slice(entry.as_bytes());
     }
-    let catalog_len = u32::try_from(catalog.len()).expect("catalog length");
+    let catalog_len = u32::try_from(catalog.len())?;
     catalog[2..6].copy_from_slice(&catalog_len.to_le_bytes());
-    write_seed("seeds/catia_catalog", "minimal", &catalog);
+    write_seed("seeds/catia_catalog", "minimal", &catalog)?;
 
     let mut value_block = vec![0x7c, 0x0b, 0, 0, 0, 0, 0x32, 1, 0, 0, 0];
-    let value_len = u32::try_from(value_block.len()).expect("value-block length");
+    let value_len = u32::try_from(value_block.len())?;
     value_block[2..6].copy_from_slice(&value_len.to_le_bytes());
     value_block.push(0xfe);
-    write_seed("seeds/catia_value_block", "minimal", &value_block);
+    write_seed("seeds/catia_value_block", "minimal", &value_block)?;
 
     let record_body = [0x04, 0x01, 0x82];
     let mut object_record = vec![0x7c, 0x09];
@@ -322,79 +328,81 @@ fn generate_catia_submodule_seeds() {
     let mut object_graph = vec![0x7c, 0x08];
     object_graph.extend_from_slice(&(6_u32 + object_record.len() as u32).to_le_bytes());
     object_graph.extend_from_slice(&object_record);
-    write_seed("seeds/catia_object_graph", "minimal", &object_graph);
+    write_seed("seeds/catia_object_graph", "minimal", &object_graph)?;
 
     let mut topology = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
     for handle in [1u16, 10, 11, 12, 13, 14, 15, 16, 17, 10] {
         topology.extend_from_slice(&handle.to_be_bytes());
     }
     topology.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
-    write_seed("seeds/catia_topology", "minimal", &topology);
+    write_seed("seeds/catia_topology", "minimal", &topology)?;
 
-    write_seed("seeds/catia_e5_orientation", "minimal", &e5);
+    write_seed("seeds/catia_e5_orientation", "minimal", &e5)?;
+    Ok(())
 }
 
 // ============================================================================
 // Creo sub-module seeds
 // ============================================================================
 
-fn generate_creo_submodule_seeds() {
+fn generate_creo_submodule_seeds() -> Result<(), SeedError> {
     // PSB tokens seed
     let psb_tokens = vec![
         0x01, 0x00, 0x00, 0x00, // token count
         0x00, 0x00, 0x00, 0x00, // token type
     ];
-    write_seed("seeds/creo_psb_tokens", "minimal", &psb_tokens);
+    write_seed("seeds/creo_psb_tokens", "minimal", &psb_tokens)?;
 
     // Compact int seed
     let compact_int = vec![
         0x05, // value (encoded as (value * 4) + 1)
     ];
-    write_seed("seeds/creo_compact_int", "minimal", &compact_int);
+    write_seed("seeds/creo_compact_int", "minimal", &compact_int)?;
 
     // Short form float seed
     let short_float = vec![
         0x00, 0x00, 0x00, // 3-byte float
     ];
-    write_seed("seeds/creo_short_form_float", "minimal", &short_float);
+    write_seed("seeds/creo_short_form_float", "minimal", &short_float)?;
 
     // Container scan seed
     let container = vec![
         0x00, 0x00, 0x00, 0x00, // padding
         0x01, 0x00, 0x00, 0x00, // block count
     ];
-    write_seed("seeds/creo_container_scan", "minimal", &container);
+    write_seed("seeds/creo_container_scan", "minimal", &container)?;
 
     // Surface rows seed
     let surface_rows = vec![
         0x01, 0x00, 0x00, 0x00, // row count
         0x00, 0x00, 0x00, 0x00, // row type
     ];
-    write_seed("seeds/creo_surface_rows", "minimal", &surface_rows);
+    write_seed("seeds/creo_surface_rows", "minimal", &surface_rows)?;
 
     // Curve prototypes seed
     let curve_protos = vec![
         0x01, 0x00, 0x00, 0x00, // prototype count
         0x00, 0x00, 0x00, 0x00, // prototype type
     ];
-    write_seed("seeds/creo_curve_prototypes", "minimal", &curve_protos);
+    write_seed("seeds/creo_curve_prototypes", "minimal", &curve_protos)?;
 
-    write_seed("seeds/creo_datum", "minimal", &surface_rows);
-    write_seed("seeds/creo_scalar", "minimal", &compact_int);
+    write_seed("seeds/creo_datum", "minimal", &surface_rows)?;
+    write_seed("seeds/creo_scalar", "minimal", &compact_int)?;
+    Ok(())
 }
 
 // ============================================================================
 // NX sub-module seeds
 // ============================================================================
 
-fn generate_nx_submodule_seeds() {
+fn generate_nx_submodule_seeds() -> Result<(), SeedError> {
     // Parasolid stream seed (with zlib header)
     let parasolid = vec![
         0x78, 0x9c, // zlib header
         0x00, 0x00, 0x00, 0x00, // compressed data
         0x00, 0x00, 0x00, 0x00, // checksum
     ];
-    write_seed("seeds/nx_parasolid", "minimal", &parasolid);
+    write_seed("seeds/nx_parasolid", "minimal", &parasolid)?;
 
     // Geometry points seed
     let points = vec![
@@ -403,21 +411,21 @@ fn generate_nx_submodule_seeds() {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // y
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // z
     ];
-    write_seed("seeds/nx_geometry_points", "minimal", &points);
+    write_seed("seeds/nx_geometry_points", "minimal", &points)?;
 
     // Geometry surfaces seed
     let surfaces = vec![
         0x01, 0x00, 0x00, 0x00, // surface count
         0x00, 0x00, 0x00, 0x00, // surface type
     ];
-    write_seed("seeds/nx_geometry_surfaces", "minimal", &surfaces);
+    write_seed("seeds/nx_geometry_surfaces", "minimal", &surfaces)?;
 
     // Geometry curves seed
     let curves = vec![
         0x01, 0x00, 0x00, 0x00, // curve count
         0x00, 0x00, 0x00, 0x00, // curve type
     ];
-    write_seed("seeds/nx_geometry_curves", "minimal", &curves);
+    write_seed("seeds/nx_geometry_curves", "minimal", &curves)?;
 
     // NURBS surfaces seed
     let nurbs_surfaces = vec![
@@ -425,7 +433,7 @@ fn generate_nx_submodule_seeds() {
         0x02, 0x00, 0x00, 0x00, // type
         0x03, 0x00, 0x00, 0x00, // degree
     ];
-    write_seed("seeds/nx_nurbs_surfaces", "minimal", &nurbs_surfaces);
+    write_seed("seeds/nx_nurbs_surfaces", "minimal", &nurbs_surfaces)?;
 
     // NURBS curves seed
     let nurbs_curves = vec![
@@ -433,37 +441,38 @@ fn generate_nx_submodule_seeds() {
         0x01, 0x00, 0x00, 0x00, // type
         0x03, 0x00, 0x00, 0x00, // degree
     ];
-    write_seed("seeds/nx_nurbs_curves", "minimal", &nurbs_curves);
+    write_seed("seeds/nx_nurbs_curves", "minimal", &nurbs_curves)?;
 
     let mut om = b"\x04\x01\x0eNX \x00hostglobalvariables".to_vec();
     om.extend_from_slice(&[0x00, 0x01, 0xff]);
-    write_seed("seeds/nx_om", "minimal", &om);
+    write_seed("seeds/nx_om", "minimal", &om)?;
 
     write_seed(
         "seeds/nx_deltas",
         "minimal",
         &[0x00, 0x1e, 0x01, 0x00, 0x00, 0x00],
-    );
-    write_seed("seeds/nx_topology", "minimal", &[0x00, 0x0c, 0x00, 0x00]);
+    )?;
+    write_seed("seeds/nx_topology", "minimal", &[0x00, 0x0c, 0x00, 0x00])?;
 
     let mut intersection = vec![0x00, 0x28];
     intersection.extend_from_slice(&[0; 52]);
-    write_seed("seeds/nx_intersection", "minimal", &intersection);
+    write_seed("seeds/nx_intersection", "minimal", &intersection)?;
+    Ok(())
 }
 
 // ============================================================================
 // Inventor and shared-container seeds
 // ============================================================================
 
-fn generate_inventor_submodule_seeds() -> Result<(), CodecError> {
+fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     let cfb = synthetic_cfb_seed()?;
-    write_seed("seeds/inventor_codec", "minimal", &cfb);
-    write_seed("seeds/compound_snapshot", "minimal", &cfb);
+    write_seed("seeds/inventor_codec", "minimal", &cfb)?;
+    write_seed("seeds/compound_snapshot", "minimal", &cfb)?;
     write_seed(
         "seeds/inventor_database",
         "minimal",
         &synthetic_database_seed(),
-    );
+    )?;
 
     let metadata_body = synthetic_meta_table_body();
     let mut metadata = Vec::new();
@@ -482,11 +491,9 @@ fn generate_inventor_submodule_seeds() -> Result<(), CodecError> {
     push_utf8(&mut metadata, "2000-01-02");
     metadata.push(0);
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder
-        .write_all(&metadata_body)
-        .expect("synthetic metadata fits the encoder");
-    metadata.extend_from_slice(&encoder.finish().expect("synthetic metadata finishes"));
-    write_seed("seeds/inventor_rse_meta", "minimal", &metadata);
+    encoder.write_all(&metadata_body)?;
+    metadata.extend_from_slice(&encoder.finish()?);
+    write_seed("seeds/inventor_rse_meta", "minimal", &metadata)?;
 
     let mut records = metadata_body.clone();
     let mut bulk = Vec::new();
@@ -495,23 +502,23 @@ fn generate_inventor_submodule_seeds() -> Result<(), CodecError> {
     push_u32(&mut bulk, u32::MAX);
     bulk.resize(metadata_body.len(), 0);
     records.extend_from_slice(&bulk);
-    write_seed("seeds/inventor_rse_records", "minimal", &records);
+    write_seed("seeds/inventor_rse_records", "minimal", &records)?;
 
     write_seed(
         "seeds/inventor_property_set",
         "minimal",
         &synthetic_property_set_seed(),
-    );
+    )?;
     write_seed(
         "seeds/inventor_protein_envelope",
         "empty",
         &0_u32.to_le_bytes(),
-    );
-    write_seed("seeds/protein_decode", "malformed_page", &[0; 304]);
+    )?;
+    write_seed("seeds/protein_decode", "malformed_page", &[0; 304])?;
     Ok(())
 }
 
-fn generate_rhino_submodule_seeds() {
+fn generate_rhino_submodule_seeds() -> Result<(), SeedError> {
     let cage_body = {
         let mut body = Vec::new();
         for value in [1_i32, 0, 1, 0, 2, 2, 2, 2, 2, 2] {
@@ -520,16 +527,16 @@ fn generate_rhino_submodule_seeds() {
         body
     };
     let mut cage = vec![0];
-    cage.extend(rhino_crc_chunk(0x4000_0000, &cage_body));
-    write_seed("seeds/rhino_cage", "minimal", &cage);
+    cage.extend(rhino_crc_chunk(0x4000_0000, &cage_body)?);
+    write_seed("seeds/rhino_cage", "minimal", &cage)?;
 
     let mut hatch_body = Vec::new();
     for _ in 0..12 {
         hatch_body.extend_from_slice(&0.0_f64.to_le_bytes());
     }
     let mut hatch = vec![0];
-    hatch.extend(rhino_crc_chunk(0x4000_0000, &hatch_body));
-    write_seed("seeds/rhino_hatch", "minimal", &hatch);
+    hatch.extend(rhino_crc_chunk(0x4000_0000, &hatch_body)?);
+    write_seed("seeds/rhino_hatch", "minimal", &hatch)?;
 
     let mut polyedge_body = vec![0x10];
     for value in [1_i32, 0, 0] {
@@ -540,18 +547,19 @@ fn generate_rhino_submodule_seeds() {
     polyedge_body.extend_from_slice(&0.0_f64.to_le_bytes());
     polyedge_body.extend_from_slice(&10.0_f64.to_le_bytes());
     let mut polyedge = vec![0];
-    polyedge.extend(rhino_crc_chunk(0x4000_0000, &polyedge_body));
-    write_seed("seeds/rhino_polyedge", "minimal", &polyedge);
+    polyedge.extend(rhino_crc_chunk(0x4000_0000, &polyedge_body)?);
+    write_seed("seeds/rhino_polyedge", "minimal", &polyedge)?;
+    Ok(())
 }
 
-fn rhino_crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
+fn rhino_crc_chunk(typecode: u32, body: &[u8]) -> Result<Vec<u8>, SeedError> {
     let mut with_crc = body.to_vec();
     with_crc.extend(crc32fast::hash(body).to_le_bytes());
     let mut bytes = (typecode | 0x8000).to_le_bytes().to_vec();
-    let len = i32::try_from(with_crc.len()).expect("rhino seed chunk fits i32");
+    let len = i32::try_from(with_crc.len())?;
     bytes.extend_from_slice(&len.to_le_bytes());
     bytes.extend(with_crc);
-    bytes
+    Ok(bytes)
 }
 
 fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
@@ -735,11 +743,9 @@ fn directory_entry(
         name_offset += 2;
     }
     entry[name_offset..name_offset + 2].copy_from_slice(&0_u16.to_le_bytes());
-    entry[64..66].copy_from_slice(
-        &u16::try_from(name_offset + 2)
-            .expect("short name")
-            .to_le_bytes(),
-    );
+    // A directory entry is 128 bytes, and the name is written into it above,
+    // so its length is a `u16` by the time it is stored.
+    entry[64..66].copy_from_slice(&((name_offset + 2) as u16).to_le_bytes());
     entry[66] = object_type;
     entry[67] = 1;
     entry[68..72].copy_from_slice(&left.to_le_bytes());

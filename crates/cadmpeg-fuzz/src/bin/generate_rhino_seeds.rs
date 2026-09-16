@@ -2,6 +2,7 @@
 //! Generates deterministic synthetic seeds for the focused Rhino fuzz targets.
 
 use std::fs;
+use std::io;
 use std::io::Write;
 
 include!("../seed_paths.rs");
@@ -11,36 +12,39 @@ use flate2::Compression;
 
 const MAGIC: &[u8] = b"3D Geometry File Format ";
 
-fn main() {
-    generate_container_seeds();
-    generate_chunk_seeds();
-    generate_object_seeds();
-    generate_nurbs_seeds();
-    generate_mesh_seeds();
-    generate_brep_seeds();
-    generate_subd_seeds();
+fn main() -> io::Result<()> {
+    generate_container_seeds()?;
+    generate_chunk_seeds()?;
+    generate_object_seeds()?;
+    generate_nurbs_seeds()?;
+    generate_mesh_seeds()?;
+    generate_brep_seeds()?;
+    generate_subd_seeds()?;
+    Ok(())
 }
 
-fn replace(directory: &str, seeds: &[(&str, Vec<u8>)]) {
+fn replace(directory: &str, seeds: &[(&str, Vec<u8>)]) -> io::Result<()> {
     let path = seed_dir(directory);
-    fs::create_dir_all(&path).expect("required invariant");
-    for entry in fs::read_dir(&path).expect("required invariant") {
-        let entry = entry.expect("required invariant").path();
+    fs::create_dir_all(&path)?;
+    for entry in fs::read_dir(&path)? {
+        let entry = entry?.path();
         if entry.is_dir() {
-            fs::remove_dir_all(entry).expect("required invariant");
+            fs::remove_dir_all(entry)?;
         } else {
-            fs::remove_file(entry).expect("required invariant");
+            fs::remove_file(entry)?;
         }
     }
     for (name, bytes) in seeds {
-        fs::write(path.join(name), bytes).expect("required invariant");
+        fs::write(path.join(name), bytes)?;
     }
+    Ok(())
 }
 
-fn write_seed(directory: &str, name: &str, bytes: &[u8]) {
+fn write_seed(directory: &str, name: &str, bytes: &[u8]) -> io::Result<()> {
     let path = seed_dir(directory);
-    fs::create_dir_all(&path).expect("required invariant");
-    fs::write(path.join(name), bytes).expect("required invariant");
+    fs::create_dir_all(&path)?;
+    fs::write(path.join(name), bytes)?;
+    Ok(())
 }
 
 fn header(version: u64) -> Vec<u8> {
@@ -100,7 +104,7 @@ fn minimal_document(version: u64) -> Vec<u8> {
     bytes
 }
 
-fn generate_container_seeds() {
+fn generate_container_seeds() -> io::Result<()> {
     let versions = [1_u64, 2, 3, 4, 5, 50, 60, 70, 80];
     let mut seeds = versions
         .into_iter()
@@ -116,19 +120,23 @@ fn generate_container_seeds() {
         .iter()
         .map(|(name, data)| (name.as_str(), data.clone()))
         .collect::<Vec<_>>();
-    replace("seeds/rhino_container", &borrowed);
+    replace("seeds/rhino_container", &borrowed)?;
 
     let mut mutated = vec![0_u8];
     mutated.extend(minimal_document(80));
-    write_seed("seeds/decode_pipeline_mutated", "rhino_minimal", &mutated);
+    write_seed("seeds/decode_pipeline_mutated", "rhino_minimal", &mutated)?;
+    Ok(())
 }
 
-fn generate_chunk_seeds() {
+fn generate_chunk_seeds() -> io::Result<()> {
     let short = short_chunk(50, 0x1234, 7);
     let long = long_chunk(50, 0x1234, b"body");
     let crc = crc_chunk(50, 0x1234, b"body");
     let mut mismatch = crc.clone();
-    *mismatch.last_mut().expect("required invariant") ^= 0xff;
+    let Some(last) = mismatch.last_mut() else {
+        return Err(io::Error::other("a CRC chunk is never empty"));
+    };
+    *last ^= 0xff;
     replace(
         "seeds/rhino_chunks",
         &[
@@ -138,7 +146,8 @@ fn generate_chunk_seeds() {
             ("crc_mismatch", mismatch),
             ("truncated", vec![0x34, 0x12, 0, 0]),
         ],
-    );
+    )?;
+    Ok(())
 }
 
 fn object_body(version: u64, payload: &[u8]) -> Vec<u8> {
@@ -155,7 +164,7 @@ fn object_body(version: u64, payload: &[u8]) -> Vec<u8> {
     [object_type, class, object_end].concat()
 }
 
-fn generate_object_seeds() {
+fn generate_object_seeds() -> io::Result<()> {
     let mut valid = vec![5];
     valid.extend(object_body(50, &nurbs_curve(false, true)));
     let mut truncated = valid.clone();
@@ -180,7 +189,8 @@ fn generate_object_seeds() {
                 .concat(),
             ),
         ],
-    );
+    )?;
+    Ok(())
 }
 
 fn push_f64s(bytes: &mut Vec<u8>, values: &[f64]) {
@@ -239,7 +249,7 @@ fn plane_surface() -> Vec<u8> {
     bytes
 }
 
-fn generate_nurbs_seeds() {
+fn generate_nurbs_seeds() -> io::Result<()> {
     let mut clamped = vec![0, 5];
     clamped.extend(nurbs_curve(false, true));
     let truncated = clamped[..clamped.len() / 2].to_vec();
@@ -268,46 +278,48 @@ fn generate_nurbs_seeds() {
             ("truncated_curve", truncated),
             ("oversize", oversize),
         ],
-    );
+    )?;
+    Ok(())
 }
 
-fn mesh_buffer(raw: &[u8], method: u8) -> Vec<u8> {
+fn mesh_buffer(raw: &[u8], method: u8) -> io::Result<Vec<u8>> {
     let body = if method == 0 {
         raw.to_vec()
     } else {
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(raw).expect("required invariant");
-        encoder.finish().expect("required invariant")
+        encoder.write_all(raw)?;
+        encoder.finish()?
     };
     let mut bytes = (raw.len() as u16).to_le_bytes().to_vec();
     bytes.extend((raw.len() as u32).to_le_bytes());
     bytes.extend(crc32fast::hash(raw).to_le_bytes());
     bytes.push(method);
     bytes.extend(body);
-    bytes
+    Ok(bytes)
 }
 
-fn generate_mesh_seeds() {
+fn generate_mesh_seeds() -> io::Result<()> {
     let raw = [0_u8, 0, 128, 63, 0, 0, 0, 64];
-    let zlib = mesh_buffer(&raw, 1);
+    let zlib = mesh_buffer(&raw, 1)?;
     let truncated = zlib[..zlib.len() / 2].to_vec();
-    let mut mismatch = mesh_buffer(&raw, 0);
+    let mut mismatch = mesh_buffer(&raw, 0)?;
     mismatch[6] ^= 1;
     let mut oversize = 0_u16.to_le_bytes().to_vec();
     oversize.extend(u32::MAX.to_le_bytes());
     replace(
         "seeds/rhino_mesh_buffer",
         &[
-            ("stored", mesh_buffer(&raw, 0)),
+            ("stored", mesh_buffer(&raw, 0)?),
             ("zlib", zlib),
             ("truncated_zlib", truncated),
             ("crc_mismatch", mismatch),
             ("oversize", oversize),
         ],
-    );
+    )?;
+    Ok(())
 }
 
-fn generate_brep_seeds() {
+fn generate_brep_seeds() -> io::Result<()> {
     let mut empty = vec![5, 0x30];
     let mut polymorphic_body = 1_i32.to_le_bytes().to_vec();
     polymorphic_body.extend(0_i32.to_le_bytes());
@@ -335,7 +347,8 @@ fn generate_brep_seeds() {
             ("truncated", vec![5]),
             ("truncated_wrapper", truncated),
         ],
-    );
+    )?;
+    Ok(())
 }
 
 fn anonymous_chunk(body: &[u8]) -> Vec<u8> {
@@ -432,7 +445,7 @@ fn subd_quad() -> Vec<u8> {
     payload
 }
 
-fn generate_subd_seeds() {
+fn generate_subd_seeds() -> io::Result<()> {
     let quad = subd_quad();
     let mut truncated_quad = quad.clone();
     truncated_quad.truncate(truncated_quad.len() / 2);
@@ -454,5 +467,6 @@ fn generate_subd_seeds() {
                 .concat(),
             ),
         ],
-    );
+    )?;
+    Ok(())
 }
