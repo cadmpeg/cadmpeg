@@ -323,6 +323,7 @@ fn solved_curve(
     chart: &Chart,
     start: [f64; 3],
     end: [f64; 3],
+    record_attr: u16,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<(CurveGeometry, Vec<f64>, bool)> {
     let mut parameter = chart.base_parameter;
@@ -372,7 +373,10 @@ fn solved_curve(
     ) {
         Ok(nurbs) => nurbs,
         Err(error) => {
-            refusal.note("sldprt intersection chart curve", &error);
+            refusal.note(
+                format_args!("sldprt intersection chart curve for record attr {record_attr}"),
+                &error,
+            );
             return None;
         }
     };
@@ -473,7 +477,8 @@ pub(super) fn scan_intersection_carriers(
             let (start, start_distance) = nearest_term(&terms, start_ref, first)?;
             let (end, end_distance) = nearest_term(&terms, end_ref, last)?;
             let endpoint_displacement = start_distance + end_distance;
-            let (geometry, parameters, reversed) = solved_curve(chart, start, end, chart_refusal)?;
+            let (geometry, parameters, reversed) =
+                solved_curve(chart, start, end, attr, chart_refusal)?;
             let fit_tolerance_mm = chart.chordal_error * LEN_TO_MM;
             fit_tolerance_mm.is_finite().then_some(SolvedChart {
                 geometry,

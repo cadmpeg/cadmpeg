@@ -247,6 +247,18 @@ pub enum E5Pcurve {
 
 impl E5Pcurve {
     pub const JET_DEGREE: u32 = 5;
+
+    /// The `record_id` of the surface carrier this p-curve lies on, which every
+    /// variant states.
+    #[must_use]
+    pub fn surface_record_id(&self) -> u32 {
+        match self {
+            Self::Line { surface, .. }
+            | Self::Circle { surface, .. }
+            | Self::Jet { surface, .. }
+            | Self::Nurbs { surface, .. } => *surface,
+        }
+    }
 }
 
 /// A class-`0x01` body record resolved through its class-`0x08` root record:

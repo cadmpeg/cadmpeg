@@ -225,6 +225,7 @@ pub(super) fn neutral_surface(
             axis_direction,
             angular_scale,
             bounds,
+            &format_args!("b5 revolution surface record #{surface_id}"),
             refusal,
         )
         .map_or_else(
@@ -252,11 +253,12 @@ pub(super) fn revolution_surface(
     axis_direction: [f64; 3],
     angular_scale: f64,
     bounds: [[f64; 2]; 2],
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(NurbsSurface, RevolutionPlan)> {
     let profile = profile?;
     let [parameter_interval, native_angular_interval] = bounds;
-    let directrix = profile_nurbs(profile, parameter_interval, refusal)?;
+    let directrix = profile_nurbs(profile, parameter_interval, record, refusal)?;
     if angular_scale <= 0.0 {
         return None;
     }
@@ -270,6 +272,7 @@ pub(super) fn revolution_surface(
         axis_direction,
         angular_interval,
         native_angular_interval,
+        record,
         refusal,
     )?;
     Some((
@@ -288,6 +291,7 @@ pub(super) fn revolution_surface(
 pub(super) fn profile_nurbs(
     profile: &B5Profile,
     interval: [f64; 2],
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<NurbsCurve> {
     (profile
@@ -310,7 +314,7 @@ pub(super) fn profile_nurbs(
                 false,
             ),
             refusal,
-            "b5 line profile of a revolution surface",
+            format_args!("b5 line profile of a revolution surface: {record}"),
         ),
         B5Profile::Arc {
             center,
@@ -324,6 +328,7 @@ pub(super) fn profile_nurbs(
             *direction_y,
             *radius,
             interval,
+            record,
             refusal,
         ),
     }
@@ -335,6 +340,7 @@ pub(super) fn rational_arc(
     direction_y: [f64; 3],
     radius: f64,
     interval: [f64; 2],
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<NurbsCurve> {
     let angles = [interval[0] / radius, interval[1] / radius];
@@ -391,7 +397,7 @@ pub(super) fn rational_arc(
     crate::nurbs::note_refusal(
         NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false),
         refusal,
-        "b5 rational arc profile of a revolution surface",
+        format_args!("b5 rational arc profile of a revolution surface: {record}"),
     )
 }
 
@@ -401,6 +407,7 @@ pub(super) fn revolve_nurbs(
     axis_direction: [f64; 3],
     angular_interval: [f64; 2],
     native_interval: [f64; 2],
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<NurbsSurface> {
     let span_count =
@@ -484,7 +491,7 @@ pub(super) fn revolve_nurbs(
             false,
         ),
         refusal,
-        "b5 revolution surface built from its profile",
+        format_args!("b5 revolution surface built from its profile: {record}"),
     )
 }
 

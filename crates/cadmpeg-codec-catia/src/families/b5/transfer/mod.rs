@@ -999,6 +999,10 @@ pub(crate) fn resolved_extrusion_surface(
                 support.curve.clone()?,
                 support.pcurve_parameter_range,
                 extrusion.parameter_bounds[1],
+                &format_args!(
+                    "b5 extrusion directrix on surface record #{}",
+                    support.surface_object_id
+                ),
                 refusal,
             )?;
             ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
@@ -1021,6 +1025,10 @@ pub(crate) fn resolved_extrusion_surface(
                 support.curve.clone()?,
                 *source_parameter_range,
                 extrusion.parameter_bounds[1],
+                &format_args!(
+                    "b5 offset extrusion source curve on surface record #{}",
+                    support.surface_object_id
+                ),
                 refusal,
             )?;
             ResolvedExtrusionDirectrix::Offset {
@@ -1047,6 +1055,7 @@ fn curve_on_parameter_range(
     curve: CurveGeometry,
     source: [f64; 2],
     target: [f64; 2],
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<CurveGeometry> {
     if parameter_range_contains(source, target) {
@@ -1096,7 +1105,9 @@ fn curve_on_parameter_range(
                         false,
                     ),
                     refusal,
-                    "b5 line curve reparameterized onto its occurrence range",
+                    format_args!(
+                        "b5 line curve reparameterized onto its occurrence range: {record}"
+                    ),
                 )
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved);
