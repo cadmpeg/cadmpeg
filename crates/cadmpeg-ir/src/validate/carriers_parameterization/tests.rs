@@ -128,16 +128,25 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     ]}});
     let parsed = crate::CadIr::from_json(&wire.to_string()).unwrap();
     let findings = validate_neutral(&parsed, Vec::new()).findings;
-    assert!(findings.iter().any(|finding| finding.check == Check::NativeLinks
-        && finding.entity.as_deref() == Some("test:source:unknown#malformed")));
-    assert!(!findings.iter().any(|finding| finding.check == Check::CarrierReachability
-        && finding.entity.as_deref() == Some(carrier_id.as_str())), "{findings:?}");
+    assert!(findings
+        .iter()
+        .any(|finding| finding.check == Check::NativeLinks
+            && finding.entity.as_deref() == Some("test:source:unknown#malformed")));
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.check == Check::CarrierReachability
+                && finding.entity.as_deref() == Some(carrier_id.as_str())),
+        "{findings:?}"
+    );
 
     wire["native"]["test"]["unknowns"][0]["links"] = serde_json::json!([]);
     let orphan = crate::CadIr::from_json(&wire.to_string()).unwrap();
-    assert!(validate_neutral(&orphan, Vec::new()).findings.iter().any(|finding|
-        finding.check == Check::CarrierReachability
-        && finding.entity.as_deref() == Some(carrier_id.as_str())));
+    assert!(validate_neutral(&orphan, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::CarrierReachability
+            && finding.entity.as_deref() == Some(carrier_id.as_str())));
 }
 
 #[test]

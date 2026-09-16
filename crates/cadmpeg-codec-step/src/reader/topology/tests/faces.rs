@@ -730,7 +730,16 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
         );
         let links = unknowns
             .iter()
-            .map(|record| (record.id.as_str().to_owned(), record.links.iter().map(|link| link.as_str().to_owned()).collect::<Vec<_>>()))
+            .map(|record| {
+                (
+                    record.id.as_str().to_owned(),
+                    record
+                        .links
+                        .iter()
+                        .map(|link| link.as_str().to_owned())
+                        .collect::<Vec<_>>(),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         assert_eq!(
             links,

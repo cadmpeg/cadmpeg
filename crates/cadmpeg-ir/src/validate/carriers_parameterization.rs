@@ -854,7 +854,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     // NativeLinks reports malformed link fields. Read each source link here so
     // one malformed record cannot erase reachability from the other records.
     let mut native_links = Vec::new();
-    for record in ir.native.0.values()
+    for record in ir
+        .native
+        .0
+        .values()
         .flat_map(|namespace| namespace.arenas().get("unknowns"))
         .flatten()
     {

@@ -206,7 +206,8 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     );
     assert!(unknowns[0]
         .links
-        .iter().any(|link| link.as_str() == "step:data:opaque_target#2"));
+        .iter()
+        .any(|link| link.as_str() == "step:data:opaque_target#2"));
     assert!(!result.report().geometry_transferred());
     assert!(result
         .report()
@@ -279,7 +280,14 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
         .iter()
         .find(|record| record.id.as_str() == "step:data:!vendor_entity#2")
         .expect("user-defined entity record");
-    assert_eq!(entity.links.iter().map(|link| link.as_str()).collect::<Vec<_>>(), vec!["step:data:!vendor_target#1".to_string()]);
+    assert_eq!(
+        entity
+            .links
+            .iter()
+            .map(|link| link.as_str())
+            .collect::<Vec<_>>(),
+        vec!["step:data:!vendor_target#1".to_string()]
+    );
     let entity_source = result
         .source_fidelity()
         .retained_record(entity.id.as_str())
@@ -311,7 +319,14 @@ fn opaque_links_retain_typed_step_targets() {
         .native_unknowns("step")
         .expect("STEP unknown records");
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].links.iter().map(|link| link.as_str()).collect::<Vec<_>>(), vec!["step:data:curve#2".to_string()]);
+    assert_eq!(
+        unknowns[0]
+            .links
+            .iter()
+            .map(|link| link.as_str())
+            .collect::<Vec<_>>(),
+        vec!["step:data:curve#2".to_string()]
+    );
 }
 
 #[test]
@@ -336,7 +351,10 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .iter()
         .find(|record| record.id.as_str() == "step:data:example_record#2")
         .expect("opaque record referencing fallback carrier");
-    assert!(example.links.iter().any(|link| link.as_str() == "step:data:curve#1"));
+    assert!(example
+        .links
+        .iter()
+        .any(|link| link.as_str() == "step:data:curve#1"));
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
