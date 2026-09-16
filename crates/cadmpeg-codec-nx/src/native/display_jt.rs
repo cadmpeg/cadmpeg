@@ -2881,17 +2881,21 @@ pub fn display_jt_polygon_meshes(
             .flatten()
             .copied()
             .collect::<Vec<_>>();
+        let (Ok(degrees), Ok(attribute_masks)) = (
+            <[_; 8]>::try_from(degrees),
+            <[_; 8]>::try_from(attribute_masks),
+        ) else {
+            return Vec::new();
+        };
         let Some(polygons) = crate::jt_topology::decode(
-            degrees.try_into().expect("eight degree contexts"),
+            degrees,
             valences,
             values(TopologyPacketRole::VertexGroups).unwrap_or_default(),
             values(TopologyPacketRole::VertexFlags).unwrap_or_default(),
             values(TopologyPacketRole::SplitFaceSymbols).unwrap_or_default(),
             values(TopologyPacketRole::SplitFacePositions).unwrap_or_default(),
             crate::jt_topology::AttributeMaskLanes {
-                small: attribute_masks
-                    .try_into()
-                    .expect("eight attribute-mask contexts"),
+                small: attribute_masks,
                 context_7_next_30,
                 context_7_upper_4,
                 large_words: &large_words,

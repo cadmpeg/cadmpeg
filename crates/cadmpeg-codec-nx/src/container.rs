@@ -1023,14 +1023,17 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     let fingerprint_end = footer_end
         .checked_add(4)
         .ok_or_else(|| CodecError::Malformed("FOOTER fingerprint offset overflow".to_string()))?;
-    if fingerprint_end != data.len() {
+    // The fingerprint is the last four bytes, which is what makes it an array
+    // here rather than a slice that a later read has to measure again.
+    let Some(footer_fingerprint) = data
+        .last_chunk::<4>()
+        .copied()
+        .filter(|_| fingerprint_end == data.len())
+    else {
         return Err(CodecError::Malformed(
             "counted FOOTER directory is not followed by exactly four bytes".to_string(),
         ));
-    }
-    let footer_fingerprint = data[footer_end..fingerprint_end]
-        .try_into()
-        .expect("checked four-byte footer fingerprint");
+    };
     let physical_size = data.len() as u64;
 
     Ok(Container {

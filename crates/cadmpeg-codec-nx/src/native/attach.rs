@@ -71,7 +71,7 @@ fn admit_hole_recognition_tolerances(ir: &CadIr) -> Result<(), CodecError> {
 }
 
 use crate::container::EntryContent;
-use crate::decode::ids::{extended_id, IdScope};
+use crate::decode::ids::{extended_id, native_entity_key, IdScope};
 use crate::decode::Scan;
 use crate::native::history::{
     active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
@@ -132,7 +132,7 @@ fn attach_container_payloads(
         let Some(bytes) = scan.container.data.get(start..end) else {
             continue;
         };
-        let id: UnknownId = IdScope::native("container-entry").id("opaque", ordinal);
+        let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("container-entry")).id(&cadmpeg_ir::identity_component!("opaque"), ordinal);
         annotations
             .note(&id, &annotation_stream, offset)
             .tag(content.label());
@@ -161,8 +161,8 @@ fn attach_indexed_om_unknowns(
         match &section.store {
             crate::om::IndexedStore::Fixed { records } => {
                 for (record_index, record) in records.iter().enumerate() {
-                    let id: UnknownId = IdScope::native(format_args!("om-section-{section_index}"))
-                        .id("record", record_index);
+                    let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("om-section-").then(section_index))
+                        .id(&cadmpeg_ir::identity_component!("record"), record_index);
                     let offset = entry_offset + record.offset as u64;
                     annotations
                         .note(&id, &annotation_stream, offset)
@@ -182,8 +182,8 @@ fn attach_indexed_om_unknowns(
                 for (record_index, record) in
                     std::iter::once(control).chain(records.iter()).enumerate()
                 {
-                    let id: UnknownId = IdScope::native(format_args!("om-section-{section_index}"))
-                        .id("block", record_index);
+                    let id: UnknownId = IdScope::native(cadmpeg_ir::identity_component!("om-section-").then(section_index))
+                        .id(&cadmpeg_ir::identity_component!("block"), record_index);
                     let offset = entry_offset + record.offset as u64;
                     annotations
                         .note(&id, &annotation_stream, offset)
@@ -251,7 +251,13 @@ pub(crate) fn attach(
             .note(&attribute.id, &annotation_stream, attribute.source_offset)
             .tag("Attribute");
         annotations.exactness(&attribute.id, Exactness::ByteExact);
-        let id: AttributeId = extended_id(attribute.id.as_str(), "neutral");
+        let id: AttributeId = extended_id(
+            attribute.id.as_str(),
+            &cadmpeg_ir::identity_key!("neutral"),
+        )
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("NX part attribute id is not an identity"))
+        })?;
         annotations
             .note(id.as_str(), &annotation_stream, attribute.source_offset)
             .tag("Attribute");
@@ -314,7 +320,7 @@ pub(crate) fn attach(
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     if !model.om.configurations.is_empty() {
         for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
-            let id: ConfigurationId = IdScope::native("arrangements").id("configuration", ordinal);
+            let id: ConfigurationId = IdScope::native(cadmpeg_ir::identity_component!("arrangements")).id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
             let active_attribute_use = model
                 .om
                 .configuration_attribute_uses
@@ -510,8 +516,12 @@ fn attach_rm_appearances(
             definition,
             &annotation_stream,
         )?;
-        let binding_id: AppearanceBindingId = IdScope::native("appearance-binding")
-            .id("rmfastload-color", native_entity_key(&binding.source_id));
+        let binding_id: AppearanceBindingId = IdScope::native(cadmpeg_ir::identity_component!("appearance-binding"))
+            .id(&cadmpeg_ir::identity_component!("rmfastload-color"), native_entity_key(&binding.source_id).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "NX RMFASTLOAD_COLOR_ASSIGNMENT source id is not identity key text"
+                ))
+            })?);
         annotations
             .note(
                 binding_id.as_str(),
@@ -567,8 +577,12 @@ fn attach_rm_appearances(
             definition,
             &annotation_stream,
         )?;
-        let binding_id: AppearanceBindingId = IdScope::native("appearance-binding")
-            .id("rmfastload-face-color", native_entity_key(&binding.face_id));
+        let binding_id: AppearanceBindingId = IdScope::native(cadmpeg_ir::identity_component!("appearance-binding"))
+            .id(&cadmpeg_ir::identity_component!("rmfastload-face-color"), native_entity_key(&binding.face_id).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "NX RMFASTLOAD_FACE_COLOR_ASSIGNMENT face id is not identity key text"
+                ))
+            })?);
         annotations
             .note(
                 binding_id.as_str(),
@@ -613,7 +627,11 @@ fn ensure_rm_color_appearance(
         return Ok(id.clone());
     }
     let id: AppearanceId =
-        IdScope::native("appearance").id("rmfastload-color", native_entity_key(&definition.id));
+        IdScope::native(cadmpeg_ir::identity_component!("appearance")).id(&cadmpeg_ir::identity_component!("rmfastload-color"), native_entity_key(&definition.id).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "NX RMFASTLOAD_COLOR_APPEARANCE definition id is not identity key text"
+                ))
+            })?);
     annotations
         .note(id.as_str(), annotation_stream, definition.source_offset)
         .tag("RMFASTLOAD_COLOR_APPEARANCE");
@@ -641,10 +659,6 @@ fn ensure_rm_color_appearance(
     });
     appearances.insert(definition.id.clone(), id.clone());
     Ok(id)
-}
-
-fn native_entity_key(id: &str) -> String {
-    id.replace([':', '#'], "-")
 }
 
 /// One agreed palette definition and its earliest source occurrence.
@@ -858,7 +872,7 @@ fn attach_jpeg_preview_assets(
         else {
             continue;
         };
-        let native_ref: UnknownId = IdScope::container().id("jpeg-preview", ordinal);
+        let native_ref: UnknownId = IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations
                 .note(native_ref.as_str(), &stream, source_offset)
@@ -872,7 +886,10 @@ fn attach_jpeg_preview_assets(
             ));
             continue;
         }
-        let id: AssetId = extended_id(native_ref.as_str(), "asset");
+        let id: AssetId = extended_id(native_ref.as_str(), &cadmpeg_ir::identity_key!("asset"))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("NX JPEG preview id is not an identity"))
+            })?;
         annotations
             .note(id.as_str(), &stream, source_offset)
             .tag("JPEG_PREVIEW_ASSET");
@@ -944,7 +961,12 @@ fn attach_material_texture_assets(
     for (texture, bytes) in sources {
         assets.push(
             Asset::try_new(
-                extended_id::<AssetId>(texture.id.as_str(), "asset"),
+                extended_id::<AssetId>(texture.id.as_str(), &cadmpeg_ir::identity_key!("asset"))
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "NX material texture id is not an identity"
+                        ))
+                    })?,
                 Some(texture.name().to_owned()),
                 Some("image/tiff".to_string()),
                 AssetContent::Embedded {
@@ -1001,33 +1023,28 @@ fn attach_active_configuration_parameter_values(
         .collect::<BTreeMap<_, _>>();
     if parameters_by_id.len() != ir.model.parameters.len()
         || ir.model.parameters.iter().any(|parameter| {
-            parameter.value.is_none()
-                || parameter.dependencies.iter().any(|dependency| {
-                    parameters_by_id.get(dependency).is_none_or(|dependency| {
-                        dependency.owner != parameter.owner
-                            || dependency.ordinal >= parameter.ordinal
-                    })
+            parameter.dependencies.iter().any(|dependency| {
+                parameters_by_id.get(dependency).is_none_or(|dependency| {
+                    dependency.owner != parameter.owner || dependency.ordinal >= parameter.ordinal
                 })
+            })
         })
     {
         return Ok(());
     }
-    let values = ir
+    // A parameter with no evaluated value leaves the configuration untouched,
+    // which is what the dependency guard above does for its own case.
+    let Some(values) = ir
         .model
         .parameters
         .iter()
-        .map(|parameter| {
-            (
-                parameter.id.clone(),
-                parameter
-                    .value
-                    .clone()
-                    .expect("validated parameter has an evaluated value"),
-            )
-        })
-        .collect();
+        .map(|parameter| Some((parameter.id.clone(), parameter.value.clone()?)))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(());
+    };
     let configuration = &mut ir.model.configurations[configuration_index];
-    configuration.parameter_values = values;
+    configuration.parameter_values = values.into_iter().collect();
     annotations
         .derived(configuration.id.as_str(), "parameter_values")
         .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1154,7 +1171,10 @@ fn attach_initial_segment_bodies(
         return None;
     }
 
-    let id: FeatureId = IdScope::native("feature-history").id("feature", "initial-bodies");
+    let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!("feature-history")).id(
+        &cadmpeg_ir::identity_component!("feature"),
+        cadmpeg_ir::identity_key!("initial-bodies"),
+    );
     let outputs = bindings_by_body.keys().cloned().collect::<Vec<_>>();
     let source_properties = bindings_by_body
         .values()
@@ -1928,15 +1948,16 @@ fn attach_feature_operations(
             projects_neutral_feature(&label.value)
                 && !hole_packages.internal_operations.contains(&label.id)
         })
-        .map(|label| {
+        .filter_map(|label| {
             let key = label
                 .id
                 .strip_prefix("nx:feature-history:operation-label#")
                 .unwrap_or(label.id.as_str());
-            (
-                label.id.as_str(),
-                IdScope::native("feature-history").id::<FeatureId>("feature", key),
-            )
+            let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!(
+                "feature-history"
+            ))
+            .try_id(&cadmpeg_ir::identity_component!("feature"), key)?;
+            Some((label.id.as_str(), id))
         })
         .collect::<BTreeMap<_, _>>();
     let mut parameter_bindings_by_operation =
@@ -2022,10 +2043,9 @@ fn attach_feature_operations(
         {
             continue;
         }
-        let id = feature_ids_by_operation
-            .get(label.id.as_str())
-            .expect("every operation label owns one neutral feature identity")
-            .clone();
+        let Some(id) = feature_ids_by_operation.get(label.id.as_str()).cloned() else {
+            continue;
+        };
         let boolean_offset_store_resolution = booleans.get(label.id.as_str()).map(|operation| {
             crate::native::segments::boolean_offset_store_resolution(operation, data_blocks)
         });
@@ -3771,10 +3791,16 @@ fn attach_feature_operations(
                 );
                 ir.model.feature_result_topologies.push(
                     FeatureResultTopology::new(
-                        IdScope::native("feature-history").id::<FeatureResultTopologyId>(
-                            "result-topology",
-                            format_args!("{key}-{:010}", write.ordinal),
-                        ),
+                        IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+                            .try_id::<FeatureResultTopologyId>(
+                                &cadmpeg_ir::identity_component!("result-topology"),
+                                format!("{key}-{:010}", write.ordinal),
+                            )
+                            .ok_or_else(|| {
+                                CodecError::malformed(format_args!(
+                                    "NX operation label key is not identity key text"
+                                ))
+                            })?,
                         id.clone(),
                         vec![cadmpeg_core::nonblank_literal!(
                             "nx:feature-history:body-identity#{:010}",
@@ -3802,8 +3828,16 @@ fn attach_feature_operations(
                     .unwrap_or(label.id.as_str());
                 ir.model.feature_result_topologies.push(
                     FeatureResultTopology::new(
-                        IdScope::native("feature-history")
-                            .id::<FeatureResultTopologyId>("result-topology", key),
+                        IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+                            .try_id::<FeatureResultTopologyId>(
+                                &cadmpeg_ir::identity_component!("result-topology"),
+                                key,
+                            )
+                            .ok_or_else(|| {
+                                CodecError::malformed(format_args!(
+                                    "NX operation label key is not identity key text"
+                                ))
+                            })?,
                         id.clone(),
                         vec![local_id],
                         Vec::new(),
@@ -4010,7 +4044,7 @@ fn attach_sketch_graph(
         .id
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
-    let sketch_id: SketchId = IdScope::native("feature-history").try_id("sketch", operation_key)?;
+    let sketch_id: SketchId = IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id(&cadmpeg_ir::identity_component!("sketch"), operation_key)?;
     let operation_fixed_points = sources
         .fixed_points
         .iter()
@@ -4051,9 +4085,9 @@ fn attach_sketch_graph(
             entities.push((
                 pair.source_offset,
                 SketchEntity::new(
-                    IdScope::native("feature-history").try_id::<SketchEntityId>(
-                        "sketch-entity",
-                        format_args!("coordinate-pair-{pair_key}"),
+                    IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id::<SketchEntityId>(
+                        &cadmpeg_ir::identity_component!("sketch-entity"),
+                        format!("coordinate-pair-{pair_key}"),
                     )?,
                     sketch_id.clone(),
                     SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(
@@ -4222,9 +4256,9 @@ fn attach_sketch_graph(
         entities.push((
             source_offset,
             SketchEntity::new(
-                IdScope::native("feature-history").try_id::<SketchEntityId>(
-                    "sketch-entity",
-                    format_args!("point-{entity_key}"),
+                IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id::<SketchEntityId>(
+                    &cadmpeg_ir::identity_component!("sketch-entity"),
+                    format!("point-{entity_key}"),
                 )?,
                 sketch_id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -4326,9 +4360,9 @@ fn native_fixed_point_entities(
         entities.push((
             point.source_offset,
             SketchEntity::new(
-                IdScope::native("feature-history").try_id::<SketchEntityId>(
-                    "sketch-entity",
-                    format_args!("fixed-point-{point_key}"),
+                IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id::<SketchEntityId>(
+                    &cadmpeg_ir::identity_component!("sketch-entity"),
+                    format!("fixed-point-{point_key}"),
                 )?,
                 sketch_id.clone(),
                 SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("nx-fixed-point")?),
@@ -4435,9 +4469,9 @@ fn attach_parasolid_topology_string_attributes(
             };
             let id = topology_attribute_id(
                 reference,
-                "topology-string-attribute",
+                &cadmpeg_ir::identity_component!("topology-string-attribute"),
                 string_use.position.reference_ordinal(),
-                context.id_suffix,
+                context.id_suffix.as_ref(),
             );
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
@@ -4686,7 +4720,7 @@ fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, Attribut
 struct ParasolidTopologyAttributeContext<'a> {
     reference: &'a crate::native::parasolid::ParasolidTopologyAttributeListReference,
     entity: &'a str,
-    id_suffix: Option<&'a str>,
+    id_suffix: Option<cadmpeg_ir::ids::IdentityKey>,
     target: AttributeTarget,
 }
 
@@ -4765,8 +4799,7 @@ fn parasolid_topology_attribute_contexts<'a>(
                 .map(|entity| ParasolidTopologyAttributeContext {
                     reference,
                     entity,
-                    id_suffix: multiple_entities
-                        .then(|| entity.rsplit_once('#').map_or(entity, |(_, key)| key)),
+                    id_suffix: multiple_entities.then(|| entity_suffix_key(entity)).flatten(),
                     target: target.clone(),
                 })
                 .collect::<Vec<_>>()
@@ -4776,21 +4809,29 @@ fn parasolid_topology_attribute_contexts<'a>(
 
 fn topology_attribute_id(
     reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
-    family: &str,
+    family: &cadmpeg_ir::ids::IdentityComponent,
     reference_ordinal: u32,
-    entity_suffix: Option<&str>,
+    entity_suffix: Option<&cadmpeg_ir::ids::IdentityKey>,
 ) -> AttributeId {
-    let entity_suffix = entity_suffix.map_or_else(String::new, |suffix| format!("-{suffix}"));
-    IdScope::stream(reference.stream_ordinal).id(
-        family,
-        format_args!(
-            "{}-{}-{}{}",
-            reference.topology_type.code(),
-            reference.topology_xmt,
-            reference_ordinal,
-            entity_suffix
-        ),
-    )
+    let mut key = cadmpeg_ir::ids::IdentityKey::from(reference.topology_type.code())
+        .dash(reference.topology_xmt)
+        .dash(reference_ordinal);
+    if let Some(suffix) = entity_suffix {
+        key = key.dash(suffix);
+    }
+    IdScope::stream(reference.stream_ordinal).id(family, key)
+}
+
+/// The key half of an entity reference, which is what an id suffix names.
+///
+/// The reference reaches this as stored record text, so it is admitted here;
+/// text that is not key text names no suffix.
+fn entity_suffix_key(entity: &str) -> Option<cadmpeg_ir::ids::IdentityKey> {
+    let suffix = entity.rsplit_once('#').map_or(entity, |(_, key)| key);
+    let Ok(key) = cadmpeg_ir::ids::IdentityKey::try_new(suffix) else {
+        return None;
+    };
+    Some(key)
 }
 
 fn attach_parasolid_topology_numeric_attributes(
@@ -4861,9 +4902,9 @@ fn attach_parasolid_topology_numeric_attributes(
             };
             let id = topology_attribute_id(
                 reference,
-                "topology-numeric-attribute",
+                &cadmpeg_ir::identity_component!("topology-numeric-attribute"),
                 numeric_use.position.reference_ordinal(),
-                context.id_suffix,
+                context.id_suffix.as_ref(),
             );
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
@@ -5033,9 +5074,9 @@ fn attach_parasolid_topology_structured_attributes(
             };
             let id = topology_attribute_id(
                 reference,
-                "topology-structured-attribute",
+                &cadmpeg_ir::identity_component!("topology-structured-attribute"),
                 structured_use.position.reference_ordinal(),
-                context.id_suffix,
+                context.id_suffix.as_ref(),
             );
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
@@ -5103,7 +5144,7 @@ fn text_semantic_annotation(
         return None;
     };
     Some(SemanticAnnotation {
-        id: extended_id(native_ref, "semantic-text"),
+        id: extended_id(native_ref, &cadmpeg_ir::identity_key!("semantic-text"))?,
         object: native_ref.to_string(),
         kind: SemanticAnnotationKind::Text,
         runtime_type: "TEXT".to_string(),
@@ -8067,9 +8108,15 @@ fn simple_hole_chamfers(
         }
         outer_radii.sort_by(f64::total_cmp);
         included_angles.sort_by(f64::total_cmp);
-        if outer_radii.last().expect("nonempty") - outer_radii[0] > linear_tolerance
-            || included_angles.last().expect("nonempty") - included_angles[0] > angular_tolerance
-        {
+        let (Some(&widest), Some(&narrowest), Some(&largest), Some(&smallest)) = (
+            outer_radii.last(),
+            outer_radii.first(),
+            included_angles.last(),
+            included_angles.first(),
+        ) else {
+            return BTreeMap::new();
+        };
+        if widest - narrowest > linear_tolerance || largest - smallest > angular_tolerance {
             return BTreeMap::new();
         }
         let (Some(diameter), Some(angle)) = (
@@ -9019,10 +9066,33 @@ pub(crate) fn attach_expression_parameters(
     for (table_ordinal, (table, expressions, dependency_ordered_expressions)) in
         tables.into_iter().enumerate()
     {
-        let feature_id: FeatureId = table.split_once(":expression-table#").map_or_else(
-            || IdScope::of(&table).id("feature", "equations"),
-            |(scope, key)| IdScope::of(scope).id("feature", format_args!("equations-{key}")),
-        );
+        let feature_id: FeatureId = match table.split_once(":expression-table#") {
+            None => IdScope::of(&table)
+                .map(|scope| {
+                    scope.id(
+                        &cadmpeg_ir::identity_component!("feature"),
+                        cadmpeg_ir::identity_key!("equations"),
+                    )
+                })
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "NX expression table id is not an NX identity"
+                    ))
+                })?,
+            Some((scope, key)) => IdScope::of(scope)
+                .zip(cadmpeg_ir::ids::IdentityKey::try_new(key).ok())
+                .map(|(scope, key)| {
+                    scope.id(
+                        &cadmpeg_ir::identity_component!("feature"),
+                        cadmpeg_ir::identity_key!("equations-").then(key),
+                    )
+                })
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "NX expression table id is not an NX identity"
+                    ))
+                })?,
+        };
         let first_offset = expressions
             .iter()
             .map(|expression| expression.source_offset)
@@ -9067,17 +9137,18 @@ pub(crate) fn attach_expression_parameters(
         let mut parameter_ids =
             BTreeMap::<(&str, crate::native::om::ExpressionUnit), Vec<ParameterId>>::new();
         for expression in &expressions {
+            let Some(id) = expression_parameter_id(&expression.id) else {
+                continue;
+            };
             parameter_ids
                 .entry((expression.name.as_str(), expression.unit.clone()))
                 .or_default()
-                .push(
-                    expression_parameter_id(&expression.id)
-                        .expect("sectioned expressions have parameter identities"),
-                );
+                .push(id);
         }
         for (ordinal, expression) in expressions.into_iter().enumerate() {
-            let id = expression_parameter_id(&expression.id)
-                .expect("sectioned expressions have parameter identities");
+            let Some(id) = expression_parameter_id(&expression.id) else {
+                continue;
+            };
             annotations
                 .note(id.as_str(), &stream, expression.source_offset)
                 .tag("Number");
@@ -9265,13 +9336,17 @@ fn attach_block_dimension_parameter_consumers(
                 .values()
                 .any(|value| value == &consumer)
             {
-                let consumer_ordinal = (0..=parameter.properties.len())
-                    .find(|candidate| {
-                        !parameter
-                            .properties
-                            .contains_key(format!("consumer.{candidate}").as_str())
-                    })
-                    .expect("finite parameter properties have a free consumer ordinal");
+                // One more candidate than the map holds entries, so one of
+                // them is free; the `else` states that rather than asserting it.
+                let Some(consumer_ordinal) = (0..=parameter.properties.len()).find(|candidate| {
+                    !parameter
+                        .properties
+                        .contains_key(format!("consumer.{candidate}").as_str())
+                }) else {
+                    return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                        "NX parameter properties hold no free consumer ordinal"
+                    )));
+                };
                 parameter.properties.insert(
                     cadmpeg_core::nonblank_literal!("consumer.{consumer_ordinal}"),
                     consumer.clone(),
@@ -9287,7 +9362,7 @@ fn attach_block_dimension_parameter_consumers(
 
 fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {
     let (section, key) = expression_id.split_once(":expression#")?;
-    Some(IdScope::of(section).id("parameter", key))
+    IdScope::of(section)?.try_id(&cadmpeg_ir::identity_component!("parameter"), key)
 }
 
 #[cfg(test)]

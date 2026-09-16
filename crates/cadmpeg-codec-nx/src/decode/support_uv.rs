@@ -2045,7 +2045,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             }
             let source_index = sources.iter().position(|source| {
                 index >= source.coedge_start
-                    && stream_owns_id(coedge.id.as_str(), source.scope.as_str())
+                    && stream_owns_id(coedge.id.as_str(), &source.scope.prefix())
             })?;
             let surface = loop_faces
                 .get(&coedge.owner_loop)
@@ -2086,7 +2086,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         if multiple_sources
             && !sources.iter().any(|source| {
                 index >= source.procedural_start
-                    && stream_owns_id(procedural.id.as_str(), source.scope.as_str())
+                    && stream_owns_id(procedural.id.as_str(), &source.scope.prefix())
             })
         {
             continue;
@@ -2259,7 +2259,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         else {
             continue;
         };
-        let pcurve_id: PcurveId = source.scope.id("intersection-pcurve-completed", fin_xmt);
+        let pcurve_id: PcurveId = source.scope.id(&cadmpeg_ir::identity_component!("intersection-pcurve-completed"), fin_xmt);
         if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
             continue;
         }
