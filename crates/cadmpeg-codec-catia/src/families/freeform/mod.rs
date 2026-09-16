@@ -1420,11 +1420,7 @@ pub(crate) fn append_freeform_surface_pools(
         );
     }
 
-    append_consolidated_line_profiles(
-        ir,
-        annotations,
-        consolidated_line_profiles(data, records),
-    );
+    append_consolidated_line_profiles(ir, annotations, consolidated_line_profiles(data, records));
 
     for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let points = guide

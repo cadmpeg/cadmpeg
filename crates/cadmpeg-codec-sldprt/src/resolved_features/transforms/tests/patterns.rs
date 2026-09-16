@@ -413,8 +413,9 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         );
         assert!(!object
             .windows(crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER.len())
-            .any(|window| window
-                == crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER));
+            .any(
+                |window| window == crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER
+            ));
         assert_eq!(
             crate::resolved_features::axes::temporary_axis_reference(
                 &lane.native_payload,

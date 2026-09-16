@@ -302,9 +302,11 @@ pub(in super::super) fn unique_section_torus_minor_radius(
     scan: &ContainerScan,
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
-    let section = scan.framing.sections.iter().find(|section| {
-        row.offset >= section.offset() && row.offset < section.end()
-    })?;
+    let section = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| row.offset >= section.offset() && row.offset < section.end())?;
     let prototype = exactly_one(scan.surfaces.prototype_records.iter().filter(|prototype| {
         matches!(
             prototype.family,

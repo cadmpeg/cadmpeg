@@ -855,13 +855,7 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
         if length < marker.len() || data.get(offset..marker_end) != Some(marker.as_slice()) {
             continue;
         }
-        sections.extend(Section::new(
-            raw_name.to_string(),
-            offset,
-            end,
-            None,
-            data,
-        ));
+        sections.extend(Section::new(raw_name.to_string(), offset, end, None, data));
     }
     sections.sort_by_key(|section| section.offset());
     sections.dedup_by_key(|section| section.offset());
@@ -2151,12 +2145,7 @@ fn section_owner_ranges(sections: &[Section], feature_rows: &[FeatureRow]) -> Ve
     let mut ranges = sections
         .iter()
         .filter(|section| section.name() == "DEPDB_DATA")
-        .map(|section| {
-            (
-                section.offset(),
-                section.end(),
-            )
-        })
+        .map(|section| (section.offset(), section.end()))
         .collect::<Vec<_>>();
     ranges.extend(feature_rows.iter().map(|row| {
         (

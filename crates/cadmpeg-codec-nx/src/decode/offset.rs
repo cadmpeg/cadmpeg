@@ -2397,8 +2397,8 @@ mod tests {
 
     #[test]
     fn a_surface_the_index_does_not_hold_and_the_depth_limit_both_sample_at_the_ceiling() {
-        let absent =
-            SurfaceId::mint("test:model:entity#synthetic:absent-surface").expect("identity grammar");
+        let absent = SurfaceId::mint("test:model:entity#synthetic:absent-surface")
+            .expect("identity grammar");
         let ir = CadIr::empty();
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 

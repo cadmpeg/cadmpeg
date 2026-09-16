@@ -105,9 +105,7 @@ pub(in super::super) fn legacy_source_stream<'a>(
     scan.framing
         .sections
         .iter()
-        .find(|section| {
-            offset >= section.offset() && offset < section.end()
-        })
+        .find(|section| offset >= section.offset() && offset < section.end())
         .map_or("legacy_ascii", |section| section.name())
 }
 

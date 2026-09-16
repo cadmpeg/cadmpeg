@@ -257,10 +257,12 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             ),
             _ => continue,
         };
-        let Some(section) = scan.framing.sections.iter().find(|section| {
-            record.offset >= section.offset()
-                && record.offset < section.end()
-        }) else {
+        let Some(section) = scan
+            .framing
+            .sections
+            .iter()
+            .find(|section| record.offset >= section.offset() && record.offset < section.end())
+        else {
             continue;
         };
         let Some((adjacent_start, adjacent_end)) =
@@ -505,10 +507,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             .framing
             .sections
             .iter()
-            .filter(|section| {
-                row.offset >= section.offset()
-                    && row.offset < section.end()
-            })
+            .filter(|section| row.offset >= section.offset() && row.offset < section.end())
             .collect::<Vec<_>>();
         let [section] = sections.as_slice() else {
             continue;
@@ -527,8 +526,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             .rows
             .iter()
             .filter(|candidate| {
-                candidate.offset >= section.offset()
-                    && candidate.offset < section.end()
+                candidate.offset >= section.offset() && candidate.offset < section.end()
             })
             .filter_map(|candidate| {
                 let mut candidate = candidate.clone();
