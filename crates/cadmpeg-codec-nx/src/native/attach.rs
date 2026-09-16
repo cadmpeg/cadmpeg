@@ -9096,19 +9096,25 @@ pub(crate) fn attach_expression_parameters(
                         "NX expression table id is not an NX identity"
                     ))
                 })?,
-            Some((scope, key)) => IdScope::of(scope)
-                .zip(cadmpeg_ir::ids::IdentityKey::try_new(key).ok())
-                .map(|(scope, key)| {
-                    scope.id(
-                        &cadmpeg_ir::identity_component!("feature"),
-                        cadmpeg_ir::identity_key!("equations-").then(key),
-                    )
-                })
-                .ok_or_else(|| {
+            Some((scope, key)) => {
+                let key = cadmpeg_ir::ids::IdentityKey::try_new(key).map_err(|error| {
                     cadmpeg_core::CodecError::malformed(format_args!(
-                        "NX expression table id is not an NX identity"
+                        "NX expression table key is not identity key text: {error}"
                     ))
-                })?,
+                })?;
+                IdScope::of(scope)
+                    .map(|scope| {
+                        scope.id(
+                            &cadmpeg_ir::identity_component!("feature"),
+                            cadmpeg_ir::identity_key!("equations-").then(key),
+                        )
+                    })
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(format_args!(
+                            "NX expression table id is not an NX identity"
+                        ))
+                    })?
+            }
         };
         let first_offset = expressions
             .iter()
