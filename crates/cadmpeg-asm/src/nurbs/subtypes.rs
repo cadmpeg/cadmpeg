@@ -30,10 +30,7 @@ pub(crate) const INTCURVE_ALIASES: &[(&str, &str)] = &[
 /// construction, not to `bytes`.
 ///
 /// A `0x10` with no open scope is a malformed stream and is refused.
-pub(crate) fn owned_subtype_defs(
-    bytes: &[u8],
-    int_width: RefWidth,
-) -> Option<Vec<(usize, &[u8])>> {
+pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Vec<(usize, &[u8])>> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     let mut pos = 0usize;

@@ -2766,14 +2766,12 @@ mod tests {
             )
             .expect("valid ConeSurface fixture"),
         ));
-        let Some(PcurveGeometry::Nurbs { nurbs }) =
-            zero_entity_neutral_pcurve(
-                &cone,
-                &pcurve,
-                &"test support record",
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        else {
+        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(
+            &cone,
+            &pcurve,
+            &"test support record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) else {
             panic!("neutral cone pcurve")
         };
         assert_eq!(nurbs.control_points()[0].u, 2.0);
@@ -2789,14 +2787,12 @@ mod tests {
             )
             .expect("valid TorusSurface fixture"),
         ));
-        let Some(PcurveGeometry::Nurbs { nurbs }) =
-            zero_entity_neutral_pcurve(
-                &torus,
-                &pcurve,
-                &"test support record",
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        else {
+        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(
+            &torus,
+            &pcurve,
+            &"test support record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ) else {
             panic!("neutral torus pcurve")
         };
         assert_eq!(nurbs.control_points()[1], Point2::new(1.0, 2.5));

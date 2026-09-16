@@ -36,14 +36,12 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
                 "SolidWorks feature-input name structure does not match its native payload".into(),
             ));
         }
-        if let Some((index, actual, expected)) = lane
-            .names
-            .iter()
-            .zip(&expected_names)
-            .enumerate()
-            .find_map(|(index, (actual, expected))| {
-                (actual.value != expected.value).then_some((index, actual, expected))
-            })
+        if let Some((index, actual, expected)) =
+            lane.names.iter().zip(&expected_names).enumerate().find_map(
+                |(index, (actual, expected))| {
+                    (actual.value != expected.value).then_some((index, actual, expected))
+                },
+            )
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",

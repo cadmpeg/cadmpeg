@@ -181,5 +181,4 @@ mod tests {
         assert_eq!(serde_json::to_string(&member).unwrap(), TEXT);
         assert_eq!(serde_json::to_value(&member).unwrap(), expected);
     }
-
 }
