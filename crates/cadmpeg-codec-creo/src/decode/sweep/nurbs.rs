@@ -255,26 +255,46 @@ pub(in super::super) fn saved_spline_nurbs(
     }
 }
 
+/// The first input of `spline` that states a `z` off the sketch plane, named as
+/// the record names it, with the `z` the record states.
+///
+/// The record's own inputs are the subject, not the fitted control points. The
+/// fit is a per-coordinate linear solve over the interpolation points and the
+/// two endpoint tangents, so a `z` column that is all zeros answers a control
+/// polygon whose `z` is all zeros: inputs on the sketch plane fit control
+/// points on it. A control point off the plane therefore states an input off
+/// the plane, and the input is the number the record's bytes carry.
+fn saved_spline_off_plane_input(
+    spline: &crate::feature::FeatureSavedSpline,
+) -> Option<(String, f64)> {
+    let point = spline
+        .interpolation_points
+        .iter()
+        .enumerate()
+        .find(|(_, point)| point[2].abs() > EPS_PLANAR_COORDINATE)
+        .map(|(index, point)| (format!("interpolation point {index}"), point[2]));
+    let tangent = spline.endpoint_tangents.as_ref().and_then(|tangents| {
+        ["start", "end"]
+            .into_iter()
+            .zip(tangents.value)
+            .find(|(_, tangent)| tangent[2].abs() > EPS_PLANAR_COORDINATE)
+            .map(|(end, tangent)| (format!("endpoint tangent {end}"), tangent[2]))
+    });
+    point.or(tangent)
+}
+
 pub(in super::super) fn saved_spline_sketch_geometry(
     spline: &crate::feature::FeatureSavedSpline,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<SketchGeometry> {
-    let nurbs = saved_spline_nurbs(spline, refusal)?;
-    if let Some((index, point)) = nurbs
-        .control_points()
-        .iter()
-        .enumerate()
-        .find(|(_, point)| point.z.abs() > EPS_PLANAR_COORDINATE)
-    {
+    if let Some((subject, z)) = saved_spline_off_plane_input(spline) {
         refusal.note(
             format!("{} sketch geometry record", saved_spline_record(spline)),
-            &format_args!(
-                "control point {index} is not on the sketch plane: z states {}",
-                point.z
-            ),
+            &format_args!("{subject} is not on the sketch plane: z states {z}"),
         );
         return None;
     }
+    let nurbs = saved_spline_nurbs(spline, refusal)?;
     match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
@@ -934,7 +954,7 @@ mod tests {
     }
 
     #[test]
-    fn a_non_planar_saved_spline_states_the_control_point_that_left_the_sketch_plane() {
+    fn a_non_planar_saved_spline_states_the_interpolation_point_that_left_the_sketch_plane() {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         assert!(
             super::saved_spline_sketch_geometry(&planar_or_offset_spline(2.0), &mut refusal)
@@ -942,16 +962,32 @@ mod tests {
         );
         let records = refusal.take_records();
         assert_eq!(records.len(), 1);
-        let record = &records[0];
-        assert!(
-            record.starts_with(
-                "creo saved-spline entity 11 at offset 64 sketch geometry record: control point "
-            ),
-            "{record}"
+        // The fixture states `z = 2` at interpolation point 1, and the note
+        // names that point and that number: both are bytes of the record.
+        assert_eq!(
+            records[0],
+            "creo saved-spline entity 11 at offset 64 sketch geometry record: interpolation \
+             point 1 is not on the sketch plane: z states 2"
         );
-        assert!(
-            record.contains("is not on the sketch plane: z states "),
-            "{record}"
+    }
+
+    #[test]
+    fn a_non_planar_saved_spline_tangent_states_the_tangent_that_left_the_sketch_plane() {
+        let mut spline = planar_or_offset_spline(0.0);
+        spline
+            .endpoint_tangents
+            .as_mut()
+            .expect("endpoint tangents")
+            .value[1] = [1.0, 0.0, 3.0];
+
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        assert!(super::saved_spline_sketch_geometry(&spline, &mut refusal).is_none());
+        let records = refusal.take_records();
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0],
+            "creo saved-spline entity 11 at offset 64 sketch geometry record: endpoint tangent \
+             end is not on the sketch plane: z states 3"
         );
     }
 
