@@ -249,16 +249,18 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
         unresolved_surfaces.len(),
     );
     if !unresolved_curves.is_empty() {
-        statement.push_str(&format!(
+        let curve_carriers = format!(
             " Curve carriers: {}.",
             identity_statement(&unresolved_curves)
-        ));
+        );
+        statement.push_str(&curve_carriers);
     }
     if !unresolved_surfaces.is_empty() {
-        statement.push_str(&format!(
+        let surface_carriers = format!(
             " Surface carriers: {}.",
             identity_statement(&unresolved_surfaces)
-        ));
+        );
+        statement.push_str(&surface_carriers);
     }
     losses.insert(0, CatiaLossCode::GeometryUnresolvedCarriers.note(statement));
 }
@@ -617,23 +619,35 @@ pub(crate) fn build_metadata_fallback(
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
 
-    // Preserve the reconstructed BREP stream (or, absent one, the whole file) as
-    // an unknown passthrough so no recognized data is silently dropped.
-    if let Some(brep) = &scan.brep {
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-            cadmpeg_ir::identity_key!("brep-stream"),
-        );
-        annotate(
-            &mut annotations,
-            &id,
+    // Preserve the reconstructed BREP stream, or the whole file when the scan
+    // recovered no stream, as an unknown passthrough so no source byte is
+    // dropped. A container-only decode transfers no model, so this record is
+    // the only place the payload survives.
+    let (bytes, stream, key) = match scan.brep.as_ref() {
+        Some(brep) => (
+            brep.clone(),
             "MainDataStream+SurfacicReps",
-            0,
-            scan.variant.id().to_string(),
-            Exactness::Unknown,
-        );
-        unknowns.push(UnknownRecord::retained(id, 0, brep.clone(), Vec::new()));
-    }
+            cadmpeg_ir::identity_key!("brep-stream"),
+        ),
+        None => (
+            scan.data.as_ref().to_vec(),
+            "CATPart",
+            cadmpeg_ir::identity_key!("container"),
+        ),
+    };
+    let id = UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+        key,
+    );
+    annotate(
+        &mut annotations,
+        &id,
+        stream,
+        0,
+        scan.variant.id().to_string(),
+        Exactness::Unknown,
+    );
+    unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
     (ir, annotations.build(), unknowns)
 }
 
