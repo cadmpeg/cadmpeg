@@ -67,7 +67,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         object_id: ObjectId::try_from(object_id).ok(),
     };
     let line_ref_offset = 120usize;
-    let mut native_payload = vec![0; 400];
+    // The lane states object names at offsets 50, 100, 500 and 600, and an
+    // object name states the payload bytes at its own offset, so the payload
+    // holds every one of them.
+    let mut native_payload = vec![0; 700];
     native_payload[line_ref_offset + 136..line_ref_offset + 144]
         .copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
     native_payload[line_ref_offset + 148..line_ref_offset + 152]
