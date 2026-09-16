@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record identities and located payloads with flat wire fields.
 
+use cadmpeg_ir::ids::IdentityKey;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordIdentity {
-    pub(crate) segment_token: String,
+    pub(crate) segment_token: IdentityKey,
     pub(crate) record_ordinal: u32,
     pub(crate) type_id: String,
 }
@@ -16,6 +17,11 @@ impl RecordIdentity {
             "inventor:pmdc:{kind}#{}-{}",
             self.segment_token, self.record_ordinal
         )
+    }
+
+    /// The identity key of this record: `{segment_token}-{record_ordinal}`.
+    pub(crate) fn key(&self) -> IdentityKey {
+        self.segment_token.clone().dash(self.record_ordinal)
     }
 }
 
@@ -30,11 +36,16 @@ pub(crate) struct Located<T> {
 }
 
 impl<T> Located<T> {
-    pub(crate) fn new(value: T, type_id: String, segment_token: &str, record_ordinal: u32) -> Self {
+    pub(crate) fn new(
+        value: T,
+        type_id: String,
+        segment_token: &IdentityKey,
+        record_ordinal: u32,
+    ) -> Self {
         Self {
             identity: RecordIdentity {
                 type_id,
-                segment_token: segment_token.into(),
+                segment_token: segment_token.clone(),
                 record_ordinal,
             },
             payload: value,
@@ -70,7 +81,7 @@ impl<T: RecordPayload + Serialize> Serialize for Located<T> {
         LocatedWire {
             id: self.id(),
             type_id: self.identity.type_id.clone(),
-            segment_token: self.identity.segment_token.clone(),
+            segment_token: self.identity.segment_token.as_str().to_owned(),
             record_ordinal: self.identity.record_ordinal,
             value: &self.payload,
         }
@@ -81,10 +92,12 @@ impl<T: RecordPayload + Serialize> Serialize for Located<T> {
 impl<'de, T: RecordPayload + Deserialize<'de>> Deserialize<'de> for Located<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = LocatedWire::<T>::deserialize(deserializer)?;
+        let segment_token = IdentityKey::try_new(wire.segment_token)
+            .map_err(|error| serde::de::Error::custom(format!("segment_token: {error}")))?;
         let value = Self::new(
             wire.value,
             wire.type_id,
-            &wire.segment_token,
+            &segment_token,
             wire.record_ordinal,
         );
         if wire.id != value.id() {

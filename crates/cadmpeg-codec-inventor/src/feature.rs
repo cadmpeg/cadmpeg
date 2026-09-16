@@ -392,7 +392,7 @@ pub(crate) fn inventory(
                     inventory.features.push(Located::new(
                         feature,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 }),
@@ -406,7 +406,7 @@ pub(crate) fn inventory(
                         inventory.pattern_features.push(Located::new(
                             feature,
                             type_id_string(record.type_id),
-                            segment.pair.token.as_str(),
+                            segment.pair.token.key(),
                             record.ordinal,
                         ));
                     })
@@ -416,7 +416,7 @@ pub(crate) fn inventory(
                         inventory.terminators.push(Located::new(
                             terminator,
                             type_id_string(record.type_id),
-                            segment.pair.token.as_str(),
+                            segment.pair.token.key(),
                             record.ordinal,
                         ));
                     })
@@ -425,7 +425,7 @@ pub(crate) fn inventory(
                     inventory.labels.push(Located::new(
                         label,
                         type_id_string(record.type_id),
-                        segment.pair.token.as_str(),
+                        segment.pair.token.key(),
                         record.ordinal,
                     ));
                 }),
@@ -434,7 +434,7 @@ pub(crate) fn inventory(
                         inventory.entity_style_links.push(Located::new(
                             link,
                             type_id_string(record.type_id),
-                            segment.pair.token.as_str(),
+                            segment.pair.token.key(),
                             record.ordinal,
                         ));
                     })
@@ -446,7 +446,7 @@ pub(crate) fn inventory(
                             inventory.properties.push(Located::new(
                                 property,
                                 type_id_string(record.type_id),
-                                segment.pair.token.as_str(),
+                                segment.pair.token.key(),
                                 record.ordinal,
                             ));
                         })
@@ -1170,7 +1170,7 @@ fn project_extrusion(
         .iter()
         .map(|reference| {
             let property =
-                resolve_property(&source.identity.segment_token, reference.index, index)?;
+                resolve_property(source.identity.segment_token.as_str(), reference.index, index)?;
             let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &property.kind
             else {
                 return None;
@@ -1273,7 +1273,7 @@ fn project_fillet(
         .references()
         .iter()
         .map(|reference| {
-            let set = resolve_property(&source.identity.segment_token, reference.index, index)?;
+            let set = resolve_property(source.identity.segment_token.as_str(), reference.index, index)?;
             let PmDcFeaturePropertyKind::FilletEdgeSet {
                 edges,
                 radius,
@@ -1284,7 +1284,7 @@ fn project_fillet(
                 return None;
             };
             let selection =
-                resolve_property(&source.identity.segment_token, selection.index, index)?;
+                resolve_property(source.identity.segment_token.as_str(), selection.index, index)?;
             if !matches!(
                 selection.kind,
                 PmDcFeaturePropertyKind::WideEnumeration {
@@ -1292,13 +1292,13 @@ fn project_fillet(
                     value: 0
                 }
             ) || !matches!(
-                resolve_property(&source.identity.segment_token, continuity.index, index)?.kind,
+                resolve_property(source.identity.segment_token.as_str(), continuity.index, index)?.kind,
                 PmDcFeaturePropertyKind::Boolean { value: false, .. }
             ) {
                 return None;
             }
             let edge_collection =
-                resolve_property(&source.identity.segment_token, edges.index, index)?;
+                resolve_property(source.identity.segment_token.as_str(), edges.index, index)?;
             let PmDcFeaturePropertyKind::References {
                 family: PmDcFeatureReferenceFamily::EdgeCollection,
                 items,
@@ -1306,14 +1306,14 @@ fn project_fillet(
             else {
                 return None;
             };
-            if !closed_edge_items(&source.identity.segment_token, items, index) {
+            if !closed_edge_items(source.identity.segment_token.as_str(), items, index) {
                 return None;
             }
             Some(FilletGroup {
                 edges: EdgeSelection::Native(edge_collection.id()),
                 radius: RadiusSpec::Constant {
                     radius: cadmpeg_ir::scalar::PositiveLength::new(
-                        length_reference(&source.identity.segment_token, radius.index, index)?
+                        length_reference(source.identity.segment_token.as_str(), radius.index, index)?
                             .get(),
                     )?,
                 },
@@ -1364,7 +1364,7 @@ fn project_chamfer(
     else {
         return None;
     };
-    if !closed_edge_items(&source.identity.segment_token, items, index) {
+    if !closed_edge_items(source.identity.segment_token.as_str(), items, index) {
         return None;
     }
     let (feature_id, result) = feature_result(source, 11, index)?;
@@ -1542,7 +1542,7 @@ fn feature_result(
         .references()
         .iter()
         .map(|reference| {
-            let body = resolve_property(&source.identity.segment_token, reference.index, index)?;
+            let body = resolve_property(source.identity.segment_token.as_str(), reference.index, index)?;
             matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
                 .then(|| cadmpeg_core::text::NonBlankString::new(body.id()))
                 .flatten()
@@ -1551,17 +1551,15 @@ fn feature_result(
     if bodies.is_empty() {
         return None;
     }
-    let feature_id = FeatureId::mint(format!(
-        "inventor:design:feature#{}-{}",
-        source.identity.segment_token, source.identity.record_ordinal
-    ))
-    .expect("identity grammar");
+    let feature_id = FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+        source.identity.key(),
+    );
     let result = FeatureResultTopology::new(
-        FeatureResultTopologyId::mint(format!(
-            "inventor:design:feature-result#{}-{}",
-            source.identity.segment_token, source.identity.record_ordinal
-        ))
-        .expect("identity grammar"),
+        FeatureResultTopologyId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "design", "feature-result"),
+            source.identity.key(),
+        ),
         feature_id.clone(),
         bodies,
         Vec::new(),
@@ -1594,7 +1592,7 @@ fn slot_property<'a>(
     index: &'a ProjectionIndex<'a>,
 ) -> Option<&'a PmDcFeatureProperty> {
     resolve_property(
-        &source.identity.segment_token,
+        source.identity.segment_token.as_str(),
         source.properties.references().get(slot)?.index,
         index,
     )
@@ -1677,7 +1675,7 @@ fn length_parameter(
     index: &ProjectionIndex<'_>,
 ) -> Option<Length> {
     length_reference(
-        &source.identity.segment_token,
+        source.identity.segment_token.as_str(),
         source.properties.references().get(slot)?.index,
         index,
     )
@@ -1768,7 +1766,9 @@ mod tests {
     use cadmpeg_ir::features::{ParameterId, ParameterValue};
     use cadmpeg_ir::sketches::{SketchId, SketchPlacement};
 
-    const SEGMENT: &str = "generated";
+    fn segment() -> cadmpeg_ir::ids::IdentityKey {
+        cadmpeg_ir::identity_key!("generated")
+    }
 
     fn content(index: u32) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -1848,7 +1848,7 @@ mod tests {
                 kind,
             },
             format!("{ordinal:032x}"),
-            SEGMENT,
+            &segment(),
             ordinal,
         )
     }
@@ -1874,7 +1874,7 @@ mod tests {
                 value: 0,
             },
             type_id_string(FEATURE_TYPE),
-            SEGMENT,
+            &segment(),
             ordinal,
         )
     }
@@ -1930,7 +1930,7 @@ mod tests {
             })
             .expect("valid label fixture"),
             type_id_string(FEATURE_LABEL_TYPE),
-            SEGMENT,
+            &segment(),
             owner_ordinal + 1000,
         )
     }
@@ -1957,7 +1957,7 @@ mod tests {
                 terminal_value: 0,
             },
             "264d8790d011f8d10008cabc0663dc09".into(),
-            SEGMENT,
+            &segment(),
             ordinal,
         )
     }
@@ -2381,11 +2381,11 @@ mod tests {
                 auxiliary: None,
             },
             "114d8790d011f8d10008cabc0663dc09".into(),
-            SEGMENT,
+            &segment(),
             50,
         );
         let neutral_sketch = Sketch {
-            id: SketchId::mint(format!("inventor:design:sketch#{SEGMENT}-50"))
+            id: SketchId::mint(format!("inventor:design:sketch#{}-50", segment()))
                 .expect("valid test fixture"),
             name: None,
             configuration: None,
@@ -2409,7 +2409,7 @@ mod tests {
                 direction: [0.0, 0.0, 1.0],
             },
             "40df52ced011d0d20008ccbc0663dc09".into(),
-            SEGMENT,
+            &segment(),
             60,
         );
         let entity_link = Located::new(
@@ -2428,7 +2428,7 @@ mod tests {
                 entity_type: 1,
             },
             type_id_string(ENTITY_STYLE_LINK_TYPE),
-            SEGMENT,
+            &segment(),
             51,
         );
         let properties = vec![
@@ -2576,7 +2576,7 @@ mod tests {
                 .expect("finite explicit matrix fixture"),
             },
             "184d8790d011f8d10008cabc0663dc09".into(),
-            SEGMENT,
+            &segment(),
             60,
         );
         let direction = Located::new(
@@ -2589,7 +2589,7 @@ mod tests {
                 direction: [0.0, 0.0, -1.0],
             },
             "40df52ced011d0d20008ccbc0663dc09".into(),
-            SEGMENT,
+            &segment(),
             61,
         );
         let properties = vec![

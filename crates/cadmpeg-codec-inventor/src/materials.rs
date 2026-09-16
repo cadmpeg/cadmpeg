@@ -77,11 +77,10 @@ pub(crate) fn project_catalog(
             .into_iter()
             .find_map(|id| color_property(record, id));
             appearances.push(Appearance {
-                id: AppearanceId::mint(format!(
-                    "inventor:protein:appearance#{instance_ordinal}-{}",
-                    record.ordinal
-                ))
-                .expect("identity grammar"),
+                id: AppearanceId::compose(
+                    &cadmpeg_ir::identity_namespace!("inventor", "protein", "appearance"),
+                    cadmpeg_ir::ids::IdentityKey::from(instance_ordinal).dash(record.ordinal),
+                ),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
                 library_id: library_id(&record.asset_lib_id),

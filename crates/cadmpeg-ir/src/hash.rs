@@ -16,9 +16,15 @@ pub mod finite_json;
 
 use finite_json::{write_canonical_json, CanonicalJsonError};
 
+/// Returns the SHA-256 digest of `bytes`.
+#[must_use]
+pub fn sha256(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
+
 /// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    encode_hex(&Sha256::digest(bytes))
+    encode_hex(&sha256(bytes))
 }
 
 /// Returns the lowercase hexadecimal SHA-256 digest of `value`'s canonical

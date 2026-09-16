@@ -240,7 +240,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         )) != Some(&parameter.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&parameter.identity.segment_token, reference))
+                .any(|reference| !resolves(parameter.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -269,7 +269,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         )) != Some(&expression.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&expression.identity.segment_token, reference))
+                .any(|reference| !resolves(expression.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -303,7 +303,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         )) != Some(&unit.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&unit.identity.segment_token, reference))
+                .any(|reference| !resolves(unit.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -443,10 +443,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         )
         .collect::<Vec<_>>();
         if !record_is_exact(
-            &sketch.identity.segment_token,
+            sketch.identity.segment_token.as_str(),
             sketch.identity.record_ordinal,
             &sketch.identity.type_id,
-        ) || !references_resolve(&sketch.identity.segment_token, &references)
+        ) || !references_resolve(sketch.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -505,10 +505,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
         if !record_is_exact(
-            &entity.identity.segment_token,
+            entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
             &entity.identity.type_id,
-        ) || !references_resolve(&entity.identity.segment_token, &references)
+        ) || !references_resolve(entity.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -519,11 +519,11 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
     for transform in &data.pm_dc_transforms {
         if !record_is_exact(
-            &transform.identity.segment_token,
+            transform.identity.segment_token.as_str(),
             transform.identity.record_ordinal,
             &transform.identity.type_id,
         ) || !references_resolve(
-            &transform.identity.segment_token,
+            transform.identity.segment_token.as_str(),
             &[transform.header.next.index, transform.header.context.index],
         ) {
             findings.push(finding(
@@ -584,10 +584,10 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
         if !record_is_exact(
-            &constraint.identity.segment_token,
+            constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
             &constraint.identity.type_id,
-        ) || !references_resolve(&constraint.identity.segment_token, &references)
+        ) || !references_resolve(constraint.identity.segment_token.as_str(), &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -598,11 +598,11 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
     for direction in &data.pm_dc_directions {
         if !record_is_exact(
-            &direction.identity.segment_token,
+            direction.identity.segment_token.as_str(),
             direction.identity.record_ordinal,
             &direction.identity.type_id,
         ) || !references_resolve(
-            &direction.identity.segment_token,
+            direction.identity.segment_token.as_str(),
             &[direction.header.next.index, direction.header.context.index],
         ) {
             findings.push(finding(
@@ -760,7 +760,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&feature.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&feature.identity.segment_token, reference))
+                .any(|reference| !resolves(feature.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -798,7 +798,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&feature.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&feature.identity.segment_token, reference))
+                .any(|reference| !resolves(feature.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -840,7 +840,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&property.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&property.identity.segment_token, reference))
+                .any(|reference| !resolves(property.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -861,7 +861,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&link.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&link.identity.segment_token, reference))
+                .any(|reference| !resolves(link.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -890,7 +890,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&label.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&label.identity.segment_token, reference))
+                .any(|reference| !resolves(label.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
@@ -910,7 +910,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         )) != Some(&terminator.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&terminator.identity.segment_token, reference))
+                .any(|reference| !resolves(terminator.identity.segment_token.as_str(), reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
