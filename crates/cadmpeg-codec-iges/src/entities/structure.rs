@@ -1736,8 +1736,7 @@ fn plane_face_draft(
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(vec![coedge_id], Vec::new())
-                    .expect("valid loop ring"),
+                cadmpeg_ir::topology::LoopRing::single(coedge_id),
             ),
         });
         loop_ids.push(loop_id);

@@ -2039,7 +2039,6 @@ pub(super) fn project(
                 weights.push(u_weight * angular_weight);
             }
         }
-        let placed_generatrix = (entry.transform != 0).then(|| generatrix.clone());
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         let surface = match NurbsSurface::from_lanes(
             NurbsSurfaceAxis::new(
@@ -2089,8 +2088,9 @@ pub(super) fn project(
         let procedural_is_exact = if entry.transform == 0 {
             true
         } else if let Some(orientation) = similarity_orientation(transform) {
-            let mut placed_generatrix = placed_generatrix
-                .expect("a transformed revolution retains its generatrix until placement");
+            // This arm is the transformed route, so the generatrix is placed
+            // here rather than carried past the untransformed one.
+            let mut placed_generatrix = generatrix.clone();
             if placed_generatrix
                 .edit_control_points(|point| {
                     *point = transform.point(*point);

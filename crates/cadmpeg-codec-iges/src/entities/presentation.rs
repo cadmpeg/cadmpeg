@@ -565,9 +565,10 @@ pub(super) fn project(
         body.color = Some(color);
         body.visible = Some(visible);
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("iges:model:appearance-binding#body-D{sequence}")
-                .try_into()
-                .expect("valid identity"),
+            id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
+                crate::ids::Word::Body,
+                sequence,
+            )),
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
@@ -602,9 +603,10 @@ pub(super) fn project(
         };
         face.color = Some(color);
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("iges:model:appearance-binding#face-D{sequence}")
-                .try_into()
-                .expect("valid identity"),
+            id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
+                crate::ids::Word::Face,
+                sequence,
+            )),
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,

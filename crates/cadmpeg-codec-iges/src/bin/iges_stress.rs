@@ -18,7 +18,6 @@
 //! ```
 
 use std::env;
-use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -29,7 +28,6 @@ const CARD_DATA_COLUMNS: usize = 72;
 const PARAMETER_COLUMNS: usize = 64;
 const DIRECTORY_FIELD_COLUMNS: usize = 8;
 const SEQUENCE_COLUMNS: usize = 7;
-const INFALLIBLE: &str = "writing to a String never fails";
 
 const GLOBAL: &str = "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
 
@@ -67,13 +65,11 @@ struct Record(String);
 
 impl Record {
     fn new(entity_type: u32) -> Self {
-        let mut text = String::new();
-        write!(text, "{entity_type}").expect(INFALLIBLE);
-        Self(text)
+        Self(entity_type.to_string())
     }
 
     fn integer(&mut self, value: i64) {
-        write!(self.0, ",{value}").expect(INFALLIBLE);
+        self.0.push_str(&format!(",{value}"));
     }
 
     fn integers(&mut self, values: &[i64]) {
@@ -82,16 +78,24 @@ impl Record {
         }
     }
 
+    /// One unsigned parameter, such as a Directory sequence.
+    fn unsigned(&mut self, value: u64) {
+        self.0.push_str(&format!(",{value}"));
+    }
+
+    /// One counted length, which is a decimal parameter already.
+    fn count(&mut self, value: usize) {
+        self.unsigned(value as u64);
+    }
+
     fn real(&mut self, thousandths: i64) {
         let magnitude = thousandths.unsigned_abs();
         let sign = if thousandths < 0 { "-" } else { "" };
-        write!(
-            self.0,
+        self.0.push_str(&format!(
             ",{sign}{}.{:03}",
             magnitude / 1000,
             magnitude % 1000
-        )
-        .expect(INFALLIBLE);
+        ));
     }
 
     fn reals(&mut self, values: &[i64]) {
@@ -101,11 +105,11 @@ impl Record {
     }
 
     fn verbatim(&mut self, value: &str) {
-        write!(self.0, ",{value}").expect(INFALLIBLE);
+        self.0.push_str(&format!(",{value}"));
     }
 
     fn hollerith(&mut self, value: &str) {
-        write!(self.0, ",{}H{value}", value.len()).expect(INFALLIBLE);
+        self.0.push_str(&format!(",{}H{value}", value.len()));
     }
 
     fn finish(self) -> String {
@@ -165,7 +169,7 @@ fn right_aligned(field: &mut [u8], value: u64) {
     }
 }
 
-fn card(out: &mut Vec<u8>, data: &[u8], section: u8, sequence: u32) {
+fn card(out: &mut Vec<u8>, data: &[u8], section: u8, sequence: u64) {
     assert!(
         data.len() <= CARD_DATA_COLUMNS,
         "card data exceeds the seventy-two data columns"
@@ -175,12 +179,12 @@ fn card(out: &mut Vec<u8>, data: &[u8], section: u8, sequence: u32) {
     out.resize(start + CARD_DATA_COLUMNS, b' ');
     out.push(section);
     let mut field = [b' '; SEQUENCE_COLUMNS];
-    right_aligned(&mut field, u64::from(sequence));
+    right_aligned(&mut field, sequence);
     out.extend_from_slice(&field);
     out.push(b'\n');
 }
 
-fn directory_card(out: &mut Vec<u8>, fields: [&str; 9], sequence: u32) {
+fn directory_card(out: &mut Vec<u8>, fields: [&str; 9], sequence: u64) {
     let mut data = [b' '; CARD_DATA_COLUMNS];
     for (index, field) in fields.iter().enumerate() {
         assert!(
@@ -193,38 +197,42 @@ fn directory_card(out: &mut Vec<u8>, fields: [&str; 9], sequence: u32) {
     card(out, &data, b'D', sequence);
 }
 
-fn parameter_card(out: &mut Vec<u8>, data: &[u8], owner: u32, sequence: u32) {
+fn parameter_card(out: &mut Vec<u8>, data: &[u8], owner: u64, sequence: u64) {
     assert!(
         data.len() <= PARAMETER_COLUMNS,
         "parameter fragment exceeds the sixty-four data columns"
     );
     let mut payload = [b' '; CARD_DATA_COLUMNS];
     payload[..data.len()].copy_from_slice(data);
-    right_aligned(&mut payload[PARAMETER_COLUMNS..], u64::from(owner));
+    right_aligned(&mut payload[PARAMETER_COLUMNS..], owner);
     card(out, &payload, b'P', sequence);
 }
 
-fn directory_sequence(index: usize) -> u32 {
-    u32::try_from(index * 2 + 1).expect("directory sequence fits a thirty-two bit value")
+/// The Directory sequence of the entity at `index`: odd and one-based.
+///
+/// A `usize` position converts to `u64` with no loss on every supported
+/// target, so the sequence needs no range check. `right_aligned` refuses a
+/// sequence that does not fit its fixed card field.
+fn directory_sequence(index: usize) -> u64 {
+    (index * 2 + 1) as u64
 }
 
 fn assemble(start_text: &str, entities: &[Item]) -> Vec<u8> {
     let mut bytes = Vec::new();
     card(&mut bytes, start_text.as_bytes(), b'S', 1);
-    let mut global_cards: u32 = 0;
+    let mut global_cards: u64 = 0;
     for chunk in GLOBAL.as_bytes().chunks(CARD_DATA_COLUMNS) {
         global_cards += 1;
         card(&mut bytes, chunk, b'G', global_cards);
     }
-    let mut parameter_start: u32 = 1;
+    let mut parameter_start: u64 = 1;
     for (index, entry) in entities.iter().enumerate() {
         assert!(
             !entry.parameters.is_empty(),
             "every entity owns at least one parameter card"
         );
         let sequence = directory_sequence(index);
-        let line_count = u32::try_from(entry.parameters.len().div_ceil(PARAMETER_COLUMNS))
-            .expect("parameter card count fits a thirty-two bit value");
+        let line_count = entry.parameters.len().div_ceil(PARAMETER_COLUMNS) as u64;
         let entity_type = entry.entity_type.to_string();
         let form = entry.form.to_string();
         let start_field = parameter_start.to_string();
@@ -261,7 +269,7 @@ fn assemble(start_text: &str, entities: &[Item]) -> Vec<u8> {
         );
         parameter_start += line_count;
     }
-    let mut parameter_sequence: u32 = 1;
+    let mut parameter_sequence: u64 = 1;
     for (index, entry) in entities.iter().enumerate() {
         let owner = directory_sequence(index);
         for chunk in entry.parameters.as_bytes().chunks(PARAMETER_COLUMNS) {
@@ -319,9 +327,9 @@ fn composite_chains(scale: Scale) -> Vec<u8> {
     let tile_base = entities.len();
     for tile in 0..tiles {
         let mut record = Record::new(102);
-        record.integer(i64::try_from(children).expect("child count fits a signed integer"));
+        record.count(children);
         for child in 0..children {
-            record.integer(i64::from(directory_sequence(tile * children + child)));
+            record.unsigned(directory_sequence(tile * children + child));
         }
         entities.push(item(
             102,
@@ -334,18 +342,18 @@ fn composite_chains(scale: Scale) -> Vec<u8> {
     for index in 0..overlapping {
         let first = (index * 7) % (pool - children);
         let mut record = Record::new(102);
-        record.integer(i64::try_from(children).expect("child count fits a signed integer"));
+        record.count(children);
         for child in 0..children {
-            record.integer(i64::from(directory_sequence(first + child)));
+            record.unsigned(directory_sequence(first + child));
         }
         entities.push(item(102, 0, "OVERCURV", INDEPENDENT, record.finish()));
     }
     for index in 0..nests {
         let first = (index * 3) % (tiles - nest_size);
         let mut record = Record::new(102);
-        record.integer(i64::try_from(nest_size).expect("nest size fits a signed integer"));
+        record.count(nest_size);
         for child in 0..nest_size {
-            record.integer(i64::from(directory_sequence(tile_base + first + child)));
+            record.unsigned(directory_sequence(tile_base + first + child));
         }
         entities.push(item(102, 0, "NESTCURV", INDEPENDENT, record.finish()));
     }
@@ -423,13 +431,11 @@ fn trimmed_surfaces(scale: Scale) -> Vec<u8> {
                 closed_polyline(0, corners),
             ));
             let mut record = Record::new(142);
-            record.integers(&[
-                0,
-                i64::from(directory_sequence(base)),
-                i64::from(directory_sequence(pcurve)),
-                i64::from(directory_sequence(model)),
-                1,
-            ]);
+            record.integer(0);
+            record.unsigned(directory_sequence(base));
+            record.unsigned(directory_sequence(pcurve));
+            record.unsigned(directory_sequence(model));
+            record.integer(1);
             boundaries.push(entities.len());
             entities.push(item(
                 142,
@@ -440,14 +446,12 @@ fn trimmed_surfaces(scale: Scale) -> Vec<u8> {
             ));
         }
         let mut record = Record::new(144);
-        record.integers(&[
-            i64::from(directory_sequence(base)),
-            1,
-            i64::try_from(inner_loops).expect("inner loop count fits a signed integer"),
-            i64::from(directory_sequence(boundaries[0])),
-        ]);
+        record.unsigned(directory_sequence(base));
+        record.integer(1);
+        record.count(inner_loops);
+        record.unsigned(directory_sequence(boundaries[0]));
         for boundary in &boundaries[1..] {
-            record.integer(i64::from(directory_sequence(*boundary)));
+            record.unsigned(directory_sequence(*boundary));
         }
         entities.push(item(144, 0, "TRIMMED", INDEPENDENT, record.finish()));
     }
@@ -478,28 +482,26 @@ fn counted_lists(scale: Scale) -> Vec<u8> {
     }
     for index in 0..groups {
         let mut record = Record::new(402);
-        record.integer(i64::try_from(group_members).expect("member count fits a signed integer"));
+        record.count(group_members);
         for member in 0..group_members {
             let target = (index * 13 + member) % points;
-            record.integer(i64::from(directory_sequence(target)));
+            record.unsigned(directory_sequence(target));
         }
         entities.push(item(402, 7, "GROUP", INDEPENDENT, record.finish()));
     }
     for index in 0..level_properties {
         let mut record = Record::new(406);
-        record.integer(i64::try_from(levels).expect("level count fits a signed integer"));
-        let base = i64::try_from(index * levels).expect("level base fits a signed integer");
+        record.count(levels);
+        let base = (index * levels) as i64;
         for level in 0..levels {
-            record.integer(base + i64::try_from(level).expect("level fits a signed integer"));
+            record.integer(base + level as i64);
         }
         entities.push(item(406, 1, "LEVELS", INDEPENDENT, record.finish()));
     }
     for index in 0..copious_records {
         let mut record = Record::new(106);
-        record.integers(&[
-            2,
-            i64::try_from(triples).expect("tuple count fits a signed integer"),
-        ]);
+        record.integer(2);
+        record.count(triples);
         let defaulted_tail = index % 2 == 1;
         for tuple in 0..triples {
             let step = (index * triples + tuple) as i64;
@@ -514,18 +516,16 @@ fn counted_lists(scale: Scale) -> Vec<u8> {
     for index in 0..arrays {
         let base = seed.below(points as u64) as usize;
         let mut record = Record::new(412);
-        record.integer(i64::from(directory_sequence(base)));
+        record.unsigned(directory_sequence(base));
         record.real(1_000);
         record.reals(&[0, 0, 0]);
         record.integers(&[8, 8]);
         record.reals(&[2_000, 2_000]);
         record.real(0);
-        record.integer(i64::try_from(positions).expect("position count fits a signed integer"));
+        record.count(positions);
         record.integer(0);
         for position in 0..positions {
-            record.integer(
-                i64::try_from((index + position) % 64 + 1).expect("position fits a signed integer"),
-            );
+            record.count((index + position) % 64 + 1);
         }
         entities.push(item(412, 0, "ARRAY", INDEPENDENT, record.finish()));
     }
@@ -555,7 +555,7 @@ fn trailing_groups(scale: Scale) -> Vec<u8> {
         let mut record = Record::new(402);
         record.integer(3);
         for member in 0..3usize {
-            record.integer(i64::from(directory_sequence((index * 3 + member) % points)));
+            record.unsigned(directory_sequence((index * 3 + member) % points));
         }
         entities.push(item(402, 7, "ASSOC", INDEPENDENT, record.finish()));
     }
@@ -563,23 +563,20 @@ fn trailing_groups(scale: Scale) -> Vec<u8> {
     for index in 0..properties {
         let mut record = Record::new(406);
         record.integer(3);
-        let base = i64::try_from(index * 3).expect("level base fits a signed integer");
+        let base = (index * 3) as i64;
         record.integers(&[base, base + 1, base + 2]);
         entities.push(item(406, 1, "PROPERTY", INDEPENDENT, record.finish()));
     }
     let append_groups = |record: &mut Record, index: usize| {
-        record.integer(
-            i64::try_from(association_depth).expect("association depth fits a signed integer"),
-        );
+        record.count(association_depth);
         for slot in 0..association_depth {
             let target = association_base + (index * 5 + slot) % associations;
-            record.integer(i64::from(directory_sequence(target)));
+            record.unsigned(directory_sequence(target));
         }
-        record
-            .integer(i64::try_from(property_depth).expect("property depth fits a signed integer"));
+        record.count(property_depth);
         for slot in 0..property_depth {
             let target = property_base + (index * 3 + slot) % properties;
-            record.integer(i64::from(directory_sequence(target)));
+            record.unsigned(directory_sequence(target));
         }
     };
     for index in 0..carriers {
@@ -638,11 +635,11 @@ fn annotation_runs(scale: Scale) -> Vec<u8> {
     let mut entities = Vec::new();
     for index in 0..general_notes {
         let mut record = Record::new(212);
-        record.integer(i64::try_from(general_strings).expect("string count fits a signed integer"));
+        record.count(general_strings);
         for string in 0..general_strings {
             let length = 40 + (index + string) % 41;
             let text = text_run(&mut seed, length);
-            record.integer(i64::try_from(text.len()).expect("text length fits a signed integer"));
+            record.count(text.len());
             record.reals(&[3_000, 2_000]);
             record.integer(1);
             record.verbatim(RIGHT_ANGLE);
@@ -658,7 +655,7 @@ fn annotation_runs(scale: Scale) -> Vec<u8> {
         record.reals(&[40_000, 20_000]);
         record.integer(2);
         record.reals(&[0, 20_000, 0, 0, 0, 18_000, 0, -5_000]);
-        record.integer(i64::try_from(new_strings).expect("string count fits a signed integer"));
+        record.count(new_strings);
         for string in 0..new_strings {
             let length = 32 + (index + string) % 49;
             let style = text_run(&mut seed, 4);
@@ -669,7 +666,7 @@ fn annotation_runs(scale: Scale) -> Vec<u8> {
             record.integer(18);
             record.real(0);
             record.hollerith(&style);
-            record.integer(i64::try_from(text.len()).expect("text length fits a signed integer"));
+            record.count(text.len());
             record.reals(&[12_000, 3_000]);
             record.integer(1);
             record.verbatim(RIGHT_ANGLE);
@@ -723,12 +720,10 @@ fn free_curve_soup(scale: Scale) -> Vec<u8> {
             }
             3 => {
                 let mut record = Record::new(106);
-                record.integers(&[
-                    2,
-                    i64::try_from(path_points).expect("path point count fits a signed integer"),
-                ]);
+                record.integer(2);
+                record.count(path_points);
                 for point in 0..path_points {
-                    let along = i64::try_from(point).expect("path index fits a signed integer");
+                    let along = point as i64;
                     record.reals(&[
                         step * 2 % 4001 + along * 300,
                         step * 6 % 4003 + along * along * 25,
