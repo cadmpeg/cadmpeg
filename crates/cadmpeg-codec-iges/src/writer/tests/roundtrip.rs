@@ -574,7 +574,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                     entities.iter().any(|entity| {
                         entity
                             .field("entity_type")
-                            .unwrap()
+                            .expect("generated entity reads")
                             .and_then(|value| value.as_i64())
                             == Some(122)
                     })

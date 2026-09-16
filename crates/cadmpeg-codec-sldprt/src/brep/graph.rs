@@ -2131,7 +2131,7 @@ fn decode_graph(
             })
             .map(|face| id_face(face.bridge_attr))
             .filter(|face| emitted_faces.contains_key(face.as_str()))
-            .map(|face| face.into_string());
+            .map(cadmpeg_ir::ids::FaceId::into_string);
     }
     let mut bound_faces = HashSet::new();
     out.face_atoms = entity_facts

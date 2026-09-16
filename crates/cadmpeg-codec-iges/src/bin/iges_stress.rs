@@ -69,7 +69,8 @@ impl Record {
     }
 
     fn integer(&mut self, value: i64) {
-        self.0.push_str(&format!(",{value}"));
+        self.0.push(',');
+        self.0.push_str(&value.to_string());
     }
 
     fn integers(&mut self, values: &[i64]) {
@@ -80,7 +81,8 @@ impl Record {
 
     /// One unsigned parameter, such as a Directory sequence.
     fn unsigned(&mut self, value: u64) {
-        self.0.push_str(&format!(",{value}"));
+        self.0.push(',');
+        self.0.push_str(&value.to_string());
     }
 
     /// One counted length, which is a decimal parameter already.
@@ -90,12 +92,19 @@ impl Record {
 
     fn real(&mut self, thousandths: i64) {
         let magnitude = thousandths.unsigned_abs();
-        let sign = if thousandths < 0 { "-" } else { "" };
-        self.0.push_str(&format!(
-            ",{sign}{}.{:03}",
-            magnitude / 1000,
-            magnitude % 1000
-        ));
+        self.0.push(',');
+        if thousandths < 0 {
+            self.0.push('-');
+        }
+        self.0.push_str(&(magnitude / 1000).to_string());
+        self.0.push('.');
+        // A thousandths remainder is three digits wide, so the fixed field is
+        // written digit by digit rather than padded by a formatter.
+        let thousandths = magnitude % 1000;
+        for place in [100, 10, 1] {
+            self.0
+                .push(char::from(b'0' + (thousandths / place % 10) as u8));
+        }
     }
 
     fn reals(&mut self, values: &[i64]) {
@@ -105,11 +114,15 @@ impl Record {
     }
 
     fn verbatim(&mut self, value: &str) {
-        self.0.push_str(&format!(",{value}"));
+        self.0.push(',');
+        self.0.push_str(value);
     }
 
     fn hollerith(&mut self, value: &str) {
-        self.0.push_str(&format!(",{}H{value}", value.len()));
+        self.0.push(',');
+        self.0.push_str(&value.len().to_string());
+        self.0.push('H');
+        self.0.push_str(value);
     }
 
     fn finish(self) -> String {

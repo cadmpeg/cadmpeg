@@ -982,12 +982,9 @@ fn short_digest_key(bytes: &[u8]) -> cadmpeg_ir::ids::IdentityKey {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .fold(String::with_capacity(bytes.len() * 2), |mut value, byte| {
-            value.push_str(&format!("{byte:02x}"));
-            value
-        })
+    let mut text = String::with_capacity(bytes.len() * 2);
+    crate::pmdc::push_hex(&mut text, bytes);
+    text
 }
 
 pub(crate) fn suffix_fields(source: View<'_>) -> (u64, crate::native::digest::Sha256Hex) {

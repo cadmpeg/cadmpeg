@@ -5,11 +5,20 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
+/// Lowercase hexadecimal digits, the only characters a hex rendering holds.
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+/// Append `bytes` to `text` as lowercase hexadecimal digit pairs.
+pub(crate) fn push_hex(text: &mut String, bytes: &[u8]) {
+    for byte in bytes {
+        text.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+        text.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+    }
+}
+
 pub(crate) fn type_id_string(value: [u8; 16]) -> String {
     let mut result = String::with_capacity(32);
-    for byte in value {
-        result.push_str(&format!("{byte:02x}"));
-    }
+    push_hex(&mut result, &value);
     result
 }
 
