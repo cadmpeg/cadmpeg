@@ -3227,31 +3227,19 @@ mod tests {
         );
         assert_eq!(result.ir().model.points.len(), 1);
         let retained = &result.source_fidelity().retained_records();
-        assert_eq!(retained.len(), 1);
-        assert_eq!(
-            retained.values().next().expect("retained record").offset(),
-            record_offset as u64
-        );
-        assert_eq!(
-            retained
-                .values()
-                .next()
-                .expect("retained record")
-                .byte_len(),
-            record.len() as u64
-        );
-        assert_eq!(
-            retained.values().next().expect("retained record").data(),
-            Some(record.as_slice())
-        );
-        assert_eq!(
-            retained.values().next().expect("retained record").stream(),
-            "rhino"
-        );
-        assert!(retained
-            .keys()
-            .next()
-            .expect("retained record")
+        // `53b52e008` retains the source boundary of a V1 record the decode
+        // transfers as well as one it refuses, so the point chunk is here
+        // beside the malformed annotation record.
+        assert_eq!(retained.len(), 2);
+        let (malformed_id, malformed) = retained
+            .iter()
+            .find(|(id, _)| id.as_str().starts_with("rhino:legacy:record#00200004-"))
+            .expect("the malformed direct record is retained under its typecode");
+        assert_eq!(malformed.offset(), record_offset as u64);
+        assert_eq!(malformed.byte_len(), record.len() as u64);
+        assert_eq!(malformed.data(), Some(record.as_slice()));
+        assert_eq!(malformed.stream(), "rhino");
+        assert!(malformed_id
             .as_str()
             .starts_with("rhino:legacy:record#00200004-"));
         assert!(result
