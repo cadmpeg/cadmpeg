@@ -643,12 +643,10 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
 fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
-    scan.framing.sections.push(crate::container::Section {
-        raw_name: "VisibGeom".to_string(),
-        offset: 0,
-        length: 1_000,
-        expanded_length: None,
-    });
+    scan.framing.sections.push(
+        crate::container::Section::new("VisibGeom".to_string(), 0, 1_000, None, &vec![0u8; 1_000])
+            .expect("section extent"),
+    );
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 11,
