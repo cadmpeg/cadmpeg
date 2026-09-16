@@ -111,10 +111,16 @@ pub enum TransformError {
     Singular,
 }
 
+// The smallest exponent a finite `f64` significand carries. Every exponent
+// this module handles is biased by it, which keeps the biased value unsigned
+// and makes the product shift below a `usize` with no conversion.
+const MIN_SIGNIFICAND_EXPONENT: i32 = -1074;
+
 // A product of two finite f64 values has an integer significand with at most
-// 106 bits. The smallest product exponent is -2148 and the largest is 1942;
-// this range leaves 66 words for three exact signed products and their sum.
-const EXACT_PRODUCT_EXPONENT: i32 = -2148;
+// 106 bits. The smallest product exponent is the sum of two smallest
+// significand exponents and the largest is 1942; this range leaves 66 words
+// for three exact signed products and their sum.
+const EXACT_PRODUCT_EXPONENT: i32 = 2 * MIN_SIGNIFICAND_EXPONENT;
 const EXACT_SUM_WORDS: usize = 66;
 
 #[derive(Clone, Copy)]
@@ -139,22 +145,26 @@ struct ScaledValue {
     exponent: i32,
 }
 
-fn finite_significand(value: f64) -> Option<(bool, u64, i32)> {
+/// The sign, the integer significand, and the significand's exponent biased by
+/// [`MIN_SIGNIFICAND_EXPONENT`], of a finite `f64`.
+///
+/// The biased exponent is a `u16`: the field is eleven bits wide, and a finite
+/// value never reaches the all-ones field, so the biased value is at most 2045.
+fn finite_significand(value: f64) -> Option<(bool, u64, u16)> {
     if !value.is_finite() {
         return None;
     }
     let bits = value.to_bits();
     let negative = bits >> 63 != 0;
-    let exponent = (bits >> 52) & 0x7ff;
+    // The mask keeps eleven bits, so the field is a `u16` by construction.
+    let exponent_field = ((bits >> 52) & 0x7ff) as u16;
     let fraction = bits & ((1_u64 << 52) - 1);
-    if exponent == 0 {
-        (fraction != 0).then_some((negative, fraction, -1074))
+    if exponent_field == 0 {
+        (fraction != 0).then_some((negative, fraction, 0))
     } else {
-        Some((
-            negative,
-            (1_u64 << 52) | fraction,
-            i32::try_from(exponent).expect("f64 exponent fits i32") - 1075,
-        ))
+        // A normal value's exponent is `field - 1075`, which is
+        // `field - 1` once biased by `MIN_SIGNIFICAND_EXPONENT`.
+        Some((negative, (1_u64 << 52) | fraction, exponent_field - 1))
     }
 }
 
@@ -170,8 +180,7 @@ fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
     }
 }
 
-fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: i32) {
-    let shift = usize::try_from(shift).expect("product exponent is in range");
+fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: usize) {
     for (limb_index, limb) in [value as u64, (value >> 64) as u64].into_iter().enumerate() {
         if limb == 0 {
             continue;
@@ -199,13 +208,15 @@ impl ExactSignedSum {
             return;
         };
         let product = u128::from(left_significand) * u128::from(right_significand);
-        let exponent = left_exponent + right_exponent;
+        // Both exponents are biased by `MIN_SIGNIFICAND_EXPONENT`, so their sum
+        // is the product exponent already offset from `EXACT_PRODUCT_EXPONENT`.
+        let shift = usize::from(left_exponent) + usize::from(right_exponent);
         let target = if left_negative ^ right_negative {
             &mut self.negative
         } else {
             &mut self.positive
         };
-        add_shifted(target, product, exponent - EXACT_PRODUCT_EXPONENT);
+        add_shifted(target, product, shift);
     }
 
     fn finish(self) -> Option<ScaledValue> {
@@ -213,39 +224,36 @@ impl ExactSignedSum {
         let word = magnitude.iter().rposition(|value| *value != 0)?;
         // `checked_ilog2` answers `None` for a zero word, which `rposition`
         // has already excluded; the `?` states that rather than asserting it.
-        let highest_bit = word * 64 + magnitude[word].checked_ilog2()? as usize;
+        // `word` indexes `EXACT_SUM_WORDS` words of 64 bits, so a bit index of
+        // the accumulator is a `u16` and converts to `i32` with no range check.
+        let highest_bit = (word * 64 + magnitude[word].checked_ilog2()? as usize) as u16;
         let keep = (highest_bit + 1).min(53);
         let mut significand = 0_u64;
         for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
-            significand = (significand << 1) | u64::from(bit_is_set(&magnitude, bit));
+            significand = (significand << 1) | u64::from(bit_is_set(&magnitude, usize::from(bit)));
         }
         if keep == 53 {
             let guard_bit = highest_bit
                 .checked_sub(keep)
-                .is_some_and(|bit| bit_is_set(&magnitude, bit));
-            let sticky = highest_bit
-                .checked_sub(keep)
-                .is_some_and(|bit| (0..bit).any(|candidate| bit_is_set(&magnitude, candidate)));
+                .is_some_and(|bit| bit_is_set(&magnitude, usize::from(bit)));
+            let sticky = highest_bit.checked_sub(keep).is_some_and(|bit| {
+                (0..bit).any(|candidate| bit_is_set(&magnitude, usize::from(candidate)))
+            });
             if guard_bit && (sticky || significand & 1 != 0) {
                 significand += 1;
                 if significand == 1_u64 << 53 {
                     return Some(ScaledValue {
                         sign: if negative { -1.0 } else { 1.0 },
                         mantissa: 0.5,
-                        exponent: EXACT_PRODUCT_EXPONENT
-                            + i32::try_from(highest_bit).expect("bit index fits i32")
-                            + 2,
+                        exponent: EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 2,
                     });
                 }
             }
         }
         Some(ScaledValue {
             sign: if negative { -1.0 } else { 1.0 },
-            mantissa: significand as f64
-                * 2.0_f64.powi(-(i32::try_from(keep).expect("bit count fits i32"))),
-            exponent: EXACT_PRODUCT_EXPONENT
-                + i32::try_from(highest_bit).expect("bit index fits i32")
-                + 1,
+            mantissa: significand as f64 * 2.0_f64.powi(-i32::from(keep)),
+            exponent: EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1,
         })
     }
 }
@@ -291,11 +299,12 @@ fn scaled_finite(value: f64) -> Option<ScaledValue> {
     // A finite significand is never zero: the subnormal branch requires a
     // nonzero fraction and the normal branch sets bit 52.
     let highest_bit = significand.checked_ilog2()?;
-    let bits = i32::try_from(highest_bit + 1).expect("f64 significand fits i32");
+    // `checked_ilog2` of a `u64` is at most 63, so the width is at most 64.
+    let bits = highest_bit as i32 + 1;
     Some(ScaledValue {
         sign: if negative { -1.0 } else { 1.0 },
         mantissa: significand as f64 * 2.0_f64.powi(-bits),
-        exponent: exponent + bits,
+        exponent: i32::from(exponent) + MIN_SIGNIFICAND_EXPONENT + bits,
     })
 }
 
