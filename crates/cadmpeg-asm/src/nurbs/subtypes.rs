@@ -28,7 +28,12 @@ pub(crate) const INTCURVE_ALIASES: &[(&str, &str)] = &[
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
 /// included. A definition inside a nested scope belongs to that scope's
 /// construction, not to `bytes`.
-pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Vec<(usize, &[u8])> {
+///
+/// A `0x10` with no open scope is a malformed stream and is refused.
+pub(crate) fn owned_subtype_defs(
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Option<Vec<(usize, &[u8])>> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     let mut pos = 0usize;
@@ -43,7 +48,7 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Vec<(usiz
                 }
                 depth += 1;
             }
-            0x10 => depth = depth.saturating_sub(1),
+            0x10 => depth = depth.checked_sub(1)?,
             _ => {}
         }
         match next_token(bytes, pos, int_width) {
@@ -51,7 +56,7 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Vec<(usiz
             None => break,
         }
     }
-    owned
+    Some(owned)
 }
 
 /// Byte offset of the first subtype definition `bytes` owns whose name matches
@@ -68,7 +73,7 @@ pub(crate) fn find_owned_subtype_marker<'n>(
     names: &[&'n [u8]],
     int_width: RefWidth,
 ) -> Option<(usize, &'n [u8])> {
-    let owned = owned_subtype_defs(bytes, int_width);
+    let owned = owned_subtype_defs(bytes, int_width)?;
     names.iter().copied().find_map(|name| {
         owned
             .iter()

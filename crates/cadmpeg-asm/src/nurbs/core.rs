@@ -125,7 +125,7 @@ pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
 /// `comp_spl_sur` compound, whose own cache comes first.
 pub(crate) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
     let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
-    let mut caches = toks::owned_marker_positions(scope)
+    let mut caches = toks::owned_marker_positions(scope)?
         .into_iter()
         .filter_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface));
     let compound = scope.iter().any(|token| {
@@ -141,7 +141,7 @@ pub(crate) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
 /// Decode the surface cache a subtype scope itself owns: the first surface
 /// block outside every construction the scope nests.
 pub(crate) fn owned_surface_cache(scope: &[Token]) -> Option<NurbsSurface> {
-    toks::owned_marker_positions(scope)
+    toks::owned_marker_positions(scope)?
         .into_iter()
         .find_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface))
 }
@@ -151,7 +151,7 @@ pub(crate) fn owned_surface_cache(scope: &[Token]) -> Option<NurbsSurface> {
 /// parse as a 3D curve block).
 pub(crate) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
     let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
-    toks::owned_marker_positions(scope)
+    toks::owned_marker_positions(scope)?
         .into_iter()
         .find_map(|pos| curve_block(scope, pos).map(|(curve, _)| curve))
 }
@@ -159,7 +159,7 @@ pub(crate) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve
 /// block outside every construction the scope nests.
 pub(crate) fn owned_curve_cache(scope: &[Token]) -> Option<NurbsCurve> {
-    toks::owned_marker_positions(scope)
+    toks::owned_marker_positions(scope)?
         .into_iter()
         .find_map(|pos| curve_block(scope, pos).map(|(curve, _)| curve))
 }
@@ -324,7 +324,7 @@ pub fn final_surface_patch_layout(
     record: &[u8],
     int_width: RefWidth,
 ) -> Option<SurfacePatchLayout> {
-    construction_marker_positions(record, int_width)
+    construction_marker_positions(record, int_width)?
         .into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
         .next_back()
@@ -337,7 +337,7 @@ pub fn surface_patch_layout_at(
     ordinal: usize,
     int_width: RefWidth,
 ) -> Option<SurfacePatchLayout> {
-    construction_marker_positions(record, int_width)
+    construction_marker_positions(record, int_width)?
         .into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
         .nth(ordinal)
@@ -413,14 +413,14 @@ pub(crate) fn decode_curve_block(
 
 /// Locate the first valid 3D curve cache at the stream's known integer width.
 pub fn first_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<CurvePatchLayout> {
-    construction_marker_positions(record, int_width)
+    construction_marker_positions(record, int_width)?
         .into_iter()
         .find_map(|position| decode_curve_block(record, position, int_width))
 }
 
 /// Locate the final valid 3D curve cache at the stream's known integer width.
 pub fn final_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<CurvePatchLayout> {
-    construction_marker_positions(record, int_width)
+    construction_marker_positions(record, int_width)?
         .into_iter()
         .filter_map(|position| decode_curve_block(record, position, int_width))
         .next_back()
@@ -453,7 +453,7 @@ pub(crate) fn decode_owned_surface_cache_at(
     scope: &[u8],
     int_width: RefWidth,
 ) -> Option<NurbsSurface> {
-    owned_marker_positions(scope, int_width)
+    owned_marker_positions(scope, int_width)?
         .into_iter()
         .find_map(|pos| decode_surface_block(scope, pos, int_width).map(|decoded| decoded.surface))
 }
@@ -501,7 +501,7 @@ pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block
 /// outside every construction the scope nests.
 pub fn decode_owned_curve_cache_at(scope: &[u8], int_width: RefWidth) -> Option<NurbsCurve> {
-    owned_marker_positions(scope, int_width)
+    owned_marker_positions(scope, int_width)?
         .into_iter()
         .find_map(|pos| decode_curve_block(scope, pos, int_width).map(|decoded| decoded.curve))
 }

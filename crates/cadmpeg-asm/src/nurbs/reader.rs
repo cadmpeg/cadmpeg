@@ -178,14 +178,23 @@ pub(crate) fn marker_positions(b: &[u8]) -> Vec<usize> {
 /// A scope's members and the members of the constructions it nests are
 /// indistinguishable to a raw byte scan, so a scan that ignores nesting reports
 /// a nested support's cache as the scope's own.
-pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Vec<usize> {
+///
+/// A `0x10` with no open scope is a malformed stream and is refused: pinning
+/// the depth at zero would make every later marker read as one `b` owns.
+pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
     let mut out = Vec::new();
     let mut depth = 0usize;
-    let mut pos = usize::from(b.first() == Some(&0x0f));
+    // The scope's own leading `0x0f` is skipped, so the close that matches it
+    // is the one close this walk admits at depth zero.
+    let mut outer = usize::from(b.first() == Some(&0x0f));
+    let mut pos = outer;
     while pos < b.len() {
         match b[pos] {
             0x0f => depth += 1,
-            0x10 => depth = depth.saturating_sub(1),
+            0x10 => match depth.checked_sub(1) {
+                Some(next) => depth = next,
+                None => outer = outer.checked_sub(1)?,
+            },
             _ => {
                 if depth == 0 && marker_at(b, pos).is_some() {
                     out.push(pos);
@@ -197,7 +206,7 @@ pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Vec<usize
             None => break,
         }
     }
-    out
+    Some(out)
 }
 
 /// Positions of the B-spline markers owned by a complete record's unique
@@ -207,13 +216,13 @@ pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Vec<usize
 /// construction. Enter every non-reference outer scope and admit its markers
 /// only when exactly one such scope owns markers. Multiple cache-bearing outer
 /// scopes are ambiguous and therefore not writable.
-pub(crate) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Vec<usize> {
-    let candidates = crate::nurbs::subtypes::owned_subtype_defs(b, int_width)
+pub(crate) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
+    let candidates = crate::nurbs::subtypes::owned_subtype_defs(b, int_width)?
         .into_iter()
         .filter(|(_, name)| *name != b"ref")
         .filter_map(|(start, _)| {
             let scope = crate::nurbs::subtypes::subtype_span(b, start, int_width)?;
-            let positions = owned_marker_positions(scope, int_width)
+            let positions = owned_marker_positions(scope, int_width)?
                 .into_iter()
                 .map(|position| start + position)
                 .collect::<Vec<_>>();
@@ -224,9 +233,9 @@ pub(crate) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Ve
         return owned_marker_positions(b, int_width);
     }
     if candidates.len() != 1 {
-        return Vec::new();
+        return Some(Vec::new());
     }
-    candidates.into_iter().next().unwrap_or_default()
+    candidates.into_iter().next()
 }
 
 /// Bounds for the shared ASM NURBS knot expansion check.

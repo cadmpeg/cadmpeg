@@ -63,7 +63,7 @@ impl PcurvePatchLayout {
 
 /// Locate the final valid 2D pcurve block at the stream's known integer width.
 pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<PcurvePatchLayout> {
-    construction_marker_positions(record, int_width)
+    construction_marker_positions(record, int_width)?
         .into_iter()
         .filter_map(|marker_pos| {
             let marker = marker_at(record, marker_pos)?;
@@ -239,7 +239,7 @@ fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<PcurveNurbs> {
 /// The scope grammar makes its first owned B-spline block the pcurve. Nested
 /// support references are not searched because they belong to other fields.
 pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<PcurveNurbs> {
-    let position = toks::owned_marker_positions(toks).into_iter().next()?;
+    let position = toks::owned_marker_positions(toks)?.into_iter().next()?;
     pcurve_block(toks, position)
 }
 
@@ -257,7 +257,7 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
 /// [`decode_pcurve_fit_tolerance`].
 pub fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
     let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
-    let (_, end) = toks::owned_marker_positions(scope)
+    let (_, end) = toks::owned_marker_positions(scope)?
         .into_iter()
         .filter_map(|pos| pcurve_block_with_end(scope, pos))
         .next_back()?;
