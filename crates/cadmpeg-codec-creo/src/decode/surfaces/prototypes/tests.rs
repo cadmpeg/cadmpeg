@@ -600,7 +600,7 @@ ${}
 #[test]
 fn in_range_section_extent_states_its_declared_end() {
     let section =
-        crate::container::Section::new("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &vec![0u8; 48])
+        crate::container::Section::new("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
             .expect("section extent");
 
     assert_eq!(section.end(), 48);

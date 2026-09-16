@@ -733,7 +733,7 @@ fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
             ));
         }
     }
-    sections.sort_by_key(|section| section.offset());
+    sections.sort_by_key(Section::offset);
     sections.dedup_by_key(|section| section.offset());
     sections
 }
@@ -857,7 +857,7 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
         }
         sections.extend(Section::new(raw_name.to_string(), offset, end, None, data));
     }
-    sections.sort_by_key(|section| section.offset());
+    sections.sort_by_key(Section::offset);
     sections.dedup_by_key(|section| section.offset());
     sections
 }
@@ -2383,9 +2383,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
         sections
     };
     if let Some(framing) = &mut legacy_ascii {
-        let initial_end = sections
-            .first()
-            .map_or(data.len(), |section| section.offset());
+        let initial_end = sections.first().map_or(data.len(), Section::offset);
         let mut scopes = Vec::with_capacity(sections.len() + 1);
         scopes.push(framing.object_offset..initial_end);
         for section in &sections {
@@ -2521,7 +2519,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
             loop_array_sections.push(section.clone());
         }
     }
-    loop_array_sections.sort_by_key(|section| section.offset());
+    loop_array_sections.sort_by_key(Section::offset);
     loop_array_sections.dedup_by_key(|section| section.offset());
     let loop_arrays = loop_array_scan(&data, &loop_array_sections)?;
     let mut nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections)?;
