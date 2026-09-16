@@ -609,7 +609,7 @@ pub(crate) fn field_value(payload: &[u8]) -> FeatureFieldValue {
                         .len()
                         .saturating_sub(values_start)
                         .saturating_mul(16)
-                        .max(12)
+                        .max(crate::scalar::POSITIONAL_SLOT_TABLE_WIDTH)
         }) else {
             return FeatureFieldValue::Raw(payload.to_vec());
         };

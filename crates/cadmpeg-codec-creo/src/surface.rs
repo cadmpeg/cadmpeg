@@ -3262,7 +3262,7 @@ fn parsed_named_surface_value(
                             .len()
                             .saturating_sub(values_start)
                             .saturating_mul(2)
-                            .max(12)
+                            .max(crate::scalar::POSITIONAL_SLOT_TABLE_WIDTH)
             })
             .and_then(|_| arrays::DimensionedScalars::empty(dimensions, count))?;
         let slot_count = array.values().len();
