@@ -524,8 +524,12 @@ fn associated_spline_replay_prototype(
     let (frame_start, frame_end) = bounds.next()?;
     bounds.next().is_none().then_some(())?;
 
-    let mut prototypes = named_prototype_records(payload)
-        .into_iter()
+    // This route re-reads the same payload to locate a span. The prototype
+    // reader in `container` owns the refusal report for these records, so the
+    // sink here is a local buffer and states nothing twice.
+    let mut prototypes =
+        named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new())
+            .into_iter()
         .filter(|prototype| {
             matches!(prototype.family, SurfacePrototypeFamily::Spline(_))
                 && prototype.offset >= frame_start
@@ -3022,8 +3026,12 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
         },
     );
     result.retain(|row| id_counts.get(&row.id) == Some(&1));
-    let prototype_parameter_spans = named_prototype_records(payload)
-        .into_iter()
+    // This route re-reads the same payload to locate a span. The prototype
+    // reader in `container` owns the refusal report for these records, so the
+    // sink here is a local buffer and states nothing twice.
+    let prototype_parameter_spans =
+        named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new())
+            .into_iter()
         .flat_map(|record| record.parameters)
         .map(|parameter| {
             (
@@ -3124,14 +3132,29 @@ fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> b
             && matches!(name, "i_pnts" | "i_points" | "c_pnts"))
 }
 
+/// The decoded value of one named prototype field, or the field's bytes when
+/// no form states it.
+///
+/// A bounded scalar body that the decoder refuses states why. The reason names
+/// the record, the field, the declared slot count and the slot and byte the
+/// refusal stands at, and it reaches `refusals` so the refusal names its
+/// instance instead of leaving only an opaque body behind.
 fn named_surface_value(
     family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     cache: &scalar::ScalarCache,
+    record: &dyn std::fmt::Display,
+    refusals: &mut crate::lane_refusal::LaneRefusals,
 ) -> SurfaceNamedValue {
-    parsed_named_surface_value(family, name, body, cache)
-        .unwrap_or_else(|| SurfaceNamedValue::Opaque(body.to_vec()))
+    let mut refusal = ScalarBodyRefusal::default();
+    if let Some(value) = parsed_named_surface_value(family, name, body, cache, &mut refusal) {
+        return value;
+    }
+    if let Some(reason) = refusal.reason() {
+        refusals.note(record, &format_args!("named field `{name}` {reason}"));
+    }
+    SurfaceNamedValue::Opaque(body.to_vec())
 }
 
 fn parsed_named_surface_value(
@@ -3139,6 +3162,7 @@ fn parsed_named_surface_value(
     name: &str,
     body: &[u8],
     cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
 ) -> Option<SurfaceNamedValue> {
     if body.is_empty() {
         return Some(SurfaceNamedValue::Empty);
@@ -3212,6 +3236,7 @@ fn parsed_named_surface_value(
                     &body[values_start..],
                     array.values().len(),
                     cache,
+                    refusal,
                 )?;
                 array.fill_tokens(slots)?;
                 return Some(SurfaceNamedValue::CountedScalarArray(array));
@@ -3264,13 +3289,15 @@ fn parsed_named_surface_value(
                 | "end_tangts"
         );
         if spline_field {
-            let slots = named_spline_scalar_slots(family, name, remaining, slot_count, cache)?;
+            let slots =
+                named_spline_scalar_slots(family, name, remaining, slot_count, cache, refusal)?;
             array.fill_tokens(slots)?;
         } else if name == "local_sys" {
-            let values = sequential_named_local_system_slots(remaining, slot_count, cache)?;
+            let values =
+                sequential_named_local_system_slots(remaining, slot_count, cache, refusal)?;
             array.fill_values(values)?;
         } else {
-            array.fill_values(scalar_slots(remaining, slot_count, cache)?)?;
+            array.fill_values(scalar_slots(remaining, slot_count, cache, refusal)?)?;
         }
         return Some(SurfaceNamedValue::ScalarArray(array));
     }
@@ -3319,7 +3346,15 @@ fn parsed_named_surface_value(
 }
 
 /// Decode bounded named surface-prototype parameter records.
-pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
+/// Bounded named `srf_prim_ptr(<kind>)` prototype records in `payload`.
+///
+/// A named field whose bounded scalar body the decoder refuses is retained
+/// opaque and stated in `refusals`, against the prototype record and field
+/// that hold it.
+pub fn named_prototype_records(
+    payload: &[u8],
+    refusals: &mut crate::lane_refusal::LaneRefusals,
+) -> Vec<SurfacePrototypeRecord> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut records = Vec::new();
     let mut search = 0;
@@ -3412,7 +3447,14 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
                 value_end = value_offset + compound_close.offset;
             }
             let body = payload[value_offset..value_end].to_vec();
-            let value = named_surface_value(&family, &name, &body, &cache);
+            let value = named_surface_value(
+                &family,
+                &name,
+                &body,
+                &cache,
+                &format_args!("creo surface prototype {family_name} at offset {record_start}"),
+                refusals,
+            );
             parameters.push(SurfaceNamedParameter {
                 name: name.into_owned(),
                 value,
@@ -7326,6 +7368,7 @@ fn named_spline_scalar_slots(
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
 ) -> Option<Vec<ScalarTokenSlot>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = psb::Cursor::new(body);
@@ -7352,7 +7395,15 @@ fn named_spline_scalar_slots(
     {
         slots.push((Some(0.0), Vec::new()));
     }
-    (cursor.pos() == body.len() && slots.len() == count).then_some(slots)
+    if slots.len() != count {
+        refusal.state(scalar_body_refusal(body, count, slots.len(), cursor.pos()));
+        return None;
+    }
+    if cursor.pos() != body.len() {
+        refusal.state(trailing_scalar_body_refusal(body, count, cursor.pos()));
+        return None;
+    }
+    Some(slots)
 }
 
 fn named_vector_scalar_body_len(
@@ -7616,6 +7667,26 @@ fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     scalar::ieee7_with_prefix(body, offset, first, second)
 }
 
+/// Why a bounded scalar body was refused, stated for the record that holds it.
+///
+/// The decoder that refuses knows the slot and the byte; the reader that
+/// reports knows the record and the field. This carries the first to the
+/// second, so a refusal names its instance instead of leaving only an opaque
+/// body behind.
+#[derive(Debug, Default)]
+pub(crate) struct ScalarBodyRefusal(Option<String>);
+
+impl ScalarBodyRefusal {
+    fn state(&mut self, reason: String) {
+        self.0 = Some(reason);
+    }
+
+    /// The stated reason, when the body was refused for one.
+    pub(crate) fn reason(&self) -> Option<&str> {
+        self.0.as_deref()
+    }
+}
+
 /// The declared slots of a bounded scalar body, in stored order, or `None` when
 /// the body does not encode exactly its declared slots.
 ///
@@ -7644,15 +7715,48 @@ fn scalar_slots(
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
 ) -> Option<Vec<Option<f64>>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while slots.len() < count {
-        let (value, next) = scalar::decode_in_lane(body, cursor, cache)?;
+        let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) else {
+            refusal.state(scalar_body_refusal(body, count, slots.len(), cursor));
+            return None;
+        };
         slots.push(Some(value));
         cursor = next;
     }
-    (cursor == body.len()).then_some(slots)
+    if cursor != body.len() {
+        refusal.state(trailing_scalar_body_refusal(body, count, cursor));
+        return None;
+    }
+    Some(slots)
+}
+
+/// The reason a bounded scalar body states no slot at `cursor`: the byte no
+/// scalar form defines, or the end of a body that declares more slots than it
+/// encodes.
+fn scalar_body_refusal(body: &[u8], count: usize, slot: usize, cursor: usize) -> String {
+    match body.get(cursor) {
+        Some(byte) => format!(
+            "declares {count} scalar slots and states byte 0x{byte:02x} at slot {slot}, \
+             which no scalar form defines"
+        ),
+        None => format!(
+            "declares {count} scalar slots and encodes {slot} in {} bytes",
+            body.len()
+        ),
+    }
+}
+
+/// The reason a bounded scalar body that encodes every declared slot is still
+/// refused: bytes are left after the last slot.
+fn trailing_scalar_body_refusal(body: &[u8], count: usize, cursor: usize) -> String {
+    format!(
+        "declares {count} scalar slots and ends them at byte {cursor} of {}",
+        body.len()
+    )
 }
 
 type ScalarTokenSlot = (Option<f64>, Vec<u8>);
@@ -7823,6 +7927,7 @@ fn sequential_named_local_system_slots(
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
+    refusal: &mut ScalarBodyRefusal,
 ) -> Option<Vec<Option<f64>>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
@@ -7879,10 +7984,19 @@ fn sequential_named_local_system_slots(
             slots.push(Some(value));
             cursor = next;
         } else {
+            refusal.state(scalar_body_refusal(body, count, slots.len(), cursor));
             return None;
         }
     }
-    (cursor == body.len() && slots.len() == count).then_some(slots)
+    if slots.len() != count {
+        refusal.state(scalar_body_refusal(body, count, slots.len(), body.len()));
+        return None;
+    }
+    if cursor != body.len() {
+        refusal.state(trailing_scalar_body_refusal(body, count, cursor));
+        return None;
+    }
+    Some(slots)
 }
 
 pub(crate) struct PlaneFrame {
@@ -8415,7 +8529,11 @@ fn complete_plane_compact_scalar_suffix(
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
 /// `geom_type` prototype records. Production readers use only this count.
 pub fn prototype_count(payload: &[u8]) -> usize {
-    let named = named_prototype_records(payload)
+    // This route re-reads the same payload to locate a span. The prototype
+    // reader in `container` owns the refusal report for these records, so the
+    // sink here is a local buffer and states nothing twice.
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
+    let named = records
         .iter()
         .filter(|record| !matches!(record.family, SurfacePrototypeFamily::Other(_)))
         .count();

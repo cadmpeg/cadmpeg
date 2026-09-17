@@ -1043,7 +1043,7 @@ fn named_local_system_expands_row_lane_zero_forms() {
             "local_sys",
             &body,
             &scalar::ScalarCache::default(),
-        ),
+         &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                 .expect("valid scalar array");
@@ -1076,7 +1076,7 @@ fn named_local_system_splits_zero_before_coordinate_token() {
         0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
     ];
 
-    let slots = sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default())
+    let slots = sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default(), &mut ScalarBodyRefusal::default())
         .expect("complete local system");
 
     assert_eq!(slots[2], Some(0.0));
@@ -1088,7 +1088,7 @@ fn named_local_system_splits_zero_before_coordinate_token() {
 #[test]
 fn named_local_system_decodes_terminal_zero_slot() {
     let payload = b"srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\xe0\x01radius\0\xe4";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("local_sys").map(|field| &field.value),
@@ -1123,7 +1123,7 @@ fn named_local_system_advances_across_inherited_slots() {
     ];
 
     assert_eq!(
-        sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default()),
+        sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default(), &mut ScalarBodyRefusal::default()),
         Some(vec![
             Some(1.0),
             Some(0.0),
@@ -1154,17 +1154,17 @@ fn a_named_local_system_body_that_is_not_exactly_its_declared_slots_is_refused()
     ];
 
     assert_eq!(
-        sequential_named_local_system_slots(&body, 12, &cache)
+        sequential_named_local_system_slots(&body, 12, &cache, &mut ScalarBodyRefusal::default())
             .map(|slots| slots.len()),
         Some(12)
     );
     // Thirteen declared slots: the body ends one slot early.
-    assert_eq!(sequential_named_local_system_slots(&body, 13, &cache), None);
+    assert_eq!(sequential_named_local_system_slots(&body, 13, &cache, &mut ScalarBodyRefusal::default()), None);
     // Eleven declared slots: the last byte is left over.
-    assert_eq!(sequential_named_local_system_slots(&body, 11, &cache), None);
+    assert_eq!(sequential_named_local_system_slots(&body, 11, &cache, &mut ScalarBodyRefusal::default()), None);
     // An inherited run that ends the body far short of the declaration.
     assert_eq!(
-        sequential_named_local_system_slots(&[0xe4, 0xe7, 0x02], 12, &cache),
+        sequential_named_local_system_slots(&[0xe4, 0xe7, 0x02], 12, &cache, &mut ScalarBodyRefusal::default()),
         None
     );
 }
@@ -1178,7 +1178,7 @@ fn named_local_system_rejects_invalid_inherited_slot_transitions() {
         &[0xe4, 0xe7, 0x0c],
     ] {
         assert_eq!(
-            sequential_named_local_system_slots(body, 12, &scalar::ScalarCache::default()),
+            sequential_named_local_system_slots(body, 12, &scalar::ScalarCache::default(), &mut ScalarBodyRefusal::default()),
             None
         );
     }
@@ -1189,7 +1189,7 @@ fn named_local_system_rejects_an_unknown_byte_before_complete_slots() {
     let payload = b"srf_prim_ptr(cylinder)\0\
         \xe0\x02local_sys\0\xf9\x04\x03\xfb\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\
         \xe0\x01radius\0\xe4";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("local_sys").map(|field| &field.value),
@@ -1209,7 +1209,7 @@ fn named_local_system_uses_the_signed_coordinate_dict_lane() {
         \x41\xb2\x01\x83\xce\x09\x70\xf1\
         \x7a\xeb\xb6\x28\xd0\x03\x82\x18\
         \x48\x66\x80\x48\x08\x00\x2f\x44\x00";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
     let SurfaceNamedValue::ScalarArray(array) =
         &records[0].field("local_sys").expect("local system").value
     else {
@@ -1234,7 +1234,7 @@ fn named_local_system_decodes_positive_compact_half_coordinate_over_a_complete_b
         "local_sys",
         &body,
         &scalar::ScalarCache::default(),
-    ) else {
+     &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()) else {
         panic!("scalar local system");
     };
     let values = array.values();
@@ -1251,7 +1251,7 @@ fn dimensioned_scalar_arrays_decode_compact_extents() {
         "i_points",
         &body,
         &scalar::ScalarCache::default(),
-    ) else {
+     &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()) else {
         panic!("dimensioned scalar array");
     };
     let dimensions = array.dimensions();
@@ -1271,7 +1271,7 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
     payload.extend_from_slice(&negative);
     payload.extend_from_slice(&[0xe4, 0x0f]);
 
-    let records = named_prototype_records(&payload);
+    let records = named_prototype_records(&payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("i_pnts").map(|field| &field.value),
@@ -1301,7 +1301,7 @@ fn fillet_vectors_dispatch_positive_coordinate_lanes_by_field() {
         \xe0\x02i_pnts\0\xf9\x01\x03\x98\x01\x02\x03\x04\x05\x06\xe4\xe4\
         \xe0\x02tangts\0\xf9\x01\x03\x4c\x01\x02\x03\x04\x05\x06\xe4\xe4";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
     let prototype = &records[0];
 
     assert!(matches!(
@@ -1331,7 +1331,7 @@ fn interpolation_point_dict_token_does_not_consume_following_world_coordinate() 
         \x71\x01\x02\x03\x04\x05\x06\
         \x46\x40\x01\x02\x03\x04\x05\x06\xe4";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert!(matches!(
         records[0].field("i_pnts").map(|field| &field.value),
@@ -1351,7 +1351,7 @@ fn dimensioned_vectors_own_header_shaped_scalar_payloads() {
         \xaa\xe0\x01id\0\xe3\xe4\x0f\
         \xe0\x01tangts\0\xf9\x01\x03\xe4\xe4\xe4";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
     let prototype = &records[0];
 
     assert_eq!(
@@ -1370,7 +1370,7 @@ fn named_torus_radii_decode_compact_positive_quarters() {
     let payload = b"srf_prim_ptr(torus)\0\
         \xe0\x01radius1\0\x0e\
         \xe0\x01radius2\0\x0d\xf1\xf7\x0e\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("radius1").map(|field| &field.value),
@@ -1391,7 +1391,7 @@ fn named_prototype_radius_decodes_positive_eight_byte_form() {
     payload.push(0x28);
     payload.extend_from_slice(&raw[1..]);
 
-    let records = named_prototype_records(&payload);
+    let records = named_prototype_records(&payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("radius").map(|field| &field.value),
@@ -1409,7 +1409,7 @@ fn named_prototype_radius_decodes_positive_dict_form() {
     payload.push(prefix);
     payload.extend_from_slice(&raw[2..]);
 
-    let records = named_prototype_records(&payload);
+    let records = named_prototype_records(&payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("radius").map(|field| &field.value),
@@ -1430,7 +1430,7 @@ fn fillet_parameter_bounds_use_the_named_positive_dict_lane() {
     payload.push(prefix);
     payload.extend_from_slice(&raw[2..]);
 
-    let records = named_prototype_records(&payload);
+    let records = named_prototype_records(&payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("par_v_0").map(|field| &field.value),
@@ -1446,7 +1446,7 @@ fn fillet_parameter_bounds_use_the_named_positive_dict_lane() {
 fn fillet_parameter_bounds_do_not_use_the_radius_only_28_form() {
     let payload = b"srf_prim_ptr(fillet_srf)\0\
         \xe0\x01par_v_1\0\x28\x01\x02\x03\x04\x05\x06\x07";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("par_v_1").map(|field| &field.value),
@@ -1462,7 +1462,7 @@ fn spline_metadata_decodes_wrapped_compact_values() {
         \xe0\x00frst_cntr_crv_hdr_ptr\0\x2f\
         \xe0\x01trv\0\x01\
         \xe0\x01tan_spline\0";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("flip").map(|field| &field.value),
@@ -1505,7 +1505,7 @@ fn spline_metadata_rejects_malformed_compact_wrappers() {
                 name,
                 body,
                 &scalar::ScalarCache::default(),
-            ),
+             &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
             SurfaceNamedValue::Opaque(body.to_vec())
         );
     }
@@ -1515,7 +1515,7 @@ fn spline_metadata_rejects_malformed_compact_wrappers() {
 fn parent_feature_array_accepts_its_exact_reference_trailer() {
     let payload = b"srf_prim_ptr(plane)\0\xe0\0parent_feats\0\
         \xf8\x02\x07\x08\xf7\x03\x09\xe1\xf6\xf6";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].field("parent_feats").map(|field| &field.value),
@@ -1541,7 +1541,7 @@ fn parent_feature_array_rejects_malformed_reference_trailers() {
                 "parent_feats",
                 &body,
                 &scalar::ScalarCache::default(),
-            ),
+             &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
             SurfaceNamedValue::Opaque(body)
         );
     }
@@ -1554,12 +1554,12 @@ fn a_compact_integer_array_holding_fewer_values_than_it_declares_is_not_an_array
 
     // `f8 02` declares two values and the body states two.
     assert_eq!(
-        named_surface_value(&family, "dum_array", &[0xf8, 0x02, 0x07, 0x08], &cache),
+        named_surface_value(&family, "dum_array", &[0xf8, 0x02, 0x07, 0x08], &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         SurfaceNamedValue::CompactIntArray(vec![7, 8])
     );
     // `f8 03` declares three and the body still states two.
     assert_eq!(
-        named_surface_value(&family, "dum_array", &[0xf8, 0x03, 0x07, 0x08], &cache),
+        named_surface_value(&family, "dum_array", &[0xf8, 0x03, 0x07, 0x08], &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         SurfaceNamedValue::Opaque(vec![0xf8, 0x03, 0x07, 0x08])
     );
 }
@@ -1573,7 +1573,7 @@ fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_tr
     let mut two = vec![0xf8u8, 0x02, 0x07, 0x08];
     two.extend_from_slice(&trailer);
     assert_eq!(
-        named_surface_value(&family, "parent_feats", &two, &cache),
+        named_surface_value(&family, "parent_feats", &two, &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         SurfaceNamedValue::CompactIntArray(vec![7, 8])
     );
 
@@ -1582,7 +1582,7 @@ fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_tr
     // the end and no bytes remain to state a trailer.
     let short = vec![0xf8u8, 0x03, 0x07, 0x08];
     assert_eq!(
-        named_surface_value(&family, "parent_feats", &short, &cache),
+        named_surface_value(&family, "parent_feats", &short, &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         SurfaceNamedValue::Opaque(short.clone())
     );
 
@@ -1591,7 +1591,7 @@ fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_tr
     let mut three = vec![0xf8u8, 0x03, 0x07, 0x08];
     three.extend_from_slice(&trailer);
     assert_eq!(
-        named_surface_value(&family, "parent_feats", &three, &cache),
+        named_surface_value(&family, "parent_feats", &three, &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         SurfaceNamedValue::Opaque(three.clone())
     );
 }
@@ -1607,7 +1607,7 @@ fn a_surface_scalar_body_with_fewer_bytes_than_slots_above_twelve_is_refused() {
     // `f9 0d 01`: thirteen dimensions, one entry, no value bytes.
     let body = [0xf9u8, 0x0d, 0x01];
     assert_eq!(
-        named_surface_value(&family, "dum_array", &body, &cache),
+        named_surface_value(&family, "dum_array", &body, &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         SurfaceNamedValue::Opaque(body.to_vec())
     );
 }

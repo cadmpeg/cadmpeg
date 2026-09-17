@@ -354,7 +354,7 @@ fn decodes_named_prototype_scalars_without_promoting_them_to_instances() {
 fn bounds_last_named_prototype_field_at_compound_close() {
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3\
                     \x07\x26\x04\x01\0\0";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].parameters.len(), 1);
@@ -371,7 +371,7 @@ fn parenthesized_prototype_ends_at_legacy_prototype_record() {
         \xe0\x00srf_prim_ptr\0geom_type\0\x24\
         \xe0\x02radius\0\x2f\x05\x00";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].family, SurfacePrototypeFamily::Plane);
@@ -386,7 +386,7 @@ fn parenthesized_prototype_ends_at_peer_entity_record() {
         \xe0\x00entity_ptr(coord_sys)\0\xe3\
         \xe0\x02radius\0\x2f\x05\x00";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].parameters.len(), 1);
@@ -402,7 +402,7 @@ fn analytic_prototype_does_not_claim_nested_curve_parameters() {
         \xe0\x00curve(b_spline)\0\xe3\
         \xe0\x00c_pnts\0\xf8\x04\xf7\x50\xfb";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(
@@ -418,7 +418,7 @@ fn analytic_prototype_does_not_claim_nested_curve_parameters() {
 #[test]
 fn terminal_zero_decodes_in_a_bounded_named_scalar_field() {
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].parameters.len(), 1);
@@ -439,7 +439,7 @@ fn summarizes_parenthesized_analytic_prototypes() {
 #[test]
 fn distinguishes_spline_and_fillet_surface_families() {
     let payload = b"srf_prim_ptr(splsrf)\0\xe3srf_prim_ptr(fillet_srf)\0\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 2);
     assert_eq!(
@@ -459,7 +459,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
         \xe0\x02i_points\0\xf9\x02\x02\xe4\x0f\xe4\x0f\
         \xe0\x02end_u_tangts\0\xf9\x01\x02\x0f\xe4\
         \xe0\x02u_params\0\xf8\x02\x0f\xe4\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert_eq!(
@@ -515,7 +515,7 @@ fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
         &body,
         2,
         &scalar::ScalarCache::default(),
-    )
+     &mut ScalarBodyRefusal::default())
     .expect("complete spline body");
 
     assert_eq!(
@@ -537,7 +537,7 @@ fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
             &body,
             6,
             &scalar::ScalarCache::default(),
-        )
+         &mut ScalarBodyRefusal::default())
         .expect("complete spline body");
         assert_eq!(
             slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
@@ -567,7 +567,7 @@ fn spline_tangents_use_the_signed_coordinate_dict_lattice() {
             &body,
             3,
             &scalar::ScalarCache::default(),
-        )
+         &mut ScalarBodyRefusal::default())
         .expect("complete spline body");
 
         assert_eq!(
@@ -595,7 +595,7 @@ fn tabulated_cylinder_parameters_end_the_tangent_field() {
         \xe0\x02params\0\xf8\x03\x0f\
         \x2d\x00\x00\x00\x00\x00\x00\x00\
         \x2d\x08\x00\x00\x00\x00\x00\x00\xe3";
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(records.len(), 1);
     assert!(matches!(
@@ -624,7 +624,7 @@ fn tabulated_cylinder_control_point_field_expands_contiguous_ids() {
     let payload = b"srf_prim_ptr(tab_cyl)\0\
         \xe0\x00c_pnts\0\xf8\x04\xf7\x50\xfb";
 
-    let records = named_prototype_records(payload);
+    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
 
     assert_eq!(
         records[0].tabulated_cylinder_control_point_ids(),
@@ -758,26 +758,26 @@ fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
 
     // `0xe4` is one and `0x0f` is zero; `0x00` defines no scalar form.
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 3, &cache),
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
         Some(vec![Some(1.0), Some(0.0), Some(0.0)])
     );
     // The same body with the undefined byte at slot 0, slot 1 and slot 2.
     assert_eq!(
-        super::super::scalar_slots(&[0x00, 0x0f, 0x0f], 3, &cache),
+        super::super::scalar_slots(&[0x00, 0x0f, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
         None
     );
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x00, 0x0f], 3, &cache),
+        super::super::scalar_slots(&[0xe4, 0x00, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
         None
     );
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x00], 3, &cache),
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x00], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
         None
     );
     // The first two slots decode, so the refusal is at slot 2 and not earlier:
     // a two-slot declaration over the same two prefixes decodes.
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f], 2, &cache),
+        super::super::scalar_slots(&[0xe4, 0x0f], 2, &cache, &mut super::super::ScalarBodyRefusal::default()),
         Some(vec![Some(1.0), Some(0.0)])
     );
 }
@@ -791,12 +791,12 @@ fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
     let cache = scalar::ScalarCache::default();
 
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f], 2, &cache),
+        super::super::scalar_slots(&[0xe4, 0x0f], 2, &cache, &mut super::super::ScalarBodyRefusal::default()),
         Some(vec![Some(1.0), Some(0.0)])
     );
-    assert_eq!(super::super::scalar_slots(&[0xe4, 0x0f], 3, &cache), None);
-    assert_eq!(super::super::scalar_slots(&[], 1, &cache), None);
-    assert_eq!(super::super::scalar_slots(&[], 0, &cache), Some(Vec::new()));
+    assert_eq!(super::super::scalar_slots(&[0xe4, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()), None);
+    assert_eq!(super::super::scalar_slots(&[], 1, &cache, &mut super::super::ScalarBodyRefusal::default()), None);
+    assert_eq!(super::super::scalar_slots(&[], 0, &cache, &mut super::super::ScalarBodyRefusal::default()), Some(Vec::new()));
 }
 
 /// The format states no rule for a byte left in a bounded scalar body after
@@ -807,14 +807,106 @@ fn a_scalar_body_longer_than_its_declared_count_is_refused() {
     let cache = scalar::ScalarCache::default();
 
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 3, &cache),
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
         Some(vec![Some(1.0), Some(0.0), Some(0.0)])
     );
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 2, &cache),
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 2, &cache, &mut super::super::ScalarBodyRefusal::default()),
         None
     );
-    assert_eq!(super::super::scalar_slots(&[0xe4], 0, &cache), None);
+    assert_eq!(super::super::scalar_slots(&[0xe4], 0, &cache, &mut super::super::ScalarBodyRefusal::default()), None);
+}
+
+/// A refused bounded scalar body is recorded by name. The note states the
+/// record, the field, the declared slot count, and the slot and the byte the
+/// refusal stands at, or the length of a body that states fewer slots than it
+/// declares. The field bytes survive as an opaque value either way.
+#[test]
+fn a_refused_scalar_body_names_the_record_the_field_and_the_slot() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Plane;
+    let record = "creo surface prototype plane at offset 96";
+
+    // `f9 01 03` declares three scalar slots. `0xe4` is one and `0x0f` is
+    // zero; `0x00` defines no scalar form.
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    let undefined = [0xf9, 0x01, 0x03, 0xe4, 0x00, 0x0f];
+    assert!(matches!(
+        super::super::named_surface_value(
+            &family,
+            "data_dbls",
+            &undefined,
+            &cache,
+            &record,
+            &mut refusals
+        ),
+        SurfaceNamedValue::Opaque(bytes) if bytes == undefined
+    ));
+    assert_eq!(
+        refusals.take_records(),
+        [format!(
+            "{record}: named field `data_dbls` declares 3 scalar slots and states byte 0x00 \
+             at slot 1, which no scalar form defines"
+        )]
+    );
+
+    // The same declaration over a body that encodes two slots.
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    let short = [0xf9, 0x01, 0x03, 0xe4, 0x0f];
+    assert!(matches!(
+        super::super::named_surface_value(
+            &family,
+            "data_dbls",
+            &short,
+            &cache,
+            &record,
+            &mut refusals
+        ),
+        SurfaceNamedValue::Opaque(bytes) if bytes == short
+    ));
+    assert_eq!(
+        refusals.take_records(),
+        [format!(
+            "{record}: named field `data_dbls` declares 3 scalar slots and encodes 2 in 2 bytes"
+        )]
+    );
+
+    // A two-slot declaration over the same three encoded slots.
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    let long = [0xf9, 0x01, 0x02, 0xe4, 0x0f, 0x0f];
+    assert!(matches!(
+        super::super::named_surface_value(
+            &family,
+            "data_dbls",
+            &long,
+            &cache,
+            &record,
+            &mut refusals
+        ),
+        SurfaceNamedValue::Opaque(bytes) if bytes == long
+    ));
+    assert_eq!(
+        refusals.take_records(),
+        [format!(
+            "{record}: named field `data_dbls` declares 2 scalar slots and ends them at byte 2 \
+             of 3"
+        )]
+    );
+
+    // A body every declared slot encodes states no refusal.
+    let mut refusals = crate::lane_refusal::LaneRefusals::new();
+    assert!(matches!(
+        super::super::named_surface_value(
+            &family,
+            "data_dbls",
+            &[0xf9, 0x01, 0x03, 0xe4, 0x0f, 0x0f],
+            &cache,
+            &record,
+            &mut refusals
+        ),
+        SurfaceNamedValue::ScalarArray(_)
+    ));
+    assert!(refusals.take_records().is_empty());
 }
 
 /// The bounded spline scalar body obeys the rules of the bounded scalar body
@@ -829,15 +921,15 @@ fn a_spline_scalar_body_that_is_not_exactly_its_declared_slots_is_refused() {
         0x2d, 1, 2, 3, 4, 5, 6, 7, 0x2d, 1, 2, 3, 4, 5, 6, 8, 0x2d, 1, 2, 3, 4, 5, 6, 9,
     ];
 
-    assert!(named_spline_scalar_slots(&family, "tangts", &body, 3, &cache).is_some());
+    assert!(named_spline_scalar_slots(&family, "tangts", &body, 3, &cache, &mut ScalarBodyRefusal::default()).is_some());
     // The same bytes under a four-slot declaration end one slot early.
     assert_eq!(
-        named_spline_scalar_slots(&family, "tangts", &body, 4, &cache),
+        named_spline_scalar_slots(&family, "tangts", &body, 4, &cache, &mut ScalarBodyRefusal::default()),
         None
     );
     // The same bytes under a two-slot declaration leave eight bytes over.
     assert_eq!(
-        named_spline_scalar_slots(&family, "tangts", &body, 2, &cache),
+        named_spline_scalar_slots(&family, "tangts", &body, 2, &cache, &mut ScalarBodyRefusal::default()),
         None
     );
 }

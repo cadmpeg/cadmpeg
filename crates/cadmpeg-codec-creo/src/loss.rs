@@ -70,6 +70,9 @@ pub enum CreoLossCode {
     BrepTransferIncomplete,
     /// A saved section spline cannot form a NURBS curve.
     SectionSplineUnresolved,
+    /// A named surface-prototype field's bounded scalar body states no slots
+    /// and is retained opaque.
+    SurfacePrototypeFieldRetained,
     /// A resolved extrusion body failed shell admission.
     ExtrusionBodyRejected,
     /// Remaining per-instance surfaces, curves, and vertices stay gated.
@@ -202,6 +205,7 @@ impl CreoLossCode {
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
             Self::SectionSplineUnresolved => "geometry.section-spline-unresolved",
+            Self::SurfacePrototypeFieldRetained => "geometry.surface-prototype-field-retained",
             Self::ExtrusionBodyRejected => "topology.extrusion-body-rejected",
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
@@ -292,6 +296,7 @@ impl CreoLossCode {
             | Self::TopologyIncompleteComponents
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::SectionSplineUnresolved
+            | Self::SurfacePrototypeFieldRetained
             | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
             | Self::LegacyIntegerValueUnresolved
@@ -382,7 +387,8 @@ impl CreoLossCode {
             | Self::VisibGeomSurfaceAmbiguous
             | Self::VisibGeomCurveAmbiguous
             | Self::SectionSegmentGeometryUnresolved
-            | Self::SectionSplineUnresolved => LossTaxonomy::GeometryNotTransferred,
+            | Self::SectionSplineUnresolved
+            | Self::SurfacePrototypeFieldRetained => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyIncompleteComponents | Self::ExtrusionBodyRejected => {
                 LossTaxonomy::TopologyNotTransferred
             }
@@ -465,6 +471,7 @@ mod tests {
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
                 "geometry.section-spline-unresolved",
+                "geometry.surface-prototype-field-retained",
                 "topology.extrusion-body-rejected",
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
