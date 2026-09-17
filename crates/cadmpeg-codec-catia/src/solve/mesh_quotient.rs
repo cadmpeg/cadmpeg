@@ -6574,7 +6574,10 @@ impl MeshSelectionSearch<'_> {
             .map(|(component, roots)| {
                 required_component_roots(
                     *roots,
-                    component_merge_capacity.get(component).copied().unwrap_or(0),
+                    component_merge_capacity
+                        .get(component)
+                        .copied()
+                        .unwrap_or(0),
                 )
             })
             .sum::<usize>();
@@ -6584,7 +6587,10 @@ impl MeshSelectionSearch<'_> {
         let required_count = |component: &usize| {
             required_component_roots(
                 possible_root_counts[component],
-                component_merge_capacity.get(component).copied().unwrap_or(0),
+                component_merge_capacity
+                    .get(component)
+                    .copied()
+                    .unwrap_or(0),
             )
         };
         let universal_required = universal_components

@@ -50,10 +50,7 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
         if view.seek(count_offset).is_none() {
             continue;
         }
-        let Some(count) = view
-            .u32_le()
-            .map(|n| index_from_u32(n))
-        else {
+        let Some(count) = view.u32_le().map(|n| index_from_u32(n)) else {
             continue;
         };
         if count > 100_000 {

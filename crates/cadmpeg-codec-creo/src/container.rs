@@ -1029,7 +1029,11 @@ fn identify_layout(
         if section.section.name() != "DEPDB_DATA" {
             return false;
         }
-        let Some(header_end) = section.section.offset().checked_add(section.section.raw_name.len() + 2) else {
+        let Some(header_end) = section
+            .section
+            .offset()
+            .checked_add(section.section.raw_name.len() + 2)
+        else {
             return false;
         };
         data.get(header_end..section.section.end())
@@ -1038,7 +1042,9 @@ fn identify_layout(
     let has_depdb_section = sections
         .iter()
         .any(|section| section.section.name() == "DEPDB_DATA");
-    let has_nd_decoration = sections.iter().any(|s| s.section.raw_name.starts_with("ND:"));
+    let has_nd_decoration = sections
+        .iter()
+        .any(|s| s.section.raw_name.starts_with("ND:"));
     if has_depdb_section {
         if has_depdb_root {
             Layout::Depdb
@@ -1216,9 +1222,7 @@ fn family_table(data: &[u8], sections: &[ScannedSection<'_>]) -> Option<FamilyTa
     Some(FamilyTableRecord { pointer, offset })
 }
 
-fn model_geometry_sections<'a>(
-    sections: &[ScannedSection<'a>],
-) -> Vec<ScannedSection<'a>> {
+fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSection<'a>> {
     let mut visible_namespace_present = false;
     for candidate in sections
         .iter()
@@ -1925,7 +1929,11 @@ fn feature_rows(sections: &[ScannedSection<'_>], feature_ids: &[u32]) -> Vec<Fea
         .filter(|section| section.section.name() == "AllFeatur")
     {
         let section_bytes = section.region;
-        rows.extend(feature::rows(section_bytes, &feature_ids, section.section.offset()));
+        rows.extend(feature::rows(
+            section_bytes,
+            &feature_ids,
+            section.section.offset(),
+        ));
     }
     rows.sort_by_key(|row| row.offset);
     rows
@@ -2035,10 +2043,9 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
 
 fn feature_definitions(sections: &[ScannedSection<'_>]) -> Vec<FeatureDefinition> {
     let mut definitions = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "FeatDefs" || section.section.name() == "DEPDB_DATA")
-    {
+    for section in sections.iter().filter(|section| {
+        section.section.name() == "FeatDefs" || section.section.name() == "DEPDB_DATA"
+    }) {
         let payload = section.region;
         definitions.extend(
             (if section.section.name() == "DEPDB_DATA" {
@@ -2131,10 +2138,9 @@ fn positional_replay_definitions(sections: &[ScannedSection<'_>]) -> Vec<Feature
 
 fn feature_operations(sections: &[ScannedSection<'_>]) -> Vec<FeatureOperation> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA")
-    {
+    for section in sections.iter().filter(|section| {
+        section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
+    }) {
         let section_bytes = section.region;
         records.extend(
             feature::operations(section_bytes)
@@ -2178,10 +2184,9 @@ fn feature_reference_names(sections: &[ScannedSection<'_>]) -> Vec<FeatureRefere
 
 fn feature_operation_states(sections: &[ScannedSection<'_>]) -> Vec<FeatureOperationState> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA")
-    {
+    for section in sections.iter().filter(|section| {
+        section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
+    }) {
         let section_bytes = section.region;
         records.extend(
             feature::operation_states(section_bytes)
@@ -2323,7 +2328,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
         for section in &sections {
             let region = section.region;
             let Some(payload_start) = section
-                .section.offset()
+                .section
+                .offset()
                 .checked_add(section.section.raw_name.len())
                 .and_then(|start| start.checked_add(2))
             else {
@@ -2517,8 +2523,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
     let curve_parameters = curve_parameters(&model_geometry_sections, &topology_face_ids);
     let nonvisible_curve_topology_rows =
         curve_topology_rows(&nonvisible_geometry_sections, &topology_face_ids);
-    let mut curve_topology_rows =
-        curve_topology_rows(&model_geometry_sections, &topology_face_ids);
+    let mut curve_topology_rows = curve_topology_rows(&model_geometry_sections, &topology_face_ids);
     let curve_prototype_topology = curve_prototype_topology(&model_geometry_sections);
     let prototype_topology_rows = curve::prototype_topology_rows(
         &curve_prototypes,
@@ -2599,8 +2604,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
     let surface_merge_replay_affected_ids =
         feature::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
-    let feature_entity_tables =
-        feature_entity_tables(&sections, &feature_ids, &surface_rows);
+    let feature_entity_tables = feature_entity_tables(&sections, &feature_ids, &surface_rows);
     let feature_definitions = feature_definitions(&sections);
     let feature_definitions =
         feature::bind_definition_owners(feature_definitions, &feature_geometry_tables);
