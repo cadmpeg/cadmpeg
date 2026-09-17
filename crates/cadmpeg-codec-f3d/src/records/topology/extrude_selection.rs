@@ -1,0 +1,549 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Extrude selection groups, operand and face roles, and group members.
+
+use super::fillet::deserialize_historical_binding;
+use super::fillet::HistoricalBinding;
+use crate::records::identity::Located;
+use crate::records::mesh::DesignRelaxedGuidText;
+use crate::records::references::DesignClassTag;
+use crate::records::sketch_relations::SketchRelationOperand;
+use serde::Deserialize;
+use serde::Serialize;
+use std::num::NonZeroU32;
+
+/// Counted selection group owned by an Extrude parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignExtrudeSelectionGroupWire",
+    into = "DesignExtrudeSelectionGroupWire"
+)]
+pub struct DesignExtrudeSelectionGroup {
+    /// Globally unique deterministic identifier for this native group.
+    pub id: String,
+    /// Owning Extrude parameter-scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    pub record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: DesignClassTag,
+    /// Ordered indexed selection-member records.
+    members: Vec<Located<u32>>,
+    /// Opaque nonzero u32 repeated around the f64 scalar.
+    pub opaque_index: NonZeroU32,
+    /// Opaque finite f64 between the repeated u32 copies.
+    opaque_scalar: f64,
+    /// Boolean byte between the two nested-record references.
+    pub variant: bool,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: DesignClassTag,
+    offsets: [u64; 4],
+}
+
+/// Counted selection group owned by an Extrude parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignExtrudeSelectionGroupWire {
+    /// Globally unique deterministic identifier for this native group.
+    pub id: String,
+    /// Owning Extrude parameter-scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    pub record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// Byte offset of the counted member-run length.
+    pub member_count_offset: u64,
+    /// Ordered indexed selection-member records.
+    pub members: Vec<u32>,
+    /// Byte offsets parallel to `members`.
+    pub member_offsets: Vec<u64>,
+    /// Opaque nonzero u32 repeated around the f64 scalar.
+    pub opaque_index: u32,
+    /// Byte offset of the first `opaque_index` copy.
+    pub opaque_index_offset: u64,
+    /// Opaque finite f64 between the repeated u32 copies.
+    pub opaque_scalar: f64,
+    /// Byte offset of `opaque_scalar`.
+    pub opaque_scalar_offset: u64,
+    /// Boolean byte between the two nested-record references.
+    pub variant: bool,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: String,
+    /// Byte offset of the same-index paired header.
+    pub paired_byte_offset: u64,
+}
+
+impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
+    type Error = String;
+    fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
+        if wire.members.len() != wire.member_offsets.len() {
+            return Err("members and member_offsets must have equal lengths".into());
+        }
+        let offsets = DesignExtrudeSelectionGroup::offsets(wire.byte_offset, wire.members.len())?;
+        if wire
+            .members
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            != wire.members.len()
+        {
+            return Err("members must be distinct".into());
+        }
+        if wire.member_count_offset != offsets[0]
+            || wire.opaque_index_offset != offsets[1]
+            || wire.opaque_scalar_offset != offsets[2]
+            || wire.paired_byte_offset != offsets[3]
+        {
+            return Err("member_count_offset, opaque_index_offset, opaque_scalar_offset and paired_byte_offset must follow the member run".into());
+        }
+        if !wire
+            .member_offsets
+            .iter()
+            .enumerate()
+            .all(|(index, offset)| *offset == offsets[0] + 5 + index as u64 * 11)
+        {
+            return Err(
+                "member_offsets must start after member_count_offset and have stride 11".into(),
+            );
+        }
+        let opaque_index =
+            NonZeroU32::new(wire.opaque_index).ok_or("opaque_index must be nonzero")?;
+        if !wire.opaque_scalar.is_finite() {
+            return Err("opaque_scalar must be finite".into());
+        }
+        Ok(Self {
+            members: wire
+                .members
+                .into_iter()
+                .zip(wire.member_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            scope_reference_ordinal: wire.scope_reference_ordinal,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag.try_into()?,
+            opaque_index,
+            opaque_scalar: wire.opaque_scalar,
+            variant: wire.variant,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
+            offsets,
+        })
+    }
+}
+
+impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
+    fn from(group: DesignExtrudeSelectionGroup) -> Self {
+        let opaque_scalar = group.opaque_scalar();
+        let member_count_offset = group.member_count_offset();
+        let opaque_index_offset = group.opaque_index_offset();
+        let opaque_scalar_offset = group.opaque_scalar_offset();
+        let paired_byte_offset = group.paired_byte_offset();
+        let (members, member_offsets) = group
+            .members
+            .into_iter()
+            .map(|member| (member.value, member.offset))
+            .unzip();
+        Self {
+            members,
+            member_offsets,
+            id: group.id,
+            scope_record_index: group.scope_record_index,
+            scope_reference_ordinal: group.scope_reference_ordinal,
+            record_index: group.record_index,
+            byte_offset: group.byte_offset,
+            class_tag: group.class_tag.into(),
+            member_count_offset,
+            opaque_index: group.opaque_index.get(),
+            opaque_index_offset,
+            opaque_scalar,
+            opaque_scalar_offset,
+            variant: group.variant,
+            paired_class_tag: group.paired_class_tag.into(),
+            paired_byte_offset,
+        }
+    }
+}
+
+impl DesignExtrudeSelectionGroup {
+    fn offsets(byte_offset: u64, count: usize) -> Result<[u64; 4], String> {
+        if count == 0 {
+            return Err("members must not be empty".into());
+        }
+        let member_count_offset = byte_offset
+            .checked_add(32)
+            .ok_or("byte_offset overflows member_count_offset")?;
+        let run_size = u64::try_from(count)
+            .ok()
+            .and_then(|count| count.checked_mul(11))
+            .ok_or("members exceed offset range")?;
+        let opaque_index_offset = member_count_offset
+            .checked_add(4)
+            .and_then(|offset| offset.checked_add(run_size))
+            .ok_or("members overflow opaque_index_offset")?;
+        let paired_byte_offset = opaque_index_offset
+            .checked_add(53)
+            .ok_or("opaque_index_offset overflows paired_byte_offset")?;
+        Ok([
+            member_count_offset,
+            opaque_index_offset,
+            opaque_index_offset + 4,
+            paired_byte_offset,
+        ])
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub(crate) fn members(&self) -> &[Located<u32>] {
+        &self.members
+    }
+    pub(crate) fn member_count_offset(&self) -> u64 {
+        self.offsets[0]
+    }
+    pub(crate) fn opaque_index_offset(&self) -> u64 {
+        self.offsets[1]
+    }
+    pub(crate) fn opaque_scalar_offset(&self) -> u64 {
+        self.offsets[2]
+    }
+    pub(crate) fn paired_byte_offset(&self) -> u64 {
+        self.offsets[3]
+    }
+    pub(crate) fn opaque_scalar(&self) -> f64 {
+        self.opaque_scalar
+    }
+    #[cfg(test)]
+    pub(crate) fn try_set_members(&mut self, members: Vec<u32>) -> Result<(), String> {
+        let offsets = Self::offsets(self.byte_offset, members.len())?;
+        let mut wire = DesignExtrudeSelectionGroupWire::from(self.clone());
+        wire.member_offsets = (0..members.len())
+            .map(|index| offsets[0] + 5 + index as u64 * 11)
+            .collect();
+        wire.members = members;
+        [
+            wire.member_count_offset,
+            wire.opaque_index_offset,
+            wire.opaque_scalar_offset,
+            wire.paired_byte_offset,
+        ] = offsets;
+        *self = Self::try_from(wire)?;
+        Ok(())
+    }
+}
+
+/// Semantic role of a counted Extrude operand group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesignExtrudeOperandRole {
+    /// Existing bodies consumed by the Boolean operation.
+    Bodies,
+    /// Sketch profile swept by the Extrude.
+    Profile,
+    /// Faces used by profile-start or termination construction. The ordered
+    /// position inside the scope always resolves to one of the two uses, so
+    /// there is no unresolved face role.
+    Faces(DesignExtrudeFaceRole),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum DesignExtrudeOperandRoleTag {
+    Bodies,
+    Profile,
+    Faces,
+}
+
+/// Semantic use of an ordered Extrude face-operand group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignExtrudeFaceRole {
+    /// Face supporting a selected-face start.
+    Start,
+    /// Face terminating a one-sided to-face extent.
+    Termination,
+}
+
+/// Source u64 role code carried by a construction-operand group.
+///
+/// The admitted set is open: files carry codes outside the named list, and
+/// `extrude_operand_role` returns `None` for them, so this is a newtype with
+/// named codes rather than a closed enum. One spelling per value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DesignOperandRole(u64);
+
+impl DesignOperandRole {
+    /// Extrude body operand run A.
+    pub const BODIES_A: Self = Self(0x0000_0004_0000_0000);
+    /// Extrude body operand run B.
+    pub const BODIES_B: Self = Self(0x0000_0008_0000_0000);
+    /// Extrude profile operand run.
+    pub const PROFILE: Self = Self(0x0000_0041_0000_0000);
+    /// Extrude face operand run.
+    pub const FACES: Self = Self(0x0000_0011_0000_0000);
+
+    // These codes have scope-dependent meanings and no single semantic name.
+    /// Scope-dependent role code 0x5.
+    pub const ROLE_0X5: Self = Self(0x0000_0005_0000_0000);
+    /// Scope-dependent role code 0x7.
+    pub const ROLE_0X7: Self = Self(0x0000_0007_0000_0000);
+    /// Scope-dependent role code 0x9.
+    pub const ROLE_0X9: Self = Self(0x0000_0009_0000_0000);
+    /// Scope-dependent role code 0x10.
+    pub const ROLE_0X10: Self = Self(0x0000_0010_0000_0000);
+    /// Scope-dependent role code 0x12.
+    pub const ROLE_0X12: Self = Self(0x0000_0012_0000_0000);
+    /// Scope-dependent role code 0x21.
+    pub const ROLE_0X21: Self = Self(0x0000_0021_0000_0000);
+    /// Scope-dependent role code 0x43.
+    pub const ROLE_0X43: Self = Self(0x0000_0043_0000_0000);
+
+    /// Wrap the stored u64 role code.
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+    /// The stored u64 role code.
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+/// Source encoding of an Extrude face operand run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesignExtrudeFaceEncoding {
+    /// Standard face-group encoding.
+    Faces,
+    /// Selected-face start encoding.
+    SelectedStart,
+    /// Legacy termination-face encoding.
+    LegacyTermination,
+}
+
+/// One fixed-width member named by an Extrude selection group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DesignExtrudeSelectionMemberDraft",
+    into = "DesignExtrudeSelectionMemberDraft"
+)]
+pub struct DesignExtrudeSelectionMember {
+    frame: crate::records::frame_chain::RecordFrameChain,
+    /// Globally unique deterministic identifier for this native member.
+    pub id: String,
+    /// Owning selection-group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: DesignClassTag,
+    /// Local persistent selection identity preceding the two UUID fields.
+    pub local_id: u64,
+    /// Asset UUID qualifying the local selection identity.
+    pub asset_id: DesignRelaxedGuidText,
+    /// UUID of the local selection-identity context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Whether the fixed tail's optional slot is present.
+    #[serde(default)]
+    pub tail_slot_present: bool,
+    /// Byte offset of the optional-slot marker.
+    #[serde(default)]
+    pub tail_slot_offset: u64,
+    /// Sketch geometry carrying `local_id`, when it resolves uniquely in
+    /// the selected Sketch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_geometry: Option<SketchRelationOperand>,
+    /// Construction-operand identity chains that terminate at this member.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operand_identity_ids: Vec<String>,
+    /// Stable ASM history family, entity slot, and states carrying `local_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(flatten, deserialize_with = "deserialize_historical_binding")]
+    pub historical: Option<HistoricalBinding>,
+    /// Identity of the indexed record immediately following this member.
+    pub next_record_index: u32,
+}
+
+impl DesignExtrudeSelectionMember {
+    pub(crate) fn try_new(draft: DesignExtrudeSelectionMemberDraft) -> Result<Self, String> {
+        if draft.context_id_offset <= draft.asset_id_offset {
+            return Err("context_id_offset must follow asset_id_offset".into());
+        }
+        let frame = crate::records::frame_chain::RecordFrameChain::try_new(
+            draft.record_index,
+            draft.byte_offset,
+            0,
+            190,
+        )?;
+        let value = Self {
+            frame,
+            id: draft.id,
+            group_record_index: draft.group_record_index,
+            group_member_ordinal: draft.group_member_ordinal,
+            class_tag: draft.class_tag,
+            local_id: draft.local_id,
+            asset_id: draft.asset_id,
+            context_id: draft.context_id,
+            context_id_offset: draft.context_id_offset,
+            tail_slot_present: draft.tail_slot_present,
+            tail_slot_offset: draft.tail_slot_offset,
+            resolved_geometry: draft.resolved_geometry,
+            operand_identity_ids: draft.operand_identity_ids,
+            historical: draft.historical,
+            next_record_index: draft.next_record_index,
+        };
+        if value.local_id_offset() != draft.local_id_offset {
+            return Err("local_id_offset disagrees with frame layout".into());
+        }
+        if value.asset_id_offset() != draft.asset_id_offset {
+            return Err("asset_id_offset disagrees with frame layout".into());
+        }
+        if value.next_byte_offset() != draft.next_byte_offset {
+            return Err("next_byte_offset disagrees with frame layout".into());
+        }
+        Ok(value)
+    }
+    pub(crate) fn into_draft(self) -> DesignExtrudeSelectionMemberDraft {
+        let record_index = self.record_index();
+        let byte_offset = self.byte_offset();
+        let local_id_offset = self.local_id_offset();
+        let asset_id_offset = self.asset_id_offset();
+        let next_byte_offset = self.next_byte_offset();
+        DesignExtrudeSelectionMemberDraft {
+            id: self.id,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            record_index,
+            byte_offset,
+            class_tag: self.class_tag,
+            local_id: self.local_id,
+            local_id_offset,
+            asset_id: self.asset_id,
+            asset_id_offset,
+            context_id: self.context_id,
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            tail_slot_offset: self.tail_slot_offset,
+            resolved_geometry: self.resolved_geometry,
+            operand_identity_ids: self.operand_identity_ids,
+            historical: self.historical,
+            next_record_index: self.next_record_index,
+            next_byte_offset,
+        }
+    }
+    pub(crate) fn record_index(&self) -> u32 {
+        self.frame.index(0)
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.offset(0)
+    }
+    pub(crate) fn local_id_offset(&self) -> u64 {
+        self.frame.offset(21)
+    }
+    pub(crate) fn asset_id_offset(&self) -> u64 {
+        self.frame.offset(33)
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.frame.offset(190)
+    }
+}
+
+/// Unadmitted `DesignExtrudeSelectionMember` fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignExtrudeSelectionMemberDraft {
+    /// Globally unique deterministic identifier for this native member.
+    pub id: String,
+    /// Owning selection-group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Indexed-record identity named by the selection group.
+    pub record_index: u32,
+    /// Byte offset of the indexed-record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: DesignClassTag,
+    /// Local persistent selection identity preceding the two UUID fields.
+    pub local_id: u64,
+    /// Byte offset of `local_id`.
+    pub local_id_offset: u64,
+    /// Asset UUID qualifying the local selection identity.
+    pub asset_id: DesignRelaxedGuidText,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the local selection-identity context.
+    pub context_id: DesignRelaxedGuidText,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Whether the fixed tail's optional slot is present.
+    #[serde(default)]
+    pub tail_slot_present: bool,
+    /// Byte offset of the optional-slot marker.
+    #[serde(default)]
+    pub tail_slot_offset: u64,
+    /// Sketch geometry carrying `local_id`, when it resolves uniquely in
+    /// the selected Sketch.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_resolved_geometry"
+    )]
+    pub resolved_geometry: Option<SketchRelationOperand>,
+    /// Construction-operand identity chains that terminate at this member.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operand_identity_ids: Vec<String>,
+    /// Stable ASM history family, entity slot, and states carrying `local_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(flatten, deserialize_with = "deserialize_historical_binding")]
+    pub historical: Option<HistoricalBinding>,
+    /// Identity of the indexed record immediately following this member.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record immediately following this member.
+    pub next_byte_offset: u64,
+}
+
+impl TryFrom<DesignExtrudeSelectionMemberDraft> for DesignExtrudeSelectionMember {
+    type Error = String;
+    fn try_from(draft: DesignExtrudeSelectionMemberDraft) -> Result<Self, String> {
+        Self::try_new(draft)
+    }
+}
+
+impl From<DesignExtrudeSelectionMember> for DesignExtrudeSelectionMemberDraft {
+    fn from(value: DesignExtrudeSelectionMember) -> Self {
+        let value = value.into_draft();
+        Self {
+            id: value.id,
+            group_record_index: value.group_record_index,
+            group_member_ordinal: value.group_member_ordinal,
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            local_id: value.local_id,
+            local_id_offset: value.local_id_offset,
+            asset_id: value.asset_id,
+            asset_id_offset: value.asset_id_offset,
+            context_id: value.context_id,
+            context_id_offset: value.context_id_offset,
+            tail_slot_present: value.tail_slot_present,
+            tail_slot_offset: value.tail_slot_offset,
+            resolved_geometry: value.resolved_geometry,
+            operand_identity_ids: value.operand_identity_ids,
+            historical: value.historical,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+        }
+    }
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_resolved_geometry,
+    SketchRelationOperand,
+    "resolved_geometry"
+);

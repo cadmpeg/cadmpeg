@@ -54,10 +54,11 @@ use crate::records::{
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
     sketch_placement::DesignSketchPlacement,
     topology::{
-        body_recipe::DesignBodyRecipeOperand, edge_identity::DesignEdgeIdentityOperand,
-        edge_identity::DesignEdgeOperand, face::DesignFaceOperand, DesignConstructionOperandGroup,
-        DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignFilletRadiusGroup,
-        DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier, DesignOperandRole,
+        body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
+        edge_identity::DesignEdgeIdentityOperand, edge_identity::DesignEdgeOperand,
+        entity_selection::DesignLoftLegacyBodyCarrier, extrude_selection::DesignExtrudeFaceRole,
+        extrude_selection::DesignExtrudeOperandRole, extrude_selection::DesignOperandRole,
+        face::DesignFaceOperand, fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
     },
 };
 use cadmpeg_core::decode::{bounded_len, View};
@@ -87,7 +88,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) edge_identity_operands: &'a [DesignEdgeIdentityOperand],
     pub(crate) edge_treatment_vertex_operands: &'a [DesignEdgeTreatmentVertexOperand],
     pub(crate) entity_selection_operands:
-        &'a [crate::records::topology::DesignEntitySelectionOperand],
+        &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
@@ -2811,7 +2812,7 @@ fn project_draft(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -2961,7 +2962,7 @@ fn project_draft(
 fn selected_historical_face_selection(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let previous_state_id =
@@ -3063,7 +3064,7 @@ fn project_draft_face_selection(
 fn group_has_entity_selection(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) -> bool {
     let Some(stream) = native_stream(&scope.id) else {
         return false;
@@ -3090,7 +3091,7 @@ fn group_has_entity_selection(
 fn selected_work_plane<'a>(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
 ) -> Option<&'a DesignParameterScope> {
     let planes = selected_work_planes(scope, group, entity_selection_operands, scopes)?;
@@ -3103,7 +3104,7 @@ fn selected_work_plane<'a>(
 fn selected_work_planes<'a>(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
 ) -> Option<Vec<&'a DesignParameterScope>> {
     let stream = native_stream(&scope.id)?;
@@ -3159,7 +3160,7 @@ fn selected_work_planes<'a>(
 fn resolved_split_face_path(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::PathRef> {
     use cadmpeg_ir::features::PathRef;
@@ -5755,7 +5756,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
@@ -5891,7 +5892,7 @@ fn unresolved_historical_face_axis_selection(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
     axis_member: u32,
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) -> bool {
     let stream = native_stream(&scope.id);
     let selections = entity_selection_operands
@@ -5936,7 +5937,7 @@ pub(crate) fn bind_revolve_face_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
@@ -6106,7 +6107,7 @@ fn resolve_sketch_axis_selection(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
     axis_member: u32,
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
@@ -6875,7 +6876,7 @@ pub(crate) fn project_fixed_sweep(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -7886,7 +7887,7 @@ fn project_split_face(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {

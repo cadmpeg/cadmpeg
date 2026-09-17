@@ -3,7 +3,8 @@
 
 use crate::design::profile_select::historical_face_points;
 use crate::records::{
-    sketch_relations::SketchRelationOperand, topology::DesignExtrudeSelectionMember,
+    sketch_relations::SketchRelationOperand,
+    topology::extrude_selection::DesignExtrudeSelectionMember,
 };
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use cadmpeg_ir::geometry::{knots_nondecreasing, PcurveNurbs};

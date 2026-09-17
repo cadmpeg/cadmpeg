@@ -8,7 +8,7 @@
 )]
 use super::prelude::*;
 use crate::design::decode::operands::RecordFrame;
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
@@ -455,9 +455,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     let mut tool_group = group.clone();
     tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
-    tool_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X21,
-    );
+    tool_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
+        );
     let mut target_group = group.clone();
     target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     target_group.record_index = 400;
@@ -468,9 +469,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             offset: 1129,
         }])
         .unwrap();
-    target_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X10,
-    );
+    target_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
+        );
     let split_groups = [tool_group, target_group];
     let (features, _) = project_parameter_design(
         &[],
@@ -553,8 +555,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     compact_split_scope.feature_ordinal = std::num::NonZeroU32::new(3).expect("nonzero ordinal");
     let plane_selection = |record_index, group_member_ordinal, primary_identity| {
-        crate::records::topology::DesignEntitySelectionOperand::try_new(
-            crate::records::topology::DesignEntitySelectionOperandDraft {
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
                 id: format!(
                     "f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"
                 ),
@@ -696,7 +698,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }])
         .unwrap();
     split_tool_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X9);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X9,
+        );
     let mut split_target_group = group.clone();
     split_target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     split_target_group.record_index = 400;
@@ -708,7 +712,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }])
         .unwrap();
     split_target_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        );
     let split_tool =
         DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
             id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
@@ -846,9 +852,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         })
         .unwrap();
     let mut construction_tool = split_tool_group.clone();
-    construction_tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X21,
-    );
+    construction_tool.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
+        );
     construction_tool
         .try_set_members(
             vec![200, 201]
@@ -897,9 +904,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             0 => tool.scope_reference_ordinal = 1,
             1 => tool.record_index = 101,
             2 => {
-                tool.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-                    DesignOperandRole::BODIES_B,
-                );
+                tool.operand_role =
+                    crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                        DesignOperandRole::BODIES_B,
+                    );
             }
             3 => {
                 tool.try_set_members(vec![crate::records::identity::Located {
@@ -919,7 +927,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             1 => target.record_index = 401,
             2 => {
                 target.operand_role =
-                    crate::records::topology::DesignConstructionOperandRole::Other(
+                    crate::records::topology::construction::DesignConstructionOperandRole::Other(
                         DesignOperandRole::ROLE_0X5,
                     );
             }
@@ -979,9 +987,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             offset: 1096,
         }])
         .unwrap();
-    delete_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X10,
-    );
+    delete_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
+        );
     let mut delete_face_operand = split_tool.clone();
     delete_face_operand.id = "f3d:Design/BulkStream.dat:face-operand#200".into();
     delete_face_operand.scope_record_index = delete_scope.record_index;
@@ -1338,7 +1347,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut remove_group = group;
     remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     remove_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        );
     assert_eq!(
         crate::design::feature_project::project_remove_body(
             &remove_scope,
@@ -1388,7 +1399,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         )
         .unwrap();
     stitch_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X5,
+        );
     assert_eq!(
         crate::design::feature_project::project_surface_stitch(
             &stitch_scope,

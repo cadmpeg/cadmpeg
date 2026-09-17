@@ -2,7 +2,9 @@
 use super::prelude::*;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
-use crate::records::topology::{DesignLoftLegacyBodyCarrier, DesignOperandRole};
+use crate::records::topology::{
+    entity_selection::DesignLoftLegacyBodyCarrier, extrude_selection::DesignOperandRole,
+};
 
 pub(super) fn fixed_kind_path_operations(
     mut bytes: Vec<u8>,
@@ -62,7 +64,8 @@ pub(super) fn fixed_kind_path_operations(
         group.id = format!("stream:loft-group-{ordinal}");
         group.scope_record_index = loft_record_index;
         group.scope_reference_ordinal = ordinal;
-        group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(role);
+        group.operand_role =
+            crate::records::topology::construction::DesignConstructionOperandRole::Other(role);
         group
     };
     let role_41 = [
@@ -410,7 +413,8 @@ pub(super) fn fixed_kind_path_operations(
         group.id = format!("stream:sweep-group-{ordinal}");
         group.scope_record_index = sweep_record_index;
         group.scope_reference_ordinal = ordinal;
-        group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(role);
+        group.operand_role =
+            crate::records::topology::construction::DesignConstructionOperandRole::Other(role);
         group
     };
     let profile = sweep_group(0, DesignOperandRole::PROFILE);
@@ -525,8 +529,8 @@ pub(super) fn fixed_kind_path_operations(
     );
     {
         let value = Some(
-            crate::records::topology::DesignSketchProfileOperand::try_new(
-                crate::records::topology::DesignSketchProfileOperandDraft {
+            crate::records::topology::sketch_profile::DesignSketchProfileOperand::try_new(
+                crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
                     scope_reference_ordinal: 3,
                     record_index: 2795,
                     byte_offset: 32_000,
@@ -578,45 +582,46 @@ pub(super) fn fixed_kind_path_operations(
         .unwrap();
     let mut guide_surface = sweep_group(4, DesignOperandRole::FACES);
     guide_surface.id = "stream:sweep-guide-surface".into();
-    let entity_selection = crate::records::topology::DesignEntitySelectionOperand::try_new(
-        crate::records::topology::DesignEntitySelectionOperandDraft {
-            id: "stream:sweep-profile-selection".into(),
-            scope_record_index: sweep_scope.record_index,
-            group_record_index: selected_profile.record_index,
-            group_member_ordinal: 0,
-            record_index: 2788,
-            byte_offset: 31_000,
-            class_tag: crate::records::references::DesignClassTag::try_from("310".to_owned())
+    let entity_selection =
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                id: "stream:sweep-profile-selection".into(),
+                scope_record_index: sweep_scope.record_index,
+                group_record_index: selected_profile.record_index,
+                group_member_ordinal: 0,
+                record_index: 2788,
+                byte_offset: 31_000,
+                class_tag: crate::records::references::DesignClassTag::try_from("310".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
                 .unwrap(),
-            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 31_040,
-            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 31_080,
-            identity_record_index: 2791,
-            identity_record_offset: 31_180,
-            primary_identity: 2718,
-            primary_identity_offset: 31209,
-            secondary: Some(crate::records::identity::DesignSecondaryIdentity {
-                identity: crate::records::identity::Located {
-                    value: 164,
-                    offset: 31217,
-                },
-                curve_identity: None,
-            }),
-            historical_edge_candidates: Vec::new(),
-            historical_face_candidates: Vec::new(),
-            resolved_edge_slot: None,
-            next_record_index: 2792,
-            next_byte_offset: 31225,
-        },
-    )
-    .unwrap();
+                asset_id_offset: 31_040,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 31_080,
+                identity_record_index: 2791,
+                identity_record_offset: 31_180,
+                primary_identity: 2718,
+                primary_identity_offset: 31209,
+                secondary: Some(crate::records::identity::DesignSecondaryIdentity {
+                    identity: crate::records::identity::Located {
+                        value: 164,
+                        offset: 31217,
+                    },
+                    curve_identity: None,
+                }),
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: None,
+                next_record_index: 2792,
+                next_byte_offset: 31225,
+            },
+        )
+        .unwrap();
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,

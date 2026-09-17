@@ -15,7 +15,7 @@ use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
 use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::View;
 use std::collections::HashSet;
 
@@ -163,7 +163,7 @@ fn exact_construction_operand_group(
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     record_index: u32,
-) -> Option<crate::records::topology::DesignConstructionOperandGroup> {
+) -> Option<crate::records::topology::construction::DesignConstructionOperandGroup> {
     let mut candidates = Vec::new();
     for (start, _) in records.frames(record_index) {
         let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;

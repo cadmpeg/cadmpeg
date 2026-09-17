@@ -22,7 +22,7 @@ use crate::records::{
     recipes::DesignComponentNamingSpace,
     topology::{
         body_recipe::AsmHistoricalEntityKind, edge_identity::DesignEdgeIdentityOperand,
-        DesignExtrudeSelectionMember, DesignOperandRole,
+        extrude_selection::DesignExtrudeSelectionMember, extrude_selection::DesignOperandRole,
     },
 };
 use cadmpeg_asm::kernel_header::RefWidth;
@@ -942,7 +942,7 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     /// Decoded Design feature scopes.
     pub scopes: &'a [crate::records::feature::scope::DesignParameterScope],
     /// Counted Design construction-operand groups.
-    pub groups: &'a [crate::records::topology::DesignConstructionOperandGroup],
+    pub groups: &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
     /// Whole-body recipe operands.
     pub body_recipe_operands:
         &'a [crate::records::topology::body_recipe::DesignBodyRecipeOperand],
@@ -1726,7 +1726,7 @@ fn bind_body_recipe_body_selection(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
 ) {
     use cadmpeg_ir::features::BodySelection;
@@ -2136,9 +2136,9 @@ pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::face::DesignFaceOperand],
-    entity_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    entity_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) {
@@ -2331,8 +2331,8 @@ fn bind_entity_face_selection(
     previous_state_id: i64,
     operation_history_id: &str,
     scope: &crate::records::feature::scope::DesignParameterScope,
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) {
     use cadmpeg_ir::features::FaceSelection;
@@ -2375,8 +2375,8 @@ fn bind_surface_stitch_face_selection(
     previous_state_id: i64,
     operation_history_id: &str,
     scope: &crate::records::feature::scope::DesignParameterScope,
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) {
     let native_id = match selection {
@@ -2450,8 +2450,8 @@ fn bind_entity_face_groups(
     previous_state_id: i64,
     operation_history_id: &str,
     scope: &crate::records::feature::scope::DesignParameterScope,
-    groups: &[&crate::records::topology::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    groups: &[&crate::records::topology::construction::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) {
     use cadmpeg_ir::features::FaceSelection;
@@ -2597,8 +2597,8 @@ fn bind_hole_face_selection(
 pub(crate) fn bind_feature_path_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceBoundary};
 
@@ -2685,8 +2685,8 @@ fn bind_entity_selection_path(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) {
     use cadmpeg_ir::features::PathRef;
 
@@ -3750,8 +3750,8 @@ fn history_state_index(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaSta
 fn exact_face_selection_group<'a>(
     operand: &crate::records::topology::face::DesignFaceOperand,
     scope: &crate::records::feature::scope::DesignParameterScope,
-    operand_groups: &'a [crate::records::topology::DesignConstructionOperandGroup],
-) -> Option<&'a crate::records::topology::DesignConstructionOperandGroup> {
+    operand_groups: &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
+) -> Option<&'a crate::records::topology::construction::DesignConstructionOperandGroup> {
     let stream = crate::ids::native_stream(&operand.id)?;
     if crate::ids::native_stream(&scope.id) != Some(stream) {
         return None;
@@ -3854,7 +3854,7 @@ fn direct_face_recipe_candidates(
 pub(crate) fn bind_face_operand_history_candidates(
     operands: &mut [crate::records::topology::face::DesignFaceOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
-    operand_groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipes: &[crate::records::recipes::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
@@ -3988,7 +3988,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     && group.extrude_role().is_some_and(|role| {
                         matches!(
                             role,
-                            crate::records::topology::DesignExtrudeOperandRole::Faces(_)
+                            crate::records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_)
                         )
                     })
                     && group.extrude_face_role().is_some()
@@ -4051,7 +4051,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     };
                     groups.next().is_none()
                         && group.extrude_face_role()
-                            == Some(crate::records::topology::DesignExtrudeFaceRole::Termination)
+                            == Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
                 });
         operand.resolved_face_slots = match &scope.payload() {
             crate::records::feature::scope::DesignScopePayload::OffsetFaces(Some(_))
@@ -5090,7 +5090,7 @@ fn resolve_direct_face_recipe_clauses(
 fn bind_profile_face_group_cardinality(
     operands: &mut [crate::records::topology::face::DesignFaceOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
-    operand_groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
@@ -6613,7 +6613,7 @@ fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) 
 fn bind_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::face::DesignFaceOperand],
     updated_face_slots: &[i64],
 ) {
@@ -6699,7 +6699,7 @@ fn bind_body_recipe_face_selection(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
 ) {
     use cadmpeg_ir::features::FaceSelection;
@@ -7102,7 +7102,7 @@ pub(crate) fn bind_extrude_selection_history(
             body_bindings,
             histories,
         ) {
-            member.historical = Some(crate::records::topology::HistoricalBinding {
+            member.historical = Some(crate::records::topology::fillet::HistoricalBinding {
                 kind,
                 entity_ref,
                 state_ids: states,
@@ -7114,7 +7114,7 @@ pub(crate) fn bind_extrude_selection_history(
 /// Resolve both identities in nested entity-selection operands against the
 /// owning feature's exact input topology.
 pub(crate) fn bind_entity_selection_history(
-    operands: &mut [crate::records::topology::DesignEntitySelectionOperand],
+    operands: &mut [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
@@ -7223,9 +7223,9 @@ fn hole_transition_face_candidate(
     state_id: Option<i64>,
     previous_state_id: Option<i64>,
     histories: &[AsmHistory],
-) -> Option<crate::records::topology::DesignEntitySelectionFaceCandidate> {
+) -> Option<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     use crate::records::topology::{
-        body_recipe::AsmHistoricalEntityKind, DesignEntitySelectionFaceCandidate,
+        body_recipe::AsmHistoricalEntityKind, entity_selection::DesignEntitySelectionFaceCandidate,
     };
 
     if secondary_identity.is_some() {
@@ -7347,7 +7347,7 @@ fn hole_transition_face_candidate(
     };
     Some(DesignEntitySelectionFaceCandidate {
         history_id: history.id.clone(),
-        historical: crate::records::topology::HistoricalBinding {
+        historical: crate::records::topology::fillet::HistoricalBinding {
             kind,
             entity_ref,
             state_ids: vec![previous_state_id],
@@ -7590,10 +7590,10 @@ pub(crate) fn same_axis_line(
 /// historical topology.
 pub(crate) fn bind_mirror_selection_planes(
     scopes: &mut [crate::records::feature::scope::DesignParameterScope],
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
-    identities: &[crate::records::topology::DesignConstructionOperandIdentity],
+    identities: &[crate::records::topology::construction::DesignConstructionOperandIdentity],
     histories: &[AsmHistory],
 ) {
     for scope in scopes {
@@ -7670,7 +7670,7 @@ pub(crate) fn bind_mirror_selection_planes(
                 continue;
             }
             let persistent_candidates = identity
-                .and_then(crate::records::topology::DesignConstructionOperandIdentity::persistent_identity)
+                .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity)
                 .map_or_else(Vec::new, |identity| {
                     entity_selection_face_candidates(identity.local_id, histories)
                 });
@@ -7740,9 +7740,11 @@ fn historical_mirror_face_operand_plane(
 }
 
 fn unique_mirror_plane_candidate(
-    mut primary: Vec<crate::records::topology::DesignEntitySelectionFaceCandidate>,
-    persistent: Vec<crate::records::topology::DesignEntitySelectionFaceCandidate>,
-) -> Option<crate::records::topology::DesignEntitySelectionFaceCandidate> {
+    mut primary: Vec<
+        crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
+    >,
+    persistent: Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate>,
+) -> Option<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     primary.sort_by(|left, right| left.history_id.cmp(&right.history_id));
     primary.dedup();
     let context_histories = primary
@@ -7791,7 +7793,7 @@ fn design_geometry_mirror_plane(primary_identity: u64) -> Option<HistoricalMirro
 }
 
 fn historical_mirror_plane(
-    candidate: &crate::records::topology::DesignEntitySelectionFaceCandidate,
+    candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     preferred_state_id: i64,
     histories: &[AsmHistory],
 ) -> Option<HistoricalMirrorPlane> {
@@ -7820,7 +7822,7 @@ fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirr
 }
 
 fn historical_mirror_plane_in_state(
-    candidate: &crate::records::topology::DesignEntitySelectionFaceCandidate,
+    candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     state_id: i64,
     histories: &[AsmHistory],
 ) -> Option<HistoricalMirrorPlane> {
@@ -8068,8 +8070,8 @@ fn historical_mirror_coedge_plane(
 fn entity_selection_face_candidates(
     local_id: u64,
     histories: &[AsmHistory],
-) -> Vec<crate::records::topology::DesignEntitySelectionFaceCandidate> {
-    use crate::records::topology::DesignEntitySelectionFaceCandidate;
+) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
+    use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 
     histories
         .iter()
@@ -8097,7 +8099,7 @@ fn entity_selection_face_candidates(
             }
             Some(DesignEntitySelectionFaceCandidate {
                 history_id: history.id.clone(),
-                historical: crate::records::topology::HistoricalBinding {
+                historical: crate::records::topology::fillet::HistoricalBinding {
                     kind,
                     entity_ref,
                     state_ids,
@@ -8113,8 +8115,8 @@ fn entity_selection_edge_candidates(
     previous_state_id: i64,
     history_identities: &HistoricalIdentityIndex,
     topology: &AsmHistoricalTopology,
-) -> Vec<crate::records::topology::DesignEntitySelectionEdgeCandidate> {
-    use crate::records::topology::DesignEntitySelectionEdgeCandidate;
+) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate> {
+    use crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate;
 
     identities
         .into_iter()
@@ -8138,7 +8140,7 @@ fn entity_selection_edge_candidates(
 }
 
 fn unique_entity_selection_edge(
-    candidates: &[crate::records::topology::DesignEntitySelectionEdgeCandidate],
+    candidates: &[crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate],
 ) -> Option<i64> {
     let first = candidates.first()?;
     let mut intersection = first.edge_slots.iter().copied().collect::<BTreeSet<_>>();
@@ -8152,7 +8154,7 @@ fn unique_entity_selection_edge(
 
 pub(crate) fn bind_edge_identity_history(
     operands: &mut [DesignEdgeIdentityOperand],
-    identities: &[crate::records::topology::DesignConstructionOperandIdentity],
+    identities: &[crate::records::topology::construction::DesignConstructionOperandIdentity],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
@@ -8238,7 +8240,7 @@ pub(crate) fn bind_edge_identity_history(
             .selection_identity_kind(operand.local_id)
             .filter(|(_, _, states)| states.contains(&previous_state_id))
         {
-            operand.historical = Some(crate::records::topology::HistoricalBinding {
+            operand.historical = Some(crate::records::topology::fillet::HistoricalBinding {
                 kind,
                 entity_ref,
                 state_ids: states,

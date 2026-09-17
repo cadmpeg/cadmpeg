@@ -175,9 +175,9 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
             .map(|selection| selection.historical_face_candidates.as_slice()),
         Some(
             &[
-                crate::records::topology::DesignEntitySelectionFaceCandidate {
+                crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                     history_id: "history".into(),
-                    historical: crate::records::topology::HistoricalBinding {
+                    historical: crate::records::topology::fillet::HistoricalBinding {
                         kind: AsmHistoricalEntityKind::Edge,
                         entity_ref: 7,
                         state_ids: vec![1],

@@ -11,7 +11,8 @@ use super::project_rectangular_pattern_scalars;
 use crate::records::{
     feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
     topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignOperandRole,
+        construction::DesignConstructionOperandGroup,
+        construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
     },
 };
 use cadmpeg_ir::features::{
@@ -27,7 +28,7 @@ fn group(
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: format!(
                 "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
             ),
@@ -43,7 +44,7 @@ fn group(
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -59,7 +60,8 @@ fn group(
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(role),
             role_offset: 0,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "263".to_owned(),

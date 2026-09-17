@@ -140,7 +140,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     assert_eq!(expanded.entity_ref, 174);
     assert_eq!(
         expanded.clone().into_draft().placement,
-        crate::records::topology::DesignConstructionPathPlacement::Transform(
+        crate::records::topology::construction::DesignConstructionPathPlacement::Transform(
             transform.try_into().unwrap()
         )
     );
@@ -169,7 +169,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     assert_eq!(compact.entity_ref, 18_064);
     assert_eq!(
         compact.clone().into_draft().placement,
-        crate::records::topology::DesignConstructionPathPlacement::Compact(true)
+        crate::records::topology::construction::DesignConstructionPathPlacement::Compact(true)
     );
     assert_eq!(compact.scope_record_index_offset(), 35);
     assert_eq!(compact.nested_record_index_offset(), 46);

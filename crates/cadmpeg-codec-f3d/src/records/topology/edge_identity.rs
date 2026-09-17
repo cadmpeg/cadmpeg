@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge-identity operands, edge operands and the resolved axis they carry.
 
-use super::deserialize_historical_binding;
 use super::edge_recipe::DesignEdgeRecipeSelectorContext;
 use super::edge_recipe::DesignEdgeRecipeStructure;
 use super::edge_recipe::DesignSurfacePatchRecipeStructure;
+use super::fillet::deserialize_historical_binding;
+use super::fillet::HistoricalBinding;
 use super::historical_context::DesignEdgeRecipeReferenceContext;
 use super::historical_context::DesignHistoricalEdgeContext;
-use super::HistoricalBinding;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::feature::patterns::DesignAxis;
 use crate::records::mesh::DesignRelaxedGuidText;

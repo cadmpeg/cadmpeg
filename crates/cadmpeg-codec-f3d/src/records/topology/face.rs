@@ -2,9 +2,9 @@
 //! Face operands, face source groups and face recipe structures.
 
 use super::body_recipe::DesignOperandGroup;
+use super::construction::DesignConstructionPersistentIdentity;
 use super::edge_recipe::DesignTopologyRecipeSide;
 use super::historical_context::DesignHistoricalFaceSupportContext;
-use super::DesignConstructionPersistentIdentity;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::identity::Located;
 use crate::records::identity::NonEmptyByteSpan;

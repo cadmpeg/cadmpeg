@@ -6,7 +6,9 @@
 )]
 
 use super::{prelude::*, project_split_face};
-use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
+use crate::records::topology::{
+    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
+};
 use cadmpeg_ir::features::FeatureOperation;
 
 fn group(
@@ -17,7 +19,7 @@ fn group(
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
             scope_record_index,
             scope_reference_ordinal,
@@ -36,7 +38,7 @@ fn group(
                 .collect(),
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -52,7 +54,8 @@ fn group(
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(role),
             role_offset: 0,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "258".to_owned(),
@@ -169,8 +172,8 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         ),
     ];
     let selections = [
-        crate::records::topology::DesignEntitySelectionOperand::try_new(
-            crate::records::topology::DesignEntitySelectionOperandDraft {
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
                 id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
                 scope_record_index,
                 group_record_index: 100,

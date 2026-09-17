@@ -7,7 +7,9 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
+use crate::records::topology::{
+    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
+};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
@@ -183,7 +185,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     }
 
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
             scope_record_index: 12,
             scope_reference_ordinal: 0,
@@ -197,7 +199,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 1021,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -216,7 +218,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
+            operand_role: crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeBodiesB,
             role_offset: 1053,
 
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -308,7 +310,10 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         leaf.tail_slot_offset += 200;
         leaf.next_byte_offset += 200;
         draft.persistent_identity = Some(
-            crate::records::topology::DesignConstructionPersistentIdentity::try_new(leaf).unwrap(),
+            crate::records::topology::construction::DesignConstructionPersistentIdentity::try_new(
+                leaf,
+            )
+            .unwrap(),
         );
     }
     terminating_identity = DesignConstructionOperandIdentity::try_new(draft).unwrap();
@@ -341,7 +346,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     }
 
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
             scope_record_index: 80,
             scope_reference_ordinal: 0,
@@ -355,7 +360,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 921,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -374,9 +379,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::ROLE_0X5,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X5,
+                ),
             role_offset: 953,
 
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -721,12 +727,15 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     relocated.context_id_offset += 74;
     relocated.tail_slot_offset += 74;
     relocated.next_byte_offset += 74;
-    member = crate::records::topology::DesignExtrudeSelectionMember::try_new(relocated).unwrap();
+    member = crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
+        relocated,
+    )
+    .unwrap();
     let identity = DesignConstructionOperandIdentity::try_new(
-        crate::records::topology::DesignConstructionOperandIdentityDraft {
+        crate::records::topology::construction::DesignConstructionOperandIdentityDraft {
             id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
             group_record_index: 50,
-            wrappers: vec![crate::records::topology::DesignIdentityWrapper {
+            wrappers: vec![crate::records::topology::construction::DesignIdentityWrapper {
                 record_index: 150,
                 byte_offset: 50,
                 class_tag: crate::records::references::DesignClassTag::try_from("289".to_owned())
@@ -741,7 +750,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             tracking_path: None,
             persistent_identity: Some(
                 DesignConstructionPersistentIdentity::try_new(
-                    crate::records::topology::DesignConstructionPersistentIdentityDraft {
+                    crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
                         local_id: 586,
                         local_id_offset: 95,
                         asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
@@ -778,7 +787,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     {
         slot.get_or_insert_with(Default::default).extrude_profile = Some(
             DesignSketchProfileOperand::try_new(
-                crate::records::topology::DesignSketchProfileOperandDraft {
+                crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
                     scope_reference_ordinal: 1,
                     record_index: 300,
                     byte_offset: 3000,
@@ -891,7 +900,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let mut draft = point_member.into_draft();
     draft.record_index = 201;
 
-    point_member = crate::records::topology::DesignExtrudeSelectionMember::try_new(draft).unwrap();
+    point_member =
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(draft)
+            .unwrap();
     point_member.group_member_ordinal = 1;
     point_member.local_id = 587;
     point_member.resolved_geometry = Some(SketchRelationOperand::Point {

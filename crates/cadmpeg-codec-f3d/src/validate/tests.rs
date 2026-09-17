@@ -11,12 +11,14 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use crate::records::topology::DesignConstructionOperandGroupFrame;
+use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::records::{feature::scope::DesignScopePayload, topology::DesignOperandRole};
+use crate::records::{
+    feature::scope::DesignScopePayload, topology::extrude_selection::DesignOperandRole,
+};
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -632,7 +634,10 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     use crate::records::{
         decal::DesignRecordHeader,
         feature::scope::DesignParameterScope,
-        topology::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame},
+        topology::{
+            construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame,
+        },
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -659,7 +664,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                  role: DesignOperandRole| {
         let role_offset = byte_offset + 40;
         DesignConstructionOperandGroup::try_from(
-            crate::records::topology::DesignConstructionOperandGroupDraft {
+            crate::records::topology::construction::DesignConstructionOperandGroupDraft {
                 id: format!("{stream}:design-construction-operand-group#{record_index}"),
                 scope_record_index: 10,
                 scope_reference_ordinal,
@@ -673,7 +678,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                 }],
                 lost_edge_references: Vec::new(),
                 frame: DesignConstructionOperandGroupFrame::try_from(
-                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                         member_count_offset: byte_offset + 21,
                         auxiliary_records: Vec::new(),
                         auxiliary_paths: Vec::new(),
@@ -689,7 +694,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                     },
                 )
                 .unwrap(),
-                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+                operand_role: crate::records::topology::construction::DesignConstructionOperandRole::Other(role),
                 role_offset,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "258".to_owned(),
@@ -747,7 +752,9 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         .any(invalid_frame));
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        );
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
@@ -762,7 +769,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             })
             .unwrap();
         native.design_construction_operand_groups[1].operand_role =
-            crate::records::topology::DesignConstructionOperandRole::Other(
+            crate::records::topology::construction::DesignConstructionOperandRole::Other(
                 DesignOperandRole::ROLE_0X21,
             );
     }
@@ -771,7 +778,9 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         .any(invalid_frame));
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        );
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
@@ -785,7 +794,10 @@ fn validation_checks_pipe_path_group_roles() {
             extrude::DesignExtrudeOperation, path_features::DesignPathFeatureConstruction,
             scope::DesignParameterScope,
         },
-        topology::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame},
+        topology::{
+            construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame,
+        },
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -829,7 +841,7 @@ fn validation_checks_pipe_path_group_roles() {
         })
         .unwrap();
     let path_group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: format!("{stream}:design-construction-operand-group#20"),
             scope_record_index: 10,
             scope_reference_ordinal: 4,
@@ -840,7 +852,7 @@ fn validation_checks_pipe_path_group_roles() {
             members: Vec::new(),
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 1_021,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -856,9 +868,10 @@ fn validation_checks_pipe_path_group_roles() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::ROLE_0X5,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X5,
+                ),
             role_offset: 1_040,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "258".to_owned(),
@@ -936,7 +949,9 @@ fn validation_checks_pipe_path_group_roles() {
     assert_eq!(group_native_finding_count(&ir), 1);
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_B,
+        );
     assert_eq!(group_native_finding_count(&ir), 2);
 }
 
@@ -1321,12 +1336,15 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             },
             scope::DesignParameterScope,
         },
-        topology::{DesignConstructionOperandGroup, DesignSketchProfileOperand},
+        topology::{
+            construction::DesignConstructionOperandGroup,
+            sketch_profile::DesignSketchProfileOperand,
+        },
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let profile = DesignSketchProfileOperand::try_new(
-        crate::records::topology::DesignSketchProfileOperandDraft {
+        crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             scope_reference_ordinal: 0,
             record_index: 20,
             byte_offset: 200,
@@ -1405,7 +1423,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     )
     .unwrap();
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:test:operand-group#30".into(),
             scope_record_index: 10,
             scope_reference_ordinal: 1,
@@ -1419,7 +1437,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 420,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -1438,7 +1456,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile,
+            operand_role: crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile,
             role_offset: 450,
 
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -1506,15 +1524,17 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     use crate::records::{
         decal::DesignRecordHeader,
         topology::{
-            DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-            DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+            construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame,
+            construction::DesignConstructionOperandIdentity,
+            construction::DesignConstructionPersistentIdentity,
         },
     };
 
     let stream = "f3d:Design/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: format!("{stream}:operand-group#100"),
             scope_record_index: 10,
             scope_reference_ordinal: 0,
@@ -1525,7 +1545,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             members: Vec::new(),
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 1_021,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -1544,9 +1564,10 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::from_raw(0),
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::from_raw(0),
+                ),
             role_offset: 1_041,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
@@ -1557,10 +1578,10 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     )
     .unwrap();
     let identity = DesignConstructionOperandIdentity::try_new(
-        crate::records::topology::DesignConstructionOperandIdentityDraft {
+        crate::records::topology::construction::DesignConstructionOperandIdentityDraft {
             id: format!("{stream}:operand-identity#1100"),
             group_record_index: 100,
-            wrappers: vec![crate::records::topology::DesignIdentityWrapper {
+            wrappers: vec![crate::records::topology::construction::DesignIdentityWrapper {
                 record_index: 101,
                 byte_offset: 1_100,
                 class_tag: crate::records::references::DesignClassTag::try_from("384".to_owned())
@@ -1575,7 +1596,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             tracking_path: None,
             persistent_identity: Some(
                 DesignConstructionPersistentIdentity::try_new(
-                    crate::records::topology::DesignConstructionPersistentIdentityDraft {
+                    crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
                         local_id: 167,
                         local_id_offset: 1_145,
                         asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
@@ -1644,8 +1665,9 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
     use crate::records::{
         decal::DesignRecordHeader,
         topology::{
-            DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-            DesignEntitySelectionOperand,
+            construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame,
+            entity_selection::DesignEntitySelectionOperand,
         },
     };
 
@@ -1653,7 +1675,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
     let group_id = format!("{stream}:design-construction-operand-group#100");
     let operand_id = format!("{stream}:design-entity-selection-operand#1000");
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: group_id,
             scope_record_index: 10,
             scope_reference_ordinal: 0,
@@ -1667,7 +1689,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 921,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -1683,7 +1705,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile,
+            operand_role: crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile,
             role_offset: 953,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "265".to_owned(),
@@ -1700,7 +1722,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         record_index: 200,
     };
     let operand = DesignEntitySelectionOperand::try_new(
-        crate::records::topology::DesignEntitySelectionOperandDraft {
+        crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
             id: operand_id.clone(),
             scope_record_index: 10,
             group_record_index: 100,

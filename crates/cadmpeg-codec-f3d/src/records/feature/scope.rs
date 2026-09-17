@@ -49,7 +49,7 @@ use crate::records::identity::{
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use crate::records::topology::DesignSketchProfileOperand;
+use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(

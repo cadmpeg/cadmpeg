@@ -32,10 +32,10 @@ fn the_flattened_historical_binding_names_the_null_key_it_refuses() {
     struct Probe {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::topology::deserialize_historical_binding"
+            deserialize_with = "crate::records::topology::fillet::deserialize_historical_binding"
         )]
         #[allow(dead_code)]
-        binding: Option<crate::records::topology::HistoricalBinding>,
+        binding: Option<crate::records::topology::fillet::HistoricalBinding>,
     }
     for key in ["historical_entity_kind", "historical_entity_ref"] {
         states_the_key(key, &refusal::<Probe>(key));
@@ -48,13 +48,17 @@ fn a_top_level_topology_key_names_itself_in_its_refusal() {
     for key in ["transform", "transform_offset", "compact_variant"] {
         states_the_key(
             key,
-            &refusal::<crate::records::topology::DesignConstructionOperandPathWire>(key),
+            &refusal::<crate::records::topology::construction::DesignConstructionOperandPathWire>(
+                key,
+            ),
         );
     }
     for key in ["first_related_identity", "second_related_identity"] {
         states_the_key(
             key,
-            &refusal::<crate::records::topology::DesignConstructionTrackingPathWire>(key),
+            &refusal::<crate::records::topology::construction::DesignConstructionTrackingPathWire>(
+                key,
+            ),
         );
     }
 }

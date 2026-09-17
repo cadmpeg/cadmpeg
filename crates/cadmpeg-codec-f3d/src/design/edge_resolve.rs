@@ -5,8 +5,8 @@ use crate::ids::{self, native_stream, neutral_feature_id};
 use crate::records::{
     feature::{scope::DesignParameterScope, work_geometry::DesignEdgeTreatmentVertexOperand},
     topology::{
-        edge_identity::DesignEdgeIdentityOperand, edge_identity::DesignEdgeOperand,
-        DesignConstructionOperandGroup,
+        construction::DesignConstructionOperandGroup, edge_identity::DesignEdgeIdentityOperand,
+        edge_identity::DesignEdgeOperand,
     },
 };
 use std::collections::{HashMap, HashSet};

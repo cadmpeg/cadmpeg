@@ -61,7 +61,10 @@ fn placement_record_serde_routes_reject_unchecked_matrices() {
             primitives::{DesignSpherePrimitive, DesignTorusPrimitive},
             scope::{DesignJointOriginTransform, DesignWorkPlaneTransform},
         },
-        topology::{DesignConstructionOperandDualTransform, DesignConstructionOperandTransform},
+        topology::{
+            construction::DesignConstructionOperandDualTransform,
+            construction::DesignConstructionOperandTransform,
+        },
     };
     rejects_transform::<DesignAssemblyOperandFrame>(
         serde_json::json!({

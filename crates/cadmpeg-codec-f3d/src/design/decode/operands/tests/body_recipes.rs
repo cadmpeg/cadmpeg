@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::prelude::*;
-use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
+use crate::records::topology::{
+    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
+};
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
@@ -11,7 +13,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     }
 
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
             scope_record_index: 80,
             scope_reference_ordinal: 0,
@@ -25,7 +27,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 921,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -44,9 +46,10 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::ROLE_0X5,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X5,
+                ),
             role_offset: 953,
 
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -315,7 +318,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     header(&mut bytes, *b"280", 104);
 
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
             scope_record_index: 80,
             scope_reference_ordinal: 1,
@@ -329,7 +332,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -345,9 +348,10 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::BODIES_A,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_A,
+                ),
             role_offset: 0,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "264".to_owned(),

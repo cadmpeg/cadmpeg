@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
@@ -493,7 +493,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             base_feature::DesignBaseFeatureConstruction, body_ops::DesignCopyPasteBodiesOperation,
             sheet_metal::DesignBaseFlangeOperation,
         },
-        topology::DesignConstructionOperandGroupFrame,
+        topology::construction::DesignConstructionOperandGroupFrame,
     };
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, SheetMetalThicknessSide};
 
@@ -504,7 +504,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                  members: &[u32],
                  role: DesignOperandRole| {
         DesignConstructionOperandGroup::try_from(
-            crate::records::topology::DesignConstructionOperandGroupDraft {
+            crate::records::topology::construction::DesignConstructionOperandGroupDraft {
                 id: format!("{stream}:construction-group#{record_index}"),
                 scope_record_index,
                 scope_reference_ordinal,
@@ -523,7 +523,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                     .collect(),
                 lost_edge_references: Vec::new(),
                 frame: DesignConstructionOperandGroupFrame::try_from(
-                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                         member_count_offset: 0,
                         auxiliary_records: Vec::new(),
                         auxiliary_paths: Vec::new(),
@@ -539,7 +539,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                     },
                 )
                 .unwrap(),
-                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+                operand_role: crate::records::topology::construction::DesignConstructionOperandRole::Other(role),
                 role_offset: 0,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "264".to_owned(),
@@ -576,7 +576,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     {
         let value = Some(
             DesignSketchProfileOperand::try_new(
-                crate::records::topology::DesignSketchProfileOperandDraft {
+                crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
                     scope_reference_ordinal: 1,
                     record_index: 101,
                     byte_offset: 0,

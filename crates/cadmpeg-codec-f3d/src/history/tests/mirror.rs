@@ -277,15 +277,16 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             transition: None,
         }],
     };
-    let candidate = crate::records::topology::DesignEntitySelectionFaceCandidate {
-        history_id: "history".into(),
-        historical: crate::records::topology::HistoricalBinding {
-            kind: AsmHistoricalEntityKind::Coedge,
-            entity_ref: 30,
-            state_ids: vec![1],
-        },
-        face_slot: 10,
-    };
+    let candidate =
+        crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
+            history_id: "history".into(),
+            historical: crate::records::topology::fillet::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Coedge,
+                entity_ref: 30,
+                state_ids: vec![1],
+            },
+            face_slot: 10,
+        };
     let dispatched = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
         .expect("coedge dispatch uses radial plane resolver");
     assert_eq!(dispatched.origin, Point3::new(1.0, 2.0, 3.0));

@@ -98,8 +98,8 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         history("BREP.b.smbh", 2, AsmHistoricalEntityKind::Loop),
     ];
     let mut members = vec![
-        crate::records::topology::DesignExtrudeSelectionMember::try_new(
-            crate::records::topology::DesignExtrudeSelectionMemberDraft {
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(
+            crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
                 id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
                 group_record_index: 1,
                 group_member_ordinal: 0,

@@ -7,7 +7,8 @@
     clippy::wildcard_imports
 )]
 use crate::records::topology::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignOperandRole,
+    construction::DesignConstructionOperandGroup,
+    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
 
 #[test]
@@ -133,7 +134,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         parameter(401, "FlangeAngle", "deg", std::f64::consts::FRAC_PI_2),
     ];
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: format!("{stream}:design-construction-operand-group#385"),
             scope_record_index: 382,
             scope_reference_ordinal: 1,
@@ -147,7 +148,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -163,9 +164,10 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::BODIES_B,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
             role_offset: 0,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "000".to_owned(),
@@ -695,7 +697,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     ];
 
     let edge_group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: format!("{stream}:design-construction-operand-group#385"),
             scope_record_index: 382,
             scope_reference_ordinal: 1,
@@ -709,7 +711,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -725,9 +727,10 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::BODIES_B,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
             role_offset: 0,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "000".to_owned(),
@@ -747,43 +750,45 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             offset: target_group.members()[0].offset,
         }])
         .unwrap();
-    target_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X21,
-    );
+    target_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
+        );
 
-    let target_selection = crate::records::topology::DesignEntitySelectionOperand::try_new(
-        crate::records::topology::DesignEntitySelectionOperandDraft {
-            id: format!("{stream}:design-entity-selection-operand#424"),
-            scope_record_index: 382,
-            group_record_index: 421,
-            group_member_ordinal: 0,
-            record_index: 424,
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned())
+    let target_selection =
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                id: format!("{stream}:design-entity-selection-operand#424"),
+                scope_record_index: 382,
+                group_record_index: 421,
+                group_member_ordinal: 0,
+                record_index: 424,
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
                 .unwrap(),
-            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 0,
-            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 0,
-            identity_record_index: 427,
-            identity_record_offset: 0,
-            primary_identity: 319,
-            primary_identity_offset: 21,
-            secondary: None,
-            historical_edge_candidates: Vec::new(),
-            historical_face_candidates: Vec::new(),
-            resolved_edge_slot: None,
-            next_record_index: 428,
-            next_byte_offset: 29,
-        },
-    )
-    .unwrap();
+                asset_id_offset: 0,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 0,
+                identity_record_index: 427,
+                identity_record_offset: 0,
+                primary_identity: 319,
+                primary_identity_offset: 21,
+                secondary: None,
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: None,
+                next_record_index: 428,
+                next_byte_offset: 29,
+            },
+        )
+        .unwrap();
     let mut target_scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#920"),
         crate::records::feature::scope::DesignFeatureKind::WorkPlane,
@@ -999,7 +1004,10 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             scope::DesignParameterScope,
             surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
         },
-        topology::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame},
+        topology::{
+            construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame,
+        },
     };
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceContinuity};
 
@@ -1055,7 +1063,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     let scope_record_index = scope.record_index;
     let group = |record_index, ordinal, member| {
         DesignConstructionOperandGroup::try_from(
-            crate::records::topology::DesignConstructionOperandGroupDraft {
+            crate::records::topology::construction::DesignConstructionOperandGroupDraft {
                 id: format!("f3d:test:construction-group#{record_index}"),
                 scope_record_index,
                 scope_reference_ordinal: ordinal,
@@ -1069,7 +1077,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
                 }],
                 lost_edge_references: Vec::new(),
                 frame: DesignConstructionOperandGroupFrame::try_from(
-                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                         member_count_offset: 0,
                         auxiliary_records: Vec::new(),
                         auxiliary_paths: Vec::new(),
@@ -1085,7 +1093,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
                     },
                 )
                 .unwrap(),
-                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                operand_role: crate::records::topology::construction::DesignConstructionOperandRole::Other(
                     DesignOperandRole::BODIES_A,
                 ),
                 role_offset: 0,
@@ -1168,7 +1176,10 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             sheet_metal::{DesignHemOperation, DesignHemParameterOwners},
         },
         parameters::{DesignParameter, DesignParameterOwner},
-        topology::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame},
+        topology::{
+            construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame,
+        },
     };
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalHemDirection, SheetMetalHemForm,
@@ -1235,7 +1246,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                  member: u32,
                  role: DesignOperandRole| {
         DesignConstructionOperandGroup::try_from(
-            crate::records::topology::DesignConstructionOperandGroupDraft {
+            crate::records::topology::construction::DesignConstructionOperandGroupDraft {
                 id: format!("{stream}:design-construction-operand-group#{record_index}"),
                 scope_record_index,
                 scope_reference_ordinal: 0,
@@ -1249,7 +1260,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                 }],
                 lost_edge_references: Vec::new(),
                 frame: DesignConstructionOperandGroupFrame::try_from(
-                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                         member_count_offset: 0,
                         auxiliary_records: Vec::new(),
                         auxiliary_paths: Vec::new(),
@@ -1265,7 +1276,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                     },
                 )
                 .unwrap(),
-                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+                operand_role: crate::records::topology::construction::DesignConstructionOperandRole::Other(role),
                 role_offset: 0,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "000".to_owned(),
