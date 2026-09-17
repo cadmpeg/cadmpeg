@@ -38,14 +38,20 @@ fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
     let error = serde_json::from_value::<LoftProfileMember>(beside)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("zz_bogus"), "{error}");
+    assert_eq!(
+        error,
+        "unknown field `zz_bogus`, expected `profile` or `form`"
+    );
 
     let mut inside = wire;
     inside["profile"]["zz_bogus"] = serde_json::json!(1);
     let error = serde_json::from_value::<LoftProfileMember>(inside)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("zz_bogus"), "{error}");
+    assert_eq!(
+        error,
+        "unknown field `zz_bogus`, expected `curve` or `endpoints`"
+    );
 }
 
 // The classic profile data carries every field it needs and no field it
@@ -102,6 +108,6 @@ fn classic_loft_profile_data_states_only_its_own_fields() {
         let error = serde_json::from_value::<ClassicLoftProfileData>(missing)
             .expect_err("the classic form requires the field")
             .to_string();
-        assert!(error.contains(required), "{required}: {error}");
+        assert_eq!(error, format!("missing field `{required}`"), "{required}");
     }
 }

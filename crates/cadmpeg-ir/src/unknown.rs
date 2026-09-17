@@ -388,6 +388,9 @@ mod tests {
         let error = serde_json::from_value::<UnknownRecord>(bogus)
             .expect_err("an unknown key is refused")
             .to_string();
-        assert!(error.contains("zz_bogus"), "{error}");
+        assert_eq!(
+            error,
+            "unknown field `zz_bogus`, expected one of `id`, `offset`, `retention`, `links`"
+        );
     }
 }
