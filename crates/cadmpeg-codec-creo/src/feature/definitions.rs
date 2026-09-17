@@ -1087,10 +1087,15 @@ impl<T> SolverSubtable<T> {
     pub fn missing_rows(&self) -> usize {
         match self {
             Self::Declared { header, rows } => {
-                // `checked_sub` answering `None` is the doc sentence above:
-                // rows decoded past the declaration are an over-run, so the
-                // shortfall is zero.
-                header.declared_rows().checked_sub(rows.len()).unwrap_or(0)
+                let declared = header.declared_rows();
+                // The two cases the doc sentence above names: a declaration
+                // above the decoded count is the shortfall, and rows decoded
+                // past the declaration are an over-run, not a shortfall.
+                if declared > rows.len() {
+                    declared - rows.len()
+                } else {
+                    0
+                }
             }
             Self::Unframed(_) => 0,
         }
