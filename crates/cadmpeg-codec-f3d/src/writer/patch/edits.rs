@@ -2054,7 +2054,15 @@ pub(crate) fn validate_construction_recipe_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.record_index = before.record_index;
+        normalized.record_index = before
+            .record_index
+            .zip(after.record_index)
+            .map(
+                |(before_index, after_index)| crate::records::RecordedValue {
+                    value: before_index.value,
+                    offset: after_index.offset,
+                },
+            );
         normalized.design =
             before
                 .design
@@ -2083,10 +2091,10 @@ pub(crate) fn validate_construction_recipe_edits(
         let record_index = (after.record_index != before.record_index)
             .then(|| {
                 after
-                    .record_index_offset
-                    .map(|offset| Edit {
-                        offset,
-                        value: after.record_index,
+                    .record_index
+                    .map(|record_index| Edit {
+                        offset: record_index.offset,
+                        value: record_index.value,
                     })
                     .ok_or_else(|| {
                         CodecError::NotImplemented(format!(

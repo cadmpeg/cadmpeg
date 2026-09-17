@@ -512,7 +512,6 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
     let recipes = vec![ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{recipe_byte_offset}"),
         byte_offset: recipe_byte_offset as u64,
-        record_index_offset: None,
         kind: ConstructionRecipeKind::Face,
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
@@ -522,7 +521,10 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
             selector: None,
         }),
         recipe_index: 0,
-        record_index: 103,
+        record_index: Some(crate::records::RecordedValue {
+            value: 103,
+            offset: 0,
+        }),
     }];
     (bytes, scope, recipes)
 }

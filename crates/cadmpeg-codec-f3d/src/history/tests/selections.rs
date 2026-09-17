@@ -459,7 +459,6 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
     let recipe = |record_index, design_id: &str, selector| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
         byte_offset: 0,
-        record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
@@ -472,7 +471,10 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
             }),
         }),
         recipe_index: 0,
-        record_index: 0,
+        record_index: Some(crate::records::RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
     };
     let recipes = [
         recipe(101, "exact", 6),

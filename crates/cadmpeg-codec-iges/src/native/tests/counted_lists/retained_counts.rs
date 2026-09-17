@@ -966,3 +966,88 @@ fn decode_attribute_instance_rows_clamp_to_the_values_the_record_holds() {
         );
     }
 }
+
+fn attribute_table_refusals(bytes: &[u8]) -> Vec<String> {
+    salvage(bytes)
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::AttributeTableCountUnstatable.kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+fn attribute_table(definition: &str, instance: &str) -> Vec<u8> {
+    owned_test_file_with_structures(
+        &[
+            OwnedTestEntity {
+                entity_type: 322,
+                form: 0,
+                label: "ATTRDEF".into(),
+                status: "00000000",
+                parameters: definition.into(),
+            },
+            OwnedTestEntity {
+                entity_type: 422,
+                form: 1,
+                label: "ATTRTAB".into(),
+                status: "00000000",
+                parameters: instance.into(),
+            },
+        ],
+        &[(3, -1)],
+    )
+}
+
+#[test]
+fn decode_refuses_an_attribute_table_whose_definition_states_a_negative_value_count() {
+    let bytes = attribute_table("322,4HMETA,1,2,10,1,-1,11,3,1;", "422,1,8,4HIRON;");
+    assert_eq!(
+        attribute_table_refusals(&bytes),
+        vec![
+            "IGES attribute table instance D3 states no value count for attribute 0 in its \
+             attribute-table definition, so no attribute row was read"
+                .to_owned()
+        ]
+    );
+    let result = salvage(&bytes);
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert!(native.arenas()["attribute_table_instances"][0].fields()["rows"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn decode_refuses_an_attribute_table_whose_instance_states_no_row_count() {
+    for instance in ["422,,8,4HIRON;", "422,-3,8,4HIRON;"] {
+        let bytes = attribute_table("322,4HMETA,1,2,10,1,1,11,3,1;", instance);
+        assert_eq!(
+            attribute_table_refusals(&bytes),
+            vec![
+                "IGES attribute table instance D3 states no row count, so no attribute row was read"
+                    .to_owned()
+            ],
+            "{instance}"
+        );
+    }
+}
+
+#[test]
+fn decode_refuses_an_attribute_table_whose_record_does_not_hold_its_declared_rows() {
+    let bytes = attribute_table("322,4HMETA,1,2,10,1,1,11,3,1;", "422,3,8,4HIRON,9,5HBRASS;");
+    assert_eq!(
+        attribute_table_refusals(&bytes),
+        vec![
+            "IGES attribute table instance D3 declares 3 attribute rows; its Parameter Data \
+             record holds 4 values, so no attribute row was read"
+                .to_owned()
+        ]
+    );
+}
+
+#[test]
+fn decode_states_no_attribute_table_refusal_for_a_complete_table() {
+    let bytes = attribute_table("322,4HMETA,1,2,10,1,1,11,3,1;", "422,2,8,4HIRON,9,5HBRASS;");
+    assert_eq!(attribute_table_refusals(&bytes), Vec::<String>::new());
+}

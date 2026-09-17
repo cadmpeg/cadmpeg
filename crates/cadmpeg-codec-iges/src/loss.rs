@@ -66,6 +66,8 @@ loss_codes! {
     ParameterBoundaryAmbiguous => "parameter.boundary-ambiguous",
     /// A counted list declares more items than its Parameter Data record holds.
     ParameterCountOverdeclared => "parameter.count-overdeclared",
+    /// A Type 422 attribute table states a count no row grid can be read from.
+    AttributeTableCountUnstatable => "parameter.attribute-table-count-unstatable",
     /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
     DirectoryRecordQuarantined => "directory.record-quarantined",
     /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
@@ -129,6 +131,7 @@ impl IgesLossCode {
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
+            | Self::AttributeTableCountUnstatable
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
@@ -176,6 +179,7 @@ impl IgesLossCode {
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterCountOverdeclared
+            | Self::AttributeTableCountUnstatable
             | Self::DirectoryRecordQuarantined
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
@@ -238,6 +242,7 @@ mod tests {
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
+                "parameter.attribute-table-count-unstatable",
                 "directory.record-quarantined",
                 "parameter.data-quarantined",
                 "card.framing-recovered",

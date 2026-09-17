@@ -175,7 +175,6 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     .map(|(ordinal, kind)| ConstructionRecipe {
         id: format!("f3d:generated:recipe#{ordinal}"),
         byte_offset: 0,
-        record_index_offset: None,
         kind,
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
@@ -185,7 +184,10 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
             selector: None,
         }),
         recipe_index: 0,
-        record_index: 100 + i32::try_from(ordinal).unwrap(),
+        record_index: Some(crate::records::RecordedValue {
+            value: 100 + i32::try_from(ordinal).unwrap(),
+            offset: 0,
+        }),
     })
     .collect();
     native.persistent_references = vec![
@@ -306,7 +308,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .iter()
         .find(|recipe| recipe.kind == ConstructionRecipeKind::Body)
         .expect("body recipe");
-    assert_eq!(body_recipe.record_index, 100);
+    assert_eq!(body_recipe.record_index.map(|index| index.value), Some(100));
     assert_eq!(
         body_recipe
             .design
@@ -330,7 +332,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
             .map(|design| design.id.value.as_str()),
         Some("322")
     );
-    assert_eq!(bounded.record_index, 102);
+    assert_eq!(bounded.record_index.map(|index| index.value), Some(102));
     assert_eq!(native.persistent_references.len(), 3);
     assert_eq!(
         native

@@ -972,7 +972,6 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let recipe = crate::records::ConstructionRecipe {
         id: operand.recipe_id.clone(),
         byte_offset: 0,
-        record_index_offset: None,
         kind: crate::records::ConstructionRecipeKind::Body,
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
@@ -985,7 +984,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             }),
         }),
         recipe_index: 0,
-        record_index: 0,
+        record_index: Some(crate::records::RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
     };
     let link = crate::records::PersistentDesignLink {
         id: "link".into(),

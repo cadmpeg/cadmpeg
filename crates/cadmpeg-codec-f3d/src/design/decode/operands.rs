@@ -1202,7 +1202,8 @@ pub fn bind_face_operand_candidates(
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
-            .map(|recipe| i64::from(recipe.record_index))
+            .and_then(|recipe| recipe.record_index)
+            .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0)
         else {
             continue;
@@ -1265,7 +1266,8 @@ pub fn bind_edge_operand_candidates(
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
-            .map(|recipe| i64::from(recipe.record_index))
+            .and_then(|recipe| recipe.record_index)
+            .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0)
         else {
             continue;

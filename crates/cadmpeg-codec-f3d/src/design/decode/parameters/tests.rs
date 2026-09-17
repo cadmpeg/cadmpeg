@@ -1060,11 +1060,13 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
         byte_offset,
-        record_index_offset: None,
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
-        record_index,
+        record_index: Some(crate::records::RecordedValue {
+            value: record_index,
+            offset: 0,
+        }),
     };
     let recipes = [recipe(31, 100), recipe(30, 80)];
 

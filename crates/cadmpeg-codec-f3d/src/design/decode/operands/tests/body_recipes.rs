@@ -87,7 +87,6 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
         byte_offset: recipe_at as u64,
-        record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
@@ -100,7 +99,10 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             }),
         }),
         recipe_index: 0,
-        record_index: 0,
+        record_index: Some(crate::records::RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
     };
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#80",
@@ -357,7 +359,6 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     let recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
         byte_offset: recipe_at as u64,
-        record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::ConstructionRecipeDesign {
             id: crate::records::RecordedValue {
@@ -370,7 +371,10 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             }),
         }),
         recipe_index: 0,
-        record_index: 0,
+        record_index: Some(crate::records::RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
     };
 
     let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)

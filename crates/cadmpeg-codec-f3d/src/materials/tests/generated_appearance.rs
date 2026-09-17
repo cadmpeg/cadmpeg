@@ -126,8 +126,10 @@ fn decode_transfers_generated_protein_appearance() {
         Some("322")
     );
     assert_eq!(
-        f3d_native(result.ir()).construction_recipes[0].record_index,
-        123
+        f3d_native(result.ir()).construction_recipes[0]
+            .record_index
+            .map(|index| index.value),
+        Some(123)
     );
     assert_eq!(f3d_native(result.ir()).persistent_references.len(), 10);
     assert!(f3d_native(result.ir())

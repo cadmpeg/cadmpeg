@@ -1344,6 +1344,141 @@ pub(crate) enum ParameterBoundaryAmbiguity {
     Structural(usize),
 }
 
+/// Why one Type 422 attribute-table instance states no readable row grid.
+///
+/// Each variant is a refusal that names the lane the instance failed in, not a
+/// default: no row is read and the instance's loss states which count could
+/// not be used. None of them stands for a table that holds no row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UnstatableAttributeTable {
+    /// The definition record does not state how many attributes the table has.
+    AttributeCount,
+    /// The definition record does not state a usable value count for one
+    /// attribute: the count field lies past the record's parameter end, or the
+    /// record states it as a negative integer, a real or a string.
+    ValueCount { attribute: usize },
+    /// The per-attribute value counts sum past what `usize` can state.
+    ValueTotal,
+    /// The instance record does not state a row count.
+    RowCount,
+    /// The instance record's primary parameters do not hold the rows it
+    /// declares.
+    RowsNotHeld { declared: usize, available: usize },
+}
+
+impl UnstatableAttributeTable {
+    /// The clause naming this refusal in the instance's loss message.
+    pub(crate) fn reason(self) -> String {
+        match self {
+            Self::AttributeCount => {
+                "states no attribute count in its attribute-table definition".to_owned()
+            }
+            Self::ValueCount { attribute } => format!(
+                "states no value count for attribute {attribute} in its attribute-table definition"
+            ),
+            Self::ValueTotal => {
+                "states per-attribute value counts that sum past an addressable row".to_owned()
+            }
+            Self::RowCount => "states no row count".to_owned(),
+            Self::RowsNotHeld {
+                declared,
+                available,
+            } => format!(
+                "declares {declared} attribute rows; its Parameter Data record holds {available} values"
+            ),
+        }
+    }
+}
+
+/// The admitted value grid of one Type 422 attribute-table instance.
+///
+/// `values` holds exactly `rows * values_per_row` tokens of the instance
+/// record's primary parameters.
+struct AttributeTableRows<'a> {
+    values: &'a [crate::parameter::Token],
+    values_per_row: std::num::NonZeroUsize,
+}
+
+/// The value grid one Type 422 attribute-table instance states.
+///
+/// Every count on this route is read from the file: the attribute count and
+/// the per-attribute value counts from the Type 322 definition record, the row
+/// count from the instance record itself. A count the record does not state,
+/// states as a negative integer, a real or a string, or states past what the
+/// record holds is refused by name, never read as a zero count standing for an
+/// empty table. `Ok(None)` states the two tables the format itself says hold no
+/// value: one that resolves to no attribute-table definition, and one whose
+/// attributes together state no value.
+fn attribute_table_rows<'a>(
+    form: i64,
+    record: &'a ParameterRecord,
+    instance_end: usize,
+    definition: Option<(&ParameterRecord, usize, usize)>,
+    value_start: usize,
+) -> Result<Option<AttributeTableRows<'a>>, UnstatableAttributeTable> {
+    let Some((definition_record, stride, definition_end)) = definition else {
+        return Ok(None);
+    };
+    let Some(attribute_count) =
+        definition_record.count_with_stride_before(3, stride, definition_end)
+    else {
+        return Err(UnstatableAttributeTable::AttributeCount);
+    };
+    let mut values_per_row = 0_usize;
+    for attribute in 0..attribute_count {
+        let count_index = 6 + attribute * 3;
+        let declared = match definition_record.value(count_index) {
+            // The definition omits this attribute's count field, or the field
+            // lies past the record's own parameter end. `integer_or` states
+            // the format's default of one value for the first and states
+            // nothing for the second.
+            None | Some(TokenValue::Omitted) => definition_record
+                .integer_or(count_index, 1)
+                .ok_or(UnstatableAttributeTable::ValueCount { attribute })?,
+            Some(TokenValue::Integer(value)) => *value,
+            Some(TokenValue::Real(_) | TokenValue::String(_)) => {
+                return Err(UnstatableAttributeTable::ValueCount { attribute })
+            }
+        };
+        let declared = usize::try_from(declared)
+            .map_err(|_| UnstatableAttributeTable::ValueCount { attribute })?;
+        values_per_row = values_per_row
+            .checked_add(declared)
+            .ok_or(UnstatableAttributeTable::ValueTotal)?;
+    }
+    let Some(values_per_row) = std::num::NonZeroUsize::new(values_per_row) else {
+        return Ok(None);
+    };
+    let declared_rows = if form == 0 {
+        // A Form 0 instance states one row of the definition's values.
+        1
+    } else {
+        let declared = record
+            .integer(1)
+            .ok_or(UnstatableAttributeTable::RowCount)?;
+        usize::try_from(declared).map_err(|_| UnstatableAttributeTable::RowCount)?
+    };
+    let primary = match record.tokens().get(value_start..instance_end) {
+        Some(primary) => primary,
+        // The record's primary parameters end before its first value, so it
+        // states no attribute value.
+        None => &[],
+    };
+    let admitted = declared_rows
+        .checked_mul(values_per_row.get())
+        .and_then(|required| primary.get(..required));
+    let Some(values) = admitted else {
+        return Err(UnstatableAttributeTable::RowsNotHeld {
+            declared: declared_rows,
+            available: primary.len(),
+        });
+    };
+    Ok(Some(AttributeTableRows {
+        values,
+        values_per_row,
+    }))
+}
+
 /// Collects at most one overdeclared-count verdict per Directory Entry. The
 /// first verdict a record earns is the one its loss reports.
 #[derive(Default)]
@@ -1416,6 +1551,7 @@ pub(crate) struct NativeStoreResult {
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
     pub(crate) ambiguous_parameter_boundaries: Vec<AmbiguousParameterBoundary>,
     pub(crate) overdeclared_counts: BTreeMap<u32, OverdeclaredCount>,
+    pub(crate) unstatable_attribute_tables: BTreeMap<u32, UnstatableAttributeTable>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2078,6 +2214,7 @@ pub(crate) fn store(
     };
     let parameter_resolver = ParameterResolver::new(directory);
     let mut overdeclared_counts = OverdeclaredCounts::default();
+    let mut unstatable_attribute_tables = BTreeMap::new();
     let mut required_back_pointer_members = std::collections::BTreeSet::new();
     for group in directory
         .iter()
@@ -4265,73 +4402,42 @@ pub(crate) fn store(
                 crate::graph::resolved_structure_sequence(references, entry.sequence);
             let definition_record =
                 definition_sequence.and_then(|sequence| by_directory.get(&sequence).copied());
-            let attribute_count = definition_sequence
+            let definition = definition_sequence
+                .and_then(|sequence| Some((sequence, *entries.get(&sequence)?)))
                 .zip(definition_record)
-                .and_then(|(sequence, record)| {
-                    let stride =
-                        entries
-                            .get(&sequence)
-                            .map_or(1, |entry| if entry.form == 0 { 3 } else { 1 });
-                    record.count_with_stride_before(
-                        3,
+                .map(|((sequence, definition_entry), definition_record)| {
+                    let stride = if definition_entry.form == 0 { 3 } else { 1 };
+                    (
+                        definition_record,
                         stride,
-                        clamped_primary_end(sequence, record),
+                        clamped_primary_end(sequence, definition_record),
                     )
-                })
-                .unwrap_or_default();
-            let values_per_row = (0..attribute_count)
-                .try_fold(0_usize, |total, index| {
-                    let count_index = 6 + index * 3;
-                    let count = match definition_record {
-                        Some(record) => match record.value(count_index) {
-                            None | Some(TokenValue::Omitted) => record
-                                .integer_or(count_index, 1)
-                                .and_then(|value| usize::try_from(value).ok())
-                                .unwrap_or_default(),
-                            Some(TokenValue::Integer(value)) => {
-                                usize::try_from(*value).unwrap_or_default()
-                            }
-                            Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
-                        },
-                        None => 0,
-                    };
-                    total.checked_add(count)
-                })
-                .unwrap_or_default();
-            let declared_rows = if entry.form == 0 {
-                usize::from(values_per_row > 0)
-            } else {
-                record
-                    .and_then(|record| record.integer(1))
-                    .and_then(|value| usize::try_from(value).ok())
-                    .unwrap_or_default()
-            };
+                });
             let value_start = if entry.form == 0 { 1 } else { 2 };
-            let row_count = record.map_or(0, |record| {
-                let available =
-                    clamped_primary_end(entry.sequence, record).saturating_sub(value_start);
-                if values_per_row == 0 || declared_rows > available / values_per_row {
-                    0
-                } else {
-                    declared_rows
+            let grid = match record {
+                Some(record) => attribute_table_rows(
+                    entry.form,
+                    record,
+                    clamped_primary_end(entry.sequence, record),
+                    definition,
+                    value_start,
+                ),
+                // The instance has no Parameter Data record at all, which its
+                // own quarantine loss already names.
+                None => Ok(None),
+            };
+            let rows = match grid {
+                Ok(Some(grid)) => grid
+                    .values
+                    .chunks_exact(grid.values_per_row.get())
+                    .map(|row| row.iter().map(|token| token.value.clone()).collect())
+                    .collect(),
+                Ok(None) => Vec::new(),
+                Err(refusal) => {
+                    unstatable_attribute_tables.insert(entry.sequence, refusal);
+                    Vec::new()
                 }
-            });
-            let rows = (0..row_count)
-                .map(|row| {
-                    (0..values_per_row)
-                        .map(|column| {
-                            record
-                                .and_then(|record| {
-                                    record
-                                        .tokens()
-                                        .get(value_start + row * values_per_row + column)
-                                })
-                                .cloned()
-                                .map_or(TokenValue::Omitted, |token| token.value)
-                        })
-                        .collect()
-                })
-                .collect();
+            };
             NativeAttributeTableInstance {
                 id: format!("iges:product:attribute-instance#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -5516,6 +5622,7 @@ pub(crate) fn store(
         },
         ambiguous_parameter_boundaries,
         overdeclared_counts: overdeclared_counts.0,
+        unstatable_attribute_tables,
     })
 }
 

@@ -719,17 +719,17 @@ pub struct ConstructionRecipe {
     pub id: String,
     /// Byte offset of this recipe's family marker in its Design `BulkStream`.
     pub byte_offset: u64,
-    /// Byte offset of `record_index` in the Design `BulkStream`, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub record_index_offset: Option<u64>,
     /// Topology kind this recipe regenerates on replay.
     pub kind: ConstructionRecipeKind,
     /// Design identity carried by the recipe; absent for recipes without a body key.
     pub design: Option<ConstructionRecipeDesign<RecordedValue<String>>>,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub recipe_index: u32,
-    /// Source `BulkStream` record index this recipe was decoded from.
-    pub record_index: i32,
+    /// Source `BulkStream` record index this recipe was decoded from, with the
+    /// byte offset it was read at; `None` when the recipe's family marker opens
+    /// the stream too early for the index word to precede it, so the stream
+    /// states no record index for this recipe.
+    pub record_index: Option<RecordedValue<i32>>,
 }
 
 /// One source-framed parametric regeneration recipe.
@@ -756,8 +756,10 @@ struct ConstructionRecipeWire {
     pub design_selector: Option<ConstructionRecipeSelector>,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub recipe_index: u32,
-    /// Source `BulkStream` record index this recipe was decoded from.
-    pub record_index: i32,
+    /// Source `BulkStream` record index this recipe was decoded from, when the
+    /// stream states one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_index: Option<i32>,
 }
 
 impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
@@ -771,14 +773,15 @@ impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
                 return Err("construction recipe design_selector requires design_id".into())
             }
         };
+        let record_index =
+            RecordedValue::from_wire(wire.record_index, wire.record_index_offset, "record_index")?;
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
-            record_index_offset: wire.record_index_offset,
             kind: wire.kind,
             design,
             recipe_index: wire.recipe_index,
-            record_index: wire.record_index,
+            record_index,
         })
     }
 }
@@ -793,16 +796,20 @@ impl From<ConstructionRecipe> for ConstructionRecipeWire {
             ),
             None => (None, None, None),
         };
+        let (record_index, record_index_offset) = match value.record_index {
+            Some(record_index) => (Some(record_index.value), Some(record_index.offset)),
+            None => (None, None),
+        };
         Self {
             id: value.id,
             byte_offset: value.byte_offset,
-            record_index_offset: value.record_index_offset,
+            record_index_offset,
             kind: value.kind,
             design_id,
             design_id_offset,
             design_selector,
             recipe_index: value.recipe_index,
-            record_index: value.record_index,
+            record_index,
         }
     }
 }

@@ -222,7 +222,14 @@ pub(crate) fn encode_design_bulkstream(
             prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
             prefix[4..7].copy_from_slice(design_id.as_bytes());
         }
-        prefix[11..15].copy_from_slice(&recipe.record_index.to_le_bytes());
+        // A generated Design recipe states its own record index; a native
+        // recipe that states none has no index word to regenerate.
+        let Some(record_index) = recipe.record_index else {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D construction recipe states no record index".into(),
+            ));
+        };
+        prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
                 .map_err(|_| CodecError::Malformed("Design recipe name exceeds u32::MAX".into()))?

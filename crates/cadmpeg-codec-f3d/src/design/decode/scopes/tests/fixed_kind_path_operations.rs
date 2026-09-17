@@ -1022,11 +1022,13 @@ pub(super) fn fixed_kind_path_operations(
     let recipe = ConstructionRecipe {
         id: "f3d:native:construction-recipe#60".into(),
         byte_offset: 60,
-        record_index_offset: None,
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
-        record_index: 303,
+        record_index: Some(crate::records::RecordedValue {
+            value: 303,
+            offset: 0,
+        }),
     };
     let bound = bind_parameter_companion_payloads(
         vec![companion.clone()],
