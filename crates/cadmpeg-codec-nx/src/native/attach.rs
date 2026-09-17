@@ -2021,8 +2021,9 @@ fn attach_feature_operations(
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect::<BTreeMap<_, _>>();
-    let annotation_base_order =
-        u32::try_from(ir.model.semantic_annotations.len()).unwrap_or(u32::MAX);
+    // The annotation order is stated in a `u32`; a population past that width
+    // states no order for the labels that follow it.
+    let annotation_base_order = u32::try_from(ir.model.semantic_annotations.len()).ok();
     for (annotation_ordinal, label) in labels
         .iter()
         .filter(|label| label.value == "TEXT")
@@ -2034,12 +2035,14 @@ fn attach_feature_operations(
             .iter()
             .map(|value| value.value.as_str())
             .collect::<Vec<_>>();
-        let Some(annotation) = text_semantic_annotation(
-            &label.id,
-            annotation_base_order
-                .saturating_add(u32::try_from(annotation_ordinal).unwrap_or(u32::MAX)),
-            &payload_strings,
-        ) else {
+        let Some(order) = annotation_base_order.and_then(|base| {
+            u32::try_from(annotation_ordinal)
+                .ok()
+                .and_then(|ordinal| base.checked_add(ordinal))
+        }) else {
+            continue;
+        };
+        let Some(annotation) = text_semantic_annotation(&label.id, order, &payload_strings) else {
             continue;
         };
         annotations

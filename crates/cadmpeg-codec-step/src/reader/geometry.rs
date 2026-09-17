@@ -4,6 +4,7 @@
 use crate::ids::{key_word, kind};
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
@@ -101,8 +102,7 @@ pub(super) fn infer_edge_parameter_ranges(
             Some((index, curve, start, end))
         })
         .collect::<Vec<_>>();
-    let work = u64::try_from(candidates.len())
-        .unwrap_or(u64::MAX)
+    let work = u64_from_index(candidates.len())
         .saturating_mul(RANGE_INFERENCE_WORK_UNITS);
     if let Some(ctx) = ctx {
         ctx.charge_work(work, "step_edge_parameter_inference")?;

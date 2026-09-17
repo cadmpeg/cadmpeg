@@ -149,7 +149,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     table.buckets.push(crate::feature::FeatureTrimBucket {
         index: 0,
         declared_entry_count: 4,
-        decoded_entry_count: 3,
+        decoded_entry_count: Some(3),
         offset: 5,
     });
     assert!(resolved_profile_chains(

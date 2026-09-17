@@ -2553,7 +2553,13 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);
-    let (topological_vertices, half_edge_vertex_incidence) = topology::vertex_orbits(&half_edges);
+    let Some((topological_vertices, half_edge_vertex_incidence)) =
+        topology::vertex_orbits(&half_edges)
+    else {
+        return Err(CodecError::Malformed(
+            "creo half-edge orbits outnumber the vertex identifier space".into(),
+        ));
+    };
     let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(&sections);
     let datum_cylinders = datum_cylinders(&sections);

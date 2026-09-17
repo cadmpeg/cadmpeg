@@ -271,11 +271,14 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "spline segment count is invalid"));
             continue;
         };
-        if raw_segment_count > MAX_SPLINE_SEGMENTS as i64 {
+        if let Some(observed) = u64::try_from(raw_segment_count)
+            .ok()
+            .filter(|count| *count > MAX_SPLINE_SEGMENTS as u64)
+        {
             return Err(refuse_local_limit(
                 "iges_spline_segments",
                 MAX_SPLINE_SEGMENTS as u64,
-                u64::try_from(raw_segment_count).unwrap_or(u64::MAX),
+                observed,
             ));
         }
         let Some(segment_count) = usize::try_from(raw_segment_count)

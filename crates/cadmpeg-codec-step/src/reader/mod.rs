@@ -4,7 +4,7 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -199,13 +199,13 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
 
     fn charge_stage(&mut self, operation: &'static str) -> Result<(), CodecError> {
         self.charge_pending_ir_entities(operation)?;
-        let output_work = u64::try_from(self.ir.model.entity_count()).unwrap_or(u64::MAX);
+        let output_work = u64_from_index(self.ir.model.entity_count());
         let units = self.semantic_input_work.saturating_add(output_work);
         self.ctx.charge_work(units, operation)
     }
 
     fn charge_pending_ir_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
-        let current_entities = u64::try_from(self.ir.model.entity_count()).unwrap_or(u64::MAX);
+        let current_entities = u64_from_index(self.ir.model.entity_count());
         let additional_entities = current_entities.saturating_sub(self.admitted_ir_entities);
         self.ctx.charge_entities(additional_entities, operation)?;
         self.admitted_ir_entities = current_entities;
@@ -506,7 +506,7 @@ fn decode_exchange_mode(
     }
     let accounting = {
         session.ctx.charge_work(
-            u64::try_from(input.len()).unwrap_or(u64::MAX),
+            u64_from_index(input.len()),
             "step_byte_accounting",
         )?;
         let _reservation = session
@@ -637,9 +637,9 @@ fn semantic_input_work(exchange: &Exchange) -> u64 {
                     .map(value_work_units)
                     .fold(0, u64::saturating_add),
             )
-            .saturating_add(u64::try_from(section.records.len()).unwrap_or(u64::MAX))
+            .saturating_add(u64_from_index(section.records.len()))
     });
-    let references = u64::try_from(exchange.references().len()).unwrap_or(u64::MAX);
+    let references = u64_from_index(exchange.references().len());
     records
         .chain(headers)
         .chain(anchors)
@@ -687,7 +687,7 @@ fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
                     Value::List(values) => Some(values),
                     _ => None,
                 })
-                .map(|points| u64::try_from(points.len()).unwrap_or(u64::MAX))
+                .map(|points| u64_from_index(points.len()))
         })
         .fold(0, u64::saturating_add)
 }

@@ -32,6 +32,7 @@ use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::{design, history, ids, native, records};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{Check, Finding, Severity};
 
@@ -111,7 +112,7 @@ fn valid_assembly_operand_path_link(
     };
     let Some(locator_scope_reference_offset) = link
         .locator_byte_offset
-        .checked_add(u64::try_from(scope_backlink).unwrap_or(u64::MAX))
+        .checked_add(u64_from_index(scope_backlink))
     else {
         return false;
     };
@@ -122,7 +123,7 @@ fn valid_assembly_operand_path_link(
     };
     let Some(wrapper_reference_offset) = link
         .locator_byte_offset
-        .checked_add(u64::try_from(wrapper_reference).unwrap_or(u64::MAX))
+        .checked_add(u64_from_index(wrapper_reference))
     else {
         return false;
     };
@@ -159,10 +160,10 @@ fn valid_class_363_operand_path_link(
         && link.locator_reference_offset == frame.reference_offset
         && link.locator_scope_reference_offset
             == link.locator_byte_offset
-                + u64::try_from(class_363_carrier::SCOPE_REFERENCE + 1).unwrap_or(u64::MAX)
+                + u64_from_index(class_363_carrier::SCOPE_REFERENCE + 1)
         && link.path_reference_offset
             == link.wrapper_byte_offset
-                + u64::try_from(class_363_identity::OCCURRENCE_GUID + 4).unwrap_or(u64::MAX)
+                + u64_from_index(class_363_identity::OCCURRENCE_GUID + 4)
         && link.wrapper_reference_offset < link.wrapper_byte_offset
         && link.locator_scope_reference_offset > link.locator_byte_offset
         && link.locator_reference_offset >= scope.byte_offset()
@@ -2094,7 +2095,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && frame.record_byte_offset == header.byte_offset
                         && frame.transform_offset
                             == frame.record_byte_offset
-                                + u64::try_from(generation.matrix_offset()).unwrap_or(u64::MAX)
+                                + u64_from_index(generation.matrix_offset())
                 });
                 let operand_qualifiers_link = match alignment.form.as_ref() {
                     Some(records::feature::DesignAssemblyAlignmentForm::Qualified(operands)) => {
@@ -6302,7 +6303,7 @@ fn validate_face_operands<'a>(
             .map(|(index, _)| {
                 operand
                     .recipe_program_offset
-                    .saturating_add(u64::try_from(index).unwrap_or(u64::MAX).saturating_mul(4))
+                    .saturating_add(u64_from_index(index).saturating_mul(4))
             })
             .collect::<Vec<_>>();
         let expected_nodes = expected_node_offsets
@@ -6556,8 +6557,7 @@ fn validate_face_operands<'a>(
                 })
             && operand.next_byte_offset()
                 == operand.recipe_program_offset.saturating_add(
-                    u64::try_from(operand.recipe_program.len())
-                        .unwrap_or(u64::MAX)
+                    u64_from_index(operand.recipe_program.len())
                         .saturating_mul(4),
                 )
             && (historical_candidates_retained || operand.candidate_faces == expected_faces)

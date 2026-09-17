@@ -247,9 +247,7 @@ pub(super) fn decode(
         .iter()
         .filter_map(|id| overridden_style(&exchange.records()[id]))
         .collect::<BTreeSet<_>>();
-    styles.sort_by_key(|id| {
-        style_depth(*id, exchange, &mut BTreeSet::new(), 0, graph_limit).unwrap_or(u32::MAX)
-    });
+    styles.sort_by_key(|id| style_application_order(*id, exchange, graph_limit));
     let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for style_id in styles {
         if overridden_styles.contains(&style_id) {
@@ -979,6 +977,16 @@ fn presentation_style_context(record: &RawRecord) -> Option<&Value> {
 
 pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
     styled_item_parts(record).and_then(|parts| parts.target.reference())
+}
+
+/// The position of one styled item in override-depth order.
+///
+/// A style whose override walk revisits a style or passes the graph limit
+/// states no depth. Absence takes a position of its own, after every stated
+/// depth; it is not read as the deepest style.
+fn style_application_order(id: u64, exchange: &Exchange, graph_limit: usize) -> (bool, Option<u32>) {
+    let depth = style_depth(id, exchange, &mut BTreeSet::new(), 0, graph_limit);
+    (depth.is_none(), depth)
 }
 
 fn style_depth(

@@ -1553,7 +1553,7 @@ fn trim_buckets_require_the_complete_declared_sequence_and_counts() {
             .collect::<Vec<_>>(),
         (0..7)
             .zip([1, 1, 0, 0, 1, 1, 0])
-            .map(|(index, count)| (index, count, count))
+            .map(|(index, count)| (index, count, Some(count)))
             .collect::<Vec<_>>()
     );
     let truncated = payload
@@ -1583,14 +1583,14 @@ fn trim_bucket_completeness_rejects_missing_and_extra_vertex_entries() {
             \xf7\x44\x01\x02\x03\x00\xe0";
     let buckets = trim_buckets(missing, 0, missing.len(), header, TrimEntryKind::Vertex);
     assert_eq!(buckets[0].declared_entry_count, 2);
-    assert_eq!(buckets[0].decoded_entry_count, 1);
+    assert_eq!(buckets[0].decoded_entry_count, Some(1));
     assert!(!buckets[0].is_complete());
 
     let extra = b"bucket_index\0\x00bucket_xar\0\xf8\x01\xf7\x43\xfb\xe3\
             \xf7\x44\x01\x02\x03\x00\xe3\x04\x05\x06\x00\xe0";
     let buckets = trim_buckets(extra, 0, extra.len(), header, TrimEntryKind::Vertex);
     assert_eq!(buckets[0].declared_entry_count, 1);
-    assert_eq!(buckets[0].decoded_entry_count, 2);
+    assert_eq!(buckets[0].decoded_entry_count, Some(2));
     assert!(!buckets[0].is_complete());
 }
 
@@ -1624,11 +1624,11 @@ fn trim_entity_bucket_counts_the_named_prototype_and_complete_bodies() {
         },
     };
     let buckets = trim_buckets(payload, 0, payload.len(), header, TrimEntryKind::Entity);
-    assert_eq!(buckets[0].decoded_entry_count, 2);
+    assert_eq!(buckets[0].decoded_entry_count, Some(2));
     assert!(buckets[0].is_complete());
 
     let truncated = payload.len() - 2;
     let buckets = trim_buckets(payload, 0, truncated, header, TrimEntryKind::Entity);
-    assert_eq!(buckets[0].decoded_entry_count, 1);
+    assert_eq!(buckets[0].decoded_entry_count, Some(1));
     assert!(!buckets[0].is_complete());
 }

@@ -688,7 +688,9 @@ fn structure(args: &StructArgs) -> Result<()> {
         );
     }
     let bytes = read_window(file_path, args.offset, span - args.offset)?;
-    let name_width = layout.names().map(str::len).max().unwrap_or(1);
+    // `fields()` yields exactly the named fields, so a layout that names none
+    // prints no field line. Zero is the identity of a maximum over lengths.
+    let name_width = layout.names().map(str::len).fold(0, usize::max);
     for (index, record) in layout.split(&bytes).enumerate() {
         let base = args.offset + index as u64 * record_size;
         println!("record {index} @ 0x{base:08x} ({record_size} bytes)");

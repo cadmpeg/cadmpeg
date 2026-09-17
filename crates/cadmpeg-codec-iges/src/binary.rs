@@ -9,7 +9,7 @@
 //! passed to the reader, so normalization does not replace source fidelity.
 
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -547,7 +547,7 @@ fn validate_terminate(payload: &[u8], expected: [usize; 5]) -> Result<(), CodecE
     for (index, (identifier, size)) in b"BSGDP".iter().copied().zip(expected).enumerate() {
         let offset = index * 5;
         if payload[offset] != identifier
-            || u32_at(payload, offset + 1)? != u32::try_from(size).unwrap_or(u32::MAX)
+            || u64::from(u32_at(payload, offset + 1)?) != u64_from_index(size)
         {
             return Err(malformed("Binary Terminate section counts disagree"));
         }
@@ -1180,7 +1180,7 @@ fn charge_normalization(
     normalized_len: usize,
 ) -> Result<(), CodecError> {
     ctx.charge_work(
-        u64::try_from(source_len.saturating_add(normalized_len)).unwrap_or(u64::MAX),
+        u64_from_index(source_len.saturating_add(normalized_len)),
         "iges_binary_normalization",
     )
 }

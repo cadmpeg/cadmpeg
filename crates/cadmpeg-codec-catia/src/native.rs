@@ -1870,8 +1870,16 @@ pub struct CatiaCatalog {
 }
 
 impl CatiaCatalog {
-    pub fn declared_count(&self) -> u32 {
-        u32::try_from(self.entries.len() + 1).unwrap_or(u32::MAX)
+    /// The stored count, equal to the entry population plus one.
+    ///
+    /// The format states the count in a `u32`, so a catalog holding a
+    /// population that plus one does not fit a `u32` states no count. Every
+    /// decoded catalog derives its population from that same `u32`, so it
+    /// always states one.
+    pub fn declared_count(&self) -> Option<u32> {
+        u32::try_from(self.entries.len())
+            .ok()
+            .and_then(|population| population.checked_add(1))
     }
 }
 
@@ -1884,8 +1892,10 @@ struct CatiaCatalogWire {
     byte_offset: u64,
     /// Total framed byte length.
     byte_len: u64,
-    /// Stored count, equal to the entry population plus one.
-    declared_count: u32,
+    /// Stored count, equal to the entry population plus one. Absent when the
+    /// entry population plus one does not fit the stored `u32`.
+    #[serde(default)]
+    declared_count: Option<u32>,
     /// Catalog entries in serialized order.
     #[serde(default)]
     entries: Vec<CatiaCatalogEntry>,
@@ -1919,10 +1929,13 @@ impl TryFrom<CatiaCatalogWire> for CatiaCatalog {
     type Error = &'static str;
 
     fn try_from(wire: CatiaCatalogWire) -> Result<Self, Self::Error> {
+        let Some(declared_count) = wire.declared_count else {
+            return Err("catalog states no count");
+        };
         if u32::try_from(wire.entries.len())
             .ok()
             .and_then(|count| count.checked_add(1))
-            != Some(wire.declared_count)
+            != Some(declared_count)
         {
             return Err("catalog count disagrees with entries");
         }

@@ -76,11 +76,13 @@ fn feature_at_offset(offset: u64, intervals: &[(u64, u64, String)]) -> Option<&s
         .map(|(_, _, feature)| feature.as_str())
 }
 
+/// The exclusive offset the relation's scope ends at, or `None` when no
+/// following class, feature interval or unknown-feature span bounds it.
 fn relation_scope_end(
     class: &FeatureInputClass,
     classes: &[FeatureInputClass],
     intervals: &[(u64, u64, String)],
-) -> u64 {
+) -> Option<u64> {
     let class_feature = feature_at_offset(class.offset, intervals);
     let next_class = classes
         .iter()
@@ -92,18 +94,18 @@ fn relation_scope_end(
                 })
         })
         .map(|candidate| candidate.offset)
-        .min()
-        .unwrap_or(u64::MAX);
+        .min();
     let feature_end = intervals
         .iter()
         .find(|(start, end, _)| class.offset >= *start && class.offset < *end)
-        .map_or(u64::MAX, |(_, end, _)| *end);
-    let unknown_feature_limit = if class_feature.is_none() {
-        class.offset.saturating_add(128)
-    } else {
-        u64::MAX
-    };
-    next_class.min(feature_end).min(unknown_feature_limit)
+        .map(|(_, end, _)| *end);
+    let unknown_feature_limit = class_feature
+        .is_none()
+        .then(|| class.offset.saturating_add(128));
+    [next_class, feature_end, unknown_feature_limit]
+        .into_iter()
+        .flatten()
+        .min()
 }
 
 pub(super) fn relation_declaration_candidates<'a>(
@@ -150,7 +152,7 @@ fn relation_declaration_candidates_impl<'a>(
                 .iter()
                 .filter(|scalar| {
                     scalar.offset > class.offset
-                        && scalar.offset < scope_end
+                        && scope_end.is_none_or(|end| scalar.offset < end)
                         && class_feature
                             .is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
                         && if allow_dynamic {
@@ -1647,13 +1649,13 @@ pub(super) fn circle_dimension_handle_driver<'a>(
         .and_then(|id| scalars.iter().find(|scalar| scalar.id == *id))
         .copied()
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)?;
+    // No following relation class states no upper bound on this relation.
     let next_relation_offset = lane
         .classes
         .iter()
         .filter(|class| class.offset > first.offset && relation_family(&class.name).is_some())
         .map(|class| class.offset)
-        .min()
-        .unwrap_or(u64::MAX);
+        .min();
     let candidates = scalars
         .windows(2)
         .filter_map(|pair| {
@@ -1673,8 +1675,8 @@ pub(super) fn circle_dimension_handle_driver<'a>(
                 ),
                 (Some(left), Some(right)) if left == right
             );
-            let in_relation =
-                first.offset < display.offset && driving.offset < next_relation_offset;
+            let in_relation = first.offset < display.offset
+                && next_relation_offset.is_none_or(|limit| driving.offset < limit);
             (declared_handle
                 && same_feature
                 && same_scalar_operands(display, first)

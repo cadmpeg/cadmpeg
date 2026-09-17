@@ -4,7 +4,7 @@
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, IdentityKey, IdentityKeyTail, OccurrenceId, ProductDefinitionId};
@@ -542,7 +542,7 @@ fn admit_occurrence(
     ir: &CadIr,
     admitted: &mut u64,
 ) -> Result<(), CodecError> {
-    let current = u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX);
+    let current = u64_from_index(ir.model.entity_count());
     if let Some(ctx) = ctx {
         ctx.admit_entities(current, admitted, "step_assembly_occurrence")?;
     } else {

@@ -29,7 +29,7 @@ use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
@@ -1217,7 +1217,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         .iter()
         .find(|class| class.name == "moFeatureDimHandle_c")
         .map_or_else(
-            || u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX),
+            || u64_from_index(lane.native_payload.len()),
             |class| class.offset,
         );
     let relation_bindings = bind_detached_spatial_relation_objects(histories, represented, lane);

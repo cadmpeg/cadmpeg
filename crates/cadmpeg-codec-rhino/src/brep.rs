@@ -1304,8 +1304,8 @@ fn parse_legacy_major2(
                 endpoint_vertices[legacy_trim_endpoint_for_edge(trim, *trim_index, 1)],
             ]
         } else {
-            let start = legacy_vertex(&mut vertices, curve.endpoints[0]);
-            let end = legacy_vertex(&mut vertices, curve.endpoints[1]);
+            let start = legacy_vertex(&mut vertices, curve.endpoints[0], curve.range.start)?;
+            let end = legacy_vertex(&mut vertices, curve.endpoints[1], curve.range.start)?;
             [start, end]
         };
         for (vertex, point) in endpoints
@@ -1600,18 +1600,25 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
     }
 }
 
-fn legacy_vertex(vertices: &mut Vec<LegacyVertex>, point: Point3) -> usize {
+fn legacy_vertex(
+    vertices: &mut Vec<LegacyVertex>,
+    point: Point3,
+    position: usize,
+) -> Result<usize, GeometryError> {
     if let Some((index, _)) = vertices
         .iter()
         .enumerate()
         .find(|(_, value)| value.vertex.point == point)
     {
-        return index;
+        return Ok(index);
     }
     let index = vertices.len();
+    // The archive states a vertex index in an i32, as it states an edge index.
+    let stored_index = i32::try_from(index)
+        .map_err(|_| error(position, "legacy Brep vertex index overflow"))?;
     vertices.push(LegacyVertex {
         vertex: RawBrepVertex {
-            index: i32::try_from(index).unwrap_or(i32::MAX),
+            index: stored_index,
             point,
             edges: Vec::new(),
             tolerance: 0.0,
@@ -1620,7 +1627,7 @@ fn legacy_vertex(vertices: &mut Vec<LegacyVertex>, point: Point3) -> usize {
         point_sum: [0.0; 3],
         point_count: 0,
     });
-    index
+    Ok(index)
 }
 
 fn read_legacy_mesh_sides(
