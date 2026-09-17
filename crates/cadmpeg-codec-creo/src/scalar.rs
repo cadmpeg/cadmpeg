@@ -47,6 +47,16 @@ pub(crate) const POSITIONAL_SLOT_TABLE_WIDTH: usize = 12;
 /// whatever the remaining byte count, because the widest fixed positional table
 /// the format defines is stated by a prototype body of any length and the exact
 /// proof that the bytes carry the slots is the decode itself.
+///
+/// At the surface route this guard is the whole admission decision, and that is
+/// correct. `scalar_slots` cannot contradict it: it advances at least one byte
+/// per iteration and then states every slot it did not read as absent. That is
+/// the format's encoding, not padding -- `docs/formats/creo_prt.md` states that
+/// a body ending before the declared slot count leaves "the remaining slots
+/// absent and own no bytes", and `DimensionedScalars::empty` builds the array
+/// absent in every slot before a value is read. A shorter body is therefore a
+/// well-formed array of trailing absent slots, and the only refusal the surface
+/// route can make is this one.
 pub(crate) fn admitted_scalar_body(
     payload: &[u8],
     dimensions_end: usize,

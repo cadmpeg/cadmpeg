@@ -1566,6 +1566,45 @@ fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_tr
     );
 }
 
+/// A scalar body declaring more slots than the positional table is wide and
+/// fewer value bytes than slots states more slots than its bytes can carry.
+/// `scalar_slots` never refuses, so the guard in `admitted_scalar_body` is the
+/// whole admission decision at this route.
+#[test]
+fn a_surface_scalar_body_with_fewer_bytes_than_slots_above_twelve_is_refused() {
+    let family = SurfacePrototypeFamily::Plane;
+    let cache = scalar::ScalarCache::default();
+
+    // `f9 0d 01`: thirteen dimensions, one entry, no value bytes.
+    let body = [0xf9u8, 0x0d, 0x01];
+    assert_eq!(
+        named_surface_value(&family, "dum_array", &body, &cache),
+        SurfaceNamedValue::Opaque(body.to_vec())
+    );
+}
+
+/// A body ending before its declared slot count states the remaining slots as
+/// absent, owning no bytes. That is the format's encoding, so the array decodes.
+#[test]
+fn a_surface_scalar_body_of_trailing_absent_slots_decodes() {
+    let family = SurfacePrototypeFamily::Plane;
+    let cache = scalar::ScalarCache::default();
+
+    // `f9 0c 01`: twelve dimensions, one entry, no value bytes. Twelve is the
+    // positional table width, so the body is admitted and every slot is absent.
+    let body = [0xf9u8, 0x0c, 0x01];
+    let SurfaceNamedValue::ScalarArray(array) =
+        named_surface_value(&family, "dum_array", &body, &cache)
+    else {
+        panic!("scalar array of absent slots");
+    };
+
+    assert_eq!(array.dimensions(), 12);
+    assert_eq!(array.count(), 1);
+    assert_eq!(array.values().len(), 12);
+    assert!(array.values().iter().all(|value| value.is_none()));
+}
+
 #[test]
 fn a_counted_parameter_body_whose_values_start_past_the_body_is_refused() {
     let body = [0xf8u8, 0x03, 0xe6];
