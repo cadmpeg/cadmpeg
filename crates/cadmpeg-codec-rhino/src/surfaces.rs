@@ -306,14 +306,12 @@ fn read_clipping_plane(
             "unsupported clipping-plane minor version",
         ));
     }
-    let first_viewport = Uuid::from_wire(payload.array()?);
+    let _first_viewport = Uuid::from_wire(payload.array()?);
     let _plane_id = Uuid::from_wire(payload.array()?);
     let native_plane = plane(&mut payload)?;
     validate_plane(native_plane, payload.position())?;
     let _enabled = payload.bool()?;
-    if minor == 0 {
-        let _ = first_viewport;
-    } else {
+    if minor != 0 {
         read_uuid_list(data, &mut payload, archive)?;
     }
     if minor >= 2 {

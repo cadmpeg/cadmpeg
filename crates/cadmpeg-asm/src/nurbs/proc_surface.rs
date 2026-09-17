@@ -3812,7 +3812,6 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     ];
     let extension = cur.take_long()?;
     cur.at_scope_end().then_some(())?;
-    let _ = name;
     Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Exact {
             spline: cadmpeg_ir::geometry::ExactSpline::Legacy {

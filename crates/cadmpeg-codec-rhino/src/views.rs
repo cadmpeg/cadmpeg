@@ -269,8 +269,7 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
 }
 
-fn bool_i32(reader: &mut BoundedReader<'_>, label: &str) -> Result<bool, FramingError> {
-    let _ = label;
+fn bool_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {
     Ok(reader.i32()? != 0)
 }
 
@@ -532,9 +531,9 @@ fn parse_viewport(
             "viewport version is unsupported",
         ));
     }
-    let camera_valid = bool_i32(&mut reader, "camera-valid")?;
-    let frustum_valid = bool_i32(&mut reader, "frustum-valid")?;
-    let port_valid = bool_i32(&mut reader, "port-valid")?;
+    let camera_valid = bool_i32(&mut reader)?;
+    let frustum_valid = bool_i32(&mut reader)?;
+    let port_valid = bool_i32(&mut reader)?;
     let projection = reader.i32()?;
     let mut camera_location = [reader.f64()?, reader.f64()?, reader.f64()?];
     scale3(&mut camera_location, scale, reader.position() - 24)?;

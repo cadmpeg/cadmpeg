@@ -5049,11 +5049,10 @@ fn region_shell_groups(
                     )
                 },
             )?;
-        for (group, (component, faces)) in groups.into_iter().enumerate() {
+        for (group, (_component, faces)) in groups.into_iter().enumerate() {
             for face in &faces {
                 face_groups[*face] = group;
             }
-            let _ = component;
             shells.push(ShellGroup {
                 region: group,
                 faces,
@@ -5280,7 +5279,10 @@ fn transform_decoded_curve(
             }
             Ok(())
         }
-        crate::curves::DecodedCurve::Leaf { geometry, warnings } => {
+        crate::curves::DecodedCurve::Leaf {
+            geometry,
+            warnings: _,
+        } => {
             let source = std::mem::replace(
                 geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -5295,7 +5297,6 @@ fn transform_decoded_curve(
             };
             transform_curve(&mut carrier, transform)?;
             *geometry = carrier.geometry;
-            let _ = warnings;
             Ok(())
         }
     }
