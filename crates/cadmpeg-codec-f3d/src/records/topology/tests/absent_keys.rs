@@ -12,7 +12,7 @@ fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
 
 fn states_the_key(key: &str, message: &str) {
     assert!(
-        message.contains(key),
+        message.starts_with(&format!("{key}: ")),
         "the refusal of a null {key} states {message}"
     );
     assert!(

@@ -240,7 +240,7 @@ fn a_flattened_feature_reader_names_the_null_key_it_refuses() {
     ];
     for (key, message) in refusals {
         assert!(
-            message.contains(key),
+            message.starts_with(&format!("{key}: ")),
             "the refusal of a null {key} states {message}"
         );
         assert!(
