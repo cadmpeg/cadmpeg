@@ -1518,6 +1518,55 @@ fn parent_feature_array_rejects_malformed_reference_trailers() {
 }
 
 #[test]
+fn a_compact_integer_array_holding_fewer_values_than_it_declares_is_not_an_array() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline);
+
+    // `f8 02` declares two values and the body states two.
+    assert_eq!(
+        named_surface_value(&family, "dum_array", &[0xf8, 0x02, 0x07, 0x08], &cache),
+        SurfaceNamedValue::CompactIntArray(vec![7, 8])
+    );
+    // `f8 03` declares three and the body still states two.
+    assert_eq!(
+        named_surface_value(&family, "dum_array", &[0xf8, 0x03, 0x07, 0x08], &cache),
+        SurfaceNamedValue::Opaque(vec![0xf8, 0x03, 0x07, 0x08])
+    );
+}
+
+#[test]
+fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_trailer() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline);
+    let trailer = [0xf7u8, 0x03, 0x09, 0xe1, 0xf6, 0xf6];
+
+    let mut two = vec![0xf8u8, 0x02, 0x07, 0x08];
+    two.extend_from_slice(&trailer);
+    assert_eq!(
+        named_surface_value(&family, "parent_feats", &two, &cache),
+        SurfaceNamedValue::CompactIntArray(vec![7, 8])
+    );
+
+    // `compact_int` advances on every byte inside the body, so an array that
+    // holds fewer values than it declares ran out of body: the cursor is on
+    // the end and no bytes remain to state a trailer.
+    let short = vec![0xf8u8, 0x03, 0x07, 0x08];
+    assert_eq!(
+        named_surface_value(&family, "parent_feats", &short, &cache),
+        SurfaceNamedValue::Opaque(short.clone())
+    );
+
+    // A body that does hold three values reads the trailer's first byte as the
+    // third, so the trailer no longer begins at the cursor.
+    let mut three = vec![0xf8u8, 0x03, 0x07, 0x08];
+    three.extend_from_slice(&trailer);
+    assert_eq!(
+        named_surface_value(&family, "parent_feats", &three, &cache),
+        SurfaceNamedValue::Opaque(three.clone())
+    );
+}
+
+#[test]
 fn a_counted_parameter_body_whose_values_start_past_the_body_is_refused() {
     let body = [0xf8u8, 0x03, 0xe6];
 

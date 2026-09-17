@@ -293,6 +293,21 @@ fn sparse_surface_array_retains_rows_but_not_complete_frame() {
 }
 
 #[test]
+fn a_surface_array_frame_withholds_more_rows_than_the_slots_it_declares() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[8, 0x24, 5, 0x01, 0, 0]);
+    payload.extend_from_slice(b"crv_array\0\xf8\x00");
+
+    // The frame declares one slot and two validated headers fall inside it.
+    // More headers than slots is structurally invalid, so the frame holds no
+    // row.
+    assert!(rows(&payload).is_empty());
+    assert!(counted_row_bounds(&payload).is_empty());
+    assert!(complete_surface_array_bounds(&payload).is_empty());
+}
+
+#[test]
 fn named_prototype_parameter_body_cannot_start_a_surface_row() {
     let payload = b"srf_array\0\xf8\x01srf_prim_ptr(torus)\0\xe3\
         \xe0\x02radius1\0\x07\x26\x04\x01\x00\x00\
