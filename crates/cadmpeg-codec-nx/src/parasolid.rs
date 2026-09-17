@@ -712,7 +712,11 @@ fn append_all_zlib_streams<'a>(
                 // member's, double-attributing the same compressed bytes to two
                 // decompression origins. Skipping the consumed run keeps packed
                 // members' input extents disjoint.
-                i = i.saturating_add((consumed as usize).max(2));
+                //
+                // Plain `+`: `inflate_stream` reads only from `part[i..]`, so
+                // `inflate_zlib_member`'s report is at most the remaining
+                // length and the sum is a byte offset of `part`.
+                i += packed_member_advance(file_offset, consumed)?;
                 continue;
             }
         }
@@ -833,6 +837,35 @@ fn legacy_transmit_header(bytes: &[u8], start: usize) -> bool {
 }
 
 /// Inflate one complete zlib member.
+/// The shortest zlib member: the two-byte header, the two bytes a final empty
+/// deflate block needs, and the four-byte Adler-32 trailer.
+///
+/// `inflate_zlib_member` returns only on the decompressor's `StreamEnd`, so it
+/// read a complete member and nothing shorter than this is one.
+const MIN_ZLIB_MEMBER_LEN: usize = 8;
+
+/// The distance the packed-member scan advances past the member at
+/// `file_offset` whose decompressor reported `consumed` source bytes.
+///
+/// The report comes from the decompressor, not from a byte of the file, so it
+/// is read rather than assumed: a count this file cannot address, or one below
+/// the shortest zlib member, is a malformed member and is refused by name.
+fn packed_member_advance(file_offset: usize, consumed: u64) -> Result<usize, CodecError> {
+    let advance = usize::try_from(consumed).map_err(|_| {
+        CodecError::malformed(format_args!(
+            "nx packed member at {file_offset} reports {consumed} consumed source bytes, \
+             which this file cannot address"
+        ))
+    })?;
+    if advance < MIN_ZLIB_MEMBER_LEN {
+        return Err(CodecError::malformed(format_args!(
+            "nx packed member at {file_offset} reports {advance} consumed source bytes, \
+             below the {MIN_ZLIB_MEMBER_LEN} a zlib member holds"
+        )));
+    }
+    Ok(advance)
+}
+
 fn inflate_stream<'a>(
     ctx: &DecodeContext<'a>,
     part_view: View<'a>,

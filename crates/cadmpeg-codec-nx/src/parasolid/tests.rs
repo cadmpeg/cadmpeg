@@ -536,3 +536,25 @@ fn counted_value_identities_require_nonempty_payloads() {
         );
     }
 }
+
+#[test]
+fn a_packed_member_reporting_fewer_bytes_than_a_zlib_member_holds_is_refused_by_name() {
+    use crate::parasolid::{packed_member_advance, MIN_ZLIB_MEMBER_LEN};
+
+    let error = packed_member_advance(4096, 1).expect_err("one consumed byte is not a member");
+    let message = error.to_string();
+    assert!(message.contains("nx packed member"), "{message}");
+    assert!(message.contains("4096"), "{message}");
+    assert!(message.contains(" 1 consumed source bytes"), "{message}");
+
+    // The shortest member a decompressor can report is admitted, and the scan
+    // advances by exactly the bytes the member consumed.
+    assert_eq!(
+        packed_member_advance(4096, MIN_ZLIB_MEMBER_LEN as u64).expect("the shortest zlib member"),
+        MIN_ZLIB_MEMBER_LEN
+    );
+    assert_eq!(
+        packed_member_advance(4096, 4321).expect("a member of ordinary length"),
+        4321
+    );
+}
