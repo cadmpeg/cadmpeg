@@ -100,26 +100,34 @@ pub(crate) fn find_owned_intcurve_subtype(
     found.map(|(marker, name)| (marker, name.len()))
 }
 
+/// Resolve a cache through `{ref N}` subtype references: decode the scope
+/// inline first, then follow each reference into the stream's subtype table.
+/// `seen` breaks reference cycles.
+///
+/// Every input is a balanced scope: the caller's own comes from
+/// [`subtype_span`], and each reference is resolved through the same function,
+/// so `decode_inline` reads a proven scope and needs no walk of its own to
+/// establish one.
 pub(crate) fn decode_cache_resolving_refs<T>(
-    bytes: &[u8],
+    scope: SubtypeScope<'_>,
     active_bytes: &[u8],
     tables: &SubtypeTables,
     seen: &mut Vec<usize>,
-    decode_inline: fn(&[u8], RefWidth) -> Option<T>,
+    decode_inline: fn(SubtypeScope<'_>, RefWidth) -> Option<T>,
     int_width: RefWidth,
 ) -> Option<T> {
-    if let Some(decoded) = decode_inline(bytes, int_width) {
+    if let Some(decoded) = decode_inline(scope, int_width) {
         return Some(decoded);
     }
     let table = tables.for_width(int_width);
-    for index in subtype_refs(bytes, int_width) {
+    for index in subtype_refs(scope.bytes(), int_width) {
         if seen.contains(&index) {
             continue;
         }
         let target = *table.get(index)?;
         seen.push(index);
         if let Some(decoded) = decode_cache_resolving_refs(
-            subtype_span(active_bytes, target, int_width)?.bytes(),
+            subtype_span(active_bytes, target, int_width)?,
             active_bytes,
             tables,
             seen,

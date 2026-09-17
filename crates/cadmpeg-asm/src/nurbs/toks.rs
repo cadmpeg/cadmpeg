@@ -558,10 +558,10 @@ impl SubtypeTable {
         self.save_format_version
     }
 
-    /// The token span of definition `index`, sliced from its owning record.
-    pub(crate) fn span(&self, index: usize) -> Option<&[Token]> {
+    /// The balanced scope of definition `index`, sliced from its owning record.
+    pub(crate) fn span(&self, index: usize) -> Option<SubtypeScope<'_>> {
         let (tokens, token_pos) = self.defs.get(index)?;
-        subtype_span(tokens, *token_pos).map(|scope| scope.tokens())
+        subtype_span(tokens, *token_pos)
     }
 }
 

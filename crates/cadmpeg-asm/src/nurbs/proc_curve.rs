@@ -650,7 +650,9 @@ fn pcurve_for_selector_recursive(
         if !seen.contains(&index) {
             seen.push(index);
             if let Some(target) = table.span(index) {
-                if let Some(result) = pcurve_for_selector_recursive(target, slot, table, seen) {
+                if let Some(result) =
+                    pcurve_for_selector_recursive(target.tokens(), slot, table, seen)
+                {
                     return Some(result);
                 }
             }
@@ -845,7 +847,7 @@ fn cacheless_procedural_curve_recursive(
         }
         seen.push(index);
         let target = table.span(index)?;
-        if let Some(decoded) = cacheless_procedural_curve_recursive(target, table, seen) {
+        if let Some(decoded) = cacheless_procedural_curve_recursive(target.tokens(), table, seen) {
             return Some(decoded);
         }
     }
@@ -933,7 +935,7 @@ fn procedural_curve_recursive(
         }
         seen.push(index);
         let target = table.span(index)?;
-        if let Some(decoded) = procedural_curve_recursive(target, table, seen) {
+        if let Some(decoded) = procedural_curve_recursive(target.tokens(), table, seen) {
             return Some(decoded);
         }
     }
@@ -1520,9 +1522,9 @@ pub(crate) fn embedded_base_curve_resolving_refs(
         cur.take_bool()?;
         let reference = cur.pos();
         if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
-            let scope = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
+            let scope = crate::nurbs::toks::subtype_span(toks, reference)?;
             if let Some(curve) = owned_curve_cache_resolving_refs(scope, table) {
-                cur.set_pos(reference + scope.len());
+                cur.set_pos(reference + scope.tokens().len());
                 return Some(curve);
             }
         }
@@ -1585,9 +1587,9 @@ pub(crate) fn embedded_base_curve_resolving_refs(
             if !compact_ref {
                 if matches!(toks.get(reference), Some(Token::SubtypeOpen)) {
                     // Inline subtype scope: resolve its solved curve cache.
-                    let scope = crate::nurbs::toks::subtype_span(toks, reference)?.tokens();
+                    let scope = crate::nurbs::toks::subtype_span(toks, reference)?;
                     let curve = owned_curve_cache_resolving_refs(scope, table)?;
-                    cur.set_pos(reference + scope.len());
+                    cur.set_pos(reference + scope.tokens().len());
                     return Some(curve);
                 }
                 cur.set_pos(saved);
@@ -2676,9 +2678,7 @@ fn support_slot_present(cur: &Cur<'_>, table: &SubtypeTable) -> bool {
         return false;
     };
     let start = probe.pos();
-    let Some(scope) =
-        crate::nurbs::toks::subtype_span(probe.toks(), start).map(|scope| scope.tokens())
-    else {
+    let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start) else {
         return false;
     };
     let Some(Token::Ident(name)) = probe.toks().get(start + 1) else {
@@ -2693,12 +2693,16 @@ fn support_slot_present(cur: &Cur<'_>, table: &SubtypeTable) -> bool {
         };
         return table.span(index).is_some_and(|target| {
             crate::nurbs::core::owned_surface_cache_resolving_refs(target, table).is_some()
-                || crate::nurbs::proc_surface::procedural_surface_resolving_refs(target, table)
-                    .is_some()
+                || crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    target.tokens(),
+                    table,
+                )
+                .is_some()
         });
     }
     crate::nurbs::core::owned_surface_cache_resolving_refs(scope, table).is_some()
-        || crate::nurbs::proc_surface::procedural_surface_resolving_refs(scope, table).is_some()
+        || crate::nurbs::proc_surface::procedural_surface_resolving_refs(scope.tokens(), table)
+            .is_some()
 }
 
 /// Writable scalar locations in a retained `off_int_cur` construction.
@@ -3170,19 +3174,22 @@ pub(crate) fn optional_embedded_surface_with_bounds(
             cur.take_bool()?;
         }
         if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
-            let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?.tokens();
+            let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?;
             let surface = if let Some(surface) = owned_surface_cache_resolving_refs(scope, table) {
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     surface,
                 )))
-            } else if crate::nurbs::proc_surface::procedural_surface_resolving_refs(scope, table)
-                .is_some()
+            } else if crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                scope.tokens(),
+                table,
+            )
+            .is_some()
             {
                 None
             } else {
                 return None;
             };
-            cur.set_pos(cur.pos() + scope.len());
+            cur.set_pos(cur.pos() + scope.tokens().len());
             let mut bounds = [None; 4];
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();

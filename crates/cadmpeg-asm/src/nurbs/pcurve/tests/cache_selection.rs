@@ -302,3 +302,49 @@ fn token_surface_cache_ignores_later_nested_support_scope() {
         assert!((surface.poles()[0].x - 50.0).abs() < f64::EPSILON);
     }
 }
+
+/// The token-space owned-cache decoder reads the scope, not a raw stream.
+/// `subtype_span` is its only source, so the balance the raw walk refuses is a
+/// state the argument cannot hold and the decoder states no refusal for it.
+#[test]
+fn a_token_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exact_int_cur");
+        bytes.push(0x0f);
+        push_ident(&mut bytes, "support");
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [2.0, 0.0, 0.0]));
+        bytes.push(0x10);
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        let scope = crate::nurbs::toks::subtype_span(&tokens, 0).expect("balanced scope");
+        let curve = crate::nurbs::core::owned_curve_cache(scope)
+            .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
+
+        assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
+    }
+}
+
+/// The byte-space owned-cache decoder reads the scope, not a raw stream.
+#[test]
+fn a_byte_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exact_int_cur");
+        bytes.push(0x0f);
+        push_ident(&mut bytes, "support");
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [2.0, 0.0, 0.0]));
+        bytes.push(0x10);
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
+        bytes.push(0x10);
+
+        let scope =
+            crate::nurbs::subtypes::subtype_span(&bytes, 0, int_width).expect("balanced scope");
+        let curve = crate::nurbs::core::decode_owned_curve_cache_at(scope, int_width)
+            .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
+
+        assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
+    }
+}

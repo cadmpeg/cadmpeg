@@ -9,11 +9,10 @@
 
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
-    construction_marker_positions, is_periodic, marker_at, marker_positions,
-    owned_marker_positions, read_control_points, read_knots, take_tagged_int, BsplineMarker,
-    KnotLayout, ReadPoles3, INT_WIDTHS, LEN_TO_MM,
+    construction_marker_positions, is_periodic, marker_at, marker_positions, read_control_points,
+    read_knots, take_tagged_int, BsplineMarker, KnotLayout, ReadPoles3, INT_WIDTHS, LEN_TO_MM,
 };
-use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
+use crate::nurbs::subtypes::{self, decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;
@@ -140,10 +139,12 @@ pub(crate) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
 
 /// Decode the surface cache a subtype scope itself owns: the first surface
 /// block outside every construction the scope nests.
-pub(crate) fn owned_surface_cache(scope: &[Token]) -> Option<NurbsSurface> {
-    toks::owned_marker_positions(scope)?
+pub(crate) fn owned_surface_cache(scope: toks::SubtypeScope<'_>) -> Option<NurbsSurface> {
+    let tokens = scope.tokens();
+    scope
+        .owned_marker_positions()
         .into_iter()
-        .find_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface))
+        .find_map(|pos| surface_block(tokens, pos).map(|(surface, _)| surface))
 }
 
 /// Decode the 3D curve cache of a procedural curve record from its payload
@@ -158,31 +159,39 @@ pub(crate) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve
 /// block outside every construction the scope nests.
-pub(crate) fn owned_curve_cache(scope: &[Token]) -> Option<NurbsCurve> {
-    toks::owned_marker_positions(scope)?
+pub(crate) fn owned_curve_cache(scope: toks::SubtypeScope<'_>) -> Option<NurbsCurve> {
+    let tokens = scope.tokens();
+    scope
+        .owned_marker_positions()
         .into_iter()
-        .find_map(|pos| curve_block(scope, pos).map(|(curve, _)| curve))
+        .find_map(|pos| curve_block(tokens, pos).map(|(curve, _)| curve))
 }
 
-/// Resolve a cache through `{ref N}` subtype references: decode inline first,
-/// then follow each reference into the stream's subtype table. `seen` breaks
-/// reference cycles. Token-space counterpart of [`decode_cache_resolving_refs`].
-pub(crate) fn cache_resolving_refs<T>(
+/// Decode the cache of each scope the `{ref N}` references in `toks` reach,
+/// depth first in stream order. `seen` breaks reference cycles.
+///
+/// [`toks::SubtypeTable::span`] answers with the balanced scope the reference
+/// names, so `decode_scope` reads a proven scope and needs no walk of its own
+/// to establish one. Token-space counterpart of [`decode_cache_resolving_refs`].
+fn cache_from_subtype_refs<T, D>(
     toks: &[Token],
     table: &toks::SubtypeTable,
     seen: &mut Vec<usize>,
-    decode_inline: fn(&[Token]) -> Option<T>,
-) -> Option<T> {
-    if let Some(decoded) = decode_inline(toks) {
-        return Some(decoded);
-    }
+    decode_scope: D,
+) -> Option<T>
+where
+    D: Fn(toks::SubtypeScope<'_>) -> Option<T> + Copy,
+{
     for index in toks::subtype_refs(toks) {
         if seen.contains(&index) {
             continue;
         }
         seen.push(index);
         let target = table.span(index)?;
-        if let Some(decoded) = cache_resolving_refs(target, table, seen, decode_inline) {
+        if let Some(decoded) = decode_scope(target) {
+            return Some(decoded);
+        }
+        if let Some(decoded) = cache_from_subtype_refs(target.tokens(), table, seen, decode_scope) {
             return Some(decoded);
         }
     }
@@ -194,15 +203,21 @@ pub fn surface_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Option<NurbsSurface> {
-    cache_resolving_refs(toks, table, &mut Vec::new(), surface_cache)
+    surface_cache(toks).or_else(|| {
+        cache_from_subtype_refs(toks, table, &mut Vec::new(), |scope| {
+            surface_cache(scope.tokens())
+        })
+    })
 }
 
 /// [`owned_surface_cache`], following subtype-table references.
 pub(crate) fn owned_surface_cache_resolving_refs(
-    toks: &[Token],
+    scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<NurbsSurface> {
-    cache_resolving_refs(toks, table, &mut Vec::new(), owned_surface_cache)
+    owned_surface_cache(scope).or_else(|| {
+        cache_from_subtype_refs(scope.tokens(), table, &mut Vec::new(), owned_surface_cache)
+    })
 }
 
 /// [`curve_cache`], following subtype-table references.
@@ -210,15 +225,21 @@ pub fn curve_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Option<NurbsCurve> {
-    cache_resolving_refs(toks, table, &mut Vec::new(), curve_cache)
+    curve_cache(toks).or_else(|| {
+        cache_from_subtype_refs(toks, table, &mut Vec::new(), |scope| {
+            curve_cache(scope.tokens())
+        })
+    })
 }
 
 /// [`owned_curve_cache`], following subtype-table references.
 pub(crate) fn owned_curve_cache_resolving_refs(
-    toks: &[Token],
+    scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<NurbsCurve> {
-    cache_resolving_refs(toks, table, &mut Vec::new(), owned_curve_cache)
+    owned_curve_cache(scope).or_else(|| {
+        cache_from_subtype_refs(scope.tokens(), table, &mut Vec::new(), owned_curve_cache)
+    })
 }
 
 /// Decode a surface `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes
@@ -450,12 +471,14 @@ pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
 /// block outside every construction the scope nests. A scope whose supports are
 /// nested constructions carries their caches too, and those are not its own.
 pub(crate) fn decode_owned_surface_cache_at(
-    scope: &[u8],
+    scope: subtypes::SubtypeScope<'_>,
     int_width: RefWidth,
 ) -> Option<NurbsSurface> {
-    owned_marker_positions(scope, int_width)?
+    let bytes = scope.bytes();
+    scope
+        .owned_marker_positions(int_width)
         .into_iter()
-        .find_map(|pos| decode_surface_block(scope, pos, int_width).map(|decoded| decoded.surface))
+        .find_map(|pos| decode_surface_block(bytes, pos, int_width).map(|decoded| decoded.surface))
 }
 
 /// [`decode_owned_surface_cache_at`], following subtype-table references at the
@@ -464,7 +487,7 @@ pub(crate) fn decode_owned_surface_cache_at(
 /// each width, so probing the other one walks the reference graph a second time
 /// against a table built for a stream this is not.
 pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
-    scope: &[u8],
+    scope: subtypes::SubtypeScope<'_>,
     active_bytes: &[u8],
     tables: &SubtypeTables,
     int_width: RefWidth,
@@ -500,16 +523,21 @@ pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block
 /// outside every construction the scope nests.
-pub fn decode_owned_curve_cache_at(scope: &[u8], int_width: RefWidth) -> Option<NurbsCurve> {
-    owned_marker_positions(scope, int_width)?
+pub fn decode_owned_curve_cache_at(
+    scope: subtypes::SubtypeScope<'_>,
+    int_width: RefWidth,
+) -> Option<NurbsCurve> {
+    let bytes = scope.bytes();
+    scope
+        .owned_marker_positions(int_width)
         .into_iter()
-        .find_map(|pos| decode_curve_block(scope, pos, int_width).map(|decoded| decoded.curve))
+        .find_map(|pos| decode_curve_block(bytes, pos, int_width).map(|decoded| decoded.curve))
 }
 
 /// [`decode_owned_curve_cache_at`], following subtype-table references at the
 /// stream's integer width.
 pub(crate) fn decode_owned_curve_cache_resolving_refs_at(
-    scope: &[u8],
+    scope: subtypes::SubtypeScope<'_>,
     active_bytes: &[u8],
     tables: &SubtypeTables,
     int_width: RefWidth,

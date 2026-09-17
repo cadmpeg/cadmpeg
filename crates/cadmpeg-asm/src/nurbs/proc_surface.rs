@@ -4353,7 +4353,7 @@ fn resolve_t_spline_subtransform(
         return None;
     }
     seen.push(index);
-    let span = table.span(index)?;
+    let span = table.span(index)?.tokens();
     let start = usize::from(matches!(span.first(), Some(Token::SubtypeOpen)));
     let decoded = t_spline_subtransform(&mut Cur::at(span, start))?;
     match decoded {
@@ -4422,7 +4422,7 @@ fn procedural_resolving_refs(
         if seen.contains(&index) {
             continue;
         }
-        let target = table.span(index)?;
+        let target = table.span(index)?.tokens();
         seen.push(index);
         if let Some(decoded) = procedural_resolving_refs(target, table, seen) {
             return Some(decoded);

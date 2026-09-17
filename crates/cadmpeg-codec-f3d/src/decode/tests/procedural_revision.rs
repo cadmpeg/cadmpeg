@@ -1740,10 +1740,11 @@ fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
     t_ident(&mut scope, "nullbs");
     scope.push(0x10);
 
+    let width = cadmpeg_asm::kernel_header::RefWidth::Eight;
+    let span = cadmpeg_asm::nurbs::subtypes::subtype_span(&scope, 0, width)
+        .expect("the fixture is a balanced subtype scope");
     assert!(decode_curve_cache(&scope).is_some());
-    assert!(
-        decode_owned_curve_cache_at(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight).is_none()
-    );
+    assert!(decode_owned_curve_cache_at(span, width).is_none());
 }
 
 #[test]

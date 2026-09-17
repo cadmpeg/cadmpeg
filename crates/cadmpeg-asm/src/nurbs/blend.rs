@@ -244,13 +244,13 @@ pub(crate) fn decode_rolling_ball_surface(
             ));
         }
         take_bool(bytes, position)?;
-        let scope = subtype_span(bytes, *position, int_width)?.bytes();
+        let scope = subtype_span(bytes, *position, int_width)?;
         let surface = reference_context
             .and_then(|(active_bytes, tables)| {
                 decode_owned_surface_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
             })
             .or_else(|| decode_owned_surface_cache_at(scope, int_width))?;
-        *position += scope.len();
+        *position += scope.bytes().len();
         let ranges = decode_surface_ranges(bytes, position)?;
         return Some((
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -298,14 +298,14 @@ pub(crate) fn decode_rolling_ball_curve(
     let kind = take_native_ident(bytes, position)?;
     if kind == "intcurve" {
         take_bool(bytes, position)?;
-        let scope = subtype_span(bytes, *position, int_width)?.bytes();
+        let scope = subtype_span(bytes, *position, int_width)?;
         let curve = reference_context
             .and_then(|(active_bytes, tables)| {
                 decode_owned_curve_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
             })
             .or_else(|| decode_owned_curve_cache_at(scope, int_width))
-            .or_else(|| decode_par_int_cur_isoline(scope, int_width, reference_context))?;
-        *position += scope.len();
+            .or_else(|| decode_par_int_cur_isoline(scope.bytes(), int_width, reference_context))?;
+        *position += scope.bytes().len();
         let parameter_range = [
             take_optional_range_value(bytes, position)?.value(),
             take_optional_range_value(bytes, position)?.value(),
@@ -489,11 +489,11 @@ pub(crate) fn rolling_ball_surface(
             ));
         }
         cur.take_bool()?;
-        let scope = toks::subtype_span(toks, cur.pos())?.tokens();
+        let scope = toks::subtype_span(toks, cur.pos())?;
         let surface = reference_context
             .and_then(|table| crate::nurbs::core::owned_surface_cache_resolving_refs(scope, table))
             .or_else(|| crate::nurbs::core::owned_surface_cache(scope))?;
-        cur.set_pos(cur.pos() + scope.len());
+        cur.set_pos(cur.pos() + scope.tokens().len());
         let ranges = surface_ranges(cur)?;
         return Some((
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -541,12 +541,12 @@ pub(crate) fn rolling_ball_curve(
     let kind = cur.take_ident()?;
     if kind == "intcurve" {
         cur.take_bool()?;
-        let scope = toks::subtype_span(toks, cur.pos())?.tokens();
+        let scope = toks::subtype_span(toks, cur.pos())?;
         let curve = reference_context
             .and_then(|table| crate::nurbs::core::owned_curve_cache_resolving_refs(scope, table))
             .or_else(|| crate::nurbs::core::owned_curve_cache(scope))
-            .or_else(|| par_int_cur_isoline(scope, reference_context))?;
-        cur.set_pos(cur.pos() + scope.len());
+            .or_else(|| par_int_cur_isoline(scope.tokens(), reference_context))?;
+        cur.set_pos(cur.pos() + scope.tokens().len());
         let parameter_range = [
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),

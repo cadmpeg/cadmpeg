@@ -249,7 +249,7 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
     table: &toks::SubtypeTable,
 ) -> Option<PcurveNurbs> {
     let index = usize::try_from(index).ok()?;
-    explicit_pcurve_cache(table.span(index)?)
+    explicit_pcurve_cache(table.span(index)?.tokens())
 }
 
 /// The parameter-space fit tolerance immediately following the final valid 2D
