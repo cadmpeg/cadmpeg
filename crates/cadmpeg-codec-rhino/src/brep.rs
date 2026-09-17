@@ -1600,6 +1600,15 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
     }
 }
 
+/// The index of the legacy Brep vertex at `point`, adding it when the archive
+/// states no vertex there yet.
+///
+/// The vertex index lane of a legacy Brep archive is an `i32`, so the rule
+/// [`cadmpeg_core::decode::id_from_index`] states applies at that width: a
+/// position the lane cannot state is a refusal, and the refusal names the
+/// instance it happened at. `position` is what names it — the archive offset
+/// this vertex was read from. It has no other use, and it is a parameter
+/// because the vertex list alone does not carry it.
 fn legacy_vertex(
     vertices: &mut Vec<LegacyVertex>,
     point: Point3,
@@ -1613,7 +1622,6 @@ fn legacy_vertex(
         return Ok(index);
     }
     let index = vertices.len();
-    // The archive states a vertex index in an i32, as it states an edge index.
     let stored_index =
         i32::try_from(index).map_err(|_| error(position, "legacy Brep vertex index overflow"))?;
     vertices.push(LegacyVertex {

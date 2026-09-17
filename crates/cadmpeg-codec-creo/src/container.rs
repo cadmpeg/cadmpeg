@@ -532,6 +532,10 @@ pub struct TopologyScan {
     pub vertices: Vec<TopologicalVertex>,
     /// Start/end vertex binding for each decoded half-edge.
     pub half_edge_vertex_incidence: Vec<HalfEdgeVertexIncidence>,
+    /// Half-edge orbits past the one-based `u32` vertex identifier space. Each
+    /// is an orbit that states no topological vertex, so its half-edges carry
+    /// no incidence.
+    pub unstatable_vertex_orbits: usize,
 }
 
 /// Feature rows, definitions, operations, and the implicit entity graph.
@@ -2568,13 +2572,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);
-    let Some((topological_vertices, half_edge_vertex_incidence)) =
-        topology::vertex_orbits(&half_edges)
-    else {
-        return Err(CodecError::Malformed(
-            "creo half-edge orbits outnumber the vertex identifier space".into(),
-        ));
-    };
+    let vertex_orbits = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(&sections);
     let datum_cylinders = datum_cylinders(&sections);
@@ -2786,8 +2784,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
             half_edges,
             loops,
             face_components,
-            vertices: topological_vertices,
-            half_edge_vertex_incidence,
+            vertices: vertex_orbits.vertices,
+            half_edge_vertex_incidence: vertex_orbits.incidence,
+            unstatable_vertex_orbits: vertex_orbits.unstatable_orbits,
         },
         loop_arrays,
         features: FeatureScan {

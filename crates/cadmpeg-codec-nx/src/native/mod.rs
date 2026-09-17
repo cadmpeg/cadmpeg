@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Siemens NX object-model records retained in the native namespace.
 
+use cadmpeg_ir::report::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -56,8 +57,9 @@ pub(crate) fn attach_annotations(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    attach::attach(ctx, ir, model, scan, annotations, unknowns)
+    attach::attach(ctx, ir, model, scan, annotations, unknowns, losses)
 }
 
 /// Preserve container-layer records without extracting typed native entities.

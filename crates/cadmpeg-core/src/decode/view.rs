@@ -62,6 +62,29 @@ pub const fn u64_from_index(value: usize) -> u64 {
     value as u64
 }
 
+/// Narrows the position of one item already held in memory to the `u32` an IR
+/// identifier, order or index field is stated in.
+///
+/// This is the one rule for a population that outgrows an IR id width, and
+/// every lane that meets that shape applies it. The population cannot be
+/// widened: the IR field's width is the constraint, not the decoder's. A
+/// position the field cannot state is therefore a refusal, and a refusal names
+/// the instance and the lane it happened in — a `LossNote` at that lane, or
+/// the lane's own refusal type. It is never a whole-file `Err`, because one
+/// lane that outgrew its id width says nothing about the rest of the file, and
+/// never a silent `continue`, because a dropped instance no one names is a
+/// loss no report carries. `None` is that refusal; the caller states it.
+///
+/// A lane stated in an `i32` rather than a `u32` applies the same rule at that
+/// width.
+///
+/// This is not [`bounded_len`]: the position already exists in memory, so
+/// `None` states nothing about the input's own declared counts.
+#[must_use]
+pub fn id_from_index(index: usize) -> Option<u32> {
+    u32::try_from(index).ok()
+}
+
 /// A count proven to fit in the unread input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundedCount(usize);
@@ -367,8 +390,16 @@ impl View<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_len, index_from_u32, u64_from_index, BoundedCount, View};
+    use super::{bounded_len, id_from_index, index_from_u32, u64_from_index, BoundedCount, View};
     use crate::decode::space::SpaceId;
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn an_in_memory_position_past_the_id_width_states_no_identifier() {
+        assert_eq!(id_from_index(0), Some(0));
+        assert_eq!(id_from_index(index_from_u32(u32::MAX)), Some(u32::MAX));
+        assert_eq!(id_from_index(index_from_u32(u32::MAX) + 1), None);
+    }
 
     #[test]
     fn a_u32_index_widens_to_the_same_value() {

@@ -186,9 +186,7 @@ pub(super) fn decode(
             }
         }
 
-        // The stored order is stated in a `u32`; a position past that width
-        // states no order, and the drawing is not typed.
-        let Ok(order) = u32::try_from(order) else {
+        let Some(order) = cadmpeg_core::decode::id_from_index(order) else {
             losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
                 "drawing #{id} position in the stored order exceeds the stated order width"
             )));

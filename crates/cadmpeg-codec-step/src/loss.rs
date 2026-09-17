@@ -516,7 +516,6 @@ impl StepLossCode {
             }
             Self::DrawingRecordTooFewParameters => "drawing.record-too-few-parameters",
             Self::DrawingOrderUnstatable => "drawing.order-unstatable",
-
             Self::DrawingRelationshipUntypedTarget => "drawing.relationship-untyped-target",
             Self::DrawingRelationshipTargetAmbiguous => "drawing.relationship-target-ambiguous",
             Self::DrawingSheetRevisionUnresolved => "drawing.sheet-revision-unresolved",
