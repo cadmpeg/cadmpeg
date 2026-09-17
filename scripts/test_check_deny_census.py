@@ -1919,6 +1919,64 @@ class AbsentKeyCensusTests(unittest.TestCase):
         )
         self.assertEqual(self.run_absent_key_census({"wire.rs": writer}), [])
 
+    FLATTENED = (
+        '#[derive(serde::Deserialize)]\n'
+        'struct Owner {\n'
+        '    #[serde(flatten, deserialize_with = "%s")]\n'
+        '    inner: Inner,\n'
+        '}\n'
+    )
+    UNDECLARED = (
+        'struct Wire {\n'
+        '    #[serde(default, skip_serializing_if = "Option::is_none")]\n'
+        '    key: Option<u32>,\n'
+        '}\n'
+    )
+
+    def test_a_flattened_reader_that_resolves_to_no_struct_is_named(self) -> None:
+        findings = self.run_absent_key_census({
+            "owner.rs": self.FLATTENED % "missing_reader",
+        })
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("Owner.inner", findings[0])
+        self.assertIn("missing_reader", findings[0])
+        self.assertIn("resolves to no struct", findings[0])
+
+    def test_a_flattened_reader_that_resolves_to_two_modules_is_named(self) -> None:
+        findings = self.run_absent_key_census({
+            "owner.rs": self.FLATTENED % "inner",
+            "alpha/inner.rs": "struct Wire {\n    value: u32,\n}\n",
+            "beta/inner.rs": self.UNDECLARED,
+        })
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("Owner.inner", findings[0])
+        self.assertIn("resolves to 2 modules", findings[0])
+        self.assertIn("alpha/inner.rs", findings[0])
+        self.assertIn("beta/inner.rs", findings[0])
+
+    def test_a_flattened_reader_path_names_the_module_it_reads(self) -> None:
+        self.assertEqual(
+            self.run_absent_key_census({
+                "owner.rs": self.FLATTENED % "crate::alpha::inner",
+                "alpha/inner.rs": "struct Wire {\n    value: u32,\n}\n",
+                "beta/inner.rs": self.UNDECLARED,
+            }),
+            [],
+        )
+
+    def test_a_routed_reader_struct_states_no_key_of_its_own(self) -> None:
+        self.assertEqual(
+            self.run_absent_key_census({
+                "owner.rs": self.FLATTENED % "crate::alpha::inner",
+                "alpha/inner.rs": (
+                    '#[serde(try_from = "WireRepr")]\n'
+                    + self.UNDECLARED
+                ),
+            }),
+            [],
+        )
+
+
 
 class GenericParameterProofTests(unittest.TestCase):
     """A generic payload parameter is proved over every type that reaches it."""
