@@ -271,12 +271,13 @@ impl<'a> View<'a> {
     /// Moves the cursor to the window's exclusive upper bound.
     ///
     /// This is the one seek the window proves at construction. `seek(end)`
-    /// reads `offset_of(end)`, which is the window length, and the suffix at
-    /// a slice's own length is the empty slice, so neither bound of `seek`
-    /// can refuse it. The suffix is taken directly and the move states no
-    /// refusal to thread.
+    /// reads `offset_of(end)`, which is the window length, and the suffix of a
+    /// slice at its own length is the empty slice, so neither bound of `seek`
+    /// can refuse it. The window's suffix at `end` is written directly and the
+    /// move states no refusal to thread: `remaining` is then 0, `read_len` the
+    /// whole window, and `position` the stored `end`.
     pub fn seek_to_end(&mut self) {
-        self.unread = &self.window[self.window.len()..];
+        self.unread = &[];
     }
 
     /// Reads a single byte.
