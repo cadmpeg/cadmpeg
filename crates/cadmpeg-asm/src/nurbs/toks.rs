@@ -428,9 +428,11 @@ impl<'a> SubtypeScope<'a> {
     /// first of these is the identifier that names it, and the rest are the
     /// fields the construction states.
     ///
-    /// Total: [`subtype_span`] is the only constructor and builds `tokens` as
-    /// `toks[start..=pos]` with `pos > start`, so the slice holds at least the
-    /// opening and the closing delimiter and this range is in bounds.
+    /// Total: [`subtype_span`] is the only constructor. It refuses unless the
+    /// token at `start` is the scope's own `SubtypeOpen`, and it builds
+    /// `tokens` as `toks[start..=pos]` with `pos > start`, so the slice holds
+    /// at least the opening and the closing delimiter and this range is in
+    /// bounds. The proof is the constructor's, not the caller's.
     pub fn interior(&self) -> &'a [Token] {
         &self.tokens[1..self.tokens.len() - 1]
     }
@@ -461,7 +463,12 @@ impl<'a> SubtypeScope<'a> {
 }
 
 /// The balanced subtype scope opening at `start`, inclusive of both delimiters.
+///
+/// `None` unless the token at `start` is a `SubtypeOpen`. A scope opens at its
+/// own opening delimiter, so a `start` that names another token names no
+/// scope, and the span is then at least two tokens.
 pub(crate) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<'_>> {
+    matches!(toks.get(start), Some(Token::SubtypeOpen)).then_some(())?;
     let mut depth = 0usize;
     for (pos, token) in toks.iter().enumerate().skip(start) {
         match token {
@@ -778,6 +785,27 @@ mod tests {
         let owned: Vec<usize> = scope.owned_marker_positions();
         assert_eq!(owned, vec![2, 9]);
         assert_eq!(scope.tokens(), &toks[..]);
+    }
+
+    /// A scope opens at its own `SubtypeOpen`. An index that names another
+    /// token names no scope, so `interior()` is total by construction: the
+    /// constructor never hands back a span whose first token is not the open.
+    #[test]
+    fn a_span_that_does_not_open_at_start_is_not_a_scope() {
+        let toks = [
+            ident("x"),
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            Token::SubtypeClose,
+        ];
+
+        assert_eq!(subtype_span(&toks, 0), None);
+        assert_eq!(subtype_span(&toks, 2), None);
+        assert_eq!(subtype_span(&toks, 3), None);
+        assert_eq!(subtype_span(&toks, 4), None);
+        let scope = subtype_span(&toks, 1).expect("balanced scope");
+        assert_eq!(scope.tokens(), &toks[1..=3]);
+        assert_eq!(scope.interior(), &toks[2..3]);
     }
 
     #[test]
