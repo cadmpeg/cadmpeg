@@ -7787,7 +7787,10 @@ fn scalar_slots_with_tokens_and_end(
             cursor += 1;
         } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
         {
-            let token = body.get(cursor..next).filter(|token| !token.is_empty())?;
+            // Every arm of `decode_in_surface_row_lane` reads the bytes it
+            // reports, so `cursor < next <= body.len()`. The `get` is the
+            // bounded access, not a second test of that range.
+            let token = body.get(cursor..next)?;
             slots.push((Some(value), token.to_vec()));
             cursor = next;
         } else {
@@ -7819,7 +7822,10 @@ fn plane_envelope_scalar_slots_with_tokens_and_end(
             cursor += 1;
         } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
         {
-            let token = body.get(cursor..next).filter(|token| !token.is_empty())?;
+            // Every arm of `decode_in_surface_row_lane` reads the bytes it
+            // reports, so `cursor < next <= body.len()`. The `get` is the
+            // bounded access, not a second test of that range.
+            let token = body.get(cursor..next)?;
             slots.push((Some(value), token.to_vec()));
             cursor = next;
         } else {
