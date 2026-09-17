@@ -625,16 +625,27 @@ pub(super) fn push_carrier_transfer_notes(
     }
 }
 
+/// The refusal for half-edge orbits past the one-based topological vertex
+/// identifier width.
+///
+/// The note names the lane and the instance: `orbits` carries the seed
+/// half-edge of every orbit that stated no vertex, and the first of them is
+/// what a report reader needs to find the dropped orbit.
+fn unstatable_vertex_orbit_note(orbits: &[crate::topology::HalfEdgeId]) -> Option<LossNote> {
+    let first = orbits.first()?;
+    let count = orbits.len();
+    Some(CreoLossCode::TopologyVertexIdentifierUnstatable.note(format!(
+        "{count} half-edge orbit(s) lie past the one-based topological vertex identifier \
+         width, so they state no vertex and their half-edges carry no incidence. The first \
+         is the orbit at half-edge curve {} side {}.",
+        first.curve_id, first.side,
+    )))
+}
+
 pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &ContainerScan) {
-    let unstatable_orbits = scan.topology.unstatable_vertex_orbits;
-    if unstatable_orbits != 0 {
-        losses.push(
-            CreoLossCode::TopologyVertexIdentifierUnstatable.note(format!(
-                "{unstatable_orbits} half-edge orbit(s) lie past the one-based topological vertex \
-             identifier width, so they state no vertex and their half-edges carry no incidence."
-            )),
-        );
-    }
+    losses.extend(unstatable_vertex_orbit_note(
+        &scan.topology.unstatable_vertex_orbits,
+    ));
     // Named prototype fields whose bounded scalar body the decoder refused.
     // The field bytes are retained opaque; the note states which record and
     // field, and the slot and byte the refusal stands at.
@@ -715,4 +726,35 @@ pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &Con
          remain untransferred."
         )),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unstatable_vertex_orbit_note;
+    use crate::topology::{HalfEdgeId, Side};
+
+    /// A refusal names the instance and the lane it happened in. The orbit
+    /// that stated no vertex is named by its seed half-edge, so a report
+    /// reader can find it; the count alone names nothing.
+    #[test]
+    fn an_unstatable_vertex_orbit_note_names_the_orbit() {
+        assert!(unstatable_vertex_orbit_note(&[]).is_none());
+        let note = unstatable_vertex_orbit_note(&[
+            HalfEdgeId {
+                curve_id: 4_100,
+                side: Side::One,
+            },
+            HalfEdgeId {
+                curve_id: 4_101,
+                side: Side::Zero,
+            },
+        ])
+        .expect("a stated orbit refusal");
+        assert!(
+            note.message.contains("half-edge curve 4100 side 1"),
+            "{}",
+            note.message
+        );
+        assert!(note.message.starts_with("2 half-edge orbit(s)"), "{}", note.message);
+    }
 }

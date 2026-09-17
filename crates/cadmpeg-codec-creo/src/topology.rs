@@ -230,10 +230,11 @@ pub struct VertexOrbits {
     pub vertices: Vec<TopologicalVertex>,
     /// Start and end vertex binding of every half-edge an admitted orbit holds.
     pub incidence: Vec<HalfEdgeVertexIncidence>,
-    /// Orbits past the one-based `u32` vertex identifier space. Each is an
-    /// orbit this scan states no vertex for; its half-edges carry no incidence
-    /// and the decode report names the lane.
-    pub unstatable_orbits: usize,
+    /// The seed half-edge of every orbit past the one-based `u32` vertex
+    /// identifier space, in traversal order. Each names an orbit this scan
+    /// states no vertex for; its half-edges carry no incidence, and the decode
+    /// report names the lane and the first instance.
+    pub unstatable_orbits: Vec<HalfEdgeId>,
 }
 
 /// Build topological vertex orbits under `twin(previous(h))` and bind each
@@ -242,8 +243,9 @@ pub struct VertexOrbits {
 ///
 /// An orbit past the one-based `u32` vertex identifier space states no vertex:
 /// two orbits would otherwise carry one identifier and the incidence map would
-/// bind the wrong half-edges. That orbit is counted in
-/// [`VertexOrbits::unstatable_orbits`] and refused at its own lane. The rest of
+/// bind the wrong half-edges. That orbit is named in
+/// [`VertexOrbits::unstatable_orbits`] by its seed half-edge and refused at its
+/// own lane. The rest of
 /// the file's topology is unaffected, so it is not a whole-file refusal.
 pub fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
     let by_id = edges
@@ -283,7 +285,7 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
     }
     let mut visited = BTreeSet::new();
     let mut vertices = Vec::new();
-    let mut unstatable_orbits = 0_usize;
+    let mut unstatable_orbits = Vec::new();
     for start in by_id.keys().copied() {
         if visited.contains(&start) {
             continue;
@@ -306,7 +308,9 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
         }
         let Some(id) = id_from_index(vertices.len()).and_then(|position| position.checked_add(1))
         else {
-            unstatable_orbits += 1;
+            // `start` is the half-edge the orbit was grown from, so it names
+            // the orbit no identifier could be stated for.
+            unstatable_orbits.push(start);
             continue;
         };
         vertices.push(TopologicalVertex {
