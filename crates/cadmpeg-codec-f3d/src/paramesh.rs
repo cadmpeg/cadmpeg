@@ -18,6 +18,7 @@ use cadmpeg_core::CodecError;
 
 use crate::error::malformed;
 use crate::records::DesignMeshUuid;
+use cadmpeg_core::decode::index_from_u32;
 
 /// Container magic.
 const MAGIC: [u8; 12] = [
@@ -1254,7 +1255,7 @@ fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, Cod
         current += *delta;
         let index = u32::try_from(current)
             .map_err(|_| malformed("paramesh corner index is out of range"))?;
-        if usize::try_from(index).is_ok_and(|index| index >= vertices) {
+        if index_from_u32(index) >= vertices {
             return Err(malformed("paramesh corner index names no vertex"));
         }
         corners.push(index);
@@ -1525,7 +1526,7 @@ fn registry_feature_edges(
     let mut feature_edges = Vec::with_capacity(endpoints.len() / 2);
     for pair in endpoints.chunks_exact(2) {
         let edge = [pair[0], pair[1]];
-        let high_in_domain = usize::try_from(edge[1]).is_ok_and(|endpoint| endpoint < vertices);
+        let high_in_domain = index_from_u32(edge[1]) < vertices;
         if edge[0] >= edge[1] || !high_in_domain {
             return Err(malformed(
                 "paramesh feature-edge endpoints are not an ascending vertex pair",
@@ -1954,6 +1955,28 @@ fn registry_texture_ids(attributes: &[MeshAttribute]) -> Result<Option<Vec<u32>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The implicit starting index is the one that keeps the whole corner
+    /// sequence inside the vertex domain, and a domain too small for the
+    /// sequence determines no starting index at all. The per-corner domain
+    /// test that follows reads the index widened exactly, and this pins the
+    /// values it reads.
+    #[test]
+    fn corner_deltas_resolve_against_the_vertex_domain() {
+        fn stream(deltas: &[i32]) -> Vec<u8> {
+            deltas.iter().flat_map(|d| d.to_le_bytes()).collect()
+        }
+
+        // Three corners plus the unused terminal word. The deltas keep the
+        // sequence in `0..=2`, so the implicit start is 0.
+        let triangles = decode_triangles(&stream(&[1, 1, 0]), 3).expect("a corner triple");
+        assert_eq!(triangles, vec![[0, 1, 2]]);
+
+        // The same sequence needs three vertices; two leave the last corner
+        // outside the domain, so the stream states no starting index at all.
+        let error = decode_triangles(&stream(&[1, 1, 0]), 2).expect_err("a refusal");
+        assert!(error.to_string().contains("paramesh corner"), "{error}");
+    }
 
     /// One kind-4 chunk: the descriptor map, the uncompressed byte count, the
     /// two LZMA1 property bytes, and the raw LZMA1 stream.

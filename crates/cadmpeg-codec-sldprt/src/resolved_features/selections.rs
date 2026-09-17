@@ -43,6 +43,7 @@ use crate::layout::{
 };
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
+use cadmpeg_core::decode::u64_from_index;
 
 pub(super) fn compact_body_selections(
     histories: &[crate::records::FeatureHistory],
@@ -89,8 +90,7 @@ pub(super) fn compact_body_selections(
                 .iter()
                 .filter(|class| {
                     class.name == "moMoveCopyBodyData_c"
-                        && usize::try_from(class.offset)
-                            .is_ok_and(|offset| (start..end).contains(&offset))
+                        && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 })
                 .collect::<Vec<_>>();
             match data_classes.as_slice() {
@@ -781,7 +781,7 @@ fn face_reference_plane_selection_candidates(
         .iter()
         .filter(|class| {
             class.name == "moFaceRefPlnData_c"
-                && usize::try_from(class.offset).is_ok_and(|offset| (start..end).contains(&offset))
+                && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
         })
         .collect::<Vec<_>>();
     let mut candidates = if let [data_class] = data_classes.as_slice() {
@@ -2302,7 +2302,7 @@ pub(crate) fn variable_fillet_control_references(
             .names
             .iter()
             .filter(|name| {
-                usize::try_from(name.offset).is_ok_and(|offset| start < offset && offset < marker)
+                name.offset > u64_from_index(start) && name.offset < u64_from_index(marker)
             })
             .filter(|name| {
                 variable_fillet_dimension_index_for_feature(feature, &name.value).is_some()

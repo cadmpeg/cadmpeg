@@ -26,6 +26,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -1635,8 +1636,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                                     && marker.offset() == *candidate_offset as u64
                             })
                             && (*candidate_offset == *offset
-                                || u32::try_from(*candidate_radial_index)
-                                    .is_ok_and(|index| pair_radial_object_indices.contains(&index)))
+                                || id_from_index(*candidate_radial_index).is_some_and(|index| {
+                                    pair_radial_object_indices.contains(&index)
+                                }))
                     })
                     .map(|(candidate_offset, ..)| {
                         format!("sldprt:feature-input:sketch-entity#{lane_key}:{candidate_offset}")

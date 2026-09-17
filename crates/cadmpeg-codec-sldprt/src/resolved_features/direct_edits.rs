@@ -10,6 +10,7 @@ use crate::records::FeatureInputLane;
 use crate::records::FeatureSource;
 #[cfg(test)]
 use crate::records::ObjectId;
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
@@ -195,8 +196,7 @@ pub(crate) fn enrich_history_move_face_translations(
                 .iter()
                 .filter(|class| {
                     class.name == "moDirectionSpec_c"
-                        && usize::try_from(class.offset)
-                            .is_ok_and(|offset| (start..end).contains(&offset))
+                        && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 })
                 .count();
             let line_refs = lane
@@ -204,8 +204,7 @@ pub(crate) fn enrich_history_move_face_translations(
                 .iter()
                 .filter(|class| {
                     class.name == "moLineRef_w"
-                        && usize::try_from(class.offset)
-                            .is_ok_and(|offset| (start..end).contains(&offset))
+                        && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 })
                 .collect::<Vec<_>>();
             if direction_specs != 1 || line_refs.len() != 1 {
@@ -323,8 +322,7 @@ pub(crate) fn enrich_history_move_body_translations(
                 .iter()
                 .filter(|class| {
                     class.name == "moMoveCopyBodyData_c"
-                        && usize::try_from(class.offset)
-                            .is_ok_and(|offset| (start..end).contains(&offset))
+                        && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 })
                 .collect::<Vec<_>>();
             let candidate = match data_classes.as_slice() {

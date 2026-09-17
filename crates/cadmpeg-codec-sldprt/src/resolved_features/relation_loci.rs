@@ -20,6 +20,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
@@ -4102,7 +4103,7 @@ pub(super) fn marker_transform_candidates_by_feature(
                         continue;
                     };
                     if primary_only
-                        && usize::try_from(marker.offset()).ok().is_none_or(|offset| {
+                        && index_from_u64(marker.offset()).is_none_or(|offset| {
                             !marker_is_geometry_locus(&lane.native_payload, offset)
                         })
                     {

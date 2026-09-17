@@ -29,6 +29,7 @@ use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
+use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -373,8 +374,8 @@ pub(crate) fn bind_pattern_inputs(
                     .iter()
                     .filter(|class| {
                         class.name == "moLineRef_w"
-                            && usize::try_from(class.offset)
-                                .is_ok_and(|offset| offset > starts[start_index].0 && offset < end)
+                            && class.offset > u64_from_index(starts[start_index].0)
+                            && class.offset < u64_from_index(end)
                     })
                     .collect::<Vec<_>>();
                 let mut directions = declarations
@@ -1461,7 +1462,7 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
         .iter()
         .filter_map(|curve| {
             let feature = curve.feature_ref.as_ref()?;
-            let offset = usize::try_from(curve.offset()).ok()?;
+            let offset = index_from_u64(curve.offset())?;
             let indices = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
                 .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))
                 .or_else(|| {
@@ -1517,7 +1518,7 @@ pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
             .iter()
             .copied()
             .filter(|curve| {
-                usize::try_from(curve.offset()).ok().is_some_and(|offset| {
+                index_from_u64(curve.offset()).is_some_and(|offset| {
                     marker_is_selected_construction_line(&lane.native_payload, offset)
                 })
             })
