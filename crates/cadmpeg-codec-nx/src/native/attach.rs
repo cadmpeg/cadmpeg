@@ -406,16 +406,7 @@ pub(crate) fn attach(
         annotations,
     )?;
     attach_active_configuration_parameter_values(ir, annotations)?;
-    attach_feature_operations(
-        ir,
-        &model.features,
-        &model.parasolid.parasolid_group_members,
-        &model.om.data_blocks,
-        &model.om.expressions,
-        &model.segments.segment_body_bindings,
-        annotations,
-        losses,
-    )?;
+    attach_feature_operations(ir, model, annotations, losses)?;
     attach_block_dimension_parameter_consumers(
         ir,
         &model.features.feature_block_dimensions,
@@ -1236,14 +1227,15 @@ fn attach_initial_segment_bodies(
 
 fn attach_feature_operations(
     ir: &mut CadIr,
-    features: &crate::native::model::FeatureRecords,
-    parasolid_group_members: &[crate::native::parasolid::ParasolidGroupMember],
-    data_blocks: &[crate::native::om::DataBlock],
-    expressions: &[crate::native::om::Expression],
-    body_bindings: &[crate::native::segments::SegmentBodyBinding],
+    model: &crate::native::model::NativeModel,
     annotations: &mut AnnotationBuilder,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let features = &model.features;
+    let parasolid_group_members = model.parasolid.parasolid_group_members.as_slice();
+    let data_blocks = model.om.data_blocks.as_slice();
+    let expressions = model.om.expressions.as_slice();
+    let body_bindings = model.segments.segment_body_bindings.as_slice();
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
     let body_references = features.feature_body_references.as_slice();
