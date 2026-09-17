@@ -2,6 +2,9 @@
 //!
 //! Closes vertex-coordinate quotients and enumerates face endpoint configurations.
 
+#[cfg(test)]
+use std::num::NonZeroUsize;
+
 use cadmpeg_core::decode::{alloc_filled, work_units, WorkBudget};
 
 /// Words in a zeroed bitset over `bits` positions.
@@ -18,14 +21,16 @@ fn bitset_words(bits: usize) -> usize {
 /// can. Read by `remaining_equation_merge_capacity`, which is itself
 /// `#[cfg(test)]`.
 ///
-/// A component exists, so it owns at least one root. `merge_capacity` counts
-/// the roots those choices can fuse away; a capacity that reaches or passes the
-/// component's root count fuses the component onto that one remaining root.
-/// The relation `roots > merge_capacity` is not proven - `merge_capacity` sums
-/// a per-face maximum reduction over every face - so both cases are stated.
+/// A component exists, so it owns at least one root: `roots` is a
+/// [`NonZeroUsize`] and a component of no roots is a state the argument cannot
+/// hold. `merge_capacity` counts the roots those choices can fuse away; a
+/// capacity that reaches or passes the component's root count fuses the
+/// component onto that one remaining root. The relation
+/// `roots > merge_capacity` is not proven - `merge_capacity` sums a per-face
+/// maximum reduction over every face - so both cases are stated.
 #[cfg(test)]
-fn required_component_roots(roots: usize, merge_capacity: usize) -> usize {
-    match roots.checked_sub(merge_capacity) {
+fn required_component_roots(roots: NonZeroUsize, merge_capacity: usize) -> usize {
+    match roots.get().checked_sub(merge_capacity) {
         Some(0) | None => 1,
         Some(required) => required,
     }
@@ -6524,7 +6529,7 @@ impl MeshSelectionSearch<'_> {
         };
         let mut possible_domains = HashMap::<usize, HashSet<usize>>::new();
         let mut universal_components = HashSet::new();
-        let mut possible_root_counts = HashMap::<usize, usize>::new();
+        let mut possible_root_counts = HashMap::<usize, NonZeroUsize>::new();
         for node in 0..node_count {
             if quotient.union.find(node) != node {
                 continue;
@@ -6539,7 +6544,13 @@ impl MeshSelectionSearch<'_> {
                     .or_default()
                     .extend(quotient.domains[node].iter());
             }
-            *possible_root_counts.entry(component).or_default() += 1;
+            // The node itself is the component's first root, so the count is
+            // never zero.
+            let roots = match possible_root_counts.get(&component) {
+                Some(roots) => roots.checked_add(1)?,
+                None => NonZeroUsize::MIN,
+            };
+            possible_root_counts.insert(component, roots);
         }
         let mut component_merge_capacity = HashMap::<usize, usize>::new();
         let mut independent_capacity = 0usize;
@@ -9921,7 +9932,7 @@ fn singleton_mesh_path_handles_closed_endpoint_pairs() {
 
 #[cfg(test)]
 mod bitset_and_root_count_tests {
-    use super::{bitset_words, required_component_roots};
+    use super::{bitset_words, required_component_roots, NonZeroUsize};
 
     /// A bitset over a domain of no choices states no words. Nothing floors it
     /// at one: the readers index by a choice identifier below the bit count, so
@@ -9936,14 +9947,15 @@ mod bitset_and_root_count_tests {
     }
 
     /// A component owns at least one root, so a merge capacity that reaches or
-    /// passes its root count leaves that one root.
+    /// passes its root count leaves that one root. A component of no roots is
+    /// a state the argument type does not hold.
     #[test]
     fn a_merge_capacity_at_or_above_the_root_count_leaves_one_root() {
-        assert_eq!(required_component_roots(3, 0), 3);
-        assert_eq!(required_component_roots(3, 1), 2);
-        assert_eq!(required_component_roots(3, 3), 1);
-        assert_eq!(required_component_roots(3, 9), 1);
-        assert_eq!(required_component_roots(0, 0), 1);
+        let three = NonZeroUsize::new(3).expect("three roots");
+        assert_eq!(required_component_roots(three, 0), 3);
+        assert_eq!(required_component_roots(three, 1), 2);
+        assert_eq!(required_component_roots(three, 3), 1);
+        assert_eq!(required_component_roots(three, 9), 1);
     }
 }
 
