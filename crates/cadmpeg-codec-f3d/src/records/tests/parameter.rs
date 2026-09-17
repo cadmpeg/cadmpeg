@@ -1,7 +1,8 @@
-use super::super::{
-    DesignClassTag, DesignParameter, DesignParameterDiscriminator, DesignParameterDraft,
-    DesignParameterSource, Located, RecordedValue,
+use super::super::identity::{Located, RecordedValue};
+use super::super::parameters::{
+    DesignParameter, DesignParameterDiscriminator, DesignParameterDraft, DesignParameterSource,
 };
+use super::super::references::DesignClassTag;
 use serde_json::json;
 
 fn draft() -> DesignParameterDraft {

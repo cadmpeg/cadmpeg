@@ -11,7 +11,8 @@ use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
 fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
-    use cadmpeg_ir::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition::Line};
+    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line;
 
     let first = SpatialSketchGeometry::try_from(Line {
         start: Point3::new(0.0, 0.0, 0.0),
@@ -40,10 +41,8 @@ fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
 
 #[test]
 fn spatial_point_distance_requires_point_geometry_and_exact_value() {
-    use cadmpeg_ir::sketches::{
-        SpatialSketchGeometry,
-        SpatialSketchGeometryDefinition::{Line, Point},
-    };
+    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+    use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::{Line, Point};
 
     let first = SpatialSketchGeometry::try_from(Point {
         position: Point3::new(1.0, 2.0, 3.0),
@@ -344,7 +343,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
         owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset,
         geometry_offset: 0,
         entity_genesis: None,
@@ -364,17 +363,18 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         curve(13, 120, -std::f64::consts::FRAC_PI_4),
     ];
     let point = |record_index, byte_offset, incident_curves| {
-        SketchPoint::try_from(crate::records::SketchPointDraft {
+        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
             id: format!("{stream}:sketch-point#{record_index}"),
             record_index,
             owner_reference: Some(100),
-            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
             byte_offset,
             coordinate_offset: 0,
-            companion: crate::records::SketchPointCompanion { incident_curves },
-            record_form: crate::records::SketchPointRecordForm::version11(
+            companion: crate::records::sketch_geometry::SketchPointCompanion { incident_curves },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
                 u64::from(record_index),
-                crate::records::SketchPointClosure::Selector0State0,
+                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
                 None,
                 0.0,
             ),
@@ -617,7 +617,7 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
     let mut linear = parameter;
     linear
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-2".into(),
                 linear.owner_record_index(),
                 linear.family_discriminator(),

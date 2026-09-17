@@ -16,21 +16,24 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         local_ordinal: u32,
         value: f64,
     ) -> DesignParameterOwner {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
-            byte_offset: u64::from(record_index) + 60,
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value: value,
-            evaluated_value_offset: u64::from(record_index) + 100,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: Some(0),
-            companion_record_index: record_index + 2,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
+                byte_offset: u64::from(record_index) + 60,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("272".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index,
+                local_ordinal,
+                evaluated_value: value,
+                evaluated_value_offset: u64::from(record_index) + 100,
+                parameter_record_index: record_index + 1,
+                owned_ordinal: local_ordinal,
+                variant: Some(0),
+                companion_record_index: record_index + 2,
+            },
+        )
         .unwrap()
     }
 
@@ -47,7 +50,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         .try_edit(|draft| {
             draft.frame_length = bytes.len() as u64;
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![20, 21, 22, 23, 24]);
+                crate::records::identity::ReferenceRun::unlocated(vec![20, 21, 22, 23, 24]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -89,7 +92,8 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     cylinder_scope.record_index = 13;
     cylinder_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![30, 31]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![30, 31]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -135,21 +139,24 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         value: f64,
         stream: &str,
     ) -> DesignParameterOwner {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: format!("f3d:{stream}:owner#{record_index}"),
-            byte_offset: u64::from(record_index),
-            frame_length: 103,
-            class_tag: crate::records::DesignClassTag::try_from("294".to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value: value,
-            evaluated_value_offset: u64::from(record_index) + 40,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: None,
-            companion_record_index: record_index + 2,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("f3d:{stream}:owner#{record_index}"),
+                byte_offset: u64::from(record_index),
+                frame_length: 103,
+                class_tag: crate::records::references::DesignClassTag::try_from("294".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index,
+                local_ordinal,
+                evaluated_value: value,
+                evaluated_value_offset: u64::from(record_index) + 40,
+                parameter_record_index: record_index + 1,
+                owned_ordinal: local_ordinal,
+                variant: None,
+                companion_record_index: record_index + 2,
+            },
+        )
         .unwrap()
     }
 
@@ -178,15 +185,17 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        scope.class_tag =
+            crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         scope.paired_class_tag =
-            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
+            crate::records::references::DesignClassTag::try_from(paired_class_tag.to_owned())
+                .unwrap();
         scope
             .try_edit(|draft| {
                 draft.paired_byte_offset = frame_length as u64;
                 draft.frame_length = frame_length as u64;
                 draft.reference_members =
-                    crate::records::ReferenceRun::unlocated(reference_members);
+                    crate::records::identity::ReferenceRun::unlocated(reference_members);
                 draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
@@ -299,7 +308,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                     diameter: 3.0,
                     operation: DesignExtrudeOperation::Join,
                     operation_offset: 22,
-                    transform: Some(crate::records::Located { offset: 72, .. }),
+                    transform: Some(crate::records::identity::Located { offset: 72, .. }),
                     ..
                 }
             ))

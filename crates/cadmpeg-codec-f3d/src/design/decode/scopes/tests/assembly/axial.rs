@@ -4,8 +4,9 @@ use super::*;
 
 #[test]
 fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
-    let first_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
-    let mut second_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+    let first_transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
+    let mut second_transform =
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     second_transform[2][3] = 4.25;
     let first_role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     let second_role = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
@@ -36,7 +37,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     assembly
         .try_edit(|draft| {
             draft.frame_length = 772;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(
                 first_members
                     .into_iter()
                     .chain(second_members)
@@ -151,8 +152,9 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
 
 #[test]
 fn axial_assembly_selector_binds_a_document_root_joint_origin() {
-    let first_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
-    let mut second_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+    let first_transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
+    let mut second_transform =
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     second_transform[1][3] = 2.5;
     let role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     let mut bytes = vec![0; 705];
@@ -173,7 +175,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     assembly
         .try_edit(|draft| {
             draft.frame_length = 705;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(
                 members.into_iter().chain([90, 91]).collect(),
             );
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;

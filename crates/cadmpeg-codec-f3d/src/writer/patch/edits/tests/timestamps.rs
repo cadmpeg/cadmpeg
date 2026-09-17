@@ -7,7 +7,7 @@ use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::records::CreationTimestamp;
+use crate::records::recipes::CreationTimestamp;
 use crate::test_support::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 

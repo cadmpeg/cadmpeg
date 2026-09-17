@@ -81,10 +81,10 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
 
 #[test]
 fn ambiguous_scope_histories_use_exact_result_body_sources() {
+    use crate::records::bodies::DesignBodyBinding;
     use crate::records::topology::{
         DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
     };
-    use crate::records::DesignBodyBinding;
     use cadmpeg_ir::ids::FaceId;
 
     let state = |history: &str, state_id: i64, previous_state_id: Option<i64>| AsmDeltaState {
@@ -142,7 +142,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         crate::records::feature::DesignFeatureKind::Sketch,
         200,
     );
-    let binding = DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+    let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
         id: format!("{stream}:design-body-binding#150"),
         stream: stream.into(),
         pair_count: 1,
@@ -175,13 +175,14 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
             },
             record_index: 120,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 56,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -731,8 +732,8 @@ fn historical_identity_edge_requires_unique_incidence() {
 fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
     use cadmpeg_ir::ids::FaceId;
 
-    let reference =
-        |candidate_faces, alternate_selector_faces| crate::records::DesignRecipeReference {
+    let reference = |candidate_faces, alternate_selector_faces| {
+        crate::records::dimensions::DesignRecipeReference {
             selector: 1,
             selector_offset: 0,
             token: "1".into(),
@@ -743,7 +744,8 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
             candidate_edges: Vec::new(),
             alternate_selector_faces,
             alternate_selector_edges: Vec::new(),
-        };
+        }
+    };
     assert_eq!(
         terminal_edge_recipe_reference_faces(
             &[
@@ -1429,7 +1431,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ),
         [FaceId::mint(id(4)).expect("identity grammar")]
     );
-    let mut reference = crate::records::DesignRecipeReference {
+    let mut reference = crate::records::dimensions::DesignRecipeReference {
         selector: 1,
         selector_offset: 0,
         token: "1".into(),

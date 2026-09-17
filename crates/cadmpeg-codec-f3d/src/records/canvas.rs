@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::DesignClassTag;
+use super::references::DesignClassTag;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use serde::{Deserialize, Serialize};
 

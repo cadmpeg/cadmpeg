@@ -225,15 +225,13 @@ fn product_feature_definitions_require_neutral_reference_ids() {
 
 #[test]
 fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
+    use cadmpeg_ir::features::{
+        AxisAngle, BodySelection, BooleanOp, FaceMotion, FaceSelection, FeatureDefinition,
+        FeatureOperation, ScaleCenter, ScaleFactors, ThickenSide,
+    };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{
-            AxisAngle, BodySelection, BooleanOp, FaceMotion, FaceSelection, FeatureDefinition,
-            FeatureOperation, ScaleCenter, ScaleFactors, ThickenSide,
-        },
-        scalar::Length,
-    };
+    use cadmpeg_ir::scalar::Length;
 
     let faces = FaceSelection::Faces(vec!["test:model:face#1"
         .try_into()
@@ -360,10 +358,8 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
 
 #[test]
 fn knit_surfaces_require_resolved_faces_and_operation_settings() {
-    use cadmpeg_ir::{
-        features::{FaceSelection, FeatureDefinition, FeatureOperation},
-        scalar::NonNegativeLength,
-    };
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::NonNegativeLength;
 
     let complete = |faces, merge_entities, create_solid, gap_tolerance| {
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {

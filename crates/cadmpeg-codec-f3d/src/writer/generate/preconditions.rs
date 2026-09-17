@@ -6,7 +6,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
 use crate::records::{
-    PersistentDesignLink, PersistentSubentityTag, SegmentType, SketchCurveGeometry,
+    entity_header::SegmentType,
+    sketch_geometry::SketchCurveGeometry,
+    sketch_links::{PersistentDesignLink, PersistentSubentityTag},
 };
 use cadmpeg_asm::brep::records::EvaluatedToleranceSlot;
 use cadmpeg_core::CodecError;
@@ -194,7 +196,7 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
 
 fn source_less_design_record_type<'a>(
     native: &'a F3dNative,
-    class_tag: &crate::records::DesignClassTag,
+    class_tag: &crate::records::references::DesignClassTag,
     record_index: u32,
     record_kind: &str,
 ) -> Result<&'a SegmentType, CodecError> {
@@ -306,7 +308,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         if point.record_form().class_version() != point_type.version
             || !matches!(
                 point.record_form(),
-                crate::records::SketchPointRecordForm::Version11 { .. }
+                crate::records::sketch_geometry::SketchPointRecordForm::Version11 { .. }
             )
         {
             return Err(CodecError::NotImplemented(format!(
@@ -535,7 +537,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         if design_type
             .base_type_guid
             .value()
-            .map(crate::records::DesignRelaxedGuidText::as_str)
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             == Some(design_type.type_guid.as_str())
         {
             return Err(CodecError::InvalidInput(format!(
@@ -548,7 +550,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         while let Some(base) = cursor
             .base_type_guid
             .value()
-            .map(crate::records::DesignRelaxedGuidText::as_str)
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             .and_then(|base| types_by_guid.get(base))
         {
             if !ancestors.insert(base.type_guid.as_str()) {

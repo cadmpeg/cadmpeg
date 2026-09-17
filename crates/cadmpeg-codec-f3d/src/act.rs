@@ -11,10 +11,11 @@ use cadmpeg_core::CodecError;
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
-use crate::records::{
+use crate::records::act::{
     ActChannelGroup, ActClassTail, ActEntity, ActGuid, ActRegistryChannel, ActRootComponent,
-    ActTableReference, ActTableRow, DesignClassTag, Located,
+    ActTableReference, ActTableRow,
 };
+use crate::records::{identity::Located, references::DesignClassTag};
 
 pub struct DecodedAct {
     pub entities: Vec<ActEntity>,
@@ -409,7 +410,7 @@ struct ChannelGroup {
     record_index_offset: usize,
     entity_id: Option<Located<String, usize>>,
     class_tag: DesignClassTag,
-    channels: BTreeMap<String, Located<crate::records::DesignGuidText>>,
+    channels: BTreeMap<String, Located<crate::records::mesh::DesignGuidText>>,
     class_tail: Option<ActClassTail>,
 }
 
@@ -595,11 +596,11 @@ fn decode_component_link(bytes: &[u8], frame: &RecordFrame, stream: &str) -> Opt
     if !bytes.get(end..frame.end)?.iter().all(|byte| *byte == 0) {
         return None;
     }
-    let registry_flag = crate::records::ActRegistryFlag::from_code(registry_flag)?;
+    let registry_flag = crate::records::act::ActRegistryFlag::from_code(registry_flag)?;
     if tracked_entity_record != 3 {
         return Some(ComponentLink::NonRoot);
     }
-    let layout = crate::records::ActRootLayout::new(
+    let layout = crate::records::act::ActRootLayout::new(
         frame.start as u64,
         entity_id,
         display_name,

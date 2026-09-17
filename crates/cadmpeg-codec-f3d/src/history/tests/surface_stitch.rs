@@ -46,8 +46,9 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         .try_edit(|draft| {
             draft.history_state_id = Some(2);
             draft.previous_history_state_id = Some(1);
-            draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![100, 200, 110, 210, 300, 301]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                100, 200, 110, 210, 300, 301,
+            ]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -62,8 +63,9 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                 scope_reference_ordinal,
                 record_index,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
-                members: vec![crate::records::Located {
+                class_tag: crate::records::references::DesignClassTag::try_from("282".to_owned())
+                    .unwrap(),
+                members: vec![crate::records::identity::Located {
                     value: member,
                     offset: 0,
                 }],
@@ -89,8 +91,10 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                     DesignOperandRole::ROLE_0X5,
                 ),
                 role_offset: 0,
-                paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "261".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: 0,
             },
         )
@@ -106,13 +110,14 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                 group_member_ordinal: 0,
                 record_index,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
-                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
                 )
                 .unwrap(),
                 asset_id_offset: 0,
-                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
                 )
                 .unwrap(),

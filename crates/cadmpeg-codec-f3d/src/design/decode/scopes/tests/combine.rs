@@ -88,7 +88,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: scope_record_index,
-        class_tag: crate::records::DesignClassTag::try_from("382".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("382".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let mut scope = parse_parameter_scope(
@@ -162,9 +162,10 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     compact_bytes[36..44].copy_from_slice(&200u64.to_le_bytes());
     compact_bytes[44..46].fill(0);
     let mut compact_scope = scope.clone();
-    compact_scope.class_tag = crate::records::DesignClassTag::try_from("387".to_owned()).unwrap();
+    compact_scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("387".to_owned()).unwrap();
     compact_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     compact_scope
         .try_edit(|draft| {
             draft.frame_length = 328;
@@ -315,12 +316,15 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.class_tag = crate::records::DesignClassTag::try_from("329".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 363;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();

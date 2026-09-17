@@ -87,7 +87,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
 
 #[test]
 fn generated_source_less_rejects_material_assignment_without_presentation_graph() {
-    use crate::records::DesignMaterialAssignment;
+    use crate::records::references::DesignMaterialAssignment;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     f3d_native_mut(&mut source_less).design_material_assignments = vec![DesignMaterialAssignment {
@@ -96,15 +96,15 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
         asm_body_key_offset: 0,
 
         entity_suffix_offset: 0,
-        entity_id: crate::records::DesignEntityId::try_from("0_985".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_985".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 0,
-        visual_guid: crate::records::DesignVisualToken::try_from(
+        visual_guid: crate::records::references::DesignVisualToken::try_from(
             "11111111-2222-3333-4444-555555555555".to_owned(),
         )
         .unwrap(),
         visual_guid_offset: 0,
-        physical_token: Some(crate::records::RecordedValue {
+        physical_token: Some(crate::records::identity::RecordedValue {
             value: "PrismMaterial-Generated".into(),
             offset: 0,
         }),
@@ -128,16 +128,18 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
     f3d_native_mut(&mut source_less).body_visibilities = [985, 986]
         .into_iter()
         .enumerate()
-        .map(|(ordinal, entity_suffix)| crate::records::BodyVisibility {
-            id: format!("f3d:generated:body-visibility#{ordinal}"),
-            body: body.clone(),
-            stream: "generated/Design1/BulkStream.dat".into(),
-            byte_offset: 0,
-            asm_body_key_offset: 0,
-            asm_body_key: 42,
-            entity_suffix,
-            visible: false,
-        })
+        .map(
+            |(ordinal, entity_suffix)| crate::records::bodies::BodyVisibility {
+                id: format!("f3d:generated:body-visibility#{ordinal}"),
+                body: body.clone(),
+                stream: "generated/Design1/BulkStream.dat".into(),
+                byte_offset: 0,
+                asm_body_key_offset: 0,
+                asm_body_key: 42,
+                entity_suffix,
+                visible: false,
+            },
+        )
         .collect();
 
     let error = F3dCodec
@@ -179,7 +181,8 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
     update_f3d_native(&mut edited, |native| {
         let assignment = &mut native.design_material_assignments[0];
         assignment.entity_id =
-            crate::records::DesignEntityId::try_from("0_986".to_owned()).expect("valid entity ID");
+            crate::records::identity::DesignEntityId::try_from("0_986".to_owned())
+                .expect("valid entity ID");
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())

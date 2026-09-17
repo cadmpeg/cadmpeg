@@ -79,24 +79,25 @@ fn sketch_visibility_accepts_settled_container_header() {
                         version: u32,
                         module: &str,
                         entity_ids: Vec<u64>| {
-        crate::records::SegmentType {
+        crate::records::entity_header::SegmentType {
             id: String::new(),
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map_or(crate::records::BaseTypeGuid::Absent, |value| {
-                crate::records::BaseTypeGuid::Guid {
+            base_type_guid: base_type_guid.map_or(
+                crate::records::entity_header::BaseTypeGuid::Absent,
+                |value| crate::records::entity_header::BaseTypeGuid::Guid {
                     value: value.to_owned().try_into().expect("base GUID"),
                     offset: 0,
-                }
-            }),
+                },
+            ),
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::located(
+            entities: crate::records::identity::ReferenceRun::located(
                 entity_ids
                     .into_iter()
-                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located { value, offset: 0 })
                     .collect(),
             ),
         }

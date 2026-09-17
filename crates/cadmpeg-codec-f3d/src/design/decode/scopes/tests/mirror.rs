@@ -57,7 +57,7 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
     let header = DesignRecordHeader {
         id: String::new(),
         record_index,
-        class_tag: crate::records::DesignClassTag::try_from("320".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("320".to_owned()).unwrap(),
         byte_offset: start as u64,
     };
 
@@ -77,8 +77,10 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("413".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("413".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.kind_offset = 32;
@@ -111,8 +113,10 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.kind_offset = 32;
@@ -150,8 +154,10 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("391".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("391".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.kind_offset = 32;
@@ -189,8 +195,10 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("440".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("440".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.kind_offset = 32;
@@ -224,8 +232,10 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
         crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("441".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("267".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.kind_offset = 32;
@@ -281,12 +291,18 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
         crate::records::feature::DesignFeatureKind::Mirror,
         scope_record_index,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("441".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("267".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("441".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("267".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![1, 2, 3, count_record_index]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                1,
+                2,
+                3,
+                count_record_index,
+            ]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;

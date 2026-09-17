@@ -51,7 +51,7 @@ fn parameter_scope_parses_named_variable_tail() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("378".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
@@ -84,7 +84,7 @@ fn parameter_scope_parses_named_variable_tail() {
     owner_scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![327, 330, 55, 56, 57, 58]);
+                crate::records::identity::ReferenceRun::unlocated(vec![327, 330, 55, 56, 57, 58]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -92,37 +92,43 @@ fn parameter_scope_parses_named_variable_tail() {
         })
         .unwrap();
     let owners = vec![
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: "f3d:test:owner#327".into(),
-            byte_offset: (111) - 40,
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
-            record_index: 327,
-            scope_record_index: 12,
-            local_ordinal: 0,
-            evaluated_value: 0.0,
-            evaluated_value_offset: 111,
-            parameter_record_index: 326,
-            owned_ordinal: 3,
-            variant: Some(0),
-            companion_record_index: 328,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: "f3d:test:owner#327".into(),
+                byte_offset: (111) - 40,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("272".to_owned())
+                    .unwrap(),
+                record_index: 327,
+                scope_record_index: 12,
+                local_ordinal: 0,
+                evaluated_value: 0.0,
+                evaluated_value_offset: 111,
+                parameter_record_index: 326,
+                owned_ordinal: 3,
+                variant: Some(0),
+                companion_record_index: 328,
+            },
+        )
         .unwrap(),
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: "f3d:test:owner#330".into(),
-            byte_offset: (222) - 40,
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
-            record_index: 330,
-            scope_record_index: 12,
-            local_ordinal: 1,
-            evaluated_value: 0.0,
-            evaluated_value_offset: 222,
-            parameter_record_index: 329,
-            owned_ordinal: 4,
-            variant: Some(0),
-            companion_record_index: 331,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: "f3d:test:owner#330".into(),
+                byte_offset: (222) - 40,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("272".to_owned())
+                    .unwrap(),
+                record_index: 330,
+                scope_record_index: 12,
+                local_ordinal: 1,
+                evaluated_value: 0.0,
+                evaluated_value_offset: 222,
+                parameter_record_index: 329,
+                owned_ordinal: 4,
+                variant: Some(0),
+                companion_record_index: 331,
+            },
+        )
         .unwrap(),
     ];
     let operation = exact_draft_operation_with_owners(

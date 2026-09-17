@@ -34,7 +34,7 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
@@ -96,7 +96,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 6644,
-        class_tag: crate::records::DesignClassTag::try_from("353".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("353".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
@@ -192,7 +192,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 6644,
-        class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("338".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
@@ -265,7 +265,8 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: 331,
-            class_tag: crate::records::DesignClassTag::try_from("345".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("345".to_owned())
+                .unwrap(),
             byte_offset: 0,
         };
         parse_parameter_scope(

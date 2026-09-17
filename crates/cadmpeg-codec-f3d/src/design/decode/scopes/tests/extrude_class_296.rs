@@ -51,7 +51,7 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
             bytes,
             &IndexedRecordOffsets::build(bytes),
             RECORD_INDEX,
-            &crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
+            &crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             0,
         )
     };
@@ -158,7 +158,7 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-symmetric".into(),
         record_index: RECORD_INDEX,
-        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
@@ -292,7 +292,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-two-sided-to-faces".into(),
         record_index: RECORD_INDEX,
-        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {
@@ -457,7 +457,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#class-296-legacy-one-sided".into(),
         record_index: RECORD_INDEX,
-        class_tag: crate::records::DesignClassTag::try_from("296".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let prologue = |bytes: &[u8]| {

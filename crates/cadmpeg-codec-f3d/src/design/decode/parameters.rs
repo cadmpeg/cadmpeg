@@ -16,10 +16,12 @@ use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
-use crate::records::feature::DesignParameterScope;
 use crate::records::{
-    ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignRecordHeader,
+    decal::DesignRecordHeader,
+    entity_header::DesignEntityHeader,
+    feature::DesignParameterScope,
+    parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
+    recipes::ConstructionRecipe,
 };
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
@@ -78,12 +80,13 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
 
 /// Design parameter parsed in frame-relative coordinates.
 pub(crate) struct ParsedDesignParameter {
-    pub(crate) class_tag: crate::records::DesignClassTag,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
     pub(crate) record_index: u32,
     pub(crate) source_ordinal: u32,
     pub(crate) source_kind: String,
     pub(crate) owner_record_index: Option<u32>,
-    pub(crate) family_discriminator: Option<crate::records::DesignParameterDiscriminator>,
+    pub(crate) family_discriminator:
+        Option<crate::records::parameters::DesignParameterDiscriminator>,
     pub(crate) expression: String,
     pub(crate) expression_offset: FrameRelative,
     pub(crate) source_kind_offset: FrameRelative,
@@ -104,7 +107,7 @@ impl ParsedDesignParameter {
     /// Locate this parameter in its containing stream.
     pub(crate) fn into_record(self, stream: &str, frame_start: u64) -> Option<DesignParameter> {
         let family_discriminator = match self.family_discriminator {
-            Some(value) => Some(crate::records::Located {
+            Some(value) => Some(crate::records::identity::Located {
                 value,
                 offset: FrameRelative(i128::from(DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET))
                     .absolute(frame_start)?,
@@ -112,33 +115,35 @@ impl ParsedDesignParameter {
             None => None,
         };
         let unit = match self.unit {
-            Some(unit) => Some(crate::records::RecordedValue {
+            Some(unit) => Some(crate::records::identity::RecordedValue {
                 value: unit.value,
                 offset: unit.offset.absolute(frame_start)?,
             }),
             None => None,
         };
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: ids::native_design_parameter_id(stream, frame_start),
-            byte_offset: frame_start,
-            class_tag: self.class_tag,
-            record_index: self.record_index,
-            source_ordinal: self.source_ordinal,
-            source: crate::records::DesignParameterSource::new(
-                self.source_kind,
-                self.owner_record_index,
-                family_discriminator,
-            )
-            .ok()?,
-            expression: self.expression,
-            expression_offset: self.expression_offset.absolute(frame_start)?,
-            source_kind_offset: self.source_kind_offset.absolute(frame_start)?,
-            unit,
-            name: self.name,
-            name_offset: self.name_offset.absolute(frame_start)?,
-            evaluated_value: self.evaluated_value,
-            evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
-        })
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: ids::native_design_parameter_id(stream, frame_start),
+                byte_offset: frame_start,
+                class_tag: self.class_tag,
+                record_index: self.record_index,
+                source_ordinal: self.source_ordinal,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    self.source_kind,
+                    self.owner_record_index,
+                    family_discriminator,
+                )
+                .ok()?,
+                expression: self.expression,
+                expression_offset: self.expression_offset.absolute(frame_start)?,
+                source_kind_offset: self.source_kind_offset.absolute(frame_start)?,
+                unit,
+                name: self.name,
+                name_offset: self.name_offset.absolute(frame_start)?,
+                evaluated_value: self.evaluated_value,
+                evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
+            },
+        )
         .ok()
     }
 }
@@ -174,7 +179,7 @@ fn locate_design_parameter(
 
 pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<ParsedDesignParameter> {
     let (class_tag, after_tag) = lp_ascii_filtered(payload, 0, 0..=2000, u8::is_ascii_graphic)?;
-    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
+    let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
     if after_tag != 7 || payload.get(11..22) != Some(&[0; 11]) {
         return None;
     }
@@ -191,7 +196,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<ParsedDesignParam
     }
     let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
         if discriminated {
-            let discriminator = crate::records::DesignParameterDiscriminator::try_from(
+            let discriminator = crate::records::parameters::DesignParameterDiscriminator::try_from(
                 View::u64_le_at(payload, 22)?,
             )
             .ok()?;
@@ -298,7 +303,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<ParsedDesignParam
 /// Its expression is followed by one of the two fixed five-byte trailers.
 fn parse_legacy_287_design_parameter(
     payload: &[u8],
-    class_tag: crate::records::DesignClassTag,
+    class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
 ) -> Option<ParsedDesignParameter> {
     if payload.get(legacy_287::ZERO_RUN_15..legacy_287::SOURCE_ORDINAL) != Some(&[0; 15])
@@ -371,7 +376,7 @@ const CLASS_287_EXPRESSION_TRAILER_LEN: usize = 5;
 
 fn parse_legacy_design_parameter(
     payload: &[u8],
-    class_tag: crate::records::DesignClassTag,
+    class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
 ) -> Option<ParsedDesignParameter> {
     if payload.get(11..25)? != [0; 14]
@@ -443,11 +448,13 @@ pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
 }
 
 fn valid_design_parameter_family(
-    discriminator: Option<crate::records::DesignParameterDiscriminator>,
+    discriminator: Option<crate::records::parameters::DesignParameterDiscriminator>,
     source_kind: &str,
     tail: u8,
 ) -> bool {
-    use crate::records::DesignParameterDiscriminator::{Code0, Code3, Code4, Code5, Code6};
+    use crate::records::parameters::DesignParameterDiscriminator::{
+        Code0, Code3, Code4, Code5, Code6,
+    };
     match tail {
         16 => {
             (discriminator == Some(Code5) && source_kind == "ScaleFactor")
@@ -544,7 +551,7 @@ pub fn decode_parameter_owners(
         let frame = bytes
             .get(at..end)
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
-        let evaluated = crate::records::Located {
+        let evaluated = crate::records::identity::Located {
             value: parameter.evaluated_value(),
             offset: parameter.evaluated_value_offset(),
         };
@@ -583,7 +590,7 @@ impl FrameRelative {
 /// Parameter owner parsed in frame-relative coordinates.
 pub(crate) struct ParsedParameterOwner {
     pub(crate) frame_length: u64,
-    pub(crate) class_tag: crate::records::DesignClassTag,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
     pub(crate) record_index: u32,
     pub(crate) scope_record_index: u32,
     pub(crate) local_ordinal: u32,
@@ -602,28 +609,30 @@ impl ParsedParameterOwner {
         stream: &str,
         frame_start: u64,
     ) -> Option<DesignParameterOwner> {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: ids::native_design_parameter_owner_id(stream, frame_start),
-            byte_offset: frame_start,
-            frame_length: self.frame_length,
-            class_tag: self.class_tag,
-            record_index: self.record_index,
-            scope_record_index: self.scope_record_index,
-            local_ordinal: self.local_ordinal,
-            evaluated_value: self.evaluated_value,
-            evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
-            parameter_record_index: self.parameter_record_index,
-            owned_ordinal: self.owned_ordinal,
-            variant: self.variant,
-            companion_record_index: self.companion_record_index,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: ids::native_design_parameter_owner_id(stream, frame_start),
+                byte_offset: frame_start,
+                frame_length: self.frame_length,
+                class_tag: self.class_tag,
+                record_index: self.record_index,
+                scope_record_index: self.scope_record_index,
+                local_ordinal: self.local_ordinal,
+                evaluated_value: self.evaluated_value,
+                evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
+                parameter_record_index: self.parameter_record_index,
+                owned_ordinal: self.owned_ordinal,
+                variant: self.variant,
+                companion_record_index: self.companion_record_index,
+            },
+        )
         .ok()
     }
 }
 
 pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
+    let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
     if after_tag != indexed_header::RECORD_INDEX
         || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
         || frame.get(owner_prefix::ONE_MARKER..owner_prefix::SCOPE_MARKER) != Some(&[1, 1, 0, 0, 0])
@@ -741,7 +750,7 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner
 /// this grammar because older class tags also occur on modern owner records.
 pub(crate) fn parse_legacy_parameter_owner_68(
     frame: &[u8],
-    evaluated: crate::records::Located<f64>,
+    evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
@@ -791,7 +800,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
 /// whose scalar and local-ordinal lanes are absent.
 pub(crate) fn parse_legacy_parameter_owner_88(
     frame: &[u8],
-    evaluated: crate::records::Located<f64>,
+    evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
@@ -899,7 +908,7 @@ pub fn decode_parameter_companions(
 
 /// Parameter companion prefix parsed in frame-relative coordinates.
 pub(crate) struct ParsedParameterCompanion {
-    pub(crate) class_tag: crate::records::DesignClassTag,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
     pub(crate) record_index: u32,
     pub(crate) owner_record_index: u32,
     pub(crate) timestamp_micros: std::num::NonZeroU64,
@@ -929,7 +938,7 @@ impl ParsedParameterCompanion {
 
 pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
     let (class_tag, after_tag) = lp_ascii_filtered(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
-    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
+    let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)
@@ -990,7 +999,7 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
 fn companion_payload<S: std::hash::BuildHasher>(
     companion: &DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
-) -> Option<crate::records::DesignCompanionPayload> {
+) -> Option<crate::records::parameters::DesignCompanionPayload> {
     let ParameterCompanionInputs {
         parameters,
         owners,
@@ -1050,7 +1059,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
         })
         .collect::<Vec<_>>();
     owned.sort_by_key(|recipe| recipe.byte_offset);
-    Some(crate::records::DesignCompanionPayload::new(
+    Some(crate::records::parameters::DesignCompanionPayload::new(
         byte_offset,
         byte_length,
         owned.into_iter().map(|recipe| recipe.id.clone()).collect(),

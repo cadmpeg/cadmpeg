@@ -8,11 +8,13 @@
 use super::prelude::*;
 use crate::records::topology::DesignOperandRole;
 
-use crate::records::feature::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation};
 use crate::records::topology::{
     DesignBodyRecipeReference, DesignConstructionOperandGroupFrame, DesignOperandOwner,
 };
-use crate::records::ConstructionRecipeKind;
+use crate::records::{
+    feature::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation},
+    recipes::ConstructionRecipeKind,
+};
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
 fn group(
@@ -29,8 +31,9 @@ fn group(
             scope_reference_ordinal,
             record_index,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: member,
                 offset: 0,
             }],
@@ -54,7 +57,10 @@ fn group(
             .unwrap(),
             operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -68,14 +74,16 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         crate::records::feature::DesignFeatureKind::ReplaceFace,
         1129,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("301".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 290;
             draft.previous_history_state_id = Some(254);
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![1130, 1133, 1137, 1140]);
+                crate::records::identity::ReferenceRun::unlocated(vec![1130, 1133, 1137, 1140]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -94,13 +102,14 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             },
             record_index: 1133,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 56,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -137,9 +146,10 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         }),
         record_index: 1140,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("272".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("272".to_owned()).unwrap(),
         paired_byte_offset: 16,
-        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
+            .unwrap(),
         recipe_record_index: 1143,
         recipe_record_byte_offset: 32,
         recipe_id: "f3d:Design/BulkStream.dat:recipe#1142".into(),
@@ -211,7 +221,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
     scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
+                crate::records::identity::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -230,13 +240,14 @@ fn surface_trim_projects_body_target_and_curve_tool() {
             },
             record_index: 1202,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 56,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -322,11 +333,15 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
             ],
             cell_table_record_index: 3,
             cell_table_byte_offset: 0,
-            cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned())
-                .unwrap(),
+            cell_table_class_tag: crate::records::references::DesignClassTag::try_from(
+                "325".to_owned(),
+            )
+            .unwrap(),
             cell_table_frame_length: 0,
-            cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
-                .unwrap(),
+            cell_table_paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "257".to_owned(),
+            )
+            .unwrap(),
             cell_table_paired_byte_offset: 0,
             cell_count_offset: 0,
             cell_entries: vec![

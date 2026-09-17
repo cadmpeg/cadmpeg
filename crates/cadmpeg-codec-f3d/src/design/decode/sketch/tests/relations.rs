@@ -152,14 +152,16 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         [2403, 2404]
     );
     assert_eq!(
-        crate::records::constraint_kinds_from_state(parsed.state),
+        crate::records::sketch_relations::constraint_kinds_from_state(parsed.state),
         (vec![SketchConstraintKind::TextFrame], 0)
     );
     assert_eq!(
         decode_pattern_definition(&record, &parsed),
-        Some(crate::records::SketchPatternDefinition::TextFrame {
-            text_reference: 2394
-        })
+        Some(
+            crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
+                text_reference: 2394
+            }
+        )
     );
 }
 
@@ -251,19 +253,25 @@ fn genesis_relation_parses_text_path_glyph_run() {
         Some(&glyphs[..])
     );
     assert_eq!(
-        crate::records::constraint_kinds_from_state(parsed.state),
+        crate::records::sketch_relations::constraint_kinds_from_state(parsed.state),
         (vec![SketchConstraintKind::TextPath], 0)
     );
     assert_eq!(
         decode_pattern_definition(&record, &parsed),
-        Some(crate::records::SketchPatternDefinition::TextPath {
-            text_reference: 304,
-            glyph_transforms: glyphs
-                .into_iter()
-                .map(|rows| crate::records::SketchGlyphTransform::try_from(rows)
-                    .expect("finite native glyph"))
-                .collect(),
-        })
+        Some(
+            crate::records::sketch_relations::SketchPatternDefinition::TextPath {
+                text_reference: 304,
+                glyph_transforms: glyphs
+                    .into_iter()
+                    .map(
+                        |rows| crate::records::sketch_relations::SketchGlyphTransform::try_from(
+                            rows
+                        )
+                        .expect("finite native glyph")
+                    )
+                    .collect(),
+            }
+        )
     );
 }
 
@@ -306,12 +314,15 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
         decode_pattern_definition(&record, &parsed),
-        Some(crate::records::SketchPatternDefinition::Circular {
-            angle_parameter: 336,
-            count_parameter: 333,
-            evaluated_angle: std::f64::consts::TAU,
-            evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
-        })
+        Some(
+            crate::records::sketch_relations::SketchPatternDefinition::Circular {
+                angle_parameter: 336,
+                count_parameter: 333,
+                evaluated_angle: std::f64::consts::TAU,
+                evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(3)
+                    .unwrap(),
+            }
+        )
     );
 }
 
@@ -370,7 +381,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         }
     ));
     assert_eq!(parsed.state, 0x2000_0000);
-    let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =
+    let Some(crate::records::sketch_relations::SketchPatternDefinition::Rectangular { directions }) =
         decode_pattern_definition(&record, &parsed)
     else {
         panic!("expected rectangular pattern definition");

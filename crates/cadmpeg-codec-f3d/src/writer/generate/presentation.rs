@@ -13,10 +13,15 @@ use crate::design::body::{
 use crate::design::presentation::{
     BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION,
 };
-use crate::records::{DesignGuidText, SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
+use crate::records::{
+    entity_header::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION},
+    mesh::DesignGuidText,
+};
 
-use super::attributes::{source_less_body_key, AttributeIndex};
-use super::preconditions::DesignBindingsValidated;
+use super::{
+    attributes::{source_less_body_key, AttributeIndex},
+    preconditions::DesignBindingsValidated,
+};
 
 /// One type-table row after generated record types have been registered.
 pub(crate) struct GeneratedDesignType {
@@ -76,13 +81,13 @@ impl GeneratedBodyMapEntries {
 pub(crate) struct GeneratedBodyMap {
     pub entries: GeneratedBodyMapEntries,
     pub record_index: u32,
-    pub class_tag: crate::records::DesignClassTag,
+    pub class_tag: crate::records::references::DesignClassTag,
 }
 
 /// Generated browser nodes and their registered class.
 pub(crate) struct GeneratedBrowserNodes {
     pub nodes: Vec<GeneratedBrowserNode>,
-    pub class_tag: crate::records::DesignClassTag,
+    pub class_tag: crate::records::references::DesignClassTag,
 }
 
 /// The common registry consumed by both generated Design streams.
@@ -318,7 +323,7 @@ fn register_generated_type(
 
 pub(crate) fn dynamic_class_tag(
     type_ordinal: usize,
-) -> Result<crate::records::DesignClassTag, CodecError> {
+) -> Result<crate::records::references::DesignClassTag, CodecError> {
     let tag = u32::try_from(type_ordinal)
         .ok()
         .and_then(|ordinal| ordinal.checked_add(256))
@@ -328,7 +333,7 @@ pub(crate) fn dynamic_class_tag(
                 "source-less F3D Design type registry exceeds three-digit class tags".into(),
             )
         })?;
-    crate::records::DesignClassTag::try_from(tag.to_string())
+    crate::records::references::DesignClassTag::try_from(tag.to_string())
         .map_err(|error| CodecError::malformed(format_args!("generated Design type: {error}")))
 }
 
@@ -378,7 +383,7 @@ mod tests {
             .unwrap();
         assert!(super::GeneratedDesignType::try_from(&source).is_err());
         source = body_map_type(vec![1]);
-        source.base_type_guid = crate::records::BaseTypeGuid::Guid {
+        source.base_type_guid = crate::records::entity_header::BaseTypeGuid::Guid {
             value: "____________________________________"
                 .to_owned()
                 .try_into()
@@ -388,8 +393,8 @@ mod tests {
         assert!(super::GeneratedDesignType::try_from(&source).is_err());
     }
 
-    fn body_map_type(entity_ids: Vec<u64>) -> crate::records::SegmentType {
-        crate::records::SegmentType {
+    fn body_map_type(entity_ids: Vec<u64>) -> crate::records::entity_header::SegmentType {
+        crate::records::entity_header::SegmentType {
             id: "synthetic:design-type#body-map".into(),
             byte_offset: 0,
             type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
@@ -397,7 +402,7 @@ mod tests {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: crate::records::BaseTypeGuid::Guid {
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
                 value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
                     .to_owned()
                     .try_into()
@@ -406,18 +411,18 @@ mod tests {
             },
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
             version_offset: 0,
-            module: crate::records::DESIGN_MODULE_BODY.into(),
-            entities: crate::records::ReferenceRun::located(
+            module: crate::records::entity_header::DESIGN_MODULE_BODY.into(),
+            entities: crate::records::identity::ReferenceRun::located(
                 entity_ids
                     .into_iter()
-                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located { value, offset: 0 })
                     .collect(),
             ),
         }
     }
 
-    fn browser_node_type(entity_ids: Vec<u64>) -> crate::records::SegmentType {
-        crate::records::SegmentType {
+    fn browser_node_type(entity_ids: Vec<u64>) -> crate::records::entity_header::SegmentType {
+        crate::records::entity_header::SegmentType {
             id: "synthetic:design-type#browser-node".into(),
             byte_offset: 0,
             type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID
@@ -425,7 +430,7 @@ mod tests {
                 .try_into()
                 .expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: crate::records::BaseTypeGuid::Guid {
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
                 value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID
                     .to_owned()
                     .try_into()
@@ -434,11 +439,11 @@ mod tests {
             },
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             version_offset: 0,
-            module: crate::records::DESIGN_MODULE_FUSION.into(),
-            entities: crate::records::ReferenceRun::located(
+            module: crate::records::entity_header::DESIGN_MODULE_FUSION.into(),
+            entities: crate::records::identity::ReferenceRun::located(
                 entity_ids
                     .into_iter()
-                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located { value, offset: 0 })
                     .collect(),
             ),
         }
@@ -486,7 +491,7 @@ mod tests {
                 },
             ],
             body_visibilities: vec![
-                crate::records::BodyVisibility {
+                crate::records::bodies::BodyVisibility {
                     id: "generated:visibility#a".into(),
                     body: first.id,
                     stream: "generated/Design1/BulkStream.dat".into(),
@@ -496,7 +501,7 @@ mod tests {
                     entity_suffix: 101,
                     visible: false,
                 },
-                crate::records::BodyVisibility {
+                crate::records::bodies::BodyVisibility {
                     id: "generated:visibility#b".into(),
                     body: second.id,
                     stream: "generated/Design1/BulkStream.dat".into(),

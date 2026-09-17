@@ -7,6 +7,16 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::{
+    feature::{
+        DesignAssemblyAlignmentForm, DesignComponentInsertMatrix, DesignFeatureKind,
+        DesignScopePayloadMut,
+    },
+    identity::{Located, ReferenceRun},
+    parameters::{DesignParameterOwner, DesignParameterOwnerWire},
+    references::DesignClassTag,
+    sketch_placement::SketchPlacementMatrix,
+};
 
 const EPS_EXACT_FIXTURE: f64 = f64::EPSILON * 4.0;
 
@@ -15,20 +25,20 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-        crate::records::feature::DesignFeatureKind::Assemble,
+        DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("273".to_owned()).unwrap();
+    scope.class_tag = DesignClassTag::try_from("273".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 637;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+            draft.reference_members = ReferenceRun::unlocated(vec![50, 51, 52, 53]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("259".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = 637;
@@ -37,11 +47,11 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         })
         .unwrap();
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+        DesignParameterOwner::try_from(DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: (evaluated_value_offset) - 40,
             frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("457".to_owned()).unwrap(),
+            class_tag: DesignClassTag::try_from("457".to_owned()).unwrap(),
             record_index,
             scope_record_index,
             local_ordinal,
@@ -454,7 +464,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             draft.reference_members = {
                 let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
                 values.push(99);
-                crate::records::ReferenceRun::unlocated(values)
+                ReferenceRun::unlocated(values)
             };
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
@@ -478,10 +488,10 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-        crate::records::feature::DesignFeatureKind::Assemble,
+        DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("383".to_owned()).unwrap();
+    scope.class_tag = DesignClassTag::try_from("383".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
@@ -489,11 +499,11 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("258".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = draft.frame_length;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = ReferenceRun::unlocated(vec![
                 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 200, 201, 202, 203,
                 204, 205, 206, 207, 112, 113, 114, 115, 300, 210, 211, 212, 213, 214, 215, 216,
                 217, 116, 117, 118, 119, 400,
@@ -505,32 +515,30 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         .unwrap();
     let owners = (0_usize..20)
         .map(|ordinal| {
-            crate::records::DesignParameterOwner::try_from(
-                crate::records::DesignParameterOwnerWire {
-                    id: format!(
-                        "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
-                        100 + ordinal
-                    ),
-                    byte_offset: (2_000 + ordinal as u64) - 40,
-                    frame_length: 103,
-                    class_tag: crate::records::DesignClassTag::try_from("284".to_owned()).unwrap(),
-                    record_index: 100 + ordinal as u32,
-                    scope_record_index,
-                    local_ordinal: ordinal as u32,
-                    evaluated_value: match ordinal {
-                        8 => 0.25,
-                        9 => 1.0,
-                        10 => 2.0,
-                        11 => 3.0,
-                        _ => 0.0,
-                    },
-                    evaluated_value_offset: 2_000 + ordinal as u64,
-                    parameter_record_index: 100 + ordinal as u32 + 1,
-                    owned_ordinal: ordinal as u32,
-                    variant: None,
-                    companion_record_index: 100 + ordinal as u32 + 2,
+            DesignParameterOwner::try_from(DesignParameterOwnerWire {
+                id: format!(
+                    "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
+                    100 + ordinal
+                ),
+                byte_offset: (2_000 + ordinal as u64) - 40,
+                frame_length: 103,
+                class_tag: DesignClassTag::try_from("284".to_owned()).unwrap(),
+                record_index: 100 + ordinal as u32,
+                scope_record_index,
+                local_ordinal: ordinal as u32,
+                evaluated_value: match ordinal {
+                    8 => 0.25,
+                    9 => 1.0,
+                    10 => 2.0,
+                    11 => 3.0,
+                    _ => 0.0,
                 },
-            )
+                evaluated_value_offset: 2_000 + ordinal as u64,
+                parameter_record_index: 100 + ordinal as u32 + 1,
+                owned_ordinal: ordinal as u32,
+                variant: None,
+                companion_record_index: 100 + ordinal as u32 + 2,
+            })
             .unwrap()
         })
         .collect::<Vec<_>>();
@@ -621,11 +629,11 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     let scope_record_index = 700_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#700",
-        crate::records::feature::DesignFeatureKind::Assemble,
+        DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("388".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
+    scope.class_tag = DesignClassTag::try_from("388".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("266".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
@@ -636,7 +644,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     scope.feature_ordinal = std::num::NonZeroU32::new(4).expect("nonzero ordinal");
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(
+            draft.reference_members = ReferenceRun::unlocated(
                 (0..24)
                     .map(|ordinal| 1_000 + ordinal)
                     .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
@@ -652,32 +660,30 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         .unwrap();
     let owners = (0..28)
         .map(|ordinal| {
-            crate::records::DesignParameterOwner::try_from(
-                crate::records::DesignParameterOwnerWire {
-                    id: format!(
-                        "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
-                        1_000 + ordinal
-                    ),
-                    byte_offset: (2_000 + u64::from(ordinal)) - 40,
-                    frame_length: 103,
-                    class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
-                    record_index: 1_000 + ordinal,
-                    scope_record_index,
-                    local_ordinal: ordinal,
-                    evaluated_value: match ordinal {
-                        4 => 0.25,
-                        5 => 1.0,
-                        6 => 2.0,
-                        7 => 3.0,
-                        _ => 0.0,
-                    },
-                    evaluated_value_offset: 2_000 + u64::from(ordinal),
-                    parameter_record_index: 1_000 + ordinal + 1,
-                    owned_ordinal: ordinal,
-                    variant: None,
-                    companion_record_index: 1_000 + ordinal + 2,
+            DesignParameterOwner::try_from(DesignParameterOwnerWire {
+                id: format!(
+                    "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
+                    1_000 + ordinal
+                ),
+                byte_offset: (2_000 + u64::from(ordinal)) - 40,
+                frame_length: 103,
+                class_tag: DesignClassTag::try_from("282".to_owned()).unwrap(),
+                record_index: 1_000 + ordinal,
+                scope_record_index,
+                local_ordinal: ordinal,
+                evaluated_value: match ordinal {
+                    4 => 0.25,
+                    5 => 1.0,
+                    6 => 2.0,
+                    7 => 3.0,
+                    _ => 0.0,
                 },
-            )
+                evaluated_value_offset: 2_000 + u64::from(ordinal),
+                parameter_record_index: 1_000 + ordinal + 1,
+                owned_ordinal: ordinal,
+                variant: None,
+                companion_record_index: 1_000 + ordinal + 2,
+            })
             .unwrap()
         })
         .collect::<Vec<_>>();
@@ -927,20 +933,20 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-        crate::records::feature::DesignFeatureKind::AsBuilt,
+        DesignFeatureKind::AsBuilt,
         scope_record_index,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("439".to_owned()).unwrap();
+    scope.class_tag = DesignClassTag::try_from("439".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 399;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+            draft.reference_members = ReferenceRun::unlocated(vec![50, 51, 52, 53]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+    scope.paired_class_tag = DesignClassTag::try_from("262".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = 399;
@@ -950,11 +956,11 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         .unwrap();
 
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+        DesignParameterOwner::try_from(DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: (evaluated_value_offset) - 40,
             frame_length: 103,
-            class_tag: crate::records::DesignClassTag::try_from("321".to_owned()).unwrap(),
+            class_tag: DesignClassTag::try_from("321".to_owned()).unwrap(),
             record_index,
             scope_record_index,
             local_ordinal,
@@ -1094,11 +1100,11 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
                  class_tag: &str,
                  value: f64,
                  offset: u64| {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+        DesignParameterOwner::try_from(DesignParameterOwnerWire {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: (offset) - 40,
             frame_length: 103,
-            class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
+            class_tag: DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             record_index,
             scope_record_index,
             local_ordinal,
@@ -1143,18 +1149,17 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         ];
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-            crate::records::feature::DesignFeatureKind::AsBuilt,
+            DesignFeatureKind::AsBuilt,
             scope_record_index,
         );
-        scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
-        scope.paired_class_tag =
-            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
+        scope.class_tag = DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        scope.paired_class_tag = DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         scope
             .try_edit(|draft| {
                 draft.frame_length = 421;
                 draft.paired_byte_offset = 421;
                 draft.reference_count_offset = 185;
-                draft.reference_members = crate::records::ReferenceRun::from_columns(
+                draft.reference_members = ReferenceRun::from_columns(
                     reference_members.to_vec(),
                     (0..11)
                         .map(|ordinal| u64::try_from(190 + ordinal * 11).expect("offset fits u64"))
@@ -1203,7 +1208,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         bytes.resize(frame_start + frame_length, 0);
         bytes[frame_start + matrix_prefix..frame_start + transform_offset]
             .copy_from_slice(&[1, 1, 0, 0]);
-        let mut solved_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+        let mut solved_transform = SketchPlacementMatrix::IDENTITY.rows();
         solved_transform[0][3] = 9.0;
         solved_transform[1][3] = 8.0;
         solved_transform[2][3] = 7.0;
@@ -1927,33 +1932,31 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
         0.0,
         [0.0; 3],
         vec![
-            crate::records::Located {
+            Located {
                 value: 90,
                 offset: 1,
             },
-            crate::records::Located {
+            Located {
                 value: 91,
                 offset: 2,
             },
         ],
-        Some(
-            crate::records::feature::DesignAssemblyAlignmentForm::Frames {
-                frames: [
-                    DesignAssemblyOperandFrame {
-                        reference_record_index: 70,
-                        reference_offset: 1,
-                        transform: transforms[0].try_into().unwrap(),
-                        transform_offset: 2,
-                    },
-                    DesignAssemblyOperandFrame {
-                        reference_record_index: 80,
-                        reference_offset: 3,
-                        transform: transforms[1].try_into().unwrap(),
-                        transform_offset: 4,
-                    },
-                ],
-            },
-        ),
+        Some(DesignAssemblyAlignmentForm::Frames {
+            frames: [
+                DesignAssemblyOperandFrame {
+                    reference_record_index: 70,
+                    reference_offset: 1,
+                    transform: transforms[0].try_into().unwrap(),
+                    transform_offset: 2,
+                },
+                DesignAssemblyOperandFrame {
+                    reference_record_index: 80,
+                    reference_offset: 3,
+                    transform: transforms[1].try_into().unwrap(),
+                    transform_offset: 4,
+                },
+            ],
+        }),
     )
     .unwrap()
 }
@@ -1961,21 +1964,19 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
 fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         &format!("f3d:Design/BulkStream.dat:component-insert#{record_index}"),
-        crate::records::feature::DesignFeatureKind::ComponentInsert,
+        DesignFeatureKind::ComponentInsert,
         record_index,
     );
-    if let crate::records::feature::DesignScopePayloadMut::ComponentInsert(slot) =
-        scope.payload_mut()
-    {
+    if let DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
         *slot = Some(DesignComponentInsertConstruction {
             relation_record_index: record_index + 1,
             carrier_record_index: record_index + 2,
             occurrence_identity: None,
             neutron_role: role.into(),
             neutron_role_offset: 0,
-            placement: Some(crate::records::feature::DesignComponentInsertMatrix {
-                scope: crate::records::Located {
-                    value: crate::records::SketchPlacementMatrix::IDENTITY,
+            placement: Some(DesignComponentInsertMatrix {
+                scope: Located {
+                    value: SketchPlacementMatrix::IDENTITY,
                     offset: 0,
                 },
                 carrier_offset: Some(0),

@@ -45,7 +45,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
@@ -275,7 +275,8 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         .try_edit(|draft| {
             draft.byte_offset = 0;
             draft.paired_byte_offset = 128;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![55, 66]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![55, 66]);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_references();
@@ -394,7 +395,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut extended_scope = scope.clone();
     extended_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![57]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![57]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -428,7 +429,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut direct_scope = scope.clone();
     direct_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![56]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![56]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -459,7 +460,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut extended_direct_scope = scope.clone();
     extended_direct_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![61]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![61]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -493,7 +494,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut large_direct_scope = scope.clone();
     large_direct_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![62]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![62]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -551,7 +552,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
                 .try_into()
                 .unwrap();
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![100, 101, 102, 103, 104]);
+                crate::records::identity::ReferenceRun::unlocated(vec![100, 101, 102, 103, 104]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -612,7 +613,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_scope = scope.clone();
     compact_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![58]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![58]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -642,7 +643,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_431_scope = scope.clone();
     compact_431_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![67]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![67]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -676,7 +677,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_364_scope = scope.clone();
     compact_364_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![65]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![65]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -710,7 +711,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_364_variant_scope = scope.clone();
     compact_364_variant_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![66]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![66]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -746,7 +747,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_450_scope = scope.clone();
     compact_450_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![59]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![59]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -779,7 +780,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut class_279_scope = scope.clone();
     class_279_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![69]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![69]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -806,7 +807,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_409_short_scope = scope.clone();
     compact_409_short_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![64]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![64]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -839,7 +840,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_409_scope = scope.clone();
     compact_409_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![63]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![63]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -877,7 +878,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
                 .try_into()
                 .unwrap();
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![60]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![60]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -934,7 +935,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
                 .try_into()
                 .unwrap();
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![67]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![67]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -976,7 +977,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
                 .try_into()
                 .unwrap();
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![72]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;

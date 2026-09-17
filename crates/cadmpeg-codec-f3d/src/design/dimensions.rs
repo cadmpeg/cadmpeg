@@ -8,11 +8,19 @@ use crate::ids::{
     native_stream, neutral_dimension_constraint_id, neutral_parameter_id,
     neutral_sketch_constraint_id, neutral_sketch_id, neutral_spatial_sketch_id,
 };
-use crate::records::{
+use crate::records::dimensions::{
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionRecipeRecord, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignSketchPlacement, SketchConstraintKind, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignDimensionRecipeRecord,
+};
+use crate::records::parameters::{
+    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+};
+use crate::records::sketch_relations::{
+    SketchConstraintKind, SketchRelation, SketchRelationOperand,
+};
+use crate::records::{
+    sketch_geometry::{SketchCurveIdentity, SketchPoint},
+    sketch_placement::DesignSketchPlacement,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -192,7 +200,7 @@ pub fn project_dimension_constraints(
 /// unrelated native arena.
 pub(crate) fn project_dimension_constraints_with_presentations(
     inputs: &DimensionConstraintInputs<'_>,
-    presentation_frames: &[crate::records::DesignDimensionPresentationFrame],
+    presentation_frames: &[crate::records::dimensions::DesignDimensionPresentationFrame],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
@@ -216,7 +224,7 @@ pub(crate) fn project_dimension_constraints_with_presentations(
 
 fn project_all_dimension_constraints(
     inputs: &DimensionConstraintInputs<'_>,
-    presentation_frames: &[crate::records::DesignDimensionPresentationFrame],
+    presentation_frames: &[crate::records::dimensions::DesignDimensionPresentationFrame],
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
@@ -1342,7 +1350,7 @@ fn project_all_dimension_constraints(
 /// assigning a nearby entity with the same source sketch.
 fn presentation_dimension_definition(
     scope: &str,
-    frame: &crate::records::DesignDimensionPresentationFrame,
+    frame: &crate::records::dimensions::DesignDimensionPresentationFrame,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
@@ -3121,7 +3129,7 @@ fn spatial_reflection_symmetry(
         return None;
     }
     if !operand_role(owner).is_some_and(|role| {
-        crate::records::constraint_kinds_from_state(u64::from(role))
+        crate::records::sketch_relations::constraint_kinds_from_state(u64::from(role))
             .0
             .contains(&SketchConstraintKind::Symmetry)
     }) {
@@ -4895,7 +4903,7 @@ pub(crate) fn counted_role_relation(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     counted_role_relation_at_tolerance(
         entities,
-        &crate::records::constraint_kinds_from_state(owner_role).0,
+        &crate::records::sketch_relations::constraint_kinds_from_state(owner_role).0,
         0.0,
     )
 }
@@ -5495,7 +5503,7 @@ pub(crate) struct CountedOffset {
 }
 
 pub(crate) fn exact_counted_offset(
-    loci: &[crate::records::DesignDimensionLocus],
+    loci: &[crate::records::dimensions::DesignDimensionLocus],
     entities: &HashMap<u32, &cadmpeg_ir::sketches::SketchEntity>,
     secondary_ids: &HashMap<u32, u64>,
     linear_tolerance: f64,

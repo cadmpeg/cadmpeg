@@ -625,7 +625,7 @@ fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
 fn scale_center_preserves_wire_and_rejects_partial_location() {
     for center in [
         None,
-        Some(crate::records::Located {
+        Some(crate::records::identity::Located {
             value: [1.25, -2.5, 3.75],
             offset: 40,
         }),
@@ -1820,14 +1820,19 @@ fn parameter_scope_layout_rejects_invalid_admission_and_preserves_failed_edits()
         |draft| draft.previous_history_state_id = Some(1),
         |draft| draft.previous_history_state_id_offset = Some(1),
         |draft| draft.reference_count_offset = draft.byte_offset,
-        |draft| draft.reference_members = crate::records::ReferenceRun::located(Vec::new()),
-        |draft| draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1]),
         |draft| {
-            draft.reference_members =
-                crate::records::ReferenceRun::located(vec![crate::records::Located {
+            draft.reference_members = crate::records::identity::ReferenceRun::located(Vec::new());
+        },
+        |draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![1]);
+        },
+        |draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::located(vec![
+                crate::records::identity::Located {
                     value: 1,
                     offset: 15,
-                }]);
+                },
+            ]);
         },
         |draft| draft.kind_offset += 1,
     ];

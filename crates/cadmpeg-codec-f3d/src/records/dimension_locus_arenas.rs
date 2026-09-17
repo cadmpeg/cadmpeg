@@ -1,4 +1,4 @@
-use super::{dimension_null_locus_wire, DesignDimensionLocusPair};
+use super::{dimension_null_locus_wire, dimensions::DesignDimensionLocusPair};
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 

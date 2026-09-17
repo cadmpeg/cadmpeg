@@ -12,7 +12,8 @@ use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Referenc
 use crate::container::ContainerScan;
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignComponentNamingSpace, DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION,
+    entity_header::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION},
+    recipes::DesignComponentNamingSpace,
 };
 
 const COMPONENT_MODULE: &str = "Component";
@@ -33,7 +34,7 @@ pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> b
         && design_type
             .base_type_guid
             .value()
-            .map(crate::records::DesignRelaxedGuidText::as_str)
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
 }
 
@@ -76,7 +77,7 @@ fn insert_component_naming_space(
     bulk_name: &str,
     marker: usize,
     component_record_index: u64,
-    context_uuid: crate::records::DesignRelaxedGuidText,
+    context_uuid: crate::records::mesh::DesignRelaxedGuidText,
     context_uuid_offset: usize,
 ) -> Result<(), CodecError> {
     let binding = DesignComponentNamingSpace {
@@ -116,7 +117,7 @@ pub fn decode_component_naming_spaces(
                     && design_type
                         .base_type_guid
                         .value()
-                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                        .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
@@ -150,7 +151,7 @@ pub fn decode_component_naming_spaces(
                     continue;
                 };
                 let Ok(context_uuid) =
-                    crate::records::DesignRelaxedGuidText::try_from(context_uuid)
+                    crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid)
                 else {
                     continue;
                 };
@@ -177,7 +178,7 @@ pub fn decode_component_naming_spaces(
                     && design_type
                         .base_type_guid
                         .value()
-                        .map(crate::records::DesignRelaxedGuidText::as_str)
+                        .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                         .is_some_and(|base| {
                             base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
                         })
@@ -195,7 +196,8 @@ pub fn decode_component_naming_spaces(
             let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
                 continue;
             };
-            let Ok(context_uuid) = crate::records::DesignRelaxedGuidText::try_from(context_uuid)
+            let Ok(context_uuid) =
+                crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid)
             else {
                 continue;
             };
@@ -244,7 +246,7 @@ pub(crate) fn metadata_for_bulk_stream(
 #[derive(Clone)]
 pub(crate) struct DesignPrimaryFrame<'a> {
     pub(crate) entity_id: u64,
-    pub(crate) class_tag: crate::records::DesignClassTag,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
     pub(crate) start: usize,
     pub(crate) end: usize,
     pub(crate) design_type: &'a SegmentType,
@@ -252,7 +254,7 @@ pub(crate) struct DesignPrimaryFrame<'a> {
 
 fn dynamic_type<'a>(
     meta: &'a crate::metastream::MetaStream,
-    class_tag: &crate::records::DesignClassTag,
+    class_tag: &crate::records::references::DesignClassTag,
 ) -> Option<(usize, &'a SegmentType)> {
     let ordinal = class_tag.as_str().parse::<usize>().ok()?.checked_sub(256)?;
     Some((ordinal, meta.types.get(ordinal)?))
@@ -263,7 +265,7 @@ fn record_header_class_tag(
     at: usize,
     end: usize,
     expected_entity_id: u64,
-) -> Option<crate::records::DesignClassTag> {
+) -> Option<crate::records::references::DesignClassTag> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 3..=3, u8::is_ascii_digit)?;
     let indexed_matches = after_tag
         .checked_add(4)
@@ -278,7 +280,7 @@ fn record_header_class_tag(
     if !indexed_matches && !named_matches {
         return None;
     }
-    crate::records::DesignClassTag::try_from(class_tag).ok()
+    crate::records::references::DesignClassTag::try_from(class_tag).ok()
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -509,7 +511,7 @@ fn parse_feature_timeline_record(
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
         let target = local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
-        items.push(crate::records::Located {
+        items.push(crate::records::identity::Located {
             value: target,
             offset: target_offset as u64,
         });
@@ -520,7 +522,7 @@ fn parse_feature_timeline_record(
 
     DesignFeatureTimeline::try_new(
         ids::native_design_feature_timeline_id(stream, start),
-        crate::records::DesignTimelineFrame::new(
+        crate::records::entity_header::DesignTimelineFrame::new(
             start as u64,
             end.checked_sub(start)? as u64,
             context_reference_offset as u64,
@@ -528,7 +530,7 @@ fn parse_feature_timeline_record(
             items,
         )
         .ok()?,
-        crate::records::DesignClassTag::try_from(class_tag).ok()?,
+        crate::records::references::DesignClassTag::try_from(class_tag).ok()?,
         std::num::NonZeroU64::new(expected_entity_id)?,
         source_ordinal,
         context_record_index,

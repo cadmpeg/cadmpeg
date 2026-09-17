@@ -8,12 +8,13 @@ use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
 use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;
 use crate::layout::assembly_as_built_421_frame_448 as as_built_421_frame_448;
 use crate::layout::assembly_as_built_421_scope as as_built_421;
+use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::{
     DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands, DesignAssemblyLegacySelection,
     DesignAssemblyLimits, DesignAssemblyLimitsWire, DesignAssemblySolvedFrame,
     DesignParameterScope, DesignWorkPointRule,
 };
-use crate::records::{ConstructionRecipe, DesignParameterOwner, DesignRecordHeader};
+use crate::records::{parameters::DesignParameterOwner, recipes::ConstructionRecipe};
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
@@ -26,7 +27,7 @@ use super::sketch::IndexedRecordOffsets;
 pub(crate) struct LegacyAsBuilt421Alignment {
     pub(crate) angle: f64,
     pub(crate) offset: [f64; 3],
-    pub(crate) owners: Vec<crate::records::Located<u32>>,
+    pub(crate) owners: Vec<crate::records::identity::Located<u32>>,
     pub(crate) limits: DesignAssemblyLimits,
 }
 
@@ -133,7 +134,7 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         ],
         owners: [angle, offset_x, offset_y, offset_z]
             .into_iter()
-            .map(|owner| crate::records::Located {
+            .map(|owner| crate::records::identity::Located {
                 value: owner.record_index(),
                 offset: owner.evaluated_value_offset(),
             })

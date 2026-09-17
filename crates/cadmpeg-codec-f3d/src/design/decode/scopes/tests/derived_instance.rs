@@ -43,7 +43,8 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
         425 + scope_279::TRANSFORM as u64
     );
 
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
     assert!(exact_derived_instance_construction(
         &bytes,
         &records,
@@ -52,7 +53,8 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     )
     .is_none());
 
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     bytes[425 + scope_279::TRANSFORM + 6] = 0;
     let records = IndexedRecordOffsets::build(&bytes);
     assert!(exact_derived_instance_construction(
@@ -122,22 +124,25 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.class_tag = crate::records::DesignClassTag::try_from("279".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("279".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = scope_279::LEN as u64;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![383]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![383]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
 
     let occurrence = DesignComponentOccurrence::try_new(
         crate::records::feature::DesignComponentOccurrenceDraft {
             id: "f3d:Design/BulkStream.dat:design-component-occurrence#0".into(),
-            class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("380".to_owned())
+                .unwrap(),
             record_index: 382,
             byte_offset: 0,
             component_record_index: 305,

@@ -55,7 +55,7 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let expected = update_f3d_native(&mut edited, |native| {
         let curve = &mut native.sketch_curve_identities[0];
-        let Some(crate::records::SketchCurveGeometry::Arc {
+        let Some(crate::records::sketch_geometry::SketchCurveGeometry::Arc {
             center,
             radius,
             start_angle,
@@ -93,7 +93,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
-        relation.definition = crate::records::SketchRelationDefinition::new(
+        relation.definition = crate::records::sketch_relations::SketchRelationDefinition::new(
             0x40,
             relation.definition.pattern().cloned(),
         )
@@ -104,10 +104,12 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
                     .members
                     .iter()
                     .zip(draft.members.iter().rev())
-                    .map(|(position, value)| crate::records::SketchRelationMember {
-                        reference: value.reference.clone(),
-                        offset: position.offset,
-                        relation_ordinal: position.relation_ordinal,
+                    .map(|(position, value)| {
+                        crate::records::sketch_relations::SketchRelationMember {
+                            reference: value.reference.clone(),
+                            offset: position.offset,
+                            relation_ordinal: position.relation_ordinal,
+                        }
                     })
                     .collect::<Vec<_>>()
                     .try_into()
@@ -127,12 +129,12 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
                     .return_members
                     .iter()
                     .zip(draft.return_members.iter().rev())
-                    .map(
-                        |(position, value)| crate::records::SketchRelationReturnMember {
+                    .map(|(position, value)| {
+                        crate::records::sketch_relations::SketchRelationReturnMember {
                             reference: value.reference.clone(),
                             offset: position.offset,
-                        },
-                    )
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .try_into()
                     .expect("uniform member resolution")
@@ -157,7 +159,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     assert_eq!(relation.definition.state(), 0x40);
     assert_eq!(
         relation.constraint_kinds(),
-        [crate::records::SketchConstraintKind::Horizontal]
+        [crate::records::sketch_relations::SketchConstraintKind::Horizontal]
     );
     assert_eq!(relation.unknown_constraint_bits(), 0);
     assert_eq!(relation.members(), &expected_references.0);
@@ -175,7 +177,7 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let expected = update_f3d_native(&mut edited, |native| {
         let curve = &mut native.sketch_curve_identities[1];
-        let Some(crate::records::SketchCurveGeometry::Nurbs {
+        let Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
             fit_tolerance,
             poles,
             ..

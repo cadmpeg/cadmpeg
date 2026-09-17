@@ -100,7 +100,8 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
 #[test]
 fn retains_later_equivalent_scope_envelope_without_history_binding() {
     let mut older = scope(42, 100, 7, 6);
-    older.class_tag = crate::records::DesignClassTag::try_from("392".to_owned()).unwrap();
+    older.class_tag =
+        crate::records::references::DesignClassTag::try_from("392".to_owned()).unwrap();
     older
         .try_edit(|draft| {
             draft.frame_length = 260;
@@ -111,7 +112,7 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     older.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     older
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::from_columns(
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 vec![101, 102, 103],
                 vec![110, 120, 130],
                 "reference_members",
@@ -124,7 +125,8 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    older.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+    older.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
     let mut newer = older.clone();
     newer.id = "f3d:stream:design-parameter-scope#200".into();
     newer
@@ -138,12 +140,13 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    newer.class_tag = crate::records::DesignClassTag::try_from("404".to_owned()).unwrap();
+    newer.class_tag =
+        crate::records::references::DesignClassTag::try_from("404".to_owned()).unwrap();
     newer
         .try_edit(|draft| {
             draft.frame_length = 340;
             draft.history_state_id = Some(9);
-            draft.reference_members = crate::records::ReferenceRun::from_columns(
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 draft.reference_members.values().copied().collect(),
                 vec![210, 220, 230],
                 "reference_members",
@@ -155,7 +158,8 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    newer.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+    newer.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
 
     let mut scopes = vec![older, newer];
     admit_history_bound_scope_variants(&mut scopes, &[]).expect("equivalent envelope");

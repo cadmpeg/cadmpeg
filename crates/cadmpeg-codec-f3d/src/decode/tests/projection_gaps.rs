@@ -6,11 +6,16 @@ use super::super::{
     unresolved_dimension_companion_count, DesignProjectionGaps,
 };
 use crate::native::F3dNative;
-use crate::records::feature::DesignParameterScope;
 use crate::records::{
-    DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
-    DesignFeatureTimeline, DesignParameterCompanion, DesignParameterOwner, DesignSketchPlacement,
-    LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
+    bodies::DesignBodyBinding,
+    dimensions::{DesignDimensionLocusPair, DesignDimensionRecipeRecord},
+    entity_header::DesignFeatureTimeline,
+    feature::DesignParameterScope,
+    parameters::{DesignParameterCompanion, DesignParameterOwner},
+    references::LostEdgeReference,
+    sketch_geometry::{SketchCurveIdentity, SketchPoint},
+    sketch_placement::DesignSketchPlacement,
+    sketch_relations::SketchRelation,
 };
 
 #[test]
@@ -18,7 +23,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     native.design_body_bindings.push(
-        DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
             id: "f3d:design:body-binding#0".into(),
             stream: "Design/BulkStream.dat".into(),
             pair_count: 1,
@@ -247,38 +252,40 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
     let mut native = F3dNative::default();
     native.design_sketch_placements.push(DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
 
         id: "native:sketch-placement".into(),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_1".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index: 10,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned())
+            .unwrap(),
     });
     native.sketch_points.push(
-        SketchPoint::try_from(crate::records::SketchPointDraft {
+        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
             id: "native:sketch-point".into(),
             record_index: 11,
             owner_reference: Some(1),
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                .unwrap(),
             byte_offset: 0,
             coordinate_offset: 0,
-            companion: crate::records::SketchPointCompanion {
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
             },
-            record_form: crate::records::SketchPointRecordForm::version11(
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
                 1,
-                crate::records::SketchPointClosure::Selector0State0,
+                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
                 None,
                 0.0,
             ),
@@ -291,7 +298,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         id: "native:sketch-curve".into(),
         record_index: 12,
         owner_reference: Some(1),
-        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -311,19 +318,20 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .expect("valid lost-edge record layout"),
     );
     native.sketch_relations.push(
-        SketchRelation::try_new(crate::records::SketchRelationDraft {
+        SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
             id: "native:sketch-relation".into(),
             record_index: 1,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                .unwrap(),
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_1").unwrap()),
-            auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+            auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: (Vec::new()).try_into().expect("uniform member resolution"),
             owner_reference_offset: 0,
-            definition: crate::records::SketchRelationDefinition::new(0, None)
+            definition: crate::records::sketch_relations::SketchRelationDefinition::new(0, None)
                 .expect("valid relation definition"),
             entity_genesis: None,
             return_members: (Vec::new()).try_into().expect("uniform member resolution"),
@@ -332,34 +340,37 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         .unwrap(),
     );
     native.design_parameters.push(
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: "f3d:test:design-parameter#2".into(),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index: 2,
-            source_ordinal: 2,
-            source: crate::records::DesignParameterSource::new(
-                "Linear Dimension-2".into(),
-                Some(3),
-                Some(crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
-                    offset: 22,
-                }),
-            )
-            .unwrap(),
-            expression: "1 mm".into(),
-            expression_offset: 40,
-            source_kind_offset: 60,
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: "f3d:test:design-parameter#2".into(),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                record_index: 2,
+                source_ordinal: 2,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    "Linear Dimension-2".into(),
+                    Some(3),
+                    Some(crate::records::identity::Located {
+                        value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                        offset: 22,
+                    }),
+                )
+                .unwrap(),
+                expression: "1 mm".into(),
+                expression_offset: 40,
+                source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
-                value: "native-unit".into(),
-                offset: 70,
-            }),
-            name: "d2".into(),
-            name_offset: 80,
-            evaluated_value: 0.1,
-            evaluated_value_offset: 90,
-        })
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: "native-unit".into(),
+                    offset: 70,
+                }),
+                name: "d2".into(),
+                name_offset: 80,
+                evaluated_value: 0.1,
+                evaluated_value_offset: 90,
+            },
+        )
         .unwrap(),
     );
     native.design_parameter_scopes.push(
@@ -367,7 +378,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             crate::records::feature::DesignParameterScopeDraft {
                 id: "native:unprojected-scope".into(),
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
                 record_index: 3,
                 frame_length: 200,
                 kind_offset: 0,
@@ -377,7 +389,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 previous_history_state_id: None,
                 previous_history_state_id_offset: None,
                 reference_count_offset: 9,
-                reference_members: crate::records::ReferenceRun::from_columns(
+                reference_members: crate::records::identity::ReferenceRun::from_columns(
                     vec![1],
                     vec![0],
                     "reference_members",
@@ -390,8 +402,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "001".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: 1,
             }
             .with_fixture_layout(),
@@ -550,7 +564,8 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
             crate::records::feature::DesignParameterScopeDraft {
                 id: format!("f3d:native:scope#{record_index}"),
                 byte_offset: u64::from(record_index),
-                class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
                 record_index,
                 frame_length: 200,
                 kind_offset: 0,
@@ -560,7 +575,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                 previous_history_state_id: previous,
                 previous_history_state_id_offset: None,
                 reference_count_offset: (u64::from(record_index)) + 9,
-                reference_members: crate::records::ReferenceRun::from_columns(
+                reference_members: crate::records::identity::ReferenceRun::from_columns(
                     vec![1],
                     vec![0],
                     "reference_members",
@@ -573,8 +588,10 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "001".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: u64::from(record_index) + 1,
             }
             .with_fixture_layout(),
@@ -661,20 +678,20 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     let scopes = vec![successor, internal, predecessor];
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        crate::records::DesignTimelineFrame::test_items(
+        crate::records::entity_header::DesignTimelineFrame::test_items(
             0,
             vec![
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 100,
                     offset: 0,
                 },
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 200,
                     offset: 0,
                 },
             ],
         ),
-        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         std::num::NonZeroU64::new(1).unwrap(),
         0,
         std::num::NonZeroU64::new(2).unwrap(),
@@ -722,42 +739,46 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = F3dNative::default();
     native.design_parameters.push(
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: format!("{stream}:design-parameter#28"),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-            record_index: 28,
-            source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(
-                "Linear Dimension-2".into(),
-                Some(29),
-                Some(crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
-                    offset: 22,
-                }),
-            )
-            .unwrap(),
-            expression: "5 mm".into(),
-            expression_offset: 40,
-            source_kind_offset: 60,
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: format!("{stream}:design-parameter#28"),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
+                record_index: 28,
+                source_ordinal: 0,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    "Linear Dimension-2".into(),
+                    Some(29),
+                    Some(crate::records::identity::Located {
+                        value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                        offset: 22,
+                    }),
+                )
+                .unwrap(),
+                expression: "5 mm".into(),
+                expression_offset: 40,
+                source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
-                value: "mm".into(),
-                offset: 90,
-            }),
-            name: "d1".into(),
-            name_offset: 100,
-            evaluated_value: 0.5,
-            evaluated_value_offset: 110,
-        })
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: "mm".into(),
+                    offset: 90,
+                }),
+                name: "d1".into(),
+                name_offset: 100,
+                evaluated_value: 0.5,
+                evaluated_value_offset: 110,
+            },
+        )
         .unwrap(),
     );
     native.design_parameter_owners.push(
-        DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+        DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
             id: format!("{stream}:design-parameter-owner#29"),
             byte_offset: 120,
             frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
             record_index: 29,
             scope_record_index: 1,
             local_ordinal: 0,
@@ -774,13 +795,13 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         DesignParameterCompanion::unbound(
             format!("{stream}:design-parameter-companion#30"),
             220,
-            crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
+            crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
             30,
             29,
             std::num::NonZeroU64::new(1).unwrap(),
             262,
         )
-        .bound(crate::records::DesignCompanionPayload::new(
+        .bound(crate::records::parameters::DesignCompanionPayload::new(
             278,
             100,
             Vec::new(),
@@ -811,9 +832,10 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             companion_record_index: 30,
             recipe_ordinal: 0,
             recipe_id: format!("{stream}:construction-recipe#31"),
-            recipe_kind: crate::records::ConstructionRecipeKind::Edge,
+            recipe_kind: crate::records::recipes::ConstructionRecipeKind::Edge,
             byte_offset: 278,
-            class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned())
+                .unwrap(),
             record_index: 31,
             frame_length: 100,
             prefix_offset: 300,
@@ -825,42 +847,44 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         });
     assert_eq!(unresolved_dimension_companion_count(&recipe_backed, &ir), 0);
 
-    native.design_dimension_locus_pairs =
-        vec![
-            DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
-                id: format!("{stream}:design-dimension-locus-pair#278"),
-                companion_record_index: 99,
-                governing_companion_record_index: 30,
-                byte_offset: 278,
-                class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
-                record_index: 31,
-                frame_length: 100,
-                opaque_index: Some(crate::records::Located {
-                    value: 0,
-                    offset: 313,
-                }),
-                loci: [
-                    crate::records::DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(40),
-                        geometry_reference_offset: 318,
-                        role: 1,
-                        role_offset: 328,
-                    },
-                    crate::records::DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(41),
-                        geometry_reference_offset: 333,
-                        role: 2,
-                        role_offset: 343,
-                    },
-                ],
-                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
-                    .unwrap(),
-                paired_byte_offset: 378,
-            })
+    native.design_dimension_locus_pairs = vec![DesignDimensionLocusPair::try_new(
+        crate::records::dimensions::DesignDimensionLocusPairDraft {
+            id: format!("{stream}:design-dimension-locus-pair#278"),
+            companion_record_index: 99,
+            governing_companion_record_index: 30,
+            byte_offset: 278,
+            class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned())
+                .unwrap(),
+            record_index: 31,
+            frame_length: 100,
+            opaque_index: Some(crate::records::identity::Located {
+                value: 0,
+                offset: 313,
+            }),
+            loci: [
+                crate::records::dimensions::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(40),
+                    geometry_reference_offset: 318,
+                    role: 1,
+                    role_offset: 328,
+                },
+                crate::records::dimensions::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(41),
+                    geometry_reference_offset: 333,
+                    role: 2,
+                    role_offset: 343,
+                },
+            ],
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
             .unwrap(),
-        ]
-        .try_into()
-        .expect("pair arena");
+            paired_byte_offset: 378,
+        },
+    )
+    .unwrap()]
+    .try_into()
+    .expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
     assert!(container_only_dimension_parameters(&native).is_empty());
     let mut pairs = native.design_dimension_locus_pairs.to_vec();
@@ -871,39 +895,41 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     assert_eq!(container_only_dimension_parameters(&native).len(), 1);
 
     native.design_dimension_locus_pairs = Default::default();
-    native.design_dimension_null_locus_pairs =
-        vec![
-            DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
-                id: format!("{stream}:design-dimension-null-locus-pair#278"),
-                companion_record_index: 99,
-                governing_companion_record_index: 30,
-                byte_offset: 278,
-                class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
-                record_index: 31,
-                frame_length: 100,
-                opaque_index: None,
-                loci: [
-                    crate::records::DesignDimensionAnnotationOperand {
-                        geometry_record_index: None,
-                        geometry_reference_offset: 303,
-                        role: 14,
-                        role_offset: 313,
-                    },
-                    crate::records::DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(40),
-                        geometry_reference_offset: 318,
-                        role: 3,
-                        role_offset: 328,
-                    },
-                ],
-                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
-                    .unwrap(),
-                paired_byte_offset: 378,
-            })
+    native.design_dimension_null_locus_pairs = vec![DesignDimensionLocusPair::try_new(
+        crate::records::dimensions::DesignDimensionLocusPairDraft {
+            id: format!("{stream}:design-dimension-null-locus-pair#278"),
+            companion_record_index: 99,
+            governing_companion_record_index: 30,
+            byte_offset: 278,
+            class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned())
+                .unwrap(),
+            record_index: 31,
+            frame_length: 100,
+            opaque_index: None,
+            loci: [
+                crate::records::dimensions::DesignDimensionAnnotationOperand {
+                    geometry_record_index: None,
+                    geometry_reference_offset: 303,
+                    role: 14,
+                    role_offset: 313,
+                },
+                crate::records::dimensions::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(40),
+                    geometry_reference_offset: 318,
+                    role: 3,
+                    role_offset: 328,
+                },
+            ],
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
             .unwrap(),
-        ]
-        .try_into()
-        .expect("pair arena");
+            paired_byte_offset: 378,
+        },
+    )
+    .unwrap()]
+    .try_into()
+    .expect("pair arena");
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);
     let mut pairs = native.design_dimension_null_locus_pairs.to_vec();
     pairs[0].companion_record_index = 30;

@@ -366,8 +366,10 @@ fn reads_class_328_form_envelope() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![group_record, metadata_record]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                group_record,
+                metadata_record,
+            ]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -538,14 +540,15 @@ fn rejects_legacy_form_owner_with_wrong_nested_class() {
 
 #[test]
 fn retains_parameter_when_owner_frame_has_no_scope_binding() {
-    let parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
             record_index: 7,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "AlongDistance".into(),
                 Some(8),
                 None,
@@ -555,7 +558,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
             expression_offset: 40,
             source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "mm".into(),
                 offset: 70,
             }),
@@ -563,8 +566,9 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
             name_offset: 80,
             evaluated_value: 1.25,
             evaluated_value_offset: 90,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#9",
         crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())

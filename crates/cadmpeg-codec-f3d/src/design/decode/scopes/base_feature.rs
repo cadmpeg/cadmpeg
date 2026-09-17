@@ -6,7 +6,7 @@ use crate::records::feature::{
     DesignBaseFeatureBodyReferenceForm, DesignBaseFeatureConstruction, DesignBaseFeatureEntry,
     DesignLegacyBaseFeatureBody, DesignParameterScope,
 };
-use crate::records::Located;
+use crate::records::identity::Located;
 use cadmpeg_core::decode::View;
 
 use super::marked_record_reference;
@@ -235,7 +235,8 @@ fn exact_base_feature_legacy_compact(
         start + class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT,
         guid_code_units..=guid_code_units,
     )?;
-    let envelope_guid = crate::records::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    let envelope_guid =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
     if guid_end != start + class_452_compact::ZERO_RUN_AFTER_GUID
         || bytes.get(
             start + class_452_compact::ZERO_RUN_AFTER_GUID
@@ -406,7 +407,8 @@ fn exact_base_feature_legacy_expanded(
         start + class_452_expanded::ENVELOPE_GUID_CODE_UNIT_COUNT,
         guid_code_units..=guid_code_units,
     )?;
-    let envelope_guid = crate::records::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    let envelope_guid =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
     if guid_end != start + class_452_expanded::ZERO_RUN_AFTER_GUID
         || bytes.get(
             start + class_452_expanded::ZERO_RUN_AFTER_GUID
@@ -613,7 +615,8 @@ fn exact_base_feature_direct_body_based_on_faces(
         Some(id) => u32::try_from(id).ok() == Some(previous_history_state_id),
         None => previous_history_state_id == u32::MAX,
     };
-    let envelope_guid = crate::records::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    let envelope_guid =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
     if guid_end != start + class_377::ZERO_RUN_3
         || bytes.get(start + class_377::ZERO_RUN_3..start + class_377::REFERENCE_COUNT)? != [0; 3]
         || View::u32_le_at(bytes, start + class_377::REFERENCE_COUNT)?
@@ -643,7 +646,7 @@ fn exact_base_feature_direct_body_based_on_faces(
         return None;
     }
     Some(DesignBaseFeatureConstruction::BodyBasedOnFaces {
-        body: crate::records::Located {
+        body: crate::records::identity::Located {
             value: body_entity_suffix,
             offset: scope.byte_offset() + u64::try_from(class_377::BODY_ENTITY_SUFFIX).ok()?,
         },

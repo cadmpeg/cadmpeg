@@ -11,9 +11,11 @@ use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
 use crate::layout::design_decal_scope_prefix as decal_scope;
-use crate::records::feature::DesignParameterScope;
-use crate::records::topology::{DesignBodyRecipeOperand, DesignConstructionOperandGroup};
-use crate::records::{DesignDecalAsset, DesignDecalImage};
+use crate::records::{
+    decal::{DesignDecalAsset, DesignDecalImage},
+    feature::DesignParameterScope,
+    topology::{DesignBodyRecipeOperand, DesignConstructionOperandGroup},
+};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
@@ -63,7 +65,7 @@ pub fn project_decal_images(
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
     for image in images {
-        if image.mapping_mode != crate::records::DesignDecalMappingMode::FitToFaces {
+        if image.mapping_mode != crate::records::decal::DesignDecalMappingMode::FitToFaces {
             continue;
         }
         let native_stream = ids::native_stream(&image.id);
@@ -185,11 +187,11 @@ fn parse_decal_image_frame(
     }
     DesignDecalImage::new(
         ids::native_design_decal_image_id(stream, scope_at),
-        crate::records::Located {
+        crate::records::identity::Located {
             value: scope_record_index,
             offset: u64::try_from(scope_at).ok()?,
         },
-        crate::records::DesignDecalMappingMode::from_code(mapping_mode),
+        crate::records::decal::DesignDecalMappingMode::from_code(mapping_mode),
         target_group_record_index,
         asset_record?,
     )
@@ -256,7 +258,7 @@ fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::parse_decal_image_frame;
-    use crate::records::DesignDecalMappingMode;
+    use crate::records::decal::DesignDecalMappingMode;
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -304,10 +306,13 @@ mod tests {
         assert_eq!(image.asset.name(), "mark.png");
         assert_eq!(
             image.mapping_mode,
-            crate::records::DesignDecalMappingMode::FitToFaces
+            crate::records::decal::DesignDecalMappingMode::FitToFaces
         );
         assert_eq!(image.target_group_record_index, 24);
-        assert_eq!(crate::records::DesignDecalAsset::primary_frame_length(), 30);
+        assert_eq!(
+            crate::records::decal::DesignDecalAsset::primary_frame_length(),
+            30
+        );
         assert_eq!(image.asset.name_frame_length(), 41);
     }
 

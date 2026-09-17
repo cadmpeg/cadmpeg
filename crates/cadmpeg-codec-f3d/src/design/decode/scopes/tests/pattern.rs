@@ -6,8 +6,7 @@
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::assembly::assembly_operand_frame_fixture;
-use super::prelude::*;
+use super::{assembly::assembly_operand_frame_fixture, prelude::*};
 
 #[test]
 fn circular_pattern_axis_prefers_one_inline_carrier() {
@@ -217,7 +216,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("291".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("291".to_owned())
+                .unwrap(),
             record_index: scope_record_index,
             frame_length: 329,
             kind_offset: 0,
@@ -228,7 +228,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             previous_history_state_id: Some(1),
             previous_history_state_id_offset: None,
             reference_count_offset: 9,
-            reference_members: crate::records::ReferenceRun::from_columns(
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
                 vec![
                     count_record_index,
                     angle_record_index,
@@ -243,7 +243,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 329,
         }
         .with_fixture_layout(),
@@ -305,21 +308,24 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     bytes[count_start + 4] = b'x';
     bytes[angle_start + 4] = b'x';
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
-            byte_offset: (evaluated_value_offset) - 40,
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("457".to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value,
-            evaluated_value_offset,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: Some(0),
-            companion_record_index: record_index + 2,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
+                byte_offset: (evaluated_value_offset) - 40,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("457".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index,
+                local_ordinal,
+                evaluated_value,
+                evaluated_value_offset,
+                parameter_record_index: record_index + 1,
+                owned_ordinal: local_ordinal,
+                variant: Some(0),
+                companion_record_index: record_index + 2,
+            },
+        )
         .unwrap()
     };
     let owners = [
@@ -376,7 +382,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.reference_members = {
                 let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
                 values.extend([axis_record_index, selection_record_index]);
-                crate::records::ReferenceRun::unlocated(values)
+                crate::records::identity::ReferenceRun::unlocated(values)
             };
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
@@ -432,7 +438,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     append_header(&mut bytes, 140);
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 100, 50, 51, 52, 53, 110, 120, 130, 140,
             ]);
             draft.layout_fixture_references();
@@ -466,10 +472,12 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     let mut invalid_inactive_spacing = rectangular_owners.clone();
     {
-        let mut wire =
-            crate::records::DesignParameterOwnerWire::from(invalid_inactive_spacing[3].clone());
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(
+            invalid_inactive_spacing[3].clone(),
+        );
         wire.evaluated_value = 1.0;
-        invalid_inactive_spacing[3] = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        invalid_inactive_spacing[3] =
+            crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     assert_eq!(
         exact_rectangular_pattern_construction(
@@ -482,9 +490,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     let mut duplicate_lane = rectangular_owners.clone();
     {
-        let mut wire = crate::records::DesignParameterOwnerWire::from(duplicate_lane[3].clone());
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(duplicate_lane[3].clone());
         wire.local_ordinal = 2;
-        duplicate_lane[3] = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        duplicate_lane[3] =
+            crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     assert_eq!(
         exact_rectangular_pattern_construction(
@@ -513,7 +523,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
                 .try_into()
                 .unwrap();
             draft.frame_length = 627;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -555,8 +566,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     ]);
     scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53, 60, 61, 62, 63]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                50, 51, 52, 53, 60, 61, 62, 63,
+            ]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -625,7 +637,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53, 64, 65]);
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 51, 52, 53, 64, 65]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -660,7 +672,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     legacy_alignment_owners.extend([owner(64, 8, 0.5, 605), owner(65, 9, 2.0, 606)]);
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 50, 51, 52, 53, 60, 61, 62, 63, 64, 65,
             ]);
             draft.layout_fixture_references();
@@ -710,7 +722,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 51, 52, 53]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -726,7 +739,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
     let frames = exact_assembly_alignment(
         &assembly_bytes,
         &IndexedRecordOffsets::build(&assembly_bytes),
@@ -768,7 +782,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         crate::records::feature::DesignParameterScopeDraft {
             frame_length: 633,
             paired_byte_offset: 633,
-            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
             ..scope.clone().into_draft()
         }
         .with_fixture_layout(),
@@ -789,7 +806,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     dynamic_standard_bytes[641..644].copy_from_slice(b"262");
     let dynamic_standard_scope = DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
-            paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "262".to_owned(),
+            )
+            .unwrap(),
             ..scope.clone().into_draft()
         }
         .with_fixture_layout(),
@@ -807,7 +827,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     dynamic_compact_bytes[637..640].copy_from_slice(b"262");
     let dynamic_compact_scope = DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
-            paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "262".to_owned(),
+            )
+            .unwrap(),
             ..legacy_assembly_scope.clone().into_draft()
         }
         .with_fixture_layout(),
@@ -839,8 +862,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         crate::records::feature::DesignParameterScopeDraft {
             frame_length: 772,
             paired_byte_offset: 772,
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-            reference_members: crate::records::ReferenceRun::unlocated(vec![
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
                 50, 51, 52, 53, 60, 61, 62, 63, 64, 65,
             ]),
             ..scope.clone().into_draft()
@@ -871,8 +897,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         crate::records::feature::DesignParameterScopeDraft {
             frame_length: 705,
             paired_byte_offset: 705,
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-            reference_members: crate::records::ReferenceRun::unlocated(vec![
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
                 50, 51, 52, 53, 64, 65,
             ]),
             ..scope.clone().into_draft()
@@ -918,7 +947,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     first_joint_origin
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![draft.record_index]);
+                crate::records::identity::ReferenceRun::unlocated(vec![draft.record_index]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -963,17 +992,17 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_bytes[175..179].copy_from_slice(&1_u32.to_le_bytes());
     let mut single_frame_assembly = scope.clone();
     single_frame_assembly.class_tag =
-        crate::records::DesignClassTag::try_from("276".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("276".to_owned()).unwrap();
     single_frame_assembly.paired_class_tag =
-        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     single_frame_assembly
         .try_edit(|draft| {
             draft.frame_length = 604;
             draft.paired_byte_offset = 604;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(
                 placement_and_alignment_owners
                     .iter()
-                    .map(crate::records::DesignParameterOwner::record_index)
+                    .map(crate::records::parameters::DesignParameterOwner::record_index)
                     .collect(),
             );
             draft.layout_fixture_references();
@@ -998,7 +1027,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_joint_origin
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![draft.record_index]);
+                crate::records::identity::ReferenceRun::unlocated(vec![draft.record_index]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -1062,7 +1091,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     compact_bytes.extend_from_slice(b"264");
     compact_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
     let mut compact_scope = scope.clone();
-    compact_scope.class_tag = crate::records::DesignClassTag::try_from("459".to_owned()).unwrap();
+    compact_scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("459".to_owned()).unwrap();
     compact_scope
         .try_edit(|draft| {
             draft.frame_length = 627;
@@ -1071,7 +1101,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         })
         .unwrap();
     compact_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &compact_bytes,
         &IndexedRecordOffsets::build(&compact_bytes),

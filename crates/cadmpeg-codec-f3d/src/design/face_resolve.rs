@@ -5,14 +5,16 @@ use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::{self, native_stream, neutral_feature_id};
-use crate::records::feature::{DesignExtrudeExtent, DesignExtrudePrologue, DesignParameterScope};
-use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeOperand,
     DesignExtrudeFaceRole, DesignFaceOperand,
 };
 use crate::records::{
-    DesignParameter, DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+    feature::{DesignExtrudeExtent, DesignExtrudePrologue, DesignParameterScope},
+    parameters::DesignParameter,
+    sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
+    sketch_placement::DesignSketchPlacement,
+    topology::DesignOperandRole,
 };
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -135,7 +137,8 @@ pub(crate) fn resolved_direct_face_selection(
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index().is_none()
                 && operand.group_member_ordinal().is_none()
-                && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+                && operand.recipe_kind
+                    == crate::records::recipes::ConstructionRecipeKind::BoundedFace
                 && usize::try_from(operand.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
@@ -482,8 +485,7 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
 ) -> bool {
-    use crate::records::topology::DesignExtrudeOperandRole;
-    use crate::records::ConstructionRecipeKind;
+    use crate::records::{recipes::ConstructionRecipeKind, topology::DesignExtrudeOperandRole};
 
     let Some(stream) = native_stream(&root.id) else {
         return false;
@@ -507,7 +509,7 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
                 if children.next().is_some() {
                     return false;
                 }
-                let [crate::records::Located {
+                let [crate::records::identity::Located {
                     value: operand_record_index,
                     ..
                 }] = child.members()
@@ -586,7 +588,7 @@ fn resolved_extrude_profile_active_faces(
     let mut faces = Vec::new();
     for index in indices {
         let operand = operands.get(*index)?;
-        if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+        if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
             || operand.candidate_faces.is_empty()
             || !operand.unreferenced_candidate_faces.is_empty()
             || !operand.alternate_selector_candidate_faces.is_empty()
@@ -990,7 +992,8 @@ fn split_face_updated_target_slots(
                 && operand.group_record_index() == Some(group.record_index)
                 && operand.group_member_ordinal() == Some(ordinal)
                 && operand.record_index() == *record_index
-                && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+                && operand.recipe_kind
+                    == crate::records::recipes::ConstructionRecipeKind::BoundedFace
         });
         let operand = matches.next()?;
         if matches.next().is_some() || operand.preceding_candidate_faces.is_empty() {
@@ -1082,7 +1085,7 @@ fn split_face_complete_candidate_slots(operand: &DesignFaceOperand) -> Option<Ve
 }
 
 fn is_split_face_context_member(operand: &DesignFaceOperand) -> bool {
-    operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+    operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
         && crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
             .is_some_and(|kind| {
                 matches!(
@@ -1144,7 +1147,7 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
     if !operand.alternate_selector_candidate_faces.is_empty() {
         return Some(candidates.to_vec());
     }
-    if operand.recipe_kind == crate::records::ConstructionRecipeKind::Face {
+    if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face {
         let mut referenced = Vec::new();
         for reference in &operand.recipe_references {
             for face in &reference.candidate_faces {
@@ -1169,7 +1172,7 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
 fn explicit_bounded_face_candidates(
     operand: &DesignFaceOperand,
 ) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
-    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+    if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
         || !operand.resolved_face_slots.is_empty()
         || !operand.alternate_selector_candidate_faces.is_empty()
         || !operand.historical_support_contexts.is_empty()
@@ -1217,7 +1220,7 @@ fn explicit_bounded_face_candidates(
 }
 
 fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
-    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace {
+    if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
         return None;
     }
     let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
@@ -1254,7 +1257,7 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
     operand: &DesignFaceOperand,
     recipe_record_index: i32,
 ) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
-    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+    if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
         || !matches!(
             crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program),
             Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. })
@@ -1330,7 +1333,7 @@ fn unique_face_operand_history_candidate(
 pub(crate) fn resolve_bounded_face_history_candidates(
     operand: &DesignFaceOperand,
 ) -> Option<Vec<i64>> {
-    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace {
+    if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
         return None;
     }
     if let Some(candidate) = convergent_effective_face_support(operand) {
@@ -1412,7 +1415,7 @@ fn unique_stable_face_slots(faces: &[cadmpeg_ir::ids::FaceId]) -> Option<Vec<i64
 }
 
 fn counted_face_recipe_frame(operand: &DesignFaceOperand) -> Option<usize> {
-    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace {
+    if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
         return None;
     }
     let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
@@ -1672,7 +1675,7 @@ pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_
 pub(crate) fn historical_face_operand_candidates(
     operand: &DesignFaceOperand,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
-    if operand.recipe_kind == crate::records::ConstructionRecipeKind::Face {
+    if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face {
         let mut referenced = operand
             .recipe_references
             .iter()
@@ -1734,7 +1737,7 @@ fn extrude_start_plane_geometry_candidates(
     operands: &[DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
 ) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
-    let [crate::records::Located {
+    let [crate::records::identity::Located {
         value: record_index,
         ..
     }] = group.members()
@@ -2021,7 +2024,7 @@ fn extrude_target_plane_candidate(
     sketch_origin: Point3,
     sweep_direction: Vector3,
 ) -> Option<cadmpeg_ir::ids::FaceId> {
-    let [crate::records::Located {
+    let [crate::records::identity::Located {
         value: record_index,
         ..
     }] = group.members()
@@ -2184,7 +2187,7 @@ pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
 /// and curve records carry values ten times the centimetre value, so the
 /// origin scales by ten to stay commensurate with the entities.
 pub(crate) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
-    use crate::records::DesignSketchFrameForm;
+    use crate::records::sketch_placement::DesignSketchFrameForm;
     match placement.frame.form() {
         DesignSketchFrameForm::ScopeGenesisCompact
         | DesignSketchFrameForm::ScopeGenesisExplicit(_)
@@ -2226,13 +2229,12 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::records::feature::DesignParameterScope;
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
         DesignEdgeRecipeStructure, DesignFaceRecipeNode, DesignHistoricalFaceBoundaryContext,
         DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
     };
-    use crate::records::DesignRecipeReference;
+    use crate::records::{dimensions::DesignRecipeReference, feature::DesignParameterScope};
 
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::FaceId;

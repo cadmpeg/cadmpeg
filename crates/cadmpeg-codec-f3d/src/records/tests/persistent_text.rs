@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::{DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag};
-use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::{
-    attributes::AttributeTarget,
-    ids::{BodyId, FaceId},
+use crate::records::sketch_links::{
+    DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
+use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::attributes::AttributeTarget;
+use cadmpeg_ir::ids::{BodyId, FaceId};
 
 #[test]
 fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() {

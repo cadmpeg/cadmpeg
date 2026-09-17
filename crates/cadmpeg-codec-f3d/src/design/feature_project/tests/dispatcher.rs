@@ -12,7 +12,7 @@ use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {
-    let mut transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+    let mut transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     transform[0][3] = 1.0;
     transform[1][3] = 2.0;
     transform[2][3] = 3.0;
@@ -89,7 +89,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
             center_record_index: 6,
-            center_position: Some(crate::records::Located {
+            center_position: Some(crate::records::identity::Located {
                 value: [1.25, -2.5, 3.75],
                 offset: 40,
             }),
@@ -131,7 +131,9 @@ fn dispatcher_projects_referenced_work_plane_frame() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         10,
     );
-    referenced.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
+    referenced.with_work_plane_transform(
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+    );
     referenced.with_work_plane_reference(11);
 
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
@@ -152,9 +154,13 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
             record_index,
             byte_offset: u64::from(record_index),
-            class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
+                .unwrap(),
             paired_byte_offset: u64::from(record_index) + 16,
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             recipe_record_index: record_index + 3,
             recipe_record_byte_offset: u64::from(record_index) + 32,
             recipe_id: format!("f3d:native/BulkStream.dat:construction-recipe#{record_index}"),
@@ -177,7 +183,9 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         crate::records::feature::DesignFeatureKind::WorkPlane,
         20,
     );
-    plane.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
+    plane.with_work_plane_transform(
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+    );
     if let Some(frame) = plane.work_plane_frame_mut() {
         frame.work_plane_construction = Some(
             DesignWorkPlaneConstruction::try_new(
@@ -219,7 +227,9 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             crate::records::feature::DesignFeatureKind::WorkPlane,
             record_index,
         );
-        scope.with_work_plane_transform(crate::records::SketchPlacementMatrix::IDENTITY);
+        scope.with_work_plane_transform(
+            crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+        );
         scope
     });
     let input = |record_index, work_plane_scope_record_index| {
@@ -229,14 +239,16 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             carrier: Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection::try_new(
                     crate::records::feature::DesignWorkPointPlaneSelectionDraft {
-                        class_tag: crate::records::DesignClassTag::try_from("267".to_owned())
-                            .unwrap(),
-                        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                        class_tag: crate::records::references::DesignClassTag::try_from(
+                            "267".to_owned(),
+                        )
+                        .unwrap(),
+                        asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                             "00000000-0000-0000-0000-000000000001".to_owned(),
                         )
                         .unwrap(),
                         asset_id_offset: 1,
-                        context_id: crate::records::DesignRelaxedGuidText::try_from(
+                        context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                             "00000000-0000-0000-0000-000000000002".to_owned(),
                         )
                         .unwrap(),
@@ -329,9 +341,10 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     let recipe = DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
         record_index: 12,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap(),
         paired_byte_offset: 16,
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
+            .unwrap(),
         recipe_record_index: 15,
         recipe_record_byte_offset: 32,
         recipe_id: recipe_id.clone(),
@@ -378,20 +391,20 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     }
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream("f3d:native/BulkStream.dat", 0),
-        crate::records::DesignTimelineFrame::test_items(
+        crate::records::entity_header::DesignTimelineFrame::test_items(
             0,
             vec![
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 10,
                     offset: 0,
                 },
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 20,
                     offset: 0,
                 },
             ],
         ),
-        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         std::num::NonZeroU64::new(1).unwrap(),
         0,
         std::num::NonZeroU64::new(1).unwrap(),
@@ -480,12 +493,13 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 scope_reference_ordinal,
                 record_index,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
+                    .unwrap(),
                 members: members
                     .iter()
                     .copied()
                     .enumerate()
-                    .map(|(index, value)| crate::records::Located {
+                    .map(|(index, value)| crate::records::identity::Located {
                         value,
                         offset: index as u64 * 11,
                     })
@@ -510,8 +524,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .unwrap(),
                 operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
                 role_offset: 0,
-                paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "264".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: 0,
             },
         )
@@ -546,18 +562,25 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                     scope_reference_ordinal: 1,
                     record_index: 101,
                     byte_offset: 0,
-                    class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
-                    asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "377".to_owned(),
+                    )
+                    .unwrap(),
+                    asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                         "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
                     )
                     .unwrap(),
                     asset_id_offset: 32,
-                    entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned())
-                        .expect("valid entity identity"),
+                    entity_id: crate::records::identity::DesignEntityId::try_from(
+                        "Sketch_7".to_owned(),
+                    )
+                    .expect("valid entity identity"),
                     entity_reference_offset: 80,
                     region_selection: None,
-                    paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned())
-                        .unwrap(),
+                    paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                        "264".to_owned(),
+                    )
+                    .unwrap(),
                     paired_byte_offset: 160,
                 },
             )
@@ -578,7 +601,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     );
     remove_body
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![200]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![200]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -599,7 +622,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     surface_stitch
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![300, 301, 302, 303]);
+                crate::records::identity::ReferenceRun::unlocated(vec![300, 301, 302, 303]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -631,9 +654,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            source_transform: crate::records::SketchPlacementMatrix::IDENTITY,
+            source_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
             source_transform_offset: 0,
-            copied_transform: crate::records::SketchPlacementMatrix::IDENTITY,
+            copied_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
             copied_transform_offset: 0,
         });
     }
@@ -649,24 +672,24 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         *slot = Some(
             DesignCopyPasteBodiesOperation::try_new(
                 vec![crate::records::feature::DesignCopiedBody {
-                    operand: crate::records::Located {
+                    operand: crate::records::identity::Located {
                         value: 502,
                         offset: 26,
                     },
-                    source: crate::records::Located {
+                    source: crate::records::identity::Located {
                         value: 11,
                         offset: 25,
                     },
-                    copied: crate::records::Located {
+                    copied: crate::records::identity::Located {
                         value: 12,
                         offset: 40,
                     },
                 }],
                 501,
-                crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
                 0,
                 503,
-                crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+                crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
                 0,
             )
             .unwrap(),
@@ -730,7 +753,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     }
     thread
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![701, 702]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![701, 702]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -754,22 +778,23 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         group(70, 0, 701, &[702], DesignOperandRole::ROLE_0X10),
     ];
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
         id: format!("{stream}:placement#7"),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_7".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
         record_index: 700,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
+            .unwrap(),
     };
     let (features, _) = project_parameter_design(
         &[],
@@ -925,7 +950,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![205]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -1016,7 +1041,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![205]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![205]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;

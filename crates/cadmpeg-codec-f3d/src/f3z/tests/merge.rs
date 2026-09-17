@@ -5,7 +5,7 @@ use crate::f3z::merge::{
     append_feature_history, compose_transforms, extend_native, occurrence_key,
     reparent_component_roots, OccurrenceScope,
 };
-use crate::records::XrefReference;
+use crate::records::xref::XrefReference;
 use cadmpeg_ir::features::FeatureOperation;
 
 fn feature(id: &str, ordinal: u64) -> Feature {
@@ -250,24 +250,25 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
 #[test]
 fn occurrence_merge_remaps_and_retains_native_records() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             42,
-            crate::records::DesignSketchFrameForm::MemberCompact {
+            crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
                 paired_byte_offset: 76,
             },
         )
         .unwrap(),
         id: "f3d:Design/BulkStream.dat:design-sketch-placement#42".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_1".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
         record_index: 7,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("002".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("002".to_owned())
+            .unwrap(),
     };
     let mut component = Native::default();
     component
@@ -324,8 +325,10 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
 
 #[test]
 fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuration_text() {
-    use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
-    use crate::records::BodyVisibility;
+    use crate::records::{
+        bodies::BodyVisibility,
+        configuration::{DesignConfiguration, DesignConfigurationKind},
+    };
 
     let configuration_payload = serde_json::json!({
         "raw_text": "f3d:brep:entity#3",

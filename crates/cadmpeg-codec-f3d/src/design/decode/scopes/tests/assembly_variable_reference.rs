@@ -11,13 +11,15 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("283".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("283".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 637;
             draft.paired_byte_offset = 637;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 200, 201, 202, 203, 108, 109, 110, 111, 204,
             ]);
             draft.layout_fixture_references();
@@ -26,15 +28,18 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         .unwrap();
     let owners = (0_u32..12)
         .map(|local_ordinal| {
-            crate::records::DesignParameterOwner::try_from(
-                crate::records::DesignParameterOwnerWire {
+            crate::records::parameters::DesignParameterOwner::try_from(
+                crate::records::parameters::DesignParameterOwnerWire {
                     id: format!(
                         "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
                         100 + local_ordinal
                     ),
                     byte_offset: (u64::from(1_000 + local_ordinal)) - 40,
                     frame_length: 103,
-                    class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "289".to_owned(),
+                    )
+                    .unwrap(),
                     record_index: 100 + local_ordinal,
                     scope_record_index,
                     local_ordinal,
@@ -167,7 +172,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
 
     let mut wrong_generation = scope.clone();
     wrong_generation.paired_class_tag =
-        crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),

@@ -2,8 +2,9 @@
 //! Sketch-arrangement and profile-containment computational geometry.
 
 use crate::design::profile_select::historical_face_points;
-use crate::records::topology::DesignExtrudeSelectionMember;
-use crate::records::SketchRelationOperand;
+use crate::records::{
+    sketch_relations::SketchRelationOperand, topology::DesignExtrudeSelectionMember,
+};
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use cadmpeg_ir::geometry::{knots_nondecreasing, PcurveNurbs};
 use cadmpeg_ir::math::{Point2, Point3};

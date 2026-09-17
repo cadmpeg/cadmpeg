@@ -37,7 +37,6 @@ use crate::records::feature::{
     DesignWorkPlaneConstruction, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
     DesignWorkPointRule, DesignWorkPointSketchPointSelection,
 };
-use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignConstructionOperandGroup,
     DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
@@ -50,10 +49,15 @@ use crate::records::topology::{
     DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection, DesignTopologyRecipeEntry,
     DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
 };
+use crate::records::{decal::DesignRecordHeader, entity_header::DesignEntityHeader};
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignEntityHeader, DesignParameter,
-    DesignParameterOwner, DesignRecordHeader, LostEdgeReference, PersistentSubentityTag,
-    SketchCurveIdentity, SketchPoint, SketchRelationOperand,
+    parameters::{DesignParameter, DesignParameterOwner},
+    recipes::{ConstructionRecipe, ConstructionRecipeKind},
+    references::LostEdgeReference,
+    sketch_geometry::{SketchCurveIdentity, SketchPoint},
+    sketch_links::PersistentSubentityTag,
+    sketch_relations::SketchRelationOperand,
+    topology::DesignOperandRole,
 };
 use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
@@ -360,8 +364,12 @@ pub fn bind_work_point_input_carriers(
                     })
                     .collect::<Vec<_>>();
                 let (Ok(asset_id), Ok(context_id)) = (
-                    crate::records::DesignRelaxedGuidText::try_from(selection.asset_id.clone()),
-                    crate::records::DesignRelaxedGuidText::try_from(selection.context_id.clone()),
+                    crate::records::mesh::DesignRelaxedGuidText::try_from(
+                        selection.asset_id.clone(),
+                    ),
+                    crate::records::mesh::DesignRelaxedGuidText::try_from(
+                        selection.context_id.clone(),
+                    ),
                 ) else {
                     continue;
                 };
@@ -415,8 +423,8 @@ pub fn bind_work_point_input_carriers(
                 continue;
             }
             let (Ok(asset_id), Ok(context_id)) = (
-                crate::records::DesignRelaxedGuidText::try_from(selection.asset_id.clone()),
-                crate::records::DesignRelaxedGuidText::try_from(selection.context_id.clone()),
+                crate::records::mesh::DesignRelaxedGuidText::try_from(selection.asset_id.clone()),
+                crate::records::mesh::DesignRelaxedGuidText::try_from(selection.context_id.clone()),
             ) else {
                 continue;
             };
@@ -660,8 +668,8 @@ pub fn decode_edge_identity_operands(
                 continue;
             };
             let (Ok(asset_id), Ok(context_id)) = (
-                crate::records::DesignRelaxedGuidText::try_from(parsed.asset_id),
-                crate::records::DesignRelaxedGuidText::try_from(parsed.context_id),
+                crate::records::mesh::DesignRelaxedGuidText::try_from(parsed.asset_id),
+                crate::records::mesh::DesignRelaxedGuidText::try_from(parsed.context_id),
             ) else {
                 continue;
             };
@@ -1037,7 +1045,7 @@ pub fn decode_face_source_groups(
                         lp_ascii_filtered(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)?;
                     let member = parse_extrude_identity_member(bytes, source_byte_offset)?;
                     let source_byte_offset_u64 = u64::try_from(source_byte_offset).ok()?;
-                    Some(crate::records::Located {
+                    Some(crate::records::identity::Located {
                         offset: u64::try_from(offset).ok()?,
                         value: DesignFaceSourceMember {
                             record_index: source_record_index,
@@ -1072,13 +1080,13 @@ pub fn decode_face_source_groups(
                 continue;
             };
             let Some(carrier_span) =
-                crate::records::NonEmptyByteSpan::new(carrier_start, carrier_end)
+                crate::records::identity::NonEmptyByteSpan::new(carrier_start, carrier_end)
             else {
                 continue;
             };
             let (Ok(carrier_class_tag), Ok(paired_class_tag)) = (
-                crate::records::DesignClassTag::try_from(carrier_class_tag.clone()),
-                crate::records::DesignClassTag::try_from(paired_class_tag.clone()),
+                crate::records::references::DesignClassTag::try_from(carrier_class_tag.clone()),
+                crate::records::references::DesignClassTag::try_from(paired_class_tag.clone()),
             ) else {
                 continue;
             };
@@ -2053,7 +2061,7 @@ fn extrude_operand_role(
 #[derive(Clone, Debug)]
 pub(crate) struct RecordFrame {
     pub(crate) record_index: u32,
-    pub(crate) class_tag: crate::records::DesignClassTag,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
     pub(crate) byte_offset: u64,
 }
 
@@ -2118,7 +2126,7 @@ pub(crate) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        members.push(crate::records::Located {
+        members.push(crate::records::identity::Located {
             value: record_index,
             offset,
         });
@@ -2134,7 +2142,7 @@ pub(crate) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        auxiliary_records.push(crate::records::Located {
+        auxiliary_records.push(crate::records::identity::Located {
             value: record_index,
             offset,
         });
@@ -2151,7 +2159,7 @@ pub(crate) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        trailing_records.push(crate::records::Located {
+        trailing_records.push(crate::records::identity::Located {
             value: record_index,
             offset,
         });
@@ -2650,7 +2658,10 @@ pub(crate) fn parse_construction_operand_dual_transform(
     )
 }
 
-fn rigid_transform_at(bytes: &[u8], at: usize) -> Option<crate::records::SketchPlacementMatrix> {
+fn rigid_transform_at(
+    bytes: &[u8],
+    at: usize,
+) -> Option<crate::records::sketch_placement::SketchPlacementMatrix> {
     let mut view = View::over_retained(bytes);
     view.seek(at)?;
     let mut transform = [[0.0; 4]; 4];
@@ -2895,7 +2906,7 @@ pub(crate) fn parse_construction_tracking_path(
     bytes: &[u8],
     wrapper_at: usize,
     wrapper_record_index: u32,
-    wrapper_class_tag: &crate::records::DesignClassTag,
+    wrapper_class_tag: &crate::records::references::DesignClassTag,
 ) -> Option<DesignConstructionTrackingPath> {
     if bytes.get(wrapper_at + 11..wrapper_at + 21)? != [0; 10]
         || bytes.get(wrapper_at + 21) != Some(&1)
@@ -2963,7 +2974,7 @@ pub(crate) fn parse_construction_tracking_path(
 fn take_optional_tracking_identity(
     bytes: &[u8],
     cursor: &mut usize,
-) -> Option<Option<crate::records::Located<u64>>> {
+) -> Option<Option<crate::records::identity::Located<u64>>> {
     match View::u32_le_at(bytes, *cursor)? {
         0 => {
             *cursor = (*cursor).checked_add(4)?;
@@ -2973,7 +2984,7 @@ fn take_optional_tracking_identity(
             let value_at = (*cursor).checked_add(4)?;
             let value = View::u64_le_at(bytes, value_at)?;
             *cursor = value_at.checked_add(8)?;
-            Some(Some(crate::records::Located {
+            Some(Some(crate::records::identity::Located {
                 value,
                 offset: u64::try_from(value_at).ok()?,
             }))
@@ -3008,7 +3019,7 @@ pub(crate) fn parse_extrude_selection_group(
         if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
             return None;
         }
-        members.push(crate::records::Located {
+        members.push(crate::records::identity::Located {
             value: View::u32_le_at(bytes, position + 1)?,
             offset: u64::try_from(position + 1).ok()?,
         });
@@ -3195,7 +3206,7 @@ pub(crate) fn parse_entity_selection_operand(
 pub(crate) struct EntitySelectionFrame {
     pub(crate) record_index: u32,
     pub(crate) byte_offset: u64,
-    pub(crate) class_tag: crate::records::DesignClassTag,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
     pub(crate) asset_id: String,
     pub(crate) asset_id_offset: u64,
     pub(crate) context_id: String,
@@ -3204,8 +3215,9 @@ pub(crate) struct EntitySelectionFrame {
     pub(crate) identity_record_offset: u64,
     pub(crate) primary_identity: u64,
     pub(crate) primary_identity_offset: u64,
-    pub(crate) secondary:
-        Option<crate::records::DesignSecondaryIdentity<crate::records::Located<u64>>>,
+    pub(crate) secondary: Option<
+        crate::records::identity::DesignSecondaryIdentity<crate::records::identity::Located<u64>>,
+    >,
     pub(crate) next_record_index: u32,
     pub(crate) next_byte_offset: u64,
 }
@@ -3443,8 +3455,8 @@ pub(crate) fn parse_entity_selection_frame(
         (
             identity_at.checked_add(class_338_curve::OWNER_RECORD_INDEX)?,
             primary_identity,
-            Some(crate::records::DesignSecondaryIdentity {
-                identity: crate::records::Located {
+            Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
                     value: secondary_identity,
                     offset: u64::try_from(
                         identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?,
@@ -3464,12 +3476,12 @@ pub(crate) fn parse_entity_selection_frame(
         (
             primary_identity_offset,
             View::u64_le_at(bytes, primary_identity_offset)?,
-            Some(crate::records::DesignSecondaryIdentity {
-                identity: crate::records::Located {
+            Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
                     value: View::u64_le_at(bytes, secondary_identity_offset)?,
                     offset: u64::try_from(secondary_identity_offset).ok()?,
                 },
-                curve_identity: Some(crate::records::Located {
+                curve_identity: Some(crate::records::identity::Located {
                     value: View::u64_le_at(bytes, curve_secondary_identity_offset)?,
                     offset: u64::try_from(curve_secondary_identity_offset).ok()?,
                 })
@@ -3882,7 +3894,7 @@ fn parse_body_recipe_operand_frame_with_index(
         asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
         context_id: context_id.try_into().ok()?,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
-        selector_tail: Some(crate::records::Located {
+        selector_tail: Some(crate::records::identity::Located {
             value: selector_tail,
             offset: u64::try_from(selector_tail_at).ok()?,
         }),
@@ -4490,7 +4502,7 @@ struct ParsedRecipeOperand {
     recipe_id: String,
     recipe_prefix_offset: u64,
     recipe_prefix_bytes: Vec<u8>,
-    recipe_references: Vec<crate::records::DesignRecipeReference>,
+    recipe_references: Vec<crate::records::dimensions::DesignRecipeReference>,
     recipe_program_offset: u64,
     recipe_program: Vec<i32>,
     next_record_index: u32,

@@ -8,10 +8,12 @@
 )]
 
 use super::project_rectangular_pattern_scalars;
-use crate::records::feature::{DesignParameterScope, DesignRectangularPatternConstruction};
-use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+};
+use crate::records::{
+    feature::{DesignParameterScope, DesignRectangularPatternConstruction},
+    topology::DesignOperandRole,
 };
 use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PatternSeed,
@@ -34,8 +36,9 @@ fn group(
             scope_reference_ordinal: 1,
             record_index,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("313".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("313".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: record_index + 1,
                 offset: 0,
             }],
@@ -59,7 +62,10 @@ fn group(
             .unwrap(),
             operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("263".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "263".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )

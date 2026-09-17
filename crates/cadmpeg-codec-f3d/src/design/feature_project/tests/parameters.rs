@@ -209,15 +209,16 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
     {
-        let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
         wire.id = "f3d:native/BulkStream.dat:parameter-owner#44".into();
-        owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     let scope = DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:native/BulkStream.dat:parameter-scope#12".into(),
             byte_offset: 100,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
             record_index: 12,
             frame_length: 200,
             kind_offset: 210,
@@ -250,14 +251,17 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: 180,
-            reference_members: crate::records::ReferenceRun::from_columns(
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
                 vec![44, 44],
                 vec![185, 196],
                 "reference_members",
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 300,
         }
         .with_fixture_layout(),
@@ -320,9 +324,9 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
     {
-        let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
         wire.id = "f3d:native:parameter-owner#44".into();
-        owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
 
     let (features, parameters) =
@@ -365,21 +369,24 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         parameter
     };
     let owner = |record_index, parameter_record_index, scope_record_index| {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
-            byte_offset: 0,
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal: parameter_record_index,
-            evaluated_value: 1.0,
-            evaluated_value_offset: 40,
-            parameter_record_index,
-            owned_ordinal: parameter_record_index,
-            variant: Some(0),
-            companion_record_index: record_index + 1,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
+                byte_offset: 0,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index,
+                local_ordinal: parameter_record_index,
+                evaluated_value: 1.0,
+                evaluated_value_offset: 40,
+                parameter_record_index,
+                owned_ordinal: parameter_record_index,
+                variant: Some(0),
+                companion_record_index: record_index + 1,
+            },
+        )
         .unwrap()
     };
     let scope = |record_index| {
@@ -387,7 +394,8 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
             crate::records::feature::DesignParameterScopeDraft {
                 id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
                 byte_offset: u64::from(record_index),
-                class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                    .unwrap(),
                 record_index,
                 frame_length: 200,
                 kind_offset: 0,
@@ -398,7 +406,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
                 previous_history_state_id: None,
                 previous_history_state_id_offset: None,
                 reference_count_offset: (u64::from(record_index)) + 9,
-                reference_members: crate::records::ReferenceRun::from_columns(
+                reference_members: crate::records::identity::ReferenceRun::from_columns(
                     vec![1],
                     vec![0],
                     "reference_members",
@@ -408,8 +416,10 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                paired_class_tag: crate::records::DesignClassTag::try_from("302".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "302".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: u64::from(record_index) + 100,
             }
             .with_fixture_layout(),
@@ -531,13 +541,14 @@ fn parameter_expressions_project_feature_dependencies() {
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();
         {
-            let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+            let mut wire =
+                crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
             wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
             wire.record_index = record_index;
             wire.scope_record_index = scope_record_index;
             wire.parameter_record_index = parameter_record_index;
             wire.companion_record_index = parameter_record_index + 1;
-            owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+            owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
         }
         owner
     };
@@ -546,7 +557,8 @@ fn parameter_expressions_project_feature_dependencies() {
             crate::records::feature::DesignParameterScopeDraft {
                 id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
                 byte_offset,
-                class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                    .unwrap(),
                 record_index,
                 frame_length: 200,
                 kind_offset: byte_offset + 100,
@@ -557,7 +569,7 @@ fn parameter_expressions_project_feature_dependencies() {
                 previous_history_state_id: None,
                 previous_history_state_id_offset: None,
                 reference_count_offset: byte_offset + 80,
-                reference_members: crate::records::ReferenceRun::from_columns(
+                reference_members: crate::records::identity::ReferenceRun::from_columns(
                     vec![record_index + 1],
                     vec![byte_offset + 85],
                     "reference_members",
@@ -568,8 +580,10 @@ fn parameter_expressions_project_feature_dependencies() {
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "261".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: byte_offset + 200,
             }
             .with_fixture_layout(),

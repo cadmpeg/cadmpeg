@@ -25,8 +25,10 @@ use crate::bytes::{
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
-use crate::records::feature::{DesignComponentInsertConstruction, DesignParameterScope};
-use crate::records::{XrefDesign, XrefReference};
+use crate::records::{
+    feature::{DesignComponentInsertConstruction, DesignParameterScope},
+    xref::{XrefDesign, XrefReference},
+};
 
 /// Top-level container entry holding the external-reference table.
 pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
@@ -378,7 +380,7 @@ pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg
                     [0.0, 0.0, 1.0, 0.0],
                     [0.0, 0.0, 0.0, 1.0],
                 ],
-                crate::records::XrefPlacementTransform::rows,
+                crate::records::xref::XrefPlacementTransform::rows,
             );
             Ok(Occurrence {
                 id: crate::ids::neutral_xref_occurrence_id(
@@ -417,7 +419,7 @@ pub fn bind_component_insert_features(
             reference.neutron_role == construction.neutron_role
                 && reference
                     .transform
-                    .map(crate::records::XrefPlacementTransform::rows)
+                    .map(crate::records::xref::XrefPlacementTransform::rows)
                     == Some((*construction.transform()).into())
         });
         let Some(reference) = matches.next() else {
@@ -550,7 +552,7 @@ fn bind_occurrences(
             );
             occurrence.occurrence_ordinal = ordinal_at(occurrence_ordinal)?;
             occurrence.transform = transform
-                .map(crate::records::XrefPlacementTransform::try_from)
+                .map(crate::records::xref::XrefPlacementTransform::try_from)
                 .transpose()
                 .map_err(CodecError::NotImplemented)?;
             expanded.push(occurrence);
@@ -1376,9 +1378,9 @@ fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
             *value = view.f64_le()?;
         }
     }
-    crate::records::XrefPlacementTransform::try_from(rows)
+    crate::records::xref::XrefPlacementTransform::try_from(rows)
         .ok()
-        .map(crate::records::XrefPlacementTransform::rows)
+        .map(crate::records::xref::XrefPlacementTransform::rows)
 }
 
 #[cfg(test)]

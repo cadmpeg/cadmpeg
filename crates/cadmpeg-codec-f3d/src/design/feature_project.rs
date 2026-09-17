@@ -40,16 +40,18 @@ use crate::records::feature::{
     DesignExtrudePrologue, DesignExtrudeStart, DesignFixedExtrudeDistance, DesignParameterScope,
     DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceTrimOperation,
 };
-use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeIdentityOperand,
     DesignEdgeOperand, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignFaceOperand,
     DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier,
 };
+use crate::records::{bodies::DesignBodyBinding, entity_header::DesignFeatureTimeline};
 use crate::records::{
-    ConstructionRecipeKind, DesignBodyBinding, DesignFeatureTimeline, DesignParameter,
-    DesignParameterKind, DesignParameterOwner, DesignSketchPlacement, SketchCurveGeometry,
-    SketchCurveIdentity,
+    parameters::{DesignParameter, DesignParameterKind, DesignParameterOwner},
+    recipes::ConstructionRecipeKind,
+    sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
+    sketch_placement::DesignSketchPlacement,
+    topology::DesignOperandRole,
 };
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
@@ -85,7 +87,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) legacy_loft_body_carriers: &'a [DesignLoftLegacyBodyCarrier],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
-    pub(crate) component_naming_spaces: &'a [crate::records::DesignComponentNamingSpace],
+    pub(crate) component_naming_spaces: &'a [crate::records::recipes::DesignComponentNamingSpace],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
 }
 
@@ -321,7 +323,7 @@ impl<'a> ScopeHistoryGraph<'a> {
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
         body_recipe_operands: &[DesignBodyRecipeOperand],
-        component_naming_spaces: &[crate::records::DesignComponentNamingSpace],
+        component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
         let binding = if histories.is_empty() {
@@ -379,7 +381,7 @@ impl<'a> ScopeHistoryGraph<'a> {
 
     fn component_namespace(
         scope: &DesignParameterScope,
-        component_naming_spaces: &[crate::records::DesignComponentNamingSpace],
+        component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
     ) -> Option<ComponentHistoryNamespace> {
         let stream = native_stream(&scope.id)?;
         let mut stream_spaces = component_naming_spaces
@@ -534,10 +536,10 @@ pub fn project_parameter_design(
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
-    let mut streams = Vec::<(&str, Vec<crate::records::Located<u64>>)>::new();
+    let mut streams = Vec::<(&str, Vec<crate::records::identity::Located<u64>>)>::new();
     for scope in scopes {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
-        let item = crate::records::Located {
+        let item = crate::records::identity::Located {
             value: u64::from(scope.record_index),
             offset: 0,
         };
@@ -555,8 +557,8 @@ pub fn project_parameter_design(
         .map(|(stream, items)| {
             DesignFeatureTimeline::try_new(
                 ids::native_design_feature_timeline_id_in_stream(stream, 0),
-                crate::records::DesignTimelineFrame::test_items(0, items),
-                crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                crate::records::entity_header::DesignTimelineFrame::test_items(0, items),
+                crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
                 std::num::NonZeroU64::new(1).unwrap(),
                 0,
                 std::num::NonZeroU64::new(1).unwrap(),
@@ -597,13 +599,11 @@ pub fn project_parameter_design_with_edge_identities(
     ),
     CodecError,
 > {
-    use cadmpeg_ir::{
-        features::{
-            DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
-            FeatureOperation, ParameterId, ParameterValue, PatternKind,
-        },
-        scalar::{Angle, Length},
+    use cadmpeg_ir::features::{
+        DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
+        FeatureOperation, ParameterId, ParameterValue, PatternKind,
     };
+    use cadmpeg_ir::scalar::{Angle, Length};
     use std::collections::BTreeMap;
 
     let &ProjectInputs {
@@ -1565,11 +1565,11 @@ pub fn project_parameter_design_with_edge_identities(
 fn project_solid_primitive(
     scope: &DesignParameterScope,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind},
-        scalar::{Angle, Length},
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind,
     };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::scalar::{Angle, Length};
     let operation = |operation| match operation {
         DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
         DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
@@ -2144,7 +2144,7 @@ fn resolved_fillet_assignments<'a>(
                 .tangency_weight_parameter_record_index
                 .map(|record| {
                     parameter(record, "TangencyWeight")
-                        .map(crate::records::DesignParameter::evaluated_value)
+                        .map(crate::records::parameters::DesignParameter::evaluated_value)
                         .and_then(cadmpeg_ir::scalar::FiniteReal::new)
                 })
                 .map_or(Some(None), |value| value.map(Some))?;
@@ -2312,7 +2312,7 @@ fn project_full_round_fillet(
     {
         return None;
     }
-    let [crate::records::Located { value: member, .. }] = group.members() else {
+    let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return None;
     };
     let mut operands = face_operands.iter().filter(|operand| {
@@ -2954,7 +2954,7 @@ fn selected_historical_face_selection(
     let previous_state_id =
         crate::history::effective_scope_previous_history_state_id(scope, histories)?;
     let stream = native_stream(&scope.id)?;
-    let [crate::records::Located { value: member, .. }] = group.members() else {
+    let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return None;
     };
     let selections = entity_selection_operands
@@ -3221,10 +3221,8 @@ pub(crate) fn project_offset_faces(
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::{
-        features::{FaceMotion, FeatureDefinition, FeatureOperation},
-        scalar::Length,
-    };
+    use cadmpeg_ir::features::{FaceMotion, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
 
     let parameter_distance = match parameters {
         [] => None,
@@ -3446,14 +3444,12 @@ pub(crate) fn project_edge_flange(
         DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeWidthParameterSource,
         DesignSheetMetalHeightDatum,
     };
-    use cadmpeg_ir::{
-        features::{
-            FeatureDefinition, FeatureOperation, SheetMetalBendPosition, SheetMetalFlangeHeight,
-            SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
-            SheetMetalHeightDatum,
-        },
-        scalar::PositiveLength,
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, SheetMetalBendPosition, SheetMetalFlangeHeight,
+        SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+        SheetMetalHeightDatum,
     };
+    use cadmpeg_ir::scalar::PositiveLength;
 
     let ProjectInputs {
         native: parameters,
@@ -3899,7 +3895,7 @@ pub(crate) fn project_surface_stitch(
 
 pub(crate) fn project_ruled_surface(
     scope: &DesignParameterScope,
-    owners: &[crate::records::DesignParameterOwner],
+    owners: &[crate::records::parameters::DesignParameterOwner],
     parameters: &[DesignParameter],
     groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
@@ -4060,7 +4056,8 @@ fn merge_edge_selections(
 pub(crate) fn matrix_axis_angle(
     transform: &[[f64; 4]; 4],
 ) -> Option<cadmpeg_ir::features::AxisAngle> {
-    use cadmpeg_ir::{features::AxisAngle, scalar::Angle};
+    use cadmpeg_ir::features::AxisAngle;
+    use cadmpeg_ir::scalar::Angle;
 
     let trace = transform[0][0] + transform[1][1] + transform[2][2];
     let angle = ((trace - 1.0) * 0.5).clamp(-1.0, 1.0).acos();
@@ -5793,7 +5790,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
     let [_] = profile.members() else {
         return None;
     };
-    let [crate::records::Located {
+    let [crate::records::identity::Located {
         value: axis_member, ..
     }] = axis_group.members()
     else {
@@ -5960,7 +5957,7 @@ pub(crate) fn bind_revolve_face_axes(
             let [group] = groups.as_slice() else {
                 break 'feature_edit;
             };
-            let [crate::records::Located { value: member, .. }] = group.members() else {
+            let [crate::records::identity::Located { value: member, .. }] = group.members() else {
                 break 'feature_edit;
             };
             let selections = entity_selection_operands
@@ -6544,12 +6541,10 @@ pub(crate) fn project_circular_pattern(
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::{
-        features::{
-            FeatureDefinition, FeatureOperation, PatternKind, PatternSeed, PatternTransform,
-        },
-        scalar::Angle,
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, PatternKind, PatternSeed, PatternTransform,
     };
+    use cadmpeg_ir::scalar::Angle;
 
     let construction = scope.circular_pattern_construction()?;
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
@@ -6640,12 +6635,10 @@ fn project_rectangular_pattern_scalars(
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::{
-        features::{
-            FeatureDefinition, FeatureOperation, PatternKind, PatternSeed, PatternTransform,
-        },
-        scalar::Length,
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, PatternKind, PatternSeed, PatternTransform,
     };
+    use cadmpeg_ir::scalar::Length;
 
     let construction = scope.rectangular_pattern_construction()?;
     let active = [
@@ -6865,13 +6858,11 @@ pub(crate) fn project_fixed_sweep(
     entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::{
-        features::{
-            FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepGuideRail,
-            SweepOrientation, SweepPathExtent,
-        },
-        scalar::Angle,
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepGuideRail,
+        SweepOrientation, SweepPathExtent,
     };
+    use cadmpeg_ir::scalar::Angle;
 
     let crate::records::feature::DesignScopePayload::Sweep(Some(
         crate::records::feature::DesignSweepScope {
@@ -7821,7 +7812,7 @@ pub(crate) fn project_split(
     }
     let tools = match tool_group.role() {
         DesignOperandRole::ROLE_0X9 => {
-            let [crate::records::Located {
+            let [crate::records::identity::Located {
                 value: tool_record_index,
                 ..
             }] = tool_group.members()
@@ -8062,13 +8053,11 @@ pub(crate) fn project_extrude(
     placements: &[DesignSketchPlacement],
     body_recipe_operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::{
-        features::{
-            BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
-            FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
-        },
-        scalar::{Angle, Length},
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
+        FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
+    use cadmpeg_ir::scalar::{Angle, Length};
 
     // Per-side terminations without side-local modifiers; drafts and offsets
     // are attached below once they are resolved.

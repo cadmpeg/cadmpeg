@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::prelude::*;
-use crate::records::topology::DesignConstructionOperandGroupFrame;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
 use cadmpeg_ir::features::FeatureOperation;
 
 pub(super) fn fixed_kind_tail_operations(
@@ -15,7 +14,8 @@ pub(super) fn fixed_kind_tail_operations(
     move_frame[4..7].copy_from_slice(b"368");
     move_frame[7..11].copy_from_slice(&90u32.to_le_bytes());
     move_frame[43..47].copy_from_slice(&5u32.to_le_bytes());
-    let mut move_transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+    let mut move_transform =
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     move_transform[1][3] = 15.0;
     for (ordinal, value) in move_transform.into_iter().flatten().enumerate() {
         let at = 48 + ordinal * 8;
@@ -31,7 +31,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.payload = crate::records::feature::DesignFeatureKind::Move
                 .try_into()
                 .unwrap();
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![90]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![90]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -68,7 +68,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.payload = crate::records::feature::DesignFeatureKind::Move
                 .try_into()
                 .unwrap();
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![91]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![91]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -117,7 +117,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.payload = crate::records::feature::DesignFeatureKind::Move
                 .try_into()
                 .unwrap();
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![92]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![92]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -156,7 +156,7 @@ pub(super) fn fixed_kind_tail_operations(
                 .unwrap();
             draft.frame_length = 317;
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
+                crate::records::identity::ReferenceRun::unlocated(vec![101, 102, 103, 104, 105]);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -313,7 +313,8 @@ pub(super) fn fixed_kind_tail_operations(
                 .try_into()
                 .unwrap();
             draft.frame_length = 286;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 73]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 3, 73]);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -351,7 +352,8 @@ pub(super) fn fixed_kind_tail_operations(
         .try_edit(|draft| {
             draft.byte_offset = compact_offset_at as u64;
             draft.frame_length = 275;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 1_777]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 1_777]);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -391,7 +393,8 @@ pub(super) fn fixed_kind_tail_operations(
                 .try_into()
                 .unwrap();
             draft.frame_length = 301;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 74]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 74]);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -458,7 +461,9 @@ pub(super) fn fixed_kind_tail_operations(
             byte_offset: shifted_thicken_at as u64,
             reference_count_offset: (shifted_thicken_at + 9) as u64,
             frame_length: 312,
-            reference_members: crate::records::ReferenceRun::unlocated(vec![74, 200, 201, 202]),
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                74, 200, 201, 202,
+            ]),
             ..thicken_scope.clone().into_draft()
         }
         .with_fixture_layout(),
@@ -509,8 +514,9 @@ pub(super) fn fixed_kind_tail_operations(
             scope_reference_ordinal: 0,
             record_index: 200,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 201,
                 offset: 0,
             }],
@@ -520,7 +526,7 @@ pub(super) fn fixed_kind_tail_operations(
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
-                    trailing_records: vec![crate::records::Located {
+                    trailing_records: vec![crate::records::identity::Located {
                         value: 202,
                         offset: 0,
                     }],
@@ -540,7 +546,10 @@ pub(super) fn fixed_kind_tail_operations(
             ),
             role_offset: 0,
 
-            paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "264".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -598,7 +607,7 @@ pub(super) fn fixed_kind_tail_operations(
                 .unwrap();
             draft.frame_length = 278;
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![200, 201, 1_778]);
+                crate::records::identity::ReferenceRun::unlocated(vec![200, 201, 1_778]);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -687,7 +696,9 @@ pub(super) fn fixed_kind_tail_operations(
             byte_offset: compact_shell_at as u64,
             reference_count_offset: (compact_shell_at + 9) as u64,
             frame_length: 268,
-            reference_members: crate::records::ReferenceRun::unlocated(vec![200, 201, 9_000]),
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                200, 201, 9_000,
+            ]),
             ..shell_scope.clone().into_draft()
         }
         .with_fixture_layout(),
@@ -718,7 +729,9 @@ pub(super) fn fixed_kind_tail_operations(
             byte_offset: shifted_shell_at as u64,
             reference_count_offset: (shifted_shell_at + 9) as u64,
             frame_length: 278,
-            reference_members: crate::records::ReferenceRun::unlocated(vec![9_000, 200, 201]),
+            reference_members: crate::records::identity::ReferenceRun::unlocated(vec![
+                9_000, 200, 201,
+            ]),
             ..shell_scope.clone().into_draft()
         }
         .with_fixture_layout(),
@@ -876,7 +889,8 @@ pub(super) fn fixed_kind_tail_operations(
     }
     extrude_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 76, 51]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 75, 76, 51]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -908,7 +922,8 @@ pub(super) fn fixed_kind_tail_operations(
     );
     extrude_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 51]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 75, 51]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -936,11 +951,12 @@ pub(super) fn fixed_kind_tail_operations(
     );
     extrude_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 75, 76, 51]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 75, 76, 51]);
             draft.reference_members = {
                 let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
                 values.push(75);
-                crate::records::ReferenceRun::unlocated(values)
+                crate::records::identity::ReferenceRun::unlocated(values)
             };
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
@@ -1036,7 +1052,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.payload = crate::records::feature::DesignFeatureKind::SurfaceExtend
                 .try_into()
                 .unwrap();
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 extend_distance_record_index,
                 extend_boundary_record_index,
                 extend_edge_record_indices[0],
@@ -1190,7 +1206,7 @@ pub(super) fn fixed_kind_tail_operations(
     let mut grouped_scope = extend_scope.clone();
     grouped_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 extend_distance_record_index,
                 grouped_record_index,
                 grouped_member_record_index,
@@ -1267,7 +1283,7 @@ pub(super) fn fixed_kind_tail_operations(
     bytes.extend_from_slice(&embedded_distance);
     extrude_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 50,
                 273,
                 274,
@@ -1308,7 +1324,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.reference_members = {
                 let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
                 values.insert(2, 273);
-                crate::records::ReferenceRun::unlocated(values)
+                crate::records::identity::ReferenceRun::unlocated(values)
             };
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);

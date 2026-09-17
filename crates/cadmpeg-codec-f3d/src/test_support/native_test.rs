@@ -3,7 +3,8 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::write::TargetRequest;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::io::Write;
 
 use cadmpeg_ir::codec::write::Encoder;

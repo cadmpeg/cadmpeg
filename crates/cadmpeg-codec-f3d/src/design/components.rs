@@ -8,8 +8,9 @@ use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 
-use crate::records::feature::DesignAssemblyOperandQualifier;
-use crate::records::feature::{DesignComponentOccurrence, DesignParameterScope};
+use crate::records::feature::{
+    DesignAssemblyOperandQualifier, {DesignComponentOccurrence, DesignParameterScope},
+};
 
 /// Project components and occurrences proven by local component history operations.
 pub(crate) fn project_local_components(
@@ -220,8 +221,8 @@ fn project_occurrence(
     components: &mut BTreeMap<String, ProductDefinition>,
     occurrences: &mut BTreeMap<String, Occurrence>,
     native_by_guid: &BTreeMap<String, Option<&DesignComponentOccurrence>>,
-    component_guid: &crate::records::DesignRelaxedGuidText,
-    occurrence_guid: &crate::records::DesignRelaxedGuidText,
+    component_guid: &crate::records::mesh::DesignRelaxedGuidText,
+    occurrence_guid: &crate::records::mesh::DesignRelaxedGuidText,
     transform: impl Into<[[f64; 4]; 4]>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let component_id = crate::ids::neutral_component_id(component_guid);
@@ -254,7 +255,7 @@ fn project_occurrence(
 
 fn project_component(
     components: &mut BTreeMap<String, ProductDefinition>,
-    component_guid: &crate::records::DesignRelaxedGuidText,
+    component_guid: &crate::records::mesh::DesignRelaxedGuidText,
 ) {
     let component_id = crate::ids::neutral_component_id(component_guid);
     components
@@ -332,7 +333,10 @@ mod tests {
                     id: format!(
                         "f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"
                     ),
-                    class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "256".to_owned(),
+                    )
+                    .unwrap(),
                     record_index,
                     byte_offset: u64::from(record_index),
                     component_record_index,
@@ -402,7 +406,8 @@ mod tests {
         let native_occurrence = DesignComponentOccurrence::try_new(
             crate::records::feature::DesignComponentOccurrenceDraft {
                 id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
-                class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("380".to_owned())
+                    .unwrap(),
                 record_index: 382,
                 byte_offset: 0,
                 component_record_index: 305,

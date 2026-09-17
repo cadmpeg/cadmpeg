@@ -21,7 +21,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
-use crate::container::{self};
+use crate::container;
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;

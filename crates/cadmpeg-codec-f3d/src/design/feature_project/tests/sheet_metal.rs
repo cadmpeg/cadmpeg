@@ -6,9 +6,10 @@
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use crate::records::topology::DesignConstructionOperandGroup;
-use crate::records::topology::DesignConstructionOperandGroupFrame;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{
+    topology::DesignConstructionOperandGroup, topology::DesignConstructionOperandGroupFrame,
+    topology::DesignOperandRole,
+};
 
 #[test]
 fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
@@ -30,7 +31,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 383, 385, 388, 393, 396, 399, 402, 404, 407, 411,
             ]);
             draft.layout_fixture_references();
@@ -66,45 +67,55 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     }
 
     let owner = |record_index: u32, parameter_record_index: u32| {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: format!("{stream}:design-parameter-owner#{record_index}"),
-            byte_offset: 0,
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index,
-            scope_record_index: 382,
-            local_ordinal: 0,
-            evaluated_value: 0.0,
-            evaluated_value_offset: 40,
-            parameter_record_index,
-            owned_ordinal: 0,
-            variant: Some(0),
-            companion_record_index: record_index + 1,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("{stream}:design-parameter-owner#{record_index}"),
+                byte_offset: 0,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index: 382,
+                local_ordinal: 0,
+                evaluated_value: 0.0,
+                evaluated_value_offset: 40,
+                parameter_record_index,
+                owned_ordinal: 0,
+                variant: Some(0),
+                companion_record_index: record_index + 1,
+            },
+        )
         .unwrap()
     };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: format!("{stream}:design-parameter#{record_index}"),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index,
-            source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: format!("{stream}:design-parameter#{record_index}"),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                record_index,
+                source_ordinal: 0,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    source_kind.into(),
+                    Some(0),
+                    None,
+                )
                 .unwrap(),
-            expression: evaluated_value.to_string(),
-            expression_offset: 40,
-            source_kind_offset: 60,
+                expression: evaluated_value.to_string(),
+                expression_offset: 40,
+                source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
-                value: unit.into(),
-                offset: 70,
-            }),
-            name: source_kind.into(),
-            name_offset: 80,
-            evaluated_value,
-            evaluated_value_offset: 90,
-        })
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: unit.into(),
+                    offset: 70,
+                }),
+                name: source_kind.into(),
+                name_offset: 80,
+                evaluated_value,
+                evaluated_value_offset: 90,
+            },
+        )
         .unwrap()
     };
     let owners = [
@@ -127,8 +138,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             scope_reference_ordinal: 1,
             record_index: 385,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 388,
                 offset: 0,
             }],
@@ -154,7 +166,10 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
                 DesignOperandRole::BODIES_B,
             ),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "000".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -239,7 +254,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let mut offset_parameters = parameters.clone();
     offset_parameters[0]
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "EdgeOffset_1".into(),
                 offset_parameters[0].owner_record_index(),
                 offset_parameters[0].family_discriminator(),
@@ -250,7 +265,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     offset_parameters[0].try_set_evaluated_value(-3.0).unwrap();
     offset_parameters[1]
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "EdgeOffset_2".into(),
                 offset_parameters[1].owner_record_index(),
                 offset_parameters[1].family_discriminator(),
@@ -328,7 +343,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     second_group.id = format!("{stream}:design-construction-operand-group#415");
     second_group.record_index = 415;
     second_group
-        .try_set_members(vec![crate::records::Located {
+        .try_set_members(vec![crate::records::identity::Located {
             value: 418,
             offset: second_group.members()[0].offset,
         }])
@@ -370,7 +385,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let mut per_edge_parameters = parameters.clone();
     per_edge_parameters[0]
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "EdgeWidth".into(),
                 per_edge_parameters[0].owner_record_index(),
                 per_edge_parameters[0].family_discriminator(),
@@ -380,7 +395,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .unwrap();
     per_edge_parameters[1]
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "EdgeWidth".into(),
                 per_edge_parameters[1].owner_record_index(),
                 per_edge_parameters[1].family_discriminator(),
@@ -615,45 +630,55 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     }
 
     let owner = |record_index: u32, parameter_record_index: u32| {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: format!("{stream}:design-parameter-owner#{record_index}"),
-            byte_offset: 0,
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index,
-            scope_record_index: 382,
-            local_ordinal: 0,
-            evaluated_value: 0.0,
-            evaluated_value_offset: 40,
-            parameter_record_index,
-            owned_ordinal: 0,
-            variant: Some(0),
-            companion_record_index: record_index + 1,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("{stream}:design-parameter-owner#{record_index}"),
+                byte_offset: 0,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index: 382,
+                local_ordinal: 0,
+                evaluated_value: 0.0,
+                evaluated_value_offset: 40,
+                parameter_record_index,
+                owned_ordinal: 0,
+                variant: Some(0),
+                companion_record_index: record_index + 1,
+            },
+        )
         .unwrap()
     };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, evaluated_value: f64| {
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: format!("{stream}:design-parameter#{record_index}"),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index,
-            source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: format!("{stream}:design-parameter#{record_index}"),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                record_index,
+                source_ordinal: 0,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    source_kind.into(),
+                    Some(0),
+                    None,
+                )
                 .unwrap(),
-            expression: evaluated_value.to_string(),
-            expression_offset: 40,
-            source_kind_offset: 60,
+                expression: evaluated_value.to_string(),
+                expression_offset: 40,
+                source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
-                value: unit.into(),
-                offset: 70,
-            }),
-            name: source_kind.into(),
-            name_offset: 80,
-            evaluated_value,
-            evaluated_value_offset: 90,
-        })
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: unit.into(),
+                    offset: 70,
+                }),
+                name: source_kind.into(),
+                name_offset: 80,
+                evaluated_value,
+                evaluated_value_offset: 90,
+            },
+        )
         .unwrap()
     };
     let owners = [owner(399, 398), owner(402, 401), owner(430, 429)];
@@ -670,8 +695,9 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             scope_reference_ordinal: 1,
             record_index: 385,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 388,
                 offset: 0,
             }],
@@ -697,7 +723,10 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
                 DesignOperandRole::BODIES_B,
             ),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "000".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -707,7 +736,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     target_group.scope_reference_ordinal = 2;
     target_group.record_index = 421;
     target_group
-        .try_set_members(vec![crate::records::Located {
+        .try_set_members(vec![crate::records::identity::Located {
             value: 424,
             offset: target_group.members()[0].offset,
         }])
@@ -724,13 +753,14 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             group_member_ordinal: 0,
             record_index: 424,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 0,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -819,7 +849,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 318, 320, 323, 328, 331, 334, 336, 339, 343,
             ]);
             draft.layout_fixture_references();
@@ -971,7 +1001,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     scope
         .try_edit(|draft| {
             draft.frame_length = 442;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 900, 100, 101, 102, 110, 111, 112, 120, 121, 122,
             ]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
@@ -1020,8 +1050,9 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
                 scope_reference_ordinal: ordinal,
                 record_index,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-                members: vec![crate::records::Located {
+                class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                    .unwrap(),
+                members: vec![crate::records::identity::Located {
                     value: member,
                     offset: 0,
                 }],
@@ -1047,8 +1078,10 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
                     DesignOperandRole::BODIES_A,
                 ),
                 role_offset: 0,
-                paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "260".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: 0,
             },
         )
@@ -1077,7 +1110,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
 
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 100, 101, 102, 110, 111, 112, 120, 121, 122, 900,
             ]);
             draft.layout_fixture_references();
@@ -1121,10 +1154,10 @@ fn hem_scope_projects_each_decoded_owner_layout() {
     use crate::records::feature::{
         DesignHemOperation, DesignHemParameterOwners, DesignParameterScope,
     };
+    use crate::records::parameters::{DesignParameter, DesignParameterOwner};
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     };
-    use crate::records::{DesignParameter, DesignParameterOwner};
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalHemDirection, SheetMetalHemForm,
     };
@@ -1134,45 +1167,55 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                  record_index: u32,
                  parameter_record_index: u32|
      -> DesignParameterOwner {
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-            id: format!("{stream}:design-parameter-owner#{record_index}"),
-            byte_offset: 0,
-            frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal: 0,
-            evaluated_value: 0.0,
-            evaluated_value_offset: 40,
-            parameter_record_index,
-            owned_ordinal: 0,
-            variant: Some(0),
-            companion_record_index: record_index + 1,
-        })
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("{stream}:design-parameter-owner#{record_index}"),
+                byte_offset: 0,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index,
+                local_ordinal: 0,
+                evaluated_value: 0.0,
+                evaluated_value_offset: 40,
+                parameter_record_index,
+                owned_ordinal: 0,
+                variant: Some(0),
+                companion_record_index: record_index + 1,
+            },
+        )
         .unwrap()
     };
     let parameter = |record_index: u32, source_kind: &str, unit: &str, value: f64| {
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: format!("{stream}:design-parameter#{record_index}"),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            record_index,
-            source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: format!("{stream}:design-parameter#{record_index}"),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                record_index,
+                source_ordinal: 0,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    source_kind.into(),
+                    Some(0),
+                    None,
+                )
                 .unwrap(),
-            expression: value.to_string(),
-            expression_offset: 40,
-            source_kind_offset: 60,
+                expression: value.to_string(),
+                expression_offset: 40,
+                source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
-                value: unit.into(),
-                offset: 70,
-            }),
-            name: source_kind.into(),
-            name_offset: 80,
-            evaluated_value: value,
-            evaluated_value_offset: 90,
-        })
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: unit.into(),
+                    offset: 70,
+                }),
+                name: source_kind.into(),
+                name_offset: 80,
+                evaluated_value: value,
+                evaluated_value_offset: 90,
+            },
+        )
         .unwrap()
     };
     let group = |scope_record_index: u32,
@@ -1186,8 +1229,9 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                 scope_reference_ordinal: 0,
                 record_index,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-                members: vec![crate::records::Located {
+                class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                members: vec![crate::records::identity::Located {
                     value: member,
                     offset: 0,
                 }],
@@ -1211,8 +1255,10 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                 .unwrap(),
                 operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
                 role_offset: 0,
-                paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "000".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: 0,
             },
         )

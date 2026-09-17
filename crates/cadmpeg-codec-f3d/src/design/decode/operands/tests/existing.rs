@@ -11,7 +11,10 @@ use super::{
     body_recipe_operand_end, body_recipe_prologue_end, parse_sketch_profile_region_selection,
     unique_body_recipe,
 };
-use crate::records::{ConstructionRecipe, ConstructionRecipeKind, DesignRecordHeader};
+use crate::records::{
+    decal::DesignRecordHeader,
+    recipes::{ConstructionRecipe, ConstructionRecipeKind},
+};
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -84,7 +87,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     let header = DesignRecordHeader {
         id: "stream:record-100".into(),
         record_index: RECORD_INDEX,
-        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let early = ConstructionRecipe {
@@ -93,7 +96,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
         kind: ConstructionRecipeKind::Body,
         design: None,
         recipe_index: 0,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
             offset: 0,
         }),

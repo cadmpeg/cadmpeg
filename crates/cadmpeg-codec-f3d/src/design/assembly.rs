@@ -496,16 +496,24 @@ mod tests {
     fn selector() -> DesignAssemblyAxialSelectorIdentity {
         DesignAssemblyAxialSelectorIdentity {
             axis_record_index: 10,
-            axis_class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
-            axis_byte_offset: 100,
-            axis_paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+            axis_class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
                 .unwrap(),
+            axis_byte_offset: 100,
+            axis_paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             axis_paired_byte_offset: 120,
             selector_record_index: 13,
-            selector_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            selector_class_tag: crate::records::references::DesignClassTag::try_from(
+                "277".to_owned(),
+            )
+            .unwrap(),
             selector_byte_offset: 200,
-            selector_paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
-                .unwrap(),
+            selector_paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             selector_paired_byte_offset: 560,
             nested_record_index: 16,
             nested_record_index_offset: 223,
@@ -534,7 +542,8 @@ mod tests {
             external_link_name_offset: 511,
             external_version: None,
             role_record_index: 18,
-            role_class_tag: crate::records::DesignClassTag::try_from("298".to_owned()).unwrap(),
+            role_class_tag: crate::records::references::DesignClassTag::try_from("298".to_owned())
+                .unwrap(),
             role_byte_offset: 600,
             occurrence_role: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
                 .to_owned()
@@ -602,7 +611,9 @@ mod tests {
                 DesignFeatureKind::JointOrigin,
                 index,
             );
-            scope.with_joint_origin_transform(crate::records::SketchPlacementMatrix::IDENTITY);
+            scope.with_joint_origin_transform(
+                crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            );
             scopes.push(scope);
         }
         let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
@@ -1025,15 +1036,15 @@ mod tests {
             DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
                 component_insert_scope_record_index: 200,
                 construction_record_index: 70,
-                construction_class_tag: crate::records::DesignClassTag::try_from("305".to_owned())
-                    .unwrap(),
+                construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "305".to_owned(),
+                )
+                .unwrap(),
                 construction_byte_offset: 1_300,
                 construction_transform_offset: 1_348,
                 axis_record_index_offsets: [1_493, 1_509],
-                construction_paired_class_tag: crate::records::DesignClassTag::try_from(
-                    "261".to_owned(),
-                )
-                .unwrap(),
+                construction_paired_class_tag:
+                    crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
                 construction_paired_byte_offset: 1_680,
                 selectors: Box::new([selector(), second_selector()]),
             },

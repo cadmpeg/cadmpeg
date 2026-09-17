@@ -71,8 +71,10 @@ pub(crate) fn exact_component_occurrence(
     let occurrence_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, start + 40)?)?;
     let (component_guid, after_component) = lp_utf16_bounded(bytes, start + 44, 36..=36)?;
     let (occurrence_guid, after_occurrence) = lp_utf16_bounded(bytes, start + 120, 36..=36)?;
-    let component_guid = crate::records::DesignRelaxedGuidText::try_from(component_guid).ok()?;
-    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    let component_guid =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(component_guid).ok()?;
+    let occurrence_guid =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
     if after_component != start + 120 || after_occurrence != start + 196 {
         return None;
     }

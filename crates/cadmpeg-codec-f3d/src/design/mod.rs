@@ -24,7 +24,7 @@ pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 
-use crate::records::ConstructionRecipeKind;
+use crate::records::recipes::ConstructionRecipeKind;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DesignFeatureFamily {

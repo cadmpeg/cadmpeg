@@ -17,11 +17,12 @@ use crate::history_records::{
     AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
-use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
-use crate::records::{DesignBodyBinding, DesignComponentNamingSpace};
+use crate::records::{
+    bodies::DesignBodyBinding, recipes::DesignComponentNamingSpace, topology::DesignOperandRole,
+};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -943,9 +944,9 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     /// Whole-body recipe operands.
     pub body_recipe_operands: &'a [crate::records::topology::DesignBodyRecipeOperand],
     /// Construction recipes backing whole-body operands.
-    pub construction_recipes: &'a [crate::records::ConstructionRecipe],
+    pub construction_recipes: &'a [crate::records::recipes::ConstructionRecipe],
     /// Persistent body identities in the active solved B-rep.
-    pub persistent_design_links: &'a [crate::records::PersistentDesignLink],
+    pub persistent_design_links: &'a [crate::records::sketch_links::PersistentDesignLink],
     /// Independent ASM history graphs.
     pub histories: &'a [AsmHistory],
     /// Neutral top-level bodies.
@@ -1453,11 +1454,11 @@ fn combine_recipe_family_tool_slots(
     previous_state_id: i64,
     target_body: i64,
     operands: &[crate::records::topology::DesignBodyRecipeOperand],
-    recipes: &[crate::records::ConstructionRecipe],
+    recipes: &[crate::records::recipes::ConstructionRecipe],
 ) -> Option<Vec<i64>> {
     type FamilyKey = (
-        crate::records::DesignRelaxedGuidText,
-        crate::records::DesignRelaxedGuidText,
+        crate::records::mesh::DesignRelaxedGuidText,
+        crate::records::mesh::DesignRelaxedGuidText,
         u64,
         u32,
         String,
@@ -1469,9 +1470,10 @@ fn combine_recipe_family_tool_slots(
     {
         return None;
     }
-    let mut recipes_by_id = HashMap::<&str, Option<&crate::records::ConstructionRecipe>>::new();
+    let mut recipes_by_id =
+        HashMap::<&str, Option<&crate::records::recipes::ConstructionRecipe>>::new();
     for recipe in recipes.iter().filter(|recipe| {
-        recipe.kind == crate::records::ConstructionRecipeKind::Body
+        recipe.kind == crate::records::recipes::ConstructionRecipeKind::Body
             && crate::ids::native_stream(&recipe.id) == Some(stream)
     }) {
         recipes_by_id
@@ -1927,8 +1929,8 @@ fn bind_direct_body_recipe_body_selection(
 
 fn direct_body_recipe_candidate(
     operand: &crate::records::topology::DesignBodyRecipeOperand,
-    construction_recipes: &[crate::records::ConstructionRecipe],
-    persistent_design_links: &[crate::records::PersistentDesignLink],
+    construction_recipes: &[crate::records::recipes::ConstructionRecipe],
+    persistent_design_links: &[crate::records::sketch_links::PersistentDesignLink],
     bodies: &[cadmpeg_ir::topology::Body],
     regions: &[cadmpeg_ir::topology::Region],
     shells: &[cadmpeg_ir::topology::Shell],
@@ -1950,14 +1952,14 @@ fn direct_body_recipe_candidate(
 
 fn body_recipe_link_candidate(
     operand: &crate::records::topology::DesignBodyRecipeOperand,
-    construction_recipes: &[crate::records::ConstructionRecipe],
-    persistent_design_links: &[crate::records::PersistentDesignLink],
+    construction_recipes: &[crate::records::recipes::ConstructionRecipe],
+    persistent_design_links: &[crate::records::sketch_links::PersistentDesignLink],
     bodies: &[cadmpeg_ir::topology::Body],
 ) -> Option<cadmpeg_ir::ids::BodyId> {
     let stream = crate::ids::native_stream(&operand.id)?;
     let mut matching_recipes = construction_recipes.iter().filter(|recipe| {
         recipe.id == operand.recipe_id
-            && recipe.kind == crate::records::ConstructionRecipeKind::Body
+            && recipe.kind == crate::records::recipes::ConstructionRecipeKind::Body
             && crate::ids::native_stream(&recipe.id) == Some(stream)
     });
     let recipe = matching_recipes.next()?;
@@ -1968,9 +1970,12 @@ fn body_recipe_link_candidate(
     let design_id = design.id.value.as_str();
     let selector = i64::from(design.selector?.value);
     let mut matching_bodies = Vec::new();
-    for link in crate::records::current_persistent_design_links(persistent_design_links)
-        .into_values()
-        .filter(|link| link.design_id.as_str() == design_id && link.design_reference == selector)
+    for link in
+        crate::records::sketch_links::current_persistent_design_links(persistent_design_links)
+            .into_values()
+            .filter(|link| {
+                link.design_id.as_str() == design_id && link.design_reference == selector
+            })
     {
         let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
             continue;
@@ -2815,7 +2820,7 @@ pub(crate) fn project_feature_input_topologies(
 /// that precedes their owning construction in authored timeline order.
 pub(crate) fn bind_vertex_recipe_history(
     scopes: &mut [crate::records::feature::DesignParameterScope],
-    timelines: &[crate::records::DesignFeatureTimeline],
+    timelines: &[crate::records::entity_header::DesignFeatureTimeline],
     histories: &[AsmHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let source_ordinals =
@@ -2920,7 +2925,7 @@ pub(crate) fn bind_vertex_recipe_history(
         };
         let [first, second, third] = candidates;
         if !three_point_plane_matches(
-            transform.map(crate::records::SketchPlacementMatrix::rows),
+            transform.map(crate::records::sketch_placement::SketchPlacementMatrix::rows),
             [first.1, second.1, third.1],
         ) {
             continue;
@@ -3493,7 +3498,7 @@ fn bound_history_state_pair<'a>(
 
 pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::feature::DesignParameterScope],
-    body_bindings: &[crate::records::DesignBodyBinding],
+    body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) -> HashMap<String, String> {
@@ -3766,7 +3771,7 @@ fn exact_face_selection_group<'a>(
 /// Bind one recipe reference to every live face or edge fragment carrying its
 /// token and Design reference in the recipe-state topology.
 fn bind_historical_recipe_reference_candidates(
-    reference: &mut crate::records::DesignRecipeReference,
+    reference: &mut crate::records::dimensions::DesignRecipeReference,
     topology: &AsmHistoricalTopology,
 ) {
     reference.candidate_faces.clear();
@@ -3823,11 +3828,11 @@ fn historical_recipe_faces(
 }
 
 fn direct_face_recipe_candidates(
-    recipe_kind: crate::records::ConstructionRecipeKind,
-    references: &[crate::records::DesignRecipeReference],
+    recipe_kind: crate::records::recipes::ConstructionRecipeKind,
+    references: &[crate::records::dimensions::DesignRecipeReference],
     recipe_record_index: i32,
 ) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
-    if recipe_kind != crate::records::ConstructionRecipeKind::Face {
+    if recipe_kind != crate::records::recipes::ConstructionRecipeKind::Face {
         return None;
     }
     let mut faces = references
@@ -3845,7 +3850,7 @@ pub(crate) fn bind_face_operand_history_candidates(
     operands: &mut [crate::records::topology::DesignFaceOperand],
     scopes: &[crate::records::feature::DesignParameterScope],
     operand_groups: &[crate::records::topology::DesignConstructionOperandGroup],
-    recipes: &[crate::records::ConstructionRecipe],
+    recipes: &[crate::records::recipes::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
@@ -4134,7 +4139,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .collect();
         }
         if feature_family == Some(crate::design::DesignFeatureFamily::Loft)
-            && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+            && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
             && state
                 .transition
                 .as_ref()
@@ -4278,7 +4283,7 @@ fn resolve_draft_face_by_surface_transition(
     preceding: &crate::history_records::AsmHistoricalTopology,
     result: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<i64> {
-    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+    if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
         || !matches!(
             crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program),
             Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. })
@@ -4406,7 +4411,7 @@ fn resolve_split_tool_face(
     if operand.group_record_index().is_some()
         || operand.group_member_ordinal().is_some()
         || operand.scope_reference_ordinal != 1
-        || operand.recipe_kind != crate::records::ConstructionRecipeKind::Face
+        || operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::Face
         || operand.recipe_program != [0, -1]
     {
         return None;
@@ -4422,7 +4427,7 @@ fn resolve_split_tool_face(
 }
 
 fn effective_faces(
-    reference: &crate::records::DesignRecipeReference,
+    reference: &crate::records::dimensions::DesignRecipeReference,
 ) -> &[cadmpeg_ir::ids::FaceId] {
     if reference.candidate_faces.is_empty() {
         &reference.alternate_selector_faces
@@ -4491,7 +4496,7 @@ fn grouped_reference_face_candidate(
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
 ) -> Option<cadmpeg_ir::ids::FaceId> {
-    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+    if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
         || !crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(
             &operand.recipe_prefix_bytes,
         )
@@ -4672,7 +4677,7 @@ fn cyclic_point_subsequence(
 
 pub(crate) fn bind_body_recipe_operand_history_candidates(
     operands: &mut [crate::records::topology::DesignBodyRecipeOperand],
-    recipes: &[crate::records::ConstructionRecipe],
+    recipes: &[crate::records::recipes::ConstructionRecipe],
     scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
@@ -4757,7 +4762,8 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             operand.resolved_body_slot = intersection.into_iter().next();
         }
     }
-    let mut recipes_by_id = HashMap::<_, Option<&crate::records::ConstructionRecipe>>::new();
+    let mut recipes_by_id =
+        HashMap::<_, Option<&crate::records::recipes::ConstructionRecipe>>::new();
     for recipe in recipes {
         recipes_by_id
             .entry(recipe.id.as_str())
@@ -5012,11 +5018,15 @@ fn historical_brep_source(state_id: &str) -> Option<&str> {
 }
 
 fn resolve_direct_face_recipe_clauses(
-    references: &[crate::records::DesignRecipeReference],
+    references: &[crate::records::dimensions::DesignRecipeReference],
     topology: &crate::history_records::AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
 ) -> Vec<i64> {
-    let mut clauses = Vec::<(u64, u64, Vec<&crate::records::DesignRecipeReference>)>::new();
+    let mut clauses = Vec::<(
+        u64,
+        u64,
+        Vec<&crate::records::dimensions::DesignRecipeReference>,
+    )>::new();
     for reference in references {
         let key = (reference.selector_offset, reference.token_offset);
         if let Some((_, _, references)) = clauses
@@ -5576,7 +5586,7 @@ fn preceding_support_face_slots(
 
 fn edge_recipe_reference_context(
     reference_ordinal: u32,
-    reference: &crate::records::DesignRecipeReference,
+    reference: &crate::records::dimensions::DesignRecipeReference,
     result_topology: &AsmHistoricalTopology,
     result_boundary_edges: &[i64],
     preceding_topology: &AsmHistoricalTopology,
@@ -5690,7 +5700,7 @@ fn side_one_recipe_edge(
 pub(crate) fn bind_edge_operand_history_candidates(
     operands: &mut [crate::records::topology::DesignEdgeOperand],
     scopes: &[crate::records::feature::DesignParameterScope],
-    recipes: &[crate::records::ConstructionRecipe],
+    recipes: &[crate::records::recipes::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
@@ -6055,7 +6065,7 @@ fn bind_active_edge_operand_for_scope(
 
 fn surface_patch_edge_operand_slot(
     structure: Option<&crate::records::topology::DesignSurfacePatchRecipeStructure>,
-    recipe_references: &[crate::records::DesignRecipeReference],
+    recipe_references: &[crate::records::dimensions::DesignRecipeReference],
     topology: &AsmHistoricalTopology,
 ) -> Option<i64> {
     let structure = structure?;
@@ -6186,7 +6196,7 @@ fn terminal_edge_recipe_faces(
 }
 
 fn terminal_edge_recipe_reference_faces(
-    references: &[crate::records::DesignRecipeReference],
+    references: &[crate::records::dimensions::DesignRecipeReference],
     local_topology_references: Option<&[std::num::NonZeroU32]>,
 ) -> Vec<Vec<cadmpeg_ir::ids::FaceId>> {
     let selected_references = match local_topology_references {
@@ -7034,7 +7044,7 @@ fn component_histories<'a>(
                 && binding.entity_suffix >= space.component_record_index
                 && cluster_end.is_none_or(|end| binding.entity_suffix < end)
         })
-        .map(crate::records::DesignBodyBinding::blob_name)
+        .map(crate::records::bodies::DesignBodyBinding::blob_name)
         .collect::<HashSet<_>>();
     let mut selected = histories
         .iter()
@@ -8376,7 +8386,7 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
     operands: &mut [DesignEdgeIdentityOperand],
     face_operands: &[crate::records::topology::DesignFaceOperand],
 ) {
-    use crate::records::ConstructionRecipeKind;
+    use crate::records::recipes::ConstructionRecipeKind;
 
     for operand in operands {
         operand.resolved_edge_slots.clear();

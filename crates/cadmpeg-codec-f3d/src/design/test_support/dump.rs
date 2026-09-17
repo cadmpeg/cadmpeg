@@ -78,6 +78,15 @@ pub(crate) use crate::ids::{
     neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
     neutral_sketch_point_id, neutral_spatial_sketch_id,
 };
+pub(crate) use crate::records::decal::DesignRecordHeader;
+pub(crate) use crate::records::dimensions::{
+    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
+    DesignRecipeReference,
+};
+pub(crate) use crate::records::entity_header::{
+    DesignEntityHeader, DesignFeatureTimeline, DESIGN_MODULE_SKETCH,
+};
 pub(crate) use crate::records::feature::{
     DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind,
     DesignAssemblyOperandFrame, DesignBaseFeatureConstruction, DesignCircularPatternConstruction,
@@ -93,6 +102,12 @@ pub(crate) use crate::records::feature::{
     DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
     DesignThreadForm,
 };
+pub(crate) use crate::records::sketch_geometry::{
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+};
+pub(crate) use crate::records::sketch_relations::{
+    SketchConstraintKind, SketchRelation, SketchRelationOperand,
+};
 pub(crate) use crate::records::topology::{
     DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
@@ -102,30 +117,27 @@ pub(crate) use crate::records::topology::{
     DesignTopologyRecipeSide,
 };
 pub(crate) use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignDimensionAnnotationFrame,
-    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignEntityHeader,
-    DesignFeatureTimeline, DesignParameterCompanion, DesignParameterOwner, DesignRecipeReference,
-    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentSubentityTag,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand, DESIGN_MODULE_SKETCH,
+    parameters::{DesignParameterCompanion, DesignParameterOwner},
+    recipes::{ConstructionRecipe, ConstructionRecipeKind},
+    references::LostEdgeReference,
+};
+pub(crate) use crate::records::{
+    sketch_links::PersistentSubentityTag, sketch_placement::DesignSketchPlacement,
 };
 pub(crate) use cadmpeg_core::decode::WorkBudget;
 pub(crate) use cadmpeg_ir::attributes::AttributeTarget;
+pub(crate) use cadmpeg_ir::features::{
+    FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    ParameterValue, ProfileRef,
+};
 pub(crate) use cadmpeg_ir::ids::FaceId;
 pub(crate) use cadmpeg_ir::math::{Point2, Point3, Vector3};
+pub(crate) use cadmpeg_ir::scalar::{Angle, Length};
 pub(crate) use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId,
     SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand, SpatialSketch,
     SpatialSketchConstraintDefinitionInput, SpatialSketchEntity, SpatialSketchEntityId,
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
-};
-pub(crate) use cadmpeg_ir::{
-    features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-        ParameterValue, ProfileRef,
-    },
-    scalar::{Angle, Length},
 };
 pub(crate) use std::collections::{BTreeMap, HashMap};
 

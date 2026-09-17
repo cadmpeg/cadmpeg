@@ -11,7 +11,7 @@ use super::{
     decode_pattern_definition, parse_classed_sketch_relation, relation_mask_width,
     SketchRelationClass, SketchRelationMaskWidth,
 };
-use crate::records::{SketchPatternDefinition, SketchPatternDirection};
+use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
 
 /// One present reference: the presence byte, the u64 target, and the
 /// `cross_document` and same-segment flags.
@@ -297,7 +297,8 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
             angle_parameter: 336,
             count_parameter: 333,
             evaluated_angle: std::f64::consts::TAU,
-            evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
+            evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(3)
+                .unwrap(),
         })
     );
 }
@@ -374,14 +375,16 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
         Some(SketchPatternDefinition::Rectangular {
             directions: [
                 SketchPatternDirection {
-                    evaluated_count: crate::records::SketchPatternCount::try_from(3).unwrap(),
+                    evaluated_count:
+                        crate::records::sketch_relations::SketchPatternCount::try_from(3).unwrap(),
                     count_parameter: 464,
                     direction: [1.0, 0.0, 0.0],
                     evaluated_distance: 3.0,
                     distance_parameter: 470,
                 },
                 SketchPatternDirection {
-                    evaluated_count: crate::records::SketchPatternCount::try_from(1).unwrap(),
+                    evaluated_count:
+                        crate::records::sketch_relations::SketchPatternCount::try_from(1).unwrap(),
                     count_parameter: 467,
                     direction: [0.0, 1.0, 0.0],
                     evaluated_distance: 0.5,

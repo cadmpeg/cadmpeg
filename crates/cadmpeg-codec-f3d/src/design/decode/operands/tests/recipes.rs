@@ -7,8 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::topology::DesignConstructionOperandGroupFrame;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
 
 #[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
@@ -40,7 +39,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#1".into(),
             byte_offset: 1000,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
             record_index: 1,
             frame_length: 200,
             kind_offset: 1100,
@@ -51,7 +51,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: 1080,
-            reference_members: crate::records::ReferenceRun::from_columns(
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
                 vec![100],
                 vec![1085],
                 "reference_members",
@@ -61,7 +61,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1200,
         }
         .with_fixture_layout(),
@@ -70,7 +73,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
@@ -79,7 +82,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 7,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: 303,
             offset: recipe_record_at + 8,
         }),
@@ -198,7 +201,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let vertex_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap(),
         record_index: 200,
     };
     let vertex_recipe = ConstructionRecipe {
@@ -207,7 +210,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         kind: ConstructionRecipeKind::Vertex,
         design: None,
         recipe_index: 9,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: 303,
             offset: vertex_recipe_record_at + 8,
         }),
@@ -388,8 +391,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             scope_reference_ordinal: 0,
             record_index: 90,
             byte_offset: 900,
-            class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("288".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 100,
                 offset: 926,
             }],
@@ -400,7 +404,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                     member_count_offset: 921,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
-                    trailing_records: vec![crate::records::Located {
+                    trailing_records: vec![crate::records::identity::Located {
                         value: 91,
                         offset: 950,
                     }],
@@ -420,7 +424,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             ),
             role_offset: 960,
 
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1_000,
         },
     )
@@ -445,7 +452,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             vec![100, 104]
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| crate::records::Located {
+                .map(|(index, value)| crate::records::identity::Located {
                     value,
                     offset: index as u64 * 11,
                 })
@@ -495,15 +502,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 group_member_ordinal: ordinal,
                 record_index,
                 byte_offset: u64::from(record_index),
-                class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                    .unwrap(),
                 layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
                 local_id: u64::from(record_index),
-                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
                 )
                 .unwrap(),
                 asset_id_offset: u64::from(record_index) + 42,
-                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
                 )
                 .unwrap(),
@@ -576,7 +584,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             vec![100]
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| crate::records::Located {
+                .map(|(index, value)| crate::records::identity::Located {
                     value,
                     offset: index as u64 * 11,
                 })
@@ -929,7 +937,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             vec![100]
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| crate::records::Located {
+                .map(|(index, value)| crate::records::identity::Located {
                     value,
                     offset: index as u64 * 11,
                 })
@@ -1016,7 +1024,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     local_recipe.record_index =
         local_recipe
             .record_index
-            .map(|index| crate::records::RecordedValue {
+            .map(|index| crate::records::identity::RecordedValue {
                 value: -1335,
                 ..index
             });
@@ -1045,7 +1053,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_id: "recipe".into(),
         recipe_kind: ConstructionRecipeKind::Edge,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 4,
         prefix_offset: 0,
@@ -1095,8 +1103,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .unwrap();
     let mut face_recipe = recipe;
     face_recipe.kind = ConstructionRecipeKind::BoundedFace;
-    face_recipe.design = Some(crate::records::ConstructionRecipeDesign {
-        id: crate::records::RecordedValue {
+    face_recipe.design = Some(crate::records::recipes::ConstructionRecipeDesign {
+        id: crate::records::identity::RecordedValue {
             value: "303".into(),
             offset: 0,
         },
@@ -1106,7 +1114,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_recipe.record_index =
         face_recipe
             .record_index
-            .map(|index| crate::records::RecordedValue {
+            .map(|index| crate::records::identity::RecordedValue {
                 offset: face_recipe_record_at + 8,
                 ..index
             });
@@ -1239,7 +1247,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     compact_recipe.record_index =
         compact_recipe
             .record_index
-            .map(|index| crate::records::RecordedValue {
+            .map(|index| crate::records::identity::RecordedValue {
                 offset: compact_record_at + 8,
                 ..index
             });
@@ -1368,8 +1376,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             scope_reference_ordinal: 0,
             record_index: 90,
             byte_offset: 900,
-            class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: operand.record_index(),
                 offset: 924,
             }],
@@ -1379,7 +1388,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                     member_count_offset: 920,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
-                    trailing_records: vec![crate::records::Located {
+                    trailing_records: vec![crate::records::identity::Located {
                         value: 91,
                         offset: 935,
                     }],
@@ -1400,7 +1409,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             role_offset: 946,
 
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 980,
         },
     )
@@ -1549,7 +1561,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             vec![operand.record_index(), operand.record_index() + 1]
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| crate::records::Located {
+                .map(|(index, value)| crate::records::identity::Located {
                     value,
                     offset: index as u64 * 11,
                 })
