@@ -365,7 +365,25 @@ pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
 ///   the record states no cache span.
 /// * The record owns no non-`ref` scope: it states no construction, so no
 ///   construction owns its blocks and the record's own stream is the cache
-///   span.
+///   span. This last case is the decoder's decision, not the sentence's. The
+///   sentence states what a construction owns, so a record that states no
+///   construction is outside it. The nearest sentence that bears on it is
+///   `docs/formats/asm.md:403`, `exact_int_cur`: "the solved `nubs`/`nurbs`
+///   curve cache is the authoritative exact construction payload" — the cache
+///   is the record's own payload there — but that sentence names one subtype,
+///   and this case covers every record that states no owned construction,
+///   including the `ref` forms whose subtype is named in the subtype table. No
+///   sentence in `asm.md` states the general case. What states it is the
+///   routes that exercise it: the four f3d writer round trips
+///   `writer::tests::source_less_nurbs::
+///   generated_source_less_face_writes_nurbs_surface_carrier`,
+///   `..._writes_rational_nurbs_surface_carrier`,
+///   `..._writes_rational_nurbs_edge_curve` and
+///   `generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve` in
+///   `cadmpeg-codec-f3d`, which encode a source-less NURBS body and decode it
+///   back. The written record owns no procedural subtype at all, so its
+///   B-spline block is the record's geometry and not a construction's cache.
+///   Removing this arm fails all four on `solved carrier`.
 ///
 /// This is the one answer; every reader of a record cache calls it and none
 /// states a fallback of its own.
