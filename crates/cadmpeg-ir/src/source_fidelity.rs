@@ -75,8 +75,14 @@ impl DecodeSidecar {
 }
 
 /// Returns the sidecar path for a CADIR path.
-pub fn decode_sidecar_path(path: &Path) -> PathBuf {
-    let file_name = path.file_name().unwrap_or_default();
+///
+/// The sidecar is named after the CADIR file, so a path that names no file has
+/// no sidecar path and answers `None`. `Path::file_name` answers `None` for the
+/// empty path, for a path that is a root, and for a path whose last component
+/// is `..`. The remaining paths all have a name, so `with_file_name` replaces
+/// it.
+pub fn decode_sidecar_path(path: &Path) -> Option<PathBuf> {
+    let file_name = path.file_name()?;
     let stem = match (path.extension(), path.file_stem()) {
         (Some(extension), Some(stem)) if extension == "json" => stem,
         _ if file_name == ".json" => std::ffi::OsStr::new(""),
@@ -84,7 +90,7 @@ pub fn decode_sidecar_path(path: &Path) -> PathBuf {
     };
     let mut sidecar_name = stem.to_os_string();
     sidecar_name.push(".fidelity.json");
-    path.with_file_name(sidecar_name)
+    Some(path.with_file_name(sidecar_name))
 }
 
 /// Failure parsing a decode sidecar.
@@ -774,11 +780,11 @@ mod tests {
     fn decode_sidecar_path_replaces_only_a_trailing_json_suffix() {
         assert_eq!(
             decode_sidecar_path(Path::new("part.cadir.json")),
-            PathBuf::from("part.cadir.fidelity.json")
+            Some(PathBuf::from("part.cadir.fidelity.json"))
         );
         assert_eq!(
             decode_sidecar_path(Path::new("part.cadir")),
-            PathBuf::from("part.cadir.fidelity.json")
+            Some(PathBuf::from("part.cadir.fidelity.json"))
         );
         for (source, sidecar) in [
             ("dir/.json", "dir/.fidelity.json"),
@@ -787,7 +793,18 @@ mod tests {
         ] {
             assert_eq!(
                 decode_sidecar_path(Path::new(source)),
-                PathBuf::from(sidecar)
+                Some(PathBuf::from(sidecar))
+            );
+        }
+    }
+
+    #[test]
+    fn decode_sidecar_path_is_absent_for_a_path_that_names_no_file() {
+        for source in ["..", "/", "", "dir/..", "/.."] {
+            assert_eq!(
+                decode_sidecar_path(Path::new(source)),
+                None,
+                "{source} names no file"
             );
         }
     }
@@ -809,7 +826,7 @@ mod tests {
                 expected.extend_from_slice(b".fidelity.json");
                 assert_eq!(
                     decode_sidecar_path(&path),
-                    Path::new("directory").join(std::ffi::OsString::from_vec(expected)),
+                    Some(Path::new("directory").join(std::ffi::OsString::from_vec(expected))),
                 );
             }
         }

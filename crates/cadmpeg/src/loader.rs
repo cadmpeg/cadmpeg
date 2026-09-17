@@ -107,7 +107,7 @@ mod tests {
         .unwrap();
         let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
-            cadmpeg_ir::decode_sidecar_path(&path),
+            cadmpeg_ir::decode_sidecar_path(&path).unwrap(),
             sidecar.to_canonical_json().unwrap(),
         )
         .unwrap();
