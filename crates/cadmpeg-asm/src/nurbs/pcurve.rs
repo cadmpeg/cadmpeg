@@ -257,15 +257,24 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
 }
 
 /// The parameter-space fit tolerance immediately following the final valid 2D
-/// pcurve block in `toks`. Token-space counterpart of
+/// pcurve block the scope itself owns. Token-space counterpart of
 /// [`decode_pcurve_fit_tolerance`].
-pub fn pcurve_fit_tolerance(toks: &[Token]) -> Option<f64> {
-    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
-    let (_, end) = toks::owned_marker_positions(scope)?
+///
+/// The blocks searched are the ones [`explicit_pcurve_cache`] selects from, so
+/// the tolerance belongs to the pcurve that function returns. Nested support
+/// references are not searched because they belong to other fields.
+///
+/// The argument is the scope, so the marker walk is total: the unbalanced
+/// stream the free walk refuses is a state [`toks::SubtypeScope`] cannot hold.
+/// Marker positions index the scope's own tokens.
+pub fn pcurve_fit_tolerance(scope: toks::SubtypeScope<'_>) -> Option<f64> {
+    let tokens = scope.tokens();
+    let (_, end) = scope
+        .owned_marker_positions()
         .into_iter()
-        .filter_map(|pos| pcurve_block_with_end(scope, pos))
+        .filter_map(|pos| pcurve_block_with_end(tokens, pos))
         .next_back()?;
-    match scope.get(end) {
+    match tokens.get(end) {
         Some(Token::Double(value)) => Some(*value),
         _ => None,
     }
