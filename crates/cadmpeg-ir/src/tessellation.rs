@@ -252,15 +252,20 @@ fn strip_triangles<V>(strips: &Strips<V>) -> Vec<[u32; 3]> {
     let mut triangles = Vec::new();
     let mut base: u32 = 0;
     for strip in strips.as_slice() {
-        for index in 0..strip.triangle_count() as u32 {
+        // The walk counts in the `u32` the proof is stated in, so no in-memory
+        // count is narrowed here. A strip holds two more vertices than it has
+        // triangles, so `index` ends at the strip's vertex count less two.
+        let mut index: u32 = 0;
+        for _ in 0..strip.triangle_count() {
             let a = base + index;
             triangles.push(if index % 2 == 0 {
                 [a, a + 1, a + 2]
             } else {
                 [a, a + 2, a + 1]
             });
+            index += 1;
         }
-        base += strip.vertices().len() as u32;
+        base += index + 2;
     }
     triangles
 }
@@ -794,6 +799,9 @@ pub struct TessellationChannel {
     kind: u32,
     flags: u32,
     data: Vec<u8>,
+    /// Element count, computed and bounded at construction. The channel is
+    /// immutable once built, so this is the count [`Self::data`] holds.
+    count: u32,
 }
 
 fn require_finite_vertices(vertices: &[Point3]) -> Result<(), TessellationError> {
@@ -1216,6 +1224,7 @@ impl TessellationChannel {
             kind,
             flags,
             data,
+            count,
         })
     }
 
@@ -1250,15 +1259,13 @@ impl TessellationChannel {
     }
 
     /// Number of elements in [`Self::data`].
+    ///
+    /// The constructor computes this count and refuses a channel whose data
+    /// holds more elements than the stated width, so the stored value is the
+    /// only one this channel ever has.
     #[must_use]
-    pub fn count(&self) -> u32 {
-        let item_size = self.item_size as usize;
-        match std::num::NonZeroUsize::new(item_size) {
-            // A zero item size is admitted only with empty data, so the
-            // channel holds no element.
-            None => 0,
-            Some(item_size) => (self.data.len() / item_size) as u32,
-        }
+    pub const fn count(&self) -> u32 {
+        self.count
     }
 
     /// Raw channel payload.
