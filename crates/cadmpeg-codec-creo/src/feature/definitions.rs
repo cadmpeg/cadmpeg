@@ -1077,9 +1077,7 @@ impl<T> SolverSubtable<T> {
 
     pub fn is_complete(&self) -> bool {
         match self {
-            Self::Declared { header, rows } => {
-                usize::try_from(header.declared_count).ok() == Some(rows.len())
-            }
+            Self::Declared { header, rows } => header.declared_rows() == rows.len(),
             Self::Unframed(_) => false,
         }
     }
@@ -1089,12 +1087,13 @@ impl<T> SolverSubtable<T> {
     pub fn missing_rows(&self) -> usize {
         match self {
             Self::Declared { header, rows } => {
-                let declared = usize::try_from(header.declared_count).unwrap_or(usize::MAX);
-                if declared > rows.len() {
-                    declared - rows.len()
-                } else {
-                    0
-                }
+                // `checked_sub` answering `None` is the doc sentence above:
+                // rows decoded past the declaration are an over-run, so the
+                // shortfall is zero.
+                header
+                    .declared_rows()
+                    .checked_sub(rows.len())
+                    .unwrap_or(0)
             }
             Self::Unframed(_) => 0,
         }
@@ -1153,6 +1152,22 @@ pub struct FeatureSolverTableHeader {
     pub entity_ref: u32,
     /// Byte offset of the table label or positional array opener.
     pub offset: usize,
+}
+
+/// [`FeatureSolverTableHeader::declared_rows`] widens the stored 32-bit
+/// declaration to a row count. The widening is exact on every target this
+/// crate builds for, and it justifies nothing else.
+const _: () = assert!(usize::BITS >= u32::BITS);
+
+impl FeatureSolverTableHeader {
+    /// The declaration as a row count.
+    ///
+    /// `declared_count` is the `u32` the `f8` opener stored, which is what the
+    /// native record reproduces; the module assertion above proves the
+    /// widening exact, so this states no refusal.
+    pub fn declared_rows(&self) -> usize {
+        self.declared_count as usize
+    }
 }
 
 /// One entity incidence within a section solver `skamp_ptr` row.
@@ -7294,5 +7309,31 @@ mod tests {
             RelationBodyRows::from_declared(u32::MAX).get(),
             Some(u32::MAX - 2)
         );
+    }
+
+    #[test]
+    fn a_solver_subtable_reports_the_shortfall_and_reports_an_over_run_as_none() {
+        let table = |declared: u32, decoded: usize| {
+            super::SolverSubtable::from_parts(
+                Some(super::FeatureSolverTableHeader {
+                    declared_count: declared,
+                    entity_ref: 0,
+                    offset: 0,
+                }),
+                vec![(); decoded],
+            )
+            .expect("a declared header always frames a table")
+        };
+
+        assert_eq!(table(5, 2).missing_rows(), 3);
+        assert!(!table(5, 2).is_complete());
+
+        assert_eq!(table(2, 2).missing_rows(), 0);
+        assert!(table(2, 2).is_complete());
+
+        assert_eq!(table(2, 5).missing_rows(), 0);
+        assert!(!table(2, 5).is_complete());
+
+        assert_eq!(table(u32::MAX, 1).missing_rows(), u32::MAX as usize - 1);
     }
 }
