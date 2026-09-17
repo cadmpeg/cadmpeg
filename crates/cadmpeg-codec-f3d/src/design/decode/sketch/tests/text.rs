@@ -43,19 +43,21 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
         );
         assert_eq!(
             (match text.layout {
-                crate::records::SketchTextLayout::TextexTag {
-                    first_reference, ..
+                crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                    first_reference,
+                    ..
                 } => first_reference,
-                crate::records::SketchTextLayout::TxtTag { .. } => None,
+                crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
             }),
             Some(319)
         );
         assert_eq!(
             (match text.layout {
-                crate::records::SketchTextLayout::TextexTag {
-                    second_reference, ..
+                crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                    second_reference,
+                    ..
                 } => second_reference,
-                crate::records::SketchTextLayout::TxtTag { .. } => None,
+                crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
             }),
             Some(322)
         );
@@ -66,7 +68,7 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
 #[test]
 fn sketch_records_use_the_primary_index_live_copy() {
     use crate::metastream::{MetaStream, RecordIndexEntry};
-    use crate::records::{SegmentType, SketchCurveGeometry};
+    use crate::records::{entity_header::SegmentType, sketch_geometry::SketchCurveGeometry};
     use cadmpeg_ir::math::{Point2, Point3};
 
     const PARENT: u64 = 900;
@@ -169,14 +171,14 @@ fn sketch_records_use_the_primary_index_live_copy() {
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: crate::records::BaseTypeGuid::Absent,
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::located(
+            entities: crate::records::identity::ReferenceRun::located(
                 entity_ids
                     .into_iter()
-                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located { value, offset: 0 })
                     .collect(),
             ),
         };
@@ -393,19 +395,21 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                first_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                first_reference,
+                ..
             } => first_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         Some(307)
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                second_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                second_reference,
+                ..
             } => second_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         Some(310)
     );
@@ -439,19 +443,21 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
     assert_eq!(text.persistent_id, Some(109));
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                first_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                first_reference,
+                ..
             } => first_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         None
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                second_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                second_reference,
+                ..
             } => second_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         None
     );
@@ -584,19 +590,21 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                first_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                first_reference,
+                ..
             } => first_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         None
     );
     assert_eq!(
         (match text.layout {
-            crate::records::SketchTextLayout::TextexTag {
-                second_reference, ..
+            crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+                second_reference,
+                ..
             } => second_reference,
-            crate::records::SketchTextLayout::TxtTag { .. } => None,
+            crate::records::sketch_geometry::SketchTextLayout::TxtTag { .. } => None,
         }),
         None
     );
@@ -831,11 +839,14 @@ fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
 
 /// Decode one sketch-text record at `class_version`, the version its Design
 /// `MetaStream` type table gives its class.
-fn decode_sketch_text_at(bytes: &[u8], class_version: u32) -> Option<crate::records::SketchText> {
+fn decode_sketch_text_at(
+    bytes: &[u8],
+    class_version: u32,
+) -> Option<crate::records::sketch_geometry::SketchText> {
     crate::design::decode::sketch::decode_sketch_text_record(
         bytes,
         "Design/BulkStream.dat",
-        crate::records::DesignClassTag::try_from("329".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
         class_version,
         304,
         7,
@@ -844,7 +855,7 @@ fn decode_sketch_text_at(bytes: &[u8], class_version: u32) -> Option<crate::reco
 
 /// Decode one sketch-text record at the class version that writes an identity
 /// key and the wider anchor run.
-fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::SketchText> {
+fn decode_sketch_text(bytes: &[u8]) -> Option<crate::records::sketch_geometry::SketchText> {
     decode_sketch_text_at(bytes, 4)
 }
 

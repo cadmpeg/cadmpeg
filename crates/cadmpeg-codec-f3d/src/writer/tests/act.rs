@@ -23,7 +23,7 @@ use crate::F3dCodec;
 
 #[test]
 fn generated_source_less_rejects_act_without_segment_metadata() {
-    use crate::records::ActEntity;
+    use crate::records::act::ActEntity;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = f3d_native_mut(&mut source_less);
@@ -31,14 +31,14 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
         "f3d:generated:act-entity#7".into(),
         7,
         "0_985".into(),
-        Some(crate::records::ActTableRow::new(0).unwrap()),
-        crate::records::ActChannelGroup::try_new(
+        Some(crate::records::act::ActTableRow::new(0).unwrap()),
+        crate::records::act::ActChannelGroup::try_new(
             100,
             Some(200),
             "261".to_owned().try_into().unwrap(),
             std::collections::BTreeMap::from([(
                 "Appearance".into(),
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: "11111111-2222-3333-4444-555555555555"
                         .to_owned()
                         .try_into()

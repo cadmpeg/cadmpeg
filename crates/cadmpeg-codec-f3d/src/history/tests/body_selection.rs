@@ -4,9 +4,10 @@
 #![allow(clippy::default_trait_access)]
 
 use super::super::*;
-use crate::records::topology::DesignConstructionOperandGroup;
-use crate::records::topology::DesignConstructionOperandGroupFrame;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{
+    topology::DesignConstructionOperandGroup, topology::DesignConstructionOperandGroupFrame,
+    topology::DesignOperandRole,
+};
 
 #[test]
 fn move_body_selection_uses_unique_owning_history() {
@@ -38,8 +39,9 @@ fn move_body_selection_uses_unique_owning_history() {
             scope_reference_ordinal: 0,
             record_index: 20,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("280".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("280".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 21,
                 offset: 0,
             }],
@@ -65,7 +67,10 @@ fn move_body_selection_uses_unique_owning_history() {
                 DesignOperandRole::BODIES_A,
             ),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )

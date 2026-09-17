@@ -1,4 +1,4 @@
-use crate::records::SketchPlacementMatrix;
+use crate::records::sketch_placement::SketchPlacementMatrix;
 use serde::Deserialize;
 
 #[test]

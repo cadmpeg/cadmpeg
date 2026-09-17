@@ -174,7 +174,7 @@ fn valid_class_363_operand_path_link(
 
 fn valid_class_307_joint_origin_qualifier(
     native: &native::F3dNative,
-    records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
+    records_by_index: &HashMap<(&str, u32), &records::decal::DesignRecordHeader>,
     stream: &str,
     frame: &records::feature::DesignAssemblyOperandFrame,
     qualifier: &records::feature::DesignAssemblyOperandQualifier,
@@ -277,7 +277,7 @@ fn valid_sketch_profile_region_selection(
 }
 
 fn design_header_matches(
-    records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
+    records_by_index: &HashMap<(&str, u32), &records::decal::DesignRecordHeader>,
     stream: &str,
     record_index: u32,
     class_tag: &str,
@@ -291,7 +291,7 @@ fn design_header_matches(
 }
 
 fn valid_axial_selector_identity(
-    records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
+    records_by_index: &HashMap<(&str, u32), &records::decal::DesignRecordHeader>,
     stream: &str,
     scope: &records::feature::DesignParameterScope,
     selector: &records::feature::DesignAssemblyAxialSelectorIdentity,
@@ -422,7 +422,7 @@ fn valid_axial_selector_identity(
 
 fn valid_axial_assembly_targets(
     native: &native::F3dNative,
-    records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
+    records_by_index: &HashMap<(&str, u32), &records::decal::DesignRecordHeader>,
     stream: &str,
     scope: &records::feature::DesignParameterScope,
     frames: &[records::feature::DesignAssemblyOperandFrame; 2],
@@ -545,23 +545,24 @@ struct Ctx<'a> {
     /// The loaded native namespace.
     native: &'a native::F3dNative,
     /// Design record headers keyed by `(stream, record_index)`.
-    records_by_index: HashMap<(&'a str, u32), &'a records::DesignRecordHeader>,
+    records_by_index: HashMap<(&'a str, u32), &'a records::decal::DesignRecordHeader>,
     /// Construction recipes keyed by recipe id.
-    recipes_by_id: HashMap<&'a str, &'a records::ConstructionRecipe>,
+    recipes_by_id: HashMap<&'a str, &'a records::recipes::ConstructionRecipe>,
     /// Parameters keyed by `(stream, record_index)`.
-    parameters_by_index: HashMap<(&'a str, u32), &'a records::DesignParameter>,
+    parameters_by_index: HashMap<(&'a str, u32), &'a records::parameters::DesignParameter>,
     /// Parameter owners keyed by `(stream, record_index)`.
-    owners_by_index: HashMap<(&'a str, u32), &'a records::DesignParameterOwner>,
+    owners_by_index: HashMap<(&'a str, u32), &'a records::parameters::DesignParameterOwner>,
     /// Parameter companions keyed by `(stream, record_index)`.
-    companions_by_index: HashMap<(&'a str, u32), &'a records::DesignParameterCompanion>,
+    companions_by_index: HashMap<(&'a str, u32), &'a records::parameters::DesignParameterCompanion>,
     /// Parameter scopes keyed by `(stream, record_index)`.
     scopes_by_index: HashMap<(&'a str, u32), &'a records::feature::DesignParameterScope>,
     /// Entity headers keyed by `(stream, entity_suffix)`.
-    entities_by_suffix: HashMap<(&'a str, u64), &'a records::DesignEntityHeader>,
+    entities_by_suffix: HashMap<(&'a str, u64), &'a records::entity_header::DesignEntityHeader>,
     /// Sketch geometry record indices keyed by `(stream, record_index)`.
     sketch_geometry_indices: HashSet<(&'a str, u32)>,
     /// Sketch placements keyed by `(stream, scope_record_index)`.
-    placements_by_scope: HashMap<(&'a str, u32), &'a records::DesignSketchPlacement>,
+    placements_by_scope:
+        HashMap<(&'a str, u32), &'a records::sketch_placement::DesignSketchPlacement>,
     /// Extrude selection groups keyed by `(stream, record_index)`.
     groups_by_index: HashMap<(&'a str, u32), &'a records::topology::DesignExtrudeSelectionGroup>,
     /// Construction operand groups keyed by `(stream, record_index)`.
@@ -1061,9 +1062,9 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         for entity_id in design_type.entities.values() {
             let valid_type =
                 crate::design::decode::meta::is_supported_feature_timeline_type(design_type)
-                    && class_tag
-                        .as_ref()
-                        .is_some_and(|tag| records::DesignClassTag::try_from(tag.clone()).is_ok());
+                    && class_tag.as_ref().is_some_and(|tag| {
+                        records::references::DesignClassTag::try_from(tag.clone()).is_ok()
+                    });
             let Some(class_tag) = class_tag.clone() else {
                 continue;
             };
@@ -1203,7 +1204,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 fn mesh_record_offset_is(
-    record: &records::DesignMeshRecordIdentity,
+    record: &records::mesh::DesignMeshRecordIdentity,
     relative: u64,
     offset: u64,
 ) -> bool {
@@ -1343,7 +1344,8 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .filter(|design_type| {
             matches!(
                 design_type.module.as_str(),
-                records::DESIGN_MODULE_BODY | records::DESIGN_MODULE_GEOMETRY
+                records::entity_header::DESIGN_MODULE_BODY
+                    | records::entity_header::DESIGN_MODULE_GEOMETRY
             )
         })
         .flat_map(|design_type| {
@@ -1360,7 +1362,8 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .filter(|design_type| {
             matches!(
                 design_type.module.as_str(),
-                records::DESIGN_MODULE_FUSION | records::DESIGN_MODULE_COMPONENT
+                records::entity_header::DESIGN_MODULE_FUSION
+                    | records::entity_header::DESIGN_MODULE_COMPONENT
             )
         })
         .flat_map(|design_type| {
@@ -1405,7 +1408,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .native
         .design_types
         .iter()
-        .filter(|design_type| design_type.module == records::DESIGN_MODULE_FUSION)
+        .filter(|design_type| design_type.module == records::entity_header::DESIGN_MODULE_FUSION)
         .flat_map(|design_type| {
             let segment = ids::design_segment(&design_type.id);
             design_type
@@ -1435,21 +1438,21 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && operand.owner.group() == Some((group.record_index, 0))
                 })
         });
-        let projected = if image.mapping_mode == crate::records::DesignDecalMappingMode::FitToFaces
-        {
-            operand.and_then(|operand| {
-                let mut faces = operand
-                    .references()
-                    .iter()
-                    .flat_map(|reference| reference.candidate_faces.iter().cloned())
-                    .collect::<Vec<_>>();
-                faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-                faces.dedup();
-                (!faces.is_empty()).then_some((operand, faces))
-            })
-        } else {
-            None
-        };
+        let projected =
+            if image.mapping_mode == crate::records::decal::DesignDecalMappingMode::FitToFaces {
+                operand.and_then(|operand| {
+                    let mut faces = operand
+                        .references()
+                        .iter()
+                        .flat_map(|reference| reference.candidate_faces.iter().cloned())
+                        .collect::<Vec<_>>();
+                    faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+                    faces.dedup();
+                    (!faces.is_empty()).then_some((operand, faces))
+                })
+            } else {
+                None
+            };
         let neutral_is_valid = projected.is_none_or(|(operand, expected_faces)| {
             scope.is_some_and(|scope| {
                 ctx.ir.model.features.iter().any(|feature| {
@@ -1500,7 +1503,7 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let mut binding_offsets = HashSet::new();
     let mut binding_groups =
-        std::collections::HashMap::<(&str, u64), Vec<&records::DesignBodyBinding>>::new();
+        std::collections::HashMap::<(&str, u64), Vec<&records::bodies::DesignBodyBinding>>::new();
     for binding in &native.design_body_bindings {
         let native_stream = design_stream(&binding.id);
         let valid = design_stream_contains_entry(native_stream, &binding.stream)
@@ -1594,7 +1597,7 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let valid = entity_headers_by_suffix
             .get(&(native_stream, bounds.entity_suffix()))
             .is_some_and(|entity| {
-                entity.module() == Some(records::DESIGN_MODULE_BODY)
+                entity.module() == Some(records::entity_header::DESIGN_MODULE_BODY)
                     && entity.byte_offset == bounds.entity_byte_offset
             })
             && bounds
@@ -2413,7 +2416,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             reference.neutron_role == construction.neutron_role
                                 && reference
                                     .transform
-                                    .map(records::XrefPlacementTransform::rows)
+                                    .map(records::xref::XrefPlacementTransform::rows)
                                     == Some((*construction.transform()).into())
                         }))
             }
@@ -3652,7 +3655,7 @@ fn valid_vertex_recipe(
     }
     let prefix_length = u64::try_from(vertex.recipe_prefix_bytes.len()).ok();
     let family_name_length = u64::try_from(design::construction_recipe_family_name_len(
-        records::ConstructionRecipeKind::Vertex,
+        records::recipes::ConstructionRecipeKind::Vertex,
     ))
     .ok();
     let program_byte_length = u64::try_from(vertex.recipe_program.len())
@@ -3689,7 +3692,7 @@ fn valid_vertex_recipe(
         && resolution_is_valid
         && recipe.is_some_and(|recipe| {
             design_stream(&recipe.id) == native_stream
-                && recipe.kind == records::ConstructionRecipeKind::Vertex
+                && recipe.kind == records::recipes::ConstructionRecipeKind::Vertex
                 && recipe.byte_offset > vertex.recipe_record_byte_offset()
                 && recipe.byte_offset < vertex.next_byte_offset()
                 && family_name_length.is_some_and(|family_name_length| {
@@ -4954,7 +4957,7 @@ fn validate_fillet_radius_groups<'a>(
                                         .is_some_and(design::feature_project::design_length_unit)
                                     && parameter.evaluated_value() >= 0.0
                             })
-                            .map(crate::records::DesignParameter::evaluated_value)
+                            .map(crate::records::parameters::DesignParameter::evaluated_value)
                     };
                     let start = radius(*start_radius_parameter_record_index, "StartRadius");
                     let end = radius(*end_radius_parameter_record_index, "EndRadius");
@@ -4971,7 +4974,7 @@ fn validate_fillet_radius_groups<'a>(
                                         && parameter.unit().is_none()
                                         && (0.0..1.0).contains(&parameter.evaluated_value())
                                 })
-                                .map(crate::records::DesignParameter::evaluated_value)
+                                .map(crate::records::parameters::DesignParameter::evaluated_value)
                         })
                         .collect::<Option<Vec<_>>>();
                     start.zip(end).zip(middle).zip(positions).is_some_and(
@@ -5103,7 +5106,8 @@ fn validate_fillet_operand_groups<'a>(
                             && operand.group_record_index() == Some(group.record_index)
                             && operand.group_member_ordinal() == Some(0)
                             && operand.record_index() == group.members()[0].value
-                            && operand.recipe_kind == records::ConstructionRecipeKind::BoundedFace
+                            && operand.recipe_kind
+                                == records::recipes::ConstructionRecipeKind::BoundedFace
                     })
             });
         let valid_full_round_group = full_round_group_shape
@@ -5491,7 +5495,7 @@ fn validate_body_recipe_operands<'a>(
                         })
                 });
                 design_stream(&recipe.id) == native_stream
-                    && recipe.kind == records::ConstructionRecipeKind::Body
+                    && recipe.kind == records::recipes::ConstructionRecipeKind::Body
                     && recipe.byte_offset > operand.context_id_offset()
                     && recipe.byte_offset < operand.next_byte_offset()
                     && selector_is_valid
@@ -5722,7 +5726,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && design_stream(&point.id) == native_stream
                 && point.owner_reference == selected_sketch
                 && point.persistent_id() == Some(member.local_id))
-            .then_some(records::SketchRelationOperand::Point {
+            .then_some(records::sketch_relations::SketchRelationOperand::Point {
                 record_index: point.record_index,
                 persistent_id: point.persistent_id(),
             })
@@ -5733,7 +5737,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && curve.owner_reference == selected_sketch
                 && (curve.primary_id.get() == member.local_id
                     || curve.secondary_id != 0 && curve.secondary_id == member.local_id))
-                .then_some(records::SketchRelationOperand::Curve {
+                .then_some(records::sketch_relations::SketchRelationOperand::Curve {
                     record_index: curve.record_index,
                     primary_id: curve.primary_id.get(),
                     secondary_id: curve.secondary_id,
@@ -5935,19 +5939,19 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
 ///
 /// `None` states a recipe kind that carries no face operand: it states no
 /// program offset at all.
-fn recipe_program_operand_length(kind: records::ConstructionRecipeKind) -> Option<u64> {
+fn recipe_program_operand_length(kind: records::recipes::ConstructionRecipeKind) -> Option<u64> {
     match kind {
-        records::ConstructionRecipeKind::Face => Some(16),
-        records::ConstructionRecipeKind::BoundedFace => Some(24),
-        records::ConstructionRecipeKind::Body
-        | records::ConstructionRecipeKind::Edge
-        | records::ConstructionRecipeKind::Vertex => None,
+        records::recipes::ConstructionRecipeKind::Face => Some(16),
+        records::recipes::ConstructionRecipeKind::BoundedFace => Some(24),
+        records::recipes::ConstructionRecipeKind::Body
+        | records::recipes::ConstructionRecipeKind::Edge
+        | records::recipes::ConstructionRecipeKind::Vertex => None,
     }
 }
 
 fn recipe_reference_frames_match(
-    actual: &[records::DesignRecipeReference],
-    expected: &[records::DesignRecipeReference],
+    actual: &[records::dimensions::DesignRecipeReference],
+    expected: &[records::dimensions::DesignRecipeReference],
     ignore_derived_candidates: bool,
 ) -> bool {
     if !ignore_derived_candidates {
@@ -6069,7 +6073,7 @@ fn validate_edge_operands<'a>(
             )
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
-                    && recipe.kind == crate::records::ConstructionRecipeKind::Edge
+                    && recipe.kind == crate::records::recipes::ConstructionRecipeKind::Edge
                     && recipe.byte_offset > operand.recipe_record_byte_offset()
                     && recipe.byte_offset < operand.next_byte_offset()
             })
@@ -6407,7 +6411,7 @@ fn validate_face_operands<'a>(
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
                                 }) && operand.recipe_kind
-                                    == records::ConstructionRecipeKind::BoundedFace
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::Loft) => {
                                 group.is_some_and(|group| {
@@ -6416,27 +6420,28 @@ fn validate_face_operands<'a>(
                                         DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
                                     )
                                 }) && operand.recipe_kind
-                                    == records::ConstructionRecipeKind::BoundedFace
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::Sweep) => {
                                 group.is_some_and(|group| group.role() == DesignOperandRole::FACES)
                                     && operand.recipe_kind
-                                        == records::ConstructionRecipeKind::BoundedFace
+                                        == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::SurfaceOffset) => {
                                 group
                                     .is_some_and(|group| group.role() == DesignOperandRole::PROFILE)
                                     && operand.recipe_kind
-                                        == records::ConstructionRecipeKind::BoundedFace
+                                        == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::Draft) => {
                                 group.is_some_and(|group| match group.role() {
                                     DesignOperandRole::ROLE_0X10 => {
                                         operand.recipe_kind
-                                            == records::ConstructionRecipeKind::BoundedFace
+                                            == records::recipes::ConstructionRecipeKind::BoundedFace
                                     }
                                     DesignOperandRole::ROLE_0X21 => {
-                                        operand.recipe_kind == records::ConstructionRecipeKind::Face
+                                        operand.recipe_kind
+                                            == records::recipes::ConstructionRecipeKind::Face
                                     }
                                     _ => false,
                                 })
@@ -6444,17 +6449,20 @@ fn validate_face_operands<'a>(
                             Some(design::DesignFeatureFamily::Revolve) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X21
-                                }) && operand.recipe_kind == records::ConstructionRecipeKind::Face
+                                }) && operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::Face
                             }
                             Some(design::DesignFeatureFamily::CircularPattern) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::BODIES_B
-                                }) && operand.recipe_kind == records::ConstructionRecipeKind::Face
+                                }) && operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::Face
                             }
                             Some(design::DesignFeatureFamily::Mirror) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::BODIES_B
-                                }) && operand.recipe_kind == records::ConstructionRecipeKind::Face
+                                }) && operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::Face
                             }
                             Some(design::DesignFeatureFamily::Thread) => {
                                 group.is_some_and(|group| {
@@ -6465,13 +6473,14 @@ fn validate_face_operands<'a>(
                                                 .contains(&group.record_index)
                                         })
                                 }) && operand.recipe_kind
-                                    == records::ConstructionRecipeKind::BoundedFace
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(
                                 design::DesignFeatureFamily::Fillet
                                 | design::DesignFeatureFamily::Chamfer,
                             ) => {
-                                operand.recipe_kind == records::ConstructionRecipeKind::BoundedFace
+                                operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                                     && native.design_edge_identity_operands.iter().any(|identity| {
                                         design_stream(&identity.id) == native_stream
                                             && identity.scope_record_index
@@ -6488,7 +6497,7 @@ fn validate_face_operands<'a>(
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
                                 }) && operand.recipe_kind
-                                    == records::ConstructionRecipeKind::BoundedFace
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             None if matches!(
                                 scope.kind(),
@@ -6499,7 +6508,7 @@ fn validate_face_operands<'a>(
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
                                 }) && operand.recipe_kind
-                                    == records::ConstructionRecipeKind::BoundedFace
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             _ => false,
                         }
@@ -6520,7 +6529,8 @@ fn validate_face_operands<'a>(
                                 operand.scope_reference_ordinal == 1
                             }
                             Some(design::DesignFeatureFamily::Hole) => {
-                                operand.recipe_kind == records::ConstructionRecipeKind::BoundedFace
+                                operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::Assemble)
                                 if scope.kind()
@@ -6534,8 +6544,8 @@ fn validate_face_operands<'a>(
                             {
                                 matches!(
                                     (operand.scope_reference_ordinal, operand.recipe_kind),
-                                    (1, records::ConstructionRecipeKind::BoundedFace)
-                                        | (3, records::ConstructionRecipeKind::Face)
+                                    (1, records::recipes::ConstructionRecipeKind::BoundedFace)
+                                        | (3, records::recipes::ConstructionRecipeKind::Face)
                                 )
                             }
                             _ => false,
@@ -6881,7 +6891,7 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && payload
                 .map_or(
                     &[][..],
-                    crate::records::DesignCompanionPayload::owned_recipe_ids,
+                    crate::records::parameters::DesignCompanionPayload::owned_recipe_ids,
                 )
                 .iter()
                 .map(String::as_str)
@@ -6923,7 +6933,7 @@ fn validate_dimension_recipe_records<'a>(
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
                 .is_some_and(|parameter| {
-                    parameter.kind() == records::DesignParameterKind::Dimension
+                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
         let recipe = native
@@ -7015,7 +7025,9 @@ fn validate_dimension_companion_recipes<'a>(
             .and_then(|owner| {
                 parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
             })
-            .is_some_and(|parameter| parameter.kind() == records::DesignParameterKind::Dimension);
+            .is_some_and(|parameter| {
+                parameter.kind() == records::parameters::DesignParameterKind::Dimension
+            });
         if dimension_companion
             && companion.payload().is_some_and(|payload| {
                 payload.owned_recipe_ids().iter().any(|recipe_id| {
@@ -7067,7 +7079,7 @@ fn validate_dimension_locus_pairs<'a>(
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
                 .is_some_and(|parameter| {
-                    parameter.kind() == records::DesignParameterKind::Dimension
+                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
         let governs_following_dimension =
@@ -7151,7 +7163,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 && parameters_by_index
                     .get(&(native_stream, owner.parameter_record_index()))
                     .is_some_and(|parameter| {
-                        parameter.kind() == records::DesignParameterKind::Dimension
+                        parameter.kind() == records::parameters::DesignParameterKind::Dimension
                     })
         });
         let operands_valid = frame.operands().iter().all(|operand| {
@@ -7210,7 +7222,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
             owner.parameter_record_index() == frame.governing_parameter_record_index
                 && owner.companion_record_index() == frame.governing_companion_record_index
                 && parameter.is_some_and(|parameter| {
-                    parameter.kind() == records::DesignParameterKind::Dimension
+                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
                 && companion
                     .is_some_and(|companion| companion.owner_record_index() == owner.record_index())
@@ -7229,7 +7241,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
                     && parameters_by_index
                         .get(&(native_stream, candidate.parameter_record_index()))
                         .is_some_and(|parameter| {
-                            parameter.kind() == records::DesignParameterKind::Dimension
+                            parameter.kind() == records::parameters::DesignParameterKind::Dimension
                         })
             })
             .min_by_key(|candidate| candidate.byte_offset());
@@ -7307,7 +7319,7 @@ fn validate_dimension_locus_groups<'a>(
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
                 .is_some_and(|parameter| {
-                    parameter.kind() == records::DesignParameterKind::Dimension
+                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
         let count = group.loci.len();
@@ -7414,7 +7426,7 @@ fn validate_dimension_null_locus_pairs<'a>(
                     parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                 })
                 .is_some_and(|parameter| {
-                    parameter.kind() == records::DesignParameterKind::Dimension
+                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
         let governs_following_dimension =
@@ -7638,7 +7650,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .map(|point| {
             (
                 (design_stream(&point.id), point.record_index),
-                records::SketchRelationOperand::Point {
+                records::sketch_relations::SketchRelationOperand::Point {
                     record_index: point.record_index,
                     persistent_id: point.persistent_id(),
                 },
@@ -7647,7 +7659,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .chain(native.sketch_curve_identities.iter().map(|curve| {
             (
                 (design_stream(&curve.id), curve.record_index),
-                records::SketchRelationOperand::Curve {
+                records::sketch_relations::SketchRelationOperand::Curve {
                     record_index: curve.record_index,
                     primary_id: curve.primary_id.get(),
                     secondary_id: curve.secondary_id,
@@ -7657,7 +7669,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .chain(native.sketch_surfaces.iter().map(|surface| {
             (
                 (design_stream(&surface.id), surface.record_index),
-                records::SketchRelationOperand::Surface {
+                records::sketch_relations::SketchRelationOperand::Surface {
                     record_index: surface.record_index,
                     persistent_id: surface.persistent_id.get(),
                 },
@@ -7699,7 +7711,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     sketch_operands
                         .get(&(native_stream, *record_index))
                         .cloned()
-                        .unwrap_or(records::SketchRelationOperand::Record {
+                        .unwrap_or(records::sketch_relations::SketchRelationOperand::Record {
                             record_index: *record_index,
                         })
                 })

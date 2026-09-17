@@ -7,11 +7,10 @@ use crate::records::topology::DesignOperandRole;
 #[test]
 fn split_face_targets_bind_from_a_transition_predecessor() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
-    use crate::records::feature::DesignParameterScope;
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
     };
-    use crate::records::ConstructionRecipeKind;
+    use crate::records::{feature::DesignParameterScope, recipes::ConstructionRecipeKind};
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, SplitFaceTool,
     };
@@ -38,8 +37,9 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
             scope_reference_ordinal: 2,
             record_index: 100,
             byte_offset: 1000,
-            class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 200,
                 offset: 1010,
             }],
@@ -65,7 +65,10 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
                 DesignOperandRole::ROLE_0X10,
             ),
             role_offset: 1030,
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1100,
         },
     )
@@ -80,9 +83,10 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         }),
         record_index: 200,
         byte_offset: 1200,
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned()).unwrap(),
         paired_byte_offset: 1300,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
         recipe_record_index: 203,
         recipe_record_byte_offset: 1400,
         recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
@@ -191,13 +195,14 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalTopology,
         AsmHistoricalTransition, AsmHistory,
     };
+    use crate::records::dimensions::DesignRecipeReference;
     use crate::records::feature::{
         DesignParameterScope, DesignThreadConstruction, DesignThreadForm,
     };
+    use crate::records::recipes::ConstructionRecipeKind;
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
     };
-    use crate::records::{ConstructionRecipeKind, DesignRecipeReference};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -223,8 +228,9 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             scope_reference_ordinal: 0,
             record_index: 100,
             byte_offset: 1_000,
-            class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 200,
                 offset: 1_010,
             }],
@@ -250,7 +256,10 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
                 DesignOperandRole::ROLE_0X10,
             ),
             role_offset: 1_030,
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1_100,
         },
     )
@@ -277,9 +286,10 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         }),
         record_index: 200,
         byte_offset: 1_200,
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned()).unwrap(),
         paired_byte_offset: 1_300,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
         recipe_record_index: 203,
         recipe_record_byte_offset: 1_400,
         recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
@@ -730,14 +740,15 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             reference_type: 0,
             reference_type_offset: 0,
             tangent_point_data: None,
-            input_records: vec![crate::records::Located {
+            input_records: vec![crate::records::identity::Located {
                 value: 55,
                 offset: 0,
             }],
             face_selection: Some(DesignHoleFaceSelection {
                 record_index: 100,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("333".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned())
+                    .unwrap(),
                 asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
                     .to_owned()
                     .try_into()

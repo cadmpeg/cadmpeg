@@ -2,7 +2,7 @@ use super::super::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     DesignConstructionOperandGroupFrameWire,
 };
-use crate::records::Located;
+use crate::records::identity::Located;
 use serde_json::json;
 
 fn frame_wire() -> DesignConstructionOperandGroupFrameWire {

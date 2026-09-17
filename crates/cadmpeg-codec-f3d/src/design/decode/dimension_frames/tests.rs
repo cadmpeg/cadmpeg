@@ -18,7 +18,10 @@ use crate::design::dimensions::{
     null_locus_dimension_definition, remove_dimension_frame_relations,
 };
 use crate::design::test_support::{parameter_record, push_genesis_block, push_reference};
-use crate::records::{DesignParameterOwner, PersistentSubentityTag, SketchRelation};
+use crate::records::{
+    parameters::DesignParameterOwner, sketch_links::PersistentSubentityTag,
+    sketch_relations::SketchRelation,
+};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use cadmpeg_ir::math::Point2;
@@ -612,22 +615,24 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     .unwrap();
     parameter.id = "f3d:Design/BulkStream.dat:design-parameter#301".into();
     parameter.record_index = 301;
-    let owner = DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-        id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
-        byte_offset: pair.paired_byte_offset() + 59,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 300,
-        scope_record_index: 10,
-        local_ordinal: 0,
-        evaluated_value: 4.0,
-        evaluated_value_offset: pair.paired_byte_offset() + 99,
-        parameter_record_index: 301,
-        owned_ordinal: 3,
-        variant: Some(0),
-        companion_record_index: 302,
-    })
-    .unwrap();
+    let owner =
+        DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
+            id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
+            byte_offset: pair.paired_byte_offset() + 59,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
+            record_index: 300,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 4.0,
+            evaluated_value_offset: pair.paired_byte_offset() + 99,
+            parameter_record_index: 301,
+            owned_ordinal: 3,
+            variant: Some(0),
+            companion_record_index: 302,
+        })
+        .unwrap();
     assert_eq!(
         crate::design::decode::dimension_frames::following_dimension_companion_record_index(
             &pair.id,
@@ -715,7 +720,8 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let mut axis_pair = pair.clone().into_draft();
     axis_pair.loci[0].role = 14;
     axis_pair.loci[1].role = 3;
-    let mut axis_pair = crate::records::DesignDimensionLocusPair::try_new(axis_pair).unwrap();
+    let mut axis_pair =
+        crate::records::dimensions::DesignDimensionLocusPair::try_new(axis_pair).unwrap();
     let entity = SketchEntity::new(
         SketchEntityId::mint("f3d:model:sketch-entity#line").unwrap(),
         SketchId::mint("f3d:model:sketch#axis-angle").unwrap(),
@@ -753,7 +759,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     .is_none());
     let mut draft = axis_pair.into_draft();
     draft.loci[0].role = 13;
-    axis_pair = crate::records::DesignDimensionLocusPair::try_new(draft).unwrap();
+    axis_pair = crate::records::dimensions::DesignDimensionLocusPair::try_new(draft).unwrap();
     assert!(null_locus_dimension_definition(
         &axis_pair,
         &entity,
@@ -854,40 +860,45 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     assert_eq!(group.next_record_index, 250);
 
     let relation_at = |stream: &str, byte_offset| {
-        SketchRelation::try_new(crate::records::SketchRelationDraft {
+        SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
             id: format!("f3d:{stream}:sketch-relation#{byte_offset}"),
             record_index: 249,
-            class_tag: crate::records::DesignClassTag::try_from("286".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("286".to_owned())
+                .unwrap(),
             byte_offset,
             state_offset: 66,
             owner_reference: 172,
             owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_172").unwrap()),
-            auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+            auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: ([(175, 25), (217, 40)]
                 .into_iter()
-                .map(
-                    |(record_index, offset)| crate::records::SketchRelationMember {
-                        reference: crate::records::SketchRelationReference::Index(record_index),
+                .map(|(record_index, offset)| {
+                    crate::records::sketch_relations::SketchRelationMember {
+                        reference: crate::records::sketch_relations::SketchRelationReference::Index(
+                            record_index,
+                        ),
                         offset,
                         relation_ordinal: Some(0),
-                    },
-                )
+                    }
+                })
                 .collect::<Vec<_>>())
             .try_into()
             .expect("uniform member resolution"),
             owner_reference_offset: 56,
-            definition: crate::records::SketchRelationDefinition::new(0, None)
+            definition: crate::records::sketch_relations::SketchRelationDefinition::new(0, None)
                 .expect("valid relation definition"),
             entity_genesis: None,
             return_members: ([(217, 79), (175, 90)]
                 .into_iter()
-                .map(
-                    |(record_index, offset)| crate::records::SketchRelationReturnMember {
-                        reference: crate::records::SketchRelationReference::Index(record_index),
+                .map(|(record_index, offset)| {
+                    crate::records::sketch_relations::SketchRelationReturnMember {
+                        reference: crate::records::sketch_relations::SketchRelationReference::Index(
+                            record_index,
+                        ),
                         offset,
-                    },
-                )
+                    }
+                })
                 .collect::<Vec<_>>())
             .try_into()
             .expect("uniform member resolution"),

@@ -58,7 +58,7 @@ fn work_point_direct_record_carries_model_space_position() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("427".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
@@ -149,7 +149,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("427".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let records = IndexedRecordOffsets::build(&bytes);

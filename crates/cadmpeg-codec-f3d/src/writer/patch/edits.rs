@@ -6,8 +6,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange};
 use crate::records::{
-    ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, DesignMaterialAssignment,
-    LostEdgeReference, SketchCurveGeometry,
+    act::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent},
+    references::{DesignMaterialAssignment, LostEdgeReference},
+    sketch_geometry::SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
@@ -30,26 +31,28 @@ use crate::writer::primitives::{finite_point, finite_vector, normalized_face_sen
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 /// The base-type GUID text and its location, when the entry stores the field.
-fn located_base_guid(guid: &crate::records::BaseTypeGuid) -> Option<(&str, u64)> {
+fn located_base_guid(guid: &crate::records::entity_header::BaseTypeGuid) -> Option<(&str, u64)> {
     match guid {
-        crate::records::BaseTypeGuid::Absent => None,
-        crate::records::BaseTypeGuid::EmptyRoot { offset } => Some(("", *offset)),
-        crate::records::BaseTypeGuid::Guid { value, offset } => Some((value.as_str(), *offset)),
+        crate::records::entity_header::BaseTypeGuid::Absent => None,
+        crate::records::entity_header::BaseTypeGuid::EmptyRoot { offset } => Some(("", *offset)),
+        crate::records::entity_header::BaseTypeGuid::Guid { value, offset } => {
+            Some((value.as_str(), *offset))
+        }
     }
 }
 
 /// The before base-type GUID carried at the after-record's location.
 fn normalized_base_type_guid(
-    before: &crate::records::BaseTypeGuid,
-    after: &crate::records::BaseTypeGuid,
-) -> crate::records::BaseTypeGuid {
+    before: &crate::records::entity_header::BaseTypeGuid,
+    after: &crate::records::entity_header::BaseTypeGuid,
+) -> crate::records::entity_header::BaseTypeGuid {
     match (before, after.offset()) {
-        (crate::records::BaseTypeGuid::Absent, _) | (_, None) => after.clone(),
-        (crate::records::BaseTypeGuid::EmptyRoot { .. }, Some(offset)) => {
-            crate::records::BaseTypeGuid::EmptyRoot { offset }
+        (crate::records::entity_header::BaseTypeGuid::Absent, _) | (_, None) => after.clone(),
+        (crate::records::entity_header::BaseTypeGuid::EmptyRoot { .. }, Some(offset)) => {
+            crate::records::entity_header::BaseTypeGuid::EmptyRoot { offset }
         }
-        (crate::records::BaseTypeGuid::Guid { value, .. }, Some(offset)) => {
-            crate::records::BaseTypeGuid::Guid {
+        (crate::records::entity_header::BaseTypeGuid::Guid { value, .. }, Some(offset)) => {
+            crate::records::entity_header::BaseTypeGuid::Guid {
                 value: value.clone(),
                 offset,
             }
@@ -60,11 +63,11 @@ fn normalized_base_type_guid(
 /// The before-value carried at the after-record's location, for comparing an
 /// edited record against the record it replaces.
 fn normalized_token<T: Clone>(
-    before: Option<&crate::records::RecordedValue<T>>,
-    after: Option<&crate::records::RecordedValue<T>>,
-) -> Option<crate::records::RecordedValue<T>> {
+    before: Option<&crate::records::identity::RecordedValue<T>>,
+    after: Option<&crate::records::identity::RecordedValue<T>>,
+) -> Option<crate::records::identity::RecordedValue<T>> {
     match (before, after) {
-        (Some(before), Some(after)) => Some(crate::records::RecordedValue {
+        (Some(before), Some(after)) => Some(crate::records::identity::RecordedValue {
             value: before.value.clone(),
             offset: after.offset,
         }),
@@ -1558,8 +1561,8 @@ pub(crate) fn validate_design_type_edits(
             )));
         }
         let (before_entities, after_entities): (
-            &[crate::records::Located<u64>],
-            &[crate::records::Located<u64>],
+            &[crate::records::identity::Located<u64>],
+            &[crate::records::identity::Located<u64>],
         ) = match (
             before.entities.located_rows(),
             after.entities.located_rows(),
@@ -2059,7 +2062,7 @@ pub(crate) fn validate_construction_recipe_edits(
                 .record_index
                 .zip(after.record_index)
                 .map(
-                    |(before_index, after_index)| crate::records::RecordedValue {
+                    |(before_index, after_index)| crate::records::identity::RecordedValue {
                         value: before_index.value,
                         offset: after_index.offset,
                     },
@@ -2070,8 +2073,8 @@ pub(crate) fn validate_construction_recipe_edits(
                 .as_ref()
                 .zip(after.design.as_ref())
                 .map(
-                    |(design, after_design)| crate::records::ConstructionRecipeDesign {
-                        id: crate::records::RecordedValue {
+                    |(design, after_design)| crate::records::recipes::ConstructionRecipeDesign {
+                        id: crate::records::identity::RecordedValue {
                             value: design.id.value.clone(),
                             offset: after_design.id.offset,
                         },
@@ -2749,7 +2752,7 @@ pub(crate) fn validate_sketch_relation_edits(
 }
 
 fn collect_sketch_reference_edits(
-    relation: &crate::records::SketchRelation,
+    relation: &crate::records::sketch_relations::SketchRelation,
     before: impl ExactSizeIterator<Item = u32>,
     after: impl ExactSizeIterator<Item = (u32, u32)>,
     edits: &mut Vec<Edit<Vec<u8>>>,
@@ -3854,7 +3857,7 @@ mod tests {
 
     use super::{validate_material_assignment_edits, PatchNatives};
     use crate::native::F3dNative;
-    use crate::records::DesignMaterialAssignment;
+    use crate::records::references::DesignMaterialAssignment;
 
     fn assignment(physical_token: bool) -> DesignMaterialAssignment {
         let mut document = serde_json::json!({

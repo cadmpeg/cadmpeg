@@ -7,8 +7,7 @@
 )]
 
 use super::prelude::*;
-use crate::records::feature::DesignPathFeatureConstruction;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{feature::DesignPathFeatureConstruction, topology::DesignOperandRole};
 
 #[test]
 fn legacy_pipe_projects_only_the_exact_path_reference_form() {
@@ -23,12 +22,14 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         crate::records::feature::DesignFeatureKind::Pipe,
         1,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("405".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("405".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
+                crate::records::identity::ReferenceRun::unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -61,27 +62,34 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                      source_kind: &str,
                      unit: Option<&str>,
                      evaluated_value: f64| {
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: format!("f3d:test:pipe-parameter#{record_index}"),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-            record_index,
-            source_ordinal: record_index,
-            source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: format!("f3d:test:pipe-parameter#{record_index}"),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                    .unwrap(),
+                record_index,
+                source_ordinal: record_index,
+                source: crate::records::parameters::DesignParameterSource::new(
+                    source_kind.into(),
+                    Some(0),
+                    None,
+                )
                 .unwrap(),
-            expression: evaluated_value.to_string(),
-            expression_offset: 40,
-            source_kind_offset: 60,
+                expression: evaluated_value.to_string(),
+                expression_offset: 40,
+                source_kind_offset: 60,
 
-            unit: unit.map(|value| crate::records::RecordedValue {
-                value: value.to_owned(),
-                offset: 70,
-            }),
-            name: source_kind.into(),
-            name_offset: 80,
-            evaluated_value,
-            evaluated_value_offset: 90,
-        })
+                unit: unit.map(|value| crate::records::identity::RecordedValue {
+                    value: value.to_owned(),
+                    offset: 70,
+                }),
+                name: source_kind.into(),
+                name_offset: 80,
+                evaluated_value,
+                evaluated_value_offset: 90,
+            },
+        )
         .unwrap()
     };
     let parameters = [
@@ -101,8 +109,9 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             scope_reference_ordinal: 4,
             record_index: 20,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("312".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 21,
                 offset: 0,
             }],
@@ -128,7 +137,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                 DesignOperandRole::ROLE_0X5,
             ),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -256,7 +268,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             draft.reference_members = {
                 let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
                 values.push(23);
-                crate::records::ReferenceRun::unlocated(values)
+                crate::records::identity::ReferenceRun::unlocated(values)
             };
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
@@ -278,7 +290,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             draft.reference_members = {
                 let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
                 values.pop();
-                crate::records::ReferenceRun::unlocated(values)
+                crate::records::identity::ReferenceRun::unlocated(values)
             };
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
@@ -286,8 +298,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.class_tag = crate::records::DesignClassTag::try_from("475".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("475".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,
@@ -297,8 +311,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .is_some());
 
-    scope.class_tag = crate::records::DesignClassTag::try_from("421".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("421".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap();
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::DesignPipeConstruction {

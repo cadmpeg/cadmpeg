@@ -16,13 +16,12 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::records::feature::DesignScopePayload;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{feature::DesignScopePayload, topology::DesignOperandRole};
 use crate::test_support::*;
 use crate::F3dCodec;
 
-fn recipe_reference() -> crate::records::DesignRecipeReference {
-    crate::records::DesignRecipeReference {
+fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
+    crate::records::dimensions::DesignRecipeReference {
         selector: 1,
         selector_offset: 20,
         token: "3".into(),
@@ -65,8 +64,10 @@ fn finalized_recipe_reference_validation_ignores_only_derived_candidates() {
 
 #[test]
 fn validation_accepts_class_410_component_insert_identity_frame() {
-    use crate::records::feature::{DesignComponentInsertConstruction, DesignParameterScope};
-    use crate::records::DesignRecordHeader;
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::{DesignComponentInsertConstruction, DesignParameterScope},
+    };
 
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#100");
@@ -78,18 +79,19 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     scope
         .try_edit(|draft| {
             draft.byte_offset = 100;
-            draft.class_tag = crate::records::DesignClassTag::try_from("410".to_owned()).unwrap();
+            draft.class_tag =
+                crate::records::references::DesignClassTag::try_from("410".to_owned()).unwrap();
             draft.frame_length = 261;
             draft.kind_offset = 252;
             draft.reference_count_offset = 229;
-            draft.reference_members = crate::records::ReferenceRun::from_columns(
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 vec![167],
                 vec![234],
                 "reference_members",
             )
             .unwrap();
             draft.paired_class_tag =
-                crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+                crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
             draft.paired_byte_offset = 361;
             draft.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
             draft.feature_ordinal_offset = 284;
@@ -117,13 +119,15 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#167"),
                 record_index: 167,
-                class_tag: crate::records::DesignClassTag::try_from("310".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("310".to_owned())
+                    .unwrap(),
                 byte_offset: 0,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#169"),
                 record_index: 169,
-                class_tag: crate::records::DesignClassTag::try_from("410".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("410".to_owned())
+                    .unwrap(),
                 byte_offset: 100,
             },
         ]);
@@ -137,7 +141,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     }));
 
     f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag =
-        crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
     let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(scope_id.as_str())
@@ -147,11 +151,12 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
 
 #[test]
 fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
+    use crate::records::decal::DesignRecordHeader;
     use crate::records::feature::{
         DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeScope,
         DesignExtrudeStart, DesignFeatureKind, DesignParameterScope,
     };
-    use crate::records::{DesignRecordHeader, ReferenceRun};
+    use crate::records::identity::ReferenceRun;
 
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#0");
@@ -266,35 +271,38 @@ fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
 fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let meta_stream = "f3d:FusionAssetName[Active]/Design1/MetaStream.dat";
     let bulk_entry = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let design_type = |id: &str, type_guid: &str, entities: Vec<u64>| crate::records::SegmentType {
-        id: id.into(),
-        byte_offset: 0,
-        type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-        type_guid_offset: 4,
-        base_type_guid: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
-            crate::records::BaseTypeGuid::Guid {
-                value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
-                    .to_owned()
-                    .try_into()
-                    .expect("base GUID"),
-                offset: 8,
-            }
-        } else {
-            crate::records::BaseTypeGuid::Absent
-        },
-        version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
-            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
-        } else {
-            1
-        },
-        version_offset: 44,
-        module: crate::records::DESIGN_MODULE_FUSION.into(),
-        entities: crate::records::ReferenceRun::located(
-            entities
-                .into_iter()
-                .map(|value| crate::records::Located { value, offset: 100 })
-                .collect(),
-        ),
+    let design_type = |id: &str, type_guid: &str, entities: Vec<u64>| {
+        crate::records::entity_header::SegmentType {
+            id: id.into(),
+            byte_offset: 0,
+            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
+            type_guid_offset: 4,
+            base_type_guid: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID
+            {
+                crate::records::entity_header::BaseTypeGuid::Guid {
+                    value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .expect("base GUID"),
+                    offset: 8,
+                }
+            } else {
+                crate::records::entity_header::BaseTypeGuid::Absent
+            },
+            version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
+            } else {
+                1
+            },
+            version_offset: 44,
+            module: crate::records::entity_header::DESIGN_MODULE_FUSION.into(),
+            entities: crate::records::identity::ReferenceRun::located(
+                entities
+                    .into_iter()
+                    .map(|value| crate::records::identity::Located { value, offset: 100 })
+                    .collect(),
+            ),
+        }
     };
     let mut native = crate::native::F3dNative {
         design_types: vec![
@@ -309,25 +317,27 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
                 vec![17, 101],
             ),
         ],
-        design_feature_timelines: vec![crate::records::DesignFeatureTimeline::try_new(
-            crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
-            crate::records::DesignTimelineFrame::new(
-                200,
-                60,
-                220,
-                240,
-                vec![crate::records::Located {
-                    value: 101,
-                    offset: 245,
-                }],
+        design_feature_timelines: vec![
+            crate::records::entity_header::DesignFeatureTimeline::try_new(
+                crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
+                crate::records::entity_header::DesignTimelineFrame::new(
+                    200,
+                    60,
+                    220,
+                    240,
+                    vec![crate::records::identity::Located {
+                        value: 101,
+                        offset: 245,
+                    }],
+                )
+                .unwrap(),
+                crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                std::num::NonZeroU64::new(35).unwrap(),
+                0,
+                std::num::NonZeroU64::new(17).unwrap(),
             )
             .unwrap(),
-            crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-            std::num::NonZeroU64::new(35).unwrap(),
-            0,
-            std::num::NonZeroU64::new(17).unwrap(),
-        )
-        .unwrap()],
+        ],
         ..crate::native::F3dNative::default()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -347,11 +357,12 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         .located_rows()
         .unwrap()
         .to_vec();
-    entities.push(crate::records::Located {
+    entities.push(crate::records::identity::Located {
         value: 35,
         offset: 108,
     });
-    duplicate_type_owner.design_types[1].entities = crate::records::ReferenceRun::located(entities);
+    duplicate_type_owner.design_types[1].entities =
+        crate::records::identity::ReferenceRun::located(entities);
     duplicate_type_owner
         .store(ir.native.namespace_mut("f3d"))
         .unwrap();
@@ -365,25 +376,26 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
             && finding.message == "Fusion Design feature timeline has an invalid typed frame"
     }));
 
-    native.design_feature_timelines[0] = crate::records::DesignFeatureTimeline::try_new(
-        native.design_feature_timelines[0].id().clone(),
-        crate::records::DesignTimelineFrame::new(
-            200,
-            60,
-            220,
-            240,
-            vec![crate::records::Located {
-                value: 102,
-                offset: 245,
-            }],
+    native.design_feature_timelines[0] =
+        crate::records::entity_header::DesignFeatureTimeline::try_new(
+            native.design_feature_timelines[0].id().clone(),
+            crate::records::entity_header::DesignTimelineFrame::new(
+                200,
+                60,
+                220,
+                240,
+                vec![crate::records::identity::Located {
+                    value: 102,
+                    offset: 245,
+                }],
+            )
+            .unwrap(),
+            native.design_feature_timelines[0].class_tag.clone(),
+            native.design_feature_timelines[0].record_index,
+            native.design_feature_timelines[0].source_ordinal,
+            native.design_feature_timelines[0].context_record_index,
         )
-        .unwrap(),
-        native.design_feature_timelines[0].class_tag.clone(),
-        native.design_feature_timelines[0].record_index,
-        native.design_feature_timelines[0].source_ordinal,
-        native.design_feature_timelines[0].context_record_index,
-    )
-    .unwrap();
+        .unwrap();
     native.store(ir.native.namespace_mut("f3d")).unwrap();
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.entity.as_deref() == Some(native.design_feature_timelines[0].id().as_str())
@@ -403,7 +415,8 @@ fn validation_accepts_carrier_local_component_references() {
         DesignComponentOccurrence::try_new(
             crate::records::feature::DesignComponentOccurrenceDraft {
                 id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
-                class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                    .unwrap(),
                 record_index,
                 byte_offset,
                 component_record_index,
@@ -431,14 +444,15 @@ fn validation_accepts_carrier_local_component_references() {
 
 #[test]
 fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
+    use crate::records::decal::DesignRecordHeader;
     use crate::records::feature::{
         DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation, DesignParameterScope,
     };
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+    };
     use crate::records::topology::{
         DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
-    };
-    use crate::records::{
-        ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DesignRecordHeader,
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -465,11 +479,12 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         );
         scope
             .try_edit(|draft| {
-                draft.reference_members = crate::records::ReferenceRun::unlocated(if hole_scope {
-                    vec![1, 2, 3, 4, 5, 6, operand_record_index]
-                } else {
-                    vec![1, 2, 3, 4, 5, operand_record_index]
-                });
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(if hole_scope {
+                        vec![1, 2, 3, 4, 5, 6, operand_record_index]
+                    } else {
+                        vec![1, 2, 3, 4, 5, operand_record_index]
+                    });
                 draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
                 draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -505,15 +520,16 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#{operand_record_index}"),
             record_index: operand_record_index,
-            class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned())
+                .unwrap(),
             byte_offset,
         });
         recipes.push(ConstructionRecipe {
             id: recipe_id.clone(),
             byte_offset: byte_offset + 220,
             kind: ConstructionRecipeKind::Body,
-            design: Some(crate::records::ConstructionRecipeDesign {
-                id: crate::records::RecordedValue {
+            design: Some(crate::records::recipes::ConstructionRecipeDesign {
+                id: crate::records::identity::RecordedValue {
                     value: "301".into(),
                     offset: byte_offset + 197,
                 },
@@ -523,7 +539,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 }),
             }),
             recipe_index: ordinal,
-            record_index: Some(crate::records::RecordedValue {
+            record_index: Some(crate::records::identity::RecordedValue {
                 value: i32::try_from(operand_record_index + 3).unwrap(),
                 offset: 0,
             }),
@@ -538,13 +554,16 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                     },
                     record_index: operand_record_index,
                     byte_offset,
-                    class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
-                    asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "365".to_owned(),
+                    )
+                    .unwrap(),
+                    asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                         "11111111-1111-4111-8111-111111111111".to_owned(),
                     )
                     .unwrap(),
                     asset_id_offset: byte_offset + if empty_legacy_tool { 44 } else { 56 },
-                    context_id: crate::records::DesignRelaxedGuidText::try_from(
+                    context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                         "22222222-2222-4222-8222-222222222222".to_owned(),
                     )
                     .unwrap(),
@@ -599,11 +618,10 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
 
 #[test]
 fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
-    use crate::records::feature::DesignParameterScope;
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     };
-    use crate::records::DesignRecordHeader;
+    use crate::records::{decal::DesignRecordHeader, feature::DesignParameterScope};
 
     let stream = "f3d:Design/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -615,7 +633,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![100, 101, 200, 201]);
+                crate::records::identity::ReferenceRun::unlocated(vec![100, 101, 200, 201]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -635,8 +653,9 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                 scope_reference_ordinal,
                 record_index,
                 byte_offset,
-                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-                members: vec![crate::records::Located {
+                class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                    .unwrap(),
+                members: vec![crate::records::identity::Located {
                     value: member,
                     offset: byte_offset + 26,
                 }],
@@ -660,8 +679,10 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                 .unwrap(),
                 operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
                 role_offset,
-                paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned())
-                    .unwrap(),
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "258".to_owned(),
+                )
+                .unwrap(),
                 paired_byte_offset: byte_offset + 80,
             },
         )
@@ -678,25 +699,29 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#100"),
                 record_index: 100,
-                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                    .unwrap(),
                 byte_offset: 1_000,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#101"),
                 record_index: 101,
-                class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
+                    .unwrap(),
                 byte_offset: 1_100,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#200"),
                 record_index: 200,
-                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                    .unwrap(),
                 byte_offset: 2_000,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#201"),
                 record_index: 201,
-                class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
+                    .unwrap(),
                 byte_offset: 2_100,
             },
         ]);
@@ -742,13 +767,13 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
 #[test]
 fn validation_checks_pipe_path_group_roles() {
+    use crate::records::decal::DesignRecordHeader;
     use crate::records::feature::{
         DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
     };
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     };
-    use crate::records::DesignRecordHeader;
 
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#10");
@@ -782,7 +807,7 @@ fn validation_checks_pipe_path_group_roles() {
     scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![1, 2, 3, 4, 20, 21]);
+                crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 3, 4, 20, 21]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -796,7 +821,8 @@ fn validation_checks_pipe_path_group_roles() {
             scope_reference_ordinal: 4,
             record_index: 20,
             byte_offset: 1_000,
-            class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("312".to_owned())
+                .unwrap(),
             members: Vec::new(),
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
@@ -820,7 +846,10 @@ fn validation_checks_pipe_path_group_roles() {
                 DesignOperandRole::ROLE_0X5,
             ),
             role_offset: 1_040,
-            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1_100,
         },
     )
@@ -833,13 +862,15 @@ fn validation_checks_pipe_path_group_roles() {
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#20"),
                 record_index: 20,
-                class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("312".to_owned())
+                    .unwrap(),
                 byte_offset: 1_000,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#21"),
                 record_index: 21,
-                class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
+                    .unwrap(),
                 byte_offset: 1_200,
             },
         ]);
@@ -877,7 +908,7 @@ fn validation_checks_pipe_path_group_roles() {
                     .members()
                     .iter()
                     .copied()
-                    .chain([crate::records::Located {
+                    .chain([crate::records::identity::Located {
                         value: 21,
                         offset: 1_026,
                     }])
@@ -910,7 +941,9 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
             .persistent_id()
             .expect("generated point identity");
         let mut form = native.sketch_points[1].record_form().clone();
-        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form
+        let crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
+            persistent_id, ..
+        } = &mut form
         else {
             panic!("generated point has a version-11 record form");
         };
@@ -957,7 +990,9 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
             .persistent_id()
             .expect("generated point identity");
         let mut form = native.sketch_points[1].record_form().clone();
-        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form
+        let crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
+            persistent_id, ..
+        } = &mut form
         else {
             panic!("generated point has a version-11 record form");
         };
@@ -1001,7 +1036,9 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
             .persistent_id()
             .expect("generated point identity");
         let mut form = native.sketch_points[1].record_form().clone();
-        let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form
+        let crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
+            persistent_id, ..
+        } = &mut form
         else {
             panic!("generated point has a version-11 record form");
         };
@@ -1062,8 +1099,10 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
             .expect("generated Design entity header")
             .clone();
         duplicate.id.push_str("-duplicate");
-        duplicate.entity_id =
-            crate::records::DesignEntityId::from_parts("duplicate", duplicate.entity_id.suffix());
+        duplicate.entity_id = crate::records::identity::DesignEntityId::from_parts(
+            "duplicate",
+            duplicate.entity_id.suffix(),
+        );
         let id = duplicate.entity_id.clone();
         native.design_entity_headers.push(duplicate);
         id
@@ -1083,16 +1122,17 @@ fn validation_accepts_user_design_parameter_frame() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut ir, _, _) = decoded.into_parts();
-    let parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: "f3d:generated:design-parameter#0".into(),
             byte_offset: 100,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
             record_index: 900,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::User {
-                family_discriminator: crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
+            source: crate::records::parameters::DesignParameterSource::User {
+                family_discriminator: crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 122,
                 },
             },
@@ -1100,7 +1140,7 @@ fn validation_accepts_user_design_parameter_frame() {
             expression_offset: 136,
             source_kind_offset: 166,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "mm".into(),
                 offset: 210,
             }),
@@ -1108,26 +1148,31 @@ fn validation_accepts_user_design_parameter_frame() {
             name_offset: 220,
             evaluated_value: 6.0,
             evaluated_value_offset: 234,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::validate::validate_native(&ir).is_empty());
 }
 
 #[test]
 fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
-    use crate::records::{DesignParameterCompanion, DesignParameterOwner, DesignRecordHeader};
+    use crate::records::{
+        decal::DesignRecordHeader,
+        parameters::{DesignParameterCompanion, DesignParameterOwner},
+    };
 
     const DESIGN_STREAM: &str = "Design/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let owned_parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let owned_parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 101),
             byte_offset: 1_068,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
             record_index: 101,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "Feature Input".into(),
                 Some(100),
                 None,
@@ -1137,7 +1182,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
             expression_offset: 1_080,
             source_kind_offset: 1_100,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "cm".into(),
                 offset: 1_120,
             }),
@@ -1145,46 +1190,50 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
             name_offset: 1_130,
             evaluated_value: 6.0,
             evaluated_value_offset: 1_140,
+        },
+    )
+    .unwrap();
+    let owner =
+        DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
+            id: crate::ids::native_design_parameter_owner_id(DESIGN_STREAM, 1_000),
+            byte_offset: 1_000,
+            frame_length: 68,
+            class_tag: crate::records::references::DesignClassTag::try_from("268".to_owned())
+                .unwrap(),
+            record_index: 100,
+            scope_record_index: 0,
+            local_ordinal: 0,
+            evaluated_value: 6.0,
+            evaluated_value_offset: owned_parameter.evaluated_value_offset(),
+            parameter_record_index: 101,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 102,
         })
         .unwrap();
-    let owner = DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-        id: crate::ids::native_design_parameter_owner_id(DESIGN_STREAM, 1_000),
-        byte_offset: 1_000,
-        frame_length: 68,
-        class_tag: crate::records::DesignClassTag::try_from("268".to_owned()).unwrap(),
-        record_index: 100,
-        scope_record_index: 0,
-        local_ordinal: 0,
-        evaluated_value: 6.0,
-        evaluated_value_offset: owned_parameter.evaluated_value_offset(),
-        parameter_record_index: 101,
-        owned_ordinal: 0,
-        variant: None,
-        companion_record_index: 102,
-    })
-    .unwrap();
     let companion = DesignParameterCompanion::unbound(
         crate::ids::native_design_parameter_companion_id(DESIGN_STREAM, 1_200),
         1_200,
-        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
         102,
         100,
         std::num::NonZeroU64::new(1).unwrap(),
         1_242,
     )
-    .bound(crate::records::DesignCompanionPayload::new(
+    .bound(crate::records::parameters::DesignCompanionPayload::new(
         1_258,
         0,
         Vec::new(),
     ));
-    let ownerless_parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let ownerless_parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),
             byte_offset: 1_400,
-            class_tag: crate::records::DesignClassTag::try_from("287".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("287".to_owned())
+                .unwrap(),
             record_index: 201,
             source_ordinal: 1,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "Feature Input".into(),
                 Some(200),
                 None,
@@ -1199,8 +1248,9 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
             name_offset: 1_490,
             evaluated_value: 0.0,
             evaluated_value_offset: 1_510,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     {
         let mut native = f3d_native_mut(&mut ir);
         native
@@ -1212,19 +1262,22 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
             DesignRecordHeader {
                 id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 100),
                 record_index: 100,
-                class_tag: crate::records::DesignClassTag::try_from("268".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("268".to_owned())
+                    .unwrap(),
                 byte_offset: 1_000,
             },
             DesignRecordHeader {
                 id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 101),
                 record_index: 101,
-                class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
                 byte_offset: 1_068,
             },
             DesignRecordHeader {
                 id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 102),
                 record_index: 102,
-                class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
+                    .unwrap(),
                 byte_offset: 1_200,
             },
         ]);
@@ -1258,17 +1311,21 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             scope_reference_ordinal: 0,
             record_index: 20,
             byte_offset: 200,
-            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 230,
-            entity_id: crate::records::DesignEntityId::try_from("0_10".to_owned())
+            entity_id: crate::records::identity::DesignEntityId::try_from("0_10".to_owned())
                 .expect("valid entity identity"),
             entity_reference_offset: 250,
             region_selection: None,
-            paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "260".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 300,
         },
     )
@@ -1277,7 +1334,8 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:test:scope#10".into(),
             byte_offset: 100,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
             record_index: 10,
             frame_length: 200,
             kind_offset: 210,
@@ -1311,14 +1369,17 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             previous_history_state_id: None,
             previous_history_state_id_offset: Some(228),
             reference_count_offset: 180,
-            reference_members: crate::records::ReferenceRun::from_columns(
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
                 vec![20, 30],
                 vec![184, 195],
                 "reference_members",
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 300,
         }
         .with_fixture_layout(),
@@ -1331,8 +1392,9 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             scope_reference_ordinal: 1,
             record_index: 30,
             byte_offset: 400,
-            class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 20,
                 offset: 424,
             }],
@@ -1342,7 +1404,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                     member_count_offset: 420,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
-                    trailing_records: vec![crate::records::Located {
+                    trailing_records: vec![crate::records::identity::Located {
                         value: 31,
                         offset: 440,
                     }],
@@ -1360,7 +1422,10 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile,
             role_offset: 450,
 
-            paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "262".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 500,
         },
     )
@@ -1419,11 +1484,11 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
 
 #[test]
 fn validation_accepts_unindexed_construction_identity_terminal() {
+    use crate::records::decal::DesignRecordHeader;
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
         DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
     };
-    use crate::records::DesignRecordHeader;
 
     let stream = "f3d:Design/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -1434,7 +1499,8 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             scope_reference_ordinal: 0,
             record_index: 100,
             byte_offset: 1_000,
-            class_tag: crate::records::DesignClassTag::try_from("271".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("271".to_owned())
+                .unwrap(),
             members: Vec::new(),
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
@@ -1442,7 +1508,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
                     member_count_offset: 1_021,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
-                    trailing_records: vec![crate::records::Located {
+                    trailing_records: vec![crate::records::identity::Located {
                         value: 101,
                         offset: 1_025,
                     }],
@@ -1461,7 +1527,10 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
                 DesignOperandRole::from_raw(0),
             ),
             role_offset: 1_041,
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1_050,
         },
     )
@@ -1473,24 +1542,27 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             wrappers: vec![crate::records::topology::DesignIdentityWrapper {
                 record_index: 101,
                 byte_offset: 1_100,
-                class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("384".to_owned())
+                    .unwrap(),
             }],
             following_record_index: 102,
             following_byte_offset: 1_124,
-            following_class_tag: crate::records::DesignClassTag::try_from("395".to_owned())
-                .unwrap(),
+            following_class_tag: crate::records::references::DesignClassTag::try_from(
+                "395".to_owned(),
+            )
+            .unwrap(),
             tracking_path: None,
             persistent_identity: Some(
                 DesignConstructionPersistentIdentity::try_new(
                     crate::records::topology::DesignConstructionPersistentIdentityDraft {
                         local_id: 167,
                         local_id_offset: 1_145,
-                        asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                        asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                             "2d0697b6-f6c5-4f86-bb58-4a2f413c99d3".to_owned(),
                         )
                         .unwrap(),
                         asset_id_offset: 1_157,
-                        context_id: crate::records::DesignRelaxedGuidText::try_from(
+                        context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                             "9dea94a1-729a-4032-930b-d4ba4eaadb0c".to_owned(),
                         )
                         .unwrap(),
@@ -1509,13 +1581,13 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     let wrapper = DesignRecordHeader {
         id: format!("{stream}:record-header#1100"),
         record_index: 101,
-        class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("384".to_owned()).unwrap(),
         byte_offset: 1_100,
     };
     let following = DesignRecordHeader {
         id: format!("{stream}:record-header#1124"),
         record_index: 102,
-        class_tag: crate::records::DesignClassTag::try_from("395".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("395".to_owned()).unwrap(),
         byte_offset: 1_124,
     };
     let identity_id = identity.id.clone();
@@ -1537,7 +1609,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native.design_record_headers.push(DesignRecordHeader {
         id: format!("{stream}:record-header#1315"),
         record_index: 103,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 1_315,
     });
     native.store(ir.native.namespace_mut("f3d")).unwrap();
@@ -1548,11 +1620,11 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
 
 #[test]
 fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
+    use crate::records::decal::DesignRecordHeader;
     use crate::records::topology::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
         DesignEntitySelectionOperand,
     };
-    use crate::records::DesignRecordHeader;
 
     let stream = "f3d:Design/BulkStream.dat";
     let group_id = format!("{stream}:design-construction-operand-group#100");
@@ -1564,8 +1636,9 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             scope_reference_ordinal: 0,
             record_index: 100,
             byte_offset: 900,
-            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 200,
                 offset: 926,
             }],
@@ -1589,7 +1662,10 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             .unwrap(),
             operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile,
             role_offset: 953,
-            paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "265".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1024,
         },
     )
@@ -1597,7 +1673,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
     let header = DesignRecordHeader {
         id: format!("{stream}:design-record-header#1000"),
         byte_offset: 1_000,
-        class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("338".to_owned()).unwrap(),
         record_index: 200,
     };
     let operand = DesignEntitySelectionOperand::try_new(
@@ -1608,13 +1684,14 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             group_member_ordinal: 0,
             record_index: 200,
             byte_offset: 1_000,
-            class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("338".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "11111111-2222-4333-8444-555555555555".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 1_034,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_owned(),
             )
             .unwrap(),
@@ -1623,8 +1700,8 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             identity_record_offset: 2_000,
             primary_identity: 949,
             primary_identity_offset: 2033,
-            secondary: Some(crate::records::DesignSecondaryIdentity {
-                identity: crate::records::Located {
+            secondary: Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
                     value: 249,
                     offset: 2041,
                 },
@@ -1658,7 +1735,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
 
 #[test]
 fn only_a_face_recipe_kind_states_a_program_operand_length() {
-    use crate::records::ConstructionRecipeKind;
+    use crate::records::recipes::ConstructionRecipeKind;
 
     assert_eq!(
         super::recipe_program_operand_length(ConstructionRecipeKind::Face),
@@ -1686,10 +1763,12 @@ fn only_a_face_recipe_kind_states_a_program_operand_length() {
 /// kind states, and it raises no finding.
 #[test]
 fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
-    use crate::records::feature::{DesignFeatureKind, DesignParameterScope};
-    use crate::records::topology::{DesignFaceOperand, DesignFaceOperandDraft};
     use crate::records::{
-        ConstructionRecipe, ConstructionRecipeKind, DesignClassTag, DesignRecordHeader,
+        decal::DesignRecordHeader,
+        feature::{DesignFeatureKind, DesignParameterScope},
+        recipes::{ConstructionRecipe, ConstructionRecipeKind},
+        references::DesignClassTag,
+        topology::{DesignFaceOperand, DesignFaceOperandDraft},
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -1704,7 +1783,8 @@ fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
         );
         scope
             .try_edit(|draft| {
-                draft.reference_members = crate::records::ReferenceRun::unlocated(vec![1, 2, 100]);
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 100]);
                 draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
                 draft.frame_length = draft.paired_byte_offset - draft.byte_offset;

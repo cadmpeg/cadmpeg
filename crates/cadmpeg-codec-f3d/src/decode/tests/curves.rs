@@ -102,7 +102,8 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
 
 #[test]
 fn decode_retains_generated_helix_construction() {
-    use cadmpeg_ir::{geometry::ProceduralCurveDefinition, math::Point3};
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::math::Point3;
 
     let result = F3dCodec
         .decode(

@@ -21,7 +21,7 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use crate::test_support::*;
 use crate::{F3dCodec, F3dLossCode};
 
-use crate::records::DesignSketchPlacement;
+use crate::records::sketch_placement::DesignSketchPlacement;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::ids::{BodyId, RegionId};

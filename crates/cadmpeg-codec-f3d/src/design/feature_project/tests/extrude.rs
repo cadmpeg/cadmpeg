@@ -7,8 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::topology::DesignConstructionOperandGroupFrame;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
 use cadmpeg_ir::features::FeatureOperation;
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
@@ -150,7 +149,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
             byte_offset: 100,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
             record_index: 12,
             frame_length: 200,
             kind_offset: 210,
@@ -179,25 +179,26 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                                 scope_reference_ordinal: 0,
                                 record_index: 100,
                                 byte_offset: 300,
-                                class_tag: crate::records::DesignClassTag::try_from(
+                                class_tag: crate::records::references::DesignClassTag::try_from(
                                     "308".to_owned(),
                                 )
                                 .unwrap(),
-                                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                                     "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".to_owned(),
                                 )
                                 .unwrap(),
                                 asset_id_offset: 330,
-                                entity_id: crate::records::DesignEntityId::try_from(
+                                entity_id: crate::records::identity::DesignEntityId::try_from(
                                     "0_172".to_owned(),
                                 )
                                 .expect("valid entity identity"),
                                 entity_reference_offset: 420,
                                 region_selection: None,
-                                paired_class_tag: crate::records::DesignClassTag::try_from(
-                                    "259".to_owned(),
-                                )
-                                .unwrap(),
+                                paired_class_tag:
+                                    crate::records::references::DesignClassTag::try_from(
+                                        "259".to_owned(),
+                                    )
+                                    .unwrap(),
                                 paired_byte_offset: 520,
                             },
                         )
@@ -213,24 +214,27 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: 180,
-            reference_members: crate::records::ReferenceRun::from_columns(
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
                 vec![100],
                 vec![185],
                 "reference_members",
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 300,
         }
         .with_fixture_layout(),
     )
     .unwrap();
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             600,
-            crate::records::DesignSketchFrameForm::ScopeExplicit(
-                crate::records::SketchPlacementMatrix::try_from([
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::sketch_placement::SketchPlacementMatrix::try_from([
                     [1.0, 0.0, 0.0, 0.0],
                     [0.0, 0.0, 1.0, 0.0],
                     [0.0, -1.0, 0.0, 0.0],
@@ -243,15 +247,16 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
         id: "f3d:Design/BulkStream.dat:placement#200".into(),
         scope_record_index: Some(11),
-        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 200,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("260".to_owned())
+            .unwrap(),
     };
     let along = parameter("AlongDistance", "mm", 0.55);
     let taper = parameter("TaperAngle", "deg", 0.2);
@@ -515,7 +520,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     owned_along.record_index = 45;
     owned_along
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 owned_along.source_kind().to_owned(),
                 Some(44),
                 owned_along.family_discriminator(),
@@ -528,12 +533,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
     {
-        let mut wire = crate::records::DesignParameterOwnerWire::from(owner.clone());
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
         wire.id = "f3d:Design/BulkStream.dat:owner#44".into();
         wire.record_index = 44;
         wire.scope_record_index = scope.record_index;
         wire.parameter_record_index = owned_along.record_index;
-        owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     let mut sketch_scope = scope.clone();
     sketch_scope.id = "f3d:Design/BulkStream.dat:scope#11".into();
@@ -732,8 +737,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             scope_reference_ordinal: 1,
             record_index: 101,
             byte_offset: 1000,
-            class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("332".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 200,
                 offset: 1026,
             }],
@@ -743,7 +749,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     member_count_offset: 1021,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
-                    trailing_records: vec![crate::records::Located {
+                    trailing_records: vec![crate::records::identity::Located {
                         value: 300,
                         offset: 1044,
                     }],
@@ -761,7 +767,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeBodiesB,
             role_offset: 1054,
 
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1125,
         },
     )
@@ -797,7 +806,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     target_shape_group.record_index = 105;
     target_shape_group.scope_reference_ordinal = 2;
     target_shape_group
-        .try_set_members(vec![crate::records::Located {
+        .try_set_members(vec![crate::records::identity::Located {
             value: 201,
             offset: 1026,
         }])
@@ -820,7 +829,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     unrelated_target_group.record_index = 106;
     unrelated_target_group.scope_reference_ordinal = 3;
     unrelated_target_group
-        .try_set_members(vec![crate::records::Located {
+        .try_set_members(vec![crate::records::identity::Located {
             value: 202,
             offset: unrelated_target_group.members()[0].offset,
         }])
@@ -835,13 +844,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             },
             record_index: 201,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("295".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 56,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -950,7 +960,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 .members()
                 .iter()
                 .copied()
-                .chain([crate::records::Located {
+                .chain([crate::records::identity::Located {
                     value: 202,
                     offset: 1037,
                 }])
@@ -1360,9 +1370,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
     let mut omitted_zero_offset_scope = scope.clone();
     omitted_zero_offset_scope.class_tag =
-        crate::records::DesignClassTag::try_from("330".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("330".to_owned()).unwrap();
     omitted_zero_offset_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     omitted_zero_offset_scope
         .try_edit(|draft| {
             draft.frame_length = 476;
@@ -1395,7 +1405,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }) if id == &face_group.id
     ));
     omitted_zero_offset_scope.class_tag =
-        crate::records::DesignClassTag::try_from("331".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("331".to_owned()).unwrap();
     assert!(project_extrude(
         &omitted_zero_offset_scope,
         &[(0, &taper)],

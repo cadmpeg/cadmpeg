@@ -1,6 +1,6 @@
 use super::{DesignDimensionLocusPairs, DesignDimensionNullLocusPairs};
 use crate::native::F3dNative;
-use crate::records::DesignDimensionLocusPair;
+use crate::records::dimensions::DesignDimensionLocusPair;
 
 fn pair(null_first: bool) -> DesignDimensionLocusPair {
     let shared = r#""id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80"#;

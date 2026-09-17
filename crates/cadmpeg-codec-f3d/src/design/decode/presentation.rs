@@ -19,7 +19,7 @@ use crate::design::presentation::{
     BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS,
     PHYSICAL_MATERIAL_LIBRARY_ID,
 };
-use crate::records::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
+use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 const MAX_ENVELOPE_GAP: usize = 8;
 
@@ -39,9 +39,9 @@ pub(crate) struct PresentationMaterial {
     pub node_guid: String,
     pub physical_token: String,
     pub physical_token_offset: u64,
-    pub visual_guid: crate::records::DesignVisualToken,
+    pub visual_guid: crate::records::references::DesignVisualToken,
     pub visual_guid_offset: u64,
-    pub visual_preset: Option<crate::records::Located<String>>,
+    pub visual_preset: Option<crate::records::identity::Located<String>>,
 }
 
 /// One body record, its exact owner header, and its browser-node join.
@@ -60,7 +60,7 @@ pub(crate) enum BodyPresentationOwner {
     /// The owner stores a component-qualified entity ID after its entity
     /// suffix.
     Named {
-        entity_id: crate::records::DesignEntityId,
+        entity_id: crate::records::identity::DesignEntityId,
         entity_id_offset: u64,
     },
     /// The owner stores only its u64 entity suffix in the indexed head.
@@ -84,7 +84,7 @@ pub(crate) fn browser_node_records(
                 .design_type
                 .base_type_guid
                 .value()
-                .map(crate::records::DesignRelaxedGuidText::as_str)
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -162,7 +162,7 @@ pub(crate) fn body_presentations(
                 .design_type
                 .base_type_guid
                 .value()
-                .map(crate::records::DesignRelaxedGuidText::as_str)
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -352,7 +352,8 @@ fn presentation_material(
         let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, visual_at, 1..=256) else {
             continue;
         };
-        let Ok(visual_guid) = crate::records::DesignVisualToken::try_from(visual_guid) else {
+        let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
+        else {
             continue;
         };
         let Some(visual_marker_at) = skip_zeros(bytes, after_visual, end) else {
@@ -392,7 +393,7 @@ fn presentation_material(
             physical_token_offset: (token_at + 4) as u64,
             visual_guid,
             visual_guid_offset: (visual_at + 4) as u64,
-            visual_preset: visual_preset.map(|(at, value)| crate::records::Located {
+            visual_preset: visual_preset.map(|(at, value)| crate::records::identity::Located {
                 value,
                 offset: (at + 4) as u64,
             }),
@@ -472,7 +473,8 @@ fn bare_presentation_material(
         let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, *visual_at, 1..=256) else {
             continue;
         };
-        let Ok(visual_guid) = crate::records::DesignVisualToken::try_from(visual_guid) else {
+        let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
+        else {
             continue;
         };
         let Some(marker_at) = skip_zeros(bytes, after_visual, end) else {
@@ -624,22 +626,23 @@ mod tests {
         version: u32,
         module: &str,
         entity_ids: Vec<u64>,
-    ) -> crate::records::SegmentType {
-        crate::records::SegmentType {
+    ) -> crate::records::entity_header::SegmentType {
+        crate::records::entity_header::SegmentType {
             id: String::new(),
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map_or(crate::records::BaseTypeGuid::Absent, |value| {
-                crate::records::BaseTypeGuid::Guid {
+            base_type_guid: base_type_guid.map_or(
+                crate::records::entity_header::BaseTypeGuid::Absent,
+                |value| crate::records::entity_header::BaseTypeGuid::Guid {
                     value: value.to_owned().try_into().expect("base GUID"),
                     offset: 0,
-                }
-            }),
+                },
+            ),
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::unlocated(entity_ids),
+            entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -726,7 +729,7 @@ mod tests {
         assert_eq!(
             presentation.owner,
             BodyPresentationOwner::Named {
-                entity_id: crate::records::DesignEntityId::from_parts("0", entity),
+                entity_id: crate::records::identity::DesignEntityId::from_parts("0", entity),
                 entity_id_offset: 25,
             }
         );

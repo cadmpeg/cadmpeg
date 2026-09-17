@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::{ActChannelGroup, ActEntity};
+use crate::records::act::{ActChannelGroup, ActEntity};
 use std::collections::BTreeMap;
 
 fn group_wire() -> serde_json::Value {
@@ -14,7 +14,7 @@ fn group_wire() -> serde_json::Value {
 
 #[test]
 fn act_group_admission_rejects_invalid_names_counts_and_locations() {
-    let channel = crate::records::Located {
+    let channel = crate::records::identity::Located {
         value: "11111111-2222-3333-4444-555555555555"
             .to_owned()
             .try_into()
@@ -36,7 +36,7 @@ fn act_group_admission_rejects_invalid_names_counts_and_locations() {
             .map(|index| {
                 (
                     format!("Channel{index}"),
-                    crate::records::Located {
+                    crate::records::identity::Located {
                         value: channel.value.clone(),
                         offset: 120 + 80 * index,
                     },

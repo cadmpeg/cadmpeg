@@ -350,16 +350,17 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             (("stream", record_index), entity)
         })
         .collect::<std::collections::HashMap<_, _>>();
-    let frame = |operands| crate::records::DesignDimensionPresentationFrame {
+    let frame = |operands| crate::records::dimensions::DesignDimensionPresentationFrame {
         id: "stream:presentation#0".into(),
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("314".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("314".to_owned()).unwrap(),
         record_index: 0,
         frame_length: 0,
         operands,
         presentation_bytes: Vec::new(),
         presentation_byte_offset: 0,
-        paired_class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned())
+            .unwrap(),
         paired_byte_offset: 0,
         owner_reference: 0,
         owner_reference_offset: 0,
@@ -367,7 +368,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         governing_parameter_record_index: 0,
         governing_companion_record_index: 0,
     };
-    let operand = |record_index| crate::records::DesignDimensionPresentationOperand {
+    let operand = |record_index| crate::records::dimensions::DesignDimensionPresentationOperand {
         geometry_record_index: std::num::NonZeroU32::new(record_index).unwrap(),
         geometry_reference_offset: 0,
         role: 0,
@@ -738,36 +739,38 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
 fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
 
         id: format!("{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 11,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
     };
-    let parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: format!("{stream}:design-parameter#20"),
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
             record_index: 20,
             source_ordinal: 4,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-4".into(),
                 Some(21),
-                Some(crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
+                Some(crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 22,
                 }),
             )
@@ -776,7 +779,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             expression_offset: 40,
             source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "mm".into(),
                 offset: 70,
             }),
@@ -784,14 +787,16 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             name_offset: 80,
             evaluated_value: 0.2,
             evaluated_value_offset: 90,
-        })
-        .unwrap();
-    let owner =
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+        },
+    )
+    .unwrap();
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
             id: format!("{stream}:design-parameter-owner#21"),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
             record_index: 21,
             scope_record_index: 10,
             local_ordinal: 0,
@@ -801,61 +806,68 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             owned_ordinal: 0,
             variant: Some(0),
             companion_record_index: 22,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let companion = DesignParameterCompanion::unbound(
         format!("{stream}:design-parameter-companion#22"),
         0,
-        crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         22,
         21,
         std::num::NonZeroU64::new(1).unwrap(),
         42,
     )
-    .bound(crate::records::DesignCompanionPayload::new(
+    .bound(crate::records::parameters::DesignCompanionPayload::new(
         58,
         0,
         Vec::new(),
     ));
-    let pair = DesignDimensionLocusPair::try_new(crate::records::DesignDimensionLocusPairDraft {
-        id: format!("{stream}:design-dimension-locus-pair#30"),
-        companion_record_index: 99,
-        governing_companion_record_index: 22,
-        byte_offset: 30,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        record_index: 30,
-        frame_length: 100,
-        opaque_index: Some(crate::records::Located {
-            value: 0,
-            offset: 65,
-        }),
-        loci: [
-            crate::records::DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(40),
-                geometry_reference_offset: 70,
-                role: 7,
-                role_offset: 80,
-            },
-            crate::records::DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(41),
-                geometry_reference_offset: 85,
-                role: 8,
-                role_offset: 95,
-            },
-        ],
-        paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
-        paired_byte_offset: 130,
-    })
+    let pair = DesignDimensionLocusPair::try_new(
+        crate::records::dimensions::DesignDimensionLocusPairDraft {
+            id: format!("{stream}:design-dimension-locus-pair#30"),
+            companion_record_index: 99,
+            governing_companion_record_index: 22,
+            byte_offset: 30,
+            class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                .unwrap(),
+            record_index: 30,
+            frame_length: 100,
+            opaque_index: Some(crate::records::identity::Located {
+                value: 0,
+                offset: 65,
+            }),
+            loci: [
+                crate::records::dimensions::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(40),
+                    geometry_reference_offset: 70,
+                    role: 7,
+                    role_offset: 80,
+                },
+                crate::records::dimensions::DesignDimensionAnnotationOperand {
+                    geometry_record_index: std::num::NonZeroU32::new(41),
+                    geometry_reference_offset: 85,
+                    role: 8,
+                    role_offset: 95,
+                },
+            ],
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "273".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 130,
+        },
+    )
     .unwrap();
     let group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#140"),
         companion_record_index: 99,
         byte_offset: 140,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 31,
         frame_length: 100,
         loci: vec![DesignDimensionLocus {
-            returned: crate::records::Located {
+            returned: crate::records::identity::Located {
                 value: 40,
                 offset: 210,
             },
@@ -870,24 +882,26 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         owner_role_offset: 195,
         state: 0,
         state_offset: 199,
-        next_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
+        next_class_tag: crate::records::references::DesignClassTag::try_from("273".to_owned())
+            .unwrap(),
         next_record_index: 32,
         next_byte_offset: 240,
     };
     let point = |record_index, y| {
-        SketchPoint::try_from(crate::records::SketchPointDraft {
+        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
             id: format!("{stream}:sketch-point#{record_index}"),
             record_index,
             owner_reference: Some(100),
-            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
             byte_offset: 0,
             coordinate_offset: 0,
-            companion: crate::records::SketchPointCompanion {
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
             },
-            record_form: crate::records::SketchPointRecordForm::version11(
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
                 u64::from(record_index),
-                crate::records::SketchPointClosure::Selector0State0,
+                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
                 None,
                 0.0,
             ),
@@ -1019,7 +1033,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         id: format!("{stream}:sketch-curve#42"),
         record_index: 42,
         owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -1045,12 +1059,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         id: format!("{stream}:design-dimension-locus-group#31"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 31,
         frame_length: 100,
         loci: vec![
             DesignDimensionLocus {
-                returned: crate::records::Located {
+                returned: crate::records::identity::Located {
                     value: 40,
                     offset: 0,
                 },
@@ -1060,7 +1074,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 role_offset: 0,
             },
             DesignDimensionLocus {
-                returned: crate::records::Located {
+                returned: crate::records::identity::Located {
                     value: 41,
                     offset: 0,
                 },
@@ -1070,7 +1084,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
                 role_offset: 0,
             },
             DesignDimensionLocus {
-                returned: crate::records::Located {
+                returned: crate::records::identity::Located {
                     value: 42,
                     offset: 0,
                 },
@@ -1086,14 +1100,15 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
+        next_class_tag: crate::records::references::DesignClassTag::try_from("273".to_owned())
+            .unwrap(),
         next_record_index: 32,
         next_byte_offset: 0,
     };
     let mut symmetry_parameter = parameter.clone();
     symmetry_parameter
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-6".into(),
                 symmetry_parameter.owner_record_index(),
                 symmetry_parameter.family_discriminator(),
@@ -1175,19 +1190,20 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
 
     let mut group_owner = owner.clone();
     {
-        let mut wire = crate::records::DesignParameterOwnerWire::from(group_owner.clone());
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(group_owner.clone());
         wire.companion_record_index = group.companion_record_index;
         wire.record_index = group.companion_record_index - 1;
         wire.parameter_record_index = group.companion_record_index - 2;
         wire.id = format!("{stream}:design-parameter-owner#{}", wire.record_index);
-        group_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        group_owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     let mut group_parameter = zero_parameter.clone();
     group_parameter.record_index = group_owner.parameter_record_index();
     group_parameter.id = format!("{stream}:design-parameter#{}", group_parameter.record_index);
     group_parameter
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 zero_parameter.source_kind().into(),
                 Some(group_owner.record_index()),
                 zero_parameter.family_discriminator(),

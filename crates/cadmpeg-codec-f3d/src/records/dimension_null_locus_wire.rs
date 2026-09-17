@@ -1,4 +1,4 @@
-use super::{DesignDimensionLocusPair, DesignDimensionLocusPairWire};
+use super::dimensions::{DesignDimensionLocusPair, DesignDimensionLocusPairWire};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

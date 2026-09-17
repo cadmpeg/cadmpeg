@@ -8,13 +8,14 @@ use cadmpeg_ir::document::{EntityRewrite, Model};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::archive::{ArchiveSession, ClassifiedMember};
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
-use crate::records::XrefReference;
+use crate::records::xref::XrefReference;
 use crate::xref::{self, XrefTable};
 
 /// Merges the root document's recursively reachable members in archive scope.
@@ -468,21 +469,23 @@ fn typed_fields(
     }
 
     Ok(match arena {
-        "body_visibilities" => typed!(crate::records::BodyVisibility),
-        "creation_timestamps" => typed!(crate::records::CreationTimestamp),
-        "design_body_bindings" => typed!(crate::records::DesignBodyBinding),
+        "body_visibilities" => typed!(crate::records::bodies::BodyVisibility),
+        "creation_timestamps" => typed!(crate::records::recipes::CreationTimestamp),
+        "design_body_bindings" => typed!(crate::records::bodies::DesignBodyBinding),
         "design_body_recipe_operands" => typed!(crate::records::topology::DesignBodyRecipeOperand),
-        "design_dimension_recipe_records" => typed!(crate::records::DesignDimensionRecipeRecord),
+        "design_dimension_recipe_records" => {
+            typed!(crate::records::dimensions::DesignDimensionRecipeRecord)
+        }
         "design_edge_operands" => typed!(crate::records::topology::DesignEdgeOperand),
         "design_edge_treatment_vertex_operands" => {
             typed!(crate::records::feature::DesignEdgeTreatmentVertexOperand)
         }
         "design_face_operands" => typed!(crate::records::topology::DesignFaceOperand),
-        "design_mesh_features" => typed!(crate::records::DesignMeshFeature),
+        "design_mesh_features" => typed!(crate::records::mesh::DesignMeshFeature),
         "design_parameter_scopes" => typed!(crate::records::feature::DesignParameterScope),
-        "persistent_design_links" => typed!(crate::records::PersistentDesignLink),
-        "persistent_subentity_tags" => typed!(crate::records::PersistentSubentityTag),
-        "sketch_curve_links" => typed!(crate::records::SketchCurveLink),
+        "persistent_design_links" => typed!(crate::records::sketch_links::PersistentDesignLink),
+        "persistent_subentity_tags" => typed!(crate::records::sketch_links::PersistentSubentityTag),
+        "sketch_curve_links" => typed!(crate::records::sketch_links::SketchCurveLink),
         _ => record.fields(),
     })
 }

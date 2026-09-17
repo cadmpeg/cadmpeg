@@ -77,13 +77,15 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = shell_369_261::LEN as u64;
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![9_000, 200, 201]);
+                crate::records::identity::ReferenceRun::unlocated(vec![9_000, 200, 201]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -103,7 +105,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
 
     let mut wrong_pair = scope.clone();
     wrong_pair.paired_class_tag =
-        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     assert!(exact_direct_face_operation(&bytes, &records, &wrong_pair).is_none());
 
     let mut invalid_outward = bytes;
@@ -138,7 +140,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![85]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![85]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -196,7 +198,7 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![76]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![76]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -241,7 +243,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![72]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![72]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -275,7 +277,8 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         frame[4..7].copy_from_slice(class_tag.as_bytes());
         frame[7..11].copy_from_slice(&record_index.to_le_bytes());
         frame[43..47].copy_from_slice(&form.to_le_bytes());
-        let mut transform = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+        let mut transform =
+            crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
         transform[0][3] = f64::from(ordinal as u32);
         for (cell, value) in transform.into_iter().flatten().enumerate() {
             let at = 48 + cell * 8;
@@ -298,7 +301,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         scope
             .try_edit(|draft| {
                 draft.reference_members =
-                    crate::records::ReferenceRun::unlocated(vec![record_index]);
+                    crate::records::identity::ReferenceRun::unlocated(vec![record_index]);
                 draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
                 draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -396,13 +399,15 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             crate::records::feature::DesignFeatureKind::WorkAxis,
             1,
         );
-        scope.class_tag = crate::records::DesignClassTag::try_from(scope_class.to_owned()).unwrap();
+        scope.class_tag =
+            crate::records::references::DesignClassTag::try_from(scope_class.to_owned()).unwrap();
         scope.paired_class_tag =
-            crate::records::DesignClassTag::try_from(scope_paired_class.to_owned()).unwrap();
+            crate::records::references::DesignClassTag::try_from(scope_paired_class.to_owned())
+                .unwrap();
         scope
             .try_edit(|draft| {
                 draft.frame_length = scope_length as u64;
-                draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+                draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                     carrier_record_index,
                     support_record_index,
                 ]);
@@ -498,24 +503,26 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
         .into_record("Design/BulkStream.dat", 0)
         .unwrap();
     {
-        let mut wire = crate::records::DesignParameterOwnerWire::from(taper_owner.clone());
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(taper_owner.clone());
         wire.id = "generated:owner#80".into();
         wire.record_index = 80;
         wire.scope_record_index = scope_record_index;
         wire.local_ordinal = 0;
         wire.parameter_record_index = 81;
         wire.companion_record_index = 82;
-        taper_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        taper_owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     let mut along_owner = taper_owner.clone();
     {
-        let mut wire = crate::records::DesignParameterOwnerWire::from(along_owner.clone());
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(along_owner.clone());
         wire.id = "generated:owner#82".into();
         wire.record_index = 82;
         wire.local_ordinal = 1;
         wire.parameter_record_index = 83;
         wire.companion_record_index = 84;
-        along_owner = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        along_owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
 
     let mut scope = DesignParameterScope::empty(
@@ -525,7 +532,8 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![80, 82]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![80, 82]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;

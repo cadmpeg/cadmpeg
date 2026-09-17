@@ -185,26 +185,32 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
         crate::records::feature::DesignAssemblyOperandPathLink {
             locator_reference_offset: 11,
             locator_record_index: 10,
-            locator_class_tag: crate::records::DesignClassTag::try_from("363".to_owned()).unwrap(),
+            locator_class_tag: crate::records::references::DesignClassTag::try_from(
+                "363".to_owned(),
+            )
+            .unwrap(),
             locator_byte_offset: 100,
             locator_scope_reference_offset: 111,
             wrapper_record_index: 20,
             wrapper_reference_offset: 122,
-            wrapper_class_tag: crate::records::DesignClassTag::try_from("388".to_owned()).unwrap(),
+            wrapper_class_tag: crate::records::references::DesignClassTag::try_from(
+                "388".to_owned(),
+            )
+            .unwrap(),
             wrapper_byte_offset: 200,
             path_reference_offset: 211,
         },
         30,
-        crate::records::DesignClassTag::try_from("386".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("386".to_owned()).unwrap(),
         300,
-        vec![crate::records::Located {
+        vec![crate::records::identity::Located {
             value: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
             offset: 311,
         }],
-        vec![crate::records::Located {
+        vec![crate::records::identity::Located {
             value: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
@@ -225,9 +231,10 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
         .unwrap();
     let joint_origin = crate::records::feature::DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: 60,
-        class_tag: crate::records::DesignClassTag::try_from("307".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned()).unwrap(),
         byte_offset: 600,
-        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
+            .unwrap(),
         paired_byte_offset: 700,
     };
     let axial = crate::records::feature::DesignAssemblyOperandQualifier::AxialTarget {
@@ -252,7 +259,10 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
                     reference_record_index: 30,
                     reference_offset: 33,
                     record_byte_offset: 300,
-                    class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "258".to_owned(),
+                    )
+                    .unwrap(),
                     transform: frame.transform,
                     transform_offset: 325,
                 },
@@ -288,11 +298,11 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             0.0,
             [0.0; 3],
             vec![
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 10,
                     offset: 11,
                 },
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 20,
                     offset: 22,
                 },
@@ -336,7 +346,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
     let selection = |record_index| crate::records::feature::DesignAssemblyLegacySelection {
         record_index,
         byte_offset: 400,
-        class_tag: crate::records::DesignClassTag::try_from("307".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned()).unwrap(),
         asset_id: "11111111-1111-4111-8111-111111111111"
             .to_owned()
             .try_into()
@@ -350,14 +360,16 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         recipe_record_index: 50,
         recipe_record_byte_offset: 500,
         recipe_id: "recipe".into(),
-        recipe_kind: crate::records::ConstructionRecipeKind::Face,
+        recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
         recipe_references: Vec::new(),
         next_byte_offset: 600,
     };
     let carriers = crate::records::feature::DesignAssemblyLegacyOperands::try_new(
         crate::records::feature::DesignAssemblyLegacyOperand {
-            construction_class_tag: crate::records::DesignClassTag::try_from("256".to_owned())
-                .unwrap(),
+            construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                "256".to_owned(),
+            )
+            .unwrap(),
             reference_offset: 11,
             construction: Box::new(crate::records::feature::DesignWorkPointConstruction {
                 point_record_index: 10,
@@ -376,8 +388,10 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             selection: selection(40),
         },
         crate::records::feature::DesignAssemblyLegacyOperand {
-            construction_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
-                .unwrap(),
+            construction_class_tag: crate::records::references::DesignClassTag::try_from(
+                "257".to_owned(),
+            )
+            .unwrap(),
             reference_offset: 22,
             construction: Box::new(crate::records::feature::DesignHoleConstruction {
                 point_record_index: 20,
@@ -422,7 +436,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         reference_record_index: 30,
         reference_offset: 33,
         record_byte_offset: 300,
-        class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
         transform: identity.try_into().unwrap(),
         transform_offset: 325,
     };
@@ -697,7 +711,7 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
     let guids = |offsets: &[u64]| {
         offsets
             .iter()
-            .map(|offset| crate::records::Located {
+            .map(|offset| crate::records::identity::Located {
                 value: "11111111-1111-4111-8111-111111111111"
                     .to_owned()
                     .try_into()

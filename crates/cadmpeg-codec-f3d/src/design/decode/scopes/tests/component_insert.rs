@@ -60,7 +60,8 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:design-parameter-scope#30".into(),
             byte_offset: scope_at as u64,
-            class_tag: crate::records::DesignClassTag::try_from("451".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("451".to_owned())
+                .unwrap(),
             record_index: 30,
             frame_length: 399,
             kind_offset: 0,
@@ -71,7 +72,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: (scope_at as u64) + 9,
-            reference_members: crate::records::ReferenceRun::from_columns(
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
                 vec![20],
                 vec![scope_at as u64 + 38],
                 "reference_members",
@@ -81,7 +82,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: (scope_at + 399) as u64,
         }
         .with_fixture_layout(),
@@ -142,7 +146,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         let legacy_scope = DesignParameterScope::try_new(
             crate::records::feature::DesignParameterScopeDraft {
                 frame_length: frame_length as u64,
-                paired_class_tag: crate::records::DesignClassTag::try_from(
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     paired_class_tag.to_owned(),
                 )
                 .unwrap(),
@@ -206,16 +210,20 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     let expanded_scope = DesignParameterScope::try_new(
         crate::records::feature::DesignParameterScopeDraft {
             byte_offset: expanded_scope_at as u64,
-            class_tag: crate::records::DesignClassTag::try_from("335".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("335".to_owned())
+                .unwrap(),
             frame_length: 404,
-            reference_members: crate::records::ReferenceRun::located(vec![
-                crate::records::Located {
+            reference_members: crate::records::identity::ReferenceRun::located(vec![
+                crate::records::identity::Located {
                     value: 20,
                     offset: (expanded_scope_at + 42) as u64,
                 },
             ]),
             payload: scope.kind().try_into().unwrap(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "260".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: (expanded_scope_at + 404) as u64,
             ..scope.clone().into_draft()
         }
@@ -294,7 +302,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
             byte_offset: legacy_scope_at as u64,
             reference_count_offset: (legacy_scope_at + 33) as u64,
             frame_length: 381,
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: (legacy_scope_at + 381) as u64,
             ..scope.clone().into_draft()
         }
@@ -414,11 +425,12 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.class_tag = crate::records::DesignClassTag::try_from("296".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 261;
-            draft.reference_members = crate::records::ReferenceRun::from_columns(
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 vec![20],
                 vec![(scope_at + 38) as u64],
                 "reference_members",
@@ -430,7 +442,8 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = (scope_at + 261) as u64;
@@ -449,7 +462,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
     assert_eq!(construction.neutron_role_offset, 159);
     assert_eq!(
         *construction.transform(),
-        crate::records::SketchPlacementMatrix::IDENTITY
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
     );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
@@ -545,11 +558,12 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.class_tag = crate::records::DesignClassTag::try_from("410".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("410".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 261;
-            draft.reference_members = crate::records::ReferenceRun::from_columns(
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 vec![167],
                 vec![(scope_at + 38) as u64],
                 "reference_members",
@@ -561,7 +575,8 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = (scope_at + 261) as u64;
@@ -580,7 +595,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     assert_eq!(construction.neutron_role_offset, 159);
     assert_eq!(
         *construction.transform(),
-        crate::records::SketchPlacementMatrix::IDENTITY
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
     );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
@@ -685,11 +700,12 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.class_tag = crate::records::DesignClassTag::try_from("434".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("434".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 261;
-            draft.reference_members = crate::records::ReferenceRun::from_columns(
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 vec![167],
                 vec![(scope_at + 38) as u64],
                 "reference_members",
@@ -701,7 +717,8 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = (scope_at + 261) as u64;
@@ -720,7 +737,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
     assert_eq!(construction.neutron_role_offset, 159);
     assert_eq!(
         *construction.transform(),
-        crate::records::SketchPlacementMatrix::IDENTITY
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
     );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
@@ -831,11 +848,12 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.class_tag = crate::records::DesignClassTag::try_from("426".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("426".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 261;
-            draft.reference_members = crate::records::ReferenceRun::from_columns(
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 vec![20],
                 vec![(scope_at + 38) as u64],
                 "reference_members",
@@ -847,7 +865,8 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.paired_byte_offset = (scope_at + 261) as u64;
@@ -866,7 +885,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     assert_eq!(construction.neutron_role_offset, 159);
     assert_eq!(
         *construction.transform(),
-        crate::records::SketchPlacementMatrix::IDENTITY
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
     );
     assert_eq!(construction.transform_offset(), None);
     assert_eq!(construction.carrier_transform_offset(), None);
@@ -887,7 +906,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     external_scope
         .try_edit(|draft| {
             draft.byte_offset = external_scope_at as u64;
-            draft.reference_members = crate::records::ReferenceRun::from_columns(
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 draft.reference_members.values().copied().collect(),
                 vec![(external_scope_at + 38) as u64],
                 "reference_members",
@@ -1013,11 +1032,12 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        scope.class_tag = crate::records::DesignClassTag::try_from("283".to_owned()).unwrap();
+        scope.class_tag =
+            crate::records::references::DesignClassTag::try_from("283".to_owned()).unwrap();
         scope
             .try_edit(|draft| {
                 draft.frame_length = frame_length as u64;
-                draft.reference_members = crate::records::ReferenceRun::from_columns(
+                draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                     vec![20],
                     vec![(scope_at + 34) as u64],
                     "reference_members",
@@ -1031,7 +1051,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
             })
             .unwrap();
         scope.paired_class_tag =
-            crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+            crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
         scope
             .try_edit(|draft| {
                 draft.paired_byte_offset = (scope_at + frame_length) as u64;
@@ -1042,7 +1062,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         (bytes, scope, scope_at)
     };
 
-    let identity = crate::records::SketchPlacementMatrix::IDENTITY.rows();
+    let identity = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     let (bytes, scope, _) = make_fixture(257, identity);
     let records = IndexedRecordOffsets::build(&bytes);
     let construction = exact_component_insert_construction(&bytes, &records, &scope)

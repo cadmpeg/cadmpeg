@@ -32,15 +32,15 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{
+use crate::records::mesh::{
     DesignGuidText, DesignMeshCollection, DesignMeshCollectionOwner, DesignMeshEntryName,
-    DesignMeshFixedRecord, DesignMeshGuid, DesignMeshPlacement, DesignMeshSceneNode,
-    DesignMeshSceneState, DesignMeshScope, DesignMeshTextureTable, MeshAffineTransform,
+    DesignMeshGuid, DesignMeshPlacement, DesignMeshSceneNode, DesignMeshSceneState,
+    DesignMeshScope, DesignMeshTextureTable, MeshAffineTransform,
 };
-use crate::records::{
-    DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
-    DesignMeshTextureResource,
+use crate::records::mesh::{
+    DesignMeshBody, DesignMeshFeature, DesignMeshSceneBounds, DesignMeshTextureResource,
 };
+use crate::records::{mesh::DesignMeshFixedRecord, mesh::DesignMeshRecordIdentity};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
@@ -365,7 +365,7 @@ fn validate_mesh_registration(
             .design_type
             .base_type_guid
             .value()
-            .map(crate::records::DesignRelaxedGuidText::as_str)
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
     {
         return Err(CodecError::malformed(format_args!(
@@ -401,10 +401,13 @@ fn source_offset(frame_start: usize, relative: usize) -> Option<u64> {
     u64::try_from(frame_start.checked_add(relative)?).ok()
 }
 
-fn indexed_class_tag(record: &[u8], at: usize) -> Option<crate::records::DesignClassTag> {
+fn indexed_class_tag(
+    record: &[u8],
+    at: usize,
+) -> Option<crate::records::references::DesignClassTag> {
     (View::u32_le_at(record, at) == Some(3)).then_some(())?;
     let tag = std::str::from_utf8(record.get(at.checked_add(4)?..at.checked_add(7)?)?).ok()?;
-    crate::records::DesignClassTag::try_from(tag.to_owned()).ok()
+    crate::records::references::DesignClassTag::try_from(tag.to_owned()).ok()
 }
 
 fn record_identity(
@@ -426,7 +429,7 @@ fn record_identity(
 }
 
 fn validate_design_type(
-    design_type: &crate::records::SegmentType,
+    design_type: &crate::records::entity_header::SegmentType,
     expected_type_guid: &str,
     expected_base_type_guid: &str,
     expected_version: u32,
@@ -441,7 +444,7 @@ fn validate_design_type(
         && design_type
             .base_type_guid
             .value()
-            .map(crate::records::DesignRelaxedGuidText::as_str)
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
 }
 
@@ -1289,7 +1292,7 @@ where
                 resource_guid: flag.resource_guid.clone(),
                 flags: flag.value,
                 filename_ordinal: filename_entry.ordinal,
-                file: crate::records::DesignMeshTextureFile::new(
+                file: crate::records::mesh::DesignMeshTextureFile::new(
                     filename_record,
                     &filename,
                     archive_entry_name,
@@ -1523,7 +1526,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
     for body in design_records
         .iter()
         .flatten()
-        .flat_map(crate::records::DesignMeshFeature::bodies)
+        .flat_map(crate::records::mesh::DesignMeshFeature::bodies)
         .filter(|body| body.tessellation_id.is_none())
     {
         outcomes.push(MeshContainerOutcome::Missing {
@@ -1681,22 +1684,23 @@ mod tests {
         version: u32,
         module: &str,
         entity_ids: Vec<u64>,
-    ) -> crate::records::SegmentType {
-        crate::records::SegmentType {
+    ) -> crate::records::entity_header::SegmentType {
+        crate::records::entity_header::SegmentType {
             id: String::new(),
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map_or(crate::records::BaseTypeGuid::Absent, |value| {
-                crate::records::BaseTypeGuid::Guid {
+            base_type_guid: base_type_guid.map_or(
+                crate::records::entity_header::BaseTypeGuid::Absent,
+                |value| crate::records::entity_header::BaseTypeGuid::Guid {
                     value: value.to_owned().try_into().expect("base GUID"),
                     offset: 0,
-                }
-            }),
+                },
+            ),
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::unlocated(entity_ids),
+            entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -2333,7 +2337,7 @@ mod tests {
             panic!("one mesh-collection entity");
         };
         let collection_entity = *collection_entity;
-        collection_type.entities = crate::records::ReferenceRun::unlocated(Vec::new());
+        collection_type.entities = crate::records::identity::ReferenceRun::unlocated(Vec::new());
         graph
             .meta
             .records
@@ -2806,7 +2810,7 @@ mod tests {
         let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("reflected map");
         let container = MeshContainer {
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
-            mesh_uuid: crate::records::DesignMeshUuid::try_from(
+            mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
                 "11111111-2222-4333-8444-555555555555".to_owned(),
             )
             .unwrap(),
@@ -2855,7 +2859,7 @@ mod tests {
         let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
         let container = MeshContainer {
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
-            mesh_uuid: crate::records::DesignMeshUuid::try_from(
+            mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(
                 "11111111-2222-4333-8444-555555555555".to_owned(),
             )
             .unwrap(),

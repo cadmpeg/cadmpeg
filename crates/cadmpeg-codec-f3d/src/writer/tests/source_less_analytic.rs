@@ -378,7 +378,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 parameter_range: [0.25, 0.75],
                 extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
             }];
-        native.body_visibilities = vec![crate::records::BodyVisibility {
+        native.body_visibilities = vec![crate::records::bodies::BodyVisibility {
             id: "f3d:design:body-visibility#generated".into(),
             body: visible_body,
             stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
@@ -850,59 +850,65 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let native_id = format!("f3d:{stream}:design-parameter#0");
     f3d_native_mut(&mut source_less).design_parameters.push(
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: native_id.clone(),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-            record_index: 700,
-            source_ordinal: 0,
-            source: crate::records::DesignParameterSource::User {
-                family_discriminator: crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
-                    offset: 22,
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: native_id.clone(),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
+                record_index: 700,
+                source_ordinal: 0,
+                source: crate::records::parameters::DesignParameterSource::User {
+                    family_discriminator: crate::records::identity::Located {
+                        value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                        offset: 22,
+                    },
                 },
-            },
-            expression: "Width / 2".into(),
-            expression_offset: 36,
-            source_kind_offset: 70,
+                expression: "Width / 2".into(),
+                expression_offset: 36,
+                source_kind_offset: 70,
 
-            unit: Some(crate::records::RecordedValue {
-                value: "mm".into(),
-                offset: 110,
-            }),
-            name: "HalfWidth".into(),
-            name_offset: 120,
-            evaluated_value: 3.0,
-            evaluated_value_offset: 150,
-        })
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: "mm".into(),
+                    offset: 110,
+                }),
+                name: "HalfWidth".into(),
+                name_offset: 120,
+                evaluated_value: 3.0,
+                evaluated_value_offset: 150,
+            },
+        )
         .unwrap(),
     );
     f3d_native_mut(&mut source_less).design_parameters.push(
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
-            id: format!("f3d:{stream}:design-parameter#1"),
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
-            record_index: 701,
-            source_ordinal: 1,
-            source: crate::records::DesignParameterSource::User {
-                family_discriminator: crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
-                    offset: 22,
+        crate::records::parameters::DesignParameter::try_from(
+            crate::records::parameters::DesignParameterDraft {
+                id: format!("f3d:{stream}:design-parameter#1"),
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
+                record_index: 701,
+                source_ordinal: 1,
+                source: crate::records::parameters::DesignParameterSource::User {
+                    family_discriminator: crate::records::identity::Located {
+                        value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                        offset: 22,
+                    },
                 },
-            },
-            expression: "60 mm".into(),
-            expression_offset: 36,
-            source_kind_offset: 70,
+                expression: "60 mm".into(),
+                expression_offset: 36,
+                source_kind_offset: 70,
 
-            unit: Some(crate::records::RecordedValue {
-                value: "mm".into(),
-                offset: 110,
-            }),
-            name: "Width".into(),
-            name_offset: 120,
-            evaluated_value: 6.0,
-            evaluated_value_offset: 150,
-        })
+                unit: Some(crate::records::identity::RecordedValue {
+                    value: "mm".into(),
+                    offset: 110,
+                }),
+                name: "Width".into(),
+                name_offset: 120,
+                evaluated_value: 6.0,
+                evaluated_value_offset: 150,
+            },
+        )
         .unwrap(),
     );
     let (_, parameters) = crate::design::feature_project::project_parameter_design(

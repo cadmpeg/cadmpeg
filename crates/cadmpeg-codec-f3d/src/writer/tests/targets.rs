@@ -5,7 +5,8 @@ use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 
-use crate::{loss::F3dLossCode, F3dCodec};
+use crate::loss::F3dLossCode;
+use crate::F3dCodec;
 
 fn sourced_ir(dialect: &'static str) -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");

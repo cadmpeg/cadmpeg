@@ -16,7 +16,8 @@ fn localized_chamfer_scope() -> DesignParameterScope {
         crate::records::feature::DesignParameterScopeDraft {
             id: "f3d:native/BulkStream.dat:scope#12".into(),
             byte_offset: 100,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
             record_index: 12,
             frame_length: 200,
             kind_offset: 210,
@@ -26,7 +27,7 @@ fn localized_chamfer_scope() -> DesignParameterScope {
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: 180,
-            reference_members: crate::records::ReferenceRun::from_columns(
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
                 vec![100, 101],
                 vec![185, 196],
                 "reference_members",
@@ -36,7 +37,10 @@ fn localized_chamfer_scope() -> DesignParameterScope {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 300,
         }
         .with_fixture_layout(),

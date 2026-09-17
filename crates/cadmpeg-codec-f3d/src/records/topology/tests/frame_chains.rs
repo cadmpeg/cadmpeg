@@ -5,7 +5,8 @@ use crate::records::topology::{
     DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
     DesignEntitySelectionOperand,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::{json, Value};
 
 fn rejects_changed_fields<T: DeserializeOwned + Serialize>(wire: Value, fields: &[&str]) {
@@ -22,7 +23,7 @@ fn rejects_changed_fields<T: DeserializeOwned + Serialize>(wire: Value, fields: 
 fn trailing_transform_rejects_displaced_frames_and_overflow() {
     let wire = json!({
         "record_index": 7, "byte_offset": 100, "class_tag": "300",
-        "transform": crate::records::IDENTITY_MATRIX, "transform_offset": 122,
+        "transform": crate::records::identity::IDENTITY_MATRIX, "transform_offset": 122,
         "following_record_index": 8, "following_byte_offset": 252,
         "following_class_tag": "301"
     });

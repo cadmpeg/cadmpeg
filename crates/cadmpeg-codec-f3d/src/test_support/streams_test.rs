@@ -251,14 +251,14 @@ fn generated_design_metastream_with_sketch_types(
             crate::design::presentation::BROWSER_NODE_TYPE_GUID,
             crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
             crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[900],
         ),
         (
             crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
             base,
             crate::design::presentation::BREP_CONTAINER_TYPE_VERSION,
-            crate::records::DESIGN_MODULE_BODY,
+            crate::records::entity_header::DESIGN_MODULE_BODY,
             &[7],
         ),
         (
@@ -272,7 +272,7 @@ fn generated_design_metastream_with_sketch_types(
             crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
             crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
             crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-            crate::records::DESIGN_MODULE_BODY,
+            crate::records::entity_header::DESIGN_MODULE_BODY,
             &[899],
         ),
         (
@@ -286,7 +286,7 @@ fn generated_design_metastream_with_sketch_types(
             "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
             base,
             3,
-            crate::records::DESIGN_MODULE_SKETCH,
+            crate::records::entity_header::DESIGN_MODULE_SKETCH,
             &[800],
         ),
         (
@@ -309,14 +309,14 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001100",
             base,
             1,
-            crate::records::DESIGN_MODULE_SKETCH,
+            crate::records::entity_header::DESIGN_MODULE_SKETCH,
             &[1100],
         ));
         types.push((
             "00000000-0000-0000-0000-000000000584",
             base,
             1,
-            crate::records::DESIGN_MODULE_SKETCH,
+            crate::records::entity_header::DESIGN_MODULE_SKETCH,
             &[584],
         ));
     }
@@ -348,7 +348,7 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001400",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             feature_entity_ids,
         ));
     }
@@ -357,35 +357,35 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001401",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001402",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1601],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001403",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1602],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001404",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1603],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001405",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1604],
         ));
     } else if matches!(variant, GeneratedDesignMetastreamVariant::SurfaceStitch) {
@@ -393,21 +393,21 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001401",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1600],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001402",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1700],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001403",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1701],
         ));
     } else if matches!(variant, GeneratedDesignMetastreamVariant::CopyPaste) {
@@ -415,14 +415,14 @@ fn generated_design_metastream_with_sketch_types(
             "00000000-0000-0000-0000-000000001401",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1600],
         ));
         types.push((
             "00000000-0000-0000-0000-000000001402",
             base,
             1,
-            crate::records::DESIGN_MODULE_FUSION,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
             &[1601],
         ));
     }

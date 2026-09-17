@@ -61,7 +61,8 @@ fn container_only_dimension_parameters(
                 crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM)
                     == stream
                     && parameter.record_index == owner.parameter_record_index()
-                    && parameter.kind() == crate::records::DesignParameterKind::Dimension
+                    && parameter.kind()
+                        == crate::records::parameters::DesignParameterKind::Dimension
             });
             let parameter = parameters.next()?;
             parameters
@@ -95,7 +96,7 @@ fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize
             let stream =
                 crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
             (parameters.get(&(stream, owner.parameter_record_index()))
-                == Some(&crate::records::DesignParameterKind::Dimension))
+                == Some(&crate::records::parameters::DesignParameterKind::Dimension))
             .then_some((stream, owner.record_index()))
         })
         .collect::<HashSet<_>>();
@@ -1411,7 +1412,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 .filter(|parameter| {
                     let stream = crate::ids::native_stream(&parameter.id)
                         .unwrap_or(crate::ids::DEFAULT_STREAM);
-                    parameter.kind() == crate::records::DesignParameterKind::Dimension
+                    parameter.kind() == crate::records::parameters::DesignParameterKind::Dimension
                         && relation_bearing_parameters.contains(&(stream, parameter.record_index))
                         && !projected_dimension_parameters
                             .contains(&crate::ids::neutral_parameter_id(parameter))
@@ -2088,7 +2089,7 @@ fn finish_model_decode<'a>(
     scan: &ContainerScan<'a>,
     primary_model_brep: &BrepFacts,
     brep: Brep,
-    body_visibilities: Vec<crate::records::BodyVisibility>,
+    body_visibilities: Vec<crate::records::bodies::BodyVisibility>,
     undecoded_candidates: usize,
     session_state: DecodeSessionState,
 ) -> Result<AuthoredDecoded, CodecError> {
@@ -2163,7 +2164,7 @@ impl<'a> F3dDecodeSession<'a> {
         scan: &'a ContainerScan<'a>,
         primary_model_brep: &BrepFacts,
         brep: Brep,
-        body_visibilities: Vec<crate::records::BodyVisibility>,
+        body_visibilities: Vec<crate::records::bodies::BodyVisibility>,
         undecoded_candidates: usize,
         session_state: DecodeSessionState,
     ) -> Result<(Self, SessionPath), CodecError> {
@@ -3115,7 +3116,7 @@ fn decode_scanned_document<'a>(
                             .map(|visibility| (*selector, visibility))
                     })
                 {
-                    body_visibilities.push(crate::records::BodyVisibility {
+                    body_visibilities.push(crate::records::bodies::BodyVisibility {
                         id: crate::ids::native_scoped_id(
                             &candidate.name,
                             "body-visibility",
@@ -4322,7 +4323,7 @@ fn extend_related_design_records(
         if existing.insert((stream.to_owned(), scope.record_index)) {
             native
                 .design_record_headers
-                .push(crate::records::DesignRecordHeader {
+                .push(crate::records::decal::DesignRecordHeader {
                     id: format!("{stream}:design-record-header#{}", scope.byte_offset()),
                     record_index: scope.record_index,
                     class_tag: scope.class_tag.clone(),
@@ -4333,7 +4334,7 @@ fn extend_related_design_records(
             if existing.insert((stream.to_owned(), operation.relation_record_index)) {
                 native
                     .design_record_headers
-                    .push(crate::records::DesignRecordHeader {
+                    .push(crate::records::decal::DesignRecordHeader {
                         id: format!(
                             "{stream}:design-record-header#{}",
                             operation.relation_byte_offset()

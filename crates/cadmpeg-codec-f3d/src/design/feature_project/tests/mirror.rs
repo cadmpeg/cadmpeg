@@ -31,8 +31,9 @@ fn group(
             scope_reference_ordinal: 0,
             record_index,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("282".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: record_index + 1,
                 offset: 0,
             }],
@@ -56,7 +57,10 @@ fn group(
             .unwrap(),
             operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )

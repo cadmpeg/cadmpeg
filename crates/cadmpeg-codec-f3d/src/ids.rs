@@ -8,7 +8,7 @@ use crate::records::feature::{
     DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection,
     DesignCombineExternalBodyIdentity, DesignParameterScope,
 };
-use crate::records::{DesignParameter, DesignSketchPlacement};
+use crate::records::{parameters::DesignParameter, sketch_placement::DesignSketchPlacement};
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
 /// scheme when parsing an identity key back into its stream and tail.
@@ -208,7 +208,7 @@ pub(crate) fn neutral_xref_occurrence_id(
 
 /// Neutral local component definition projected from its stable Design GUID.
 pub(crate) fn neutral_component_id(
-    guid: &crate::records::DesignRelaxedGuidText,
+    guid: &crate::records::mesh::DesignRelaxedGuidText,
 ) -> cadmpeg_ir::ids::ProductDefinitionId {
     cadmpeg_ir::ids::ProductDefinitionId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "model", "component"),
@@ -218,7 +218,7 @@ pub(crate) fn neutral_component_id(
 
 /// Neutral local occurrence projected from its stable Design GUID.
 pub(crate) fn neutral_component_occurrence_id(
-    guid: &crate::records::DesignRelaxedGuidText,
+    guid: &crate::records::mesh::DesignRelaxedGuidText,
 ) -> cadmpeg_ir::ids::OccurrenceId {
     cadmpeg_ir::ids::OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
@@ -1023,8 +1023,7 @@ mod tests {
         neutral_assembly_legacy_object_id, neutral_sketch_record_id, neutral_sketch_text_id,
         same_native_occurrence, SCHEME_PREFIX,
     };
-    use crate::records::feature::DesignAssemblyLegacySelection;
-    use crate::records::ConstructionRecipeKind;
+    use crate::records::{feature::DesignAssemblyLegacySelection, recipes::ConstructionRecipeKind};
 
     #[test]
     fn history_keys_preserve_admitted_colons_percent_escapes_and_signed_states() {
@@ -1039,17 +1038,17 @@ mod tests {
 
     #[test]
     fn empty_stream_remains_empty_before_the_sketch_entity_suffix() {
-        let placement = crate::records::DesignSketchPlacement {
+        let placement = crate::records::sketch_placement::DesignSketchPlacement {
             id: ":record#4".into(),
             scope_record_index: None,
-            entity_id: crate::records::DesignEntityId::from_parts("sketch", 7),
+            entity_id: crate::records::identity::DesignEntityId::from_parts("sketch", 7),
             visibility: None,
             class_tag: "330".to_owned().try_into().unwrap(),
             record_index: 4,
             paired_class_tag: "330".to_owned().try_into().unwrap(),
-            frame: crate::records::DesignSketchFrame::new(
+            frame: crate::records::sketch_placement::DesignSketchFrame::new(
                 0,
-                crate::records::DesignSketchFrameForm::ScopeCompact,
+                crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
             )
             .unwrap(),
         };
@@ -1066,7 +1065,7 @@ mod tests {
     #[test]
     fn admitted_guid_and_visual_tokens_retain_source_spelling() {
         let text = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE";
-        let guid: crate::records::DesignRelaxedGuidText = text.to_owned().try_into().unwrap();
+        let guid: crate::records::mesh::DesignRelaxedGuidText = text.to_owned().try_into().unwrap();
         assert_eq!(
             super::neutral_component_id(&guid).as_str(),
             "f3d:model:component#aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -1076,7 +1075,8 @@ mod tests {
             serde_json::to_string(text).unwrap()
         );
         let token_text = format!("{text}_Post2015_Post2015");
-        let token: crate::records::DesignVisualToken = token_text.clone().try_into().unwrap();
+        let token: crate::records::references::DesignVisualToken =
+            token_text.clone().try_into().unwrap();
         assert_eq!(
             super::appearance_id(token.identity_key()).as_str(),
             format!("f3d:design:appearance#{token_text}")
@@ -1085,8 +1085,8 @@ mod tests {
             serde_json::to_string(&token).unwrap(),
             serde_json::to_string(&token_text).unwrap()
         );
-        assert!(crate::records::DesignRelaxedGuidText::try_from(String::new()).is_err());
-        assert!(crate::records::DesignVisualToken::try_from(String::new()).is_err());
+        assert!(crate::records::mesh::DesignRelaxedGuidText::try_from(String::new()).is_err());
+        assert!(crate::records::references::DesignVisualToken::try_from(String::new()).is_err());
     }
 
     #[test]
@@ -1201,7 +1201,8 @@ mod tests {
         let selection = DesignAssemblyLegacySelection {
             record_index: 7,
             byte_offset: 100,
-            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
+                .unwrap(),
             asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
                 .to_owned()
                 .try_into()

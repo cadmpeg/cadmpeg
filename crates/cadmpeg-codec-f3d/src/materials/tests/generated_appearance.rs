@@ -80,7 +80,7 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(result.ir()).act_root_components[0].registry_flag,
-        crate::records::ActRegistryFlag::On
+        crate::records::act::ActRegistryFlag::On
     );
     assert_eq!(
         Some(f3d_native(result.ir()).act_entities[0].channel_class_tag()),
@@ -116,7 +116,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(f3d_native(result.ir()).construction_recipes.len(), 1);
     assert_eq!(
         f3d_native(result.ir()).construction_recipes[0].kind,
-        crate::records::ConstructionRecipeKind::Body
+        crate::records::recipes::ConstructionRecipeKind::Body
     );
     assert_eq!(
         f3d_native(result.ir()).construction_recipes[0]
@@ -141,7 +141,8 @@ fn decode_transfers_generated_protein_appearance() {
         .iter()
         .any(|reference| {
             reference.value == 440
-                && reference.kind == crate::records::PersistentReferenceKind::CurvePrimary
+                && reference.kind
+                    == crate::records::references::PersistentReferenceKind::CurvePrimary
         }));
     assert_eq!(f3d_native(result.ir()).lost_edge_references.len(), 1);
     assert_eq!(
@@ -190,7 +191,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(sketch_header.optional_slot_present);
     assert_eq!(
         sketch_header.module(),
-        Some(crate::records::DESIGN_MODULE_SKETCH)
+        Some(crate::records::entity_header::DESIGN_MODULE_SKETCH)
     );
     assert_eq!(
         sketch_header
@@ -229,7 +230,7 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(result.ir()).sketch_relations[0].constraint_kinds(),
-        [crate::records::SketchConstraintKind::Parallel]
+        [crate::records::sketch_relations::SketchConstraintKind::Parallel]
     );
     assert_eq!(
         f3d_native(result.ir()).sketch_relations[0].unknown_constraint_bits(),
@@ -278,11 +279,11 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert!(matches!(
         f3d_native(result.ir()).sketch_curve_identities[0].geometry,
-        Some(crate::records::SketchCurveGeometry::Arc { radius: 30.0, .. })
+        Some(crate::records::sketch_geometry::SketchCurveGeometry::Arc { radius: 30.0, .. })
     ));
     assert!(matches!(
         &f3d_native(result.ir()).sketch_curve_identities[1].geometry,
-        Some(crate::records::SketchCurveGeometry::Nurbs {
+        Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
             carrier_reference: Some(42),
             degree: 2,
             poles,

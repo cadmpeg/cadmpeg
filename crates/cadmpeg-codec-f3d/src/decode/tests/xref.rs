@@ -15,7 +15,7 @@ fn superseded_xref_placements_have_a_distinct_loss_note() {
     };
     let table = crate::xref::XrefTable {
         designs: Vec::new(),
-        references: vec![crate::records::XrefReference {
+        references: vec![crate::records::xref::XrefReference {
             id: "f3d:xref:reference#4-occurrence-0".into(),
             ordinal: 4,
             occurrence_ordinal: 0,

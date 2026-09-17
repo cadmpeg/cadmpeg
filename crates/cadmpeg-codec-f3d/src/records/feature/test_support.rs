@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{DesignFeatureKind, DesignParameterScopeDraft};
-use crate::records::{Located, ReferenceRun};
+use crate::records::identity::{Located, ReferenceRun};
 
 impl DesignParameterScopeDraft {
     pub(crate) fn with_fixture_layout(mut self) -> Self {

@@ -162,11 +162,11 @@ fn exact_class_363_operand_path(
         terminal_record_index,
         "386".to_owned().try_into().ok()?,
         u64::try_from(terminal_at).ok()?,
-        vec![crate::records::Located {
+        vec![crate::records::identity::Located {
             value: occurrence_guid,
             offset: occurrence_guid_offset,
         }],
-        vec![crate::records::Located {
+        vec![crate::records::identity::Located {
             value: identity_guid,
             offset: identity_guid_offset,
         }],
@@ -368,8 +368,8 @@ fn exact_class_363_identity_guids(
     bytes: &[u8],
     start: usize,
 ) -> Option<(
-    crate::records::DesignRelaxedGuidText,
-    crate::records::DesignRelaxedGuidText,
+    crate::records::mesh::DesignRelaxedGuidText,
+    crate::records::mesh::DesignRelaxedGuidText,
     u64,
     u64,
 )> {
@@ -377,8 +377,10 @@ fn exact_class_363_identity_guids(
     let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
     let (occurrence_guid, occurrence_end) = lp_utf16_bounded(bytes, occurrence_at, 36..=36)?;
     let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
-    let occurrence_guid = crate::records::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
-    let identity_guid = crate::records::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+    let occurrence_guid =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
+    let identity_guid =
+        crate::records::mesh::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
     if occurrence_end != identity_at || identity_end != identity_at.checked_add(76)? {
         return None;
     }
@@ -460,7 +462,7 @@ mod tests {
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
             reference_offset: 9,
-            transform: crate::records::SketchPlacementMatrix::IDENTITY,
+            transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
             transform_offset: 20,
         };
 

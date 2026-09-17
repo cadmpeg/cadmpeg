@@ -11,7 +11,7 @@ use super::{
     decode_sketch_point_companion, decode_sketch_point_record, SKETCH_CONTAINER_TYPE_GUID,
     SKETCH_POINT_COMPANION_TYPE, SKETCH_POINT_TYPE_GUID,
 };
-use crate::records::{
+use crate::records::sketch_geometry::{
     SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
     SketchPointRecordForm,
 };

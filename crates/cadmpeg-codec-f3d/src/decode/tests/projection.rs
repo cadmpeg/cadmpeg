@@ -82,7 +82,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     // The feature's owning entity reference is distinct from its scope index.
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![221]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![221]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -817,15 +817,13 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
 
 #[test]
 fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
+    use cadmpeg_ir::features::{
+        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
+        CoilSectionPlacement, FeatureDefinition, FeatureOperation,
+    };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{
-            BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
-            CoilSectionPlacement, FeatureDefinition, FeatureOperation,
-        },
-        scalar::{Angle, Length},
-    };
+    use cadmpeg_ir::scalar::{Angle, Length};
 
     let construction = CoilConstruction {
         placement: CoilPlacement::Explicit {

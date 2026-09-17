@@ -1057,7 +1057,7 @@ pub(crate) fn resolved_hem_edge_group(
     let Some(previous_state_id) = previous_state_id else {
         return selection;
     };
-    let [crate::records::Located { value: member, .. }] = group.members() else {
+    let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return selection;
     };
     let matching_operands = operands
@@ -2315,10 +2315,10 @@ pub(crate) fn project_fixed_fillet_with_corners(
     vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, FilletGroup, RadiusSpec, VariableRadius},
-        scalar::Length,
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, FilletGroup, RadiusSpec, VariableRadius,
     };
+    use cadmpeg_ir::scalar::Length;
 
     let fixed = scope.fixed_fillet_parameters()?;
     let stream = native_stream(&scope.id)?;

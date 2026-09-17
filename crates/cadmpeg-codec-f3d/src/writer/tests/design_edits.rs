@@ -41,12 +41,13 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .design
         .as_ref()
         .is_some_and(|design| design.id.offset > 0));
-    recipe.record_index = recipe
-        .record_index
-        .map(|index| crate::records::RecordedValue {
-            value: 777,
-            ..index
-        });
+    recipe.record_index =
+        recipe
+            .record_index
+            .map(|index| crate::records::identity::RecordedValue {
+                value: 777,
+                ..index
+            });
     recipe.design.as_mut().expect("recipe id").id.value = "333".into();
     let member = native
         .design_body_members
@@ -87,7 +88,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .try_into()
         .expect("type GUID");
     let base_offset = object.base_type_guid.offset().expect("located base GUID");
-    object.base_type_guid = crate::records::BaseTypeGuid::Guid {
+    object.base_type_guid = crate::records::entity_header::BaseTypeGuid::Guid {
         value: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef"
             .to_owned()
             .try_into()
@@ -111,7 +112,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let act_root = &mut native.act_root_components[0];
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
-    act_root.registry_flag = crate::records::ActRegistryFlag::Off;
+    act_root.registry_flag = crate::records::act::ActRegistryFlag::Off;
     act_root
         .try_set_strings("1_3".into(), "(Renamed)".into())
         .unwrap();
@@ -232,7 +233,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         object
             .base_type_guid
             .value()
-            .map(crate::records::DesignRelaxedGuidText::as_str),
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str),
         Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef")
     );
     assert_eq!(object.version, 9);
@@ -244,7 +245,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(act_root.record_index, 9);
     assert_eq!(act_root.instance_root_record, 71);
     assert_eq!(act_root.components_root_record, 72);
-    assert_eq!(act_root.registry_flag, crate::records::ActRegistryFlag::Off);
+    assert_eq!(
+        act_root.registry_flag,
+        crate::records::act::ActRegistryFlag::Off
+    );
     assert_eq!(act_root.layout().entity_id(), "1_3");
     assert_eq!(act_root.layout().display_name(), "(Renamed)");
     assert_eq!(

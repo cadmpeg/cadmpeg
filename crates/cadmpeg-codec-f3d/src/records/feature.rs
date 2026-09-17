@@ -1,13 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed modeling-feature scopes, operations, and source operands.
 
-use super::topology::{DesignEntitySelectionFaceCandidate, DesignSketchProfileOperand};
-use super::SketchPlacementMatrix;
-use super::{deserialize_absent_u64_offset, serialize_absent_u64_offset};
+use super::identity::{
+    DesignEntityId, DesignSecondaryIdentity, Located, MaybeRecordedValue, NonEmptyVec,
+    RecordedValue, ReferenceRun, IDENTITY_MATRIX,
+};
+use super::mesh::DesignRelaxedGuidText;
+use super::recipes::{
+    ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector,
+};
 use super::{
-    ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignClassTag,
-    DesignEntityId, DesignRecipeReference, DesignRelaxedGuidText, DesignSecondaryIdentity, Located,
-    MaybeRecordedValue, NonEmptyVec, RecordedValue, ReferenceRun, IDENTITY_MATRIX,
+    dimensions::DesignRecipeReference,
+    identity::{deserialize_absent_u64_offset, serialize_absent_u64_offset},
+};
+use super::{
+    references::DesignClassTag,
+    sketch_placement::SketchPlacementMatrix,
+    topology::{DesignEntitySelectionFaceCandidate, DesignSketchProfileOperand},
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use serde::Deserialize;

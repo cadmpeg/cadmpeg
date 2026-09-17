@@ -152,7 +152,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: 12,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
             byte_offset: 0,
         };
         parse_parameter_scope(
@@ -772,7 +773,8 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: 12,
-            class_tag: crate::records::DesignClassTag::try_from("376".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("376".to_owned())
+                .unwrap(),
             byte_offset: 0,
         };
         parse_parameter_scope(
@@ -853,7 +855,7 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
@@ -937,7 +939,7 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
@@ -1054,7 +1056,8 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: RECORD_INDEX,
-            class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from(class_tag.to_owned())
+                .unwrap(),
             byte_offset: 0,
         };
         parse_parameter_scope(
@@ -1213,7 +1216,8 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: RECORD_INDEX,
-            class_tag: crate::records::DesignClassTag::try_from("415".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("415".to_owned())
+                .unwrap(),
             byte_offset: 0,
         };
         parse_parameter_scope(
@@ -1360,7 +1364,8 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         let header = DesignRecordHeader {
             id: "generated:scope-header#0".into(),
             record_index: RECORD_INDEX,
-            class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from(class_tag.to_owned())
+                .unwrap(),
             byte_offset: 0,
         };
         parse_parameter_scope(
@@ -1410,7 +1415,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         &invalid_class_397,
         &IndexedRecordOffsets::build(&invalid_class_397),
         RECORD_INDEX,
-        &crate::records::DesignClassTag::try_from("397".to_owned()).unwrap(),
+        &crate::records::references::DesignClassTag::try_from("397".to_owned()).unwrap(),
         0,
     )
     .expect("class-397 scope envelope remains parseable");
@@ -1421,7 +1426,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
-        class_tag: crate::records::DesignClassTag::try_from("357".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("357".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let invalid_scope = parse_parameter_scope(
@@ -1440,7 +1445,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         &invalid_class,
         &IndexedRecordOffsets::build(&invalid_class),
         RECORD_INDEX,
-        &crate::records::DesignClassTag::try_from("349".to_owned()).unwrap(),
+        &crate::records::references::DesignClassTag::try_from("349".to_owned()).unwrap(),
         0,
     )
     .expect("scope envelope remains parseable");
@@ -1452,7 +1457,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     let nonzero_header = DesignRecordHeader {
         id: "generated:scope-header#nonzero".into(),
         record_index: RECORD_INDEX,
-        class_tag: crate::records::DesignClassTag::try_from("349".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("349".to_owned()).unwrap(),
         byte_offset: prefix_length as u64,
     };
     let nonzero_scope = parse_parameter_scope(
@@ -1562,7 +1567,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
-        class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
@@ -1712,7 +1717,7 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
-        class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let parse = |bytes: &[u8]| {

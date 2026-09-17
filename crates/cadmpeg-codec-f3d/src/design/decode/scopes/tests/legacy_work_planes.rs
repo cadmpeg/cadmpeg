@@ -63,7 +63,7 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
             b"263",
             76u32,
             [0, 0, 0, 0],
-            crate::records::SketchPlacementMatrix::IDENTITY.rows(),
+            crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows(),
         ),
     ];
 
@@ -90,7 +90,7 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
         scope
             .try_edit(|draft| {
                 draft.reference_members =
-                    crate::records::ReferenceRun::unlocated(vec![record_index]);
+                    crate::records::identity::ReferenceRun::unlocated(vec![record_index]);
                 draft.layout_fixture_references();
                 draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
                 draft.frame_length = draft.paired_byte_offset - draft.byte_offset;

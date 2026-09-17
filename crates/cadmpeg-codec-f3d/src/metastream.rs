@@ -5,7 +5,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_hyphenated, lp_ascii_filtered, lp_utf16_bounded};
-use crate::records::SegmentType;
+use crate::records::entity_header::SegmentType;
 
 /// Serializer magic that selects the modern `MetaStream` header group.
 pub(crate) const MODERN_SERIALIZER_MAGIC: u32 = 1234;
@@ -312,7 +312,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         let type_guid_offset = require(at.checked_add(4), "type GUID", at)?;
         let (type_guid, next) = require(
             lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic).and_then(|(guid, next)| {
-                crate::records::DesignRelaxedGuidText::try_from(guid)
+                crate::records::mesh::DesignRelaxedGuidText::try_from(guid)
                     .ok()
                     .map(|guid| (guid, next))
             }),
@@ -326,7 +326,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
                 if guid.is_empty() {
                     Some((None, next))
                 } else {
-                    crate::records::DesignRelaxedGuidText::try_from(guid)
+                    crate::records::mesh::DesignRelaxedGuidText::try_from(guid)
                         .ok()
                         .map(|guid| (Some(guid), next))
                 }
@@ -375,23 +375,24 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
             byte_offset: entry_at as u64,
             type_guid,
             type_guid_offset: type_guid_offset as u64,
-            base_type_guid: base_type_guid.map_or(crate::records::BaseTypeGuid::Absent, |value| {
-                crate::records::BaseTypeGuid::Guid {
+            base_type_guid: base_type_guid.map_or(
+                crate::records::entity_header::BaseTypeGuid::Absent,
+                |value| crate::records::entity_header::BaseTypeGuid::Guid {
                     value,
                     offset: base_type_guid_offset as u64,
-                }
-            }),
+                },
+            ),
             version,
             version_offset: version_offset as u64,
             module,
             entities: if entity_ids.is_empty() {
-                crate::records::ReferenceRun::unlocated(entity_ids)
+                crate::records::identity::ReferenceRun::unlocated(entity_ids)
             } else {
-                crate::records::ReferenceRun::located(
+                crate::records::identity::ReferenceRun::located(
                     entity_ids
                         .into_iter()
                         .enumerate()
-                        .map(|(index, value)| crate::records::Located {
+                        .map(|(index, value)| crate::records::identity::Located {
                             value,
                             offset: (ids_at + index * 8) as u64,
                         })
@@ -716,7 +717,7 @@ mod tests {
             types[0]
                 .base_type_guid
                 .value()
-                .map(crate::records::DesignRelaxedGuidText::as_str),
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str),
             Some(base)
         );
         assert_eq!(types[0].version, 3);
@@ -729,11 +730,14 @@ mod tests {
         assert_eq!(types[1].type_guid.as_str(), second);
         assert_eq!(
             types[1].base_type_guid,
-            crate::records::BaseTypeGuid::Absent
+            crate::records::entity_header::BaseTypeGuid::Absent
         );
 
         assert_eq!(types[1].version, 7);
-        assert_eq!(types[1].module, crate::records::DESIGN_MODULE_SKETCH);
+        assert_eq!(
+            types[1].module,
+            crate::records::entity_header::DESIGN_MODULE_SKETCH
+        );
         assert_eq!(
             types[1].entities.values().copied().collect::<Vec<_>>(),
             [20]
@@ -744,11 +748,14 @@ mod tests {
             types[2]
                 .base_type_guid
                 .value()
-                .map(crate::records::DesignRelaxedGuidText::as_str),
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str),
             Some(second)
         );
         assert_eq!(types[2].version, 11);
-        assert_eq!(types[2].module, crate::records::DESIGN_MODULE_BODY);
+        assert_eq!(
+            types[2].module,
+            crate::records::entity_header::DESIGN_MODULE_BODY
+        );
         assert_eq!(
             types[2].entities.values().copied().collect::<Vec<_>>(),
             [30, 31, 32]
@@ -774,7 +781,7 @@ mod tests {
                 design_type.type_guid.as_str()
             );
             assert_eq!(u32_at(design_type.version_offset), design_type.version);
-            if let crate::records::BaseTypeGuid::Guid { value, offset } =
+            if let crate::records::entity_header::BaseTypeGuid::Guid { value, offset } =
                 &design_type.base_type_guid
             {
                 assert_eq!(string_at(*offset, 36), value.as_str());
@@ -782,7 +789,7 @@ mod tests {
             let Some(entities) = design_type.entities.located_rows() else {
                 panic!("parsed entity locations");
             };
-            for crate::records::Located {
+            for crate::records::identity::Located {
                 value: entity_id,
                 offset,
             } in entities

@@ -13,36 +13,38 @@ use cadmpeg_ir::sketches::SketchGeometryDefinition;
 fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
 
         id: format!("{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 11,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
     };
-    let parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: format!("{stream}:design-parameter#20"),
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
             record_index: 20,
             source_ordinal: 4,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-4".into(),
                 Some(21),
-                Some(crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
+                Some(crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 22,
                 }),
             )
@@ -51,7 +53,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             expression_offset: 40,
             source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "mm".into(),
                 offset: 70,
             }),
@@ -59,14 +61,16 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             name_offset: 80,
             evaluated_value: 0.2,
             evaluated_value_offset: 90,
-        })
-        .unwrap();
-    let owner =
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+        },
+    )
+    .unwrap();
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
             id: format!("{stream}:design-parameter-owner#21"),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
             record_index: 21,
             scope_record_index: 10,
             local_ordinal: 0,
@@ -76,18 +80,19 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             owned_ordinal: 0,
             variant: Some(0),
             companion_record_index: 22,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let companion = DesignParameterCompanion::unbound(
         format!("{stream}:design-parameter-companion#22"),
         0,
-        crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         22,
         21,
         std::num::NonZeroU64::new(1).unwrap(),
         0,
     )
-    .bound(crate::records::DesignCompanionPayload::new(
+    .bound(crate::records::parameters::DesignCompanionPayload::new(
         58,
         200,
         Vec::new(),
@@ -99,7 +104,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         recipe_id: format!("{stream}:construction-recipe#{record_index}"),
         recipe_kind: ConstructionRecipeKind::Edge,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index,
         frame_length: 10,
         prefix_offset: 0,
@@ -194,7 +199,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let mut radial_parameter = parameter.clone();
     radial_parameter
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "Radial Dimension-4".into(),
                 radial_parameter.owner_record_index(),
                 radial_parameter.family_discriminator(),
@@ -242,31 +247,33 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
     )));
 
-    let annotation_point = SketchPoint::try_from(crate::records::SketchPointDraft {
-        id: format!("{stream}:sketch-point#50"),
-        record_index: 50,
-        owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset: 0,
-        coordinate_offset: 0,
-        companion: crate::records::SketchPointCompanion {
-            incident_curves: Vec::new(),
-        },
-        record_form: crate::records::SketchPointRecordForm::version11(
-            50,
-            crate::records::SketchPointClosure::Selector0State0,
-            None,
-            0.0,
-        ),
-        paired_reference: 0,
-        coordinates: Point2::new(4.5, 0.0),
-    })
-    .unwrap();
+    let annotation_point =
+        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: format!("{stream}:sketch-point#50"),
+            record_index: 50,
+            owner_reference: Some(100),
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 0,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                50,
+                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
+                None,
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(4.5, 0.0),
+        })
+        .unwrap();
     let annotation_curve = SketchCurveIdentity {
         id: format!("{stream}:sketch-curve#51"),
         record_index: 51,
         owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -290,12 +297,12 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:design-dimension-locus-group#60"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 60,
         frame_length: 100,
         loci: vec![
             DesignDimensionLocus {
-                returned: crate::records::Located {
+                returned: crate::records::identity::Located {
                     value: 50,
                     offset: 0,
                 },
@@ -305,7 +312,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 role_offset: 0,
             },
             DesignDimensionLocus {
-                returned: crate::records::Located {
+                returned: crate::records::identity::Located {
                     value: 51,
                     offset: 0,
                 },
@@ -321,7 +328,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        next_class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+            .unwrap(),
         next_record_index: 61,
         next_byte_offset: 100,
     };
@@ -362,7 +370,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
         owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -378,12 +386,12 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:design-dimension-locus-group#40"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 40,
         frame_length: 100,
         loci: vec![
             DesignDimensionLocus {
-                returned: crate::records::Located {
+                returned: crate::records::identity::Located {
                     value: 40,
                     offset: 0,
                 },
@@ -393,7 +401,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 role_offset: 0,
             },
             DesignDimensionLocus {
-                returned: crate::records::Located {
+                returned: crate::records::identity::Located {
                     value: 41,
                     offset: 0,
                 },
@@ -409,7 +417,8 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        next_class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+            .unwrap(),
         next_record_index: 42,
         next_byte_offset: 100,
     };
@@ -442,7 +451,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let mut radial_parameter = parameter.clone();
     radial_parameter
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "Radial Dimension-2".into(),
                 radial_parameter.owner_record_index(),
                 radial_parameter.family_discriminator(),
@@ -586,7 +595,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let mut radial_parameter = parameter.clone();
     radial_parameter
         .try_set_source(
-            crate::records::DesignParameterSource::new(
+            crate::records::parameters::DesignParameterSource::new(
                 "Radial Dimension-2".into(),
                 radial_parameter.owner_record_index(),
                 radial_parameter.family_discriminator(),
@@ -634,13 +643,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             && native_ref == companion.id()
     )));
 
-    let empty_companion = companion
-        .clone()
-        .bound(crate::records::DesignCompanionPayload::new(
-            58,
-            0,
-            Vec::new(),
-        ));
+    let empty_companion =
+        companion
+            .clone()
+            .bound(crate::records::parameters::DesignCompanionPayload::new(
+                58,
+                0,
+                Vec::new(),
+            ));
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -852,18 +862,19 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
 
-    let parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: "f3d:A:design-parameter#1".into(),
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
             record_index: 1,
             source_ordinal: 1,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-2".into(),
                 Some(2),
-                Some(crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
+                Some(crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 22,
                 }),
             )
@@ -872,7 +883,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             expression_offset: 40,
             source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "mm".into(),
                 offset: 70,
             }),
@@ -880,8 +891,9 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             name_offset: 80,
             evaluated_value: 0.2,
             evaluated_value_offset: 90,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     assert!(matches!(
         crate::design::dimensions::unique_parallel_line_dimension_definition(
             &entities,
@@ -1063,18 +1075,19 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
 #[test]
 fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
-    let parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: "f3d:A:design-parameter#1".into(),
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
             record_index: 1,
             source_ordinal: 1,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-2".into(),
                 Some(2),
-                Some(crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
+                Some(crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 22,
                 }),
             )
@@ -1083,7 +1096,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
             expression_offset: 40,
             source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "mm".into(),
                 offset: 70,
             }),
@@ -1091,8 +1104,9 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
             name_offset: 80,
             evaluated_value: 0.2,
             evaluated_value_offset: 90,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let circle = |name: &str, center, radius| {
         SketchEntity::new(
             SketchEntityId::mint(name).unwrap(),

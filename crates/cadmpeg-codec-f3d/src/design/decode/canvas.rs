@@ -8,11 +8,11 @@ use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
-use crate::records::feature::DesignParameterScope;
-use crate::records::{
+use crate::records::canvas::{
     DesignCanvasAsset, DesignCanvasBounds, DesignCanvasGeometry, DesignCanvasGeometryPayload,
     DesignCanvasImage, DesignCanvasPrologue,
 };
+use crate::records::feature::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;

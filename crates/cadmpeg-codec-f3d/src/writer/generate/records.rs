@@ -2,8 +2,9 @@
 //! Bulkstream and sketch/design record encoders for source-less generation.
 
 use crate::records::{
-    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchPointRecordForm,
-    SketchText,
+    recipes::ConstructionRecipeKind,
+    references::PersistentReferenceKind,
+    sketch_geometry::{SketchCurveGeometry, SketchPointRecordForm, SketchText},
 };
 use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_core::CodecError;
@@ -11,10 +12,12 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
 
-use super::index::NativeGenerationIndex;
-use super::native_bytes::{native_f64, native_i64, native_ref};
-use super::native_geometry::native_nurbs_curve;
-use super::presentation::GeneratedDesignRegistry;
+use super::{
+    index::NativeGenerationIndex,
+    native_bytes::{native_f64, native_i64, native_ref},
+    native_geometry::native_nurbs_curve,
+    presentation::GeneratedDesignRegistry,
+};
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -410,7 +413,7 @@ fn primary_record_u64(
 }
 
 pub(super) fn encode_document_parameters(
-    parameters: &[crate::records::DesignParameter],
+    parameters: &[crate::records::parameters::DesignParameter],
 ) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
@@ -430,7 +433,7 @@ pub(super) fn encode_document_parameters(
                 parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
             )));
         }
-        let crate::records::DesignParameterSource::User {
+        let crate::records::parameters::DesignParameterSource::User {
             family_discriminator,
         } = parameter.source()
         else {
@@ -472,7 +475,7 @@ pub(super) fn encode_document_parameters(
 
 fn encode_sketch_record_header(
     out: &mut [u8],
-    class_tag: &crate::records::DesignClassTag,
+    class_tag: &crate::records::references::DesignClassTag,
     record_index: u32,
 ) {
     out[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -482,7 +485,7 @@ fn encode_sketch_record_header(
 
 fn encode_sketch_point(
     out: &mut Vec<u8>,
-    point: &crate::records::SketchPoint,
+    point: &crate::records::sketch_geometry::SketchPoint,
 ) -> Result<(), CodecError> {
     let owner_reference = point.owner_reference.ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -543,10 +546,10 @@ fn encode_sketch_point(
 
 fn encode_sketch_point_companion(
     out: &mut Vec<u8>,
-    class_tag: &crate::records::DesignClassTag,
+    class_tag: &crate::records::references::DesignClassTag,
     record_index: u32,
     point_record_index: u32,
-    companion: crate::records::SketchPointCompanionRef<'_>,
+    companion: crate::records::sketch_geometry::SketchPointCompanionRef<'_>,
 ) -> Result<(), CodecError> {
     let prefix_present_zero = companion.prefix_present_zero;
     let incident_curves = companion.incident_curves;
@@ -571,7 +574,7 @@ fn encode_sketch_point_companion(
 
 fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
-    curve: &crate::records::SketchCurveIdentity,
+    curve: &crate::records::sketch_geometry::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
     let owner_reference = curve.owner_reference.ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -706,13 +709,13 @@ const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
 fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
-    subtype_class_tag: &crate::records::DesignClassTag,
+    subtype_class_tag: &crate::records::references::DesignClassTag,
     subtype_record_index: u32,
     degree: u32,
     fit_tolerance: f64,
     scalar_width: u32,
     knots: &[f64],
-    poles: &crate::records::SketchNurbsPoles,
+    poles: &crate::records::sketch_geometry::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
     if scalar_width != 8 {
         return Err(CodecError::Malformed(
@@ -818,7 +821,7 @@ const SKETCH_RELATION_RECORD_FILLED_LEN: usize = 101;
 
 fn encode_sketch_relation(
     out: &mut Vec<u8>,
-    relation: &crate::records::SketchRelation,
+    relation: &crate::records::sketch_relations::SketchRelation,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 19];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index);
@@ -1053,10 +1056,11 @@ mod tests {
     // Hand-built relations assert the written bytes; the drafts are valid by construction.
     #![allow(clippy::unwrap_used)]
     use super::{encode_sketch_relation, SKETCH_RELATION_RECORD_FILLED_LEN};
-    use crate::records::{
-        DesignClassTag, ReferenceRun, SketchRelation, SketchRelationDefinition,
-        SketchRelationDraft, SketchRelationMember, SketchRelationReturnMember,
+    use crate::records::sketch_relations::{
+        SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+        SketchRelationReturnMember,
     };
+    use crate::records::{identity::ReferenceRun, references::DesignClassTag};
 
     /// One member whose ordinal the wire states, which is what the writer
     /// needs: `SketchRelationMember::from_index` retains none.
@@ -1147,10 +1151,11 @@ mod tests {
 mod relation_ordinal_tests {
     #![allow(clippy::unwrap_used)]
     use super::encode_sketch_relation;
-    use crate::records::{
-        DesignClassTag, ReferenceRun, SketchRelation, SketchRelationDefinition,
-        SketchRelationDraft, SketchRelationMember, SketchRelationReturnMember,
+    use crate::records::sketch_relations::{
+        SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+        SketchRelationReturnMember,
     };
+    use crate::records::{identity::ReferenceRun, references::DesignClassTag};
 
     /// The record states a u32 ordinal for every member, so a member that
     /// retains none has no bytes to write. Writing `0` there would state the

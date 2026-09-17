@@ -142,7 +142,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     ];
     let table = super::XrefTable {
         designs: Vec::new(),
-        references: vec![crate::records::XrefReference {
+        references: vec![crate::records::xref::XrefReference {
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,
@@ -192,12 +192,12 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
     table.references[0].transform = Some(rows.try_into().unwrap());
     let wire = serde_json::to_value(&table.references[0]).unwrap();
     assert_eq!(
-        serde_json::from_value::<crate::records::XrefReference>(wire.clone()).unwrap(),
+        serde_json::from_value::<crate::records::xref::XrefReference>(wire.clone()).unwrap(),
         table.references[0]
     );
     let mut invalid = wire;
     invalid["transform"][3][0] = serde_json::json!(1.0);
-    assert!(serde_json::from_value::<crate::records::XrefReference>(invalid).is_err());
+    assert!(serde_json::from_value::<crate::records::xref::XrefReference>(invalid).is_err());
     let reflected = serde_json::json!({
         "id": "f3d:xref:reference#0",
         "ordinal": 0,
@@ -213,7 +213,7 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
             [0.0, 0.0, 0.0, 1.0]
         ]
     });
-    assert!(serde_json::from_value::<crate::records::XrefReference>(reflected).is_err());
+    assert!(serde_json::from_value::<crate::records::xref::XrefReference>(reflected).is_err());
     rows[0][3] = f64::MAX;
     table.references[0].transform = Some(rows.try_into().unwrap());
     assert!(matches!(
@@ -1037,7 +1037,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         neutron_role: "role".into(),
         neutron_role_offset: 0,
         placement: Some(crate::records::feature::DesignComponentInsertMatrix {
-            scope: crate::records::Located {
+            scope: crate::records::identity::Located {
                 value: selected.try_into().unwrap(),
                 offset: 0,
             },
@@ -1047,7 +1047,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
     let ignored_construction = crate::records::feature::DesignComponentInsertConstruction {
         neutron_role: "other".into(),
         placement: Some(crate::records::feature::DesignComponentInsertMatrix {
-            scope: crate::records::Located {
+            scope: crate::records::identity::Located {
                 value: ignored.try_into().unwrap(),
                 offset: 0,
             },

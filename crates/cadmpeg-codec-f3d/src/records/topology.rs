@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical topology selections, recipe operands, and incidence records.
 
-use super::feature::DesignAxis;
-use super::SketchPlacementMatrix;
 use super::{
-    ConstructionRecipeKind, DesignRecipeReference, Located, NonEmptyByteSpan, SketchRelationOperand,
+    dimensions::DesignRecipeReference,
+    feature::DesignAxis,
+    identity::{DesignEntityId, DesignSecondaryIdentity},
+    identity::{Located, NonEmptyByteSpan},
+    mesh::DesignRelaxedGuidText,
+    recipes::ConstructionRecipeKind,
+    references::DesignClassTag,
+    sketch_placement::SketchPlacementMatrix,
+    sketch_relations::SketchRelationOperand,
 };
-use super::{DesignClassTag, DesignEntityId, DesignRelaxedGuidText, DesignSecondaryIdentity};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use serde::Deserialize;

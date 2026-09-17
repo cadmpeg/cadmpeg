@@ -13,9 +13,12 @@ use crate::ids::{
     neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id, neutral_spatial_sketch_point_id,
     neutral_spatial_sketch_record_id, neutral_spatial_sketch_surface_id,
 };
+use crate::records::sketch_geometry::{
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchSurface, SketchText,
+};
 use crate::records::{
-    DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchSurface, SketchText,
+    sketch_placement::DesignSketchPlacement,
+    sketch_relations::{SketchConstraintKind, SketchRelation},
 };
 use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -91,8 +94,9 @@ fn text_frame_curve_records(
         .iter()
         .filter_map(|relation| {
             let pattern = relation.definition.pattern();
-            let Some(crate::records::SketchPatternDefinition::TextFrame { text_reference }) =
-                pattern
+            let Some(crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
+                text_reference,
+            }) = pattern
             else {
                 return None;
             };

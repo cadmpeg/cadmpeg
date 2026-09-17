@@ -65,12 +65,15 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         crate::records::feature::DesignFeatureKind::Thread,
         987,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("901".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("902".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("901".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("902".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 200;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -149,11 +152,14 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         crate::records::feature::DesignFeatureKind::Thread,
         987,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("334".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("334".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 991]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 991]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -162,8 +168,10 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         .unwrap();
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
-    scope.class_tag = crate::records::DesignClassTag::try_from("335".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("335".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
@@ -240,7 +248,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     referenced[after_profile + 39..after_profile + 43].copy_from_slice(&2075u32.to_le_bytes());
     referenced[after_profile + 43..after_profile + 49].fill(0);
     let mut referenced_expected = expected.clone();
-    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::Located {
+    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::identity::Located {
         value: std::num::NonZeroU32::new(2075).expect("reference"),
         offset: (after_profile + 39) as u64,
     }));
@@ -254,18 +262,20 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         crate::records::feature::DesignFeatureKind::Thread,
         987,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("903".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("903".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 200;
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989, 992, 993]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("904".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("904".to_owned()).unwrap();
     let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &plural_expected);
@@ -296,7 +306,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
             draft.reference_members = {
                 let mut values: Vec<u32> = draft.reference_members.values().copied().collect();
                 values.push(994);
-                crate::records::ReferenceRun::unlocated(values)
+                crate::records::identity::ReferenceRun::unlocated(values)
             };
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
@@ -353,12 +363,15 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         crate::records::feature::DesignFeatureKind::Thread,
         987,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("414".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("414".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 200;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![988, 989]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![988, 989]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -366,8 +379,10 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         .unwrap();
     assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
 
-    scope.class_tag = crate::records::DesignClassTag::try_from("334".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("334".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
     assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
@@ -396,7 +411,7 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
     };
 

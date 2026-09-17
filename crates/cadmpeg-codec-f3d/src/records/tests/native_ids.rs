@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::{
+use crate::records::act::{
     ActChannelGroup, ActEntity, ActGuid, ActRegistryChannel, ActRegistryFlag, ActRootComponent,
-    ActRootLayout, ActTableReference, DesignFeatureTimeline, DesignTimelineFrame, Located,
+    ActRootLayout, ActTableReference,
+};
+use crate::records::{
+    entity_header::{DesignFeatureTimeline, DesignTimelineFrame},
+    identity::Located,
 };
 use crate::test_support::native_test::reject_changed_id;
-use std::{collections::BTreeMap, num::NonZeroU64};
+use std::collections::BTreeMap;
+use std::num::NonZeroU64;
 
 const GUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
 

@@ -47,8 +47,9 @@ fn fixed_kind_edge_and_revolve_operations(
                 .try_into()
                 .unwrap();
             draft.frame_length = 361;
-            draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                175, 176, 181, 182, 186, 190, 193,
+            ]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -76,8 +77,9 @@ fn fixed_kind_edge_and_revolve_operations(
     // them within the table must not change the recovered operation.
     draft_scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![181, 182, 186, 190, 193, 175, 176]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                181, 182, 186, 190, 193, 175, 176,
+            ]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -97,8 +99,9 @@ fn fixed_kind_edge_and_revolve_operations(
     // A table that reaches only one of the two lanes has no complete operation.
     draft_scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![175, 181, 182, 186, 190, 193]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                175, 181, 182, 186, 190, 193,
+            ]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -118,7 +121,7 @@ fn fixed_kind_edge_and_revolve_operations(
     draft_scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186]);
+                crate::records::identity::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -136,8 +139,9 @@ fn fixed_kind_edge_and_revolve_operations(
     );
     draft_scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                175, 176, 181, 182, 186, 190, 193,
+            ]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -173,7 +177,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 .try_into()
                 .unwrap();
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(vec![77, 50, 78, 79, 87, 88]);
+                crate::records::identity::ReferenceRun::unlocated(vec![77, 50, 78, 79, 87, 88]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -219,7 +223,8 @@ fn fixed_kind_edge_and_revolve_operations(
     );
     fillet_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![50, 77]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![50, 77]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -266,7 +271,7 @@ fn fixed_kind_edge_and_revolve_operations(
     bytes.extend_from_slice(&89u32.to_le_bytes());
     fillet_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![89]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![89]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -312,7 +317,8 @@ fn fixed_kind_edge_and_revolve_operations(
     }
     fillet_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![92, 93, 94, 95]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![92, 93, 94, 95]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -365,7 +371,7 @@ fn fixed_kind_edge_and_revolve_operations(
             draft.payload = crate::records::feature::DesignFeatureKind::Chamfer
                 .try_into()
                 .unwrap();
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![86]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![86]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -398,7 +404,8 @@ fn fixed_kind_edge_and_revolve_operations(
     bytes.extend_from_slice(&second_chamfer_scalar);
     chamfer_scope
         .try_edit(|draft| {
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![86, 96]);
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![86, 96]);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -426,12 +433,13 @@ fn fixed_kind_edge_and_revolve_operations(
         })
     );
     chamfer_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
-    let indexed_owner =
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+    let indexed_owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
             id: "f3d:Design/BulkStream.dat:parameter-owner#97".into(),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
             record_index: 97,
             scope_record_index: chamfer_scope.record_index,
             local_ordinal: 0,
@@ -441,8 +449,9 @@ fn fixed_kind_edge_and_revolve_operations(
             owned_ordinal: 0,
             variant: Some(0),
             companion_record_index: 99,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     assert_eq!(
         exact_fixed_chamfer_parameters(
             &bytes,
@@ -482,7 +491,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 .try_into()
                 .unwrap();
             draft.frame_length = 386;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 200, 201, 202, 203, 1_779, 1_780, 204,
             ]);
             draft.reference_count_offset = draft.byte_offset + 9;
@@ -506,7 +515,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 angle: crate::records::feature::DesignPositiveScalar::new(3.5).unwrap(),
                 angle_record_index: 1_779,
                 angle_offset: (revolve_scalar_start + 40) as u64,
-                opposite_angle: Some(crate::records::Located {
+                opposite_angle: Some(crate::records::identity::Located {
                     value: 1_780,
                     offset: (revolve_scalar_start + 116 + 40) as u64
                 }),
@@ -536,13 +545,13 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     indexed_revolve_scope.class_tag =
-        crate::records::DesignClassTag::try_from("407".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("407".to_owned()).unwrap();
     indexed_revolve_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     indexed_revolve_scope
         .try_edit(|draft| {
             draft.frame_length = 377;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 200, 201, 202, 203, 204, 205, 1_790, 1_791,
             ]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
@@ -550,12 +559,13 @@ fn fixed_kind_edge_and_revolve_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let indexed_angle =
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+    let indexed_angle = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
             id: indexed_revolve_scope.id.clone(),
             byte_offset: 5,
             frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("372".to_owned())
+                .unwrap(),
             record_index: indexed_angle_record_index,
             scope_record_index: indexed_revolve_scope.record_index,
             local_ordinal: 0,
@@ -565,8 +575,9 @@ fn fixed_kind_edge_and_revolve_operations(
             owned_ordinal: 8,
             variant: Some(0),
             companion_record_index: 1_792,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let indexed_revolve_construction = exact_path_feature_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -600,14 +611,15 @@ fn fixed_kind_edge_and_revolve_operations(
     class403_revolve[107..183].copy_from_slice(&class403_guid);
     bytes.extend_from_slice(&class403_revolve);
     let mut class403_scope = revolve_scope.clone();
-    class403_scope.class_tag = crate::records::DesignClassTag::try_from("403".to_owned()).unwrap();
+    class403_scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("403".to_owned()).unwrap();
     class403_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     class403_scope
         .try_edit(|draft| {
             draft.byte_offset = class403_start as u64;
             draft.frame_length = 387;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 200,
                 201,
                 202,
@@ -625,11 +637,12 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     let mut class403_angle = indexed_angle.clone();
     {
-        let mut wire = crate::records::DesignParameterOwnerWire::from(class403_angle.clone());
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(class403_angle.clone());
         wire.scope_record_index = class403_scope.record_index;
         wire.byte_offset = class403_start as u64;
         wire.evaluated_value_offset = (class403_start + 40) as u64;
-        class403_angle = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+        class403_angle = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     assert_eq!(
         exact_path_feature_construction(
@@ -683,13 +696,13 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     legacy_revolve_scope.class_tag =
-        crate::records::DesignClassTag::try_from("409".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("409".to_owned()).unwrap();
     legacy_revolve_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap();
     legacy_revolve_scope
         .try_edit(|draft| {
             draft.frame_length = 359;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 200,
                 201,
                 202,
@@ -702,12 +715,13 @@ fn fixed_kind_edge_and_revolve_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let legacy_angle =
-        crate::records::DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
+    let legacy_angle = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
             id: legacy_revolve_scope.id.clone(),
             byte_offset: 15,
             frame_length: 104,
-            class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("372".to_owned())
+                .unwrap(),
             record_index: legacy_angle_record_index,
             scope_record_index: legacy_revolve_scope.record_index,
             local_ordinal: 0,
@@ -717,8 +731,9 @@ fn fixed_kind_edge_and_revolve_operations(
             owned_ordinal: 8,
             variant: Some(0),
             companion_record_index: 1_802,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -739,13 +754,13 @@ fn fixed_kind_edge_and_revolve_operations(
         ))
     );
     legacy_revolve_scope.class_tag =
-        crate::records::DesignClassTag::try_from("323".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap();
     legacy_revolve_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
     legacy_revolve_scope
         .try_edit(|draft| {
             draft.frame_length = 381;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 legacy_angle_record_index,
                 200,
                 201,
@@ -780,13 +795,13 @@ fn fixed_kind_edge_and_revolve_operations(
         ))
     );
     legacy_revolve_scope.class_tag =
-        crate::records::DesignClassTag::try_from("385".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("385".to_owned()).unwrap();
     legacy_revolve_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
     legacy_revolve_scope
         .try_edit(|draft| {
             draft.frame_length = 369;
-            draft.reference_members = crate::records::ReferenceRun::unlocated(vec![
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 200,
                 201,
                 202,
@@ -870,7 +885,7 @@ fn fixed_kind_edge_and_revolve_operations(
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
     indexed_axis
-        .try_set_members(vec![crate::records::Located {
+        .try_set_members(vec![crate::records::identity::Located {
             value: 900,
             offset: indexed_axis.members()[0].offset,
         }])
@@ -891,13 +906,14 @@ fn fixed_kind_edge_and_revolve_operations(
             group_member_ordinal: 0,
             record_index: 900,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 0,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -906,8 +922,8 @@ fn fixed_kind_edge_and_revolve_operations(
             identity_record_offset: 0,
             primary_identity: 100,
             primary_identity_offset: 29,
-            secondary: Some(crate::records::DesignSecondaryIdentity {
-                identity: crate::records::Located {
+            secondary: Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
                     value: 104,
                     offset: 37,
                 },
@@ -922,29 +938,30 @@ fn fixed_kind_edge_and_revolve_operations(
     )
     .unwrap();
     let axis_placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
 
         id: "stream:indexed-axis-placement".into(),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_100".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_100".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 904,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
+            .unwrap(),
     };
     let axis_curve = SketchCurveIdentity {
         id: "stream:indexed-axis-curve".into(),
         record_index: 905,
         owner_reference: Some(100),
-        class_tag: crate::records::DesignClassTag::try_from("450".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -1084,9 +1101,13 @@ fn fixed_kind_edge_and_revolve_operations(
             }),
             record_index: 900,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                .unwrap(),
             paired_byte_offset: 16,
-            paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "262".to_owned(),
+            )
+            .unwrap(),
             recipe_record_index: 903,
             recipe_record_byte_offset: 32,
             recipe_id: "stream:indexed-face-axis-recipe".into(),

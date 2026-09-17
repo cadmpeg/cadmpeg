@@ -5,10 +5,8 @@
     clippy::wildcard_imports
 )]
 
-use super::prelude::*;
-use super::project_split_face;
-use crate::records::topology::DesignConstructionOperandGroupFrame;
-use crate::records::topology::DesignOperandRole;
+use super::{prelude::*, project_split_face};
+use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
 use cadmpeg_ir::features::FeatureOperation;
 
 fn group(
@@ -25,12 +23,13 @@ fn group(
             scope_reference_ordinal,
             record_index,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("262".to_owned())
+                .unwrap(),
 
             members: members
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| crate::records::Located {
+                .map(|(index, value)| crate::records::identity::Located {
                     value,
                     offset: index as u64 * 11,
                 })
@@ -55,7 +54,10 @@ fn group(
             .unwrap(),
             operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -70,12 +72,15 @@ fn class_277_258_compact_split_face_frame_projects() {
         crate::records::feature::DesignFeatureKind::SplitFace,
         scope_record_index,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 407;
-            draft.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated((100..112).collect());
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -110,12 +115,16 @@ fn class_277_258_compact_split_face_frame_projects() {
         }) if targets.ends_with("group#102") && tool.ends_with("group#100")
     ));
 
-    scope.class_tag = crate::records::DesignClassTag::try_from("418".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("418".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[]).is_some());
 
-    scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[]).is_none());
 }
 
@@ -127,13 +136,16 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         crate::records::feature::DesignFeatureKind::SplitFace,
         scope_record_index,
     );
-    scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
-    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
             draft.frame_length = 407;
             draft.previous_history_state_id = Some(7);
-            draft.reference_members = crate::records::ReferenceRun::unlocated((100..112).collect());
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated((100..112).collect());
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -165,13 +177,14 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
                 group_member_ordinal: 0,
                 record_index: 101,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
                 )
                 .unwrap(),
                 asset_id_offset: 0,
-                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
                 )
                 .unwrap(),

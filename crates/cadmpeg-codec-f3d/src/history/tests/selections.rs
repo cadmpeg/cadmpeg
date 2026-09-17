@@ -141,7 +141,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
     let face_selection = crate::records::feature::DesignHoleFaceSelection {
         record_index: 100,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("333".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned()).unwrap(),
         asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
             .to_owned()
             .try_into()
@@ -173,7 +173,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         reference_type: 0,
         reference_type_offset: 0,
         tangent_point_data: None,
-        input_records: vec![crate::records::Located {
+        input_records: vec![crate::records::identity::Located {
             value: 55,
             offset: 0,
         }],
@@ -450,18 +450,20 @@ fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
 
 #[test]
 fn combine_recipe_family_proves_unordered_generated_tools() {
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+    };
     use crate::records::topology::{
         DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
     };
-    use crate::records::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector};
 
     let stream = "f3d:Design/BulkStream.dat";
     let recipe = |record_index, design_id: &str, selector| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
         byte_offset: 0,
         kind: ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign {
-            id: crate::records::RecordedValue {
+        design: Some(crate::records::recipes::ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
                 value: design_id.into(),
                 offset: 0,
             },
@@ -471,7 +473,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
             }),
         }),
         recipe_index: 0,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
             offset: 0,
         }),
@@ -494,13 +496,14 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
             },
             record_index,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("389".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("389".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 56,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -1360,8 +1363,10 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 
 #[test]
 fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
-    use crate::records::feature::DesignParameterScope;
-    use crate::records::topology::{DesignConstructionOperandGroup, DesignFaceOperand};
+    use crate::records::{
+        feature::DesignParameterScope,
+        topology::{DesignConstructionOperandGroup, DesignFaceOperand},
+    };
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
     let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
@@ -1464,7 +1469,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
                 let reference_offsets = (0..reference_values.len())
                     .map(|ordinal| 14 + 11 * ordinal as u64)
                     .collect();
-                crate::records::ReferenceRun::from_columns(
+                crate::records::identity::ReferenceRun::from_columns(
                     reference_values,
                     reference_offsets,
                     "reference_members",
@@ -1516,7 +1521,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         .members()
         .iter()
         .copied()
-        .chain([crate::records::Located {
+        .chain([crate::records::identity::Located {
             value: 110,
             offset: repeated_child[0].members().last().unwrap().offset + 11,
         }])

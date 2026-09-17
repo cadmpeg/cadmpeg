@@ -16,10 +16,10 @@ use super::{
     parse_parameter_owner,
 };
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
-use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner,
+use crate::records::parameters::{
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
 };
+use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
 use crate::test_support::*;
 
 fn compact_owned_parameter_record(
@@ -657,7 +657,7 @@ fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
 fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     let parsed = parse_legacy_parameter_owner_68(
         &legacy_parameter_owner_68_frame("284"),
-        crate::records::Located {
+        crate::records::identity::Located {
             value: 0.0,
             offset: 700,
         },
@@ -674,7 +674,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     assert_eq!(parsed.scope_record_index(), 0);
     assert_eq!(parsed.local_ordinal(), 0);
     assert_eq!(
-        serde_json::from_value::<crate::records::DesignParameterOwnerWire>(
+        serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
             serde_json::to_value(&parsed).unwrap()
         )
         .unwrap()
@@ -686,7 +686,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
         assert!(parse_legacy_parameter_owner_68(
             &legacy_parameter_owner_68_frame(class_tag),
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 1.25,
                 offset: 700
             },
@@ -700,7 +700,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
 fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     assert!(parse_legacy_parameter_owner_68(
         &legacy_parameter_owner_68_frame("291"),
-        crate::records::Located {
+        crate::records::identity::Located {
             value: 1.0,
             offset: 700
         },
@@ -712,7 +712,7 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     malformed[55] = 0;
     assert!(parse_legacy_parameter_owner_68(
         &malformed,
-        crate::records::Located {
+        crate::records::identity::Located {
             value: 1.0,
             offset: 700
         },
@@ -725,7 +725,7 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let parsed = parse_legacy_parameter_owner_88(
         &legacy_parameter_owner_88_frame("284"),
-        crate::records::Located {
+        crate::records::identity::Located {
             value: 2.5,
             offset: 700,
         },
@@ -738,7 +738,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     assert_eq!(parsed.scope_record_index(), 77);
     assert_eq!(parsed.local_ordinal(), 0);
     assert_eq!(
-        serde_json::from_value::<crate::records::DesignParameterOwnerWire>(
+        serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
             serde_json::to_value(&parsed).unwrap()
         )
         .unwrap()
@@ -753,7 +753,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         assert!(
             parse_legacy_parameter_owner_88(
                 &legacy_parameter_owner_88_frame(class_tag),
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 2.5,
                     offset: 700
                 },
@@ -765,7 +765,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     }
     assert!(parse_legacy_parameter_owner_88(
         &legacy_parameter_owner_88_frame("268"),
-        crate::records::Located {
+        crate::records::identity::Located {
             value: 2.5,
             offset: 700
         },
@@ -777,7 +777,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
     assert!(parse_legacy_parameter_owner_88(
         &mismatched,
-        crate::records::Located {
+        crate::records::identity::Located {
             value: 2.5,
             offset: 700
         },
@@ -925,18 +925,19 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     }
 
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: crate::ids::native_design_parameter_id(stream, 200),
             byte_offset: 200,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
             record_index: 45,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "Distance".into(),
                 Some(44),
-                Some(crate::records::Located {
-                    value: crate::records::DesignParameterDiscriminator::Code0,
+                Some(crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 222,
                 }),
             )
@@ -945,7 +946,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
             expression_offset: 240,
             source_kind_offset: 260,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "cm".into(),
                 offset: 280,
             }),
@@ -953,12 +954,13 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
             name_offset: 300,
             evaluated_value: 6.0,
             evaluated_value_offset: 320,
-        })
-        .unwrap();
-    let header = crate::records::DesignRecordHeader {
+        },
+    )
+    .unwrap();
+    let header = crate::records::decal::DesignRecordHeader {
         id: crate::ids::native_design_record_header_id(stream, 0),
         record_index: 44,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         byte_offset: 0,
     };
 
@@ -1005,14 +1007,15 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
 #[test]
 fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let stream = "f3d:Design/BulkStream.dat";
-    let parameter =
-        crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
             id: format!("{stream}:design-parameter#20"),
             byte_offset: 1,
-            class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
             record_index: 20,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::new(
+            source: crate::records::parameters::DesignParameterSource::new(
                 "Linear Dimension-1".into(),
                 Some(21),
                 None,
@@ -1022,7 +1025,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
             expression_offset: 40,
             source_kind_offset: 60,
 
-            unit: Some(crate::records::RecordedValue {
+            unit: Some(crate::records::identity::RecordedValue {
                 value: "mm".into(),
                 offset: 70,
             }),
@@ -1030,28 +1033,31 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
             name_offset: 80,
             evaluated_value: 2.0,
             evaluated_value_offset: 90,
+        },
+    )
+    .unwrap();
+    let owner =
+        DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
+            id: format!("{stream}:design-parameter-owner#21"),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
+            record_index: 21,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 2.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 20,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 22,
         })
         .unwrap();
-    let owner = DesignParameterOwner::try_from(crate::records::DesignParameterOwnerWire {
-        id: format!("{stream}:design-parameter-owner#21"),
-        byte_offset: 0,
-        frame_length: 104,
-        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        record_index: 21,
-        scope_record_index: 10,
-        local_ordinal: 0,
-        evaluated_value: 2.0,
-        evaluated_value_offset: 40,
-        parameter_record_index: 20,
-        owned_ordinal: 0,
-        variant: Some(0),
-        companion_record_index: 22,
-    })
-    .unwrap();
     let companion = DesignParameterCompanion::unbound(
         format!("{stream}:design-parameter-companion#22"),
         10,
-        crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         22,
         21,
         std::num::NonZeroU64::new(1).unwrap(),
@@ -1063,7 +1069,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: record_index,
             offset: 0,
         }),
@@ -1121,7 +1127,7 @@ fn parameter_owner_value_offset_is_localized_once() {
     for owner in [
         parse_legacy_parameter_owner_68(
             &legacy_parameter_owner_68_frame("284"),
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 2.5,
                 offset: 700,
             },
@@ -1130,7 +1136,7 @@ fn parameter_owner_value_offset_is_localized_once() {
         .unwrap(),
         parse_legacy_parameter_owner_88(
             &legacy_parameter_owner_88_frame("284"),
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 2.5,
                 offset: 700,
             },
@@ -1146,7 +1152,7 @@ fn parameter_owner_value_offset_is_localized_once() {
 #[test]
 fn legacy_parameter_owner_preserves_external_scalar_offsets() {
     for frame_start in [400, 1000] {
-        let evaluated = crate::records::Located {
+        let evaluated = crate::records::identity::Located {
             value: 2.5,
             offset: 700,
         };

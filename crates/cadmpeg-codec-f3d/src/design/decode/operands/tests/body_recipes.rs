@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::prelude::*;
-use crate::records::topology::DesignConstructionOperandGroupFrame;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
@@ -18,8 +17,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             scope_reference_ordinal: 0,
             record_index: 90,
             byte_offset: 900,
-            class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 100,
                 offset: 926,
             }],
@@ -29,7 +29,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                     member_count_offset: 921,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
-                    trailing_records: vec![crate::records::Located {
+                    trailing_records: vec![crate::records::identity::Located {
                         value: 200,
                         offset: 943,
                     }],
@@ -49,7 +49,10 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ),
             role_offset: 953,
 
-            paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "265".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 1024,
         },
     )
@@ -57,7 +60,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut bytes = Vec::new();
@@ -88,18 +91,18 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
         byte_offset: recipe_at as u64,
         kind: ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign {
-            id: crate::records::RecordedValue {
+        design: Some(crate::records::recipes::ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
                 value: "2265".into(),
                 offset: 0,
             },
-            selector: Some(crate::records::ConstructionRecipeSelector {
+            selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 9,
                 byte_offset: 0,
             }),
         }),
         recipe_index: 0,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
             offset: 0,
         }),
@@ -234,7 +237,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     }
     let mut combine_recipe = recipe.clone();
     combine_recipe.design.as_mut().unwrap().selector =
-        Some(crate::records::ConstructionRecipeSelector {
+        Some(crate::records::recipes::ConstructionRecipeSelector {
             value: 1,
             byte_offset: 0,
         });
@@ -318,8 +321,9 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             scope_reference_ordinal: 1,
             record_index: 90,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("287".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("287".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 100,
                 offset: 21,
             }],
@@ -345,7 +349,10 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
                 DesignOperandRole::BODIES_A,
             ),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "264".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -353,25 +360,25 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("367".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("367".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
         byte_offset: recipe_at as u64,
         kind: ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign {
-            id: crate::records::RecordedValue {
+        design: Some(crate::records::recipes::ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
                 value: "301".into(),
                 offset: 0,
             },
-            selector: Some(crate::records::ConstructionRecipeSelector {
+            selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 6,
                 byte_offset: 0,
             }),
         }),
         recipe_index: 0,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
             offset: 0,
         }),

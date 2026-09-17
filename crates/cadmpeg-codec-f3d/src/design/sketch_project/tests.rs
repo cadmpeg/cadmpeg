@@ -5,9 +5,12 @@ use super::*;
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_geometry};
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
+use crate::records::sketch_relations::{
+    SketchRelation, SketchRelationMember, SketchRelationReturnMember,
+};
 use crate::records::{
-    DesignSketchPlacement, DesignSketchVisibility, SketchCurveIdentity, SketchPoint,
-    SketchRelation, SketchRelationMember, SketchRelationReturnMember, SketchText,
+    sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchText},
+    sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -58,26 +61,27 @@ fn sketch_text_alignment_ordinals_project_to_named_positions() {
 #[test]
 fn sketch_container_visibility_projects_to_the_neutral_sketch() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::MemberCompact {
+            crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
                 paired_byte_offset: 34,
             },
         )
         .unwrap(),
         id: "f3d:design:design-sketch-placement#1".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_201".to_owned())
             .expect("valid entity ID"),
 
         visibility: Some(
             DesignSketchVisibility::new(std::num::NonZeroU32::new(1).unwrap(), 30, false).unwrap(),
         ),
 
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
     };
 
     let (sketches, entities) =
@@ -90,29 +94,31 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
 #[test]
 fn text_frame_curves_are_construction_geometry_not_profiles() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
     };
     let curve =
         |record_index, primary_id, start: (f64, f64), end: (f64, f64)| SketchCurveIdentity {
             id: format!("f3d:BulkStream.dat:curve#{record_index}"),
             record_index,
             owner_reference: Some(42),
-            class_tag: crate::records::DesignClassTag::try_from("375".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("375".to_owned())
+                .unwrap(),
             byte_offset: record_index as u64,
             geometry_offset: 0,
             entity_genesis: Some(0),
@@ -131,19 +137,19 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         curve(12, 12, (10.0, 10.0), (0.0, 10.0)),
         curve(13, 13, (0.0, 10.0), (0.0, 0.0)),
     ];
-    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
+    let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
         id: "f3d:BulkStream.dat:point#14".into(),
         record_index: 14,
         owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned()).unwrap(),
         byte_offset: 14,
         coordinate_offset: 0,
-        companion: crate::records::SketchPointCompanion {
+        companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
         },
-        record_form: crate::records::SketchPointRecordForm::version11(
+        record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
             14,
-            crate::records::SketchPointClosure::Selector4State0,
+            crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
             None,
             0.0,
         ),
@@ -155,7 +161,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         id: "f3d:BulkStream.dat:text#20".into(),
         record_index: 20,
         owner_reference: 42,
-        class_tag: crate::records::DesignClassTag::try_from("376".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("376".to_owned()).unwrap(),
         class_version: 0,
         byte_offset: 20,
         entity_genesis: Some(0),
@@ -166,9 +172,9 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         font_weight: 400,
         height: 10.0,
         color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color"),
-        layout: crate::records::SketchTextLayout::TextexTag {
+        layout: crate::records::sketch_geometry::SketchTextLayout::TextexTag {
             width_factor: 1.0,
-            alignment: Some(crate::records::SketchTextAlignment {
+            alignment: Some(crate::records::sketch_geometry::SketchTextAlignment {
                 horizontal: 1,
                 vertical: 1,
             }),
@@ -181,18 +187,18 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         },
         raw_bytes: Vec::new(),
     };
-    let relation = SketchRelation::try_new(crate::records::SketchRelationDraft {
+    let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
         id: "f3d:BulkStream.dat:relation#30".into(),
         record_index: 30,
-        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned()).unwrap(),
         byte_offset: 30,
         state_offset: 0,
         owner_reference: 42,
         owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
-        auxiliary_references: crate::records::ReferenceRun::located(
+        auxiliary_references: crate::records::identity::ReferenceRun::located(
             vec![20]
                 .into_iter()
-                .map(|value| crate::records::Located { value, offset: 0 })
+                .map(|value| crate::records::identity::Located { value, offset: 0 })
                 .collect(),
         ),
         rectangular_counted_reference_count: None,
@@ -206,9 +212,13 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         .try_into()
         .expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(
+        definition: crate::records::sketch_relations::SketchRelationDefinition::new(
             0x100_0000_0000,
-            Some(crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 }),
+            Some(
+                crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
+                    text_reference: 20,
+                },
+            ),
         )
         .expect("valid relation definition"),
         entity_genesis: Some(0),
@@ -255,36 +265,37 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
 #[test]
 fn point_closure_does_not_mark_construction_geometry() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
     };
-    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
+    let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
         id: "f3d:BulkStream.dat:point#10".into(),
         record_index: 10,
         owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned()).unwrap(),
         byte_offset: 10,
         coordinate_offset: 0,
-        companion: crate::records::SketchPointCompanion {
+        companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
         },
-        record_form: crate::records::SketchPointRecordForm::version11(
+        record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
             10,
-            crate::records::SketchPointClosure::Selector4State0,
+            crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
             None,
             0.0,
         ),
@@ -292,31 +303,33 @@ fn point_closure_does_not_mark_construction_geometry() {
         coordinates: Point2::new(0.0, 0.0),
     })
     .unwrap();
-    let standalone_point = SketchPoint::try_from(crate::records::SketchPointDraft {
-        id: "f3d:BulkStream.dat:point#11".into(),
-        record_index: 11,
-        owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
-        byte_offset: 11,
-        coordinate_offset: 0,
-        companion: crate::records::SketchPointCompanion {
-            incident_curves: Vec::new(),
-        },
-        record_form: crate::records::SketchPointRecordForm::version11(
-            11,
-            crate::records::SketchPointClosure::Selector2State1,
-            None,
-            0.0,
-        ),
-        paired_reference: 12,
-        coordinates: Point2::new(2.0, 0.0),
-    })
-    .unwrap();
+    let standalone_point =
+        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: "f3d:BulkStream.dat:point#11".into(),
+            record_index: 11,
+            owner_reference: Some(42),
+            class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned())
+                .unwrap(),
+            byte_offset: 11,
+            coordinate_offset: 0,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                11,
+                crate::records::sketch_geometry::SketchPointClosure::Selector2State1,
+                None,
+                0.0,
+            ),
+            paired_reference: 12,
+            coordinates: Point2::new(2.0, 0.0),
+        })
+        .unwrap();
     let curve = SketchCurveIdentity {
         id: "f3d:BulkStream.dat:curve#20".into(),
         record_index: 20,
         owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("375".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap(),
         byte_offset: 20,
         geometry_offset: 0,
         entity_genesis: Some(0),
@@ -348,10 +361,10 @@ fn point_closure_does_not_mark_construction_geometry() {
 #[test]
 fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             100,
-            crate::records::DesignSketchFrameForm::ScopeExplicit(
-                crate::records::SketchPlacementMatrix::try_from([
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::sketch_placement::SketchPlacementMatrix::try_from([
                     [0.0, 0.0, 1.0, 10.0],
                     [1.0, 0.0, 0.0, 20.0],
                     [0.0, 1.0, 0.0, 30.0],
@@ -364,29 +377,30 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
 
         id: "f3d:native:placement#0".into(),
         scope_record_index: Some(177),
-        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 185,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
     };
-    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
+    let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
         id: "f3d:native:point#175".into(),
         record_index: 175,
         owner_reference: Some(172),
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 400,
         coordinate_offset: 89,
-        companion: crate::records::SketchPointCompanion {
+        companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
         },
-        record_form: crate::records::SketchPointRecordForm::version11(
+        record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
             10,
-            crate::records::SketchPointClosure::Selector0State0,
+            crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
             None,
             0.0,
         ),
@@ -398,7 +412,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         id: "f3d:native:curve#217".into(),
         record_index: 217,
         owner_reference: Some(172),
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 500,
         geometry_offset: 100,
         entity_genesis: None,
@@ -415,7 +429,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         id: "f3d:native:curve#220".into(),
         record_index: 220,
         owner_reference: Some(172),
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),
         byte_offset: 800,
         geometry_offset: 100,
         entity_genesis: None,
@@ -434,7 +448,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         id: "f3d:native:curve#218".into(),
         record_index: 218,
         owner_reference: Some(172),
-        class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("303".to_owned()).unwrap(),
         byte_offset: 700,
         geometry_offset: 100,
         entity_genesis: None,
@@ -442,13 +456,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Nurbs {
             carrier_reference: None,
-            subtype_class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
+            subtype_class_tag: crate::records::references::DesignClassTag::try_from(
+                "304".to_owned(),
+            )
+            .unwrap(),
             subtype_record_index: 219,
             degree: 2,
             fit_tolerance: 1.0e-6,
             scalar_width: 8,
             knots: vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            poles: crate::records::SketchNurbsPoles::Polynomial(vec![
+            poles: crate::records::sketch_geometry::SketchNurbsPoles::Polynomial(vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(2.0, 0.0, 0.0),
                 Point3::new(2.0, 2.0, 0.0),
@@ -504,15 +521,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     ));
 
     let relation = |record_index, member| {
-        SketchRelation::try_new(crate::records::SketchRelationDraft {
+        SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
             id: format!("f3d:native:relation#{record_index}"),
             record_index,
-            class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned())
+                .unwrap(),
             byte_offset: 600,
             state_offset: 70,
             owner_reference: 172,
             owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_172").unwrap()),
-            auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+            auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: (vec![member]
                 .into_iter()
@@ -521,7 +539,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             .try_into()
             .expect("uniform member resolution"),
             owner_reference_offset: 55,
-            definition: crate::records::SketchRelationDefinition::new(0x40, None)
+            definition: crate::records::sketch_relations::SketchRelationDefinition::new(0x40, None)
                 .expect("valid relation definition"),
             entity_genesis: None,
             return_members: (vec![member]
@@ -537,7 +555,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let mut curve_point_coincidence = relation(702, 217);
     let mut members = curve_point_coincidence.members().to_vec();
     members.push(SketchRelationMember {
-        reference: crate::records::SketchRelationReference::Index(175),
+        reference: crate::records::sketch_relations::SketchRelationReference::Index(175),
         offset: 40,
         relation_ordinal: None,
     });
@@ -551,15 +569,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             draft.return_members = returned.try_into().expect("uniform member resolution");
         })
         .unwrap();
-    curve_point_coincidence.definition = crate::records::SketchRelationDefinition::new(
-        1,
-        curve_point_coincidence.definition.pattern().cloned(),
-    )
-    .expect("valid relation definition");
+    curve_point_coincidence.definition =
+        crate::records::sketch_relations::SketchRelationDefinition::new(
+            1,
+            curve_point_coincidence.definition.pattern().cloned(),
+        )
+        .expect("valid relation definition");
     let mut midpoint = curve_point_coincidence.clone();
     midpoint.record_index = 703;
     midpoint.id = "f3d:native:relation#703".into();
-    midpoint.definition = crate::records::SketchRelationDefinition::new(
+    midpoint.definition = crate::records::sketch_relations::SketchRelationDefinition::new(
         0x1000,
         midpoint.definition.pattern().cloned(),
     )
@@ -567,7 +586,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let mut curvature = curve_point_coincidence.clone();
     curvature.record_index = 704;
     curvature.id = "f3d:native:relation#704".into();
-    curvature.definition = crate::records::SketchRelationDefinition::new(
+    curvature.definition = crate::records::sketch_relations::SketchRelationDefinition::new(
         0x200,
         curvature.definition.pattern().cloned(),
     )
@@ -579,13 +598,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .try_edit(|draft| {
             draft.members = ([(218, 25), (217, 40)]
                 .into_iter()
-                .map(
-                    |(record_index, offset)| crate::records::SketchRelationMember {
-                        reference: crate::records::SketchRelationReference::Index(record_index),
+                .map(|(record_index, offset)| {
+                    crate::records::sketch_relations::SketchRelationMember {
+                        reference: crate::records::sketch_relations::SketchRelationReference::Index(
+                            record_index,
+                        ),
                         offset,
                         relation_ordinal: Some(0),
-                    },
-                )
+                    }
+                })
                 .collect::<Vec<_>>())
             .try_into()
             .expect("uniform member resolution");
@@ -595,18 +616,20 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .try_edit(|draft| {
             draft.return_members = ([(217, 80), (218, 95)]
                 .into_iter()
-                .map(
-                    |(record_index, offset)| crate::records::SketchRelationReturnMember {
-                        reference: crate::records::SketchRelationReference::Index(record_index),
+                .map(|(record_index, offset)| {
+                    crate::records::sketch_relations::SketchRelationReturnMember {
+                        reference: crate::records::sketch_relations::SketchRelationReference::Index(
+                            record_index,
+                        ),
                         offset,
-                    },
-                )
+                    }
+                })
                 .collect::<Vec<_>>())
             .try_into()
             .expect("uniform member resolution");
         })
         .unwrap();
-    spline_group.definition = crate::records::SketchRelationDefinition::new(
+    spline_group.definition = crate::records::sketch_relations::SketchRelationDefinition::new(
         0x8000_0000,
         spline_group.definition.pattern().cloned(),
     )
@@ -614,11 +637,12 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let mut horizontal_point = relation(701, 175);
     horizontal_point
         .try_edit(|draft| {
-            draft.auxiliary_references =
-                crate::records::ReferenceRun::located(vec![crate::records::Located {
+            draft.auxiliary_references = crate::records::identity::ReferenceRun::located(vec![
+                crate::records::identity::Located {
                     value: 999,
                     offset: 0,
-                }]);
+                },
+            ]);
         })
         .unwrap();
     horizontal_point
@@ -631,7 +655,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             .expect("uniform member resolution");
         })
         .unwrap();
-    horizontal_point.definition = crate::records::SketchRelationDefinition::new(
+    horizontal_point.definition = crate::records::sketch_relations::SketchRelationDefinition::new(
         0x1_0000_0040,
         horizontal_point.definition.pattern().cloned(),
     )
@@ -786,10 +810,10 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             100,
-            crate::records::DesignSketchFrameForm::ScopeExplicit(
-                crate::records::SketchPlacementMatrix::try_from([
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::sketch_placement::SketchPlacementMatrix::try_from([
                     [0.0, 0.0, 1.0, 10.0],
                     [1.0, 0.0, 0.0, 20.0],
                     [0.0, 1.0, 0.0, 30.0],
@@ -802,21 +826,22 @@ fn nonplanar_sketch_curves_project_in_model_space() {
 
         id: "f3d:Design/BulkStream.dat:placement#100".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         record_index: 100,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
     };
     let curve = |record_index, primary_id, geometry| SketchCurveIdentity {
         id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
         record_index,
         owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: u64::from(record_index),
         geometry_offset: 100,
         entity_genesis: None,
@@ -862,7 +887,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         id: "f3d:Design/BulkStream.dat:curve#103".into(),
         record_index: 103,
         owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 103,
         geometry_offset: 100,
         entity_genesis: None,
@@ -875,33 +900,36 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         4,
         SketchCurveGeometry::Nurbs {
             carrier_reference: None,
-            subtype_class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
+            subtype_class_tag: crate::records::references::DesignClassTag::try_from(
+                "302".to_owned(),
+            )
+            .unwrap(),
             subtype_record_index: 104,
             degree: 1,
             fit_tolerance: 1.0e-8,
             scalar_width: 4,
             knots: vec![0.0, 0.0, 1.0, 1.0],
-            poles: crate::records::SketchNurbsPoles::Rational(vec![
-                crate::records::SketchNurbsPole {
+            poles: crate::records::sketch_geometry::SketchNurbsPoles::Rational(vec![
+                crate::records::sketch_geometry::SketchNurbsPole {
                     point: Point3::new(2.0, 3.0, 4.0),
                     weight: 1.0,
                 },
-                crate::records::SketchNurbsPole {
+                crate::records::sketch_geometry::SketchNurbsPole {
                     point: Point3::new(5.0, 6.0, 7.0),
                     weight: 1.0,
                 },
             ]),
         },
     ));
-    let relation = SketchRelation::try_new(crate::records::SketchRelationDraft {
+    let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
         id: "f3d:Design/BulkStream.dat:relation#105".into(),
         record_index: 105,
-        class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("303".to_owned()).unwrap(),
         byte_offset: 105,
         state_offset: 0,
         owner_reference: 42,
         owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
-        auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
+        auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
         rectangular_counted_reference_count: None,
         // Member run order disagrees with semantic order below.
         members: (vec![
@@ -911,8 +939,11 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         .try_into()
         .expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(0x8000_0000, None)
-            .expect("valid relation definition"),
+        definition: crate::records::sketch_relations::SketchRelationDefinition::new(
+            0x8000_0000,
+            None,
+        )
+        .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![
             SketchRelationReturnMember::from_index(103),
@@ -923,19 +954,19 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         raw_bytes: vec![0; 160],
     })
     .unwrap();
-    let point = SketchPoint::try_from(crate::records::SketchPointDraft {
+    let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
         id: "f3d:Design/BulkStream.dat:point#106".into(),
         record_index: 106,
         owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned()).unwrap(),
         byte_offset: 106,
         coordinate_offset: 0,
-        companion: crate::records::SketchPointCompanion {
+        companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
         },
-        record_form: crate::records::SketchPointRecordForm::version11(
+        record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
             5,
-            crate::records::SketchPointClosure::Selector0State0,
+            crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
             None,
             4.5,
         ),
@@ -946,7 +977,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut midpoint_relation = relation.clone();
     midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();
     midpoint_relation.record_index = 106;
-    midpoint_relation.definition = crate::records::SketchRelationDefinition::new(
+    midpoint_relation.definition = crate::records::sketch_relations::SketchRelationDefinition::new(
         0x1000,
         midpoint_relation.definition.pattern().cloned(),
     )
@@ -976,7 +1007,9 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     coincident_point.record_index = 107;
     coincident_point.byte_offset = 107;
     let mut form = coincident_point.record_form().clone();
-    let crate::records::SketchPointRecordForm::Version11 { persistent_id, .. } = &mut form else {
+    let crate::records::sketch_geometry::SketchPointRecordForm::Version11 { persistent_id, .. } =
+        &mut form
+    else {
         panic!("point fixture has a version-11 record form");
     };
     *persistent_id = std::num::NonZeroU64::new(6).unwrap();
@@ -984,11 +1017,12 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;
-    coincident_relation.definition = crate::records::SketchRelationDefinition::new(
-        1,
-        coincident_relation.definition.pattern().cloned(),
-    )
-    .expect("valid relation definition");
+    coincident_relation.definition =
+        crate::records::sketch_relations::SketchRelationDefinition::new(
+            1,
+            coincident_relation.definition.pattern().cloned(),
+        )
+        .expect("valid relation definition");
     coincident_relation
         .try_edit(|draft| {
             draft.members = (vec![106, 107]
@@ -1012,11 +1046,12 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut horizontal_relation = relation.clone();
     horizontal_relation.id = "f3d:Design/BulkStream.dat:relation#108".into();
     horizontal_relation.record_index = 108;
-    horizontal_relation.definition = crate::records::SketchRelationDefinition::new(
-        0x40,
-        horizontal_relation.definition.pattern().cloned(),
-    )
-    .expect("valid relation definition");
+    horizontal_relation.definition =
+        crate::records::sketch_relations::SketchRelationDefinition::new(
+            0x40,
+            horizontal_relation.definition.pattern().cloned(),
+        )
+        .expect("valid relation definition");
     horizontal_relation
         .try_edit(|draft| {
             draft.members = (vec![SketchRelationMember::from_index(108)])
@@ -1035,7 +1070,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         id: "f3d:Design/BulkStream.dat:surface#109".into(),
         record_index: 109,
         owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned()).unwrap(),
         byte_offset: 109,
         entity_genesis: None,
         persistent_id: std::num::NonZeroU64::new(8).unwrap(),
@@ -1051,11 +1086,12 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut point_on_surface_relation = relation.clone();
     point_on_surface_relation.id = "f3d:Design/BulkStream.dat:relation#109".into();
     point_on_surface_relation.record_index = 109;
-    point_on_surface_relation.definition = crate::records::SketchRelationDefinition::new(
-        1,
-        point_on_surface_relation.definition.pattern().cloned(),
-    )
-    .expect("valid relation definition");
+    point_on_surface_relation.definition =
+        crate::records::sketch_relations::SketchRelationDefinition::new(
+            1,
+            point_on_surface_relation.definition.pattern().cloned(),
+        )
+        .expect("valid relation definition");
     point_on_surface_relation
         .try_edit(|draft| {
             draft.members = (vec![106, 109]
@@ -1182,26 +1218,28 @@ fn nonplanar_sketch_curves_project_in_model_space() {
 #[test]
 fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::MemberCompact {
+            crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
                 paired_byte_offset: 34,
             },
         )
         .unwrap(),
         id: "f3d:design:design-sketch-placement#1".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned()).unwrap(),
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_201".to_owned())
+            .unwrap(),
         visibility: None,
-        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
-        paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
     };
     let surface = SketchSurface {
         id: "f3d:design:surface#2".into(),
         record_index: 2,
         owner_reference: Some(201),
-        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned()).unwrap(),
         byte_offset: 0,
         entity_genesis: None,
         persistent_id: std::num::NonZeroU64::new(2).unwrap(),
@@ -1230,10 +1268,10 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
 #[test]
 fn a_refused_sketch_nurbs_carrier_reaches_the_codec_error() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             100,
-            crate::records::DesignSketchFrameForm::ScopeExplicit(
-                crate::records::SketchPlacementMatrix::try_from([
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::sketch_placement::SketchPlacementMatrix::try_from([
                     [1.0, 0.0, 0.0, 0.0],
                     [0.0, 1.0, 0.0, 0.0],
                     [0.0, 0.0, 1.0, 0.0],
@@ -1245,18 +1283,19 @@ fn a_refused_sketch_nurbs_carrier_reaches_the_codec_error() {
         .unwrap(),
         id: "f3d:native:placement#0".into(),
         scope_record_index: Some(177),
-        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned())
             .expect("valid entity ID"),
         visibility: None,
-        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("356".to_owned()).unwrap(),
         record_index: 185,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
     };
     let refused = SketchCurveIdentity {
         id: "f3d:native:curve#218".into(),
         record_index: 218,
         owner_reference: Some(172),
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 700,
         geometry_offset: 100,
         entity_genesis: None,
@@ -1264,18 +1303,21 @@ fn a_refused_sketch_nurbs_carrier_reaches_the_codec_error() {
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Nurbs {
             carrier_reference: None,
-            subtype_class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
+            subtype_class_tag: crate::records::references::DesignClassTag::try_from(
+                "304".to_owned(),
+            )
+            .unwrap(),
             subtype_record_index: 219,
             degree: 1,
             fit_tolerance: 1.0e-6,
             scalar_width: 8,
             knots: vec![0.0, 0.0, 1.0, 1.0],
-            poles: crate::records::SketchNurbsPoles::Rational(vec![
-                crate::records::SketchNurbsPole {
+            poles: crate::records::sketch_geometry::SketchNurbsPoles::Rational(vec![
+                crate::records::sketch_geometry::SketchNurbsPole {
                     point: Point3::new(0.0, 0.0, 0.0),
                     weight: 1.0,
                 },
-                crate::records::SketchNurbsPole {
+                crate::records::sketch_geometry::SketchNurbsPole {
                     point: Point3::new(2.0, 0.0, 0.0),
                     weight: 0.0,
                 },

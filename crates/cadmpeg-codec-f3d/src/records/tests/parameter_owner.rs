@@ -1,4 +1,7 @@
-use crate::records::{DesignClassTag, DesignParameterOwner, DesignParameterOwnerWire};
+use crate::records::{
+    parameters::{DesignParameterOwner, DesignParameterOwnerWire},
+    references::DesignClassTag,
+};
 
 fn wire() -> DesignParameterOwnerWire {
     DesignParameterOwnerWire {

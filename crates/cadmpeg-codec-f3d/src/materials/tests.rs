@@ -43,20 +43,22 @@ fn resolved_body_binding(
     entity_suffix: u64,
     blob_name: &str,
     body: &str,
-) -> crate::records::DesignBodyBinding {
-    crate::records::DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
-        id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
-        stream: stream.into(),
-        pair_count: 1,
-        pair_ordinal: 0,
-        asm_body_key: 7,
-        asm_body_key_offset: asm_key_offset,
-        entity_suffix,
-        entity_suffix_offset: asm_key_offset + 8,
-        blob_name: blob_name.into(),
-        blob_name_offset: asm_key_offset + 32,
-        body: Some(cadmpeg_ir::ids::BodyId::mint(body).expect("identity grammar")),
-    })
+) -> crate::records::bodies::DesignBodyBinding {
+    crate::records::bodies::DesignBodyBinding::try_from(
+        crate::records::bodies::DesignBodyBindingWire {
+            id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
+            stream: stream.into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 7,
+            asm_body_key_offset: asm_key_offset,
+            entity_suffix,
+            entity_suffix_offset: asm_key_offset + 8,
+            blob_name: blob_name.into(),
+            blob_name_offset: asm_key_offset + 32,
+            body: Some(cadmpeg_ir::ids::BodyId::mint(body).expect("identity grammar")),
+        },
+    )
     .unwrap()
 }
 
@@ -326,16 +328,19 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     };
-    let assignment = crate::records::DesignMaterialAssignment {
+    let assignment = crate::records::references::DesignMaterialAssignment {
         id: owner,
         asm_body_key: 7,
         asm_body_key_offset: 125,
 
         entity_suffix_offset: 133,
-        entity_id: crate::records::DesignEntityId::try_from("0_200".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_200".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 500,
-        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
+        visual_guid: crate::records::references::DesignVisualToken::try_from(
+            visual_guid.to_owned(),
+        )
+        .unwrap(),
         visual_guid_offset: 600,
         physical_token: None,
         visual_preset: None,
@@ -374,16 +379,16 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
     };
-    let mut assignment = crate::records::DesignMaterialAssignment {
+    let mut assignment = crate::records::references::DesignMaterialAssignment {
         id: "f3d:design:material-assignment#1".into(),
         asm_body_key: 7,
         asm_body_key_offset: 25,
 
         entity_suffix_offset: 33,
-        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
         entity_id_offset: 500,
-        visual_guid: crate::records::DesignVisualToken::try_from(
+        visual_guid: crate::records::references::DesignVisualToken::try_from(
             "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
         )
         .unwrap(),
@@ -399,18 +404,19 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     );
 
     assignment.visual_guid =
-        crate::records::DesignVisualToken::try_from(appearance_guid.to_owned()).unwrap();
+        crate::records::references::DesignVisualToken::try_from(appearance_guid.to_owned())
+            .unwrap();
     assert!(
         super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
             .expect("exact visual-token assignment")
             .is_some()
     );
 
-    assignment.visual_guid = crate::records::DesignVisualToken::try_from(
+    assignment.visual_guid = crate::records::references::DesignVisualToken::try_from(
         "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
     )
     .unwrap();
-    assignment.visual_preset = Some(crate::records::RecordedValue {
+    assignment.visual_preset = Some(crate::records::identity::RecordedValue {
         value: "Prism-017".into(),
         offset: 0,
     });
@@ -446,7 +452,7 @@ fn complete_visual_token_selects_one_revision_record() {
 
     let selected = super::appearance_for_visual_token(
         &appearances,
-        &crate::records::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
+        &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
         None,
     )
     .expect("unique complete visual token")
@@ -460,7 +466,8 @@ fn complete_visual_token_selects_one_revision_record() {
     assert!(matches!(
         super::appearance_for_visual_token(
             &duplicates,
-            &crate::records::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
+            &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned())
+                .unwrap(),
             None
         ),
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -490,7 +497,7 @@ fn visual_preset_fallback_requires_one_record() {
     assert!(matches!(
         super::appearance_for_visual_token(
             &appearances,
-            &crate::records::DesignVisualToken::try_from(
+            &crate::records::references::DesignVisualToken::try_from(
                 "11111111-2222-3333-4444-555555555555".to_owned()
             )
             .unwrap(),
@@ -817,8 +824,10 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
-            visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned())
-                .unwrap(),
+            visual_guid: crate::records::references::DesignVisualToken::try_from(
+                visual_guid.to_owned(),
+            )
+            .unwrap(),
             color: None,
         }],
     )
@@ -868,8 +877,10 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
-            visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned())
-                .unwrap(),
+            visual_guid: crate::records::references::DesignVisualToken::try_from(
+                visual_guid.to_owned(),
+            )
+            .unwrap(),
             color: None,
         }],
     )
@@ -922,7 +933,10 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     };
     let assignment = crate::materials::FaceAppearanceAssignment {
         face_guid: face_guid.into(),
-        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
+        visual_guid: crate::records::references::DesignVisualToken::try_from(
+            visual_guid.to_owned(),
+        )
+        .unwrap(),
         color: Some(assignment_color),
     };
 
@@ -960,7 +974,10 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
     let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
     let assignment = |r| crate::materials::FaceAppearanceAssignment {
         face_guid: face_guid.into(),
-        visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
+        visual_guid: crate::records::references::DesignVisualToken::try_from(
+            visual_guid.to_owned(),
+        )
+        .unwrap(),
         color: Some(Color::new(r, 0.25, 0.5, 1.0).expect("valid color")),
     };
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -1079,7 +1096,9 @@ fn decode_transfers_generated_custom_attribute() {
         7
     );
     let native = f3d_native(result.ir());
-    let current = crate::records::current_persistent_design_links(&native.persistent_design_links);
+    let current = crate::records::sketch_links::current_persistent_design_links(
+        &native.persistent_design_links,
+    );
     assert_eq!(
         current
             .values()
@@ -1108,12 +1127,13 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     let vertex = source.model.vertices[0].id.clone();
     source.model.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
-    f3d_native_mut(&mut source).creation_timestamps = vec![crate::records::CreationTimestamp {
-        id: "f3d:asm:creation-timestamp#generated".into(),
-        target: AttributeTarget::Vertex(vertex),
-        record_index: 0,
-        unix_microseconds: 1_579_392_000_000_037.0,
-    }];
+    f3d_native_mut(&mut source).creation_timestamps =
+        vec![crate::records::recipes::CreationTimestamp {
+            id: "f3d:asm:creation-timestamp#generated".into(),
+            target: AttributeTarget::Vertex(vertex),
+            record_index: 0,
+            unix_microseconds: 1_579_392_000_000_037.0,
+        }];
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1204,7 +1224,7 @@ fn decode_transfers_generated_sketch_curve_link() {
 /// The one sketch-curve link a synthetic archive carries under `form`.
 pub(super) fn decoded_sketch_link(
     form: SketchLinkForm<'_>,
-) -> Option<crate::records::SketchCurveLink> {
+) -> Option<crate::records::sketch_links::SketchCurveLink> {
     let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(form));
     let result = F3dCodec
         .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
@@ -1257,7 +1277,7 @@ fn a_sketch_link_decodes_in_every_payload_form() {
 
 #[test]
 fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
-    use crate::records::SketchCurveLink;
+    use crate::records::sketch_links::SketchCurveLink;
 
     let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
         SketchLinkForm::Tagged("113 0 4294967295 0 2 3"),
@@ -1425,14 +1445,14 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
                 crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
                 crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
                 crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-                crate::records::DESIGN_MODULE_BODY,
+                crate::records::entity_header::DESIGN_MODULE_BODY,
                 &[899],
             ),
             (
                 crate::design::presentation::BROWSER_NODE_TYPE_GUID,
                 crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
                 crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
-                crate::records::DESIGN_MODULE_FUSION,
+                crate::records::entity_header::DESIGN_MODULE_FUSION,
                 &[900, 901],
             ),
         ],
@@ -1464,14 +1484,19 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
 
 #[test]
 fn protein_revision_suffix_distinguishes_visual_record_identity() {
-    let token = |text: &str| crate::records::DesignVisualToken::try_from(text.to_owned()).unwrap();
+    let token = |text: &str| {
+        crate::records::references::DesignVisualToken::try_from(text.to_owned()).unwrap()
+    };
     assert!(
         !token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015")
             .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17"))
     );
     assert!(token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015")
         .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015")));
-    assert!(crate::records::DesignVisualToken::try_from("not-a-guid_Post2015".to_owned()).is_err());
+    assert!(crate::records::references::DesignVisualToken::try_from(
+        "not-a-guid_Post2015".to_owned()
+    )
+    .is_err());
 }
 
 #[test]
@@ -1514,11 +1539,13 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
         [
             (
                 37_251,
-                crate::records::DesignVisualToken::try_from(records[0].1.to_string()).unwrap()
+                crate::records::references::DesignVisualToken::try_from(records[0].1.to_string())
+                    .unwrap()
             ),
             (
                 37_441,
-                crate::records::DesignVisualToken::try_from(records[1].1.to_string()).unwrap()
+                crate::records::references::DesignVisualToken::try_from(records[1].1.to_string())
+                    .unwrap()
             ),
         ]
     );

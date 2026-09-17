@@ -3,7 +3,8 @@
 //! blob-scoped id qualification, and Design body-map selector resolution.
 
 use crate::records::{
-    CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    recipes::CreationTimestamp,
+    sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink},
 };
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
@@ -410,7 +411,7 @@ pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCur
         target: attribute.target.clone(),
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
-        sense: crate::records::SketchLinkSense::try_from(payload.sense).ok(),
+        sense: crate::records::sketch_links::SketchLinkSense::try_from(payload.sense).ok(),
         role: payload.role,
         closure: payload.closure,
     })
@@ -435,7 +436,7 @@ pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<Persis
         .filter_map(|values| match values {
             [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0)]
             | [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0), AttributeValue::Integer(0)] => {
-                let design_id = crate::records::DesignPersistentIdText::try_from(design_id.clone()).ok()?;
+                let design_id = crate::records::sketch_links::DesignPersistentIdText::try_from(design_id.clone()).ok()?;
                 Some((*entity_kind, design_id, *design_reference))
             }
             _ => None,

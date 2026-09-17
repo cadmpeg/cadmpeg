@@ -29,13 +29,29 @@ use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
     AsmHistoricalTransition, AsmHistory, AsmTopologyCacheKind,
 };
-use crate::records::configuration::DesignConfiguration;
+use crate::records::act::{
+    ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference,
+};
+use crate::records::bodies::{
+    BodyVisibility, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
+};
 use crate::records::dimension_locus_arenas::{
     DesignDimensionLocusPairs, DesignDimensionNullLocusPairs,
 };
+use crate::records::dimensions::{
+    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionPresentationFrame,
+    DesignDimensionRecipeRecord,
+};
+use crate::records::entity_header::{DesignEntityHeader, DesignFeatureTimeline, SegmentType};
 use crate::records::feature::{
     DesignComponentOccurrence, DesignEdgeTreatmentVertexOperand, DesignParameterScope,
     DesignSurfaceTrimOperation,
+};
+use crate::records::references::{
+    DesignMaterialAssignment, LostEdgeReference, PersistentReference,
+};
+use crate::records::sketch_geometry::{
+    SketchCurveIdentity, SketchPoint, SketchSurface, SketchText,
 };
 use crate::records::topology::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
@@ -43,17 +59,21 @@ use crate::records::topology::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
     DesignFaceSourceGroup, DesignFilletRadiusGroup, DesignLoftLegacyBodyCarrier,
 };
+use crate::records::xref::{XrefDesign, XrefReference};
 use crate::records::{
-    ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference, BodyVisibility,
-    ConstructionRecipe, CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignCanvasImage, DesignComponentNamingSpace, DesignDecalImage,
-    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionPresentationFrame,
-    DesignDimensionRecipeRecord, DesignEntityHeader, DesignFeatureTimeline,
-    DesignMaterialAssignment, DesignMeshFeature, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
-    PersistentDesignLink, PersistentReference, PersistentSubentityTag, SegmentType,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
-    XrefDesign, XrefReference,
+    canvas::DesignCanvasImage,
+    configuration::DesignConfiguration,
+    decal::{DesignDecalImage, DesignRecordHeader},
+};
+use crate::records::{
+    mesh::DesignMeshFeature,
+    parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
+    recipes::{ConstructionRecipe, CreationTimestamp, DesignComponentNamingSpace},
+};
+use crate::records::{
+    sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink},
+    sketch_placement::DesignSketchPlacement,
+    sketch_relations::SketchRelation,
 };
 use cadmpeg_asm::brep::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,
@@ -1310,7 +1330,7 @@ impl F3dNative {
                 .arena_as("design_dimension_presentation_frames")?,
             design_dimension_locus_groups: namespace.arena_as("design_dimension_locus_groups")?,
             design_dimension_locus_pairs: DesignDimensionLocusPairs::try_from(
-                namespace.arena_as::<crate::records::DesignDimensionLocusPair>(
+                namespace.arena_as::<crate::records::dimensions::DesignDimensionLocusPair>(
                     "design_dimension_locus_pairs",
                 )?,
             )

@@ -17,7 +17,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::error::malformed;
-use crate::records::DesignMeshUuid;
+use crate::records::mesh::DesignMeshUuid;
 use cadmpeg_core::decode::index_from_u32;
 
 /// Container magic.

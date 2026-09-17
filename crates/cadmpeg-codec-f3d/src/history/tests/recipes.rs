@@ -12,9 +12,10 @@
 )]
 
 use super::super::*;
-use crate::records::topology::DesignConstructionOperandGroup;
-use crate::records::topology::DesignConstructionOperandGroupFrame;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{
+    topology::DesignConstructionOperandGroup, topology::DesignConstructionOperandGroupFrame,
+    topology::DesignOperandRole,
+};
 
 #[test]
 fn three_point_recipe_vertices_must_define_the_solved_plane() {
@@ -62,7 +63,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
         DesignWorkPointInputCarrier,
     };
-    use crate::records::{DesignFeatureTimeline, DesignRecipeReference};
+    use crate::records::{dimensions::DesignRecipeReference, entity_header::DesignFeatureTimeline};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::Point3;
 
@@ -94,9 +95,10 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let recipe = DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
         record_index: 202,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap(),
         paired_byte_offset: 16,
-        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
+            .unwrap(),
         recipe_record_index: 205,
         recipe_record_byte_offset: 32,
         recipe_id: format!("{stream}:construction-recipe#vertex"),
@@ -233,20 +235,20 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     };
     let timeline = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-        crate::records::DesignTimelineFrame::test_items(
+        crate::records::entity_header::DesignTimelineFrame::test_items(
             0,
             vec![
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 100,
                     offset: 0,
                 },
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 200,
                     offset: 0,
                 },
             ],
         ),
-        crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         std::num::NonZeroU64::new(1).unwrap(),
         0,
         std::num::NonZeroU64::new(1).unwrap(),
@@ -401,10 +403,10 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
     use crate::history_records::{
         AsmHistoricalCoedge, AsmHistoricalRelation, AsmHistoricalTopology,
     };
+    use crate::records::dimensions::DesignRecipeReference;
     use crate::records::topology::{
         DesignSurfacePatchRecipeClause, DesignSurfacePatchRecipeStructure,
     };
-    use crate::records::DesignRecipeReference;
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
     let clause = |faces, edges| DesignSurfacePatchRecipeClause {
@@ -513,13 +515,14 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             },
             record_index: 2,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("295".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 56,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -675,13 +678,14 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
             },
             record_index: 21,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 56,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -853,8 +857,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             scope_reference_ordinal: 0,
             record_index: 20,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("280".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
+            class_tag: crate::records::references::DesignClassTag::try_from("280".to_owned())
+                .unwrap(),
+            members: vec![crate::records::identity::Located {
                 value: 21,
                 offset: 0,
             }],
@@ -880,7 +885,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
                 DesignOperandRole::BODIES_B,
             ),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -895,13 +903,14 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             },
             record_index: 21,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("384".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 56,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -969,27 +978,27 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         }
     );
 
-    let recipe = crate::records::ConstructionRecipe {
+    let recipe = crate::records::recipes::ConstructionRecipe {
         id: operand.recipe_id.clone(),
         byte_offset: 0,
-        kind: crate::records::ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign {
-            id: crate::records::RecordedValue {
+        kind: crate::records::recipes::ConstructionRecipeKind::Body,
+        design: Some(crate::records::recipes::ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
                 value: "301".into(),
                 offset: 0,
             },
-            selector: Some(crate::records::ConstructionRecipeSelector {
+            selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 9,
                 byte_offset: 0,
             }),
         }),
         recipe_index: 0,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
             offset: 0,
         }),
     };
-    let link = crate::records::PersistentDesignLink {
+    let link = crate::records::sketch_links::PersistentDesignLink {
         id: "link".into(),
         target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
         design_id: "301".to_owned().try_into().unwrap(),

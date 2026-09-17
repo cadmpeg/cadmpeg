@@ -2,8 +2,7 @@
 use super::prelude::*;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
-use crate::records::topology::DesignLoftLegacyBodyCarrier;
-use crate::records::topology::DesignOperandRole;
+use crate::records::{topology::DesignLoftLegacyBodyCarrier, topology::DesignOperandRole};
 
 pub(super) fn fixed_kind_path_operations(
     mut bytes: Vec<u8>,
@@ -159,7 +158,7 @@ pub(super) fn fixed_kind_path_operations(
         scope_record_index: loft_scope.record_index,
         record_index: 500,
         byte_offset: 0,
-        class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned()).unwrap(),
         owner_scope_record_index_offset: 22,
         member: 900,
         member_offset: 36,
@@ -175,7 +174,8 @@ pub(super) fn fixed_kind_path_operations(
         next_record_index: 501,
         next_reference_offset: 76,
         trailing_scope_reference_offset: None,
-        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("262".to_owned())
+            .unwrap(),
         paired_byte_offset: 87,
     };
     let legacy_cut = [
@@ -285,7 +285,7 @@ pub(super) fn fixed_kind_path_operations(
             vec![10]
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| crate::records::Located {
+                .map(|(index, value)| crate::records::identity::Located {
                     value,
                     offset: index as u64 * 11,
                 })
@@ -299,7 +299,7 @@ pub(super) fn fixed_kind_path_operations(
             vec![20, 21, 22]
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| crate::records::Located {
+                .map(|(index, value)| crate::records::identity::Located {
                     value,
                     offset: index as u64 * 11,
                 })
@@ -362,7 +362,8 @@ pub(super) fn fixed_kind_path_operations(
                 .try_into()
                 .unwrap();
             draft.frame_length = 499;
-            draft.reference_members = crate::records::ReferenceRun::unlocated((80..86).collect());
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated((80..86).collect());
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -529,18 +530,25 @@ pub(super) fn fixed_kind_path_operations(
                     scope_reference_ordinal: 3,
                     record_index: 2795,
                     byte_offset: 32_000,
-                    class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
-                    asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "312".to_owned(),
+                    )
+                    .unwrap(),
+                    asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                         "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
                     )
                     .unwrap(),
                     asset_id_offset: 32_040,
-                    entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned())
-                        .expect("valid entity identity"),
+                    entity_id: crate::records::identity::DesignEntityId::try_from(
+                        "0_2718".to_owned(),
+                    )
+                    .expect("valid entity identity"),
                     entity_reference_offset: 32_080,
                     region_selection: None,
-                    paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned())
-                        .unwrap(),
+                    paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                        "258".to_owned(),
+                    )
+                    .unwrap(),
                     paired_byte_offset: 32_180,
                 },
             )
@@ -554,7 +562,7 @@ pub(super) fn fixed_kind_path_operations(
     }
     let mut selected_profile = profile.clone();
     selected_profile
-        .try_set_members(vec![crate::records::Located {
+        .try_set_members(vec![crate::records::identity::Located {
             value: 2788,
             offset: selected_profile.members()[0].offset,
         }])
@@ -563,7 +571,7 @@ pub(super) fn fixed_kind_path_operations(
     profile_carrier.id = "stream:sweep-profile-carrier".into();
     profile_carrier.scope_reference_ordinal = 3;
     profile_carrier
-        .try_set_members(vec![crate::records::Located {
+        .try_set_members(vec![crate::records::identity::Located {
             value: 2795,
             offset: profile_carrier.members()[0].offset,
         }])
@@ -578,13 +586,14 @@ pub(super) fn fixed_kind_path_operations(
             group_member_ordinal: 0,
             record_index: 2788,
             byte_offset: 31_000,
-            class_tag: crate::records::DesignClassTag::try_from("310".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("310".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 31_040,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -593,8 +602,8 @@ pub(super) fn fixed_kind_path_operations(
             identity_record_offset: 31_180,
             primary_identity: 2718,
             primary_identity_offset: 31209,
-            secondary: Some(crate::records::DesignSecondaryIdentity {
-                identity: crate::records::Located {
+            secondary: Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
                     value: 164,
                     offset: 31217,
                 },
@@ -693,7 +702,8 @@ pub(super) fn fixed_kind_path_operations(
                 .try_into()
                 .unwrap();
             draft.frame_length = 464;
-            draft.reference_members = crate::records::ReferenceRun::unlocated((170..174).collect());
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated((170..174).collect());
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -737,15 +747,18 @@ pub(super) fn fixed_kind_path_operations(
         .into_iter()
         .enumerate()
         .map(|(ordinal, value)| {
-            crate::records::DesignParameterOwner::try_from(
-                crate::records::DesignParameterOwnerWire {
+            crate::records::parameters::DesignParameterOwner::try_from(
+                crate::records::parameters::DesignParameterOwnerWire {
                     id: format!(
                         "f3d:Design/BulkStream.dat:parameter-owner#{}",
                         owner_pipe_record_indexes[ordinal]
                     ),
                     byte_offset: (10_000 + ordinal as u64) - 40,
                     frame_length: 103,
-                    class_tag: crate::records::DesignClassTag::try_from("342".to_owned()).unwrap(),
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "342".to_owned(),
+                    )
+                    .unwrap(),
                     record_index: owner_pipe_record_indexes[ordinal],
                     scope_record_index: scope.record_index,
                     local_ordinal: ordinal as u32,
@@ -774,9 +787,9 @@ pub(super) fn fixed_kind_path_operations(
         })
         .unwrap();
     owner_pipe_scope.class_tag =
-        crate::records::DesignClassTag::try_from("421".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("421".to_owned()).unwrap();
     owner_pipe_scope.paired_class_tag =
-        crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
+        crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap();
     owner_pipe_scope
         .try_edit(|draft| {
             draft.payload = crate::records::feature::DesignFeatureKind::Pipe
@@ -784,7 +797,7 @@ pub(super) fn fixed_kind_path_operations(
                 .unwrap();
             draft.frame_length = 405;
             draft.reference_members =
-                crate::records::ReferenceRun::unlocated(owner_pipe_record_indexes.into());
+                crate::records::identity::ReferenceRun::unlocated(owner_pipe_record_indexes.into());
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
@@ -812,9 +825,12 @@ pub(super) fn fixed_kind_path_operations(
         ))
     );
     let mut wrong_owner_class = owner_pipe_owners.clone();
-    let mut wire = crate::records::DesignParameterOwnerWire::from(wrong_owner_class[0].clone());
-    wire.class_tag = crate::records::DesignClassTag::try_from("341".to_owned()).unwrap();
-    wrong_owner_class[0] = crate::records::DesignParameterOwner::try_from(wire).unwrap();
+    let mut wire =
+        crate::records::parameters::DesignParameterOwnerWire::from(wrong_owner_class[0].clone());
+    wire.class_tag =
+        crate::records::references::DesignClassTag::try_from("341".to_owned()).unwrap();
+    wrong_owner_class[0] =
+        crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -872,16 +888,17 @@ pub(super) fn fixed_kind_path_operations(
             })
             .unwrap();
         legacy_scope.class_tag =
-            crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+            crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         legacy_scope.paired_class_tag =
-            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
+            crate::records::references::DesignClassTag::try_from(paired_class_tag.to_owned())
+                .unwrap();
         legacy_scope
             .try_edit(|draft| {
                 draft.payload = crate::records::feature::DesignFeatureKind::Pipe
                     .try_into()
                     .unwrap();
                 draft.frame_length = 383;
-                draft.reference_members = crate::records::ReferenceRun::unlocated(
+                draft.reference_members = crate::records::identity::ReferenceRun::unlocated(
                     (first_record_index..first_record_index + 4).collect(),
                 );
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
@@ -923,13 +940,13 @@ pub(super) fn fixed_kind_path_operations(
     let companion = DesignParameterCompanion::unbound(
         "f3d:native:parameter-companion#11".into(),
         0,
-        crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+        crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         11,
         10,
         std::num::NonZeroU64::new(1).unwrap(),
         42,
     )
-    .bound(crate::records::DesignCompanionPayload::new(
+    .bound(crate::records::parameters::DesignCompanionPayload::new(
         58,
         0,
         Vec::new(),
@@ -993,7 +1010,7 @@ pub(super) fn fixed_kind_path_operations(
     let foreign_header = DesignRecordHeader {
         id: "f3d:native:record-header#55".into(),
         record_index: 55,
-        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 70,
     };
     assert_eq!(
@@ -1025,7 +1042,7 @@ pub(super) fn fixed_kind_path_operations(
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
-        record_index: Some(crate::records::RecordedValue {
+        record_index: Some(crate::records::identity::RecordedValue {
             value: 303,
             offset: 0,
         }),
@@ -1053,23 +1070,23 @@ pub(super) fn fixed_kind_path_operations(
     | crate::records::feature::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
     {
         *slot = Some(crate::records::feature::DesignSketchEntityBinding {
-            entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned())
+            entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_99".to_owned())
                 .expect("valid entity identity"),
             entity_reference_offset: 0,
         });
     }
-    let entity = crate::records::DesignEntityHeader {
+    let entity = crate::records::entity_header::DesignEntityHeader {
         id: "f3d:native:design-entity-header#70".into(),
         byte_offset: 70,
 
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_99".to_owned())
             .expect("valid entity ID"),
-        class_tag: crate::records::DesignClassTag::try_from("366".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("366".to_owned()).unwrap(),
         optional_slot_present: false,
-        registration: crate::records::DesignEntityRegistration::new(
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some("MSketch".into()),
             None,
-            crate::records::ReferenceRun::unlocated(Vec::new()),
+            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
         )
         .expect("valid module registration"),
     };

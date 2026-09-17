@@ -9,9 +9,12 @@ use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::records::recipes::{
+    ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+};
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DesignBodyBinding,
-    DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
+    bodies::{DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
+    entity_header::{DesignEntityHeader, DESIGN_MODULE_BODY},
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;
@@ -175,7 +178,7 @@ pub fn decode_body_bounds(
             continue;
         };
         out.push(
-            DesignBodyBounds::try_from(crate::records::DesignBodyBoundsWire {
+            DesignBodyBounds::try_from(crate::records::bodies::DesignBodyBoundsWire {
                 id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
                 entity_suffix: entity.entity_id.suffix(),
                 entity_byte_offset: entity.byte_offset,
@@ -271,8 +274,8 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                             byte_offset: u64::try_from(selector_at).ok()?,
                         })
                     });
-                crate::records::ConstructionRecipeDesign {
-                    id: crate::records::RecordedValue {
+                crate::records::recipes::ConstructionRecipeDesign {
+                    id: crate::records::identity::RecordedValue {
                         value,
                         offset: design_id_at as u64,
                     },
@@ -288,7 +291,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             // no such word, so the stream states no record index for it; the
             // word itself always lies inside `bytes` when the marker does.
             let record_index = offset.checked_sub(16).and_then(|at| {
-                Some(crate::records::RecordedValue {
+                Some(crate::records::identity::RecordedValue {
                     value: View::i32_le_at(bytes, at)?,
                     offset: u64_from_index(at),
                 })
@@ -500,7 +503,7 @@ pub(crate) fn snapshot_body_map_records(
             || !design_type
                 .base_type_guid
                 .value()
-                .map(crate::records::DesignRelaxedGuidText::as_str)
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| {
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
@@ -702,7 +705,7 @@ fn body_map_records(
             || !design_type
                 .base_type_guid
                 .value()
-                .map(crate::records::DesignRelaxedGuidText::as_str)
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| {
                     base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
                 })
@@ -1010,7 +1013,7 @@ pub fn decode_design_body_bindings(
                     .collect::<Vec<_>>();
                 let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
                 out.push(
-                    DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
+                    DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
                         stream: entry.name.clone(),
                         pair_count,
@@ -1236,7 +1239,7 @@ mod tests {
         BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
         BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, PHYSICAL_MATERIAL_LIBRARY_ID,
     };
-    use crate::records::DESIGN_MODULE_FUSION;
+    use crate::records::entity_header::DESIGN_MODULE_FUSION;
 
     fn push_indexed_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
         out.extend_from_slice(&3u32.to_le_bytes());
@@ -1264,22 +1267,23 @@ mod tests {
         version: u32,
         module: &str,
         entity_ids: Vec<u64>,
-    ) -> crate::records::SegmentType {
-        crate::records::SegmentType {
+    ) -> crate::records::entity_header::SegmentType {
+        crate::records::entity_header::SegmentType {
             id: String::new(),
             byte_offset: 0,
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map_or(crate::records::BaseTypeGuid::Absent, |value| {
-                crate::records::BaseTypeGuid::Guid {
+            base_type_guid: base_type_guid.map_or(
+                crate::records::entity_header::BaseTypeGuid::Absent,
+                |value| crate::records::entity_header::BaseTypeGuid::Guid {
                     value: value.to_owned().try_into().expect("base GUID"),
                     offset: 0,
-                }
-            }),
+                },
+            ),
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::unlocated(entity_ids),
+            entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
         }
     }
 
@@ -1332,7 +1336,7 @@ mod tests {
     fn body_map_metadata() -> crate::metastream::MetaStream {
         crate::metastream::MetaStream {
             types: vec![
-                crate::records::SegmentType {
+                crate::records::entity_header::SegmentType {
                     id: String::new(),
                     byte_offset: 0,
                     type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
@@ -1340,7 +1344,7 @@ mod tests {
                         .try_into()
                         .expect("type GUID"),
                     type_guid_offset: 0,
-                    base_type_guid: crate::records::BaseTypeGuid::Guid {
+                    base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
                         value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
                             .to_owned()
                             .try_into()
@@ -1350,8 +1354,8 @@ mod tests {
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
                     module: DESIGN_MODULE_BODY.into(),
-                    entities: crate::records::ReferenceRun::located(vec![
-                        crate::records::Located {
+                    entities: crate::records::identity::ReferenceRun::located(vec![
+                        crate::records::identity::Located {
                             value: 900,
                             offset: 0,
                         },
@@ -1519,7 +1523,7 @@ mod tests {
     #[test]
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
-        metadata.types[2].entities = crate::records::ReferenceRun::unlocated(Vec::new());
+        metadata.types[2].entities = crate::records::identity::ReferenceRun::unlocated(Vec::new());
         assert!(
             snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
                 .expect("mixed carrier family")
@@ -1842,7 +1846,7 @@ mod tests {
                 .design
                 .as_ref()
                 .and_then(|design| design.selector),
-            Some(crate::records::ConstructionRecipeSelector {
+            Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 3,
                 byte_offset: 8,
             })

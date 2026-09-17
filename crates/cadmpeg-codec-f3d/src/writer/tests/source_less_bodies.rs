@@ -90,8 +90,9 @@ fn generated_source_less_rejects_translucent_direct_color() {
 
 #[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
-    use crate::records::{
-        CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    use crate::records::recipes::CreationTimestamp;
+    use crate::records::sketch_links::{
+        PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::topology::Color;
@@ -154,7 +155,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         target: AttributeTarget::Coedge(coedge_id.clone()),
         sketch_curve_id: 113,
         ref_b: 0,
-        sense: Some(crate::records::SketchLinkSense::try_from(1).unwrap()),
+        sense: Some(crate::records::sketch_links::SketchLinkSense::try_from(1).unwrap()),
         role: 2,
         closure: 3,
     }];
@@ -274,10 +275,12 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert_eq!(native.persistent_design_links[1].design_id.as_str(), "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
     assert_eq!(
-        crate::records::current_persistent_design_links(&native.persistent_design_links)
-            .values()
-            .map(|link| link.design_id.as_str())
-            .collect::<Vec<_>>(),
+        crate::records::sketch_links::current_persistent_design_links(
+            &native.persistent_design_links
+        )
+        .values()
+        .map(|link| link.design_id.as_str())
+        .collect::<Vec<_>>(),
         ["322"]
     );
     assert_eq!(native.persistent_subentity_tags.len(), 3);
@@ -329,7 +332,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 
 #[test]
 fn generated_source_less_rejects_lossy_design_link_metadata() {
-    use crate::records::{PersistentDesignLink, SketchCurveLink};
+    use crate::records::sketch_links::{PersistentDesignLink, SketchCurveLink};
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -350,7 +353,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
             target: AttributeTarget::Coedge(coedge.clone()),
             sketch_curve_id: 113 + ordinal,
             ref_b: 0,
-            sense: Some(crate::records::SketchLinkSense::try_from(1).unwrap()),
+            sense: Some(crate::records::sketch_links::SketchLinkSense::try_from(1).unwrap()),
             role: 2,
             closure: 3,
         })

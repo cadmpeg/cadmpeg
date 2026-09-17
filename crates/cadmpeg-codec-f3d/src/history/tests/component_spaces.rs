@@ -50,7 +50,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
 
     let design_stream = "Asset/Design1/BulkStream.dat";
     let naming_spaces = vec![
-        crate::records::DesignComponentNamingSpace {
+        crate::records::recipes::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 0),
             byte_offset: 0,
             component_record_index: 10,
@@ -60,7 +60,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
                 .expect("GUID"),
             context_uuid_offset: 12,
         },
-        crate::records::DesignComponentNamingSpace {
+        crate::records::recipes::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 100),
             byte_offset: 100,
             component_record_index: 20,
@@ -72,19 +72,21 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         },
     ];
     let binding = |at, entity_suffix, blob_name: &str| {
-        crate::records::DesignBodyBinding::try_from(crate::records::DesignBodyBindingWire {
-            id: crate::ids::native_design_body_binding_id(design_stream, at),
-            stream: design_stream.into(),
-            pair_count: 1,
-            pair_ordinal: 0,
-            asm_body_key: 1,
-            asm_body_key_offset: at,
-            entity_suffix,
-            entity_suffix_offset: at + 8,
-            blob_name: blob_name.into(),
-            blob_name_offset: at + 16,
-            body: None,
-        })
+        crate::records::bodies::DesignBodyBinding::try_from(
+            crate::records::bodies::DesignBodyBindingWire {
+                id: crate::ids::native_design_body_binding_id(design_stream, at),
+                stream: design_stream.into(),
+                pair_count: 1,
+                pair_ordinal: 0,
+                asm_body_key: 1,
+                asm_body_key_offset: at,
+                entity_suffix,
+                entity_suffix_offset: at + 8,
+                blob_name: blob_name.into(),
+                blob_name_offset: at + 16,
+                body: None,
+            },
+        )
         .unwrap()
     };
     let body_bindings = vec![
@@ -103,15 +105,16 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
                 group_member_ordinal: 0,
                 record_index: 2,
                 byte_offset: 400,
-                class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                    .unwrap(),
                 local_id: 42,
                 local_id_offset: 421,
-                asset_id: crate::records::DesignRelaxedGuidText::try_from(
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "11111111-2222-4333-8444-555555555555".to_owned(),
                 )
                 .unwrap(),
                 asset_id_offset: 433,
-                context_id: crate::records::DesignRelaxedGuidText::try_from(
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb".to_owned(),
                 )
                 .unwrap(),
@@ -167,7 +170,7 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         tag(AsmHistoricalEntityKind::Face, 12, 7, vec![302]),
         tag(AsmHistoricalEntityKind::Edge, 20, 11, vec![301]),
     ];
-    let mut reference = crate::records::DesignRecipeReference {
+    let mut reference = crate::records::dimensions::DesignRecipeReference {
         selector: 0x0100_0080,
         selector_offset: 0,
         token: "rim".into(),
@@ -207,29 +210,30 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
 
 #[test]
 fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
-    let reference = |design_reference, faces: &[i64]| crate::records::DesignRecipeReference {
-        selector: 0,
-        selector_offset: 0,
-        token: "face".into(),
-        token_offset: 0,
-        design_reference,
-        design_reference_offset: 0,
-        candidate_faces: faces
-            .iter()
-            .map(|face| {
-                cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
-                    .expect("identity grammar")
-            })
-            .collect(),
-        candidate_edges: Vec::new(),
-        alternate_selector_faces: Vec::new(),
-        alternate_selector_edges: Vec::new(),
-    };
+    let reference =
+        |design_reference, faces: &[i64]| crate::records::dimensions::DesignRecipeReference {
+            selector: 0,
+            selector_offset: 0,
+            token: "face".into(),
+            token_offset: 0,
+            design_reference,
+            design_reference_offset: 0,
+            candidate_faces: faces
+                .iter()
+                .map(|face| {
+                    cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
+                        .expect("identity grammar")
+                })
+                .collect(),
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        };
     let references = [reference(203, &[8, 7]), reference(199, &[9])];
 
     assert_eq!(
         direct_face_recipe_candidates(
-            crate::records::ConstructionRecipeKind::Face,
+            crate::records::recipes::ConstructionRecipeKind::Face,
             &references,
             203,
         ),
@@ -239,7 +243,7 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
         ])
     );
     assert!(direct_face_recipe_candidates(
-        crate::records::ConstructionRecipeKind::BoundedFace,
+        crate::records::recipes::ConstructionRecipeKind::BoundedFace,
         &references,
         203,
     )
@@ -289,31 +293,36 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
             .collect(),
         ..Default::default()
     };
-    let reference = |token: &str, faces: &[i64]| crate::records::DesignRecipeReference {
-        selector: 0,
-        selector_offset: 0,
-        token: token.into(),
-        token_offset: 0,
-        design_reference: 301,
-        design_reference_offset: 0,
-        candidate_faces: faces
-            .iter()
-            .map(|face| {
-                cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
-                    .expect("identity grammar")
-            })
-            .collect(),
-        candidate_edges: Vec::new(),
-        alternate_selector_faces: Vec::new(),
-        alternate_selector_edges: Vec::new(),
-    };
+    let reference =
+        |token: &str, faces: &[i64]| crate::records::dimensions::DesignRecipeReference {
+            selector: 0,
+            selector_offset: 0,
+            token: token.into(),
+            token_offset: 0,
+            design_reference: 301,
+            design_reference_offset: 0,
+            candidate_faces: faces
+                .iter()
+                .map(|face| {
+                    cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
+                        .expect("identity grammar")
+                })
+                .collect(),
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        };
     let recipe = crate::records::feature::DesignVertexRecipe::try_new(
         crate::records::feature::DesignVertexRecipeDraft {
             record_index: 1,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
+                .unwrap(),
             paired_byte_offset: 11,
-            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
             recipe_record_index: 4,
             recipe_record_byte_offset: 44,
             recipe_id: "recipe".into(),

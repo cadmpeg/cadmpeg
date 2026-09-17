@@ -11,25 +11,25 @@ use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
     neutral_spatial_sketch_id,
 };
-use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
     DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
     DesignSketchProfileRegionSelection,
 };
-use crate::records::{DesignSketchPlacement, SketchCurveIdentity, SketchRelationOperand};
+use crate::records::{
+    sketch_geometry::SketchCurveIdentity, sketch_placement::DesignSketchPlacement,
+    sketch_relations::SketchRelationOperand, topology::DesignOperandRole,
+};
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::features::{PathRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement, SpatialSketch, SpatialSketchEntity,
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     SpatialSketchProfile,
-};
-use cadmpeg_ir::{
-    features::{PathRef, SketchProfileRegion},
-    scalar::{Angle, Length},
 };
 
 fn group() -> DesignConstructionOperandGroup {
@@ -40,13 +40,14 @@ fn group() -> DesignConstructionOperandGroup {
             scope_reference_ordinal: 0,
             record_index: 9,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                .unwrap(),
             members: vec![
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 10,
                     offset: 0,
                 },
-                crate::records::Located {
+                crate::records::identity::Located {
                     value: 11,
                     offset: 11,
                 },
@@ -73,7 +74,10 @@ fn group() -> DesignConstructionOperandGroup {
                 DesignOperandRole::ROLE_0X5,
             ),
             role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "277".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 0,
         },
     )
@@ -93,13 +97,14 @@ fn operand(
             group_member_ordinal: ordinal,
             record_index,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 0,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -108,8 +113,8 @@ fn operand(
             identity_record_offset: 0,
             primary_identity: 42,
             primary_identity_offset: 29,
-            secondary: Some(crate::records::DesignSecondaryIdentity {
-                identity: crate::records::Located {
+            secondary: Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
                     value: secondary_identity,
                     offset: 37,
                 },
@@ -127,22 +132,23 @@ fn operand(
 
 fn placement() -> DesignSketchPlacement {
     DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
-            crate::records::DesignSketchFrameForm::ScopeCompact,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
         )
         .unwrap(),
         id: "stream:placement".into(),
         scope_record_index: Some(7),
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
             .expect("valid entity ID"),
 
         visibility: None,
 
-        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 20,
 
-        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
+            .unwrap(),
     }
 }
 
@@ -151,7 +157,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         id: format!("stream:curve-{record_index}"),
         record_index,
         owner_reference: Some(42),
-        class_tag: crate::records::DesignClassTag::try_from("450".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
@@ -269,15 +275,16 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             group_member_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("278".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("278".to_owned())
+                .unwrap(),
             local_id: 200,
             local_id_offset: 21,
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 33,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -660,8 +667,9 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             scope_reference_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
@@ -671,7 +679,8 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             region_selection: Some(DesignSketchProfileRegionSelection {
                 record_index: 13,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("303".to_owned())
+                    .unwrap(),
                 region_count_offset: 0,
                 regions: vec![
                     DesignSketchProfileRegion {
@@ -687,11 +696,16 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                         ],
                     },
                 ],
-                companion_class_tag: crate::records::DesignClassTag::try_from("304".to_owned())
-                    .unwrap(),
+                companion_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "304".to_owned(),
+                )
+                .unwrap(),
                 companion_byte_offset: 0,
             }),
-            paired_class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "301".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 160,
         },
     )
@@ -1054,7 +1068,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
             vec![10]
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| crate::records::Located {
+                .map(|(index, value)| crate::records::identity::Located {
                     value,
                     offset: index as u64 * 11,
                 })
@@ -1132,8 +1146,9 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             scope_reference_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
+                .unwrap(),
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
@@ -1143,7 +1158,8 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             region_selection: Some(DesignSketchProfileRegionSelection {
                 record_index: 11,
                 byte_offset: 0,
-                class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+                class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                    .unwrap(),
                 region_count_offset: 0,
                 regions: vec![
                     DesignSketchProfileRegion {
@@ -1155,11 +1171,16 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                         members: vec![profile_region_member(100)],
                     },
                 ],
-                companion_class_tag: crate::records::DesignClassTag::try_from("302".to_owned())
-                    .unwrap(),
+                companion_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "302".to_owned(),
+                )
+                .unwrap(),
                 companion_byte_offset: 0,
             }),
-            paired_class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "303".to_owned(),
+            )
+            .unwrap(),
             paired_byte_offset: 160,
         },
     )

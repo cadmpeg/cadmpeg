@@ -16,21 +16,24 @@ use super::super::*;
 fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {
     use cadmpeg_ir::ids::FaceId;
 
-    let reference = |selector_offset, candidates: &[i64]| crate::records::DesignRecipeReference {
-        selector: 1,
-        selector_offset,
-        token: "x".into(),
-        token_offset: selector_offset + 1,
-        design_reference: 1,
-        design_reference_offset: selector_offset + 2,
-        candidate_faces: candidates
-            .iter()
-            .map(|face| FaceId::mint(format!("f3d:brep:entity#{face}")).expect("identity grammar"))
-            .collect(),
-        candidate_edges: Vec::new(),
-        alternate_selector_faces: Vec::new(),
-        alternate_selector_edges: Vec::new(),
-    };
+    let reference =
+        |selector_offset, candidates: &[i64]| crate::records::dimensions::DesignRecipeReference {
+            selector: 1,
+            selector_offset,
+            token: "x".into(),
+            token_offset: selector_offset + 1,
+            design_reference: 1,
+            design_reference_offset: selector_offset + 2,
+            candidate_faces: candidates
+                .iter()
+                .map(|face| {
+                    FaceId::mint(format!("f3d:brep:entity#{face}")).expect("identity grammar")
+                })
+                .collect(),
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        };
     let references = [
         reference(10, &[1, 2]),
         reference(10, &[2, 3]),
@@ -88,11 +91,11 @@ fn bounded_face_copy_matches_cyclic_boundary_with_split_vertices() {
 
 #[test]
 fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
+    use crate::records::recipes::ConstructionRecipeKind;
     use crate::records::topology::{
         DesignEdgeIdentityOperand, DesignFaceOperand, DesignHistoricalFaceBoundaryContext,
         DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
     };
-    use crate::records::ConstructionRecipeKind;
 
     let mut identities = vec![DesignEdgeIdentityOperand::try_new(
         crate::records::topology::DesignEdgeIdentityOperandDraft {
@@ -102,15 +105,16 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
             group_member_ordinal: 0,
             record_index: 10,
             byte_offset: 100,
-            class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                .unwrap(),
             layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
             local_id: 13,
-            asset_id: crate::records::DesignRelaxedGuidText::try_from(
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
             )
             .unwrap(),
             asset_id_offset: 142,
-            context_id: crate::records::DesignRelaxedGuidText::try_from(
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
             )
             .unwrap(),
@@ -134,9 +138,10 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         }),
         record_index: 10,
         byte_offset: 100,
-        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned()).unwrap(),
         paired_byte_offset: 200,
-        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .unwrap(),
         recipe_record_index: 13,
         recipe_record_byte_offset: 300,
         recipe_id: "recipe".into(),

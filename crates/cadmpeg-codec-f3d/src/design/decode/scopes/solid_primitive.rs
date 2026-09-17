@@ -10,11 +10,11 @@ use crate::ids::native_stream;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
 use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
-use crate::records::feature::DesignExtrudeOperation;
-use crate::records::feature::DesignParameterScope;
-use crate::records::feature::DesignSolidPrimitive;
-use crate::records::valid_sketch_transform;
-use crate::records::DesignParameterOwner;
+use crate::records::{
+    feature::{DesignExtrudeOperation, DesignParameterScope, DesignSolidPrimitive},
+    parameters::DesignParameterOwner,
+    sketch_placement::valid_sketch_transform,
+};
 use cadmpeg_core::decode::View;
 
 pub(crate) fn exact_solid_primitive(
@@ -67,7 +67,7 @@ pub(crate) fn exact_solid_primitive(
             transform[ordinal / 4][ordinal % 4] = value;
         }
         Some((
-            crate::records::SketchPlacementMatrix::try_from(transform).ok()?,
+            crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform).ok()?,
             matrix_at as u64,
         ))
     };
@@ -191,7 +191,9 @@ pub(crate) fn exact_solid_primitive(
 struct ExactShiftedCylinderPrimitivePrologue {
     operation: DesignExtrudeOperation,
     operation_offset: usize,
-    transform: Option<crate::records::Located<crate::records::SketchPlacementMatrix>>,
+    transform: Option<
+        crate::records::identity::Located<crate::records::sketch_placement::SketchPlacementMatrix>,
+    >,
 }
 
 fn exact_named_solid_primitive_operation(bytes: &[u8], start: usize) -> Option<usize> {
@@ -411,8 +413,9 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            Some(crate::records::Located {
-                value: crate::records::SketchPlacementMatrix::try_from(transform).ok()?,
+            Some(crate::records::identity::Located {
+                value: crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
+                    .ok()?,
                 offset: u64::try_from(start + shifted_cylinder_502::MATRIX).ok()?,
             })
         }

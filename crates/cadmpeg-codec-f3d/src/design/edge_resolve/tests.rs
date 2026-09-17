@@ -8,11 +8,10 @@
 )]
 
 use super::*;
-use crate::records::feature::DesignParameterScope;
 use crate::records::topology::{
     DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
 };
-use crate::records::DesignRecipeReference;
+use crate::records::{dimensions::DesignRecipeReference, feature::DesignParameterScope};
 use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
@@ -236,11 +235,11 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
     let mut selection_group = group(2, 10);
     selection_group
         .try_set_members(vec![
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 10,
                 offset: 0,
             },
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 11,
                 offset: 11,
             },
@@ -390,19 +389,19 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     let mut selection_group = group(2, 10);
     selection_group
         .try_set_members(vec![
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 10,
                 offset: 0,
             },
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 11,
                 offset: 11,
             },
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 12,
                 offset: 22,
             },
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 13,
                 offset: 33,
             },
@@ -423,9 +422,13 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         recipe: DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
             record_index,
             byte_offset: u64::from(record_index),
-            class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
+                .unwrap(),
             paired_byte_offset: u64::from(record_index) + 16,
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
             recipe_record_index: record_index + 3,
             recipe_record_byte_offset: u64::from(record_index) + 32,
             recipe_id: format!("f3d:test:construction-recipe#{record_index}"),
@@ -586,11 +589,11 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
     let mut group = group(2, 10);
     group
         .try_set_members(vec![
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 10,
                 offset: 0,
             },
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 11,
                 offset: 11,
             },
@@ -850,11 +853,11 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     let mut selection_group = group(2, 10);
     selection_group
         .try_set_members(vec![
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 10,
                 offset: 0,
             },
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 11,
                 offset: 11,
             },
@@ -912,11 +915,11 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
     let mut selection_group = group(2, 10);
     selection_group
         .try_set_members(vec![
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 10,
                 offset: 0,
             },
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 11,
                 offset: 11,
             },
@@ -1002,11 +1005,11 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
     let mut selection_group = group(2, 10);
     selection_group
         .try_set_members(vec![
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 10,
                 offset: 0,
             },
-            crate::records::Located {
+            crate::records::identity::Located {
                 value: 11,
                 offset: 11,
             },

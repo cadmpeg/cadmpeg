@@ -2175,7 +2175,7 @@ pub(crate) fn exact_ruled_surface_operation(
     let direction_entity_id = if direction_absent {
         None
     } else {
-        Some(crate::records::DesignRelaxedGuidText::try_from(direction_entity_id).ok()?)
+        Some(crate::records::mesh::DesignRelaxedGuidText::try_from(direction_entity_id).ok()?)
     };
     if reference_members.first() != Some(&distance_owner_record_index)
         || reference_members.get(1) != Some(&angle_owner_record_index)

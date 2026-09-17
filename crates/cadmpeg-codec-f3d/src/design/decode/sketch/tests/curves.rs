@@ -12,7 +12,7 @@ use super::{
     CURRENT_SKETCH_NURBS_TYPE, SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES,
     SKETCH_TEXT_FRAME_LINE_TYPE_GUID,
 };
-use crate::records::SketchCurveGeometry;
+use crate::records::sketch_geometry::SketchCurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn analytic_payload(values: [f64; 12]) -> Vec<u8> {

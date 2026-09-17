@@ -8,13 +8,13 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
-use crate::records::DesignVisualToken;
+use crate::records::references::DesignVisualToken;
 use cadmpeg_core::container::ContainerRole;
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
-use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
+use crate::records::{bodies::DesignBodyBinding, references::DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
@@ -1041,16 +1041,16 @@ pub(crate) fn decode_design_assignments(
                 entity_id_offset,
                 visual_guid: material.visual_guid,
                 visual_guid_offset: material.visual_guid_offset,
-                physical_token: Some(crate::records::RecordedValue {
+                physical_token: Some(crate::records::identity::RecordedValue {
                     value: material.physical_token,
                     offset: material.physical_token_offset,
                 }),
-                visual_preset: material
-                    .visual_preset
-                    .map(|field| crate::records::RecordedValue {
+                visual_preset: material.visual_preset.map(|field| {
+                    crate::records::identity::RecordedValue {
                         value: field.value,
                         offset: field.offset,
-                    }),
+                    }
+                }),
             });
         }
     }

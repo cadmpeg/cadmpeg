@@ -70,7 +70,7 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
         });
     baseline
         .body_visibilities
-        .push(crate::records::BodyVisibility {
+        .push(crate::records::bodies::BodyVisibility {
             id: "f3d:design:body-visibility#1".into(),
             body,
             stream: "Design1/BulkStream.dat".into(),

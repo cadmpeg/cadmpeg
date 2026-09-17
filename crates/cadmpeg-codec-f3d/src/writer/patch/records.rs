@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::records::{
-    ActEntity, ActRootComponent, DesignMaterialAssignment, LostEdgeReference, SketchCurveGeometry,
+    act::{ActEntity, ActRootComponent},
+    references::{DesignMaterialAssignment, LostEdgeReference},
+    sketch_geometry::SketchCurveGeometry,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -711,7 +713,7 @@ fn patch_sketch_nurbs(
     start: usize,
     fit_tolerance: f64,
     knots: &[f64],
-    poles: &crate::records::SketchNurbsPoles,
+    poles: &crate::records::sketch_geometry::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
     let fit_at = start + 94;
     let knots_at = start + 114;
@@ -760,7 +762,7 @@ pub(crate) fn patch_sketch_relations(
 #[cfg(test)]
 mod tests {
     use super::patch_material_assignments;
-    use crate::records::DesignMaterialAssignment;
+    use crate::records::references::DesignMaterialAssignment;
 
     const SUFFIX_AT: usize = 0;
     const ENTITY_ID_AT: usize = 8;

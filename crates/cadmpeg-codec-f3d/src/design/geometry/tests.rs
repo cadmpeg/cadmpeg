@@ -3,14 +3,12 @@
 use super::*;
 use crate::design::dimensions::point_lies_on_sketch_geometry;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::features::SketchProfileRegion;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId,
-};
-use cadmpeg_ir::{
-    features::SketchProfileRegion,
-    scalar::{Angle, Length},
 };
 
 fn local_arrangement_budget() -> WorkBudget<'static> {
