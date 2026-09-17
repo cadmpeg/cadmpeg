@@ -144,6 +144,11 @@ impl Default for ExactSignedSum {
 pub(crate) const MAX_BIASED_SIGNIFICAND_EXPONENT: i32 = 0x7fe - 1;
 
 /// The widest significand a finite `f64` states, the hidden bit included.
+///
+/// [`finite_significand`] proves it. Its subnormal branch answers a nonzero
+/// `fraction`, which is below `1 << 52`, and its normal branch answers
+/// `(1 << 52) | fraction`. The highest set bit is therefore at most 52 and the
+/// width at most 53.
 pub(crate) const MAX_SIGNIFICAND_BITS: i32 = 53;
 
 /// The least power of two a [`ScaledExponent`] holds. `ExactSignedSum::finish`
@@ -365,7 +370,9 @@ fn scaled_finite(value: f64) -> Option<ScaledValue> {
     // A finite significand is never zero: the subnormal branch requires a
     // nonzero fraction and the normal branch sets bit 52.
     let highest_bit = significand.checked_ilog2()?;
-    // `checked_ilog2` of a `u64` is at most 63, so the width is at most 64.
+    // `finite_significand` answers a significand whose highest set bit is at
+    // most 52, so `bits` is at most `MAX_SIGNIFICAND_BITS`. That is the bound
+    // the `ScaledExponent` assertion above relies on.
     let bits = highest_bit as i32 + 1;
     Some(ScaledValue {
         sign: if negative { -1.0 } else { 1.0 },
