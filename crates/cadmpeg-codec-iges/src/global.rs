@@ -986,16 +986,6 @@ impl Resolution {
         }
     }
 
-    fn metadata_integer(
-        &mut self,
-        index: usize,
-        global_table: GlobalTable,
-        admits: fn(i64) -> bool,
-    ) {
-        // discarded-value: the declaration's own charge is the whole effect; this field states no value the model carries
-        let _ = self.metadata_integer_value(index, global_table, admits);
-    }
-
     fn metadata_integer_value(
         &mut self,
         index: usize,
@@ -1369,7 +1359,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let _ = resolution.maximum_coordinate(global_table);
     resolution.metadata_string(FIELD_AUTHOR, global_table);
     resolution.metadata_string(FIELD_ORGANIZATION, global_table);
-    resolution.metadata_integer(FIELD_DRAFTING_STANDARD, global_table, |value| {
+    resolution.metadata_integer_declaration(FIELD_DRAFTING_STANDARD, global_table, |value| {
         (0..=7).contains(&value)
     });
     if global_table.has_model_date() {
