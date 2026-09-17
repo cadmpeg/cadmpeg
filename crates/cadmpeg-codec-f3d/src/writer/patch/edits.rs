@@ -2054,15 +2054,16 @@ pub(crate) fn validate_construction_recipe_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.record_index = before
-            .record_index
-            .zip(after.record_index)
-            .map(
-                |(before_index, after_index)| crate::records::RecordedValue {
-                    value: before_index.value,
-                    offset: after_index.offset,
-                },
-            );
+        normalized.record_index =
+            before
+                .record_index
+                .zip(after.record_index)
+                .map(
+                    |(before_index, after_index)| crate::records::RecordedValue {
+                        value: before_index.value,
+                        offset: after_index.offset,
+                    },
+                );
         normalized.design =
             before
                 .design

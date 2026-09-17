@@ -294,7 +294,8 @@ fn decode_grouped_recipe_references(
     let Some(available) = prefix.len().checked_sub(at) else {
         return Vec::new();
     };
-    let Some(required) = group_count.checked_mul(GROUP_COUNT_WORD_SIZE + MINIMUM_PACKED_OPERAND_SIZE)
+    let Some(required) =
+        group_count.checked_mul(GROUP_COUNT_WORD_SIZE + MINIMUM_PACKED_OPERAND_SIZE)
     else {
         return Vec::new();
     };

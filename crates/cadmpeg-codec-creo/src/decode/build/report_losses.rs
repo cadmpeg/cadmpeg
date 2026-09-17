@@ -628,10 +628,12 @@ pub(super) fn push_carrier_transfer_notes(
 pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &ContainerScan) {
     let unstatable_orbits = scan.topology.unstatable_vertex_orbits;
     if unstatable_orbits != 0 {
-        losses.push(CreoLossCode::TopologyVertexIdentifierUnstatable.note(format!(
-            "{unstatable_orbits} half-edge orbit(s) lie past the one-based topological vertex \
+        losses.push(
+            CreoLossCode::TopologyVertexIdentifierUnstatable.note(format!(
+                "{unstatable_orbits} half-edge orbit(s) lie past the one-based topological vertex \
              identifier width, so they state no vertex and their half-edges carry no incidence."
-        )));
+            )),
+        );
     }
     // Named prototype fields whose bounded scalar body the decoder refused.
     // The field bytes are retained opaque; the note states which record and

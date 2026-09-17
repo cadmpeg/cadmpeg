@@ -304,8 +304,7 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
                     .copied(),
             );
         }
-        let Some(id) =
-            id_from_index(vertices.len()).and_then(|position| position.checked_add(1))
+        let Some(id) = id_from_index(vertices.len()).and_then(|position| position.checked_add(1))
         else {
             unstatable_orbits += 1;
             continue;

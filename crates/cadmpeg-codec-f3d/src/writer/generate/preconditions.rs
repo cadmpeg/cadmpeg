@@ -162,14 +162,10 @@ pub(crate) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
 }
 
 pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
-    if native
-        .construction_recipes
-        .windows(2)
-        .any(|pair| {
-            pair[0].record_index.map(|index| index.value)
-                > pair[1].record_index.map(|index| index.value)
-        })
-    {
+    if native.construction_recipes.windows(2).any(|pair| {
+        pair[0].record_index.map(|index| index.value)
+            > pair[1].record_index.map(|index| index.value)
+    }) {
         return Err(CodecError::InvalidInput(
             "F3D construction recipes must be ordered by record index".into(),
         ));
