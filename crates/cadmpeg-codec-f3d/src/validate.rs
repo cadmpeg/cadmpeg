@@ -9,12 +9,12 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
-use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_legacy_one_sided_distance_layout;
-use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_legacy_one_sided_to_face_layout;
-use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_one_sided_to_face_layout;
-use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_symmetric_distance_layout;
-use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_two_sided_to_faces_layout;
-use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_two_sided_to_faces_scope;
+use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_distance_layout;
+use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_to_face_layout;
+use crate::design::decode::scopes::extrude::is_class_296_one_sided_to_face_layout;
+use crate::design::decode::scopes::extrude::is_class_296_symmetric_distance_layout;
+use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_layout;
+use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::legacy_class_397::Class397SymmetricFrame;
 use crate::design::decode::scopes::legacy_class_415;
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;

@@ -36,8 +36,6 @@ pub(crate) use crate::design::decode::scopes::component_constructions::exact_com
 pub(crate) use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
 pub(crate) use crate::design::decode::scopes::direct_face::exact_scale_operation;
 pub(crate) use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
-pub(crate) use crate::design::decode::scopes::extrude_sheet_metal::exact_ruled_surface_operation;
-pub(crate) use crate::design::decode::scopes::extrude_sheet_metal::exact_surface_stitch_operation;
 pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_chamfer_parameters;
 pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
 pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_fillet_parameters;
@@ -47,8 +45,10 @@ pub(crate) use crate::design::decode::scopes::pattern::exact_circular_pattern_co
 pub(crate) use crate::design::decode::scopes::pattern::exact_rectangular_pattern_construction;
 pub(crate) use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
 pub(crate) use crate::design::decode::scopes::point_data::exact_work_point_construction;
+pub(crate) use crate::design::decode::scopes::surfaces::exact_ruled_surface_operation;
 pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_extend_operation;
 pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_offset_operation;
+pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_stitch_operation;
 pub(crate) use crate::design::decode::scopes::thread::exact_thread_construction;
 pub(crate) use crate::design::decode::scopes::thread::parse_thread_payload;
 pub(crate) use crate::design::decode::scopes::work_geometry::exact_joint_origin_frame;

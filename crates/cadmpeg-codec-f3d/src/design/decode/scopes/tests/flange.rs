@@ -48,14 +48,13 @@ fn base_flange_scope_has_exact_profile_and_thickness_fields() {
     bytes[145] = 1;
     bytes[146..150].copy_from_slice(&256u32.to_le_bytes());
 
-    let operation =
-        crate::design::decode::scopes::extrude_sheet_metal::exact_base_flange_operation(
-            &bytes,
-            0,
-            416,
-            &[256, 259, 263, 266],
-        )
-        .expect("fixed BaseFlange operation");
+    let operation = crate::design::decode::scopes::sheet_metal::exact_base_flange_operation(
+        &bytes,
+        0,
+        416,
+        &[256, 259, 263, 266],
+    )
+    .expect("fixed BaseFlange operation");
     assert_eq!(operation.thickness.get(), 0.25);
     assert_eq!(operation.thickness_offset, 123);
     assert_eq!(operation.profile_group_record_index, 256);
@@ -65,7 +64,7 @@ fn base_flange_scope_has_exact_profile_and_thickness_fields() {
 
     bytes[123..131].copy_from_slice(&0.0f64.to_le_bytes());
     assert!(
-        crate::design::decode::scopes::extrude_sheet_metal::exact_base_flange_operation(
+        crate::design::decode::scopes::sheet_metal::exact_base_flange_operation(
             &bytes,
             0,
             416,
@@ -95,16 +94,15 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
         edge_group: 251,
     });
 
-    let operation =
-        crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-            &frame.bytes,
-            0,
-            frame.paired_at,
-            "414",
-            "258",
-            &references,
-        )
-        .expect("fixed EdgeFlange operation");
+    let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        "414",
+        "258",
+        &references,
+    )
+    .expect("fixed EdgeFlange operation");
     assert_eq!(
         operation
             .selection
@@ -192,16 +190,15 @@ fn edge_flange_scope_reads_the_shifted_header_form() {
             edge_group: 251,
         });
 
-        let operation =
-            crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-                &frame.bytes,
-                0,
-                frame.paired_at,
-                "414",
-                "258",
-                &references,
-            )
-            .expect("fixed EdgeFlange operation");
+        let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            "414",
+            "258",
+            &references,
+        )
+        .expect("fixed EdgeFlange operation");
         assert_eq!(
             operation.bend_position,
             crate::records::feature::sheet_metal::DesignBendPosition::Adjacent
@@ -229,16 +226,15 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
     let references = [201, 204, 207, 218, 240, 243, 251, 254];
     for (class_tag, paired_class_tag) in [("325", "258"), ("334", "257")] {
         let frame = legacy_edge_flange_frame();
-        let operation =
-            crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-                &frame.bytes,
-                0,
-                frame.paired_at,
-                class_tag,
-                paired_class_tag,
-                &references,
-            )
-            .expect("legacy classed EdgeFlange operation");
+        let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            class_tag,
+            paired_class_tag,
+            &references,
+        )
+        .expect("legacy classed EdgeFlange operation");
         assert_eq!(
             operation
                 .selection
@@ -301,16 +297,15 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
     let references = [201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234];
     for (class_tag, paired_class_tag) in [("325", "258"), ("334", "257"), ("364", "261")] {
         let frame = legacy_multi_edge_flange_frame();
-        let operation =
-            crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-                &frame.bytes,
-                0,
-                frame.paired_at,
-                class_tag,
-                paired_class_tag,
-                &references,
-            )
-            .expect("legacy classed multi-edge EdgeFlange operation");
+        let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            class_tag,
+            paired_class_tag,
+            &references,
+        )
+        .expect("legacy classed multi-edge EdgeFlange operation");
         assert_eq!(
             operation
                 .selection
@@ -374,16 +369,15 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
         201, 204, 207, 210, 213, 216, 219, 222, 225, 228, 231, 234, 237, 240,
     ];
     let frame = legacy_class364_per_edge_width_flange_frame();
-    let operation =
-        crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-            &frame.bytes,
-            0,
-            frame.paired_at,
-            "364",
-            "261",
-            &references,
-        )
-        .expect("legacy class-364 per-edge width EdgeFlange operation");
+    let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        "364",
+        "261",
+        &references,
+    )
+    .expect("legacy class-364 per-edge width EdgeFlange operation");
     assert_eq!(
         operation
             .selection
@@ -448,16 +442,15 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
     ];
     let frame = legacy_class325_two_sided_per_edge_flange_frame();
     for (class_tag, paired_class_tag) in [("325", "258"), ("334", "257")] {
-        let operation =
-            crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-                &frame.bytes,
-                0,
-                frame.paired_at,
-                class_tag,
-                paired_class_tag,
-                &references,
-            )
-            .expect("legacy two-sided per-edge EdgeFlange operation");
+        let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            class_tag,
+            paired_class_tag,
+            &references,
+        )
+        .expect("legacy two-sided per-edge EdgeFlange operation");
         assert_eq!(
             operation
                 .selection
@@ -530,16 +523,15 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
 fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
     let references = [201, 204, 207, 218, 240, 243, 251, 254];
     let frame = legacy_class286_single_edge_flange_frame();
-    let operation =
-        crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-            &frame.bytes,
-            0,
-            frame.paired_at,
-            "286",
-            "258",
-            &references,
-        )
-        .expect("legacy class-286 EdgeFlange operation");
+    let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        "286",
+        "258",
+        &references,
+    )
+    .expect("legacy class-286 EdgeFlange operation");
     assert_eq!(
         operation
             .selection
@@ -610,16 +602,15 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
         255, 258, 261, 264, 267, 270, 273, 276, 279, 282,
     ];
     let frame = legacy_class286_extended_two_sided_per_edge_flange_frame();
-    let operation =
-        crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-            &frame.bytes,
-            0,
-            frame.paired_at,
-            "286",
-            "258",
-            &references,
-        )
-        .expect("legacy extended class-286 EdgeFlange operation");
+    let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+        &frame.bytes,
+        0,
+        frame.paired_at,
+        "286",
+        "258",
+        &references,
+    )
+    .expect("legacy extended class-286 EdgeFlange operation");
     assert_eq!(
         operation
             .selection
@@ -715,7 +706,7 @@ fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
     });
 
     assert!(
-        crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
+        crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
             &frame.bytes,
             0,
             frame.paired_at,
@@ -734,16 +725,15 @@ fn edge_flange_scope_reads_the_single_edge_to_object_form() {
     let references = [201, 204, 207, 218, 221, 224, 240, 243, 251, 254, 270];
     for header_shift in [0usize, 4] {
         let frame = edge_flange_to_object_frame(header_shift);
-        let operation =
-            crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
-                &frame.bytes,
-                0,
-                frame.paired_at,
-                "414",
-                "258",
-                &references,
-            )
-            .expect("fixed to-object EdgeFlange operation");
+        let operation = crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            "414",
+            "258",
+            &references,
+        )
+        .expect("fixed to-object EdgeFlange operation");
         assert_eq!(
             operation
                 .selection
@@ -788,7 +778,7 @@ fn edge_flange_scope_refuses_a_to_object_frame_with_a_table_reference_pair() {
     let mut frame = edge_flange_to_object_frame(0);
     frame.bytes[85 + 109 + 1..85 + 109 + 5].copy_from_slice(&270u32.to_le_bytes());
     assert!(
-        crate::design::decode::scopes::extrude_sheet_metal::exact_edge_flange_operation(
+        crate::design::decode::scopes::sheet_metal::exact_edge_flange_operation(
             &frame.bytes,
             0,
             frame.paired_at,
