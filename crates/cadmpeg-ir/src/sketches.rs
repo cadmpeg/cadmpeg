@@ -1887,6 +1887,9 @@ pub struct SketchCircularPattern {
     count_parameter: Option<ParameterId>,
     seed: Vec<SketchEntityId>,
     instances: crate::features::NonEmptyMembers<SketchCircularPatternInstance>,
+    /// Instance count including the seed, proven to fit the IR width by
+    /// `new`, which is the only constructor.
+    count: u32,
 }
 
 impl SketchCircularPattern {
@@ -1900,7 +1903,7 @@ impl SketchCircularPattern {
         seed: Vec<SketchEntityId>,
         instances: Vec<SketchCircularPatternInstance>,
     ) -> Option<Self> {
-        u32::try_from(instances.len().checked_add(1)?).ok()?;
+        let count = u32::try_from(instances.len().checked_add(1)?).ok()?;
         let entity_arity = seed.len();
         if entity_arity == 0
             || instances
@@ -1928,6 +1931,7 @@ impl SketchCircularPattern {
             count_parameter,
             seed,
             instances: crate::features::NonEmptyMembers::try_from(instances).ok()?,
+            count,
         })
     }
 
@@ -1944,9 +1948,13 @@ impl SketchCircularPattern {
     }
 
     /// Number of instances, including the seed instance.
+    ///
+    /// Stored at the IR width. `new` refuses a population whose count, seed
+    /// included, does not fit a `u32`, so the figure needs no cast and no
+    /// addition here.
     #[must_use]
     pub fn count(&self) -> u32 {
-        self.instances.len() as u32 + 1
+        self.count
     }
 
     /// Seed entities in fixed order.

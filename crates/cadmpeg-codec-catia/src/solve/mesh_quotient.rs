@@ -7342,8 +7342,13 @@ impl MeshSelectionSearch<'_> {
                         // The estimate is the `2^unknown` direction choices the
                         // boundary states. A count at or above `usize::BITS`
                         // states more choices than the work counter holds, so
-                        // the estimate stands at the counter's ceiling.
-                        match 1usize.checked_shl(unknown as u32) {
+                        // the estimate stands at the counter's ceiling. A count
+                        // the shift width cannot state is far past that, so it
+                        // takes the same ceiling rather than a narrowed width.
+                        match u32::try_from(unknown)
+                            .ok()
+                            .and_then(|unknown| 1usize.checked_shl(unknown))
+                        {
                             Some(choices) => choices,
                             None => usize::MAX,
                         }

@@ -619,3 +619,43 @@ fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
     assert!(error.to_string().contains("explicit pcurve"));
     assert_eq!(output, [0xaa]);
 }
+
+/// The archive's pole lane states the figure `check_nurbs_surface` proved
+/// when the surface was admitted. The in-memory grid is never narrowed a
+/// second time at the write site.
+#[test]
+fn the_nurbs_surface_pole_lane_is_the_admitted_count() {
+    use cadmpeg_ir::geometry::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+
+    let points = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(3.0, 0.0, 0.0),
+        Point3::new(3.0, 2.0, 1.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ];
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+        NurbsSurfaceAxis::new(1, vec![7.0, 7.0, 11.0, 11.0], false),
+        NurbsSurfaceLanes::new(
+            vec![vec![points[0], points[3]], vec![points[1], points[2]]],
+            None,
+        ),
+        false,
+    )
+    .expect("valid patch surface");
+
+    let pole_count = super::super::check_nurbs_surface("surface-1", &surface)
+        .expect("admissible NURBS surface");
+    assert_eq!(pole_count, 4);
+    assert_eq!(surface.poles().len(), 4);
+
+    let payload = super::super::nurbs_surface_payload(&surface, pole_count);
+    // 0x10 version byte, eight i32 header lanes, six f64 bounding-box
+    // coordinates, then each of the two knot lanes as one i32 count and two
+    // interior f64 knots.
+    let lane = 1 + 8 * 4 + 6 * 8 + 2 * (4 + 2 * 8);
+    assert_eq!(
+        cadmpeg_core::decode::View::i32_le_at(&payload, lane),
+        Some(pole_count)
+    );
+}

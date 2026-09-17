@@ -1733,21 +1733,33 @@ fn check_frame(
     Ok(())
 }
 
+/// Admits a NURBS surface the Rhino archive can state, returning its pole
+/// count at the archive's own lane width.
+///
+/// The pole lane is an `i32`, so the rule
+/// [`cadmpeg_core::decode::id_from_index`] states applies at that width: a
+/// count the lane cannot state is a refusal naming the surface. The proven
+/// figure is returned rather than discarded, so the writer states the lane
+/// from this admission instead of narrowing the population again.
 fn check_nurbs_surface(
     id: &str,
     surface: &cadmpeg_ir::geometry::NurbsSurface,
-) -> Result<(), CodecError> {
+) -> Result<i32, CodecError> {
     let u_order = surface.u_degree() as usize + 1;
     let v_order = surface.v_degree() as usize + 1;
     let u_count = surface.u_count();
     let v_count = surface.v_count();
+    let Ok(pole_count) = i32::try_from(surface.poles().len()) else {
+        return Err(CodecError::malformed(format_args!(
+            "surface {id} cannot be represented by Rhino NURBS counts"
+        )));
+    };
     if u_order < 2
         || v_order < 2
         || i32::try_from(u_order).is_err()
         || i32::try_from(v_order).is_err()
         || i32::try_from(u_count).is_err()
         || i32::try_from(v_count).is_err()
-        || i32::try_from(surface.poles().len()).is_err()
     {
         return Err(CodecError::malformed(format_args!(
             "surface {id} cannot be represented by Rhino NURBS counts"
@@ -1769,7 +1781,7 @@ fn check_nurbs_surface(
         v_count,
         surface.v_periodic(),
     )?;
-    Ok(())
+    Ok(pole_count)
 }
 
 fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Result<(), CodecError> {
@@ -2004,7 +2016,14 @@ fn plane_surface_payload(
     payload
 }
 
-fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8> {
+/// Serializes a NURBS surface.
+///
+/// `pole_count` is the figure `check_nurbs_surface` proved when the surface
+/// was admitted; the population is never narrowed again here.
+fn nurbs_surface_payload(
+    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    pole_count: i32,
+) -> Vec<u8> {
     let rational = i32::from(surface.weights().is_some());
     let mut payload = vec![0x10];
     for value in [
@@ -2035,7 +2054,7 @@ fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8
             payload.extend(knot.to_le_bytes());
         }
     }
-    payload.extend((poles.len() as i32).to_le_bytes());
+    payload.extend(pole_count.to_le_bytes());
     let pole_weights = surface.pole_weights();
     for (index, point) in poles.iter().enumerate() {
         let weight = pole_weights.as_ref().map_or(1.0, |weights| weights[index]);

@@ -162,7 +162,12 @@ pub(super) enum WritableFaceSurface<'a> {
         normal: Vector3,
         u_axis: Vector3,
     },
-    Nurbs(&'a NurbsSurface),
+    Nurbs {
+        surface: &'a NurbsSurface,
+        /// Pole count at the archive's own lane width, proven by
+        /// `check_nurbs_surface` when the surface was admitted.
+        pole_count: i32,
+    },
 }
 
 impl<'a> WritableFaceSurface<'a> {
@@ -186,8 +191,11 @@ impl<'a> WritableFaceSurface<'a> {
                 })
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                check_nurbs_surface(surface.id.as_str(), nurbs)?;
-                Ok(Self::Nurbs(nurbs))
+                let pole_count = check_nurbs_surface(surface.id.as_str(), nurbs)?;
+                Ok(Self::Nurbs {
+                    surface: nurbs,
+                    pole_count,
+                })
             }
             _ => Err(CodecError::NotImplemented(format!(
                 "surface {} is not a plane or NURBS patch",
@@ -206,9 +214,12 @@ impl<'a> WritableFaceSurface<'a> {
                 super::PLANE_SURFACE_CLASS,
                 super::plane_surface_payload(origin, normal, u_axis),
             ),
-            Self::Nurbs(nurbs) => (
+            Self::Nurbs {
+                surface,
+                pole_count,
+            } => (
                 super::NURBS_SURFACE_CLASS,
-                super::nurbs_surface_payload(nurbs),
+                super::nurbs_surface_payload(surface, pole_count),
             ),
         }
     }
@@ -520,7 +531,7 @@ impl<'a> WritableModel<'a> {
             .map(WritableFaceSurface::try_new)
             .collect::<Result<Vec<_>, _>>()?;
         for surface in &surfaces {
-            if let WritableFaceSurface::Nurbs(nurbs) = surface {
+            if let WritableFaceSurface::Nurbs { surface: nurbs, .. } = surface {
                 if nurbs.u_periodic() || nurbs.v_periodic() {
                     return Err(CodecError::NotImplemented(
                         "Brep patch surface must be nonperiodic".into(),
@@ -670,7 +681,7 @@ impl<'a> WritableModel<'a> {
                             }
                         }
                     }
-                    WritableFaceSurface::Nurbs(surface) => {
+                    WritableFaceSurface::Nurbs { surface, .. } => {
                         let pcurve = pcurve.ok_or_else(|| {
                             CodecError::NotImplemented(format!(
                                 "coedge {} has no explicit pcurve", coedge.id.as_str(),
@@ -799,7 +810,7 @@ impl<'a> WritableModel<'a> {
         for loop_ in &result.loops {
             let face = &result.faces[loop_.face];
             match result.surfaces[face.surface] {
-                WritableFaceSurface::Nurbs(_) => {}
+                WritableFaceSurface::Nurbs { .. } => {}
                 WritableFaceSurface::Plane {
                     origin,
                     normal,

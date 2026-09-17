@@ -649,6 +649,46 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
     assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(ragged).is_err());
 }
 
+/// `count()` states the figure `new` proved at the IR width. The population
+/// is never narrowed a second time, and the stored figure survives the wire,
+/// which carries no count of its own.
+#[test]
+fn a_circular_pattern_count_is_stored_at_the_ir_width() {
+    use crate::scalar::Angle;
+    use crate::sketches::{
+        SketchCircularPattern, SketchCircularPatternInstance, SketchConstraintDefinitionInput,
+        SketchEntityId,
+    };
+
+    let instance = |index: u32| SketchCircularPatternInstance {
+        angle: crate::scalar::NonZeroAngle::new(1.0).unwrap(),
+        entities: vec![
+            SketchEntityId::mint(&format!("test:test:sketch-entity#{index}")).unwrap()
+        ],
+    };
+    let pattern = SketchCircularPattern::new(
+        SketchEntityId::mint("test:test:sketch-entity#center").unwrap(),
+        Angle::new(1.0).unwrap(),
+        None,
+        None,
+        vec![SketchEntityId::mint("test:test:sketch-entity#0").unwrap()],
+        vec![instance(1), instance(2)],
+    )
+    .unwrap();
+    assert_eq!(pattern.instances().len(), 2);
+    assert_eq!(pattern.count(), 3);
+
+    let definition = SketchConstraintDefinitionInput::CircularPattern { pattern };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert!(wire["pattern"].get("count").is_none());
+    let SketchConstraintDefinitionInput::CircularPattern { pattern } =
+        serde_json::from_value::<SketchConstraintDefinitionInput>(wire).unwrap()
+    else {
+        panic!("circular pattern");
+    };
+    assert_eq!(pattern.count(), 3);
+}
+
 #[test]
 fn a_circular_pattern_states_its_count_only_as_instances() {
     use crate::scalar::Angle;
