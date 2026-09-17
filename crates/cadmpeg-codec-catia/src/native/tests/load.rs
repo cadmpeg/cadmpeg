@@ -164,10 +164,7 @@ fn a_catalog_states_its_count_or_is_refused() {
     let error = namespace
         .arena_as::<crate::native::CatiaCatalog>("catalogs")
         .expect_err("an absent declared_count key");
-    assert!(
-        format!("{error}").contains("declared_count"),
-        "{error}"
-    );
+    assert!(format!("{error}").contains("declared_count"), "{error}");
 
     // `null` is the one spelling of a population the format's count cannot
     // name, and it is refused.

@@ -373,9 +373,8 @@ pub(crate) fn bind_pattern_inputs(
                     .iter()
                     .filter(|class| {
                         class.name == "moLineRef_w"
-                            && usize::try_from(class.offset).is_ok_and(|offset| {
-                                offset > starts[start_index].0 && offset < end
-                            })
+                            && usize::try_from(class.offset)
+                                .is_ok_and(|offset| offset > starts[start_index].0 && offset < end)
                     })
                     .collect::<Vec<_>>();
                 let mut directions = declarations

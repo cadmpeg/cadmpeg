@@ -1012,10 +1012,12 @@ fn decode_refuses_an_attribute_table_whose_definition_states_a_negative_value_co
     );
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    assert!(native.arenas()["attribute_table_instances"][0].fields()["rows"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    assert!(
+        native.arenas()["attribute_table_instances"][0].fields()["rows"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

@@ -43,7 +43,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .is_some_and(|design| design.id.offset > 0));
     recipe.record_index = recipe
         .record_index
-        .map(|index| crate::records::RecordedValue { value: 777, ..index });
+        .map(|index| crate::records::RecordedValue {
+            value: 777,
+            ..index
+        });
     recipe.design.as_mut().expect("recipe id").id.value = "333".into();
     let member = native
         .design_body_members

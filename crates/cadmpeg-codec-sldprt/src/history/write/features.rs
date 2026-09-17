@@ -691,15 +691,15 @@ pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::Sldp
 #[cfg(test)]
 mod tests {
     use super::{generated_feature_record_id, neutral_feature_id, sync_neutral_features};
-    use cadmpeg_core::CodecError;
-    use std::collections::HashSet;
     use crate::test_support::{
         make_block, plan_inherited_write, resolved_feature_classes_with_ids, sldprt_native,
         sldprt_with_body, triangle_body,
     };
     use crate::SldprtCodec;
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::FeatureId;
+    use std::collections::HashSet;
     use std::io::Cursor;
 
     /// A document whose one history feature is linked to one serialized object

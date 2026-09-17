@@ -570,7 +570,10 @@ fn a_construction_recipe_record_index_and_its_offset_occur_together() {
     let complete = format!(r#"{prefix},"record_index_offset":64{suffix},"record_index":7}}"#);
     let recipe: crate::records::ConstructionRecipe =
         serde_json::from_str(&complete).expect("complete record index");
-    assert_eq!(serde_json::to_string(&recipe).expect("recipe wire"), complete);
+    assert_eq!(
+        serde_json::to_string(&recipe).expect("recipe wire"),
+        complete
+    );
 
     let absent = format!("{prefix}{suffix}}}");
     let recipe: crate::records::ConstructionRecipe =
