@@ -1756,4 +1756,37 @@ fn material_losses(report: &cadmpeg_ir::codec::DecodeBody) -> Vec<&str> {
         .collect()
 }
 
+/// The candidate window is the strings between the appearance marker and the
+/// visual token, and the token itself is outside it.
+#[test]
+fn a_body_node_candidate_reads_the_strings_between_the_marker_and_the_visual_token() {
+    const APPEARANCE_MARKER: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
+    let strings = vec![
+        (0usize, "prefix".to_string()),
+        (1, APPEARANCE_MARKER.to_string()),
+        (2, "node-a".to_string()),
+        (3, "node-b".to_string()),
+        (4, "visual".to_string()),
+    ];
+    let nodes = std::collections::HashMap::from([
+        ("node-a".to_string(), 7u64),
+        ("node-b".to_string(), 9u64),
+    ]);
+    assert_eq!(
+        crate::materials::body_node_candidate(&strings, 3, &nodes),
+        Some(7),
+        "the window ends before the visual token"
+    );
+    assert_eq!(
+        crate::materials::body_node_candidate(&strings, 2, &nodes),
+        None,
+        "a window with no candidate names no entity"
+    );
+    assert_eq!(
+        crate::materials::body_node_candidate(&strings, 4, &nodes),
+        None,
+        "two candidates that disagree name no entity"
+    );
+}
+
 mod assignment_losses;

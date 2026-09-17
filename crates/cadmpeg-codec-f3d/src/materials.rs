@@ -1453,17 +1453,20 @@ pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, DesignVisualTo
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
     for (index, (_, marker)) in strings.iter().enumerate() {
-        if index == 0 {
+        // The visual token is the string before the marker, so a marker at the
+        // first string names none. The token's index is the proof the
+        // candidate window needs, so it is carried rather than derived again.
+        let Some(visual_index) = index.checked_sub(1) else {
             continue;
-        }
+        };
         if marker != APPEARANCE_LIBRARY_ID {
             continue;
         }
-        let visual = &strings[index - 1].1;
+        let visual = &strings[visual_index].1;
         let Ok(visual) = DesignVisualToken::try_from(visual.clone()) else {
             continue;
         };
-        if let Some(entity_suffix) = body_node_candidate(&strings, index, &nodes) {
+        if let Some(entity_suffix) = body_node_candidate(&strings, visual_index, &nodes) {
             out.push((entity_suffix, visual.clone()));
         }
     }
@@ -1472,17 +1475,26 @@ pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, DesignVisualTo
     out
 }
 
+/// The browser-node entity the strings before one visual token name.
+///
+/// `visual_index` is the index of the visual token itself, which
+/// `browser_body_appearances` proved is the string before the marker. The
+/// candidate window is the strings between the appearance marker and that
+/// token, so the token's own index bounds it and no index is derived twice.
 fn body_node_candidate(
     strings: &[(usize, String)],
-    marker_index: usize,
+    visual_index: usize,
     nodes: &std::collections::HashMap<String, u64>,
 ) -> Option<u64> {
     const APPEARANCE_MARKER: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
-    let marker = strings[..marker_index]
+    let marker = strings[..=visual_index]
         .iter()
         .rposition(|(_, value)| value == APPEARANCE_MARKER)?;
+    // The marker is preceded by at most three candidate strings; a marker
+    // nearer the start of the payload is preceded by fewer, which is the
+    // back-off this states.
     let start = marker.saturating_sub(3);
-    let mut candidates = strings[start..marker_index.saturating_sub(1)]
+    let mut candidates = strings[start..visual_index]
         .iter()
         .filter_map(|(_, candidate)| nodes.get(&candidate.to_ascii_lowercase()).copied());
     let first = candidates.next()?;
