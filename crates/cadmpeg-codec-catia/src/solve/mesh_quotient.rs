@@ -7330,30 +7330,22 @@ impl MeshSelectionSearch<'_> {
                 if assignments.is_empty() {
                     return Some((0, 0, 0, 0, 0, face));
                 }
-                let direction_work = assignments
-                    .iter()
-                    .map(|assignment| {
-                        let unknown = assignment
+                let direction_work = direction_work_estimate(assignments.iter().map(
+                    |assignment| {
+                        assignment
                             .boundaries
                             .iter()
                             .flatten()
                             .filter(|use_| use_.reversed.is_none())
-                            .count();
-                        // The estimate is the `2^unknown` direction choices the
-                        // boundary states. A count at or above `usize::BITS`
-                        // states more choices than the work counter holds, so
-                        // the estimate stands at the counter's ceiling. A count
-                        // the shift width cannot state is far past that, so it
-                        // takes the same ceiling rather than a narrowed width.
-                        match u32::try_from(unknown)
-                            .ok()
-                            .and_then(|unknown| 1usize.checked_shl(unknown))
-                        {
-                            Some(choices) => choices,
-                            None => usize::MAX,
-                        }
-                    })
-                    .fold(0usize, usize::saturating_add);
+                            .count()
+                    },
+                ));
+                let Some(direction_work) = direction_work else {
+                    // The face states more direction choices than the work
+                    // counter can hold, so no search over it can finish.
+                    budget.exhaust();
+                    return None;
+                };
                 let can_merge = assignments
                     .iter()
                     .any(|assignment| mesh_assignment_can_merge(assignment, &mut measured));
@@ -7648,6 +7640,20 @@ impl MeshSelectionSearch<'_> {
             }
         }
     }
+}
+
+/// The direction choices a face's endpoint assignments state, summed.
+///
+/// Each assignment states `2^unknown` choices for its `unknown` boundary uses
+/// with no stated reversal. `None` states a figure the work counter cannot
+/// hold: more choices than any budget can enumerate.
+fn direction_work_estimate(unknown_uses: impl Iterator<Item = usize>) -> Option<usize> {
+    unknown_uses.fold(Some(0usize), |total, unknown| {
+        let choices = u32::try_from(unknown)
+            .ok()
+            .and_then(|unknown| 1usize.checked_shl(unknown))?;
+        total?.checked_add(choices)
+    })
 }
 
 pub(crate) fn mesh_assignment_can_merge(
@@ -10026,3 +10032,6 @@ mod direct_matching_tests {
         .is_none());
     }
 }
+
+#[cfg(test)]
+mod tests;
