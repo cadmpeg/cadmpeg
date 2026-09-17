@@ -649,6 +649,12 @@ fn pcurve_for_selector_recursive(
     if let Some(index) = direct_subtype_reference(toks) {
         if !seen.contains(&index) {
             seen.push(index);
+            // Not the search refusal the four `for` loops over
+            // `subtype_refs` state. This is the single record-level
+            // delegation, and the wrapper's own routes below run whenever the
+            // delegation yields no pcurve, including when it yields one from a
+            // resolvable target. An index the table does not hold takes the
+            // same route as a target that states no pcurve.
             if let Some(target) = table.span(index) {
                 if let Some(result) =
                     pcurve_for_selector_recursive(target.tokens(), slot, table, seen)
@@ -845,6 +851,14 @@ fn cacheless_procedural_curve_recursive(
         if seen.contains(&index) {
             continue;
         }
+        // A `{ref N}` indexes the per-file subtype table, in which each
+        // subtype definition contributes one entry in stream order
+        // (`docs/formats/asm.md`, "A named `ref N` scope or compact
+        // `0x0F LONG N 0x10` scope nested inside a surface, curve, or pcurve
+        // body indexes a per-file subtype table, not a byte offset"). An index
+        // the table does not hold names no definition the stream states, so the
+        // stream is malformed and the search is refused rather than continued
+        // past it.
         seen.push(index);
         let target = table.span(index)?;
         if let Some(decoded) = cacheless_procedural_curve_recursive(target.tokens(), table, seen) {
@@ -933,6 +947,14 @@ fn procedural_curve_recursive(
         if seen.contains(&index) {
             continue;
         }
+        // A `{ref N}` indexes the per-file subtype table, in which each
+        // subtype definition contributes one entry in stream order
+        // (`docs/formats/asm.md`, "A named `ref N` scope or compact
+        // `0x0F LONG N 0x10` scope nested inside a surface, curve, or pcurve
+        // body indexes a per-file subtype table, not a byte offset"). An index
+        // the table does not hold names no definition the stream states, so the
+        // stream is malformed and the search is refused rather than continued
+        // past it.
         seen.push(index);
         let target = table.span(index)?;
         if let Some(decoded) = procedural_curve_recursive(target.tokens(), table, seen) {
