@@ -1676,4 +1676,3 @@ fn only_a_face_recipe_kind_states_a_program_operand_length() {
         assert_eq!(super::recipe_program_operand_length(kind), None);
     }
 }
-

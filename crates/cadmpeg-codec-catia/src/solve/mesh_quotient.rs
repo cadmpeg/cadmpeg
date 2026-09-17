@@ -7330,16 +7330,15 @@ impl MeshSelectionSearch<'_> {
                 if assignments.is_empty() {
                     return Some((0, 0, 0, 0, 0, face));
                 }
-                let direction_work = direction_work_estimate(assignments.iter().map(
-                    |assignment| {
+                let direction_work =
+                    direction_work_estimate(assignments.iter().map(|assignment| {
                         assignment
                             .boundaries
                             .iter()
                             .flatten()
                             .filter(|use_| use_.reversed.is_none())
                             .count()
-                    },
-                ));
+                    }));
                 let Some(direction_work) = direction_work else {
                     // The face states more direction choices than the work
                     // counter can hold, so no search over it can finish.

@@ -1936,7 +1936,10 @@ mod three_point_planes;
 fn coil_secondary_identity_wire_refuses_a_null_identity() {
     #[derive(serde::Deserialize)]
     struct Probe {
-        #[serde(flatten, deserialize_with = "super::deserialize_coil_secondary_identity")]
+        #[serde(
+            flatten,
+            deserialize_with = "super::deserialize_coil_secondary_identity"
+        )]
         secondary: Option<super::DesignSecondaryIdentity<u64>>,
     }
     for key in ["secondary_identity", "curve_secondary_identity"] {

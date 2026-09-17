@@ -6555,14 +6555,12 @@ fn validate_face_operands<'a>(
                 historical_candidates_retained,
             )
             && valid_program
-            && recipe_program_operand_length(operand.recipe_kind).is_some_and(
-                |operand_length| {
-                    recipe.is_some_and(|recipe| {
-                        operand.recipe_program_offset
-                            == recipe.byte_offset.saturating_add(operand_length)
-                    })
-                },
-            )
+            && recipe_program_operand_length(operand.recipe_kind).is_some_and(|operand_length| {
+                recipe.is_some_and(|recipe| {
+                    operand.recipe_program_offset
+                        == recipe.byte_offset.saturating_add(operand_length)
+                })
+            })
             && operand.next_byte_offset()
                 == operand
                     .recipe_program_offset
