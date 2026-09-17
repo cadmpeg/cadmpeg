@@ -1518,6 +1518,68 @@ fn parent_feature_array_rejects_malformed_reference_trailers() {
 }
 
 #[test]
+fn a_counted_parameter_body_whose_values_start_past_the_body_is_refused() {
+    let body = [0xf8u8, 0x03, 0xe6];
+
+    // One byte past the body states no value bytes at all. The record is
+    // refused rather than read as "zero bytes remain".
+    assert_eq!(
+        admitted_counted_parameter_body(&body, body.len() + 1, 0),
+        None
+    );
+    assert_eq!(admitted_counted_parameter_body(&body, usize::MAX, 0), None);
+
+    // The values start on the last byte of the body, so one byte remains and
+    // states at most three slots.
+    assert_eq!(
+        admitted_counted_parameter_body(&body, body.len() - 1, 3),
+        Some(&body[body.len() - 1..])
+    );
+    assert_eq!(
+        admitted_counted_parameter_body(&body, body.len() - 1, 4),
+        None
+    );
+}
+
+#[test]
+fn a_counted_parameter_body_admits_three_slots_per_remaining_byte() {
+    // `f8 09` declares nine slots; the three `e6` run tokens state three zero
+    // slots each.
+    const VALUES_START: usize = 2;
+    const SLOTS: usize = 9;
+    let body = [0xf8u8, 0x09, 0xe6, 0xe6, 0xe6];
+
+    assert_eq!(body.len() - VALUES_START, SLOTS / 3);
+    assert_eq!(
+        admitted_counted_parameter_body(&body, VALUES_START, 9),
+        Some(&body[VALUES_START..])
+    );
+    // One slot above the densest parse the walk can answer.
+    assert_eq!(
+        admitted_counted_parameter_body(&body, VALUES_START, 10),
+        None
+    );
+    assert_eq!(
+        admitted_counted_parameter_body(&body, VALUES_START, u32::MAX),
+        None
+    );
+
+    // The bound is the density `counted_parameter_scalar_slots` reaches over
+    // those same bytes.
+    let cache = scalar::ScalarCache::default();
+    let slots = counted_parameter_scalar_slots(&body[VALUES_START..], SLOTS, &cache);
+    assert_eq!(
+        slots.as_ref().map(std::vec::Vec::len),
+        Some(SLOTS),
+        "three run tokens state nine slots"
+    );
+    assert_eq!(
+        counted_parameter_scalar_slots(&body[VALUES_START..], SLOTS + 1, &cache),
+        None
+    );
+}
+
+#[test]
 fn withholds_ambiguous_outline_plane() {
     let records = [PlaneEnvelopeRecord {
         surface_id: 42,

@@ -3230,16 +3230,9 @@ fn parsed_named_surface_value(
                 return Some(SurfaceNamedValue::CompactIntArray(values));
             }
             if name == "params" {
-                let remaining = body.len().saturating_sub(values_start);
-                let mut array = usize::try_from(count)
-                    .ok()
-                    .filter(|count| *count <= remaining.saturating_mul(3))
-                    .and_then(|_| arrays::CountedScalars::empty(count))?;
-                let slots = counted_parameter_scalar_slots(
-                    &body[values_start..],
-                    array.values().len(),
-                    cache,
-                )?;
+                let remaining = admitted_counted_parameter_body(body, values_start, count)?;
+                let mut array = arrays::CountedScalars::empty(count)?;
+                let slots = counted_parameter_scalar_slots(remaining, array.values().len(), cache)?;
                 array.fill_tokens(slots)?;
                 return Some(SurfaceNamedValue::CountedScalarArray(array));
             }
@@ -7387,6 +7380,34 @@ fn named_vector_scalar_body_len(
         slots += 1;
     }
     Some(cursor.pos())
+}
+
+/// The most slots one byte of a counted `params` value body states.
+///
+/// Read from `docs/formats/creo_prt.md`: "In a counted `params` scalar array,
+/// `e5` supplies two consecutive zero slots and `e6` supplies three. The
+/// expanded slots must exactly match the declared count." Every other form
+/// [`counted_parameter_scalar_slots`] admits states one slot, and every step of
+/// that walk consumes at least one byte, so three slots per byte is the densest
+/// parse it can answer.
+const MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE: u64 = 3;
+
+/// The value bytes of a counted `params` body whose declared slot count those
+/// bytes can carry, or `None` when the record states no such body.
+///
+/// `body.get(values_start..)` refuses a `values_start` past the body: such a
+/// record states no value bytes at all, and it is refused rather than read as
+/// "zero bytes remain". The count bound is the one
+/// [`counted_parameter_scalar_slots`] enforces: at most
+/// [`MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE`] slots come from one byte, and that
+/// walk answers only a parse ending on the last byte with exactly `count`
+/// slots, so a denser count states more slots than the bytes carry. The bound
+/// runs before [`arrays::CountedScalars::empty`], which allocates one slot per
+/// declared count from a compact integer the record states.
+fn admitted_counted_parameter_body(body: &[u8], values_start: usize, count: u32) -> Option<&[u8]> {
+    let remaining = body.get(values_start..)?;
+    let value_bytes = u64::from(count).div_ceil(MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE);
+    bounded_len(value_bytes, 1, remaining.len()).map(|_| remaining)
 }
 
 fn counted_parameter_scalar_slots(
