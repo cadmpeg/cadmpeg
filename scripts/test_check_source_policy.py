@@ -428,19 +428,25 @@ class PlacementRules(TempSourceCase):
         self.assertEqual(findings[0].message, "Inline test module tests has 2001 lines; limit is 2000.")
 
     def test_exact_boundaries_and_no_trailing_newline(self) -> None:
+        # The boundary is the limit the module states, so the test patches both
+        # limits down and states the same two facts over four lines: a file at
+        # the limit is clean, and a file one line past it is named whether or
+        # not it ends with a newline.
         self.write("crates/demo/src/lib.rs", "mod prod;\n")
-        self.write("crates/demo/src/prod.rs", _pad_lines(["fn prod() {}"], 10000))
-        self.write("crates/demo/src/test_support.rs",
-                   _pad_lines(["fn helper() {}"], 2000, trailing_newline=False))
-        self.assertEqual(policy.check_source(), [])
-        self.write("crates/demo/src/prod.rs",
-                   _pad_lines(["fn prod() {}"], 10001, trailing_newline=False))
-        self.write("crates/demo/src/test_support.rs",
-                   _pad_lines(["fn helper() {}"], 2001, trailing_newline=False))
-        self.assertEqual([(f.rule, f.path, f.line) for f in policy.check_source()], [
-            ("production_size", "crates/demo/src/prod.rs", 1),
-            ("test_size", "crates/demo/src/test_support.rs", 1),
-        ])
+        with patch.object(policy, "PRODUCTION_LINE_LIMIT", 4), \
+                patch.object(policy, "TEST_LINE_LIMIT", 3):
+            self.write("crates/demo/src/prod.rs", _pad_lines(["fn prod() {}"], 4))
+            self.write("crates/demo/src/test_support.rs",
+                       _pad_lines(["fn helper() {}"], 3, trailing_newline=False))
+            self.assertEqual(policy.check_source(), [])
+            self.write("crates/demo/src/prod.rs",
+                       _pad_lines(["fn prod() {}"], 5, trailing_newline=False))
+            self.write("crates/demo/src/test_support.rs",
+                       _pad_lines(["fn helper() {}"], 4, trailing_newline=False))
+            self.assertEqual([(f.rule, f.path, f.line) for f in policy.check_source()], [
+                ("production_size", "crates/demo/src/prod.rs", 1),
+                ("test_size", "crates/demo/src/test_support.rs", 1),
+            ])
 
     def test_split_files_are_still_checked(self) -> None:
         self.write("crates/demo/src/lib.rs", "#[cfg(test)]\nmod tests;\n")
