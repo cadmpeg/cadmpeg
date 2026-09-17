@@ -745,25 +745,52 @@ fn tabulated_cylinder_frame_rejects_nonfinite_coordinates() {
     assert_eq!(frame.prefixes(), prefixes);
 }
 
-/// A byte that no scalar encoding defines is one absent slot. The format
-/// states that an undefined prefix does not remove that slot and that no byte
-/// may be skipped between slot encodings, so the slots after it keep their
-/// stored positions.
+/// A bounded scalar body encodes its declared slots sequentially and skips no
+/// byte between slot encodings, and the format gives a byte that no scalar
+/// encoding defines no width. A body that states such a byte is refused, and
+/// the slot it refuses at is the one the byte stands in.
 #[test]
-fn an_undefined_prefix_in_a_scalar_body_is_one_absent_slot_and_moves_no_other_slot() {
+fn an_undefined_prefix_in_a_scalar_body_refuses_the_body_at_that_slot() {
     let cache = scalar::ScalarCache::default();
 
-    // `0x00` defines no scalar form; `0xe4` is one and `0x0f` is zero.
+    // `0xe4` is one and `0x0f` is zero; `0x00` defines no scalar form.
     assert_eq!(
-        super::super::scalar_slots(&[0x00, 0xe4, 0x0f], 3, &cache),
-        [None, Some(1.0), Some(0.0)]
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 3, &cache),
+        Some(vec![Some(1.0), Some(0.0), Some(0.0)])
+    );
+    // The same body with the undefined byte at slot 0, slot 1 and slot 2.
+    assert_eq!(
+        super::super::scalar_slots(&[0x00, 0x0f, 0x0f], 3, &cache),
+        None
     );
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f], 3, &cache),
-        [Some(1.0), Some(0.0), None]
+        super::super::scalar_slots(&[0xe4, 0x00, 0x0f], 3, &cache),
+        None
     );
     assert_eq!(
-        super::super::scalar_slots(&[0x00, 0x00], 3, &cache),
-        [None, None, None]
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x00], 3, &cache),
+        None
     );
+    // The first two slots decode, so the refusal is at slot 2 and not earlier:
+    // a two-slot declaration over the same prefix decodes.
+    assert_eq!(
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x00], 2, &cache),
+        Some(vec![Some(1.0), Some(0.0)])
+    );
+}
+
+/// The format states no rule for a bounded scalar body that ends before its
+/// declared slot count, so such a body states a slot it does not encode and is
+/// refused. It is not read as trailing absent slots.
+#[test]
+fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
+    let cache = scalar::ScalarCache::default();
+
+    assert_eq!(
+        super::super::scalar_slots(&[0xe4, 0x0f], 2, &cache),
+        Some(vec![Some(1.0), Some(0.0)])
+    );
+    assert_eq!(super::super::scalar_slots(&[0xe4, 0x0f], 3, &cache), None);
+    assert_eq!(super::super::scalar_slots(&[], 1, &cache), None);
+    assert_eq!(super::super::scalar_slots(&[], 0, &cache), Some(Vec::new()));
 }
