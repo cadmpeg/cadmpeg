@@ -35,7 +35,7 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
         ",\"selector_tail\":[7,0,0,0],\"selector_tail_offset\":220",
     ] {
         let wire = format!("{prefix}{fields}{suffix}");
-        let value: crate::records::topology::DesignBodyRecipeOperand =
+        let value: crate::records::topology::body_recipe::DesignBodyRecipeOperand =
             serde_json::from_str(&wire).expect("body recipe operand");
         assert_eq!(
             serde_json::to_string(&value).expect("body recipe operand wire"),
@@ -46,9 +46,9 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
         ",\"selector_tail\":[7,0,0,0]",
         ",\"selector_tail_offset\":220",
     ] {
-        let error = serde_json::from_str::<crate::records::topology::DesignBodyRecipeOperand>(
-            &format!("{prefix}{fields}{suffix}"),
-        )
+        let error = serde_json::from_str::<
+            crate::records::topology::body_recipe::DesignBodyRecipeOperand,
+        >(&format!("{prefix}{fields}{suffix}"))
         .expect_err("partial selector tail location");
         assert!(error.to_string().contains("selector_tail"));
     }
@@ -56,9 +56,9 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
         "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
         "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
     ] {
-        let error = serde_json::from_str::<crate::records::topology::DesignBodyRecipeOperand>(
-            &format!("{prefix}{suffix}").replace(guid, "not-a-guid"),
-        )
+        let error = serde_json::from_str::<
+            crate::records::topology::body_recipe::DesignBodyRecipeOperand,
+        >(&format!("{prefix}{suffix}").replace(guid, "not-a-guid"))
         .expect_err("non-GUID body recipe identity")
         .to_string();
         assert!(error.contains("GUID"), "{error}");
@@ -443,7 +443,7 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
                         .collect::<Vec<_>>());
                 }
             }
-            let context: crate::records::topology::DesignHistoricalFaceLoopContext =
+            let context: crate::records::topology::historical_context::DesignHistoricalFaceLoopContext =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(context.boundary.coedges().count(), count as usize);
             assert_eq!(serde_json::to_value(&context).unwrap(), wire);
@@ -463,7 +463,7 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
                 }
                 invalid[field] = serde_json::Value::Array(values);
                 assert!(serde_json::from_value::<
-                    crate::records::topology::DesignHistoricalFaceLoopContext,
+                    crate::records::topology::historical_context::DesignHistoricalFaceLoopContext,
                 >(invalid)
                 .unwrap_err()
                 .to_string()
@@ -556,16 +556,16 @@ fn face_operand_wire_derives_node_offsets() {
 
 #[test]
 fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
-    let entry = crate::records::topology::DesignTopologyRecipeEntry {
+    let entry = crate::records::topology::edge_recipe::DesignTopologyRecipeEntry {
         selector: 3,
         boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
         topology_triplets: std::array::from_fn(|_| {
-            crate::records::topology::DesignTopologyRecipeTriplet {
+            crate::records::topology::edge_recipe::DesignTopologyRecipeTriplet {
                 outer: std::num::NonZeroU32::new(3).unwrap(),
                 middle: 2,
-                incident: Some(crate::records::topology::DesignTopologyIncident {
+                incident: Some(crate::records::topology::edge_recipe::DesignTopologyIncident {
                     ordinal: 1,
-                    side: crate::records::topology::DesignTopologyIncidentSide::Preceding,
+                    side: crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Preceding,
                 }),
             }
         }),
@@ -587,14 +587,14 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
             if edges.len() == 1 {
                 wire["unique_incidence_edge_slot"] = serde_json::json!(7);
             }
-            let context: crate::records::topology::DesignEdgeRecipeSelectorContext =
+            let context: crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(context.clauses.len(), count);
             assert_eq!(serde_json::to_value(&context).unwrap(), wire);
             let mut invalid = wire.clone();
             invalid["unique_incidence_edge_slot"] = serde_json::json!(9);
             assert!(serde_json::from_value::<
-                crate::records::topology::DesignEdgeRecipeSelectorContext,
+                crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext,
             >(invalid)
             .unwrap_err()
             .to_string()
@@ -606,7 +606,7 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
                     .unwrap()
                     .push(serde_json::Value::Null);
                 assert!(serde_json::from_value::<
-                    crate::records::topology::DesignEdgeRecipeSelectorContext,
+                    crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext,
                 >(invalid)
                 .unwrap_err()
                 .to_string()
@@ -615,7 +615,7 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
                     let mut invalid = wire.clone();
                     invalid[field][0] = serde_json::Value::Null;
                     let error = serde_json::from_value::<
-                        crate::records::topology::DesignEdgeRecipeSelectorContext,
+                        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext,
                     >(invalid)
                     .unwrap_err()
                     .to_string();
@@ -638,7 +638,7 @@ fn edge_operand_wire_rejects_partial_resolved_axis() {
         format!(",\"resolved_axis_origin\":{origin},\"resolved_axis_direction\":{direction}"),
     ] {
         let wire = format!("{prefix}{fields}{suffix}");
-        let operand: crate::records::topology::DesignEdgeOperand =
+        let operand: crate::records::topology::edge_identity::DesignEdgeOperand =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(serde_json::to_string(&operand).unwrap(), wire);
     }
@@ -647,9 +647,11 @@ fn edge_operand_wire_rejects_partial_resolved_axis() {
         ("resolved_axis_direction", direction),
     ] {
         let invalid = format!("{prefix},\"{field}\":{value}{suffix}");
-        let error = serde_json::from_str::<crate::records::topology::DesignEdgeOperand>(&invalid)
-            .unwrap_err()
-            .to_string();
+        let error = serde_json::from_str::<
+            crate::records::topology::edge_identity::DesignEdgeOperand,
+        >(&invalid)
+        .unwrap_err()
+        .to_string();
         assert!(error.contains("resolved_axis_origin"));
         assert!(error.contains("resolved_axis_direction"));
     }
@@ -728,16 +730,17 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     member["local_id_offset"] = serde_json::json!(34);
     member["asset_id_offset"] = serde_json::json!(52);
     member["context_id_offset"] = serde_json::json!(128);
-    check::<crate::records::topology::DesignEdgeIdentityOperand>(&member);
+    check::<crate::records::topology::edge_identity::DesignEdgeIdentityOperand>(&member);
     for (compact, local_id_offset) in [(true, 32), (true, 33), (false, 34)] {
         let mut framed = member.clone();
         framed["compact_layout"] = compact.into();
         framed["local_id_offset"] = local_id_offset.into();
         framed["asset_id_offset"] = (local_id_offset + 18).into();
         framed["context_id_offset"] = (local_id_offset + 94).into();
-        let operand =
-            serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(framed)
-                .expect("edge-identity prologue framing");
+        let operand = serde_json::from_value::<
+            crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
+        >(framed)
+        .expect("edge-identity prologue framing");
         assert_eq!(operand.local_id_offset(), local_id_offset);
         assert_eq!(operand.layout.is_compact(), compact);
     }
@@ -748,20 +751,22 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
         framed["asset_id_offset"] = (local_id_offset + 18).into();
         framed["context_id_offset"] = (local_id_offset + 94).into();
         assert!(
-            serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(framed)
-                .is_err(),
+            serde_json::from_value::<
+                crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
+            >(framed)
+            .is_err(),
             "compact_layout {compact} with local_id_offset {local_id_offset}"
         );
     }
     for field in ["asset_id", "context_id"] {
         let mut invalid = member.clone();
         invalid[field] = serde_json::json!("asset");
-        assert!(
-            serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(invalid)
-                .expect_err("non-GUID edge identity")
-                .to_string()
-                .contains("GUID")
-        );
+        assert!(serde_json::from_value::<
+            crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
+        >(invalid)
+        .expect_err("non-GUID edge identity")
+        .to_string()
+        .contains("GUID"));
     }
 }
 
@@ -833,74 +838,68 @@ fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
     for field in ["incident_edge_ordinal", "incident_side"] {
         let mut wire = serde_json::json!({"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"});
         wire.as_object_mut().unwrap().remove(field);
-        assert!(
-            serde_json::from_value::<crate::records::topology::DesignTopologyRecipeTriplet>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains(field)
-        );
+        assert!(serde_json::from_value::<
+            crate::records::topology::edge_recipe::DesignTopologyRecipeTriplet,
+        >(wire)
+        .unwrap_err()
+        .to_string()
+        .contains(field));
     }
     for (outer, vertex) in [(1_u32, 0_u32), (4, 3), (u32::MAX, u32::MAX - 1)] {
         let wire = format!(r#"{{"outer":{outer},"middle":-1,"vertex_ordinal":{vertex}}}"#);
-        let triplet: crate::records::topology::DesignTopologyRecipeTriplet =
+        let triplet: crate::records::topology::edge_recipe::DesignTopologyRecipeTriplet =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(triplet.vertex_ordinal(), vertex);
         assert_eq!(serde_json::to_string(&triplet).unwrap(), wire);
         let mut invalid = serde_json::to_value(&triplet).unwrap();
         invalid["vertex_ordinal"] = serde_json::json!(outer);
-        assert!(
-            serde_json::from_value::<crate::records::topology::DesignTopologyRecipeTriplet>(
-                invalid
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("vertex_ordinal")
-        );
+        assert!(serde_json::from_value::<
+            crate::records::topology::edge_recipe::DesignTopologyRecipeTriplet,
+        >(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("vertex_ordinal"));
     }
     let wire = r#"{"selector":0,"boundary_edge_count":4,"topology_triplets":[{"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"},{"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"}],"common_incident_edge_ordinal":1}"#;
-    let entry: crate::records::topology::DesignTopologyRecipeEntry =
+    let entry: crate::records::topology::edge_recipe::DesignTopologyRecipeEntry =
         serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&entry).unwrap(), wire);
     let mut invalid = serde_json::to_value(entry).unwrap();
     invalid["common_incident_edge_ordinal"] = serde_json::json!(2);
-    assert!(
-        serde_json::from_value::<crate::records::topology::DesignTopologyRecipeEntry>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("common_incident_edge_ordinal")
-    );
+    assert!(serde_json::from_value::<
+        crate::records::topology::edge_recipe::DesignTopologyRecipeEntry,
+    >(invalid)
+    .unwrap_err()
+    .to_string()
+    .contains("common_incident_edge_ordinal"));
 }
 
 #[test]
 fn surface_patch_recipe_requires_two_clauses_and_preserves_root_wire() {
     let clause = r#"{"fields":[[0],[0],[2,0],[0,0],[0],[0,0]],"face_reference_ordinals":[0,0],"edge_reference_ordinals":[0,0],"payload_entry_count":0,"entries":[]}"#;
     let wire = format!(r#"{{"root":2,"clauses":[{clause},{clause}]}}"#);
-    let structure: crate::records::topology::DesignSurfacePatchRecipeStructure =
+    let structure: crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure =
         serde_json::from_str(&wire).unwrap();
     assert_eq!(serde_json::to_string(&structure).unwrap(), wire);
     let invalid_root = wire.replace("\"root\":2", "\"root\":1");
-    assert!(
-        serde_json::from_str::<crate::records::topology::DesignSurfacePatchRecipeStructure>(
-            &invalid_root
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("root")
-    );
+    assert!(serde_json::from_str::<
+        crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure,
+    >(&invalid_root)
+    .unwrap_err()
+    .to_string()
+    .contains("root"));
     for clauses in [
         String::new(),
         clause.to_owned(),
         format!("{clause},{clause},{clause}"),
     ] {
         let invalid = format!(r#"{{"root":2,"clauses":[{clauses}]}}"#);
-        assert!(
-            serde_json::from_str::<crate::records::topology::DesignSurfacePatchRecipeStructure>(
-                &invalid
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("clauses")
-        );
+        assert!(serde_json::from_str::<
+            crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure,
+        >(&invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("clauses"));
     }
 }
 
@@ -983,20 +982,24 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
 fn recipe_sidecar_rejects_disagreeing_counts() {
     let side = serde_json::json!({"field_count": 3, "header_value": 0,
         "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
-    assert!(serde_json::from_value::<super::DesignTopologyRecipeSide>(side).is_err());
+    assert!(serde_json::from_value::<super::edge_recipe::DesignTopologyRecipeSide>(side).is_err());
     let side = serde_json::json!({"field_count": 2, "header_value": 0,
         "scalars": [0], "payload_prefix": [0], "payload_entry_count": 1, "entries": []});
-    assert!(serde_json::from_value::<super::DesignTopologyRecipeSide>(side).is_err());
+    assert!(serde_json::from_value::<super::edge_recipe::DesignTopologyRecipeSide>(side).is_err());
     let clause = serde_json::json!({"fields": [], "face_reference_ordinals": [0, 0],
         "edge_reference_ordinals": [0, 0], "payload_entry_count": 1, "entries": []});
-    assert!(serde_json::from_value::<super::DesignSurfacePatchRecipeClause>(clause).is_err());
+    assert!(
+        serde_json::from_value::<super::edge_recipe::DesignSurfacePatchRecipeClause>(clause)
+            .is_err()
+    );
 }
 
 #[test]
 fn recipe_sidecar_derives_counts_without_changing_wire() {
     let side = serde_json::json!({"field_count": 2, "header_value": 0,
         "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
-    let record: super::DesignTopologyRecipeSide = serde_json::from_value(side.clone()).unwrap();
+    let record: super::edge_recipe::DesignTopologyRecipeSide =
+        serde_json::from_value(side.clone()).unwrap();
     assert_eq!(record.field_count(), 2);
     assert_eq!(serde_json::to_value(record).unwrap(), side);
 }

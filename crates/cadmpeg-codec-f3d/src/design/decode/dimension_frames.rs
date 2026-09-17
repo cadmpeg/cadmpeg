@@ -27,7 +27,7 @@ use crate::records::{
     sketch_geometry::{SketchCurveIdentity, SketchPoint},
     sketch_links::PersistentSubentityTag,
     sketch_placement::DesignSketchPlacement,
-    topology::DesignEdgeOperand,
+    topology::edge_identity::DesignEdgeOperand,
 };
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;

@@ -713,7 +713,7 @@ fn historical_edge_positions_require_a_complete_state_chain() {
     };
     assert_eq!(
         crate::design::geometry::historical_entity_positions(
-            crate::records::topology::AsmHistoricalEntityKind::Edge,
+            crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
             7,
             &topology,
         ),
@@ -722,7 +722,7 @@ fn historical_edge_positions_require_a_complete_state_chain() {
     topology.point_positions.pop();
     assert_eq!(
         crate::design::geometry::historical_entity_positions(
-            crate::records::topology::AsmHistoricalEntityKind::Edge,
+            crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
             7,
             &topology,
         ),
@@ -733,7 +733,7 @@ fn historical_edge_positions_require_a_complete_state_chain() {
 #[test]
 fn historical_region_faces_follow_complete_ownership_hierarchy() {
     use crate::history_records::{AsmHistoricalRelation, AsmHistoricalTopology};
-    use crate::records::topology::AsmHistoricalEntityKind;
+    use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     let topology = AsmHistoricalTopology {
         body_regions: vec![AsmHistoricalRelation {

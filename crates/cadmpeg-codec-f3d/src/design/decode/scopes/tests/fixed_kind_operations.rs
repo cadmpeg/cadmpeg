@@ -1021,7 +1021,7 @@ fn fixed_kind_edge_and_revolve_operations(
         crate::records::topology::DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
             historical: crate::records::topology::HistoricalBinding {
-                kind: crate::records::topology::AsmHistoricalEntityKind::Face,
+                kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind::Face,
                 entity_ref: 40,
                 state_ids: vec![1],
             },
@@ -1110,7 +1110,7 @@ fn fixed_kind_edge_and_revolve_operations(
             id: "stream:indexed-face-axis".into(),
             scope_record_index: indexed_revolve_scope.record_index,
             scope_reference_ordinal: 2,
-            group: Some(crate::records::topology::DesignOperandGroup {
+            group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
                 group_record_index: indexed_axis.record_index,
                 group_member_ordinal: 0,
             }),

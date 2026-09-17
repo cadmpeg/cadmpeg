@@ -458,7 +458,10 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             scope::DesignParameterScope,
         },
         recipes::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector},
-        topology::{DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner},
+        topology::{
+            body_recipe::DesignBodyRecipeOperand, body_recipe::DesignBodyRecipeReference,
+            body_recipe::DesignOperandOwner,
+        },
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -554,7 +557,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         });
         operands.push(
             DesignBodyRecipeOperand::try_new(
-                crate::records::topology::DesignBodyRecipeOperandDraft {
+                crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
                     id: format!("{stream}:design-body-recipe-operand#{operand_record_index}"),
                     scope_record_index,
                     owner: DesignOperandOwner::ScopeReference {

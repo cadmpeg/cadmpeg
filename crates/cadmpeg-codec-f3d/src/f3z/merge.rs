@@ -472,11 +472,15 @@ fn typed_fields(
         "body_visibilities" => typed!(crate::records::bodies::BodyVisibility),
         "creation_timestamps" => typed!(crate::records::recipes::CreationTimestamp),
         "design_body_bindings" => typed!(crate::records::bodies::DesignBodyBinding),
-        "design_body_recipe_operands" => typed!(crate::records::topology::DesignBodyRecipeOperand),
+        "design_body_recipe_operands" => {
+            typed!(crate::records::topology::body_recipe::DesignBodyRecipeOperand)
+        }
         "design_dimension_recipe_records" => {
             typed!(crate::records::dimensions::DesignDimensionRecipeRecord)
         }
-        "design_edge_operands" => typed!(crate::records::topology::DesignEdgeOperand),
+        "design_edge_operands" => {
+            typed!(crate::records::topology::edge_identity::DesignEdgeOperand)
+        }
         "design_edge_treatment_vertex_operands" => {
             typed!(crate::records::feature::work_geometry::DesignEdgeTreatmentVertexOperand)
         }

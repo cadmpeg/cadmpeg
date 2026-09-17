@@ -1451,7 +1451,7 @@ fn historical_profile_members_resolve_through_topology_ownership() {
         AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalOptionalCarrierBinding,
         AsmHistoricalRelation, AsmHistoricalTopology,
     };
-    use crate::records::topology::AsmHistoricalEntityKind;
+    use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     let topology = AsmHistoricalTopology {
         faces: vec![10, 20],

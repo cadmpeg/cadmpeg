@@ -11,7 +11,10 @@ use super::*;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
-    topology::{DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand},
+    topology::{
+        edge_identity::DesignEdgeIdentityOperand, edge_identity::DesignEdgeOperand,
+        DesignConstructionOperandGroup,
+    },
 };
 use cadmpeg_ir::ids::EdgeId;
 
@@ -171,10 +174,11 @@ fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
     let group = group(2, 10);
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
     let mut draft = identity.into_draft();
-    draft.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
+    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
     draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
     draft.context_id_offset = draft.asset_id_offset + 76;
-    identity = crate::records::topology::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    identity =
+        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
 
     assert!(project_fixed_fillet(&scope, &[group], &[], &[identity]).is_none());
 }
@@ -184,10 +188,11 @@ fn only_edge_treatments_use_single_member_transition_chains() {
     let group = group(2, 10);
     let mut generic_identity = identity(10, &[(17, 3.0), (19, 3.0)]);
     let mut draft = generic_identity.into_draft();
-    draft.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
+    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
     draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
     draft.context_id_offset = draft.asset_id_offset + 76;
-    generic_identity = crate::records::topology::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    generic_identity =
+        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
     generic_identity.treatment_radius_candidates.clear();
     let generic_feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#ruled-surface")
@@ -208,10 +213,11 @@ fn only_edge_treatments_use_single_member_transition_chains() {
         .expect("identity grammar");
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
     let mut draft = identity.into_draft();
-    draft.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
+    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
     draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
     draft.context_id_offset = draft.asset_id_offset + 76;
-    identity = crate::records::topology::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    identity =
+        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
     identity.treatment_radius_candidates.clear();
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -248,16 +254,18 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
         .unwrap();
     let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
     let mut draft = first.into_draft();
-    draft.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
+    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
     draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
     draft.context_id_offset = draft.asset_id_offset + 76;
-    first = crate::records::topology::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    first =
+        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
     let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
     let mut draft = second.into_draft();
-    draft.layout = crate::records::topology::DesignEdgeIdentityLayout::Full;
+    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
     draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
     draft.context_id_offset = draft.asset_id_offset + 76;
-    second = crate::records::topology::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    second =
+        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
     second.group_member_ordinal = 1;
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
@@ -311,16 +319,20 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
     let selection_group = group(2, 10);
     let mut operand = recipe_edge_operand(10, &[], &[]);
     operand.recipe_state_id = Some(7);
-    operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
-        root: 1,
-        sides: vec![crate::records::topology::DesignTopologyRecipeSide {
-            header_value: 1,
-            scalars: Vec::new(),
-            payload_prefix: Vec::new(),
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 1,
+            sides: vec![
+                crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+                    header_value: 1,
+                    scalars: Vec::new(),
+                    payload_prefix: Vec::new(),
 
-            entries: Vec::new(),
-        }],
-    });
+                    entries: Vec::new(),
+                },
+            ],
+        },
+    );
     let mut persistent_identity = identity(10, &[]);
     persistent_identity.resolved_edge_slot = Some(19);
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
@@ -607,9 +619,9 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
     let mut first = recipe_edge_operand(10, &[], &[]);
     first.recipe_references = vec![recipe_reference(&[17])];
     first.surface_patch_recipe_structure = Some(
-        crate::records::topology::DesignSurfacePatchRecipeStructure {
+        crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure {
             clauses: std::array::from_fn(|_| {
-                crate::records::topology::DesignSurfacePatchRecipeClause {
+                crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
                     fields: vec![
                         vec![0],
                         vec![0],
@@ -656,10 +668,12 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
     let mut operand = recipe_edge_operand(10, &[], &[]);
     operand.recipe_references = vec![recipe_reference(&[17]), recipe_reference(&[18])];
     operand.resolved_edge_slot = Some(17);
-    operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
-        root: 1,
-        sides: Vec::new(),
-    });
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 1,
+            sides: Vec::new(),
+        },
+    );
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
         .expect("identity grammar");
 
@@ -724,10 +738,12 @@ fn primary_terminal_support_references_resolve_one_shared_edge() {
         .expect("terminal edge recipe side")
     };
     let mut operand = recipe_edge_operand(10, &[], &[]);
-    operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
-        root: 2,
-        sides: vec![side(0, [2, 1]), side(0, [1, 3])],
-    });
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 2,
+            sides: vec![side(0, [2, 1]), side(0, [1, 3])],
+        },
+    );
     operand.terminal_reference_edge_slots = vec![
         vec![25, 38, 39, 62],
         vec![25, 35, 55, 69],
@@ -1212,8 +1228,8 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
 #[test]
 fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
     use crate::records::topology::{
-        DesignEdgeRecipeSelectorContext, DesignTopologyIncidentSide, DesignTopologyRecipeEntry,
-        DesignTopologyRecipeTriplet,
+        edge_recipe::DesignEdgeRecipeSelectorContext, edge_recipe::DesignTopologyIncidentSide,
+        edge_recipe::DesignTopologyRecipeEntry, edge_recipe::DesignTopologyRecipeTriplet,
     };
 
     let selector = |selector, edges: &[i64]| DesignEdgeRecipeSelectorContext {
@@ -1361,20 +1377,24 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
     let triplet = DesignTopologyRecipeTriplet {
         outer: std::num::NonZeroU32::new(3).unwrap(),
         middle: 2,
-        incident: Some(crate::records::topology::DesignTopologyIncident {
-            ordinal: 1,
-            side: DesignTopologyIncidentSide::Preceding,
-        }),
+        incident: Some(
+            crate::records::topology::edge_recipe::DesignTopologyIncident {
+                ordinal: 1,
+                side: DesignTopologyIncidentSide::Preceding,
+            },
+        ),
     };
     let mut common = selector(0, &[]);
-    common.clauses[0] = Some(crate::records::topology::DesignEdgeRecipeSelectorClause {
-        entry: DesignTopologyRecipeEntry {
-            selector: 0,
-            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-            topology_triplets: [triplet.clone(), triplet.clone()],
+    common.clauses[0] = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
+            entry: DesignTopologyRecipeEntry {
+                selector: 0,
+                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+                topology_triplets: [triplet.clone(), triplet.clone()],
+            },
+            triplet_edge_slots: [vec![17, 18], vec![17]],
         },
-        triplet_edge_slots: [vec![17, 18], vec![17]],
-    });
+    );
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17, 18][..]]),
         Some(17)
@@ -1384,14 +1404,16 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         Some(17)
     );
     let mut common = selector(0, &[]);
-    common.clauses[0] = Some(crate::records::topology::DesignEdgeRecipeSelectorClause {
-        entry: DesignTopologyRecipeEntry {
-            selector: 0,
-            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-            topology_triplets: [triplet.clone(), triplet.clone()],
+    common.clauses[0] = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
+            entry: DesignTopologyRecipeEntry {
+                selector: 0,
+                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+                topology_triplets: [triplet.clone(), triplet.clone()],
+            },
+            triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]],
         },
-        triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]],
-    });
+    );
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
         Some(17)
@@ -1401,24 +1423,28 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         None
     );
     let clause = |triplet_edge_slots| {
-        Some(crate::records::topology::DesignEdgeRecipeSelectorClause {
-            entry: DesignTopologyRecipeEntry {
-                selector: 0,
-                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                topology_triplets: [
-                    triplet.clone(),
-                    DesignTopologyRecipeTriplet {
-                        outer: std::num::NonZeroU32::new(4).unwrap(),
-                        incident: Some(crate::records::topology::DesignTopologyIncident {
-                            ordinal: 2,
-                            side: DesignTopologyIncidentSide::Preceding,
-                        }),
-                        ..triplet.clone()
-                    },
-                ],
+        Some(
+            crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
+                entry: DesignTopologyRecipeEntry {
+                    selector: 0,
+                    boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+                    topology_triplets: [
+                        triplet.clone(),
+                        DesignTopologyRecipeTriplet {
+                            outer: std::num::NonZeroU32::new(4).unwrap(),
+                            incident: Some(
+                                crate::records::topology::edge_recipe::DesignTopologyIncident {
+                                    ordinal: 2,
+                                    side: DesignTopologyIncidentSide::Preceding,
+                                },
+                            ),
+                            ..triplet.clone()
+                        },
+                    ],
+                },
+                triplet_edge_slots,
             },
-            triplet_edge_slots,
-        })
+        )
     };
     let mut cross_clause = selector(0, &[]);
     cross_clause.clauses = vec![
@@ -1446,12 +1472,14 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
 
 #[test]
 fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
-    let selector = |candidates: &[i64]| crate::records::topology::DesignEdgeRecipeSelectorContext {
-        selector: 0,
-        clauses: vec![None, None],
-        incidence_matching_edge_slots: Vec::new(),
+    let selector = |candidates: &[i64]| {
+        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
+            selector: 0,
+            clauses: vec![None, None],
+            incidence_matching_edge_slots: Vec::new(),
 
-        boundary_count_matching_edge_slots: candidates.to_vec(),
+            boundary_count_matching_edge_slots: candidates.to_vec(),
+        }
     };
     let first = [selector(&[19, 17, 18])];
     let context = [selector(&[])];
@@ -1566,10 +1594,12 @@ fn deleted_boundary_group_requires_complete_contextual_group_cardinality() {
     let operand = |record_index: u32, deleted: &[i64]| {
         let mut operand = recipe_edge_operand(record_index, deleted, deleted);
         operand.preceding_boundary_edge_slots = deleted.to_vec();
-        operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
-            root: 2,
-            sides: Vec::new(),
-        });
+        operand.recipe_structure = Some(
+            crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+                root: 2,
+                sides: Vec::new(),
+            },
+        );
         operand.recipe_references = vec![recipe_reference(&[])];
         operand.recipe_reference_contexts = vec![context(deleted)];
         operand
@@ -1612,7 +1642,7 @@ fn contextual_deleted_group_assigns_a_consolidated_legacy_member() {
         }))
         .expect("edge recipe reference context")
     };
-    let structure = || crate::records::topology::DesignEdgeRecipeStructure {
+    let structure = || crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
         root: 2,
         sides: Vec::new(),
     };
@@ -1656,18 +1686,22 @@ fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
         .expect("edge recipe reference context")
     };
     let mut operand = recipe_edge_operand(10, &[], &[]);
-    operand.recipe_structure = Some(crate::records::topology::DesignEdgeRecipeStructure {
-        root: 2,
-        sides: (0..2)
-            .map(|_| crate::records::topology::DesignTopologyRecipeSide {
-                header_value: 2,
-                scalars: vec![1, 0],
-                payload_prefix: vec![0],
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 2,
+            sides: (0..2)
+                .map(
+                    |_| crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+                        header_value: 2,
+                        scalars: vec![1, 0],
+                        payload_prefix: vec![0],
 
-                entries: Vec::new(),
-            })
-            .collect(),
-    });
+                        entries: Vec::new(),
+                    },
+                )
+                .collect(),
+        },
+    );
     operand.recipe_references = vec![
         recipe_reference(&[]),
         recipe_reference(&[]),
@@ -1803,7 +1837,7 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
     use crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces;
 
-    let selector = |edges| crate::records::topology::DesignEdgeRecipeSelectorContext {
+    let selector = |edges| crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
         selector: 0,
         clauses: Vec::new(),
         incidence_matching_edge_slots: edges,

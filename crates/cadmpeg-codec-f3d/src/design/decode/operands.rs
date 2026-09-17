@@ -51,17 +51,18 @@ use crate::records::{
     sketch_links::PersistentSubentityTag,
     sketch_relations::SketchRelationOperand,
     topology::{
+        body_recipe::DesignBodyRecipeOperand, body_recipe::DesignBodyRecipeReference,
+        body_recipe::DesignOperandOwner, edge_identity::DesignEdgeIdentityOperand,
+        edge_identity::DesignEdgeOperand, edge_recipe::DesignTopologyRecipeEntry,
+        edge_recipe::DesignTopologyRecipeSide, edge_recipe::DesignTopologyRecipeTriplet,
         face::DesignFaceOperand, face::DesignFaceSourceGroup, face::DesignFaceSourceMember,
-        DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignConstructionOperandGroup,
-        DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
-        DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
-        DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntitySelectionOperand,
-        DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeSelectionGroup,
-        DesignExtrudeSelectionMember, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
-        DesignLoftLegacyBodyCarrier, DesignOperandOwner, DesignOperandRole,
-        DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
-        DesignSketchProfileRegionSelection, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-        DesignTopologyRecipeTriplet,
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+        DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+        DesignConstructionTrackingPath, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
+        DesignExtrudeOperandRole, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+        DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier,
+        DesignOperandRole, DesignSketchProfileOperand, DesignSketchProfileRegion,
+        DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
     },
 };
 use cadmpeg_core::decode::{index_from_u32, View};
@@ -682,7 +683,7 @@ pub fn decode_edge_identity_operands(
             };
             out.push(
                 DesignEdgeIdentityOperand::try_new(
-                    crate::records::topology::DesignEdgeIdentityOperandDraft {
+                    crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
                         id: ids::native_design_edge_identity_operand_id(
                             &entry.name,
                             header.byte_offset,
@@ -3894,32 +3895,34 @@ fn parse_body_recipe_operand_frame_with_index(
     {
         return None;
     }
-    DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
-        id: String::new(),
-        scope_record_index,
-        owner,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        asset_id: asset_id.try_into().ok()?,
-        asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
-        context_id: context_id.try_into().ok()?,
-        context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
-        selector_tail: Some(crate::records::identity::Located {
-            value: selector_tail,
-            offset: u64::try_from(selector_tail_at).ok()?,
-        }),
-        references,
-        nested_record_index,
-        nested_record_index_offset: u64::try_from(cursor + 1).ok()?,
-        recipe_id: recipe.id.clone(),
-        resolved_face_slot: None,
-        resolved_body_state_id: None,
-        resolved_body_slot: None,
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: header.record_index.checked_add(4)?,
-        next_byte_offset: u64::try_from(next_at).ok()?,
-    })
+    DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+            id: String::new(),
+            scope_record_index,
+            owner,
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            asset_id: asset_id.try_into().ok()?,
+            asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
+            context_id: context_id.try_into().ok()?,
+            context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
+            selector_tail: Some(crate::records::identity::Located {
+                value: selector_tail,
+                offset: u64::try_from(selector_tail_at).ok()?,
+            }),
+            references,
+            nested_record_index,
+            nested_record_index_offset: u64::try_from(cursor + 1).ok()?,
+            recipe_id: recipe.id.clone(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: header.record_index.checked_add(4)?,
+            next_byte_offset: u64::try_from(next_at).ok()?,
+        },
+    )
     .ok()
 }
 
@@ -4199,7 +4202,7 @@ fn parse_extrude_identity_member(
 }
 
 pub(crate) struct ParsedEdgeIdentityMember {
-    pub(crate) layout: crate::records::topology::DesignEdgeIdentityLayout,
+    pub(crate) layout: crate::records::topology::edge_identity::DesignEdgeIdentityLayout,
     pub(crate) local_id: u64,
     pub(crate) asset_id: String,
     pub(crate) asset_id_offset: u64,
@@ -4211,7 +4214,7 @@ pub(crate) fn parse_edge_identity_member(
     bytes: &[u8],
     start: usize,
 ) -> Option<ParsedEdgeIdentityMember> {
-    use crate::records::topology::DesignEdgeIdentityLayout;
+    use crate::records::topology::edge_identity::DesignEdgeIdentityLayout;
     let layout = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
         DesignEdgeIdentityLayout::Full
     } else if bytes.get(start + 11..start + 22) == Some(&[0; 11]) {
@@ -4726,58 +4729,60 @@ pub(crate) fn parse_edge_operand(
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
         edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
     });
-    DesignEdgeOperand::try_new(crate::records::topology::DesignEdgeOperandDraft {
-        id: ids::native_design_edge_operand_id(
-            stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
-            header.byte_offset,
-        ),
-        scope_record_index: scope.record_index,
-        scope_reference_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        paired_byte_offset: parsed.paired_byte_offset,
-        paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
-        recipe_record_index: parsed.recipe_record_index,
-        recipe_record_byte_offset: parsed.recipe_record_byte_offset,
-        recipe_id: parsed.recipe_id,
-        recipe_prefix_offset: parsed.recipe_prefix_offset,
-        recipe_prefix_bytes: parsed.recipe_prefix_bytes,
-        recipe_references: parsed.recipe_references,
-        recipe_program_offset: parsed.recipe_program_offset,
-        recipe_program: parsed.recipe_program,
-        recipe_structure,
-        surface_patch_recipe_structure,
-        local_topology_references,
-        candidate_faces: Vec::new(),
-        result_candidate_faces: Vec::new(),
-        result_boundary_edge_slots: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        terminal_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        preceding_boundary_edge_slots: Vec::new(),
-        terminal_boundary_edge_slots: Vec::new(),
-        changed_boundary_edge_slots: Vec::new(),
-        deleted_boundary_edge_slots: Vec::new(),
-        updated_boundary_edge_slots: Vec::new(),
-        treatment_radius_candidates: Vec::new(),
-        changed_boundary_edge_contexts: Vec::new(),
-        terminal_boundary_edge_contexts: Vec::new(),
-        terminal_reference_edge_slots: Vec::new(),
-        recipe_reference_contexts: Vec::new(),
-        recipe_selectors: Vec::new(),
-        recipe_state_id: None,
-        resolved_edge_slot: None,
-        resolved_axis: None,
-        next_record_index: parsed.next_record_index,
-        next_byte_offset: parsed.next_byte_offset,
-    })
+    DesignEdgeOperand::try_new(
+        crate::records::topology::edge_identity::DesignEdgeOperandDraft {
+            id: ids::native_design_edge_operand_id(
+                stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
+                header.byte_offset,
+            ),
+            scope_record_index: scope.record_index,
+            scope_reference_ordinal,
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            paired_byte_offset: parsed.paired_byte_offset,
+            paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
+            recipe_record_index: parsed.recipe_record_index,
+            recipe_record_byte_offset: parsed.recipe_record_byte_offset,
+            recipe_id: parsed.recipe_id,
+            recipe_prefix_offset: parsed.recipe_prefix_offset,
+            recipe_prefix_bytes: parsed.recipe_prefix_bytes,
+            recipe_references: parsed.recipe_references,
+            recipe_program_offset: parsed.recipe_program_offset,
+            recipe_program: parsed.recipe_program,
+            recipe_structure,
+            surface_patch_recipe_structure,
+            local_topology_references,
+            candidate_faces: Vec::new(),
+            result_candidate_faces: Vec::new(),
+            result_boundary_edge_slots: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            terminal_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            preceding_boundary_edge_slots: Vec::new(),
+            terminal_boundary_edge_slots: Vec::new(),
+            changed_boundary_edge_slots: Vec::new(),
+            deleted_boundary_edge_slots: Vec::new(),
+            updated_boundary_edge_slots: Vec::new(),
+            treatment_radius_candidates: Vec::new(),
+            changed_boundary_edge_contexts: Vec::new(),
+            terminal_boundary_edge_contexts: Vec::new(),
+            terminal_reference_edge_slots: Vec::new(),
+            recipe_reference_contexts: Vec::new(),
+            recipe_selectors: Vec::new(),
+            recipe_state_id: None,
+            resolved_edge_slot: None,
+            resolved_axis: None,
+            next_record_index: parsed.next_record_index,
+            next_byte_offset: parsed.next_byte_offset,
+        },
+    )
     .ok()
 }
 
 pub(crate) fn edge_recipe_structure(
     program: &[i32],
-) -> Option<crate::records::topology::DesignEdgeRecipeStructure> {
+) -> Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure> {
     edge_recipe_structure_tail(program.get(7..)?)
 }
 
@@ -4790,7 +4795,7 @@ pub(crate) fn edge_recipe_structure(
 pub(crate) fn surface_patch_recipe_structure(
     program: &[i32],
     reference_count: usize,
-) -> Option<crate::records::topology::DesignSurfacePatchRecipeStructure> {
+) -> Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure> {
     let mut remaining = program.get(7..)?;
     let (&root, tail) = remaining.split_first()?;
     if root != 2 {
@@ -4841,13 +4846,15 @@ pub(crate) fn surface_patch_recipe_structure(
         };
         let face_reference_ordinals = [ordinal(first, first.len() - 1)?, ordinal(second, 0)?];
         let edge_reference_ordinals = [ordinal(third, 1)?, ordinal(fifth, 0)?];
-        clauses.push(crate::records::topology::DesignSurfacePatchRecipeClause {
-            fields,
-            face_reference_ordinals,
-            edge_reference_ordinals,
+        clauses.push(
+            crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
+                fields,
+                face_reference_ordinals,
+                edge_reference_ordinals,
 
-            entries,
-        });
+                entries,
+            },
+        );
     }
     if let Some(&delimiter) = remaining.first() {
         if delimiter != 0 {
@@ -4859,14 +4866,14 @@ pub(crate) fn surface_patch_recipe_structure(
         return None;
     }
     Some(
-        crate::records::topology::DesignSurfacePatchRecipeStructure {
+        crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure {
             clauses: clauses.try_into().ok()?,
         },
     )
 }
 
 pub(crate) fn edge_recipe_local_topology_references(
-    structure: &crate::records::topology::DesignEdgeRecipeStructure,
+    structure: &crate::records::topology::edge_recipe::DesignEdgeRecipeStructure,
     reference_count: usize,
 ) -> Option<Vec<std::num::NonZeroU32>> {
     topology_recipe_references(
@@ -4879,7 +4886,7 @@ pub(crate) fn edge_recipe_local_topology_references(
 
 fn edge_recipe_structure_tail(
     program: &[i32],
-) -> Option<crate::records::topology::DesignEdgeRecipeStructure> {
+) -> Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure> {
     let (&root, mut remaining) = program.split_first()?;
     let side_count = usize::try_from(root).ok()?;
     if side_count == 0 {
@@ -4889,8 +4896,9 @@ fn edge_recipe_structure_tail(
     let structures = edge_recipe_side_sequences(remaining, side_count)
         .into_iter()
         .filter_map(|(sides, tail)| {
-            matches!(tail, [] | [-1 | 0])
-                .then_some(crate::records::topology::DesignEdgeRecipeStructure { root, sides })
+            matches!(tail, [] | [-1 | 0]).then_some(
+                crate::records::topology::edge_recipe::DesignEdgeRecipeStructure { root, sides },
+            )
         })
         .collect::<Vec<_>>();
     let [structure] = structures.as_slice() else {
@@ -5122,12 +5130,12 @@ fn edge_recipe_topology_triplet(
     let vertex_ordinal = outer.get().checked_sub(1)?;
     let incident = if *middle == i32::try_from(outer.get()).ok()? {
         Some((
-            crate::records::topology::DesignTopologyIncidentSide::Following,
+            crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Following,
             vertex_ordinal,
         ))
     } else if *middle >= 0 && middle.checked_add(1) == i32::try_from(outer.get()).ok() {
         Some((
-            crate::records::topology::DesignTopologyIncidentSide::Preceding,
+            crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Preceding,
             vertex_ordinal
                 .checked_add(boundary_edge_count.get())?
                 .checked_sub(1)?
@@ -5140,7 +5148,7 @@ fn edge_recipe_topology_triplet(
         outer,
         middle: *middle,
         incident: incident.map(|(side, ordinal)| {
-            crate::records::topology::DesignTopologyIncident { ordinal, side }
+            crate::records::topology::edge_recipe::DesignTopologyIncident { ordinal, side }
         }),
     })
 }
@@ -5308,7 +5316,7 @@ pub(crate) fn parse_face_operand(
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
         group: group_ownership.map(|(group_record_index, group_member_ordinal)| {
-            crate::records::topology::DesignOperandGroup {
+            crate::records::topology::body_recipe::DesignOperandGroup {
                 group_record_index,
                 group_member_ordinal,
             }

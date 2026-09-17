@@ -83,7 +83,10 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
 fn ambiguous_scope_histories_use_exact_result_body_sources() {
     use crate::records::{
         bodies::DesignBodyBinding,
-        topology::{DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner},
+        topology::{
+            body_recipe::DesignBodyRecipeOperand, body_recipe::DesignBodyRecipeReference,
+            body_recipe::DesignOperandOwner,
+        },
     };
     use cadmpeg_ir::ids::FaceId;
 
@@ -166,8 +169,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         histories[1].id
     );
 
-    let operand =
-        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+    let operand = DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: format!("{stream}:design-body-recipe-operand#120"),
             scope_record_index: scope.record_index,
             owner: DesignOperandOwner::ScopeReference {
@@ -209,8 +212,9 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
             resolved_body_face_slots: Vec::new(),
             next_record_index: 124,
             next_byte_offset: 256,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let bindings = bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories);
     assert_eq!(bindings[&scope.id], histories[1].id);
 }
@@ -1076,7 +1080,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
             &changed_faces,
         ),
         [
-            crate::records::topology::DesignHistoricalFaceSupportContext {
+            crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot: 40,
                 surface_slot: 20,
                 preceding_face_slots: vec![4, 5],
@@ -1096,7 +1100,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
             &changed_faces,
         ),
         [
-            crate::records::topology::DesignHistoricalFaceSupportContext {
+            crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
                 active_face_slot: 4,
                 surface_slot: 20,
                 preceding_face_slots: vec![4, 5],
@@ -1283,44 +1287,47 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(topology.coedge_topology[0].radial_next, 6);
     assert_eq!(
         historical_edge_context(7, &topology),
-        crate::records::topology::DesignHistoricalEdgeContext {
+        crate::records::topology::historical_context::DesignHistoricalEdgeContext {
             edge_slot: 7,
-            incident_loops: vec![crate::records::topology::DesignHistoricalEdgeLoopContext {
-                coedge_slot: 6,
-                loop_slot: 5,
-                face_slot: 4,
-                boundary_edge_count: 1,
-                coedge_ordinal: 0,
-                previous_edge_slot: 7,
-                next_edge_slot: 7,
-            }],
+            incident_loops: vec![
+                crate::records::topology::historical_context::DesignHistoricalEdgeLoopContext {
+                    coedge_slot: 6,
+                    loop_slot: 5,
+                    face_slot: 4,
+                    boundary_edge_count: 1,
+                    coedge_ordinal: 0,
+                    previous_edge_slot: 7,
+                    next_edge_slot: 7,
+                }
+            ],
         }
     );
-    let entry =
-        |selector, boundary_edge_count| crate::records::topology::DesignTopologyRecipeEntry {
+    let entry = |selector, boundary_edge_count| {
+        crate::records::topology::edge_recipe::DesignTopologyRecipeEntry {
             selector,
             boundary_edge_count: std::num::NonZeroU32::new(boundary_edge_count).unwrap(),
             topology_triplets: [
-                crate::records::topology::DesignTopologyRecipeTriplet {
+                crate::records::topology::edge_recipe::DesignTopologyRecipeTriplet {
                     outer: std::num::NonZeroU32::new(1).unwrap(),
                     middle: 0,
-                    incident: Some(crate::records::topology::DesignTopologyIncident {
+                    incident: Some(crate::records::topology::edge_recipe::DesignTopologyIncident {
                         ordinal: boundary_edge_count - 1,
-                        side: crate::records::topology::DesignTopologyIncidentSide::Preceding,
+                        side: crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Preceding,
                     }),
                 },
-                crate::records::topology::DesignTopologyRecipeTriplet {
+                crate::records::topology::edge_recipe::DesignTopologyRecipeTriplet {
                     outer: std::num::NonZeroU32::new(1).unwrap(),
                     middle: 1,
-                    incident: Some(crate::records::topology::DesignTopologyIncident {
+                    incident: Some(crate::records::topology::edge_recipe::DesignTopologyIncident {
                         ordinal: 0,
-                        side: crate::records::topology::DesignTopologyIncidentSide::Following,
+                        side: crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Following,
                     }),
                 },
             ],
-        };
-    let side = |entries: Vec<crate::records::topology::DesignTopologyRecipeEntry>| {
-        crate::records::topology::DesignTopologyRecipeSide {
+        }
+    };
+    let side = |entries: Vec<crate::records::topology::edge_recipe::DesignTopologyRecipeEntry>| {
+        crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
             header_value: 0,
             scalars: vec![0, 0],
             payload_prefix: vec![0],
@@ -1328,7 +1335,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             entries,
         }
     };
-    let structure = crate::records::topology::DesignEdgeRecipeStructure {
+    let structure = crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
         root: 2,
         sides: vec![
             side(vec![entry(1, 1), entry(2, 1)]),
@@ -1336,7 +1343,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ],
     };
     let loop_context = |coedge_slot, boundary_edge_count| {
-        crate::records::topology::DesignHistoricalEdgeLoopContext {
+        crate::records::topology::historical_context::DesignHistoricalEdgeLoopContext {
             coedge_slot,
             loop_slot: coedge_slot + 10,
             face_slot: coedge_slot + 20,
@@ -1347,16 +1354,16 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         }
     };
     let contexts = [
-        crate::records::topology::DesignHistoricalEdgeContext {
+        crate::records::topology::historical_context::DesignHistoricalEdgeContext {
             edge_slot: 7,
             incident_loops: vec![loop_context(70, 1)],
         },
-        crate::records::topology::DesignHistoricalEdgeContext {
+        crate::records::topology::historical_context::DesignHistoricalEdgeContext {
             edge_slot: 8,
             incident_loops: vec![
                 loop_context(80, 1),
                 loop_context(81, 2),
-                crate::records::topology::DesignHistoricalEdgeLoopContext {
+                crate::records::topology::historical_context::DesignHistoricalEdgeLoopContext {
                     coedge_ordinal: 1,
                     ..loop_context(82, 2)
                 },
@@ -1457,12 +1464,12 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         context.result_faces,
         [FaceId::mint(id(4)).expect("identity grammar")]
     );
-    let boundary = crate::records::topology::DesignHistoricalFaceBoundaryContext {
+    let boundary = crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext {
         face_slot: 4,
-        loops: vec![crate::records::topology::DesignHistoricalFaceLoopContext {
+        loops: vec![crate::records::topology::historical_context::DesignHistoricalFaceLoopContext {
             loop_slot: 5,
-            boundary: crate::records::topology::DesignHistoricalLoopBoundary::Coedges(vec![
-                crate::records::topology::DesignHistoricalLoopCoedge {
+            boundary: crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Coedges(vec![
+                crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
                     coedge_slot: 6,
                     edge_slot: 7,
                 },
@@ -1536,15 +1543,15 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         let coedges = edges
             .iter()
             .enumerate()
-            .map(
-                |(ordinal, edge_slot)| crate::records::topology::DesignHistoricalLoopCoedge {
+            .map(|(ordinal, edge_slot)| {
+                crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
                     coedge_slot: ordinal as i64,
                     edge_slot: *edge_slot,
-                },
-            )
+                }
+            })
             .collect();
         match historical_loop_boundary(coedges, topology) {
-            crate::records::topology::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
+            crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
                 rows.into_iter()
                     .map(|row| row.vertex_slot)
                     .collect::<Vec<_>>(),

@@ -4,7 +4,10 @@
 use crate::ids::{self, native_stream, neutral_feature_id};
 use crate::records::{
     feature::{scope::DesignParameterScope, work_geometry::DesignEdgeTreatmentVertexOperand},
-    topology::{DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand},
+    topology::{
+        edge_identity::DesignEdgeIdentityOperand, edge_identity::DesignEdgeOperand,
+        DesignConstructionOperandGroup,
+    },
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1395,7 +1398,7 @@ pub(crate) enum EdgeAssignmentCandidates {
 // candidate. `Context` means the recipe has no edge-assignment proof and the
 // record only contributes topology context to its neighboring operands.
 pub(crate) fn edge_group_assignment_candidates<'a>(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<EdgeAssignmentCandidates> {
     let reference_edge_sets = reference_edge_sets
@@ -1512,7 +1515,7 @@ pub(crate) fn unique_edge_assignment_with_context(
 }
 
 pub(crate) fn edge_assignment_candidates<'a>(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<Vec<i64>> {
     let shared_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
@@ -1921,7 +1924,9 @@ pub(crate) fn result_boundary_reference_edge_group_candidates(
 }
 
 pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(
-    members: impl IntoIterator<Item = &'a [crate::records::topology::DesignEdgeRecipeSelectorContext]>,
+    members: impl IntoIterator<
+        Item = &'a [crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
+    >,
 ) -> Option<Vec<i64>> {
     let members = members.into_iter().collect::<Vec<_>>();
     if members.is_empty() || members.iter().any(|selectors| selectors.is_empty()) {
@@ -2021,7 +2026,7 @@ pub(crate) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> V
 }
 
 pub(crate) fn resolved_edge_candidate_intersection<'a>(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
     resolved_edge_candidate_intersection_with_extra_proofs(
@@ -2033,7 +2038,7 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
 }
 
 pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
     let mut incidence = selector_contexts
@@ -2073,7 +2078,7 @@ pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
 }
 
 fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     extra_proofs: [Option<i64>; N],
     disjoint_reference_proof: Option<i64>,
@@ -2146,7 +2151,7 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
 }
 
 fn corroborated_common_triplet_intersection(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
     let edge_sets = selector_contexts.iter().flat_map(|selector| {
@@ -2164,7 +2169,7 @@ fn corroborated_common_triplet_intersection(
 }
 
 fn corroborated_cross_clause_triplet_intersection(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
     let edge_sets = selector_contexts.iter().flat_map(|selector| {
@@ -2236,7 +2241,7 @@ enum SelectorSlots {
 }
 
 fn corroborated_edge_intersection(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
     slots: SelectorSlots,
 ) -> Option<i64> {
@@ -2249,7 +2254,7 @@ fn corroborated_edge_intersection(
 }
 
 fn corroborated_edge_candidates<'a>(
-    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     slots: SelectorSlots,
 ) -> Option<Vec<i64>> {
@@ -2281,7 +2286,7 @@ fn corroborated_edge_candidates<'a>(
 }
 
 fn selector_candidate_edges(
-    selector: &crate::records::topology::DesignEdgeRecipeSelectorContext,
+    selector: &crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext,
     slots: SelectorSlots,
 ) -> &[i64] {
     match slots {

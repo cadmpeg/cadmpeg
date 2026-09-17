@@ -754,11 +754,11 @@ fn historical_face_profile_selection(
 }
 
 pub(crate) fn historical_profile_face_candidates(
-    kind: Option<crate::records::topology::AsmHistoricalEntityKind>,
+    kind: Option<crate::records::topology::body_recipe::AsmHistoricalEntityKind>,
     entity_ref: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> HashSet<i64> {
-    use crate::records::topology::AsmHistoricalEntityKind;
+    use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     let kinds = match kind {
         Some(kind) => vec![kind],

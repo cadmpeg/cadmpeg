@@ -452,7 +452,10 @@ fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
 fn combine_recipe_family_proves_unordered_generated_tools() {
     use crate::records::{
         recipes::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector},
-        topology::{DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner},
+        topology::{
+            body_recipe::DesignBodyRecipeOperand, body_recipe::DesignBodyRecipeReference,
+            body_recipe::DesignOperandOwner,
+        },
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -486,56 +489,58 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                    recipe: &ConstructionRecipe,
                    body: Option<i64>,
                    candidates: &[i64]| {
-        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
-            id: format!("{stream}:design-body-recipe-operand#{record_index}"),
-            scope_record_index: 10,
-            owner: DesignOperandOwner::ScopeReference {
-                scope_reference_ordinal: record_index,
-            },
-            record_index,
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("389".to_owned())
-                .unwrap(),
-            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 56,
-            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 132,
-            selector_tail: None,
-
-            references: vec![DesignBodyRecipeReference {
-                design_reference: if recipe
-                    .design
-                    .as_ref()
-                    .map(|design| design.id.value.as_str())
-                    == Some("family")
-                {
-                    413
-                } else {
-                    409
+        DesignBodyRecipeOperand::try_new(
+            crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+                id: format!("{stream}:design-body-recipe-operand#{record_index}"),
+                scope_record_index: 10,
+                owner: DesignOperandOwner::ScopeReference {
+                    scope_reference_ordinal: record_index,
                 },
-                design_reference_offset: 25,
-                form: 3,
-                form_offset: 33,
-                candidate_faces: Vec::new(),
-                preceding_candidate_faces: Vec::new(),
-                preceding_body_slots: candidates.to_vec(),
-            }],
-            nested_record_index: u64::from(record_index + 3),
-            nested_record_index_offset: 38,
-            recipe_id: recipe.id.clone(),
-            resolved_face_slot: None,
-            resolved_body_state_id: body.map(|_| 317),
-            resolved_body_slot: body,
-            resolved_body_face_slots: Vec::new(),
-            next_record_index: record_index + 4,
-            next_byte_offset: 256,
-        })
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("389".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
+                .unwrap(),
+                asset_id_offset: 56,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 132,
+                selector_tail: None,
+
+                references: vec![DesignBodyRecipeReference {
+                    design_reference: if recipe
+                        .design
+                        .as_ref()
+                        .map(|design| design.id.value.as_str())
+                        == Some("family")
+                    {
+                        413
+                    } else {
+                        409
+                    },
+                    design_reference_offset: 25,
+                    form: 3,
+                    form_offset: 33,
+                    candidate_faces: Vec::new(),
+                    preceding_candidate_faces: Vec::new(),
+                    preceding_body_slots: candidates.to_vec(),
+                }],
+                nested_record_index: u64::from(record_index + 3),
+                nested_record_index_offset: 38,
+                recipe_id: recipe.id.clone(),
+                resolved_face_slot: None,
+                resolved_body_state_id: body.map(|_| 317),
+                resolved_body_slot: body,
+                resolved_body_face_slots: Vec::new(),
+                next_record_index: record_index + 4,
+                next_byte_offset: 256,
+            },
+        )
         .unwrap()
     };
     let family = [6, 7, 8];
@@ -1638,7 +1643,7 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
         crate::records::topology::DesignEntitySelectionFaceCandidate {
             history_id: history_id.into(),
             historical: crate::records::topology::HistoricalBinding {
-                kind: crate::records::topology::AsmHistoricalEntityKind::Loop,
+                kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind::Loop,
                 entity_ref: face_slot + 100,
                 state_ids: vec![2, 1],
             },

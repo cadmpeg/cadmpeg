@@ -14,7 +14,7 @@ use crate::layout::design_decal_scope_prefix as decal_scope;
 use crate::records::{
     decal::{DesignDecalAsset, DesignDecalImage},
     feature::scope::DesignParameterScope,
-    topology::{DesignBodyRecipeOperand, DesignConstructionOperandGroup},
+    topology::{body_recipe::DesignBodyRecipeOperand, DesignConstructionOperandGroup},
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;

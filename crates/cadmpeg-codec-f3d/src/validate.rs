@@ -59,12 +59,12 @@ fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
 /// Admit the empty reference table used by a legacy Combine tool operand.
 fn body_recipe_reference_table_is_admitted(
     scope: Option<&records::feature::scope::DesignParameterScope>,
-    operand: &records::topology::DesignBodyRecipeOperand,
+    operand: &records::topology::body_recipe::DesignBodyRecipeOperand,
 ) -> bool {
     !operand.references().is_empty()
         || matches!(
             operand.owner,
-            records::topology::DesignOperandOwner::ScopeReference { .. }
+            records::topology::body_recipe::DesignOperandOwner::ScopeReference { .. }
         ) && scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::Combine
                 && scope.combine_operation().is_some_and(|operation| {
@@ -5493,7 +5493,7 @@ fn validate_body_recipe_operands<'a>(
         let header = records_by_index.get(&(native_stream, operand.record_index()));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
         let valid_owner = scope.is_some_and(|scope| match operand.owner {
-            records::topology::DesignOperandOwner::Group {
+            records::topology::body_recipe::DesignOperandOwner::Group {
                 group_record_index,
                 group_member_ordinal,
             } => operand_groups_by_index
@@ -5507,7 +5507,7 @@ fn validate_body_recipe_operands<'a>(
                             })
                             == Some(&operand.record_index())
                 }),
-            records::topology::DesignOperandOwner::ScopeReference {
+            records::topology::body_recipe::DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             } => {
                 (scope.kind() == crate::records::feature::scope::DesignFeatureKind::Hole

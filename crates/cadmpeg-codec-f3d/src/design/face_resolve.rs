@@ -14,8 +14,9 @@ use crate::records::{
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
     sketch_placement::DesignSketchPlacement,
     topology::{
-        face::DesignFaceOperand, DesignBodyRecipeOperand, DesignConstructionOperandGroup,
-        DesignEdgeOperand, DesignExtrudeFaceRole, DesignOperandRole,
+        body_recipe::DesignBodyRecipeOperand, edge_identity::DesignEdgeOperand,
+        face::DesignFaceOperand, DesignConstructionOperandGroup, DesignExtrudeFaceRole,
+        DesignOperandRole,
     },
 };
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -1439,7 +1440,7 @@ fn counted_face_recipe_frame(operand: &DesignFaceOperand) -> Option<usize> {
 
 fn stable_face_support_set(
     active_faces: &[i64],
-    contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
     if active_faces.is_empty()
         || contexts.len() != active_faces.len()
@@ -1478,7 +1479,7 @@ fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<
 /// operand's candidate lane.
 fn effective_historical_face_slots(
     candidates: &[cadmpeg_ir::ids::FaceId],
-    contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
     let mut candidate_slots = candidates
         .iter()
@@ -1502,7 +1503,7 @@ fn effective_historical_face_slots(
 
 fn convergent_face_support(
     active_faces: &[i64],
-    support_contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
+    support_contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
     if active_faces.is_empty() {
         return None;
@@ -1532,7 +1533,7 @@ fn convergent_face_support(
 
 fn bounded_face_candidate_by_boundary_cardinality(
     header_value: usize,
-    contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
     let mut candidates = contexts
         .iter()
@@ -1565,8 +1566,9 @@ fn bounded_face_candidate_by_boundary_cardinality(
 }
 
 fn valid_preceding_face_boundaries(
-    context: &crate::records::topology::DesignHistoricalFaceSupportContext,
-) -> Option<Vec<&crate::records::topology::DesignHistoricalFaceBoundaryContext>> {
+    context: &crate::records::topology::historical_context::DesignHistoricalFaceSupportContext,
+) -> Option<Vec<&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>>
+{
     let mut expected_faces = context.preceding_face_slots.clone();
     expected_faces.sort_unstable();
     expected_faces.dedup();
@@ -1593,8 +1595,9 @@ fn valid_preceding_face_boundaries(
 }
 
 fn unique_preceding_face_boundaries(
-    contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
-) -> Option<Vec<&crate::records::topology::DesignHistoricalFaceBoundaryContext>> {
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
+) -> Option<Vec<&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>>
+{
     let mut active_faces = HashSet::new();
     let mut boundaries_by_face = HashMap::new();
     for context in contexts {
@@ -1615,7 +1618,7 @@ fn unique_preceding_face_boundaries(
 }
 
 fn boundary_edge_count(
-    boundaries: &[&crate::records::topology::DesignHistoricalFaceBoundaryContext],
+    boundaries: &[&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext],
 ) -> Option<usize> {
     boundaries.iter().try_fold(0usize, |total, boundary| {
         boundary.loops.iter().try_fold(total, |total, loop_| {
@@ -2235,10 +2238,11 @@ mod tests {
         dimensions::DesignRecipeReference,
         feature::scope::DesignParameterScope,
         topology::{
-            face::DesignFaceRecipeNode, DesignConstructionOperandGroup, DesignEdgeOperand,
-            DesignEdgeRecipeReferenceContext, DesignEdgeRecipeStructure,
-            DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
-            DesignHistoricalFaceSupportContext,
+            edge_identity::DesignEdgeOperand, edge_recipe::DesignEdgeRecipeStructure,
+            face::DesignFaceRecipeNode, historical_context::DesignEdgeRecipeReferenceContext,
+            historical_context::DesignHistoricalFaceBoundaryContext,
+            historical_context::DesignHistoricalFaceLoopContext,
+            historical_context::DesignHistoricalFaceSupportContext, DesignConstructionOperandGroup,
         },
     };
 
@@ -2562,11 +2566,11 @@ mod tests {
             face_slot: slot,
             loops: vec![DesignHistoricalFaceLoopContext {
                 loop_slot: slot + 1_000,
-                boundary: crate::records::topology::DesignHistoricalLoopBoundary::Coedges(
+                boundary: crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Coedges(
                     (0..edge_count)
                         .map(|ordinal| {
                             let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
-                            crate::records::topology::DesignHistoricalLoopCoedge {
+                            crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
                                 coedge_slot,
                                 edge_slot: coedge_slot + 2_000,
                             }
@@ -2763,11 +2767,11 @@ mod tests {
                     face_slot: *face,
                     loops: vec![DesignHistoricalFaceLoopContext {
                         loop_slot: face + 2_000,
-                        boundary: crate::records::topology::DesignHistoricalLoopBoundary::Coedges(
+                        boundary: crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Coedges(
                             (0..*edge_count)
                                 .map(|ordinal| {
                                     let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
-                                    crate::records::topology::DesignHistoricalLoopCoedge {
+                                    crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
                                         coedge_slot,
                                         edge_slot: coedge_slot + 10_000,
                                     }

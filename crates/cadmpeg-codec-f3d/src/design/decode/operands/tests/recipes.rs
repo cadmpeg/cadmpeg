@@ -240,7 +240,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         vec![&[17][..], &[18, 19][..]]
     );
     let reference_context = |reference_ordinal, changed_reference_edge_slots| {
-        crate::records::topology::DesignEdgeRecipeReferenceContext {
+        crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
             reference_ordinal,
             result_faces: Vec::new(),
             result_face_boundaries: Vec::new(),
@@ -303,11 +303,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     edge_operand.changed_boundary_edge_slots = vec![17, 18];
     edge_operand.deleted_boundary_edge_slots = vec![17, 18];
     edge_operand.treatment_radius_candidates = vec![
-        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 17,
             radius: 3.0,
         },
-        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 18,
             radius: 3.0,
         },
@@ -329,18 +329,18 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let mut chain_left = edge_operand.clone();
     chain_left.treatment_radius_candidates.push(
-        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 19,
             radius: 3.0,
         },
     );
     let mut chain_right = edge_operand.clone();
     chain_right.treatment_radius_candidates = vec![
-        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 19,
             radius: 3.0,
         },
-        crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
+        crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 20,
             radius: 3.0,
         },
@@ -466,20 +466,22 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut draft = terminal_unresolved.into_draft();
     draft.record_index = 104;
     draft.recipe_record_index = draft.record_index + 3;
-    terminal_unresolved = crate::records::topology::DesignEdgeOperand::try_new(draft).unwrap();
+    terminal_unresolved =
+        crate::records::topology::edge_identity::DesignEdgeOperand::try_new(draft).unwrap();
     terminal_unresolved.recipe_state_id = Some(8);
     terminal_unresolved.resolved_edge_slot = None;
     terminal_unresolved.changed_boundary_edge_slots.clear();
     terminal_unresolved.deleted_boundary_edge_slots.clear();
     terminal_unresolved.treatment_radius_candidates.clear();
-    terminal_unresolved.recipe_selectors =
-        vec![crate::records::topology::DesignEdgeRecipeSelectorContext {
+    terminal_unresolved.recipe_selectors = vec![
+        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
             selector: 0,
             clauses: vec![None, None],
             incidence_matching_edge_slots: vec![18, 19],
 
             boundary_count_matching_edge_slots: vec![18, 19],
-        }];
+        },
+    ];
     let terminal = crate::design::edge_resolve::resolved_edge_group(
         &terminal_group,
         std::slice::from_ref(&terminal_group),
@@ -495,7 +497,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let identity = |record_index, ordinal, edge| {
         DesignEdgeIdentityOperand::try_new(
-            crate::records::topology::DesignEdgeIdentityOperandDraft {
+            crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
                 id: format!("f3d:Design/BulkStream.dat:edge-identity#{record_index}"),
                 scope_record_index: 1,
                 group_record_index: 90,
@@ -504,7 +506,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 byte_offset: u64::from(record_index),
                 class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
                     .unwrap(),
-                layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
+                layout: crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
                 local_id: u64::from(record_index),
                 asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
@@ -651,7 +653,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         structured.sides[0].entries[0].topology_triplets[0]
             .incident
             .map(|incident| incident.side),
-        Some(crate::records::topology::DesignTopologyIncidentSide::Following)
+        Some(crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Following)
     );
     assert_eq!(
         structured.sides[0].entries[0].topology_triplets[1]
@@ -673,7 +675,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         structured.sides[0].entries[0].topology_triplets[1]
             .incident
             .map(|incident| incident.side),
-        Some(crate::records::topology::DesignTopologyIncidentSide::Preceding)
+        Some(crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Preceding)
     );
     assert_eq!(structured.sides[1].field_count(), 3);
     assert_eq!(structured.sides[1].header_value, 0);
@@ -786,7 +788,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         wrap[0].topology_triplets[0]
             .incident
             .map(|incident| incident.side),
-        Some(crate::records::topology::DesignTopologyIncidentSide::Preceding)
+        Some(crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Preceding)
     );
     let common =
         crate::design::decode::operands::edge_recipe_entries(&[1, 5, 1, 1, 1, 1, 1, 1]).unwrap();
@@ -1569,7 +1571,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         )
         .unwrap();
     let mut split_selected = operand.clone();
-    split_selected.group = Some(crate::records::topology::DesignOperandGroup {
+    split_selected.group = Some(crate::records::topology::body_recipe::DesignOperandGroup {
         group_record_index: split_group.record_index,
         group_member_ordinal: 0,
     });

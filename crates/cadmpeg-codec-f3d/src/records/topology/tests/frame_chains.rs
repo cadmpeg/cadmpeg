@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::topology::{
-    DesignBodyRecipeOperand, DesignConstructionOperandTransform,
+    body_recipe::DesignBodyRecipeOperand, DesignConstructionOperandTransform,
     DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
     DesignEntitySelectionOperand,
 };

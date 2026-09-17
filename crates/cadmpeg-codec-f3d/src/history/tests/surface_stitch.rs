@@ -19,7 +19,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     use crate::records::{
         feature::scope::DesignParameterScope,
         topology::{
-            AsmHistoricalEntityKind, DesignConstructionOperandGroup,
+            body_recipe::AsmHistoricalEntityKind, DesignConstructionOperandGroup,
             DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
             DesignEntitySelectionOperand,
         },
