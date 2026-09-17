@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::add_polygon_hole;
+use super::adjacent_quad_sheet;
+use super::assert_planar_sheet_round_trip;
+use super::planar_tetrahedron;
+use super::polygon_sheet;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
@@ -11,7 +16,6 @@ use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
 
-use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]

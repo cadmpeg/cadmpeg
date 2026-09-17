@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::add_polygon_hole;
+use super::adjacent_quad_sheet;
+use super::make_planar_nurbs_trimmed_face;
+use super::mixed_plane_nurbs_sheet;
+use super::polygon_sheet;
+use super::rectangular_nurbs_patch;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
@@ -9,7 +15,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::math::Point3;
 
-use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
