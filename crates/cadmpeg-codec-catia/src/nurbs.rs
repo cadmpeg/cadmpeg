@@ -615,7 +615,10 @@ pub(crate) fn circular_helix_cache(
     if !max_step.is_finite() || max_step <= 0.0 {
         return None;
     }
-    let segment_count = (sweep / max_step).ceil().max(1.0);
+    // Both refusals above bound the quotient: `sweep` and `max_step` are each
+    // finite and positive, so the quotient is positive and ceils to at least
+    // one segment. No floor stands here.
+    let segment_count = (sweep / max_step).ceil();
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
         return None;
     }
