@@ -1635,9 +1635,8 @@ pub(crate) fn project_marker_dimensioned_circles(
                                     && marker.offset() == *candidate_offset as u64
                             })
                             && (*candidate_offset == *offset
-                                || u32::try_from(*candidate_radial_index).is_ok_and(|index| {
-                                    pair_radial_object_indices.contains(&index)
-                                }))
+                                || u32::try_from(*candidate_radial_index)
+                                    .is_ok_and(|index| pair_radial_object_indices.contains(&index)))
                     })
                     .map(|(candidate_offset, ..)| {
                         format!("sldprt:feature-input:sketch-entity#{lane_key}:{candidate_offset}")

@@ -515,7 +515,8 @@ fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
         &body,
         2,
         &scalar::ScalarCache::default(),
-     &mut ScalarBodyRefusal::default())
+        &mut ScalarBodyRefusal::default(),
+    )
     .expect("complete spline body");
 
     assert_eq!(
@@ -537,7 +538,8 @@ fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
             &body,
             6,
             &scalar::ScalarCache::default(),
-         &mut ScalarBodyRefusal::default())
+            &mut ScalarBodyRefusal::default(),
+        )
         .expect("complete spline body");
         assert_eq!(
             slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
@@ -567,7 +569,8 @@ fn spline_tangents_use_the_signed_coordinate_dict_lattice() {
             &body,
             3,
             &scalar::ScalarCache::default(),
-         &mut ScalarBodyRefusal::default())
+            &mut ScalarBodyRefusal::default(),
+        )
         .expect("complete spline body");
 
         assert_eq!(
@@ -758,26 +761,51 @@ fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
 
     // `0xe4` is one and `0x0f` is zero; `0x00` defines no scalar form.
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
+        super::super::scalar_slots(
+            &[0xe4, 0x0f, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
         Some(vec![Some(1.0), Some(0.0), Some(0.0)])
     );
     // The same body with the undefined byte at slot 0, slot 1 and slot 2.
     assert_eq!(
-        super::super::scalar_slots(&[0x00, 0x0f, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
+        super::super::scalar_slots(
+            &[0x00, 0x0f, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
         None
     );
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x00, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
+        super::super::scalar_slots(
+            &[0xe4, 0x00, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
         None
     );
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x00], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
+        super::super::scalar_slots(
+            &[0xe4, 0x0f, 0x00],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
         None
     );
     // The first two slots decode, so the refusal is at slot 2 and not earlier:
     // a two-slot declaration over the same two prefixes decodes.
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f], 2, &cache, &mut super::super::ScalarBodyRefusal::default()),
+        super::super::scalar_slots(
+            &[0xe4, 0x0f],
+            2,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
         Some(vec![Some(1.0), Some(0.0)])
     );
 }
@@ -791,12 +819,41 @@ fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
     let cache = scalar::ScalarCache::default();
 
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f], 2, &cache, &mut super::super::ScalarBodyRefusal::default()),
+        super::super::scalar_slots(
+            &[0xe4, 0x0f],
+            2,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
         Some(vec![Some(1.0), Some(0.0)])
     );
-    assert_eq!(super::super::scalar_slots(&[0xe4, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()), None);
-    assert_eq!(super::super::scalar_slots(&[], 1, &cache, &mut super::super::ScalarBodyRefusal::default()), None);
-    assert_eq!(super::super::scalar_slots(&[], 0, &cache, &mut super::super::ScalarBodyRefusal::default()), Some(Vec::new()));
+    assert_eq!(
+        super::super::scalar_slots(
+            &[0xe4, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    assert_eq!(
+        super::super::scalar_slots(
+            &[],
+            1,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
+    assert_eq!(
+        super::super::scalar_slots(
+            &[],
+            0,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        Some(Vec::new())
+    );
 }
 
 /// The format states no rule for a byte left in a bounded scalar body after
@@ -807,14 +864,32 @@ fn a_scalar_body_longer_than_its_declared_count_is_refused() {
     let cache = scalar::ScalarCache::default();
 
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 3, &cache, &mut super::super::ScalarBodyRefusal::default()),
+        super::super::scalar_slots(
+            &[0xe4, 0x0f, 0x0f],
+            3,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
         Some(vec![Some(1.0), Some(0.0), Some(0.0)])
     );
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 2, &cache, &mut super::super::ScalarBodyRefusal::default()),
+        super::super::scalar_slots(
+            &[0xe4, 0x0f, 0x0f],
+            2,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
         None
     );
-    assert_eq!(super::super::scalar_slots(&[0xe4], 0, &cache, &mut super::super::ScalarBodyRefusal::default()), None);
+    assert_eq!(
+        super::super::scalar_slots(
+            &[0xe4],
+            0,
+            &cache,
+            &mut super::super::ScalarBodyRefusal::default()
+        ),
+        None
+    );
 }
 
 /// A refused bounded scalar body is recorded by name. The note states the
@@ -921,15 +996,37 @@ fn a_spline_scalar_body_that_is_not_exactly_its_declared_slots_is_refused() {
         0x2d, 1, 2, 3, 4, 5, 6, 7, 0x2d, 1, 2, 3, 4, 5, 6, 8, 0x2d, 1, 2, 3, 4, 5, 6, 9,
     ];
 
-    assert!(named_spline_scalar_slots(&family, "tangts", &body, 3, &cache, &mut ScalarBodyRefusal::default()).is_some());
+    assert!(named_spline_scalar_slots(
+        &family,
+        "tangts",
+        &body,
+        3,
+        &cache,
+        &mut ScalarBodyRefusal::default()
+    )
+    .is_some());
     // The same bytes under a four-slot declaration end one slot early.
     assert_eq!(
-        named_spline_scalar_slots(&family, "tangts", &body, 4, &cache, &mut ScalarBodyRefusal::default()),
+        named_spline_scalar_slots(
+            &family,
+            "tangts",
+            &body,
+            4,
+            &cache,
+            &mut ScalarBodyRefusal::default()
+        ),
         None
     );
     // The same bytes under a two-slot declaration leave eight bytes over.
     assert_eq!(
-        named_spline_scalar_slots(&family, "tangts", &body, 2, &cache, &mut ScalarBodyRefusal::default()),
+        named_spline_scalar_slots(
+            &family,
+            "tangts",
+            &body,
+            2,
+            &cache,
+            &mut ScalarBodyRefusal::default()
+        ),
         None
     );
 }

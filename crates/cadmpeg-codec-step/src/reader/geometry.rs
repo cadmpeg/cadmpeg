@@ -102,8 +102,7 @@ pub(super) fn infer_edge_parameter_ranges(
             Some((index, curve, start, end))
         })
         .collect::<Vec<_>>();
-    let work = u64_from_index(candidates.len())
-        .saturating_mul(RANGE_INFERENCE_WORK_UNITS);
+    let work = u64_from_index(candidates.len()).saturating_mul(RANGE_INFERENCE_WORK_UNITS);
     if let Some(ctx) = ctx {
         ctx.charge_work(work, "step_edge_parameter_inference")?;
     }

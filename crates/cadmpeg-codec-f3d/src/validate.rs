@@ -159,11 +159,9 @@ fn valid_class_363_operand_path_link(
         && link.locator_record_index == frame.reference_record_index
         && link.locator_reference_offset == frame.reference_offset
         && link.locator_scope_reference_offset
-            == link.locator_byte_offset
-                + u64_from_index(class_363_carrier::SCOPE_REFERENCE + 1)
+            == link.locator_byte_offset + u64_from_index(class_363_carrier::SCOPE_REFERENCE + 1)
         && link.path_reference_offset
-            == link.wrapper_byte_offset
-                + u64_from_index(class_363_identity::OCCURRENCE_GUID + 4)
+            == link.wrapper_byte_offset + u64_from_index(class_363_identity::OCCURRENCE_GUID + 4)
         && link.wrapper_reference_offset < link.wrapper_byte_offset
         && link.locator_scope_reference_offset > link.locator_byte_offset
         && link.locator_reference_offset >= scope.byte_offset()
@@ -2094,8 +2092,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && frame.class_tag == header.class_tag
                         && frame.record_byte_offset == header.byte_offset
                         && frame.transform_offset
-                            == frame.record_byte_offset
-                                + u64_from_index(generation.matrix_offset())
+                            == frame.record_byte_offset + u64_from_index(generation.matrix_offset())
                 });
                 let operand_qualifiers_link = match alignment.form.as_ref() {
                     Some(records::feature::DesignAssemblyAlignmentForm::Qualified(operands)) => {
@@ -6556,10 +6553,9 @@ fn validate_face_operands<'a>(
                         })
                 })
             && operand.next_byte_offset()
-                == operand.recipe_program_offset.saturating_add(
-                    u64_from_index(operand.recipe_program.len())
-                        .saturating_mul(4),
-                )
+                == operand
+                    .recipe_program_offset
+                    .saturating_add(u64_from_index(operand.recipe_program.len()).saturating_mul(4))
             && (historical_candidates_retained || operand.candidate_faces == expected_faces)
             && (historical_candidates_retained
                 || operand.unreferenced_candidate_faces == expected_unreferenced_faces)

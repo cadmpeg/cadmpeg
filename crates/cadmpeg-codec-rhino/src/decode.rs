@@ -417,10 +417,7 @@ impl<'a> DecodeContext<'a> {
                     .entities(entity_count)
                     .map_err(CandidateError::Admission)?;
                 session
-                    .charge_entities(
-                        u64_from_index(entity_count),
-                        "rhino_instance_entities",
-                    )
+                    .charge_entities(u64_from_index(entity_count), "rhino_instance_entities")
                     .map_err(|error| CandidateError::Admission(error.to_string()))?;
                 Ok(value)
             })
@@ -2465,10 +2462,7 @@ impl<'a> DecodeContext<'a> {
     fn charge_session_entities(&self, amount: usize) -> Result<(), String> {
         self.expand
             .ctx()
-            .charge_entities(
-                u64_from_index(amount),
-                "rhino_instance_entities",
-            )
+            .charge_entities(u64_from_index(amount), "rhino_instance_entities")
             .map_err(|error| error.to_string())
     }
 

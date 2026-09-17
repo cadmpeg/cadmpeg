@@ -1340,10 +1340,7 @@ impl Parser<'_, '_, '_> {
         value: &String,
         operation: &'static str,
     ) -> Result<(), ParseError> {
-        self.charge_retained(
-            u64_from_index(value.capacity()),
-            operation,
-        )
+        self.charge_retained(u64_from_index(value.capacity()), operation)
     }
     fn charge_vec_storage<T>(
         &self,
@@ -1375,8 +1372,7 @@ impl Parser<'_, '_, '_> {
 }
 
 fn allocation_bytes(capacity: usize, element_size: usize) -> u64 {
-    u64_from_index(capacity)
-        .saturating_mul(u64_from_index(element_size))
+    u64_from_index(capacity).saturating_mul(u64_from_index(element_size))
 }
 
 fn compact_vec<T>(values: &mut Vec<T>) -> u64 {
@@ -1408,8 +1404,7 @@ fn value_node_storage_bytes(value: &Value) -> u64 {
         | Value::Omitted
         | Value::Derived => 0,
     };
-    u64_from_index(size_of::<Value>())
-        .saturating_add(u64_from_index(dynamic))
+    u64_from_index(size_of::<Value>()).saturating_add(u64_from_index(dynamic))
 }
 
 fn value_storage_bytes(value: &Value) -> u64 {

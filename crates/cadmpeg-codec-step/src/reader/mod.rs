@@ -505,10 +505,9 @@ fn decode_exchange_mode(
         }
     }
     let accounting = {
-        session.ctx.charge_work(
-            u64_from_index(input.len()),
-            "step_byte_accounting",
-        )?;
+        session
+            .ctx
+            .charge_work(u64_from_index(input.len()), "step_byte_accounting")?;
         let _reservation = session
             .ctx
             .reserve_scoped(input.len() as u64, "step_byte_accounting")?;
