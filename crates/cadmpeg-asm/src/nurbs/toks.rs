@@ -410,15 +410,11 @@ pub(crate) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Optio
 /// use cadmpeg_asm::sab::Token;
 ///
 /// let toks = [Token::SubtypeOpen, Token::SubtypeClose];
-/// let scope = SubtypeScope {
-///     tokens: &toks[..],
-///     interior: &toks[1..1],
-/// };
+/// let scope = SubtypeScope { tokens: &toks[..] };
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SubtypeScope<'a> {
     tokens: &'a [Token],
-    interior: &'a [Token],
 }
 
 impl<'a> SubtypeScope<'a> {
@@ -432,16 +428,30 @@ impl<'a> SubtypeScope<'a> {
     /// first of these is the identifier that names it, and the rest are the
     /// fields the construction states.
     ///
-    /// Total: [`subtype_span`] takes the interior from the same slice and the
-    /// same bounds as [`Self::tokens`], so a value of this type always holds
-    /// both.
+    /// Total: [`subtype_span`] is the only constructor and builds `tokens` as
+    /// `toks[start..=pos]` with `pos > start`, so the slice holds at least the
+    /// opening and the closing delimiter and this range is in bounds.
     pub fn interior(&self) -> &'a [Token] {
-        self.interior
+        &self.tokens[1..self.tokens.len() - 1]
     }
 
     /// Token indices of the `nubs`/`nurbs` markers the scope itself owns: those
     /// outside every construction nested within it. The scope's outer
     /// `SubtypeOpen` sets the initial nesting depth.
+    ///
+    /// Direct ownership is the format's rule. `docs/formats/asm.md:395`: "the
+    /// outer non-`ref` procedural subtype owns the record's solved curve or
+    /// surface cache. A B-spline block inside a subtype nested by that
+    /// construction belongs to the nested support, source, guide, or child
+    /// field and is not a candidate for the outer construction's cache", and
+    /// the owning block's ordinal is fixed "among the B-spline blocks directly
+    /// owned by the construction".
+    ///
+    /// The walk skips one leading `SubtypeOpen`, which over these tokens is the
+    /// scope's own. A caller that passed the slice after the scope's name token
+    /// instead made the walk skip the open of a *first nested* scope and
+    /// collect that nested construction's markers as owned; that shape was the
+    /// defect, and no caller states it now.
     ///
     /// Total: the unbalanced stream that [`owned_marker_positions`] refuses is
     /// a state this type cannot hold.
@@ -465,7 +475,6 @@ pub(crate) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<
                     // are therefore in range.
                     return Some(SubtypeScope {
                         tokens: toks.get(start..=pos)?,
-                        interior: toks.get(start + 1..pos)?,
                     });
                 }
             }
@@ -769,6 +778,31 @@ mod tests {
         let owned: Vec<usize> = scope.owned_marker_positions();
         assert_eq!(owned, vec![2, 9]);
         assert_eq!(scope.tokens(), &toks[..]);
+    }
+
+    #[test]
+    fn a_first_nested_scope_does_not_own_the_outer_scopes_markers() {
+        // The interior opens with a nested marker-bearing construction. Only
+        // the outer scope's own `nurbs` is directly owned; the nested `nubs`
+        // belongs to the nested construction (`docs/formats/asm.md:395`).
+        let toks = [
+            Token::SubtypeOpen,
+            ident("exactcur"),
+            Token::SubtypeOpen,
+            ident("support"),
+            ident("nubs"),
+            Token::SubtypeClose,
+            ident("nurbs"),
+            Token::SubtypeClose,
+        ];
+        let scope = subtype_span(&toks, 0).expect("balanced scope");
+        assert_eq!(scope.owned_marker_positions(), vec![6]);
+        assert_eq!(scope.interior(), &toks[1..7]);
+
+        // The slice after the scope's name token opens with the nested scope,
+        // so the free walk skips that nested open and reports the nested
+        // marker as owned. That is the shape the scope type replaces.
+        assert_eq!(owned_marker_positions(&toks[2..7]), Some(vec![2, 4]));
     }
 
     #[test]
