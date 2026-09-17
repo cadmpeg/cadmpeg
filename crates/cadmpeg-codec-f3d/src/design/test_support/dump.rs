@@ -138,12 +138,14 @@ pub(crate) use crate::records::{
     sketch_relations::{SketchConstraintKind, SketchRelation, SketchRelationOperand},
     topology::{
         body_recipe::DesignBodyRecipeOperand, body_recipe::DesignBodyRecipeReference,
-        body_recipe::DesignOperandOwner, edge_identity::DesignEdgeIdentityOperand,
-        edge_recipe::DesignTopologyRecipeSide, face::DesignFaceOperand, face::DesignFaceRecipeNode,
-        face::DesignFaceRecipeStructure, DesignConstructionOperandGroup,
-        DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-        DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeSelectionGroup,
-        DesignSketchProfileOperand,
+        body_recipe::DesignOperandOwner, construction::DesignConstructionOperandGroup,
+        construction::DesignConstructionOperandIdentity,
+        construction::DesignConstructionPersistentIdentity,
+        edge_identity::DesignEdgeIdentityOperand, edge_recipe::DesignTopologyRecipeSide,
+        extrude_selection::DesignExtrudeFaceRole, extrude_selection::DesignExtrudeOperandRole,
+        extrude_selection::DesignExtrudeSelectionGroup, face::DesignFaceOperand,
+        face::DesignFaceRecipeNode, face::DesignFaceRecipeStructure,
+        sketch_profile::DesignSketchProfileOperand,
     },
 };
 pub(crate) use cadmpeg_core::decode::WorkBudget;

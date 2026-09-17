@@ -7,7 +7,9 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
+use crate::records::topology::{
+    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
+};
 
 #[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
@@ -385,7 +387,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut proven_operand = edge_operand.clone();
     proven_operand.resolved_edge_slot = Some(17);
     let recovered_group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
             scope_record_index: 1,
             scope_reference_ordinal: 0,
@@ -400,7 +402,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             lost_edge_references: vec!["f3d:Design/BulkStream.dat:lost-edge#1".into()],
 
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 921,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -419,9 +421,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::BODIES_B,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
             role_offset: 960,
 
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -1372,7 +1375,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     direct_face.alternate_selector_candidate_faces.clear();
     direct_face.resolved_face_slots.clear();
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
             scope_record_index: face_scope.record_index,
             scope_reference_ordinal: 0,
@@ -1386,7 +1389,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 920,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -1405,8 +1408,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::ExtrudeFaces {
-                encoding: crate::records::topology::DesignExtrudeFaceEncoding::Faces,
+            operand_role: crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeFaces {
+                encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
                 usage: DesignExtrudeFaceRole::Termination,
             },
             role_offset: 946,
@@ -1555,9 +1558,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .unwrap();
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
-    split_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X10,
-    );
+    split_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
+        );
     split_group
         .try_set_members(
             vec![operand.record_index(), operand.record_index() + 1]

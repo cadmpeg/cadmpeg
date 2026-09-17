@@ -28,12 +28,14 @@ use crate::records::{
     },
     references::DesignClassTag,
     topology::{
-        edge_identity::DesignEdgeIdentityLayout, edge_identity::DesignEdgeIdentityOperand,
-        edge_identity::DesignEdgeIdentityOperandDraft, face::DesignFaceOperandDraft,
-        DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
-        DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
-        DesignEntitySelectionOperandDraft, DesignFilletMidpoint, DesignFilletRadiusLaw,
-        DesignOperandRole, HistoricalBinding,
+        construction::DesignConstructionOperandGroupDraft,
+        construction::DesignConstructionOperandGroupFrame,
+        construction::DesignConstructionOperandGroupFrameDraft,
+        construction::DesignConstructionOperandRole, edge_identity::DesignEdgeIdentityLayout,
+        edge_identity::DesignEdgeIdentityOperand, edge_identity::DesignEdgeIdentityOperandDraft,
+        entity_selection::DesignEntitySelectionOperandDraft, extrude_selection::DesignOperandRole,
+        face::DesignFaceOperandDraft, fillet::DesignFilletMidpoint, fillet::DesignFilletRadiusLaw,
+        fillet::HistoricalBinding,
     },
 };
 
@@ -660,9 +662,10 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     use crate::records::{
         feature::{direct_face::DesignDraftOperation, scope::DesignParameterScope},
         topology::{
-            body_recipe::AsmHistoricalEntityKind, DesignConstructionOperandGroup,
-            DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
-            DesignEntitySelectionOperand,
+            body_recipe::AsmHistoricalEntityKind, construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame,
+            entity_selection::DesignEntitySelectionFaceCandidate,
+            entity_selection::DesignEntitySelectionOperand,
         },
     };
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
@@ -1835,7 +1838,9 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
 
 #[test]
 fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
-    use crate::records::topology::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
+    use crate::records::topology::{
+        fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
+    };
     let mut weight = parse_design_parameter(&parameter_record(
         Some(1),
         "1",

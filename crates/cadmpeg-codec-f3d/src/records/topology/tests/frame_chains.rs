@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::topology::{
-    body_recipe::DesignBodyRecipeOperand, DesignConstructionOperandTransform,
-    DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
-    DesignEntitySelectionOperand,
+    body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandTransform,
+    construction::DesignConstructionPersistentIdentity,
+    construction::DesignConstructionTrackingPath, entity_selection::DesignEntitySelectionOperand,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -174,7 +174,7 @@ fn entity_selection_retains_primary_paired_and_class_338_forms() {
 
 #[test]
 fn sketch_profile_offsets_must_follow_their_predecessors() {
-    use crate::records::topology::DesignSketchProfileOperand;
+    use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
     let wire = json!({
         "scope_reference_ordinal": 0, "record_index": 7, "byte_offset": 0,
         "class_tag": "300", "paired_class_tag": "301", "paired_byte_offset": 160,

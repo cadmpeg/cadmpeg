@@ -13,7 +13,8 @@
 
 use super::super::*;
 use crate::records::topology::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignOperandRole,
+    construction::DesignConstructionOperandGroup,
+    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
 
 #[test]
@@ -867,7 +868,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: group_id.into(),
             scope_record_index: 10,
             scope_reference_ordinal: 0,
@@ -881,7 +882,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -897,9 +898,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::BODIES_B,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
             role_offset: 0,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "259".to_owned(),
@@ -1084,7 +1086,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         .unwrap();
     let mut scale_group = group.clone();
     scale_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        );
     let scale_inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scale_scope),
         groups: std::slice::from_ref(&scale_group),

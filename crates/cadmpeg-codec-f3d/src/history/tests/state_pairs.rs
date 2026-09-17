@@ -1821,14 +1821,14 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
     assert_eq!(
         candidates,
         [
-            crate::records::topology::DesignEntitySelectionEdgeCandidate {
+            crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate {
                 identity_ordinal: 0,
                 local_id: 700,
                 historical_entity_kind: AsmHistoricalEntityKind::Coedge,
                 historical_entity_ref: 42,
                 edge_slots: vec![17],
             },
-            crate::records::topology::DesignEntitySelectionEdgeCandidate {
+            crate::records::topology::entity_selection::DesignEntitySelectionEdgeCandidate {
                 identity_ordinal: 1,
                 local_id: 800,
                 historical_entity_kind: AsmHistoricalEntityKind::Vertex,

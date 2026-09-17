@@ -49,7 +49,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
                 let value: crate::records::feature::hole::DesignHoleFaceSelection = serde_json::from_str(&wire).expect("hole selection");
                 serde_json::to_string(&value).expect("hole selection wire")
             } else {
-                let value: crate::records::topology::DesignEntitySelectionOperand = serde_json::from_str(&wire).expect("entity selection");
+                let value: crate::records::topology::entity_selection::DesignEntitySelectionOperand = serde_json::from_str(&wire).expect("entity selection");
                 serde_json::to_string(&value).expect("entity selection wire")
             };
             assert_eq!(encoded, wire);
@@ -59,7 +59,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
             let error = if prefix == "{" {
                 serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(&wire).expect_err("partial hole selection identity").to_string()
             } else {
-                serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(&wire).expect_err("partial entity selection identity").to_string()
+                serde_json::from_str::<crate::records::topology::entity_selection::DesignEntitySelectionOperand>(&wire).expect_err("partial entity selection identity").to_string()
             };
             assert!(error.contains(field));
         }
@@ -67,7 +67,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
         let error = if prefix == "{" {
             serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(&wire).unwrap_err().to_string()
         } else {
-            serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(&wire).unwrap_err().to_string()
+            serde_json::from_str::<crate::records::topology::entity_selection::DesignEntitySelectionOperand>(&wire).unwrap_err().to_string()
         };
         assert!(error.contains("secondary_identity"));
         assert!(error.contains("curve_secondary_identity"));
@@ -81,7 +81,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
                     .expect_err("non-GUID hole selection identity")
                     .to_string()
             } else {
-                serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(&wire)
+                serde_json::from_str::<crate::records::topology::entity_selection::DesignEntitySelectionOperand>(&wire)
                     .expect_err("non-GUID entity selection identity")
                     .to_string()
             };
@@ -785,27 +785,25 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
         "entity_id": "Sketch_00017", "entity_suffix": 17, "entity_reference_offset": 30,
         "paired_class_tag": "301", "paired_byte_offset": 40
     });
-    let profile: crate::records::topology::DesignSketchProfileOperand =
+    let profile: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
         serde_json::from_value(wire.clone()).expect("valid profile ID");
     assert_eq!(serde_json::to_value(profile).unwrap(), wire);
     let mut mismatch = wire.clone();
     mismatch["entity_suffix"] = 18.into();
-    assert!(
-        serde_json::from_value::<crate::records::topology::DesignSketchProfileOperand>(mismatch)
-            .expect_err("mismatched profile suffix")
-            .to_string()
-            .contains("entity_suffix")
-    );
+    assert!(serde_json::from_value::<
+        crate::records::topology::sketch_profile::DesignSketchProfileOperand,
+    >(mismatch)
+    .expect_err("mismatched profile suffix")
+    .to_string()
+    .contains("entity_suffix"));
     let mut invalid_asset = wire;
     invalid_asset["asset_id"] = "asset".into();
-    assert!(
-        serde_json::from_value::<crate::records::topology::DesignSketchProfileOperand>(
-            invalid_asset
-        )
-        .expect_err("non-GUID profile asset identity")
-        .to_string()
-        .contains("GUID")
-    );
+    assert!(serde_json::from_value::<
+        crate::records::topology::sketch_profile::DesignSketchProfileOperand,
+    >(invalid_asset)
+    .expect_err("non-GUID profile asset identity")
+    .to_string()
+    .contains("GUID"));
 }
 
 #[test]

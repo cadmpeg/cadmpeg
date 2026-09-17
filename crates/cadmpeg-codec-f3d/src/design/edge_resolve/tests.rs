@@ -12,8 +12,8 @@ use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
     topology::{
-        edge_identity::DesignEdgeIdentityOperand, edge_identity::DesignEdgeOperand,
-        DesignConstructionOperandGroup,
+        construction::DesignConstructionOperandGroup, edge_identity::DesignEdgeIdentityOperand,
+        edge_identity::DesignEdgeOperand,
     },
 };
 use cadmpeg_ir::ids::EdgeId;

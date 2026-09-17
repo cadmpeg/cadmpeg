@@ -16,10 +16,14 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::SketchRelationOperand,
     topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-        DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-        DesignOperandRole, DesignSketchProfileOperand, DesignSketchProfileRegion,
-        DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
+        construction::DesignConstructionOperandGroup,
+        construction::DesignConstructionOperandGroupFrame,
+        entity_selection::DesignEntitySelectionOperand,
+        extrude_selection::DesignExtrudeSelectionGroup,
+        extrude_selection::DesignExtrudeSelectionMember, extrude_selection::DesignOperandRole,
+        sketch_profile::DesignSketchProfileOperand, sketch_profile::DesignSketchProfileRegion,
+        sketch_profile::DesignSketchProfileRegionMember,
+        sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
 use cadmpeg_core::decode::WorkBudget;
@@ -35,7 +39,7 @@ use cadmpeg_ir::sketches::{
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "stream:group".into(),
             scope_record_index: 7,
             scope_reference_ordinal: 0,
@@ -55,7 +59,7 @@ fn group() -> DesignConstructionOperandGroup {
             ],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -71,9 +75,10 @@ fn group() -> DesignConstructionOperandGroup {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::ROLE_0X5,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X5,
+                ),
             role_offset: 0,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "277".to_owned(),
@@ -91,7 +96,7 @@ fn operand(
     secondary_identity: u64,
 ) -> DesignEntitySelectionOperand {
     DesignEntitySelectionOperand::try_new(
-        crate::records::topology::DesignEntitySelectionOperandDraft {
+        crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
             id: format!("stream:operand-{record_index}"),
             scope_record_index: 7,
             group_record_index: 9,
@@ -195,7 +200,7 @@ fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMemb
         curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
         curve_primary_id_offset: 0,
         incidence_flag: false,
-        incidence_values: [crate::records::topology::DesignRegionIncidence::One; 2],
+        incidence_values: [crate::records::topology::sketch_profile::DesignRegionIncidence::One; 2],
         incidence_words_offset: 0,
     }
 }
@@ -249,7 +254,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         native_ref: None,
     };
     let group = DesignExtrudeSelectionGroup::try_from(
-        crate::records::topology::DesignExtrudeSelectionGroupWire {
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
             id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
             scope_record_index: 7,
             scope_reference_ordinal: 0,
@@ -270,7 +275,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
     )
     .unwrap();
     let mut member = DesignExtrudeSelectionMember::try_new(
-        crate::records::topology::DesignExtrudeSelectionMemberDraft {
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
             id: "f3d:Design/BulkStream.dat:selection-member#10".into(),
             group_record_index: group.record_index,
             group_member_ordinal: 0,
@@ -340,7 +345,8 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
     draft.record_index = 11;
 
     conflicting_member =
-        crate::records::topology::DesignExtrudeSelectionMember::try_new(draft).unwrap();
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMember::try_new(draft)
+            .unwrap();
     conflicting_member.local_id = 100;
     conflicting_member.resolved_geometry = Some(SketchRelationOperand::Curve {
         record_index: 21,
@@ -664,7 +670,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         native_ref: None,
     }];
     let profile_operand = DesignSketchProfileOperand::try_new(
-        crate::records::topology::DesignSketchProfileOperandDraft {
+        crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             scope_reference_ordinal: 0,
             record_index: 10,
             byte_offset: 0,
@@ -736,7 +742,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     );
 
     let whole_sketch_operand = DesignSketchProfileOperand::try_new(
-        crate::records::topology::DesignSketchProfileOperandDraft {
+        crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             region_selection: None,
             ..profile_operand.clone().into_draft()
         },
@@ -997,7 +1003,9 @@ fn entity_selection_profile_requires_unique_profile_membership() {
     }];
     let mut group = group();
     group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::PROFILE,
+        );
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,
@@ -1063,7 +1071,9 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     }];
     let mut group = group();
     group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::PROFILE,
+        );
     group
         .try_set_members(
             vec![10]
@@ -1143,7 +1153,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         native_ref: None,
     };
     let operand = DesignSketchProfileOperand::try_new(
-        crate::records::topology::DesignSketchProfileOperandDraft {
+        crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             scope_reference_ordinal: 0,
             record_index: 10,
             byte_offset: 0,

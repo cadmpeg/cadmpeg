@@ -221,8 +221,8 @@ fn valid_class_307_joint_origin_qualifier(
 }
 
 fn valid_sketch_profile_region_selection(
-    profile: &records::topology::DesignSketchProfileOperand,
-    selection: &records::topology::DesignSketchProfileRegionSelection,
+    profile: &records::topology::sketch_profile::DesignSketchProfileOperand,
+    selection: &records::topology::sketch_profile::DesignSketchProfileRegionSelection,
 ) -> bool {
     let Some(expected_region_count_offset) = selection
         .byte_offset
@@ -534,7 +534,7 @@ fn valid_axial_assembly_targets(
         })
 }
 
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::{HashMap, HashSet};
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
@@ -565,13 +565,20 @@ struct Ctx<'a> {
     placements_by_scope:
         HashMap<(&'a str, u32), &'a records::sketch_placement::DesignSketchPlacement>,
     /// Extrude selection groups keyed by `(stream, record_index)`.
-    groups_by_index: HashMap<(&'a str, u32), &'a records::topology::DesignExtrudeSelectionGroup>,
+    groups_by_index: HashMap<
+        (&'a str, u32),
+        &'a records::topology::extrude_selection::DesignExtrudeSelectionGroup,
+    >,
     /// Construction operand groups keyed by `(stream, record_index)`.
-    operand_groups_by_index:
-        HashMap<(&'a str, u32), &'a records::topology::DesignConstructionOperandGroup>,
+    operand_groups_by_index: HashMap<
+        (&'a str, u32),
+        &'a records::topology::construction::DesignConstructionOperandGroup,
+    >,
     /// Extrude selection members keyed by `(stream, group_record_index, ordinal)`.
-    members_by_slot:
-        HashMap<(&'a str, u32, u32), &'a records::topology::DesignExtrudeSelectionMember>,
+    members_by_slot: HashMap<
+        (&'a str, u32, u32),
+        &'a records::topology::extrude_selection::DesignExtrudeSelectionMember,
+    >,
     /// Sketch owner entity ids keyed by `(stream, suffix)`.
     sketch_owner_ids: HashMap<(&'a str, u32), &'a str>,
 }
@@ -751,9 +758,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .filter(|group| {
             group.extrude_role().is_some_and(|role| {
-                matches!(role, records::topology::DesignExtrudeOperandRole::Faces(_))
+                matches!(
+                    role,
+                    records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_)
+                )
             }) || (group.extrude_role()
-                == Some(records::topology::DesignExtrudeOperandRole::Profile)
+                == Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Profile)
                 && decoded_profile_face_groups
                     .contains(&(design_stream(&group.id), group.record_index)))
         })
@@ -1637,24 +1647,25 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && binding.entity_reference_offset < scope.paired_byte_offset()
                 })
         });
-        let valid_sketch_profile = |profile: &records::topology::DesignSketchProfileOperand| {
-            let header = records_by_index.get(&(native_stream, profile.record_index));
-            let entity = entities_by_suffix.get(&(native_stream, profile.entity_id.suffix()));
-            usize::try_from(profile.scope_reference_ordinal)
-                .ok()
-                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
-                == Some(&profile.record_index)
-                && header.is_some_and(|header| {
-                    header.byte_offset == profile.byte_offset()
-                        && header.class_tag == profile.class_tag
-                })
-                && entity.is_some_and(|entity| {
-                    entity.in_sketch_module() && entity.entity_id == profile.entity_id
-                })
-                && profile.region_selection.as_ref().is_none_or(|selection| {
-                    valid_sketch_profile_region_selection(profile, selection)
-                })
-        };
+        let valid_sketch_profile =
+            |profile: &records::topology::sketch_profile::DesignSketchProfileOperand| {
+                let header = records_by_index.get(&(native_stream, profile.record_index));
+                let entity = entities_by_suffix.get(&(native_stream, profile.entity_id.suffix()));
+                usize::try_from(profile.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                    == Some(&profile.record_index)
+                    && header.is_some_and(|header| {
+                        header.byte_offset == profile.byte_offset()
+                            && header.class_tag == profile.class_tag
+                    })
+                    && entity.is_some_and(|entity| {
+                        entity.in_sketch_module() && entity.entity_id == profile.entity_id
+                    })
+                    && profile.region_selection.as_ref().is_none_or(|selection| {
+                        valid_sketch_profile_region_selection(profile, selection)
+                    })
+            };
         let extrude_profile_link = scope.extrude_profile().is_none_or(valid_sketch_profile);
         let sweep_profile_link = scope.sweep_profile().is_none_or(valid_sketch_profile);
         let is_base_flange =
@@ -3988,34 +3999,34 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             let role_is_valid = match design::design_feature_family(&scope.kind()) {
                 Some(design::DesignFeatureFamily::Extrude) => {
                     match group.operand_role {
-                        records::topology::DesignConstructionOperandRole::ExtrudeBodiesA
-                        | records::topology::DesignConstructionOperandRole::ExtrudeBodiesB => true,
-                        records::topology::DesignConstructionOperandRole::ExtrudeProfile => {
+                        records::topology::construction::DesignConstructionOperandRole::ExtrudeBodiesA
+                        | records::topology::construction::DesignConstructionOperandRole::ExtrudeBodiesB => true,
+                        records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile => {
                             scope.extrude_profile().is_none_or(|profile| {
                                 group.members().first().map(|member| &member.value)
                                     == Some(&profile.record_index)
                             })
                         }
-                        records::topology::DesignConstructionOperandRole::ExtrudeFaces {
+                        records::topology::construction::DesignConstructionOperandRole::ExtrudeFaces {
                             encoding,
                             ..
                         } => match encoding {
-                            records::topology::DesignExtrudeFaceEncoding::Faces => true,
-                            records::topology::DesignExtrudeFaceEncoding::LegacyTermination => {
+                            records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces => true,
+                            records::topology::extrude_selection::DesignExtrudeFaceEncoding::LegacyTermination => {
                                 scope.extrude_prologue().and_then(
                                     records::feature::extrude::DesignExtrudePrologue::extent,
                                 ) == Some(
                                     records::feature::extrude::DesignExtrudeExtent::OneSidedToFace,
                                 ) || is_class_296_two_sided_to_faces_scope(scope)
                             }
-                            records::topology::DesignExtrudeFaceEncoding::SelectedStart => {
+                            records::topology::extrude_selection::DesignExtrudeFaceEncoding::SelectedStart => {
                                 scope
                                     .extrude_prologue()
                                     .map(records::feature::extrude::DesignExtrudePrologue::start)
                                     == Some(records::feature::extrude::DesignExtrudeStart::FromFace)
                             }
                         },
-                        records::topology::DesignConstructionOperandRole::Other(role) => {
+                        records::topology::construction::DesignConstructionOperandRole::Other(role) => {
                             role == DesignOperandRole::ROLE_0X5
                         }
                     }
@@ -4565,7 +4576,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role()
-                            == Some(records::topology::DesignExtrudeOperandRole::Profile)
+                            == Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Profile)
                 })
                 .collect::<Vec<_>>();
             let profile_matches_operand =
@@ -4601,7 +4612,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role()
-                            == Some(records::topology::DesignExtrudeOperandRole::Bodies)
+                            == Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Bodies)
                 });
             let face_operand_group_count = native
                 .design_construction_operand_groups
@@ -4610,7 +4621,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role().is_some_and(|role| {
-                            matches!(role, records::topology::DesignExtrudeOperandRole::Faces(_))
+                            matches!(role, records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_))
                         })
                 })
                 .count();
@@ -4831,7 +4842,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role().is_some_and(|role| {
-                            matches!(role, records::topology::DesignExtrudeOperandRole::Faces(_))
+                            matches!(role, records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_))
                         })
                 })
                 .collect::<Vec<_>>();
@@ -4841,23 +4852,23 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     records::feature::extrude::DesignExtrudeStart::FromFace,
                     records::feature::extrude::DesignExtrudeExtent::OneSidedToFace,
                 ) if target_shape_group_count == 0 => vec![
-                    records::topology::DesignExtrudeFaceRole::Start,
-                    records::topology::DesignExtrudeFaceRole::Termination,
+                    records::topology::extrude_selection::DesignExtrudeFaceRole::Start,
+                    records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
                 ],
                 (records::feature::extrude::DesignExtrudeStart::FromFace, _) => {
-                    vec![records::topology::DesignExtrudeFaceRole::Start]
+                    vec![records::topology::extrude_selection::DesignExtrudeFaceRole::Start]
                 }
                 (_, records::feature::extrude::DesignExtrudeExtent::OneSidedToFace)
                     if target_shape_group_count == 0 =>
                 {
-                    vec![records::topology::DesignExtrudeFaceRole::Termination]
+                    vec![records::topology::extrude_selection::DesignExtrudeFaceRole::Termination]
                 }
                 (_, records::feature::extrude::DesignExtrudeExtent::TwoSidedToFaces) => vec![
-                    records::topology::DesignExtrudeFaceRole::Termination,
-                    records::topology::DesignExtrudeFaceRole::Termination,
+                    records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+                    records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
                 ],
                 (_, records::feature::extrude::DesignExtrudeExtent::TwoSidedDistanceToFace) => {
-                    vec![records::topology::DesignExtrudeFaceRole::Termination]
+                    vec![records::topology::extrude_selection::DesignExtrudeFaceRole::Termination]
                 }
                 _ => Vec::new(),
             };
@@ -4961,7 +4972,7 @@ fn validate_fillet_radius_groups<'a>(
                         .eq(assignment.edge_operand_record_indices.iter().copied())
             })
             && match &assignment.law {
-                records::topology::DesignFilletRadiusLaw::Constant {
+                records::topology::fillet::DesignFilletRadiusLaw::Constant {
                     radius_parameter_record_index,
                 } => {
                     assignment_parameter(*radius_parameter_record_index).is_some_and(|parameter| {
@@ -4973,7 +4984,7 @@ fn validate_fillet_radius_groups<'a>(
                             && parameter.evaluated_value() > 0.0
                     })
                 }
-                records::topology::DesignFilletRadiusLaw::Chordal {
+                records::topology::fillet::DesignFilletRadiusLaw::Chordal {
                     chord_length_parameter_record_index,
                 } => assignment_parameter(*chord_length_parameter_record_index).is_some_and(
                     |parameter| {
@@ -4985,7 +4996,7 @@ fn validate_fillet_radius_groups<'a>(
                             && parameter.evaluated_value() > 0.0
                     },
                 ),
-                records::topology::DesignFilletRadiusLaw::Asymmetric {
+                records::topology::fillet::DesignFilletRadiusLaw::Asymmetric {
                     offset_one_parameter_record_index,
                     offset_two_parameter_record_index,
                 } => [
@@ -5003,7 +5014,7 @@ fn validate_fillet_radius_groups<'a>(
                             && parameter.evaluated_value() > 0.0
                     })
                 }),
-                records::topology::DesignFilletRadiusLaw::Variable {
+                records::topology::fillet::DesignFilletRadiusLaw::Variable {
                     start_radius_parameter_record_index,
                     end_radius_parameter_record_index,
                     middle: midpoint_records,
@@ -5359,12 +5370,12 @@ fn validate_construction_operand_identities<'a>(
                         .frame
                         .trailing_transforms()
                         .first()
-                        .map(super::records::topology::DesignConstructionOperandTransform::record_index)
+                        .map(super::records::topology::construction::DesignConstructionOperandTransform::record_index)
                 })
                 .or_else(|| {
                     identity
                         .tracking_path()
-                        .map(super::records::topology::DesignConstructionTrackingPath::wrapper_record_index)
+                        .map(super::records::topology::construction::DesignConstructionTrackingPath::wrapper_record_index)
                 })
                 == trailing
         }) && wrapper_shape
@@ -6674,7 +6685,7 @@ fn validate_face_group_member_resolution(
     findings: &mut Vec<Finding>,
     face_group_members: HashSet<(&str, u32, u32)>,
     face_operand_records: &HashSet<(&str, u32, u32)>,
-    entity_selection_operands: &[records::topology::DesignEntitySelectionOperand],
+    entity_selection_operands: &[records::topology::entity_selection::DesignEntitySelectionOperand],
 ) {
     let entity_selection_records = entity_selection_operands
         .iter()

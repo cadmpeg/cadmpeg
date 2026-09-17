@@ -25,7 +25,7 @@ use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::recipes::ConstructionRecipe;
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -229,7 +229,7 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
 pub fn bind_mirror_constructions(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
-    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     owners: &[DesignParameterOwner],
     recipes: &[ConstructionRecipe],

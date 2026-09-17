@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
-use crate::records::topology::{DesignConstructionOperandRole, DesignExtrudeFaceEncoding};
+use crate::records::topology::{
+    construction::DesignConstructionOperandRole, extrude_selection::DesignExtrudeFaceEncoding,
+};
 
 use cadmpeg_core::container::ContainerRole;
 
@@ -52,17 +54,23 @@ use crate::records::{
     sketch_relations::SketchRelationOperand,
     topology::{
         body_recipe::DesignBodyRecipeOperand, body_recipe::DesignBodyRecipeReference,
-        body_recipe::DesignOperandOwner, edge_identity::DesignEdgeIdentityOperand,
+        body_recipe::DesignOperandOwner, construction::DesignConstructionOperandGroup,
+        construction::DesignConstructionOperandGroupFrame,
+        construction::DesignConstructionOperandIdentity,
+        construction::DesignConstructionPersistentIdentity,
+        construction::DesignConstructionTrackingPath, edge_identity::DesignEdgeIdentityOperand,
         edge_identity::DesignEdgeOperand, edge_recipe::DesignTopologyRecipeEntry,
         edge_recipe::DesignTopologyRecipeSide, edge_recipe::DesignTopologyRecipeTriplet,
+        entity_selection::DesignEntitySelectionOperand,
+        entity_selection::DesignLoftLegacyBodyCarrier, extrude_selection::DesignExtrudeFaceRole,
+        extrude_selection::DesignExtrudeOperandRole,
+        extrude_selection::DesignExtrudeSelectionGroup,
+        extrude_selection::DesignExtrudeSelectionMember, extrude_selection::DesignOperandRole,
         face::DesignFaceOperand, face::DesignFaceSourceGroup, face::DesignFaceSourceMember,
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-        DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-        DesignConstructionTrackingPath, DesignEntitySelectionOperand, DesignExtrudeFaceRole,
-        DesignExtrudeOperandRole, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-        DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier,
-        DesignOperandRole, DesignSketchProfileOperand, DesignSketchProfileRegion,
-        DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
+        fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
+        sketch_profile::DesignSketchProfileOperand, sketch_profile::DesignSketchProfileRegion,
+        sketch_profile::DesignSketchProfileRegionMember,
+        sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
 use cadmpeg_core::decode::{index_from_u32, View};
@@ -1060,7 +1068,7 @@ pub fn decode_face_source_groups(
                             record_index: source_record_index,
                             byte_offset: source_byte_offset_u64,
                             class_tag: source_class_tag.try_into().ok()?,
-                            persistent_identity: DesignConstructionPersistentIdentity::try_new(crate::records::topology::DesignConstructionPersistentIdentityDraft {
+                            persistent_identity: DesignConstructionPersistentIdentity::try_new(crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
                                 local_id: member.local_id,
                                 local_id_offset: member.local_id_offset,
                                 asset_id: member.asset_id.try_into().ok()?,
@@ -1942,7 +1950,7 @@ pub fn decode_fillet_radius_groups(
                     .into_iter()
                     .zip(middle_parameters)
                     .map(|(radius_parameter_record_index, parameter_record_index)| {
-                        crate::records::topology::DesignFilletMidpoint {
+                        crate::records::topology::fillet::DesignFilletMidpoint {
                             radius_parameter_record_index,
                             parameter_record_index,
                         }
@@ -2297,7 +2305,7 @@ pub(crate) fn parse_construction_operand_group(
         return Unclosed;
     };
     let Ok(frame) = DesignConstructionOperandGroupFrame::try_from(
-        crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
             member_count_offset,
             auxiliary_records,
             auxiliary_paths: Vec::new(),
@@ -2315,7 +2323,7 @@ pub(crate) fn parse_construction_operand_group(
         return Unclosed;
     };
     let Ok(group) = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: String::new(),
             scope_record_index: scope.record_index,
             scope_reference_ordinal,
@@ -2480,7 +2488,7 @@ pub fn bind_construction_operand_trailing_records(
 pub(crate) fn parse_construction_operand_flag(
     bytes: &[u8],
     header: &DesignRecordHeader,
-) -> Option<crate::records::topology::DesignConstructionOperandFlag> {
+) -> Option<crate::records::topology::construction::DesignConstructionOperandFlag> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
@@ -2493,13 +2501,15 @@ pub(crate) fn parse_construction_operand_flag(
         1 => true,
         _ => return None,
     };
-    Some(crate::records::topology::DesignConstructionOperandFlag {
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        value,
-        value_offset: u64::try_from(start + 22).ok()?,
-    })
+    Some(
+        crate::records::topology::construction::DesignConstructionOperandFlag {
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            value,
+            value_offset: u64::try_from(start + 22).ok()?,
+        },
+    )
 }
 
 /// Bind exact persistent-entity path records selected by construction groups.
@@ -2548,7 +2558,7 @@ pub(crate) fn parse_construction_operand_path(
     bytes: &[u8],
     expected_scope_record_index: u32,
     header: &DesignRecordHeader,
-) -> Option<crate::records::topology::DesignConstructionOperandPath> {
+) -> Option<crate::records::topology::construction::DesignConstructionOperandPath> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 21) != Some(&1) {
         return None;
@@ -2561,7 +2571,9 @@ pub(crate) fn parse_construction_operand_path(
             return None;
         }
         (
-            crate::records::topology::DesignConstructionPathPlacement::Transform(transform),
+            crate::records::topology::construction::DesignConstructionPathPlacement::Transform(
+                transform,
+            ),
             start + 162,
         )
     } else {
@@ -2570,7 +2582,9 @@ pub(crate) fn parse_construction_operand_path(
             _ => return None,
         };
         (
-            crate::records::topology::DesignConstructionPathPlacement::Compact(variant),
+            crate::records::topology::construction::DesignConstructionPathPlacement::Compact(
+                variant,
+            ),
             start + 34,
         )
     };
@@ -2593,8 +2607,8 @@ pub(crate) fn parse_construction_operand_path(
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    crate::records::topology::DesignConstructionOperandPath::try_new(
-        crate::records::topology::DesignConstructionOperandPathDraft {
+    crate::records::topology::construction::DesignConstructionOperandPath::try_new(
+        crate::records::topology::construction::DesignConstructionOperandPathDraft {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
             class_tag: header.class_tag.clone(),
@@ -2616,7 +2630,7 @@ pub(crate) fn parse_construction_operand_path(
 pub(crate) fn parse_construction_operand_transform(
     bytes: &[u8],
     header: &DesignRecordHeader,
-) -> Option<crate::records::topology::DesignConstructionOperandTransform> {
+) -> Option<crate::records::topology::construction::DesignConstructionOperandTransform> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 22)? != [0; 11]
         || bytes.get(start + 150..start + 152)? != [1, 0]
@@ -2632,8 +2646,8 @@ pub(crate) fn parse_construction_operand_transform(
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    crate::records::topology::DesignConstructionOperandTransform::try_new(
-        crate::records::topology::DesignConstructionOperandTransformDraft {
+    crate::records::topology::construction::DesignConstructionOperandTransform::try_new(
+        crate::records::topology::construction::DesignConstructionOperandTransformDraft {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
             class_tag: header.class_tag.clone(),
@@ -2650,7 +2664,7 @@ pub(crate) fn parse_construction_operand_transform(
 pub(crate) fn parse_construction_operand_dual_transform(
     bytes: &[u8],
     header: &DesignRecordHeader,
-) -> Option<crate::records::topology::DesignConstructionOperandDualTransform> {
+) -> Option<crate::records::topology::construction::DesignConstructionOperandDualTransform> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10] || bytes.get(start + 277) != Some(&0) {
         return None;
@@ -2658,7 +2672,7 @@ pub(crate) fn parse_construction_operand_dual_transform(
     let first_at = start.checked_add(21)?;
     let second_at = start.checked_add(149)?;
     Some(
-        crate::records::topology::DesignConstructionOperandDualTransform {
+        crate::records::topology::construction::DesignConstructionOperandDualTransform {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
             class_tag: header.class_tag.clone(),
@@ -2855,11 +2869,13 @@ pub(crate) fn parse_construction_operand_identity(
         if !seen.insert((current_record_index, current_at)) {
             return None;
         }
-        wrappers.push(crate::records::topology::DesignIdentityWrapper {
-            record_index: current_record_index,
-            byte_offset: u64::try_from(current_at).ok()?,
-            class_tag: current_class_tag,
-        });
+        wrappers.push(
+            crate::records::topology::construction::DesignIdentityWrapper {
+                record_index: current_record_index,
+                byte_offset: u64::try_from(current_at).ok()?,
+                class_tag: current_class_tag,
+            },
+        );
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =
             lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
@@ -2884,7 +2900,7 @@ pub(crate) fn parse_construction_operand_identity(
     }
     let persistent_identity = parse_extrude_identity_member(bytes, current_at).and_then(|member| {
         DesignConstructionPersistentIdentity::try_new(
-            crate::records::topology::DesignConstructionPersistentIdentityDraft {
+            crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
                 local_id: member.local_id,
                 local_id_offset: member.local_id_offset,
                 asset_id: member.asset_id.try_into().ok()?,
@@ -2900,7 +2916,7 @@ pub(crate) fn parse_construction_operand_identity(
         .ok()
     });
     DesignConstructionOperandIdentity::try_new(
-        crate::records::topology::DesignConstructionOperandIdentityDraft {
+        crate::records::topology::construction::DesignConstructionOperandIdentityDraft {
             id: String::new(),
             group_record_index: group.record_index,
             wrappers,
@@ -2958,7 +2974,7 @@ pub(crate) fn parse_construction_tracking_path(
         return None;
     }
     DesignConstructionTrackingPath::try_new(
-        crate::records::topology::DesignConstructionTrackingPathDraft {
+        crate::records::topology::construction::DesignConstructionTrackingPathDraft {
             wrapper_record_index,
             wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
             wrapper_class_tag: wrapper_class_tag.clone(),
@@ -3062,7 +3078,7 @@ pub(crate) fn parse_extrude_selection_group(
         return None;
     }
     DesignExtrudeSelectionGroup::try_from(
-        crate::records::topology::DesignExtrudeSelectionGroupWire {
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
             id: String::new(),
             scope_record_index: scope.record_index,
             scope_reference_ordinal,
@@ -3185,7 +3201,7 @@ pub(crate) fn parse_entity_selection_operand(
         header.class_tag.as_str(),
     )?;
     DesignEntitySelectionOperand::try_new(
-        crate::records::topology::DesignEntitySelectionOperandDraft {
+        crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
             id: String::new(),
             scope_record_index: group.scope_record_index,
             group_record_index: group.record_index,
@@ -4096,7 +4112,7 @@ pub(crate) fn parse_extrude_selection_member(
     let start = usize::try_from(header.byte_offset).ok()?;
     let member = parse_extrude_identity_member(bytes, start)?;
     DesignExtrudeSelectionMember::try_new(
-        crate::records::topology::DesignExtrudeSelectionMemberDraft {
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
             id: String::new(),
             group_record_index: group.record_index,
             group_member_ordinal,
@@ -4317,19 +4333,21 @@ pub(crate) fn parse_sketch_profile(
     };
     let region_selection =
         parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
-    DesignSketchProfileOperand::try_new(crate::records::topology::DesignSketchProfileOperandDraft {
-        scope_reference_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        asset_id: asset_id.try_into().ok()?,
-        asset_id_offset: u64::try_from(start + 40).ok()?,
-        entity_id: entity.entity_id.clone(),
-        entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
-        region_selection,
-        paired_class_tag: paired_class_tag.try_into().ok()?,
-        paired_byte_offset: u64::try_from(paired_at).ok()?,
-    })
+    DesignSketchProfileOperand::try_new(
+        crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            scope_reference_ordinal,
+            record_index: header.record_index,
+            byte_offset: header.byte_offset,
+            class_tag: header.class_tag.clone(),
+            asset_id: asset_id.try_into().ok()?,
+            asset_id_offset: u64::try_from(start + 40).ok()?,
+            entity_id: entity.entity_id.clone(),
+            entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
+            region_selection,
+            paired_class_tag: paired_class_tag.try_into().ok()?,
+            paired_byte_offset: u64::try_from(paired_at).ok()?,
+        },
+    )
     .ok()
 }
 
@@ -4462,10 +4480,14 @@ fn parse_sketch_profile_region_selection(
                 .ok()?,
                 incidence_flag: incidence_words[3] == 1,
                 incidence_values: [
-                    crate::records::topology::DesignRegionIncidence::try_from(incidence_words[4])
-                        .ok()?,
-                    crate::records::topology::DesignRegionIncidence::try_from(incidence_words[5])
-                        .ok()?,
+                    crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
+                        incidence_words[4],
+                    )
+                    .ok()?,
+                    crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(
+                        incidence_words[5],
+                    )
+                    .ok()?,
                 ],
                 incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
             });

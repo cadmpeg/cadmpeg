@@ -14,7 +14,9 @@ use crate::layout::design_decal_scope_prefix as decal_scope;
 use crate::records::{
     decal::{DesignDecalAsset, DesignDecalImage},
     feature::scope::DesignParameterScope,
-    topology::{body_recipe::DesignBodyRecipeOperand, DesignConstructionOperandGroup},
+    topology::{
+        body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
+    },
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -23,8 +25,8 @@ use cadmpeg_ir::features::{
     DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureOperation,
 };
 
-const DECAL_TARGET_ROLE: crate::records::topology::DesignOperandRole =
-    crate::records::topology::DesignOperandRole::BODIES_A;
+const DECAL_TARGET_ROLE: crate::records::topology::extrude_selection::DesignOperandRole =
+    crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A;
 
 /// Decode every structurally complete Decal image record.
 pub fn decode_decal_images(

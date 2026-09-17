@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -862,12 +862,15 @@ fn fixed_kind_edge_and_revolve_operations(
     revolve_profile.id = "stream:profile".into();
     revolve_profile.scope_record_index = revolve_scope.record_index;
     revolve_profile.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::PROFILE,
+        );
     let mut revolve_axis = revolve_profile.clone();
     revolve_axis.id = "stream:axis".into();
-    revolve_axis.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X21,
-    );
+    revolve_axis.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
+        );
     assert_eq!(
         crate::design::feature_project::project_fixed_revolve_with_entities(
             &revolve_scope,
@@ -895,7 +898,9 @@ fn fixed_kind_edge_and_revolve_operations(
     indexed_profile.id = "stream:indexed-profile".into();
     indexed_profile.scope_record_index = indexed_revolve_scope.record_index;
     indexed_profile.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::PROFILE,
+        );
     let mut indexed_axis = indexed_profile.clone();
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
@@ -905,53 +910,57 @@ fn fixed_kind_edge_and_revolve_operations(
             offset: indexed_axis.members()[0].offset,
         }])
         .unwrap();
-    indexed_axis.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X21,
-    );
+    indexed_axis.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
+        );
     let mut indexed_bodies = indexed_profile.clone();
     indexed_bodies.id = "stream:indexed-bodies".into();
     indexed_bodies.record_index = 901;
     indexed_bodies.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
-    let mut axis_selection = crate::records::topology::DesignEntitySelectionOperand::try_new(
-        crate::records::topology::DesignEntitySelectionOperandDraft {
-            id: "stream:indexed-axis-selection".into(),
-            scope_record_index: indexed_revolve_scope.record_index,
-            group_record_index: indexed_axis.record_index,
-            group_member_ordinal: 0,
-            record_index: 900,
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned())
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        );
+    let mut axis_selection =
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                id: "stream:indexed-axis-selection".into(),
+                scope_record_index: indexed_revolve_scope.record_index,
+                group_record_index: indexed_axis.record_index,
+                group_member_ordinal: 0,
+                record_index: 900,
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
                 .unwrap(),
-            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 0,
-            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 0,
-            identity_record_index: 903,
-            identity_record_offset: 0,
-            primary_identity: 100,
-            primary_identity_offset: 29,
-            secondary: Some(crate::records::identity::DesignSecondaryIdentity {
-                identity: crate::records::identity::Located {
-                    value: 104,
-                    offset: 37,
-                },
-                curve_identity: None,
-            }),
-            historical_edge_candidates: Vec::new(),
-            historical_face_candidates: Vec::new(),
-            resolved_edge_slot: None,
-            next_record_index: 904,
-            next_byte_offset: 45,
-        },
-    )
-    .unwrap();
+                asset_id_offset: 0,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 0,
+                identity_record_index: 903,
+                identity_record_offset: 0,
+                primary_identity: 100,
+                primary_identity_offset: 29,
+                secondary: Some(crate::records::identity::DesignSecondaryIdentity {
+                    identity: crate::records::identity::Located {
+                        value: 104,
+                        offset: 37,
+                    },
+                    curve_identity: None,
+                }),
+                historical_edge_candidates: Vec::new(),
+                historical_face_candidates: Vec::new(),
+                resolved_edge_slot: None,
+                next_record_index: 904,
+                next_byte_offset: 45,
+            },
+        )
+        .unwrap();
     let axis_placement = DesignSketchPlacement {
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
@@ -1016,11 +1025,12 @@ fn fixed_kind_edge_and_revolve_operations(
     draft.primary_identity_offset = draft.identity_record_offset + 21;
     draft.next_byte_offset = draft.identity_record_offset + 29;
     axis_selection =
-        crate::records::topology::DesignEntitySelectionOperand::try_new(draft).unwrap();
+        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(draft)
+            .unwrap();
     axis_selection.historical_face_candidates = vec![
-        crate::records::topology::DesignEntitySelectionFaceCandidate {
+        crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
-            historical: crate::records::topology::HistoricalBinding {
+            historical: crate::records::topology::fillet::HistoricalBinding {
                 kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind::Face,
                 entity_ref: 40,
                 state_ids: vec![1],

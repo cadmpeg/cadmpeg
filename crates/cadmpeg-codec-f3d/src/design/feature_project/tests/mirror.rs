@@ -6,12 +6,15 @@
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 
 use super::project_mirror;
 use crate::records::{
     feature::{mirror::DesignMirrorConstruction, scope::DesignParameterScope},
-    topology::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame},
+    topology::{
+        construction::DesignConstructionOperandGroup,
+        construction::DesignConstructionOperandGroupFrame,
+    },
 };
 use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PatternSeed,
@@ -25,7 +28,7 @@ fn group(
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
             scope_record_index,
             scope_reference_ordinal: 0,
@@ -39,7 +42,7 @@ fn group(
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -55,7 +58,8 @@ fn group(
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(role),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(role),
             role_offset: 0,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::prelude::*;
-use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
+use crate::records::topology::{
+    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
+};
 use cadmpeg_ir::features::FeatureOperation;
 
 pub(super) fn fixed_kind_tail_operations(
@@ -512,7 +514,7 @@ pub(super) fn fixed_kind_tail_operations(
         }
     }
     let thicken_group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "thicken-group".into(),
             scope_record_index: thicken_scope.record_index,
             scope_reference_ordinal: 0,
@@ -526,7 +528,7 @@ pub(super) fn fixed_kind_tail_operations(
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 0,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -545,9 +547,10 @@ pub(super) fn fixed_kind_tail_operations(
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::ROLE_0X5,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X5,
+                ),
             role_offset: 0,
 
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -568,7 +571,7 @@ pub(super) fn fixed_kind_tail_operations(
     ));
     let mut bounded_face_thicken_group = thicken_group.clone();
     bounded_face_thicken_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::ROLE_0X12,
         );
     assert!(matches!(
@@ -657,9 +660,10 @@ pub(super) fn fixed_kind_tail_operations(
     let mut shell_group = thicken_group.clone();
     shell_group.id = "shell-group".into();
     shell_group.scope_record_index = shell_scope.record_index;
-    shell_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X10,
-    );
+    shell_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
+        );
     assert!(matches!(
         crate::design::feature_project::project_shell(&shell_scope, &[], std::slice::from_ref(&shell_group)),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Shell {
@@ -788,7 +792,9 @@ pub(super) fn fixed_kind_tail_operations(
         }
     }
     shell_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::BODIES_A,
+        );
     assert!(matches!(
         crate::design::feature_project::project_shell(
             &compact_shell_scope,
@@ -834,9 +840,10 @@ pub(super) fn fixed_kind_tail_operations(
     let mut offset_group = thicken_group.clone();
     offset_group.id = "offset-group".into();
     offset_group.scope_record_index = offset_scope.record_index;
-    offset_group.operand_role = crate::records::topology::DesignConstructionOperandRole::Other(
-        DesignOperandRole::ROLE_0X10,
-    );
+    offset_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
+        );
     assert!(matches!(
         crate::design::feature_project::project_offset_faces(
             &offset_scope,

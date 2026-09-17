@@ -80,9 +80,9 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     assert_eq!(
         entity_selection_face_candidates(18044, &[unrelated, selected]),
         [
-            crate::records::topology::DesignEntitySelectionFaceCandidate {
+            crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
-                historical: crate::records::topology::HistoricalBinding {
+                historical: crate::records::topology::fillet::HistoricalBinding {
                     kind: AsmHistoricalEntityKind::Pcurve,
                     entity_ref: 18044,
                     state_ids: vec![2],
@@ -197,9 +197,9 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
             .map(|selection| selection.historical_face_candidates.as_slice()),
         Some(
             &[
-                crate::records::topology::DesignEntitySelectionFaceCandidate {
+                crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                     history_id: "selected".into(),
-                    historical: crate::records::topology::HistoricalBinding {
+                    historical: crate::records::topology::fillet::HistoricalBinding {
                         kind: AsmHistoricalEntityKind::Pcurve,
                         entity_ref: 18044,
                         state_ids: vec![2],
@@ -1371,7 +1371,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     use crate::records::{
         feature::scope::DesignParameterScope,
-        topology::{face::DesignFaceOperand, DesignConstructionOperandGroup},
+        topology::{construction::DesignConstructionOperandGroup, face::DesignFaceOperand},
     };
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
@@ -1640,9 +1640,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
 #[test]
 fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent() {
     let candidate = |history_id: &str, face_slot| {
-        crate::records::topology::DesignEntitySelectionFaceCandidate {
+        crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
             history_id: history_id.into(),
-            historical: crate::records::topology::HistoricalBinding {
+            historical: crate::records::topology::fillet::HistoricalBinding {
                 kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind::Loop,
                 entity_ref: face_slot + 100,
                 state_ids: vec![2, 1],
@@ -1710,7 +1710,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             .expect("mirror construction"),
         );
     }
-    let group: crate::records::topology::DesignConstructionOperandGroup =
+    let group: crate::records::topology::construction::DesignConstructionOperandGroup =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
             "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
@@ -1722,7 +1722,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             "paired_class_tag": "261", "paired_byte_offset": 0
         }))
         .expect("mirror plane group");
-    let mut operand: crate::records::topology::DesignEntitySelectionOperand =
+    let mut operand: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
             "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
@@ -1947,15 +1947,16 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition: None,
     };
-    let candidate = crate::records::topology::DesignEntitySelectionFaceCandidate {
-        history_id: "history".into(),
-        historical: crate::records::topology::HistoricalBinding {
-            kind: AsmHistoricalEntityKind::Face,
-            entity_ref: 69,
-            state_ids: vec![2, 1],
-        },
-        face_slot: 27,
-    };
+    let candidate =
+        crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
+            history_id: "history".into(),
+            historical: crate::records::topology::fillet::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Face,
+                entity_ref: 69,
+                state_ids: vec![2, 1],
+            },
+            face_slot: 27,
+        };
     let mut history = AsmHistory {
         id: "history".into(),
         byte_offset: 0,

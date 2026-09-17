@@ -1,6 +1,7 @@
 use super::super::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-    DesignConstructionOperandGroupFrameWire,
+    construction::DesignConstructionOperandGroup,
+    construction::DesignConstructionOperandGroupFrame,
+    construction::DesignConstructionOperandGroupFrameWire,
 };
 use crate::records::identity::Located;
 use serde_json::json;

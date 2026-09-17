@@ -2,7 +2,7 @@
 //! History-module unit tests.
 
 use super::super::*;
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 
 #[test]
 fn split_face_targets_bind_from_a_transition_predecessor() {
@@ -11,8 +11,8 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         feature::scope::DesignParameterScope,
         recipes::ConstructionRecipeKind,
         topology::{
-            face::DesignFaceOperand, DesignConstructionOperandGroup,
-            DesignConstructionOperandGroupFrame,
+            construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame, face::DesignFaceOperand,
         },
     };
     use cadmpeg_ir::features::{
@@ -35,7 +35,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         .unwrap();
 
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: group_id.clone(),
             scope_record_index: 42,
             scope_reference_ordinal: 2,
@@ -49,7 +49,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 1008,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -65,9 +65,10 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::ROLE_0X10,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X10,
+                ),
             role_offset: 1030,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "259".to_owned(),
@@ -211,8 +212,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         },
         recipes::ConstructionRecipeKind,
         topology::{
-            face::DesignFaceOperand, DesignConstructionOperandGroup,
-            DesignConstructionOperandGroupFrame,
+            construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame, face::DesignFaceOperand,
         },
     };
     use cadmpeg_ir::ids::FaceId;
@@ -234,7 +235,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .unwrap();
 
     let group = DesignConstructionOperandGroup::try_from(
-        crate::records::topology::DesignConstructionOperandGroupDraft {
+        crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
             scope_record_index: 42,
             scope_reference_ordinal: 0,
@@ -248,7 +249,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             }],
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
-                crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                     member_count_offset: 1_008,
                     auxiliary_records: Vec::new(),
                     auxiliary_paths: Vec::new(),
@@ -264,9 +265,10 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
                 },
             )
             .unwrap(),
-            operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                DesignOperandRole::ROLE_0X10,
-            ),
+            operand_role:
+                crate::records::topology::construction::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::ROLE_0X10,
+                ),
             role_offset: 1_030,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "259".to_owned(),
@@ -512,7 +514,9 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
 
     let mut unrelated_group = group;
     unrelated_group.operand_role =
-        crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::FACES);
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::FACES,
+        );
     let mut rejected = vec![operand];
     bind_face_operand_history_candidates(
         &mut rejected,
@@ -725,7 +729,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             hole::{DesignHoleConstruction, DesignHoleFaceSelection},
             scope::DesignParameterScope,
         },
-        topology::DesignEntitySelectionFaceCandidate,
+        topology::entity_selection::DesignEntitySelectionFaceCandidate,
     };
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
@@ -787,7 +791,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
                 historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
                     history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2"
                         .into(),
-                    historical: crate::records::topology::HistoricalBinding {
+                    historical: crate::records::topology::fillet::HistoricalBinding {
                         kind: AsmHistoricalEntityKind::Pcurve,
                         entity_ref: 18044,
                         state_ids: vec![1],

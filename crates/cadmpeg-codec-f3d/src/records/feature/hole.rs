@@ -4,7 +4,7 @@
 use crate::records::identity::{DesignSecondaryIdentity, Located};
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
-use crate::records::topology::DesignEntitySelectionFaceCandidate;
+use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(

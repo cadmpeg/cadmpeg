@@ -14,9 +14,9 @@ use crate::records::{
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
     sketch_placement::DesignSketchPlacement,
     topology::{
-        body_recipe::DesignBodyRecipeOperand, edge_identity::DesignEdgeOperand,
-        face::DesignFaceOperand, DesignConstructionOperandGroup, DesignExtrudeFaceRole,
-        DesignOperandRole,
+        body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
+        edge_identity::DesignEdgeOperand, extrude_selection::DesignExtrudeFaceRole,
+        extrude_selection::DesignOperandRole, face::DesignFaceOperand,
     },
 };
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -306,7 +306,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
     scope: &DesignParameterScope,
     groups: &'a [DesignConstructionOperandGroup],
 ) -> Option<Vec<&'a DesignConstructionOperandGroup>> {
-    use crate::records::topology::DesignExtrudeOperandRole;
+    use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 
     let stream = native_stream(&scope.id)?;
     let mut profile_groups = groups
@@ -395,7 +395,7 @@ pub(crate) fn extrude_profile_group_operand_indices(
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
 ) -> Option<Vec<usize>> {
-    use crate::records::topology::DesignExtrudeOperandRole;
+    use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 
     let stream = native_stream(&root.id)?;
     let profile_groups = groups
@@ -488,7 +488,9 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
 ) -> bool {
-    use crate::records::{recipes::ConstructionRecipeKind, topology::DesignExtrudeOperandRole};
+    use crate::records::{
+        recipes::ConstructionRecipeKind, topology::extrude_selection::DesignExtrudeOperandRole,
+    };
 
     let Some(stream) = native_stream(&root.id) else {
         return false;
@@ -2238,11 +2240,12 @@ mod tests {
         dimensions::DesignRecipeReference,
         feature::scope::DesignParameterScope,
         topology::{
-            edge_identity::DesignEdgeOperand, edge_recipe::DesignEdgeRecipeStructure,
-            face::DesignFaceRecipeNode, historical_context::DesignEdgeRecipeReferenceContext,
+            construction::DesignConstructionOperandGroup, edge_identity::DesignEdgeOperand,
+            edge_recipe::DesignEdgeRecipeStructure, face::DesignFaceRecipeNode,
+            historical_context::DesignEdgeRecipeReferenceContext,
             historical_context::DesignHistoricalFaceBoundaryContext,
             historical_context::DesignHistoricalFaceLoopContext,
-            historical_context::DesignHistoricalFaceSupportContext, DesignConstructionOperandGroup,
+            historical_context::DesignHistoricalFaceSupportContext,
         },
     };
 
@@ -2344,7 +2347,7 @@ mod tests {
             })
         );
         group.operand_role =
-            crate::records::topology::DesignConstructionOperandRole::ExtrudeProfile;
+            crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeProfile;
         let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
             "id": "f3d:test:scope#100",
             "byte_offset": 0,

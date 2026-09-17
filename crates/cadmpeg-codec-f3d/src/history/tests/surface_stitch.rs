@@ -12,16 +12,17 @@
 )]
 
 use super::super::*;
-use crate::records::topology::DesignOperandRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 
 #[test]
 fn surface_stitch_binds_all_unique_entity_face_candidates() {
     use crate::records::{
         feature::scope::DesignParameterScope,
         topology::{
-            body_recipe::AsmHistoricalEntityKind, DesignConstructionOperandGroup,
-            DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
-            DesignEntitySelectionOperand,
+            body_recipe::AsmHistoricalEntityKind, construction::DesignConstructionOperandGroup,
+            construction::DesignConstructionOperandGroupFrame,
+            entity_selection::DesignEntitySelectionFaceCandidate,
+            entity_selection::DesignEntitySelectionOperand,
         },
     };
     use cadmpeg_ir::features::{
@@ -62,7 +63,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         .unwrap();
     let group = |record_index, scope_reference_ordinal, member| {
         DesignConstructionOperandGroup::try_from(
-            crate::records::topology::DesignConstructionOperandGroupDraft {
+            crate::records::topology::construction::DesignConstructionOperandGroupDraft {
                 id: format!("{stream}:design-construction-operand-group#{record_index}"),
                 scope_record_index: 42,
                 scope_reference_ordinal,
@@ -76,7 +77,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                 }],
                 lost_edge_references: Vec::new(),
                 frame: DesignConstructionOperandGroupFrame::try_from(
-                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                    crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
                         member_count_offset: 0,
                         auxiliary_records: Vec::new(),
                         auxiliary_paths: Vec::new(),
@@ -92,7 +93,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                     },
                 )
                 .unwrap(),
-                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                operand_role: crate::records::topology::construction::DesignConstructionOperandRole::Other(
                     DesignOperandRole::ROLE_0X5,
                 ),
                 role_offset: 0,
@@ -108,7 +109,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let groups = vec![group(100, 0, 200), group(110, 2, 210)];
     let operand = |group_record_index, record_index, face_slot| {
         DesignEntitySelectionOperand::try_new(
-            crate::records::topology::DesignEntitySelectionOperandDraft {
+            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
                 id: format!("{stream}:design-entity-selection-operand#{record_index}"),
                 scope_record_index: 42,
                 group_record_index,
@@ -135,7 +136,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
                 historical_edge_candidates: Vec::new(),
                 historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
                     history_id: history_id.clone(),
-                    historical: crate::records::topology::HistoricalBinding {
+                    historical: crate::records::topology::fillet::HistoricalBinding {
                         kind: AsmHistoricalEntityKind::Coedge,
                         entity_ref: face_slot,
                         state_ids: vec![1],
@@ -214,7 +215,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         .historical_face_candidates
         .push(DesignEntitySelectionFaceCandidate {
             history_id: "other-history/BREP.other:asm-1".into(),
-            historical: crate::records::topology::HistoricalBinding {
+            historical: crate::records::topology::fillet::HistoricalBinding {
                 kind: AsmHistoricalEntityKind::Coedge,
                 entity_ref: 99,
                 state_ids: vec![1],

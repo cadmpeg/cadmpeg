@@ -8,7 +8,7 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
     for fields in ["", ",\"first_related_identity\":113,\"first_related_identity_offset\":110,\"second_related_identity\":119,\"second_related_identity_offset\":122"] {
         let suffix = if fields.is_empty() { suffix.replace("130", "114") } else { suffix.to_owned() };
         let wire = format!("{prefix}{fields}{suffix}");
-        let value: crate::records::topology::DesignConstructionTrackingPath = serde_json::from_str(&wire).expect("tracking path");
+        let value: crate::records::topology::construction::DesignConstructionTrackingPath = serde_json::from_str(&wire).expect("tracking path");
         assert_eq!(serde_json::to_string(&value).expect("tracking wire"), wire);
     }
     for field in [
@@ -17,11 +17,10 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
         "second_related_identity",
         "second_related_identity_offset",
     ] {
-        let error =
-            serde_json::from_str::<crate::records::topology::DesignConstructionTrackingPath>(
-                &format!("{prefix},\"{field}\":1{suffix}"),
-            )
-            .expect_err("partial identity location");
+        let error = serde_json::from_str::<
+            crate::records::topology::construction::DesignConstructionTrackingPath,
+        >(&format!("{prefix},\"{field}\":1{suffix}"))
+        .expect_err("partial identity location");
         assert!(error.to_string().contains(field));
     }
 }
@@ -74,14 +73,14 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
         ",\"trailing_scope_record_index\":12,\"trailing_scope_reference_offset\":88",
     ] {
         let wire = format!("{prefix}{fields}{suffix}");
-        let value: crate::records::topology::DesignLoftLegacyBodyCarrier =
+        let value: crate::records::topology::entity_selection::DesignLoftLegacyBodyCarrier =
             serde_json::from_str(&wire).expect("loft carrier");
         assert_eq!(
             serde_json::to_string(&value).expect("loft carrier wire"),
             wire
         );
     }
-    let error = serde_json::from_str::<crate::records::topology::DesignLoftLegacyBodyCarrier>(
+    let error = serde_json::from_str::<crate::records::topology::entity_selection::DesignLoftLegacyBodyCarrier>(
         &format!("{prefix},\"trailing_scope_record_index\":13,\"trailing_scope_reference_offset\":88{suffix}"),
     ).expect_err("conflicting owning scope");
     assert!(error.to_string().contains("trailing_scope_record_index"));
@@ -89,9 +88,9 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
         "trailing_scope_record_index",
         "trailing_scope_reference_offset",
     ] {
-        let error = serde_json::from_str::<crate::records::topology::DesignLoftLegacyBodyCarrier>(
-            &format!("{prefix},\"{field}\":12{suffix}"),
-        )
+        let error = serde_json::from_str::<
+            crate::records::topology::entity_selection::DesignLoftLegacyBodyCarrier,
+        >(&format!("{prefix},\"{field}\":12{suffix}"))
         .expect_err("partial loft scope reference");
         assert!(error.to_string().contains(field));
     }
@@ -103,22 +102,20 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
     ] {
         let mut invalid = base.clone();
         invalid[field] = value;
-        assert!(
-            serde_json::from_value::<crate::records::topology::DesignLoftLegacyBodyCarrier>(
-                invalid
-            )
-            .expect_err("invalid derived field")
-            .to_string()
-            .contains(field)
-        );
+        assert!(serde_json::from_value::<
+            crate::records::topology::entity_selection::DesignLoftLegacyBodyCarrier,
+        >(invalid)
+        .expect_err("invalid derived field")
+        .to_string()
+        .contains(field));
     }
     for ordinal in [0, 255, 256, u32::MAX] {
         let mut wire = base.clone();
         wire["opaque_index"] = ordinal.into();
         wire["repeated_opaque_index"] = ordinal.into();
-        let parsed = serde_json::from_value::<crate::records::topology::DesignLoftLegacyBodyCarrier>(
-            wire.clone(),
-        );
+        let parsed = serde_json::from_value::<
+            crate::records::topology::entity_selection::DesignLoftLegacyBodyCarrier,
+        >(wire.clone());
         if ordinal == 255 {
             assert_eq!(
                 serde_json::to_value(parsed.expect("maximum ordinal")).unwrap(),
@@ -163,8 +160,9 @@ fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
             suffix.to_owned()
         };
         wire.push_str(&suffix);
-        let result =
-            serde_json::from_str::<crate::records::topology::DesignConstructionOperandPath>(&wire);
+        let result = serde_json::from_str::<
+            crate::records::topology::construction::DesignConstructionOperandPath,
+        >(&wire);
         if mask == 3 || mask == 4 {
             assert_eq!(
                 serde_json::to_string(&result.expect("complete placement form"))
@@ -193,7 +191,7 @@ fn identity_wrapper_rows_preserve_wire_and_reject_unequal_arrays() {
                     r#"{{"id":"identity#0","group_record_index":200,"wrapper_record_indices":{indices},"wrapper_byte_offsets":{offsets_wire},"wrapper_class_tags":{tags_wire},"following_record_index":310,"following_byte_offset":{following_byte_offset},"following_class_tag":"304"}}"#
                 );
                 let parsed = serde_json::from_str::<
-                    crate::records::topology::DesignConstructionOperandIdentity,
+                    crate::records::topology::construction::DesignConstructionOperandIdentity,
                 >(&wire);
                 if count == offsets && count == tags {
                     assert_eq!(
@@ -215,7 +213,7 @@ fn identity_wrapper_rows_preserve_wire_and_reject_unequal_arrays() {
 #[test]
 fn extrude_selection_group_members_preserve_wire_and_reject_unequal_offsets() {
     let wire = r#"{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","member_count_offset":32,"members":[10,11],"member_offsets":[37,48],"opaque_index":1,"opaque_index_offset":58,"opaque_scalar":0.0,"opaque_scalar_offset":62,"variant":false,"paired_class_tag":"259","paired_byte_offset":111}"#;
-    let group: crate::records::topology::DesignExtrudeSelectionGroup =
+    let group: crate::records::topology::extrude_selection::DesignExtrudeSelectionGroup =
         serde_json::from_str(wire).expect("selection group");
     assert_eq!(serde_json::to_string(&group).expect("selection wire"), wire);
     for offsets in ["[]", "[37]", "[37,48,59]"] {
@@ -223,10 +221,11 @@ fn extrude_selection_group_members_preserve_wire_and_reject_unequal_offsets() {
             "\"member_offsets\":[37,48]",
             &format!("\"member_offsets\":{offsets}"),
         );
-        let error =
-            serde_json::from_str::<crate::records::topology::DesignExtrudeSelectionGroup>(&invalid)
-                .expect_err("unequal member arrays")
-                .to_string();
+        let error = serde_json::from_str::<
+            crate::records::topology::extrude_selection::DesignExtrudeSelectionGroup,
+        >(&invalid)
+        .expect_err("unequal member arrays")
+        .to_string();
         assert!(error.contains("members"));
         assert!(error.contains("member_offsets"));
     }
@@ -241,7 +240,7 @@ fn construction_auxiliary_rows_preserve_wire_and_reject_unequal_offsets() {
         let wire = format!(
             r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#
         );
-        let frame: crate::records::topology::DesignConstructionOperandGroupFrame =
+        let frame: crate::records::topology::construction::DesignConstructionOperandGroupFrame =
             serde_json::from_str(&wire).expect("construction frame");
         assert_eq!(
             serde_json::to_string(&frame).expect("construction wire"),
@@ -257,7 +256,7 @@ fn construction_auxiliary_rows_preserve_wire_and_reject_unequal_offsets() {
             r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#
         );
         let error = serde_json::from_str::<
-            crate::records::topology::DesignConstructionOperandGroupFrame,
+            crate::records::topology::construction::DesignConstructionOperandGroupFrame,
         >(&wire)
         .expect_err("unequal auxiliary arrays")
         .to_string();
@@ -275,7 +274,7 @@ fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
         let wire = format!(
             r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#
         );
-        let frame: crate::records::topology::DesignConstructionOperandGroupFrame =
+        let frame: crate::records::topology::construction::DesignConstructionOperandGroupFrame =
             serde_json::from_str(&wire).expect("construction frame");
         assert_eq!(
             serde_json::to_string(&frame).expect("construction wire"),
@@ -291,7 +290,7 @@ fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
             r#"{{"member_count_offset":20{fields},"opaque_index":1,"opaque_index_offset":80,"opaque_scalar":0.0,"opaque_scalar_offset":84,"variant":false}}"#
         );
         let error = serde_json::from_str::<
-            crate::records::topology::DesignConstructionOperandGroupFrame,
+            crate::records::topology::construction::DesignConstructionOperandGroupFrame,
         >(&wire)
         .expect_err("unequal trailing arrays")
         .to_string();
@@ -306,7 +305,7 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
         let wire = format!(
             r#"{{"id":"group","scope_record_index":7,"scope_reference_ordinal":0,"record_index":9,"byte_offset":0,"class_tag":"277","members":{members},"member_offsets":{offsets},"frame":{{"member_count_offset":21,"opaque_index":1,"opaque_index_offset":78,"opaque_scalar":0.0,"opaque_scalar_offset":82,"variant":false}},"role":0,"role_offset":60,"paired_class_tag":"278","paired_byte_offset":100}}"#
         );
-        let group: crate::records::topology::DesignConstructionOperandGroup =
+        let group: crate::records::topology::construction::DesignConstructionOperandGroup =
             serde_json::from_str(&wire).expect("construction group");
         assert_eq!(
             serde_json::to_string(&group).expect("construction wire"),
@@ -316,12 +315,11 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
             &format!("\"member_offsets\":{offsets}"),
             "\"member_offsets\":[1,2,3]",
         );
-        let error =
-            serde_json::from_str::<crate::records::topology::DesignConstructionOperandGroup>(
-                &invalid,
-            )
-            .expect_err("unequal member arrays")
-            .to_string();
+        let error = serde_json::from_str::<
+            crate::records::topology::construction::DesignConstructionOperandGroup,
+        >(&invalid)
+        .expect_err("unequal member arrays")
+        .to_string();
         assert!(error.contains("members"));
         assert!(error.contains("member_offsets"));
         for (roles, valid) in [
@@ -338,13 +336,13 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
             ),
         ] {
             let role = if roles.contains("bodies") {
-                crate::records::topology::DesignOperandRole::BODIES_A
+                crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A
             } else {
-                crate::records::topology::DesignOperandRole::FACES
+                crate::records::topology::extrude_selection::DesignOperandRole::FACES
             };
             let tagged = wire.replace(r#""role":0,"#, &format!("\"role\":{},{roles}", role.raw()));
             let parsed = serde_json::from_str::<
-                crate::records::topology::DesignConstructionOperandGroup,
+                crate::records::topology::construction::DesignConstructionOperandGroup,
             >(&tagged);
             if valid {
                 assert_eq!(
@@ -704,18 +702,16 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
         "tail_slot_present": false, "tail_slot_offset": 0,
         "next_record_index": 3, "next_byte_offset": 200
     });
-    check::<crate::records::topology::DesignExtrudeSelectionMember>(&member);
+    check::<crate::records::topology::extrude_selection::DesignExtrudeSelectionMember>(&member);
     for field in ["asset_id", "context_id"] {
         let mut invalid = member.clone();
         invalid[field] = serde_json::json!("asset");
-        assert!(
-            serde_json::from_value::<crate::records::topology::DesignExtrudeSelectionMember>(
-                invalid
-            )
-            .expect_err("non-GUID selection identity")
-            .to_string()
-            .contains("GUID")
-        );
+        assert!(serde_json::from_value::<
+            crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
+        >(invalid)
+        .expect_err("non-GUID selection identity")
+        .to_string()
+        .contains("GUID"));
     }
     for field in [
         "tail_slot_present",
@@ -773,13 +769,16 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
 #[test]
 fn variable_fillet_midpoints_preserve_wire_and_reject_unpaired_records() {
     let wire = r#"{"kind":"variable","start_radius_parameter_record_index":51,"end_radius_parameter_record_index":61,"middle_radius_parameter_record_indices":[71],"middle_parameter_record_indices":[81]}"#;
-    let law: crate::records::topology::DesignFilletRadiusLaw = serde_json::from_str(wire).unwrap();
+    let law: crate::records::topology::fillet::DesignFilletRadiusLaw =
+        serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&law).unwrap(), wire);
     for invalid in [wire.replace("[71]", "[]"), wire.replace("[81]", "[]")] {
         let error =
-            serde_json::from_str::<crate::records::topology::DesignFilletRadiusLaw>(&invalid)
-                .unwrap_err()
-                .to_string();
+            serde_json::from_str::<crate::records::topology::fillet::DesignFilletRadiusLaw>(
+                &invalid,
+            )
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("middle_radius_parameter_record_indices"));
         assert!(error.contains("middle_parameter_record_indices"));
     }
@@ -795,7 +794,7 @@ fn profile_region_member_preserves_fixed_words_and_closed_incidence_values() {
             for first in [1, 2] {
                 for second in [1, 2] {
                     let json = wire(3, identity, [0, 0, 0, flag, first, second, 0, 0]);
-                    let member: crate::records::topology::DesignSketchProfileRegionMember =
+                    let member: crate::records::topology::sketch_profile::DesignSketchProfileRegionMember =
                         serde_json::from_str(&json).expect("region member");
                     assert_eq!(
                         serde_json::to_string(&member).expect("region member wire"),
@@ -806,29 +805,26 @@ fn profile_region_member_preserves_fixed_words_and_closed_incidence_values() {
         }
     }
     for kind in [0, 1, 2, 4, u32::MAX] {
-        let error =
-            serde_json::from_str::<crate::records::topology::DesignSketchProfileRegionMember>(
-                &wire(kind, 1, [0, 0, 0, 0, 1, 1, 0, 0]),
-            )
-            .expect_err("fixed kind");
+        let error = serde_json::from_str::<
+            crate::records::topology::sketch_profile::DesignSketchProfileRegionMember,
+        >(&wire(kind, 1, [0, 0, 0, 0, 1, 1, 0, 0]))
+        .expect_err("fixed kind");
         assert!(error.to_string().contains("kind"));
     }
     for identity in [0, u64::from(u32::MAX) + 1, u64::MAX] {
-        let error =
-            serde_json::from_str::<crate::records::topology::DesignSketchProfileRegionMember>(
-                &wire(3, identity, [0, 0, 0, 0, 1, 1, 0, 0]),
-            )
-            .expect_err("nonzero u32 identity");
+        let error = serde_json::from_str::<
+            crate::records::topology::sketch_profile::DesignSketchProfileRegionMember,
+        >(&wire(3, identity, [0, 0, 0, 0, 1, 1, 0, 0]))
+        .expect_err("nonzero u32 identity");
         assert!(error.to_string().contains("curve_primary_id"));
     }
     for index in 0..8 {
         let mut words = [0, 0, 0, 0, 1, 1, 0, 0];
         words[index] = 3;
-        let error =
-            serde_json::from_str::<crate::records::topology::DesignSketchProfileRegionMember>(
-                &wire(3, 1, words),
-            )
-            .expect_err("invalid incidence word");
+        let error = serde_json::from_str::<
+            crate::records::topology::sketch_profile::DesignSketchProfileRegionMember,
+        >(&wire(3, 1, words))
+        .expect_err("invalid incidence word");
         assert!(error.to_string().contains("incidence_words"));
     }
 }
@@ -941,7 +937,9 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
 
 #[test]
 fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
-    use crate::records::topology::{DesignConstructionOperandGroup, DesignOperandRole};
+    use crate::records::topology::{
+        construction::DesignConstructionOperandGroup, extrude_selection::DesignOperandRole,
+    };
     let wire = serde_json::json!({
         "id": "group", "scope_record_index": 1, "scope_reference_ordinal": 0,
         "record_index": 2, "byte_offset": 10, "class_tag": "256",
@@ -1011,7 +1009,8 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
         "members": [10, 11], "member_offsets": [37, 48], "opaque_index": 1,
         "opaque_index_offset": 58, "opaque_scalar": -1.0, "opaque_scalar_offset": 62,
         "variant": false, "paired_class_tag": "259", "paired_byte_offset": 111});
-    let group: super::DesignExtrudeSelectionGroup = serde_json::from_value(wire.clone()).unwrap();
+    let group: super::extrude_selection::DesignExtrudeSelectionGroup =
+        serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&group).unwrap(), wire);
     for (field, value) in [
         ("members", serde_json::json!([10, 10])),
@@ -1026,14 +1025,18 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
         let mut invalid = wire.clone();
         invalid[field] = value;
         assert!(
-            serde_json::from_value::<super::DesignExtrudeSelectionGroup>(invalid).is_err(),
+            serde_json::from_value::<super::extrude_selection::DesignExtrudeSelectionGroup>(
+                invalid
+            )
+            .is_err(),
             "{field}"
         );
     }
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let mut invalid = super::DesignExtrudeSelectionGroupWire::from(group.clone());
+        let mut invalid =
+            super::extrude_selection::DesignExtrudeSelectionGroupWire::from(group.clone());
         invalid.opaque_scalar = value;
-        assert!(super::DesignExtrudeSelectionGroup::try_from(invalid).is_err());
+        assert!(super::extrude_selection::DesignExtrudeSelectionGroup::try_from(invalid).is_err());
     }
     for members in [vec![], vec![10, 10]] {
         let mut changed = group.clone();
@@ -1052,8 +1055,11 @@ mod frame_chains;
 fn historical_binding_wire_refuses_a_null_key() {
     #[derive(serde::Deserialize)]
     struct Probe {
-        #[serde(flatten, deserialize_with = "super::deserialize_historical_binding")]
-        historical: Option<super::HistoricalBinding>,
+        #[serde(
+            flatten,
+            deserialize_with = "super::fillet::deserialize_historical_binding"
+        )]
+        historical: Option<super::fillet::HistoricalBinding>,
     }
     for key in ["historical_entity_kind", "historical_entity_ref"] {
         let mut wire = serde_json::json!({});

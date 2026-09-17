@@ -23,9 +23,12 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::SketchRelationOperand,
     topology::{
-        DesignConstructionOperandGroup, DesignEntitySelectionOperand, DesignExtrudeSelectionGroup,
-        DesignExtrudeSelectionMember, DesignOperandRole, DesignSketchProfileOperand,
-        DesignSketchProfileRegionMember,
+        construction::DesignConstructionOperandGroup,
+        entity_selection::DesignEntitySelectionOperand,
+        extrude_selection::DesignExtrudeSelectionGroup,
+        extrude_selection::DesignExtrudeSelectionMember, extrude_selection::DesignOperandRole,
+        sketch_profile::DesignSketchProfileOperand,
+        sketch_profile::DesignSketchProfileRegionMember,
     },
 };
 use cadmpeg_core::decode::WorkBudget;
