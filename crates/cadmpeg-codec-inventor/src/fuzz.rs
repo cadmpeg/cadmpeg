@@ -56,7 +56,15 @@ pub fn record_tables(data: &[u8]) {
     let Some(bulk_source) = source.child(source.start() + split, source.end()) else {
         return;
     };
-    let version = data.first().copied().unwrap_or_default();
+    // The bulk framing reads the version from the input's first byte. Nothing
+    // stands in for an input that states no byte: it leaves the way every
+    // other input this wrapper cannot carry further leaves. `parse_meta_tables`
+    // above refuses a body shorter than its prefix, so no input reaches this
+    // guard without a first byte -- which is what the substituted version
+    // stood in for.
+    let Some(&version) = data.first() else {
+        return;
+    };
     let _probe = crate::records::frame_bulk_records(&ctx, bulk_source, &tables, version);
 }
 
