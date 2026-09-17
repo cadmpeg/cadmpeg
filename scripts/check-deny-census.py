@@ -1762,26 +1762,58 @@ def flatten_readers(item):
             yield name, reader
 
 
-def reader_structs(reader, crate_paths, crate_items):
-    """The structs a flattened field's named reader reads.
+def reader_modules(segments, crate_paths, crate_items):
+    """Structs grouped by the module a reader path resolves to.
 
-    The name is a module path or a function path. A module contributes every
-    struct it declares; a function contributes the structs declared in its
-    body and the struct it deserializes by name.
+    The whole path is read, not its last segment: two modules of one name in
+    one crate are told apart by the segments before them. A module's key is
+    its file and its scope, so every struct it declares groups together.
     """
-    segments = [part for part in reader.split("::")
-                if part not in ("crate", "super", "self")]
-    if not segments:
-        return []
-    last = segments[-1]
-    modules = [
-        (path, item)
-        for path in crate_paths
-        for item in crate_items[path]
-        if item.kind == "struct" and (path.stem == last or last in item.scope)
-    ]
-    if modules:
-        return modules
+    groups = {}
+    width = len(segments)
+    for path in crate_paths:
+        for item in crate_items[path]:
+            if item.kind != "struct":
+                continue
+            scope = item.scope
+            for index in range(len(scope), width - 1, -1):
+                if scope[index - width:index] == segments:
+                    groups.setdefault((path, scope[:index]), []).append(
+                        (path, item)
+                    )
+                    break
+    return groups
+
+
+FUNCTION_GENERICS = re.compile(r"<([^<>]*)>")
+FIELD_TYPE = re.compile(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(\w+)\s*:\s*([^,}]+)")
+OPTION_TYPE = re.compile(r"Option\s*<\s*(.+)>\s*$", re.S)
+TYPE_HEAD = re.compile(r"(?:\w+\s*::\s*)*(\w+)")
+
+
+def field_type_name(body, field):
+    """The named field's declared type, unwrapped from one ``Option``."""
+    for match in FIELD_TYPE.finditer(body):
+        if match.group(1) != field:
+            continue
+        text = match.group(2).strip()
+        option = OPTION_TYPE.match(text)
+        if option is not None:
+            text = option.group(1).strip()
+        head = TYPE_HEAD.match(text)
+        if head is not None:
+            return head.group(1)
+    return None
+
+
+def reader_functions(last, crate_paths, crate_items, owner, field):
+    """The structs a named reader function reads.
+
+    A function contributes the structs declared in its body and the struct it
+    deserializes by name. A function that deserializes one of its own type
+    parameters forwards the field's declared type, so that type is the struct
+    it reads.
+    """
     functions = []
     for path in crate_paths:
         source = path.read_text(encoding="utf-8")
@@ -1795,6 +1827,16 @@ def reader_structs(reader, crate_paths, crate_items):
                 continue
             body = code[opening:end]
             read = set(BODY_DESERIALIZE_CALL.findall(body))
+            generics = FUNCTION_GENERICS.match(code, match.end() - 1)
+            parameters = {
+                parameter.split(":", 1)[0].strip()
+                for parameter in (generics.group(1).split(",") if generics else ())
+                if not parameter.strip().startswith("'")
+            }
+            if read & parameters:
+                forwarded = field_type_name(owner.body, field)
+                if forwarded is not None:
+                    read.add(forwarded)
             for candidate_path in crate_paths:
                 for item in crate_items[candidate_path]:
                     if item.kind != "struct":
@@ -1804,6 +1846,56 @@ def reader_structs(reader, crate_paths, crate_items):
                     if inside or item.name in read:
                         functions.append((candidate_path, item))
     return functions
+
+
+def reader_structs(reader, crate_paths, crate_items, owner, field):
+    """The structs a flattened field's named reader reads, and its failures.
+
+    The reader must resolve to exactly one module or function. One that
+    resolves to no struct, and one that resolves to more than one module the
+    field's own file cannot tell apart, are both failures: a census that
+    follows nothing states nothing, and one that follows the wrong module
+    states the wrong keys.
+    """
+    def failure(message):
+        return [(owner.path, owner.line, f"{owner.name}.{field}: {message}")]
+
+    segments = tuple(part for part in reader.split("::")
+                     if part not in ("crate", "super", "self"))
+    if not segments:
+        return [], failure(f"the flattened reader `{reader}` names no path")
+    groups = reader_modules(segments, crate_paths, crate_items)
+    if len(groups) > 1:
+        for narrower in (
+            {key: items for key, items in groups.items() if key[0] == owner.path},
+            {
+                key: items
+                for key, items in groups.items()
+                if key[0].parent == owner.path.parent
+            },
+        ):
+            if len(narrower) == 1:
+                groups = narrower
+                break
+    if len(groups) == 1:
+        return next(iter(groups.values())), []
+    if groups:
+        named = ", ".join(sorted(
+            f"{path.as_posix()}::{'::'.join(scope)}" for path, scope in groups
+        ))
+        return [], failure(
+            f"the flattened reader `{reader}` resolves to {len(groups)} modules "
+            f"({named}); name the one that reads the key"
+        )
+    functions = reader_functions(
+        segments[-1], crate_paths, crate_items, owner, field
+    )
+    if functions:
+        return functions, []
+    return [], failure(
+        f"the flattened reader `{reader}` resolves to no struct; the census "
+        "cannot read the keys it admits"
+    )
 
 
 BODY_DESERIALIZE_CALL = re.compile(r"\b(\w+)\s*(?:::\s*<[^<>]*>)?\s*::\s*deserialize\b")
@@ -1818,13 +1910,22 @@ def flattened_reader_failures(crate, crate_paths, crate_items, forwarders):
             if owner.kind != "struct" or not derives_deserialize(owner.attrs):
                 continue
             for field, reader in flatten_readers(owner):
-                for read_path, item in reader_structs(
-                    reader, crate_paths, crate_items
-                ):
+                structs, failures = reader_structs(
+                    reader, crate_paths, crate_items, owner, field
+                )
+                found.extend(failures)
+                for read_path, item in structs:
                     key = (read_path, item.start)
                     if key in seen:
                         continue
                     seen.add(key)
+                    # A routed container reads no key of its own: the type it
+                    # names does, and that type is read where it is declared.
+                    if any(
+                        routed in ROUTED_CONTAINER_KEYS
+                        for routed, _, _ in serde_options(item.attrs)
+                    ):
+                        continue
                     found.extend(
                         reader_option_failures(
                             read_path, item, owner, field, reader,
