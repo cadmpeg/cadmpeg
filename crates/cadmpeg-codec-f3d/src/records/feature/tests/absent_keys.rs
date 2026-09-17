@@ -27,7 +27,10 @@ fn coil_secondary_identity_wire_refuses_a_null_identity() {
 fn coil_recipe_design_wire_refuses_a_null_design_key() {
     #[derive(serde::Deserialize)]
     struct Probe {
-        #[serde(flatten, deserialize_with = "crate::records::feature::deserialize_coil_recipe_design")]
+        #[serde(
+            flatten,
+            deserialize_with = "crate::records::feature::deserialize_coil_recipe_design"
+        )]
         design: Option<crate::records::feature::ConstructionRecipeDesign<String>>,
     }
     for key in ["design_id", "design_selector"] {
@@ -46,7 +49,10 @@ fn coil_recipe_design_wire_refuses_a_null_design_key() {
 fn work_plane_frame_wire_refuses_a_null_key() {
     #[derive(serde::Deserialize)]
     struct Probe {
-        #[serde(flatten, deserialize_with = "crate::records::feature::deserialize_work_plane_frame")]
+        #[serde(
+            flatten,
+            deserialize_with = "crate::records::feature::deserialize_work_plane_frame"
+        )]
         frame: Option<crate::records::feature::DesignWorkPlaneTransform>,
     }
     for key in [
@@ -71,7 +77,10 @@ fn work_plane_frame_wire_refuses_a_null_key() {
 fn joint_origin_frame_wire_refuses_a_null_key() {
     #[derive(serde::Deserialize)]
     struct Probe {
-        #[serde(flatten, deserialize_with = "crate::records::feature::deserialize_joint_origin_frame")]
+        #[serde(
+            flatten,
+            deserialize_with = "crate::records::feature::deserialize_joint_origin_frame"
+        )]
         frame: Option<crate::records::feature::DesignJointOriginTransform>,
     }
     for key in [
@@ -95,7 +104,10 @@ fn joint_origin_frame_wire_refuses_a_null_key() {
 fn sketch_entity_wire_refuses_a_null_key() {
     #[derive(serde::Deserialize)]
     struct Probe {
-        #[serde(flatten, deserialize_with = "crate::records::feature::deserialize_sketch_entity")]
+        #[serde(
+            flatten,
+            deserialize_with = "crate::records::feature::deserialize_sketch_entity"
+        )]
         entity: Option<crate::records::feature::DesignSketchEntityBinding>,
     }
     for key in ["entity_id", "entity_suffix", "entity_reference_offset"] {
