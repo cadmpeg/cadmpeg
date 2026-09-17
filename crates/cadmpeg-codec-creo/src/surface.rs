@@ -3212,7 +3212,7 @@ fn parsed_named_surface_value(
                     &body[values_start..],
                     array.values().len(),
                     cache,
-                );
+                )?;
                 array.fill_tokens(slots)?;
                 return Some(SurfaceNamedValue::CountedScalarArray(array));
             }
@@ -3253,7 +3253,7 @@ fn parsed_named_surface_value(
         })?;
         let mut array = arrays::DimensionedScalars::empty(dimensions, count)?;
         let slot_count = array.values().len();
-        let spline_slots = matches!(
+        let spline_field = matches!(
             name,
             "i_pnts"
                 | "i_points"
@@ -3262,9 +3262,9 @@ fn parsed_named_surface_value(
                 | "end_uv_deriv"
                 | "tangts"
                 | "end_tangts"
-        )
-        .then(|| named_spline_scalar_slots(family, name, remaining, slot_count, cache));
-        if let Some(slots) = spline_slots {
+        );
+        if spline_field {
+            let slots = named_spline_scalar_slots(family, name, remaining, slot_count, cache)?;
             array.fill_tokens(slots)?;
         } else if name == "local_sys" {
             let values = sequential_named_local_system_slots(remaining, slot_count, cache)?;
@@ -7310,13 +7310,23 @@ fn plane_local_system_compound_close(
         .find(|close| complete_plane_local_system(&payload[start..*close], cache).is_some())
 }
 
+/// The declared slots of a bounded spline scalar body, with their source
+/// tokens, or `None` when the body does not encode exactly its declared slots.
+///
+/// This is the same bounded scalar body [`scalar_slots`] reads, with the spline
+/// coordinate lanes added, and it obeys the same two rules: a body that ends
+/// before its declared count is refused, and a body with bytes left after its
+/// last declared slot is refused. An unresolved seven-byte token is a slot the
+/// body does encode; it stays in position with no value. A `f9 00`
+/// continuation in an interpolation-point field encodes the final zero slot of
+/// its tuple with no token bytes of its own.
 fn named_spline_scalar_slots(
     family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<ScalarTokenSlot> {
+) -> Option<Vec<ScalarTokenSlot>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = psb::Cursor::new(body);
     let mut continued_tuple = false;
@@ -7342,8 +7352,7 @@ fn named_spline_scalar_slots(
     {
         slots.push((Some(0.0), Vec::new()));
     }
-    slots.resize_with(count, || (None, Vec::new()));
-    slots
+    (cursor.pos() == body.len() && slots.len() == count).then_some(slots)
 }
 
 fn named_vector_scalar_body_len(
@@ -7608,17 +7617,29 @@ fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
 }
 
 /// The declared slots of a bounded scalar body, in stored order, or `None` when
-/// the body states a slot it does not encode.
+/// the body does not encode exactly its declared slots.
 ///
 /// `docs/formats/creo_prt.md` states of this body that it "encodes its declared
 /// slots sequentially; no byte may be skipped between slot encodings". A byte
 /// that no scalar encoding defines therefore cannot be passed over, and that
-/// line gives such a byte no width of its own. The decoder's decision: a body
-/// that states a byte no encoding defines, or that ends before its declared
-/// count, states a slot it does not encode and is refused; the record then
-/// takes the route a named value that does not decode already takes. The line
-/// states no rule for a body shorter than its declaration, so the decoder
-/// invents none.
+/// line gives such a byte no width of its own. A body that states a byte no
+/// encoding defines is refused; the record then takes the route a named value
+/// that does not decode already takes.
+///
+/// The bounded scalar body obeys two further rules, shared with
+/// [`sequential_named_local_system_slots`] and [`named_spline_scalar_slots`]:
+///
+/// * A body that ends before its declared count is refused. The format states
+///   that the field "declares exactly `dimensions * count` scalar slots" and
+///   that "[e]ach declared slot consumes one complete scalar token"
+///   (`docs/formats/creo_prt.md`). A slot past the end of the body consumes no
+///   token, so the body does not encode what it declares.
+/// * A body with bytes left after its last declared slot is refused. The
+///   format states no rule for such a byte in this field, so the decoder
+///   invents none and refuses.
+///
+/// An unresolved slot is a slot whose token the body does encode and whose
+/// value no lane defines. It is not a slot the body omits.
 fn scalar_slots(
     body: &[u8],
     count: usize,
@@ -7631,7 +7652,7 @@ fn scalar_slots(
         slots.push(Some(value));
         cursor = next;
     }
-    Some(slots)
+    (cursor == body.len()).then_some(slots)
 }
 
 type ScalarTokenSlot = (Option<f64>, Vec<u8>);
@@ -7789,6 +7810,15 @@ fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)
     }
 }
 
+/// The declared slots of a bounded `local_sys` scalar body, in stored order,
+/// or `None` when the body does not encode exactly its declared slots.
+///
+/// This body is the same bounded scalar body [`scalar_slots`] reads, with the
+/// `local_sys` slot forms added, and it obeys the same two rules: a body that
+/// ends before its declared count is refused, and a body with bytes left after
+/// its last declared slot is refused. An `e7 <count>` run advances over
+/// inherited slots that the body does encode and that carry no value; those
+/// slots are `None` and are not omitted slots.
 fn sequential_named_local_system_slots(
     body: &[u8],
     count: usize,
@@ -7852,9 +7882,7 @@ fn sequential_named_local_system_slots(
             return None;
         }
     }
-    (cursor == body.len()).then_some(())?;
-    slots.resize(count, None);
-    Some(slots)
+    (cursor == body.len() && slots.len() == count).then_some(slots)
 }
 
 pub(crate) struct PlaneFrame {
