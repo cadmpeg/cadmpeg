@@ -344,20 +344,42 @@ pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
         .map(|name| canonical_intcurve_kind(name).into())
 }
 
-/// The unique cache-bearing non-reference scope owned directly by `toks`.
+/// The token span that carries `toks`'s cache, or `None` when the record
+/// states none.
 ///
-/// A record can own auxiliary outer definitions before its carrier. A scope is
-/// cache-bearing when it directly owns at least one B-spline marker. Multiple
-/// such scopes are ambiguous and are therefore rejected.
+/// `docs/formats/asm.md`: "the outer non-`ref` procedural subtype owns the
+/// record's solved curve or surface cache. A B-spline block inside a subtype
+/// nested by that construction belongs to the nested support, source, guide,
+/// or child field and is not a candidate for the outer construction's cache."
+/// A scope is cache-bearing when it directly owns at least one B-spline
+/// marker. The sentence states a construction's ownership, so it decides where
+/// the record owns a construction:
+///
+/// * Exactly one non-`ref` scope the record owns directly is cache-bearing:
+///   that scope is the cache span.
+/// * More than one is cache-bearing: the record names no single owner, so it
+///   states no cache span.
+/// * The record owns non-`ref` scopes and none is cache-bearing: the
+///   construction's cache is absent. Every remaining block sits in a nested
+///   support, source, guide or child scope, which the sentence excludes, so
+///   the record states no cache span.
+/// * The record owns no non-`ref` scope: it states no construction, so no
+///   construction owns its blocks and the record's own stream is the cache
+///   span.
+///
+/// This is the one answer; every reader of a record cache calls it and none
+/// states a fallback of its own.
 ///
 /// A malformed token stream is refused, not worked around: `owned_subtype_defs`
 /// answers `None` rather than passing over the scope that stated it.
-pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
+pub(crate) fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
+    let mut constructions = 0usize;
     let mut cache_bearing = Vec::new();
     for (start, _) in owned_subtype_defs(toks)?
         .into_iter()
         .filter(|(_, name)| *name != "ref")
     {
+        constructions += 1;
         let Some(scope) = subtype_span(toks, start) else {
             continue;
         };
@@ -365,8 +387,9 @@ pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
             cache_bearing.push(scope.tokens());
         }
     }
-    match cache_bearing.as_slice() {
-        [scope] => Some(scope),
+    match (cache_bearing.as_slice(), constructions) {
+        ([scope], _) => Some(scope),
+        ([], 0) => Some(toks),
         _ => None,
     }
 }
@@ -846,7 +869,7 @@ mod tests {
             Token::Long(3),
             Token::SubtypeClose,
         ];
-        assert_eq!(owned_cache_scope(&one), Some(&one[0..=3]));
+        assert_eq!(cache_scope(&one), Some(&one[0..=3]));
 
         // A second scope owning a marker leaves no unique carrier.
         let two = [
@@ -859,7 +882,7 @@ mod tests {
             ident("nurbs"),
             Token::SubtypeClose,
         ];
-        assert_eq!(owned_cache_scope(&two), None);
+        assert_eq!(cache_scope(&two), None);
 
         // A scope owning no marker is not a candidate, and leaves the one
         // that does as the answer.
@@ -872,7 +895,7 @@ mod tests {
             ident("nubs"),
             Token::SubtypeClose,
         ];
-        assert_eq!(owned_cache_scope(&bare), Some(&bare[3..=6]));
+        assert_eq!(cache_scope(&bare), Some(&bare[3..=6]));
     }
 
     #[test]
@@ -891,7 +914,7 @@ mod tests {
             Token::SubtypeClose,
         ];
         assert_eq!(owned_subtype_defs(&toks), None);
-        assert_eq!(owned_cache_scope(&toks), None);
+        assert_eq!(cache_scope(&toks), None);
     }
 
     #[test]

@@ -123,7 +123,7 @@ pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
 /// earlier blocks are support surfaces or 2D pcurves), except in a
 /// `comp_spl_sur` compound, whose own cache comes first.
 pub(crate) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
-    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
+    let scope = toks::cache_scope(toks)?;
     let mut caches = toks::owned_marker_positions(scope)?
         .into_iter()
         .filter_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface));
@@ -151,7 +151,7 @@ pub(crate) fn owned_surface_cache(scope: toks::SubtypeScope<'_>) -> Option<Nurbs
 /// tokens: the FIRST valid curve block (surface and 2D pcurve blocks do not
 /// parse as a 3D curve block).
 pub(crate) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
-    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
+    let scope = toks::cache_scope(toks)?;
     toks::owned_marker_positions(scope)?
         .into_iter()
         .find_map(|pos| curve_block(scope, pos).map(|(curve, _)| curve))
