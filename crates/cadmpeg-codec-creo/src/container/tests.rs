@@ -642,25 +642,31 @@ fn a_section_that_ends_on_the_last_byte_is_admitted() {
     assert_eq!(section.offset(), 0);
     assert_eq!(section.length(), data.len());
     assert_eq!(section.end(), data.len());
-    assert_eq!(
-        container::section_region(data, &section).unwrap(),
-        data.as_slice()
-    );
+    assert_eq!(container::section_region(data, &section), data.as_slice());
 }
 
 #[test]
-fn bytes_shorter_than_the_file_the_section_was_scanned_from_are_refused_by_name() {
-    let data = b"#Geomlists\n0123";
-    let section = container::Section::new("Geomlists".to_string(), 0, data.len(), None, data)
-        .expect("section extent");
+fn a_section_region_is_exactly_the_bytes_between_the_section_offset_and_its_end() {
+    let data = build_prt(
+        "test",
+        &[
+            ("Geomlists", b"0123".to_vec()),
+            ("Xsections", b"ABCD".to_vec()),
+        ],
+    );
+    let scan = container::scan_bytes_ok(data.clone());
+    let section = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "Xsections")
+        .expect("the scan enumerates the second section");
 
-    // `section_region` takes the bytes as a parameter, so a caller can pass
-    // bytes other than the file the scan read. That is the one state the
-    // section's own extent does not rule out.
-    let refusal = container::section_region(&data[..data.len() - 1], &section).unwrap_err();
-    let message = refusal.to_string();
-
-    assert!(message.contains("Geomlists"), "{message}");
-    assert!(message.contains(&data.len().to_string()), "{message}");
-    assert!(message.contains(&(data.len() - 1).to_string()), "{message}");
+    // The region is read through the scan that proved it, so it is the file's
+    // own bytes over the section's own extent, with no refusal in between.
+    assert_eq!(
+        container::section_region(&scan.framing.data, section),
+        &data[section.offset()..section.end()]
+    );
+    assert!(container::section_region(&scan.framing.data, section).starts_with(b"#Xsections\nABCD"));
 }
