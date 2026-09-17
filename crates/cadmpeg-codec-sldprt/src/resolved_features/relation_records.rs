@@ -76,13 +76,33 @@ fn feature_at_offset(offset: u64, intervals: &[(u64, u64, String)]) -> Option<&s
         .map(|(_, _, feature)| feature.as_str())
 }
 
-/// The exclusive offset the relation's scope ends at, or `None` when no
-/// following class, feature interval or unknown-feature span bounds it.
+/// Bytes a class with no feature interval may carry its relation over.
+const UNKNOWN_FEATURE_SPAN: u64 = 128;
+
+/// Where a relation's scope ends.
+///
+/// The three states are separate because the last one is not an absent bound:
+/// a class whose unknown-feature span no `u64` can name states no scope, and
+/// reading its scalars under an unbounded scope would take every scalar after
+/// it. Saturating that sum answered `u64::MAX`, which the reader below reads
+/// as "no limit".
+enum RelationScope {
+    /// The exclusive offset the scope ends at.
+    Ends(u64),
+    /// No following class, feature interval or unknown-feature span bounds
+    /// the scope.
+    Unbounded,
+    /// The class states an offset whose unknown-feature span no `u64` can
+    /// name. The class is refused: it declares no relation.
+    Unstatable,
+}
+
+/// Where the relation's scope ends.
 fn relation_scope_end(
     class: &FeatureInputClass,
     classes: &[FeatureInputClass],
     intervals: &[(u64, u64, String)],
-) -> Option<u64> {
+) -> RelationScope {
     let class_feature = feature_at_offset(class.offset, intervals);
     let next_class = classes
         .iter()
@@ -99,13 +119,22 @@ fn relation_scope_end(
         .iter()
         .find(|(start, end, _)| class.offset >= *start && class.offset < *end)
         .map(|(_, end, _)| *end);
-    let unknown_feature_limit = class_feature
-        .is_none()
-        .then(|| class.offset.saturating_add(128));
-    [next_class, feature_end, unknown_feature_limit]
+    let unknown_feature_limit = if class_feature.is_some() {
+        None
+    } else {
+        let Some(limit) = class.offset.checked_add(UNKNOWN_FEATURE_SPAN) else {
+            return RelationScope::Unstatable;
+        };
+        Some(limit)
+    };
+    match [next_class, feature_end, unknown_feature_limit]
         .into_iter()
         .flatten()
         .min()
+    {
+        Some(end) => RelationScope::Ends(end),
+        None => RelationScope::Unbounded,
+    }
 }
 
 pub(super) fn relation_declaration_candidates<'a>(
@@ -147,7 +176,11 @@ fn relation_declaration_candidates_impl<'a>(
         .filter_map(|class| {
             let family = relation_family(&class.name)?;
             let class_feature = feature_at_offset(class.offset, intervals);
-            let scope_end = relation_scope_end(class, classes, intervals);
+            let scope_end = match relation_scope_end(class, classes, intervals) {
+                RelationScope::Ends(end) => Some(end),
+                RelationScope::Unbounded => None,
+                RelationScope::Unstatable => return None,
+            };
             let scalar = scalars
                 .iter()
                 .filter(|scalar| {
@@ -656,6 +689,33 @@ mod relation_records_tests {
                 .iter()
                 .all(|operand| is_solver_point_operand(operand.kind)));
         }
+    }
+
+    /// A class whose unknown-feature span no `u64` can name states no scope,
+    /// so it declares no relation. The control states the same shape at an
+    /// offset the span can name and declares one.
+    #[test]
+    fn a_class_whose_unknown_feature_span_is_unstatable_declares_no_relation() {
+        let unstatable = class(u64::MAX - 100, "sgPntPntHorDist");
+        let following = scalar(u64::MAX - 50, FeatureInputScalarRole::Driving);
+        assert!(relation_declaration_candidates(
+            std::slice::from_ref(&unstatable),
+            std::slice::from_ref(&following),
+            &[],
+        )
+        .is_empty());
+
+        let stated = class(1_000, "sgPntPntHorDist");
+        let within = scalar(1_050, FeatureInputScalarRole::Driving);
+        assert_eq!(
+            relation_declaration_candidates(
+                std::slice::from_ref(&stated),
+                std::slice::from_ref(&within),
+                &[],
+            )
+            .len(),
+            1
+        );
     }
 
     #[test]
