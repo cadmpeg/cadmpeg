@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::features::feature_operation_chronological_labels;
 use crate::native::features::payload_name::FeaturePayloadName;
+use crate::native::features::unique_feature_body_references;
+use crate::native::features::FeatureBodyReference;
+use crate::native::features::FeatureInputBlock;
+use crate::native::features::FeatureOperationCommonFrame;
+use crate::native::features::FeatureOperationLabel;
+use crate::native::features::FeatureOperationTerminalFrame;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -8,13 +15,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
 use crate::NxCodec;
 
-use super::*;
-
 #[test]
 fn segment_body_lineage_statuses_cover_every_bound_image() {
-    use super::{
-        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
-    };
+    use crate::native::features::FeatureBodyReference;
+    use crate::native::features::FeatureBooleanKind;
+    use crate::native::features::FeatureBooleanOperation;
+    use crate::native::features::FeatureOperationLabel;
     use crate::native::segments::{segment_body_lineage_statuses, SegmentBodyBinding};
     let labels = [
         FeatureOperationLabel {
@@ -93,31 +99,31 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
 
 #[test]
 fn unique_feature_body_references_require_one_field_per_operation() {
-    let reference =
-        |id: &str, operation_label: &str, body_object_index| super::FeatureBodyReference {
-            ordinal: None,
-            id: id.to_string(),
-            operation_label: operation_label.to_string(),
-            body: crate::om::reference_index::FeatureReferenceToken::from_wire(
-                body_object_index,
-                &[body_object_index as u8],
-            )
-            .unwrap(),
-            source_offset: 0,
-        };
+    let reference = |id: &str, operation_label: &str, body_object_index| FeatureBodyReference {
+        ordinal: None,
+        id: id.to_string(),
+        operation_label: operation_label.to_string(),
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(
+            body_object_index,
+            &[body_object_index as u8],
+        )
+        .unwrap(),
+        source_offset: 0,
+    };
     let references = [
         reference("reference#0", "operation#0", 10),
         reference("reference#1", "operation#0", 11),
         reference("reference#2", "operation#1", 12),
     ];
-    let unique = super::unique_feature_body_references(&references);
+    let unique = unique_feature_body_references(&references);
     assert!(!unique.contains_key("operation#0"));
     assert_eq!(unique["operation#1"].id, "reference#2");
 }
 
 #[test]
 fn feature_body_segment_uses_require_one_alias_pair() {
-    use super::{feature_body_segment_uses, FeatureBodyReference};
+    use crate::native::features::feature_body_segment_uses;
+    use crate::native::features::FeatureBodyReference;
     use crate::native::segments::SegmentBodyBinding;
     let reference = FeatureBodyReference {
         ordinal: None,
@@ -176,8 +182,10 @@ fn feature_body_segment_uses_require_one_alias_pair() {
 
 #[test]
 fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
-    use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
+    use crate::native::features::feature_body_segment_uses;
     use crate::native::features::object_frame::DataBlockObjectFrame;
+    use crate::native::features::FeatureBodyDataBlockUse;
+    use crate::native::features::FeatureBodyReference;
     use crate::native::om::{DataBlock, DataBlockRole};
     use crate::native::segments::SegmentBodyBinding;
 
@@ -382,7 +390,9 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
 
 #[test]
 fn feature_body_segment_uses_reject_primary_index_offset_collision() {
-    use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
+    use crate::native::features::feature_body_segment_uses;
+    use crate::native::features::FeatureBodyDataBlockUse;
+    use crate::native::features::FeatureBodyReference;
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
@@ -415,7 +425,9 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
 
 #[test]
 fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
-    use super::{feature_body_segment_uses, FeatureBodyReference, FeatureInputBlock};
+    use crate::native::features::feature_body_segment_uses;
+    use crate::native::features::FeatureBodyReference;
+    use crate::native::features::FeatureInputBlock;
     use crate::native::om::{DataBlock, DataBlockRole};
     use crate::native::segments::SegmentBodyBinding;
 
@@ -465,7 +477,9 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
 
 #[test]
 fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
-    use super::{feature_body_segment_uses, FeatureBodyReference, FeatureInputBlock};
+    use crate::native::features::feature_body_segment_uses;
+    use crate::native::features::FeatureBodyReference;
+    use crate::native::features::FeatureInputBlock;
     use crate::native::om::{DataBlock, DataBlockRole};
     use crate::native::segments::SegmentBodyBinding;
 
@@ -524,7 +538,9 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
 
 #[test]
 fn feature_body_data_block_uses_inherit_the_operation_input_store() {
-    use super::{feature_body_data_block_uses, FeatureBodyReference, FeatureInputBlock};
+    use crate::native::features::feature_body_data_block_uses;
+    use crate::native::features::FeatureBodyReference;
+    use crate::native::features::FeatureInputBlock;
     use crate::native::om::{DataBlock, DataBlockRole};
 
     let reference = FeatureBodyReference {
@@ -581,9 +597,10 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
 
 #[test]
 fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
-    use super::{
-        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
-    };
+    use crate::native::features::FeatureBodyReference;
+    use crate::native::features::FeatureBooleanKind;
+    use crate::native::features::FeatureBooleanOperation;
+    use crate::native::features::FeatureOperationLabel;
     use crate::native::segments::{segment_body_lineage_statuses, SegmentBodyBinding};
 
     let label = |ordinal: u32, value: &str| FeatureOperationLabel {
@@ -646,10 +663,10 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
 
 #[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
-    use super::{
-        feature_block_payload_point_groups, feature_block_payload_points,
-        FeatureBlockPayloadNamedRecord, FeaturePayloadScalar,
-    };
+    use crate::native::features::feature_block_payload_point_groups;
+    use crate::native::features::feature_block_payload_points;
+    use crate::native::features::FeatureBlockPayloadNamedRecord;
+    use crate::native::features::FeaturePayloadScalar;
 
     let operation_label = "operation".to_string();
     let construction_payload = "payload".to_string();
@@ -738,7 +755,7 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
 
 #[test]
 fn operation_history_reverses_source_order_within_each_section() {
-    let label = |section: &str, ordinal, value: &str| super::FeatureOperationLabel {
+    let label = |section: &str, ordinal, value: &str| FeatureOperationLabel {
         id: format!("{section}-{ordinal}"),
         section_link: section.to_string(),
         ordinal,
@@ -754,7 +771,7 @@ fn operation_history_reverses_source_order_within_each_section() {
         label("second", 1, "oldest-second"),
     ];
 
-    let values = super::feature_operation_chronological_labels(&labels)
+    let values = feature_operation_chronological_labels(&labels)
         .into_iter()
         .map(|label| label.value.as_str())
         .collect::<Vec<_>>();
@@ -772,7 +789,7 @@ fn operation_history_reverses_source_order_within_each_section() {
 
 #[test]
 fn operation_history_groups_interleaved_sections_before_reversing() {
-    let label = |section: &str, ordinal, value: &str| super::FeatureOperationLabel {
+    let label = |section: &str, ordinal, value: &str| FeatureOperationLabel {
         id: format!("{section}-{ordinal}"),
         section_link: section.to_string(),
         ordinal,
@@ -788,7 +805,7 @@ fn operation_history_groups_interleaved_sections_before_reversing() {
         label("second", 1, "oldest-second"),
     ];
 
-    let values = super::feature_operation_chronological_labels(&labels)
+    let values = feature_operation_chronological_labels(&labels)
         .into_iter()
         .map(|label| label.value.as_str())
         .collect::<Vec<_>>();
@@ -806,7 +823,7 @@ fn operation_history_groups_interleaved_sections_before_reversing() {
 
 #[test]
 fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
-    let label = |section: &str, ordinal, value: &str, source_offset| super::FeatureOperationLabel {
+    let label = |section: &str, ordinal, value: &str, source_offset| FeatureOperationLabel {
         id: format!("{section}-{ordinal}"),
         section_link: section.to_string(),
         ordinal,
@@ -822,7 +839,7 @@ fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
         label("second", 0, "newest-second", 100),
     ];
 
-    let values = super::feature_operation_chronological_labels(&labels)
+    let values = feature_operation_chronological_labels(&labels)
         .into_iter()
         .map(|label| label.value.as_str())
         .collect::<Vec<_>>();
@@ -860,7 +877,7 @@ fn decoded_operation_frames_resolve_unique_offset_store_targets() {
         .namespace("nx")
         .expect("required invariant");
     let common_frames = namespace
-        .arena_as::<super::FeatureOperationCommonFrame>("feature_operation_common_frames")
+        .arena_as::<FeatureOperationCommonFrame>("feature_operation_common_frames")
         .expect("required invariant");
     assert_eq!(common_frames.len(), 1);
     assert_eq!(common_frames[0].frame.suffix().object_index(), Some(65));
@@ -873,7 +890,7 @@ fn decoded_operation_frames_resolve_unique_offset_store_targets() {
         Some("nx:om-data-blocks-0:block#65")
     );
     let terminal_frames = namespace
-        .arena_as::<super::FeatureOperationTerminalFrame>("feature_operation_terminal_frames")
+        .arena_as::<FeatureOperationTerminalFrame>("feature_operation_terminal_frames")
         .expect("required invariant");
     assert_eq!(terminal_frames.len(), 1);
     assert_eq!(terminal_frames[0].frame.suffix().object_index(), Some(65));

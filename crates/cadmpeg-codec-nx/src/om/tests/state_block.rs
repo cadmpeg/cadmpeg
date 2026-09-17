@@ -1,3 +1,10 @@
+use crate::om::audit_trail_rows;
+use crate::om::operation_state_group_table;
+use crate::om::operation_state_group_table_before_counter_map;
+use crate::om::operation_state_journal;
+use crate::om::operation_state_journal_groups_before_boundary;
+use crate::om::operation_state_journal_start;
+use crate::om::operation_state_messages;
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::state_block::operation_state_block_before_boundary;
 use crate::om::state_status::StateStatusPayload;
@@ -64,7 +71,7 @@ fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2]) -> Vec<u
 #[test]
 fn operation_state_messages_decode_text_value_and_severity() {
     let bytes = message_bytes(b"hello", &[0xc0, 0x01, 0x02, 0x03], [0, 3]);
-    let messages = super::operation_state_messages(&bytes, 500);
+    let messages = operation_state_messages(&bytes, 500);
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].offset(), 500);
     assert_eq!(messages[0].body().text.declared_length(), 7);
@@ -80,8 +87,8 @@ fn operation_state_messages_accept_terminal_count_shared_with_group_opener() {
     let mut bytes = message_bytes(b"terminal", &[0xaa, 0x39, 0x4e], [1, 0]);
     let group_start = bytes.len() - 2;
     bytes.extend([0x01, 0x02, 0x4a, 0x83, 0x20, 0x01, 0xff]);
-    let table = super::operation_state_group_table(&bytes, group_start, bytes.len(), 500)
-        .expect("group table");
+    let table =
+        operation_state_group_table(&bytes, group_start, bytes.len(), 500).expect("group table");
     let messages = operation_state_block_before_boundary(&bytes, 0, group_start + 2, 500)
         .expect("terminal message")
         .into_messages()
@@ -228,8 +235,7 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
         0x01, 0x00, 0x01, 0x03, 0x4a, 0x83, 0xba, 0x01, 0xff, 0x4a, 0x83, 0xb7, 0x02, 0xff, 0x01,
         0x01, 0x01, 0x02, 0x4f, 0xf1, 0x04, 0x2d, 0x83, 0xe1, 0xff, 0xff, 0x01, 0x01, 0x00,
     ];
-    let table =
-        super::operation_state_group_table(&bytes, 0, bytes.len(), 900).expect("group table");
+    let table = operation_state_group_table(&bytes, 0, bytes.len(), 900).expect("group table");
     assert_eq!(table.groups().len(), 3);
     assert_eq!(table.groups().first().opener().bytes(), [0x01, 0x00]);
     assert_eq!(table.groups().first().members().count().prefix(), Some(1));
@@ -278,7 +284,7 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     bytes.extend([0x99; 16]);
 
     let map = crate::om::state_counter::StateCounterMap::read(&bytes, 0).expect("counter map");
-    let table = super::operation_state_group_table_before_counter_map(&bytes, map.offset(), 0)
+    let table = operation_state_group_table_before_counter_map(&bytes, map.offset(), 0)
         .expect("group table");
     assert_eq!(table.offset(), 3);
     assert_eq!(table.end_offset(), map.offset());
@@ -313,7 +319,7 @@ fn operation_state_group_table_handles_a_long_adjacent_group_run() {
     bytes.extend([0x05, 0x01, 0x00, 0x01, 0x01, 0x4e]);
     bytes.extend([0x05, 0x02, 0x01, 0x01, 0x01, 0x4e]);
 
-    let table = super::operation_state_group_table_before_counter_map(&bytes, map_start, 0)
+    let table = operation_state_group_table_before_counter_map(&bytes, map_start, 0)
         .expect("long adjacent group run");
     assert_eq!(table.groups().len(), GROUP_COUNT);
     assert_eq!(table.offset(), 0);
@@ -327,7 +333,7 @@ fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
         0x04, 0x01, 0x02, 0x00, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83,
         0x10, 0x2a, 0x13,
     ];
-    let groups = super::operation_state_journal(&bytes, 0, bytes.len(), 1100).expect("journal");
+    let groups = operation_state_journal(&bytes, 0, bytes.len(), 1100).expect("journal");
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].selector(), [0x01, 0x02]);
     assert_eq!(groups[0].rows().len(), 1);
@@ -348,11 +354,10 @@ fn operation_state_journal_start_accepts_count_token_runs() {
     let mut bytes = prefix.to_vec();
     bytes.extend(group);
 
-    let start = super::operation_state_journal_start(&bytes, 0).expect("journal prefix");
+    let start = operation_state_journal_start(&bytes, 0).expect("journal prefix");
     assert_eq!(start, prefix.len());
-    let groups =
-        super::operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
-            .expect("journal groups");
+    let groups = operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
+        .expect("journal groups");
     assert_eq!(groups.len(), 1);
     assert_eq!(Some(groups[0].rows().first().ordinal().value()), Some(0x2a));
 }
@@ -364,7 +369,7 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
         0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
         0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x13, 0x04, 0x00,
     ];
-    let rows = super::audit_trail_rows(&bytes, 2, bytes.len(), 900).expect("audit rows");
+    let rows = audit_trail_rows(&bytes, 2, bytes.len(), 900).expect("audit rows");
     assert_eq!(rows.len(), 2);
     assert_eq!(Some(rows[0].record().ordinal.value()), Some(2));
     assert_eq!(rows[0].record().frame_selector, None);
@@ -380,7 +385,7 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
     assert_eq!(rows[1].record().raw(), &bytes[20..36]);
     assert_eq!(rows[1].end_offset(), 900 + 36);
 
-    let truncated = super::audit_trail_rows(&bytes, 2, 35, 900).expect("bounded audit rows");
+    let truncated = audit_trail_rows(&bytes, 2, 35, 900).expect("bounded audit rows");
     assert_eq!(truncated.len(), 1);
     assert_eq!(truncated[0].record().raw(), &bytes[7..20]);
 }

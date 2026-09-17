@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Operation-header validation and record-boundary tests.
 
-use super::*;
+use crate::om::operation_body_write_frames;
+use crate::om::operation_labels;
 use crate::om::operation_record::OperationPayload;
+use crate::om::operation_records_with_labels_and_ordinals;
+use crate::om::unlabeled_operation_body_write_frames;
+use crate::om::unlabeled_operation_records_with_ordinals;
+use crate::om::UnlabeledOperationRecord;
 
 #[test]
 fn unlabeled_operation_header_still_bounds_adjacent_records() {

@@ -1,13 +1,21 @@
 use super::*;
+use crate::native::features::feature_sketch_fixed_points;
+use crate::native::features::feature_sketch_named_point_block_uses;
+use crate::native::features::feature_sketch_payload_named_records;
+use crate::native::features::feature_sketch_point_groups;
+use crate::native::features::feature_sketch_point_uses;
+use crate::native::features::feature_sketch_preceding_named_point_uses;
 use crate::native::features::payload_name::FeaturePayloadName;
+use crate::native::features::FeatureConstructionPayload;
+use crate::native::features::FeatureSketchNamedPointBlockUse;
+use crate::native::features::FeatureSketchPayloadFixedPair;
+use crate::native::features::FeatureSketchPoint;
+use crate::native::features::FeatureSketchReference;
+use crate::native::features::OffsetStoreNamedPoint;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 
 #[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
-    use super::super::{
-        feature_sketch_fixed_points, feature_sketch_payload_named_records,
-        FeatureConstructionPayload, FeatureSketchPayloadFixedPair,
-    };
     let payload = FeatureConstructionPayload {
         id: "payload".to_string(),
         operation_label: "sketch".to_string(),
@@ -75,10 +83,6 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
 
 #[test]
 fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
-    use super::super::{
-        feature_sketch_named_point_block_uses, FeatureSketchReference, OffsetStoreNamedPoint,
-    };
-
     let point = OffsetStoreNamedPoint {
         id: "nx:offset-store:named-point#2-10".to_string(),
         name: "Point1".to_string(),
@@ -126,10 +130,6 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
 
 #[test]
 fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane() {
-    use super::super::{
-        feature_sketch_preceding_named_point_uses, FeatureSketchReference, OffsetStoreNamedPoint,
-    };
-
     let reference = |ordinal, declared_count, block: Option<&str>| FeatureSketchReference {
         id: format!("reference-{ordinal}"),
         operation_label: "nx:feature-history:operation-label#1-4".to_string(),
@@ -223,11 +223,6 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
 
 #[test]
 fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
-    use super::super::{
-        feature_sketch_point_groups, feature_sketch_point_uses, FeatureSketchNamedPointBlockUse,
-        FeatureSketchPoint, OffsetStoreNamedPoint,
-    };
-
     let operation_label = "nx:feature-history:operation-label#1-4".to_string();
     let point = FeatureSketchPoint {
         id: "payload-point".to_string(),

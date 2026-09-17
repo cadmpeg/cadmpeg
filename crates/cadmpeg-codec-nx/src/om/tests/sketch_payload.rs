@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::om::sketch_payload_fixed_pairs;
+use crate::om::sketch_payload_mixed_pairs;
+use crate::om::sketch_payload_scalar_lanes;
 use crate::test_support::shifted_f64_bytes;
 
 const EPS_SKETCH_FIXED_ATOM: f64 = 1e-12;
@@ -31,7 +33,7 @@ fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
     let discriminator = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
     let bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
 
-    let pairs = super::sketch_payload_fixed_pairs(&bytes);
+    let pairs = sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_sketch_fixed_pair_values(
         pairs[0]
@@ -45,7 +47,7 @@ fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
     );
     let mut malformed = bytes;
     malformed[discriminator.len() + 8] = 1;
-    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
+    assert!(sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -61,7 +63,7 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
     ];
     let extended = sketch_fixed_pair_bytes(&extended_discriminator, 0.5, 0.5, false);
 
-    let short_pair = super::sketch_payload_fixed_pairs(&short);
+    let short_pair = sketch_payload_fixed_pairs(&short);
     assert_eq!(short_pair.len(), 1);
     assert_sketch_fixed_pair_values(
         short_pair[0]
@@ -70,7 +72,7 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
         [0.5, 0.75],
     );
 
-    let extended_pair = super::sketch_payload_fixed_pairs(&extended);
+    let extended_pair = sketch_payload_fixed_pairs(&extended);
     assert_eq!(extended_pair.len(), 1);
     assert_sketch_fixed_pair_values(
         extended_pair[0]
@@ -81,7 +83,7 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
 
     let mut malformed = short;
     malformed[short_discriminator.len() + 8] = 0x31;
-    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
+    assert!(sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -91,7 +93,7 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
     ];
     let bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
 
-    let pairs = super::sketch_payload_fixed_pairs(&bytes);
+    let pairs = sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_sketch_fixed_pair_values(
         pairs[0]
@@ -102,7 +104,7 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
 
     let mut malformed = bytes;
     malformed[14] = 0x02;
-    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
+    assert!(sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
 #[test]
@@ -113,13 +115,13 @@ fn sketch_mixed_pair_parser_requires_scaled_shifted_binary64_then_binary32() {
     let shifted = [0x50, 0x50, 0x00, 0x00];
     bytes.extend_from_slice(&shifted);
 
-    let pairs = super::sketch_payload_mixed_pairs(&bytes);
+    let pairs = sketch_payload_mixed_pairs(&bytes);
     assert!((pairs[0].scalars.fixed.value() - 0.5).abs() < EPS_SKETCH_FIXED_ATOM);
     assert!((pairs[0].scalars.binary32.value() - 3.25).abs() < EPS_SKETCH_FIXED_ATOM);
 
     let mut malformed = bytes;
     malformed[discriminator.len() + 8] = 1;
-    assert!(super::sketch_payload_mixed_pairs(&malformed).is_empty());
+    assert!(sketch_payload_mixed_pairs(&malformed).is_empty());
 }
 
 #[test]

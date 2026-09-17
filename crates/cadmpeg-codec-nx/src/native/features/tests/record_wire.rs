@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{FeatureBodyReference, FeatureOperationBodyWrite, FeatureOperationObjectReference};
+use crate::native::features::FeatureBlockConstruction;
+use crate::native::features::FeatureBodyReference;
+use crate::native::features::FeatureConstructionPayload;
+use crate::native::features::FeatureDatumCsysConstruction;
+use crate::native::features::FeatureDatumPlanePayload;
+use crate::native::features::FeatureExtrudePayloadHeader;
+use crate::native::features::FeatureExtrudeProfileReference;
+use crate::native::features::FeatureOperationBodyWrite;
+use crate::native::features::FeatureOperationObjectReference;
+use crate::native::features::FeaturePayloadScalar;
+use crate::native::features::FeaturePayloadScalarPair;
+use crate::native::features::FeaturePayloadString;
+use crate::native::features::FeaturePointConstructionHeader;
+use crate::native::features::FeatureProjectedCurveReference;
+use crate::native::features::FeatureSketchConstructionInputs;
+use crate::native::features::FeatureSketchReference;
+use crate::native::features::FeatureSurfaceConstructionReference;
+use crate::native::features::OffsetStoreNamedPoint;
 use crate::native::features::{
     FeatureInputBlock, FeatureInputBlockIdentityGroup, FeatureOperationLabel,
 };
@@ -44,7 +61,7 @@ fn payload_scalar_preserves_each_payload_owner_key() {
         r#"{"id":"scalar","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"field_code":100,"value":2.0,"raw_value":[48,0,0,0,0,0,0,0],"payload_offset":10,"source_offset":20}"#,
         r#"{"id":"scalar","operation_label":"operation","construction_payload":"payload","ordinal":0,"field_code":100,"value":2.0,"raw_value":[48,0,0,0,0,0,0,0],"payload_offset":10,"source_offset":20}"#,
     ] {
-        let scalar: super::FeaturePayloadScalar = serde_json::from_str(json).unwrap();
+        let scalar: FeaturePayloadScalar = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&scalar).unwrap(), json);
     }
 }
@@ -57,7 +74,7 @@ fn scalar_pair_preserves_payload_key_and_discriminator_presence() {
         r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[27,35],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[47,47,65,0,3,1,3,1,192,69,4,0,128,134,2,0,3]}"#,
         r#"{"id":"pair","operation_label":"operation","surface_construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":10,"value_payload_offsets":[25,34],"source_offset":30,"value_source_offsets":[31,39],"discriminator":[8,2,3,1,3,1,192,69,4,0,128,134,2,0,3]}"#,
     ] {
-        let pair: super::FeaturePayloadScalarPair = serde_json::from_str(json).unwrap();
+        let pair: FeaturePayloadScalarPair = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&pair).unwrap(), json);
     }
 }
@@ -78,7 +95,7 @@ fn construction_payload_preserves_each_ownership_form() {
         let json = format!(
             r#"{{"id":"payload","operation_label":"operation",{owner},"data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10]}}"#
         );
-        let payload: super::FeatureConstructionPayload = serde_json::from_str(&json).unwrap();
+        let payload: FeatureConstructionPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&payload).unwrap(), json);
     }
 }
@@ -86,21 +103,21 @@ fn construction_payload_preserves_each_ownership_form() {
 #[test]
 fn construction_payload_rejects_untyped_operation_kinds() {
     let json = r#"{"id":"payload","operation_label":"operation","operation_kind":"other","construction_references":[],"data_blocks":[],"byte_len":0,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[],"block_byte_lengths":[],"block_source_offsets":[]}"#;
-    let error = serde_json::from_str::<super::FeatureConstructionPayload>(json).unwrap_err();
+    let error = serde_json::from_str::<FeatureConstructionPayload>(json).unwrap_err();
     assert!(error.to_string().contains("operation_kind"));
 }
 
 #[test]
 fn datum_plane_payload_derives_terminal_index_count() {
     let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":2,"index_lane_values":[1],"index_lane_raw_indices":[[1]],"index_lane_value_offsets":[4],"index_lane_trailer":0}"#;
-    let payload: super::FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
+    let payload: FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&payload).unwrap(), json);
     for count in [0, 1, 3, 256] {
         let invalid = json.replace(
             "\"index_lane_declared_count\":2",
             &format!("\"index_lane_declared_count\":{count}"),
         );
-        let error = serde_json::from_str::<super::FeatureDatumPlanePayload>(&invalid).unwrap_err();
+        let error = serde_json::from_str::<FeatureDatumPlanePayload>(&invalid).unwrap_err();
         assert!(error.to_string().contains("index_lane_declared_count"));
     }
 }
@@ -108,12 +125,12 @@ fn datum_plane_payload_derives_terminal_index_count() {
 #[test]
 fn datum_plane_payload_retains_checked_compact_tokens() {
     let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
-    let payload: super::FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
+    let payload: FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&payload).unwrap(), json);
     for raw in [vec![255], vec![144], vec![144, 0, 0], vec![1]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["index_lane_raw_indices"][0] = serde_json::json!(raw);
-        let error = serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).unwrap_err();
+        let error = serde_json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
         assert!(error.to_string().contains("index_lane_values[0]"));
     }
     for count in [0, 254, 255] {
@@ -123,7 +140,7 @@ fn datum_plane_payload_retains_checked_compact_tokens() {
         wire["index_lane_raw_indices"] = serde_json::json!(vec![vec![2]; count]);
         wire["index_lane_value_offsets"] = serde_json::json!((4..4 + count).collect::<Vec<_>>());
         assert_eq!(
-            serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).is_ok(),
+            serde_json::from_value::<FeatureDatumPlanePayload>(wire).is_ok(),
             count == 254
         );
     }
@@ -132,13 +149,12 @@ fn datum_plane_payload_retains_checked_compact_tokens() {
 #[test]
 fn sketch_construction_members_preserve_wire_and_reject_unpaired_blocks() {
     let json = r#"{"id":"inputs","operation_label":"operation","sketch_record":"sketch","member_references":["reference"],"member_data_blocks":["block"],"terminal_reference":"terminal","terminal_data_block":"last"}"#;
-    let inputs: super::FeatureSketchConstructionInputs = serde_json::from_str(json).unwrap();
+    let inputs: FeatureSketchConstructionInputs = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&inputs).unwrap(), json);
     for field in ["member_references", "member_data_blocks"] {
         let mut invalid: serde_json::Value = serde_json::from_str(json).unwrap();
         invalid[field] = serde_json::json!([]);
-        let error =
-            serde_json::from_value::<super::FeatureSketchConstructionInputs>(invalid).unwrap_err();
+        let error = serde_json::from_value::<FeatureSketchConstructionInputs>(invalid).unwrap_err();
         assert!(error.to_string().contains(field));
     }
 }
@@ -153,7 +169,7 @@ fn block_construction_members_have_eighteen_paired_entries() {
     let json = format!(
         r#"{{"id":"construction","operation_label":"operation","control":38,"member_references":{references},"member_data_blocks":{blocks},"terminal_reference":"terminal","terminal_data_block":"last"}}"#
     );
-    let construction: super::FeatureBlockConstruction = serde_json::from_str(&json).unwrap();
+    let construction: FeatureBlockConstruction = serde_json::from_str(&json).unwrap();
     assert_eq!(serde_json::to_string(&construction).unwrap(), json);
     for fields in [
         vec!["member_references"],
@@ -164,7 +180,7 @@ fn block_construction_members_have_eighteen_paired_entries() {
         for field in fields {
             invalid[field].as_array_mut().unwrap().pop();
         }
-        let error = serde_json::from_value::<super::FeatureBlockConstruction>(invalid).unwrap_err();
+        let error = serde_json::from_value::<FeatureBlockConstruction>(invalid).unwrap_err();
         assert!(error.to_string().contains("member_references"));
     }
 }
@@ -302,13 +318,13 @@ fn construction_scalar_wire_derives_the_number_from_its_atom() {
         let json = format!(
             r#"{{"id":"scalar","operation_label":"operation","{payload}":"payload","ordinal":0,"field_code":100,"value":1.0,"raw_value":[47,240,0,0,0,0,0,0],"payload_offset":8,"source_offset":108}}"#
         );
-        let scalar: super::FeaturePayloadScalar = serde_json::from_str(&json).unwrap();
+        let scalar: FeaturePayloadScalar = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&scalar).unwrap(), json);
         for invalid in [
             json.replace("1.0", "2.0"),
             json.replace("[47,240", "[0,240"),
         ] {
-            let error = serde_json::from_str::<super::FeaturePayloadScalar>(&invalid).unwrap_err();
+            let error = serde_json::from_str::<FeaturePayloadScalar>(&invalid).unwrap_err();
             assert!(error.to_string().contains("value/raw_value"));
         }
     }
@@ -317,15 +333,13 @@ fn construction_scalar_wire_derives_the_number_from_its_atom() {
 #[test]
 fn named_point_wire_preserves_scalar_atoms_and_frame_offsets() {
     let json = r#"{"id":"point","name":"Point1","data_blocks":["first","second"],"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"value_source_offsets":[10,20],"source_offset":5}"#;
-    let point: super::OffsetStoreNamedPoint = serde_json::from_str(json).unwrap();
+    let point: OffsetStoreNamedPoint = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&point).unwrap(), json);
     let invalid = json.replace("1.0", "3.0");
-    assert!(
-        serde_json::from_str::<super::OffsetStoreNamedPoint>(&invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("values/raw_values")
-    );
+    assert!(serde_json::from_str::<OffsetStoreNamedPoint>(&invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("values/raw_values"));
 }
 
 #[test]
@@ -349,22 +363,20 @@ fn binary64_pair_wire_preserves_all_payload_owner_forms() {
         let json = format!(
             r#"{{"id":"pair","operation_label":"operation","{payload}":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"payload_offset":5,"value_payload_offsets":[{positions}],"source_offset":105,"value_source_offsets":[120,129]{discriminator}}}"#
         );
-        let pair: super::FeaturePayloadScalarPair = serde_json::from_str(&json).unwrap();
+        let pair: FeaturePayloadScalarPair = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&pair).unwrap(), json);
         let invalid = json.replace("1.0", "3.0");
-        assert!(
-            serde_json::from_str::<super::FeaturePayloadScalarPair>(&invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("values/raw_values")
-        );
+        assert!(serde_json::from_str::<FeaturePayloadScalarPair>(&invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("values/raw_values"));
     }
     let json = r#"{"id":"header","operation_label":"operation","scalars":[1.0,2.0],"raw_scalars":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"source_offset":100}"#;
-    let header: super::FeatureExtrudePayloadHeader = serde_json::from_str(json).unwrap();
+    let header: FeatureExtrudePayloadHeader = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&header).unwrap(), json);
     let invalid = json.replace("1.0", "3.0");
     assert!(
-        serde_json::from_str::<super::FeatureExtrudePayloadHeader>(&invalid)
+        serde_json::from_str::<FeatureExtrudePayloadHeader>(&invalid)
             .unwrap_err()
             .to_string()
             .contains("scalars")
@@ -393,12 +405,12 @@ fn body_scalar_triple_wire_checks_the_atom_value_and_width() {
 fn payload_text_records_preserve_unicode_and_reject_control_text() {
     let json =
         r#"{"id":"text","operation_record":"record","ordinal":0,"value":" × ","source_offset":10}"#;
-    let record: super::FeaturePayloadString = serde_json::from_str(json).unwrap();
+    let record: FeaturePayloadString = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&record).unwrap(), json);
     for value in ["", "\0", "\n", "\u{85}"] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["value"] = value.into();
-        assert!(serde_json::from_value::<super::FeaturePayloadString>(wire)
+        assert!(serde_json::from_value::<FeaturePayloadString>(wire)
             .unwrap_err()
             .to_string()
             .contains("value"));
@@ -426,25 +438,25 @@ fn construction_reference_records_preserve_wire_and_check_tokens() {
             }
         }
     }
-    check::<super::FeatureSketchReference>(
+    check::<FeatureSketchReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"declared_count":1,"terminal":true,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
-    check::<super::FeatureProjectedCurveReference>(
+    check::<FeatureProjectedCurveReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
     check::<crate::native::features::pattern::FeaturePatternReference>(
         r#"{"id":"r","operation_label":"o","layout":"canonical_graph","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
-    check::<super::FeaturePointConstructionHeader>(
+    check::<FeaturePointConstructionHeader>(
         r#"{"id":"r","operation_label":"o","object_index":1,"raw_object_index":[240,1],"mode":2,"source_offset":10}"#,
     );
     check::<crate::native::features::draft::FeatureDraftConstructionReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
-    check::<super::FeatureSurfaceConstructionReference>(
+    check::<FeatureSurfaceConstructionReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
-    check::<super::FeatureExtrudeProfileReference>(
+    check::<FeatureExtrudeProfileReference>(
         r#"{"id":"r","operation_label":"o","ordinal":0,"field_tag":1,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#,
     );
     check::<crate::native::features::block_reference::FeatureBlockConstructionReference>(
@@ -467,7 +479,7 @@ fn fixed_reference_groups_preserve_wire_and_check_each_token() {
             }
         }
     }
-    check::<super::FeatureDatumCsysConstruction>(
+    check::<FeatureDatumCsysConstruction>(
         r#"{"id":"c","operation_label":"o","control":19,"object_indices":[0,1,2,3,4,5,6,7],"raw_object_indices":[[240,0],[240,1],[240,2],[240,3],[240,4],[240,5],[240,6],[240,7]],"data_blocks":["a","b","c","d","e","f","g","h"],"source_offsets":[14,16,18,20,22,24,26,28]}"#,
         "raw_object_indices",
     );
@@ -827,18 +839,18 @@ fn datum_plane_payload_rejects_detached_member_positions_and_frame_overflow() {
     for offsets in [[3, 6], [4, 5], [4, u64::MAX]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["index_lane_value_offsets"] = serde_json::json!(offsets);
-        let error = serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).unwrap_err();
+        let error = serde_json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
         assert!(error.to_string().contains("index_lane_value_offsets"));
     }
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     let origin = u64::MAX - 11;
     wire["index_lane_offset"] = serde_json::json!(origin);
     wire["index_lane_value_offsets"] = serde_json::json!([origin + 2, origin + 4]);
-    let payload: super::FeatureDatumPlanePayload = serde_json::from_value(wire.clone()).unwrap();
+    let payload: FeatureDatumPlanePayload = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(payload).unwrap(), wire);
     wire["index_lane_offset"] = serde_json::json!(origin + 1);
     wire["index_lane_value_offsets"] = serde_json::json!([origin + 3, origin + 5]);
-    let error = serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).unwrap_err();
+    let error = serde_json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
     assert!(error.to_string().contains("index_lane_offset"));
 }
 
@@ -881,26 +893,22 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
         if let Some(discriminator) = discriminator {
             wire["discriminator"] = serde_json::json!(discriminator);
         }
-        let record: super::FeaturePayloadScalarPair = serde_json::from_value(wire.clone()).unwrap();
+        let record: FeaturePayloadScalarPair = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
         for slot in 0..2 {
             let mut invalid = wire.clone();
             invalid["value_payload_offsets"][slot] = serde_json::json!(origin);
-            assert!(
-                serde_json::from_value::<super::FeaturePayloadScalarPair>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("value_payload_offsets")
-            );
+            assert!(serde_json::from_value::<FeaturePayloadScalarPair>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("value_payload_offsets"));
         }
         let mut invalid = wire.clone();
         invalid["payload_offset"] = serde_json::json!(origin + 1);
-        assert!(
-            serde_json::from_value::<super::FeaturePayloadScalarPair>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("payload_offset")
-        );
+        assert!(serde_json::from_value::<FeaturePayloadScalarPair>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("payload_offset"));
         if owner != "datum_plane_payload" {
             for discriminator in [
                 vec![],
@@ -909,24 +917,20 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
             ] {
                 let mut invalid = wire.clone();
                 invalid["discriminator"] = serde_json::json!(discriminator);
-                assert!(
-                    serde_json::from_value::<super::FeaturePayloadScalarPair>(invalid)
-                        .unwrap_err()
-                        .to_string()
-                        .contains("discriminator")
-                );
+                assert!(serde_json::from_value::<FeaturePayloadScalarPair>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("discriminator"));
             }
         }
         if owner == "construction_payload" {
             let mut invalid = wire.clone();
             invalid.as_object_mut().unwrap().remove(owner);
             invalid["datum_csys_payload"] = "payload".into();
-            assert!(
-                serde_json::from_value::<super::FeaturePayloadScalarPair>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("discriminator")
-            );
+            assert!(serde_json::from_value::<FeaturePayloadScalarPair>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("discriminator"));
         }
     }
 }
@@ -934,34 +938,33 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
 #[test]
 fn datum_csys_wire_derives_offsets_from_the_complete_payload_frame() {
     let wire = r#"{"id":"c","operation_label":"o","control":255,"object_indices":[0,256,1,512,2,768,3,1024],"raw_object_indices":[[240,0],[241,1,0],[240,1],[241,2,0],[240,2],[241,3,0],[240,3],[241,4,0]],"data_blocks":["","b","c","d","e","f","g","h"],"source_offsets":[114,116,119,121,124,126,129,131]}"#;
-    let parsed: super::FeatureDatumCsysConstruction = serde_json::from_str(wire).unwrap();
+    let parsed: FeatureDatumCsysConstruction = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&parsed).unwrap(), wire);
     for slot in 0..8 {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
         invalid["source_offsets"][slot] = serde_json::json!(1000);
-        let error =
-            serde_json::from_value::<super::FeatureDatumCsysConstruction>(invalid).unwrap_err();
+        let error = serde_json::from_value::<FeatureDatumCsysConstruction>(invalid).unwrap_err();
         assert!(error.to_string().contains("source_offsets"));
     }
     for origin in [0, u64::MAX - 20] {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
         invalid["source_offsets"][0] = serde_json::json!(origin);
-        assert!(serde_json::from_value::<super::FeatureDatumCsysConstruction>(invalid).is_err());
+        assert!(serde_json::from_value::<FeatureDatumCsysConstruction>(invalid).is_err());
     }
     let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
     invalid["raw_object_indices"][0] = serde_json::json!([0]);
-    let error = serde_json::from_value::<super::FeatureDatumCsysConstruction>(invalid).unwrap_err();
+    let error = serde_json::from_value::<FeatureDatumCsysConstruction>(invalid).unwrap_err();
     assert!(error.to_string().contains("raw_object_indices[0]"));
 }
 
 #[test]
 fn surface_reference_requires_the_payload_token_grammar() {
     let wire = r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":0,"raw_object_index":[240,0],"data_block":"","source_offset":10}"#;
-    let reference: super::FeatureSurfaceConstructionReference = serde_json::from_str(wire).unwrap();
+    let reference: FeatureSurfaceConstructionReference = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
     let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
     invalid["raw_object_index"] = serde_json::json!([0]);
-    assert!(serde_json::from_value::<super::FeatureSurfaceConstructionReference>(invalid).is_err());
+    assert!(serde_json::from_value::<FeatureSurfaceConstructionReference>(invalid).is_err());
 }
 
 #[test]
@@ -982,8 +985,7 @@ fn point_header_mode_admits_only_two_wire_bytes() {
             "id": "header", "operation_label": "operation", "object_index": 1,
             "raw_object_index": [240, 1], "mode": mode, "source_offset": 10
         });
-        let header =
-            serde_json::from_value::<super::super::FeaturePointConstructionHeader>(wire.clone());
+        let header = serde_json::from_value::<FeaturePointConstructionHeader>(wire.clone());
         if matches!(mode, 2 | 3) {
             assert_eq!(serde_json::to_value(header.unwrap()).unwrap(), wire);
         } else {

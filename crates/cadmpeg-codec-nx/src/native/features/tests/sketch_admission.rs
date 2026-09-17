@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::native::features::feature_sketch_fixed_points;
+use crate::native::features::feature_sketch_points;
 use crate::native::features::payload_name::FeaturePayloadName;
+use crate::native::features::FeaturePayloadScalar;
+use crate::native::features::FeatureSketchPayloadFixedPair;
+use crate::native::features::FeatureSketchPayloadNamedRecord;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 
 #[test]

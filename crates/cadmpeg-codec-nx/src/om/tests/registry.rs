@@ -1,5 +1,6 @@
-use super::{FieldDefinition, TypeDefinition};
 use crate::om::registry::RegistryTokenForm;
+use crate::om::FieldDefinition;
+use crate::om::TypeDefinition;
 
 fn append_declaration(bytes: &mut Vec<u8>, name: &[u8], tail: &[u8]) {
     bytes.push(u8::try_from(name.len() + 1).expect("synthetic declaration fits in one byte"));
