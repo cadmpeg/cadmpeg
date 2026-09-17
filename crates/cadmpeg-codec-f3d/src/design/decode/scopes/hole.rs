@@ -17,10 +17,10 @@ use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
 /// Type GUID of the point-and-direction carrier selected by a `Hole` scope.
-pub(super) const HOLE_POINT_DATA_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
+const HOLE_POINT_DATA_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
 
 /// Type GUID of the direct persistent face selection carried by a `Hole`.
-pub(super) const HOLE_FACE_SELECTION_TYPE_GUID: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
+const HOLE_FACE_SELECTION_TYPE_GUID: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
 
 /// Accepted norm error for a serialized Hole drilling direction.
 const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
@@ -88,7 +88,7 @@ pub(crate) fn exact_hole_construction(
     Some(candidate.clone())
 }
 
-pub(super) fn exact_hole_face_selection(
+fn exact_hole_face_selection(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -257,3 +257,6 @@ fn hole_construction_frame_at(
         face_selection,
     })
 }
+
+#[cfg(test)]
+mod tests;

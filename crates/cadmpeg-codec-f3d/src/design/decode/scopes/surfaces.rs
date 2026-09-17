@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact surface extend, offset and boundary operation scopes.
+//! Exact surface extend, offset, boundary, stitch and ruled-surface operation scopes.
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;

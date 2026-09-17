@@ -37,7 +37,7 @@ use std::collections::HashMap;
 /// The scope's fourth reference names a class-426 frame paired with class 267.
 /// Its exact compact scalar envelope carries count two and has no decoded
 /// Design-parameter backlink.
-pub(super) fn exact_legacy_mirror_scope_count(
+fn exact_legacy_mirror_scope_count(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -92,7 +92,7 @@ pub(super) fn exact_legacy_mirror_scope_count(
 /// tolerance is carried after the preceding-history field, with two marked
 /// references naming the adjacent legacy records. The class pair selects the
 /// generation-specific scalar marker; the remaining tail offsets are shared.
-pub(super) fn exact_legacy_mirror_scope_tolerance(
+fn exact_legacy_mirror_scope_tolerance(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<(f64, u64, DesignMirrorScopeTolerance)> {
@@ -438,10 +438,7 @@ pub fn bind_mirror_constructions(
     Ok(())
 }
 
-pub(super) fn compact_feature_reference(
-    bytes: &[u8],
-    header: &DesignRecordHeader,
-) -> Option<(u32, u64)> {
+fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Option<(u32, u64)> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
@@ -488,3 +485,6 @@ pub(super) fn compact_feature_reference(
         u64::try_from(identity_at + 21).ok()?,
     ))
 }
+
+#[cfg(test)]
+mod tests;

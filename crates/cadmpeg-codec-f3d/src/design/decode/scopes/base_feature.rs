@@ -12,7 +12,7 @@ use cadmpeg_core::decode::View;
 
 use super::shared_frames::marked_record_reference;
 
-pub(super) fn exact_base_feature_body_based_on_faces(
+fn exact_base_feature_body_based_on_faces(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignBaseFeatureConstruction> {

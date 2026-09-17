@@ -6,7 +6,9 @@
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
+use crate::design::test_support::dump::{
+    exact_component_insert_construction, DesignParameterScope, IndexedRecordOffsets,
+};
 
 #[test]
 fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
@@ -1115,11 +1117,7 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     identity[44..46].copy_from_slice(&[1, 1]);
     identity[46..122].copy_from_slice(&null_guid);
     assert_eq!(
-        super::super::component_constructions::exact_component_insert_identity_scope_shifted(
-            &identity,
-            0,
-            relation_record_index,
-        ),
+        super::exact_component_insert_identity_scope_shifted(&identity, 0, relation_record_index,),
         Some(occurrence_identity)
     );
 
@@ -1141,11 +1139,7 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     }
     matrix[178..254].copy_from_slice(&null_guid);
     assert_eq!(
-        super::super::component_constructions::exact_component_insert_scope_414_264_389(
-            &matrix,
-            0,
-            relation_record_index,
-        ),
+        super::exact_component_insert_scope_414_264_389(&matrix, 0, relation_record_index,),
         Some((transform.try_into().unwrap(), Some(50), occurrence_identity))
     );
 }

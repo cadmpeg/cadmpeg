@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 /// Type GUID of the point-data class a `WorkPoint` scope references. Every
 /// record of this class carries the `point3d` member sequence below.
-pub(super) const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
+const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 
 /// The base class level of a point-data record, read under one record version.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -187,3 +187,6 @@ pub(crate) fn exact_point_data_construction<'a>(
     }
     candidates.pop()
 }
+
+#[cfg(test)]
+mod tests;
