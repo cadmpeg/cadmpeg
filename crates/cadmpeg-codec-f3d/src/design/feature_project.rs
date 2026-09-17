@@ -54,10 +54,10 @@ use crate::records::{
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
     sketch_placement::DesignSketchPlacement,
     topology::{
-        DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeIdentityOperand,
-        DesignEdgeOperand, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignFaceOperand,
-        DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier,
-        DesignOperandRole,
+        face::DesignFaceOperand, DesignBodyRecipeOperand, DesignConstructionOperandGroup,
+        DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeFaceRole,
+        DesignExtrudeOperandRole, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
+        DesignLoftLegacyBodyCarrier, DesignOperandRole,
     },
 };
 use cadmpeg_core::decode::{bounded_len, View};
@@ -5756,7 +5756,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
-    face_operands: &[crate::records::topology::DesignFaceOperand],
+    face_operands: &[crate::records::topology::face::DesignFaceOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -5911,8 +5911,8 @@ fn revolve_face_axis_operand<'a>(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
     axis_member: u32,
-    face_operands: &'a [crate::records::topology::DesignFaceOperand],
-) -> Option<&'a crate::records::topology::DesignFaceOperand> {
+    face_operands: &'a [crate::records::topology::face::DesignFaceOperand],
+) -> Option<&'a crate::records::topology::face::DesignFaceOperand> {
     let stream = native_stream(&scope.id);
     let operands = face_operands
         .iter()
@@ -5937,7 +5937,7 @@ pub(crate) fn bind_revolve_face_axes(
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
     entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
-    face_operands: &[crate::records::topology::DesignFaceOperand],
+    face_operands: &[crate::records::topology::face::DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) {

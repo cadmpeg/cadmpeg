@@ -709,43 +709,47 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     split_target_group.operand_role =
         crate::records::topology::DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
-    let split_tool = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
-        id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
-        scope_record_index: split_body_scope.record_index,
-        scope_reference_ordinal: 1,
-        group: Some(crate::records::topology::DesignOperandGroup {
-            group_record_index: 100,
-            group_member_ordinal: 0,
-        }),
-        record_index: 200,
-        byte_offset: 1200,
-        class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        paired_byte_offset: 1250,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+    let split_tool =
+        DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
+            id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
+            scope_record_index: split_body_scope.record_index,
+            scope_reference_ordinal: 1,
+            group: Some(crate::records::topology::DesignOperandGroup {
+                group_record_index: 100,
+                group_member_ordinal: 0,
+            }),
+            record_index: 200,
+            byte_offset: 1200,
+            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                .unwrap(),
+            paired_byte_offset: 1250,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
             .unwrap(),
-        recipe_record_index: 203,
-        recipe_record_byte_offset: 1300,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#1300".into(),
-        recipe_prefix_offset: 1311,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: Vec::new(),
-        recipe_kind: ConstructionRecipeKind::Face,
-        recipe_program_offset: 1350,
-        recipe_program: vec![0, -1],
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 1300,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#1300".into(),
+            recipe_prefix_offset: 1311,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::Face,
+            recipe_program_offset: 1350,
+            recipe_program: vec![0, -1],
 
-        recipe_nodes: Vec::new(),
-        candidate_faces: Vec::new(),
-        unreferenced_candidate_faces: Vec::new(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: Vec::new(),
-        resolved_active_face: None,
-        next_record_index: 204,
-        next_byte_offset: 1411,
-    })
-    .unwrap();
+            recipe_nodes: Vec::new(),
+            candidate_faces: Vec::new(),
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            resolved_active_face: None,
+            next_record_index: 204,
+            next_byte_offset: 1411,
+        })
+        .unwrap();
     let split_groups = [split_target_group.clone(), split_tool_group.clone()];
     assert!(matches!(
         project_split(
@@ -989,7 +993,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut draft = delete_face_operand.into_draft();
     draft.record_index = 200;
     draft.recipe_record_index = draft.record_index + 3;
-    delete_face_operand = crate::records::topology::DesignFaceOperand::try_new(draft).unwrap();
+    delete_face_operand =
+        crate::records::topology::face::DesignFaceOperand::try_new(draft).unwrap();
     delete_face_operand.resolved_face_slots = vec![7];
     let (features, _) = project_parameter_design(
         &[],

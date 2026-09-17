@@ -51,13 +51,13 @@ use crate::records::{
     sketch_links::PersistentSubentityTag,
     sketch_relations::SketchRelationOperand,
     topology::{
+        face::DesignFaceOperand, face::DesignFaceSourceGroup, face::DesignFaceSourceMember,
         DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignConstructionOperandGroup,
         DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
         DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
         DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntitySelectionOperand,
         DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeSelectionGroup,
-        DesignExtrudeSelectionMember, DesignFaceOperand, DesignFaceSourceGroup,
-        DesignFaceSourceMember, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
+        DesignExtrudeSelectionMember, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
         DesignLoftLegacyBodyCarrier, DesignOperandOwner, DesignOperandRole,
         DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
         DesignSketchProfileRegionSelection, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
@@ -5020,7 +5020,7 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
 
 pub(crate) fn face_recipe_structure(
     program: &[i32],
-) -> Option<crate::records::topology::DesignFaceRecipeStructure> {
+) -> Option<crate::records::topology::face::DesignFaceRecipeStructure> {
     let (&root, remaining) = program.split_first()?;
     let (&first_prelude, remaining) = recipe_delimiter(remaining)?.split_first()?;
     let (&second_prelude, remaining) = recipe_delimiter(remaining)?.split_first()?;
@@ -5039,7 +5039,7 @@ pub(crate) fn face_recipe_structure(
     let [(sides, postlude)] = structures.as_slice() else {
         return None;
     };
-    Some(crate::records::topology::DesignFaceRecipeStructure {
+    Some(crate::records::topology::face::DesignFaceRecipeStructure {
         root,
         prelude: [first_prelude, second_prelude],
         sides: sides.clone(),
@@ -5290,7 +5290,7 @@ pub(crate) fn parse_face_operand(
         .map(|(start, end)| {
             let program = recipe_program.get(start..end)?.to_vec();
             let recipe_structure = program.get(3..).and_then(face_recipe_structure);
-            Some(crate::records::topology::DesignFaceRecipeNode {
+            Some(crate::records::topology::face::DesignFaceRecipeNode {
                 byte_offset: u64::try_from(recipe_program_at.checked_add(start.checked_mul(4)?)?)
                     .ok()?,
                 end_byte_offset: u64::try_from(recipe_program_at.checked_add(end.checked_mul(4)?)?)
@@ -5300,7 +5300,7 @@ pub(crate) fn parse_face_operand(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
+    DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
         id: ids::native_design_face_operand_id(
             stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
             header.byte_offset,

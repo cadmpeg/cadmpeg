@@ -83,7 +83,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let operand: crate::records::topology::DesignFaceOperand =
+    let operand: crate::records::topology::face::DesignFaceOperand =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:design-face-operand#40",
             "scope_record_index": 42,

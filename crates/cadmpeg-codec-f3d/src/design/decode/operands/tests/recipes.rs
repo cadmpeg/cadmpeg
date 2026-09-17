@@ -1581,7 +1581,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut draft = split_context.into_draft();
     draft.record_index += 1;
     draft.recipe_record_index = draft.record_index + 3;
-    split_context = crate::records::topology::DesignFaceOperand::try_new(draft).unwrap();
+    split_context = crate::records::topology::face::DesignFaceOperand::try_new(draft).unwrap();
     if let Some(group) = &mut split_context.group {
         group.group_member_ordinal = 1;
     }

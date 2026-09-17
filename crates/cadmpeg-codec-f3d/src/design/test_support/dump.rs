@@ -137,11 +137,11 @@ pub(crate) use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchConstraintKind, SketchRelation, SketchRelationOperand},
     topology::{
+        face::DesignFaceOperand, face::DesignFaceRecipeNode, face::DesignFaceRecipeStructure,
         DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignConstructionOperandGroup,
         DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
         DesignEdgeIdentityOperand, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
-        DesignExtrudeSelectionGroup, DesignFaceOperand, DesignFaceRecipeNode,
-        DesignFaceRecipeStructure, DesignOperandOwner, DesignSketchProfileOperand,
+        DesignExtrudeSelectionGroup, DesignOperandOwner, DesignSketchProfileOperand,
         DesignTopologyRecipeSide,
     },
 };

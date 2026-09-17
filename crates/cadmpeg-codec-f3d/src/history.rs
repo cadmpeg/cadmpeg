@@ -2136,7 +2136,7 @@ pub(crate) fn bind_feature_face_selections(
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     groups: &[crate::records::topology::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::DesignFaceOperand],
+    operands: &[crate::records::topology::face::DesignFaceOperand],
     entity_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     body_recipe_operands: &[crate::records::topology::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
@@ -3747,7 +3747,7 @@ fn history_state_index(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaSta
 }
 
 fn exact_face_selection_group<'a>(
-    operand: &crate::records::topology::DesignFaceOperand,
+    operand: &crate::records::topology::face::DesignFaceOperand,
     scope: &crate::records::feature::scope::DesignParameterScope,
     operand_groups: &'a [crate::records::topology::DesignConstructionOperandGroup],
 ) -> Option<&'a crate::records::topology::DesignConstructionOperandGroup> {
@@ -3851,7 +3851,7 @@ fn direct_face_recipe_candidates(
 }
 
 pub(crate) fn bind_face_operand_history_candidates(
-    operands: &mut [crate::records::topology::DesignFaceOperand],
+    operands: &mut [crate::records::topology::face::DesignFaceOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     operand_groups: &[crate::records::topology::DesignConstructionOperandGroup],
     recipes: &[crate::records::recipes::ConstructionRecipe],
@@ -4283,7 +4283,7 @@ fn draft_surface_geometry(
 }
 
 fn resolve_draft_face_by_surface_transition(
-    operand: &crate::records::topology::DesignFaceOperand,
+    operand: &crate::records::topology::face::DesignFaceOperand,
     preceding: &crate::history_records::AsmHistoricalTopology,
     result: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<i64> {
@@ -4409,7 +4409,7 @@ fn resolve_pattern_face_by_surface_radius(
 }
 
 fn resolve_split_tool_face(
-    operand: &crate::records::topology::DesignFaceOperand,
+    operand: &crate::records::topology::face::DesignFaceOperand,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<i64> {
     if operand.group_record_index().is_some()
@@ -4496,7 +4496,7 @@ fn resolve_thread_face_by_transition(
 }
 
 fn grouped_reference_face_candidate(
-    operand: &crate::records::topology::DesignFaceOperand,
+    operand: &crate::records::topology::face::DesignFaceOperand,
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
 ) -> Option<cadmpeg_ir::ids::FaceId> {
@@ -4534,7 +4534,7 @@ fn relation_members(
 }
 
 fn resolve_bounded_face_recipe_target(
-    operand: &crate::records::topology::DesignFaceOperand,
+    operand: &crate::records::topology::face::DesignFaceOperand,
     preceding: &crate::history_records::AsmHistoricalTopology,
     result: &crate::history_records::AsmHistoricalTopology,
     inserted_bodies: &[i64],
@@ -5086,7 +5086,7 @@ fn resolve_direct_face_recipe_clauses(
 }
 
 fn bind_profile_face_group_cardinality(
-    operands: &mut [crate::records::topology::DesignFaceOperand],
+    operands: &mut [crate::records::topology::face::DesignFaceOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     operand_groups: &[crate::records::topology::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
@@ -6608,7 +6608,7 @@ fn bind_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::DesignFaceOperand],
+    operands: &[crate::records::topology::face::DesignFaceOperand],
     updated_face_slots: &[i64],
 ) {
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
@@ -7584,7 +7584,7 @@ pub(crate) fn bind_mirror_selection_planes(
     scopes: &mut [crate::records::feature::scope::DesignParameterScope],
     groups: &[crate::records::topology::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::DesignEntitySelectionOperand],
-    face_operands: &[crate::records::topology::DesignFaceOperand],
+    face_operands: &[crate::records::topology::face::DesignFaceOperand],
     identities: &[crate::records::topology::DesignConstructionOperandIdentity],
     histories: &[AsmHistory],
 ) {
@@ -7699,7 +7699,7 @@ pub(crate) fn bind_mirror_selection_planes(
 }
 
 fn historical_mirror_face_operand_plane(
-    operand: &crate::records::topology::DesignFaceOperand,
+    operand: &crate::records::topology::face::DesignFaceOperand,
     history: &AsmHistory,
     previous_state_id: i64,
 ) -> Option<HistoricalMirrorPlane> {
@@ -8389,7 +8389,7 @@ fn complete_compact_edge_treatment_deletions(
 /// deleted treatment edge on the recipe's exact preceding support face.
 pub(crate) fn bind_edge_identity_bounded_face_rules(
     operands: &mut [DesignEdgeIdentityOperand],
-    face_operands: &[crate::records::topology::DesignFaceOperand],
+    face_operands: &[crate::records::topology::face::DesignFaceOperand],
 ) {
     use crate::records::recipes::ConstructionRecipeKind;
 

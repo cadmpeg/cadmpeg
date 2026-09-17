@@ -1282,7 +1282,7 @@ fn profile_face_group_cardinality_requires_one_changed_surface_family() {
 
 #[test]
 fn grouped_face_reference_selects_one_changed_topology_face() {
-    use crate::records::topology::DesignFaceOperand;
+    use crate::records::topology::face::DesignFaceOperand;
 
     let mut prefix = vec![0; 10];
     prefix.extend_from_slice(&1u32.to_le_bytes());
@@ -1366,7 +1366,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     use crate::records::{
         feature::scope::DesignParameterScope,
-        topology::{DesignConstructionOperandGroup, DesignFaceOperand},
+        topology::{face::DesignFaceOperand, DesignConstructionOperandGroup},
     };
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 

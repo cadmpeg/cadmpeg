@@ -1106,7 +1106,7 @@ fn fixed_kind_edge_and_revolve_operations(
     ));
 
     let face_axis_operand =
-        DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
+        DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
             id: "stream:indexed-face-axis".into(),
             scope_record_index: indexed_revolve_scope.record_index,
             scope_reference_ordinal: 2,

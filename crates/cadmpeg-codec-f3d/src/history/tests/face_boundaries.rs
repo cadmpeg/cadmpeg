@@ -94,8 +94,9 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     use crate::records::{
         recipes::ConstructionRecipeKind,
         topology::{
-            DesignEdgeIdentityOperand, DesignFaceOperand, DesignHistoricalFaceBoundaryContext,
-            DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
+            face::DesignFaceOperand, DesignEdgeIdentityOperand,
+            DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
+            DesignHistoricalFaceSupportContext,
         },
     };
 
@@ -130,7 +131,7 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         },
     )
     .unwrap()];
-    let face = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
+    let face = DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
         id: "f3d:Design/BulkStream.dat:design-face-operand#10".into(),
         scope_record_index: 1,
         scope_reference_ordinal: 0,

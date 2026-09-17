@@ -11,7 +11,8 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         feature::scope::DesignParameterScope,
         recipes::ConstructionRecipeKind,
         topology::{
-            DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
+            face::DesignFaceOperand, DesignConstructionOperandGroup,
+            DesignConstructionOperandGroupFrame,
         },
     };
     use cadmpeg_ir::features::{
@@ -76,43 +77,47 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         },
     )
     .unwrap();
-    let operand = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
-        id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
-        scope_record_index: 42,
-        scope_reference_ordinal: 3,
-        group: Some(crate::records::topology::DesignOperandGroup {
-            group_record_index: 100,
-            group_member_ordinal: 0,
-        }),
-        record_index: 200,
-        byte_offset: 1200,
-        class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        paired_byte_offset: 1300,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+    let operand =
+        DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
+            id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
+            scope_record_index: 42,
+            scope_reference_ordinal: 3,
+            group: Some(crate::records::topology::DesignOperandGroup {
+                group_record_index: 100,
+                group_member_ordinal: 0,
+            }),
+            record_index: 200,
+            byte_offset: 1200,
+            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                .unwrap(),
+            paired_byte_offset: 1300,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
             .unwrap(),
-        recipe_record_index: 203,
-        recipe_record_byte_offset: 1400,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
-        recipe_prefix_offset: 1411,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: Vec::new(),
-        recipe_kind: ConstructionRecipeKind::Face,
-        recipe_program_offset: 1420,
-        recipe_program: Vec::new(),
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 1400,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
+            recipe_prefix_offset: 1411,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::Face,
+            recipe_program_offset: 1420,
+            recipe_program: Vec::new(),
 
-        recipe_nodes: Vec::new(),
-        candidate_faces: vec![face_id.clone()],
-        unreferenced_candidate_faces: Vec::new(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: vec![face_id.clone()],
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: Vec::new(),
-        resolved_active_face: None,
-        next_record_index: 204,
-        next_byte_offset: 1500,
-    })
-    .unwrap();
+            recipe_nodes: Vec::new(),
+            candidate_faces: vec![face_id.clone()],
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: vec![face_id.clone()],
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            resolved_active_face: None,
+            next_record_index: 204,
+            next_byte_offset: 1500,
+        })
+        .unwrap();
     let state = |state_id, transition| AsmDeltaState {
         id: format!("f3d:history:state#{state_id}"),
         parent: "f3d:history".into(),
@@ -206,7 +211,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         },
         recipes::ConstructionRecipeKind,
         topology::{
-            DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
+            face::DesignFaceOperand, DesignConstructionOperandGroup,
+            DesignConstructionOperandGroupFrame,
         },
     };
     use cadmpeg_ir::ids::FaceId;
@@ -282,43 +288,47 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let operand = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
-        id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
-        scope_record_index: 42,
-        scope_reference_ordinal: 1,
-        group: Some(crate::records::topology::DesignOperandGroup {
-            group_record_index: 100,
-            group_member_ordinal: 0,
-        }),
-        record_index: 200,
-        byte_offset: 1_200,
-        class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned()).unwrap(),
-        paired_byte_offset: 1_300,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+    let operand =
+        DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
+            id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
+            scope_record_index: 42,
+            scope_reference_ordinal: 1,
+            group: Some(crate::records::topology::DesignOperandGroup {
+                group_record_index: 100,
+                group_member_ordinal: 0,
+            }),
+            record_index: 200,
+            byte_offset: 1_200,
+            class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
+                .unwrap(),
+            paired_byte_offset: 1_300,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "259".to_owned(),
+            )
             .unwrap(),
-        recipe_record_index: 203,
-        recipe_record_byte_offset: 1_400,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
-        recipe_prefix_offset: 1_411,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: vec![reference("3", 203, &[7, 8]), reference("-1", 199, &[9, 10])],
-        recipe_kind: ConstructionRecipeKind::BoundedFace,
-        recipe_program_offset: 1_430,
-        recipe_program: vec![0, -1, 2],
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 1_400,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
+            recipe_prefix_offset: 1_411,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: vec![reference("3", 203, &[7, 8]), reference("-1", 199, &[9, 10])],
+            recipe_kind: ConstructionRecipeKind::BoundedFace,
+            recipe_program_offset: 1_430,
+            recipe_program: vec![0, -1, 2],
 
-        recipe_nodes: Vec::new(),
-        candidate_faces: [7, 8, 9, 10].into_iter().map(face).collect(),
-        unreferenced_candidate_faces: [9, 10].into_iter().map(face).collect(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: Vec::new(),
-        resolved_active_face: None,
-        next_record_index: 204,
-        next_byte_offset: 1_500,
-    })
-    .unwrap();
+            recipe_nodes: Vec::new(),
+            candidate_faces: [7, 8, 9, 10].into_iter().map(face).collect(),
+            unreferenced_candidate_faces: [9, 10].into_iter().map(face).collect(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            resolved_active_face: None,
+            next_record_index: 204,
+            next_byte_offset: 1_500,
+        })
+        .unwrap();
 
     let mut transition = AsmHistoricalTransition {
         previous_state_id: Some(1),
