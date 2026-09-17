@@ -105,7 +105,7 @@ pub enum DesignCoilSectionPlacement {
     Outside,
 }
 
-pub(super) fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(
+fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<DesignSecondaryIdentity<u64>>, D::Error> {
     #[derive(Deserialize)]
@@ -120,7 +120,7 @@ pub(super) fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(
         .map_err(serde::de::Error::custom)
 }
 
-pub(super) fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(
+fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<ConstructionRecipeDesign<String>>, D::Error> {
     #[derive(Deserialize)]
@@ -461,3 +461,6 @@ impl From<DesignCoilScope> for DesignCoilScopeWire {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
