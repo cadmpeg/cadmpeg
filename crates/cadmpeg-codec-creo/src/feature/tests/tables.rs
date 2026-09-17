@@ -1632,3 +1632,28 @@ fn trim_entity_bucket_counts_the_named_prototype_and_complete_bodies() {
     assert_eq!(buckets[0].decoded_entry_count, Some(1));
     assert!(!buckets[0].is_complete());
 }
+
+#[test]
+fn a_bucket_that_states_no_decoded_entry_count_is_not_complete() {
+    // `None` states that the scan decoded more entries than the stored `u32`
+    // count can be compared against, so the bucket states no completeness.
+    let unstatable = crate::feature::definitions::FeatureTrimBucket {
+        index: 0,
+        declared_entry_count: 2,
+        decoded_entry_count: None,
+        offset: 0,
+    };
+    assert!(!unstatable.is_complete());
+
+    let complete = crate::feature::definitions::FeatureTrimBucket {
+        decoded_entry_count: Some(2),
+        ..unstatable.clone()
+    };
+    assert!(complete.is_complete());
+
+    let short = crate::feature::definitions::FeatureTrimBucket {
+        decoded_entry_count: Some(1),
+        ..unstatable
+    };
+    assert!(!short.is_complete());
+}
