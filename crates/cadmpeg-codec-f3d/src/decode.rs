@@ -4273,21 +4273,22 @@ fn extend_related_design_records(
         )?;
     native.design_component_occurrences =
         crate::design::decode::components::decode_component_occurrences(scan)?;
-    native.design_parameter_scopes = crate::design::decode::scopes::decode_parameter_scopes(
-        scan,
-        &native.design_entity_headers,
-        &native.design_types,
-        &native.design_parameters,
-        &native.design_parameter_owners,
-        &native.design_component_occurrences,
-        &native.construction_recipes,
-    )?;
+    native.design_parameter_scopes =
+        crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
+            scan,
+            &native.design_entity_headers,
+            &native.design_types,
+            &native.design_parameters,
+            &native.design_parameter_owners,
+            &native.design_component_occurrences,
+            &native.construction_recipes,
+        )?;
     native.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
             scan,
             &native.design_parameter_scopes,
         )?;
-    crate::design::decode::scopes::admit_history_bound_scope_variants(
+    crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
         &mut native.design_parameter_scopes,
         &native.asm_histories,
     )?;
@@ -4397,7 +4398,7 @@ fn extend_related_design_records(
             &native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
-    crate::design::decode::scopes::bind_mirror_constructions(
+    crate::design::decode::scopes::mirror::bind_mirror_constructions(
         scan,
         &mut native.design_parameter_scopes,
         &native.design_construction_operand_groups,

@@ -1115,7 +1115,7 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     identity[44..46].copy_from_slice(&[1, 1]);
     identity[46..122].copy_from_slice(&null_guid);
     assert_eq!(
-        super::super::exact_component_insert_identity_scope_shifted(
+        super::super::component_constructions::exact_component_insert_identity_scope_shifted(
             &identity,
             0,
             relation_record_index,
@@ -1141,7 +1141,11 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     }
     matrix[178..254].copy_from_slice(&null_guid);
     assert_eq!(
-        super::super::exact_component_insert_scope_414_264_389(&matrix, 0, relation_record_index,),
+        super::super::component_constructions::exact_component_insert_scope_414_264_389(
+            &matrix,
+            0,
+            relation_record_index,
+        ),
         Some((transform.try_into().unwrap(), Some(50), occurrence_identity))
     );
 }

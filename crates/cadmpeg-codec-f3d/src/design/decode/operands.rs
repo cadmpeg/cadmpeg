@@ -12,7 +12,7 @@ use crate::design::decode::dimension_frames::{
     recipe_record_prefix,
 };
 use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_two_sided_to_faces_scope;
-use crate::design::decode::scopes::payload_prologue;
+use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::sketch::{
     indexed_record_header_at, next_indexed_record_offset, next_indexed_record_offset_with_index,
     IndexedRecordOffsets,

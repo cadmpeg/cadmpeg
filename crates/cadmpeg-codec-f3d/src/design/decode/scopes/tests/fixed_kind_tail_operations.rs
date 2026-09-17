@@ -38,7 +38,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = crate::design::decode::scopes::exact_move_operation(
+    let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &move_scope,
@@ -75,7 +75,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = crate::design::decode::scopes::exact_move_operation(
+    let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &compact_move_scope,
@@ -88,7 +88,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(decoded.form_offset, (compact_move_at + 43) as u64);
     bytes[compact_move_at + 4..compact_move_at + 7].copy_from_slice(b"362");
     bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
-    let decoded = crate::design::decode::scopes::exact_move_operation(
+    let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &compact_move_scope,
@@ -124,7 +124,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = crate::design::decode::scopes::exact_move_operation(
+    let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &class_433_move_scope,

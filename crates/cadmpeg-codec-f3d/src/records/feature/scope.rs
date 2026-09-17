@@ -2044,14 +2044,16 @@ impl DesignParameterScope {
             .checked_sub(draft.feature_ordinal_offset)
             .and_then(|length| usize::try_from(length).ok())
             .ok_or_else(|| fail("feature_ordinal_offset"))?;
-        if !crate::design::decode::scopes::parameter_scope_tail_length_is_valid(kind, tail) {
+        if !crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
+            kind, tail,
+        ) {
             return Err(fail("feature_ordinal_offset/kind"));
         }
         match draft.previous_history_state_id_offset {
             None if draft.previous_history_state_id.is_none() => {}
             Some(offset) => {
                 let relative =
-                    crate::design::decode::scopes::parameter_scope_previous_history_offset(
+                    crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
                         kind, tail,
                     )
                     .ok_or_else(|| fail("previous_history_state_id_offset"))?;

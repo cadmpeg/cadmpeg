@@ -5,15 +5,28 @@ use cadmpeg_core::decode::View;
 
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
 
-use super::{
-    class_363_carrier, class_363_child, class_363_identity, class_363_identity_extended,
-    class_363_identity_reduced_490, class_363_identity_reduced_501, class_363_identity_short,
-    class_363_leading, class_363_terminal, exact_indexed_header_at,
-    exact_same_segment_record_reference, is_guid_relaxed, lp_utf16_bounded,
-    marked_record_reference, rigid_transform_at, DesignAssemblyOperandFrame,
-    DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,
-    DesignParameterScope, IndexedRecordOffsets, ASSEMBLY_MARKED_REFERENCE_LEN,
-};
+use super::legacy_operand_paths::ASSEMBLY_MARKED_REFERENCE_LEN;
+use super::shared_frames::exact_indexed_header_at;
+use super::shared_frames::exact_same_segment_record_reference;
+use super::shared_frames::marked_record_reference;
+use super::shared_frames::rigid_transform_at;
+use crate::bytes::is_guid_relaxed;
+use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::layout::assembly_class_363_264_frame_360_child as class_363_child;
+use crate::layout::assembly_class_363_264_frame_360_leading as class_363_leading;
+use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
+use crate::layout::assembly_class_363_264_frame_386_terminal as class_363_terminal;
+use crate::layout::assembly_class_363_264_frame_388_identity as class_363_identity;
+use crate::layout::assembly_class_363_264_frame_388_identity_extended as class_363_identity_extended;
+use crate::layout::assembly_class_363_264_frame_388_identity_reduced_490 as class_363_identity_reduced_490;
+use crate::layout::assembly_class_363_264_frame_388_identity_reduced_501 as class_363_identity_reduced_501;
+use crate::layout::assembly_class_363_264_frame_388_identity_short as class_363_identity_short;
+use crate::records::feature::assembly::DesignAssemblyOperandFrame;
+use crate::records::feature::assembly::DesignAssemblyOperandPath;
+use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
+use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
+use crate::records::feature::scope::DesignParameterScope;
 
 pub(super) fn exact_variable_reference_operand_qualifiers(
     bytes: &[u8],

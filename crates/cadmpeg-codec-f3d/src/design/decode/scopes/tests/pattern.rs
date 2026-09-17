@@ -10,7 +10,7 @@ use super::{assembly::assembly_operand_frame_fixture, prelude::*};
 
 #[test]
 fn circular_pattern_axis_prefers_one_inline_carrier() {
-    use crate::design::decode::scopes::CircularPatternAxisCandidate;
+    use crate::design::decode::scopes::pattern::CircularPatternAxisCandidate;
     use crate::records::feature::patterns::DesignCircularPatternAxis;
 
     let historical = DesignCircularPatternAxis::HistoricalEdge {

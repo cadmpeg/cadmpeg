@@ -134,7 +134,7 @@ pub(crate) fn exact_symmetric_extrude_prologue(
             return None;
         }
         if present {
-            let record_index = super::marked_record_reference(bytes, slot_offset)?;
+            let record_index = super::shared_frames::marked_record_reference(bytes, slot_offset)?;
             if !reference_members.contains(&record_index) {
                 return None;
             }

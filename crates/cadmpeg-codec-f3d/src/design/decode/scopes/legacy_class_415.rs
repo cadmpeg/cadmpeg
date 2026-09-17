@@ -193,7 +193,8 @@ pub(crate) fn exact_one_sided_extrude_prologue(
         side_extent_discriminators,
     )?;
     if let Some(offset) = first_side_offset_reference {
-        let record_index = super::marked_record_reference(bytes, start.checked_add(offset)?)?;
+        let record_index =
+            super::shared_frames::marked_record_reference(bytes, start.checked_add(offset)?)?;
         if !reference_members.contains(&record_index) {
             return None;
         }
@@ -204,7 +205,7 @@ pub(crate) fn exact_one_sided_extrude_prologue(
     let first_reference_marker = reference_count_at.checked_add(4)?;
     for (ordinal, record_index) in reference_members.iter().enumerate() {
         let marker = first_reference_marker.checked_add(ordinal.checked_mul(11)?)?;
-        if super::marked_record_reference(bytes, marker)? != *record_index {
+        if super::shared_frames::marked_record_reference(bytes, marker)? != *record_index {
             return None;
         }
     }

@@ -1,25 +1,73 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact extrude admission and sheet-metal operation frames.
 
-use super::{
-    class_296_legacy_distance, class_296_legacy_scalar_54, class_296_legacy_scalar_70,
-    class_296_legacy_to_face, class_296_symmetric, class_296_to_face, class_296_two_faces,
-    class_338_legacy, class_415, compact_extrude, compact_extrude_extent, compact_extrude_mixed,
-    early_absent, early_present, edge_flange, edge_flange_286_per_edge, edge_flange_325_per_edge,
-    edge_flange_364_width, edge_flange_legacy, edge_flange_multi, exact_fixed_scalar,
-    extrude_extent_pair, extrude_fields, extrude_target, f64s_at, flange_to_object, hem_gap,
-    hem_rolled, hem_teardrop, is_guid_relaxed, legacy_class_397, legacy_class_415,
-    lp_utf16_bounded, marked_record_reference, native_stream, offset_lane, shifted_283,
-    shifted_extrude, shifted_reference_aware, shifted_reference_aware_323_symmetric,
-    shifted_reference_aware_323_tail, take_reference, DesignBaseFlangeOperation,
-    DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation,
-    DesignEdgeFlangeWidthParameterSource, DesignEdgeWidthMode, DesignExtrudeExtent,
-    DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudePrologueReference,
-    DesignExtrudeStart, DesignExtrudeTargetOrdinal, DesignHemOperation, DesignHemParameterOwners,
-    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignRuledSurfaceCorner,
-    DesignRuledSurfaceMethod, DesignRuledSurfaceOperation, DesignSheetMetalHeightDatum,
-    DesignSurfaceStitchOperation, HashSet, IndexedRecordOffsets, View,
-};
+use super::legacy_class_397;
+use super::legacy_class_415;
+use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::marked_record_reference;
+use crate::bytes::f64s_at;
+use crate::bytes::is_guid_relaxed;
+use crate::bytes::lp_utf16_bounded;
+use crate::bytes::take_reference;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::ids::native_stream;
+use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_scalar_54;
+use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_70 as class_296_legacy_scalar_70;
+use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
+use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_legacy_to_face;
+use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
+use crate::layout::class_296_261_symmetric_distance_extrude_prefix as class_296_symmetric;
+use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as class_296_two_faces;
+use crate::layout::compact_shifted_extrude_extent_and_table_prefix as compact_extrude_extent;
+use crate::layout::compact_shifted_extrude_mixed_extent_and_table_prefix as compact_extrude_mixed;
+use crate::layout::compact_shifted_extrude_prologue as compact_extrude;
+use crate::layout::current_extrude_non_target_extent_pair as extrude_extent_pair;
+use crate::layout::current_extrude_operation_fields as extrude_fields;
+use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
+use crate::layout::early_distance_extrude_absent_prefix as early_absent;
+use crate::layout::early_distance_extrude_present_prefix as early_present;
+use crate::layout::edge_flange_class286_two_sided_per_edge_fixed_operation as edge_flange_286_per_edge;
+use crate::layout::edge_flange_class325_334_two_sided_per_edge_fixed_operation as edge_flange_325_per_edge;
+use crate::layout::edge_flange_class364_per_edge_width_fixed_operation as edge_flange_364_width;
+use crate::layout::edge_flange_fixed_operation_section as edge_flange;
+use crate::layout::edge_flange_legacy_single_edge_fixed_operation as edge_flange_legacy;
+use crate::layout::edge_flange_multi_edge_fixed_operation as edge_flange_multi;
+use crate::layout::edge_flange_to_object_fixed_operation_section as flange_to_object;
+use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
+use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
+use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
+use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
+use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
+use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
+use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
+use crate::layout::shifted_extrude_prologue as shifted_extrude;
+use crate::layout::shifted_reference_aware_extrude_class_323_symmetric_prefix as shifted_reference_aware_323_symmetric;
+use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_reference_aware_323_tail;
+use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
+use crate::records::feature::extrude::DesignExtrudeExtent;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::extrude::DesignExtrudePrologue;
+use crate::records::feature::extrude::DesignExtrudePrologueReference;
+use crate::records::feature::extrude::DesignExtrudeStart;
+use crate::records::feature::extrude::DesignExtrudeTargetOrdinal;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::sheet_metal::DesignBaseFlangeOperation;
+use crate::records::feature::sheet_metal::DesignBendPosition;
+use crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent;
+use crate::records::feature::sheet_metal::DesignEdgeFlangeOperation;
+use crate::records::feature::sheet_metal::DesignEdgeFlangeWidthParameterSource;
+use crate::records::feature::sheet_metal::DesignEdgeWidthMode;
+use crate::records::feature::sheet_metal::DesignHemOperation;
+use crate::records::feature::sheet_metal::DesignHemParameterOwners;
+use crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum;
+use crate::records::feature::surface_ops::DesignRuledSurfaceCorner;
+use crate::records::feature::surface_ops::DesignRuledSurfaceMethod;
+use crate::records::feature::surface_ops::DesignRuledSurfaceOperation;
+use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
+use crate::records::parameters::DesignParameter;
+use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::View;
+use std::collections::HashSet;
 
 pub(super) fn exact_extrude_prologue(
     bytes: &[u8],

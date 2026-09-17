@@ -1,0 +1,319 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Exact surface extend, offset and boundary operation scopes.
+
+use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::marked_record_reference;
+use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::operands::parse_construction_operand_group;
+use crate::design::decode::operands::ConstructionOperandGroupParse;
+use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::design_feature_family;
+use crate::design::DesignFeatureFamily;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
+use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
+use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
+use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
+use crate::records::topology::DesignOperandRole;
+use cadmpeg_core::decode::View;
+use std::collections::HashSet;
+
+pub(crate) fn exact_surface_extend_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceExtendOperation> {
+    let operation = exact_surface_boundary_operation(
+        bytes,
+        records,
+        scope,
+        DesignFeatureFamily::SurfaceExtend,
+        8,
+    )?;
+    if operation.distance <= 0.0 {
+        return None;
+    }
+    let method = match operation.mode {
+        0 => DesignSurfaceExtendMethod::Natural,
+        1 => DesignSurfaceExtendMethod::Tangent,
+        2 => DesignSurfaceExtendMethod::Perpendicular,
+        _ => return None,
+    };
+    Some(DesignSurfaceExtendOperation {
+        distance: operation.distance,
+        distance_offset: operation.distance_offset,
+        distance_record_index: operation.distance_record_index,
+        method,
+        method_offset: operation.mode_offset,
+        boundary_record_index: operation.boundary_record_index,
+        boundary_reference_record_index: operation.boundary_reference_record_index,
+        boundary_reference_offset: operation.boundary_reference_offset,
+        edge_record_indices: operation.edge_record_indices,
+        tolerance: operation.tolerance,
+        tolerance_offset: operation.tolerance_offset,
+    })
+}
+
+pub(crate) fn exact_surface_offset_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceOffsetOperation> {
+    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope) {
+        return Some(operation);
+    }
+    let operation = exact_surface_boundary_operation(
+        bytes,
+        records,
+        scope,
+        DesignFeatureFamily::SurfaceOffset,
+        65,
+    )?;
+    (operation.mode == 1).then_some(DesignSurfaceOffsetOperation {
+        distance: operation.distance,
+        distance_offset: operation.distance_offset,
+        distance_record_index: operation.distance_record_index,
+        support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+            boundary_record_index: operation.boundary_record_index,
+            boundary_reference_record_index: operation.boundary_reference_record_index,
+            boundary_reference_offset: operation.boundary_reference_offset,
+            edge_record_indices: operation.edge_record_indices,
+            tolerance: operation.tolerance,
+            tolerance_offset: operation.tolerance_offset,
+        },
+    })
+}
+
+fn exact_surface_offset_face_groups(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceOffsetOperation> {
+    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::SurfaceOffset) {
+        return None;
+    }
+    let distance_record_index = scope.reference_members().values().next()?;
+    let support_reference_count = scope.reference_members().len() - 1;
+    if support_reference_count == 0 {
+        return None;
+    }
+    let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
+    if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 0 {
+        return None;
+    }
+
+    let mut group_record_indices = Vec::new();
+    let mut covered_references = HashSet::new();
+    for (scope_reference_ordinal, record_index) in scope
+        .reference_members()
+        .values()
+        .copied()
+        .enumerate()
+        .skip(1)
+    {
+        let group = exact_construction_operand_group(
+            bytes,
+            records,
+            scope,
+            u32::try_from(scope_reference_ordinal).ok()?,
+            record_index,
+        );
+        let Some(group) = group else {
+            continue;
+        };
+        if group.role() != DesignOperandRole::PROFILE
+            || group.frame.opaque_index.get() != 252
+            || group.members().is_empty()
+            || !covered_references.insert(group.record_index)
+        {
+            return None;
+        }
+        for member in group.members().iter().map(|member| &member.value) {
+            if *member == *distance_record_index
+                || !scope
+                    .reference_members()
+                    .values()
+                    .skip(1)
+                    .any(|value| value == member)
+                || !covered_references.insert(*member)
+            {
+                return None;
+            }
+        }
+        group_record_indices.push(group.record_index);
+    }
+    if group_record_indices.is_empty() || covered_references.len() != support_reference_count {
+        return None;
+    }
+
+    Some(DesignSurfaceOffsetOperation {
+        distance: scalar.value,
+        distance_offset: scalar.value_offset,
+        distance_record_index: *distance_record_index,
+        support: DesignSurfaceOffsetSupport::FaceGroups {
+            group_record_indices,
+        },
+    })
+}
+
+fn exact_construction_operand_group(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    record_index: u32,
+) -> Option<crate::records::topology::DesignConstructionOperandGroup> {
+    let mut candidates = Vec::new();
+    for (start, _) in records.frames(record_index) {
+        let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        if after_tag != start + 7 {
+            continue;
+        }
+        let header = RecordFrame {
+            record_index,
+            class_tag: class_tag.clone().try_into().ok()?,
+            byte_offset: u64::try_from(start).ok()?,
+        };
+        if let ConstructionOperandGroupParse::Complete(group) =
+            parse_construction_operand_group(bytes, scope, scope_reference_ordinal, &header)
+        {
+            candidates.push(*group);
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+#[derive(Clone)]
+struct ExactSurfaceBoundaryOperation {
+    distance: f64,
+    distance_offset: u64,
+    distance_record_index: u32,
+    mode: u32,
+    mode_offset: u64,
+    boundary_record_index: u32,
+    boundary_reference_record_index: u32,
+    boundary_reference_offset: u64,
+    edge_record_indices: Vec<u32>,
+    tolerance: f64,
+    tolerance_offset: u64,
+}
+
+fn exact_surface_boundary_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    family: DesignFeatureFamily,
+    boundary_kind: u32,
+) -> Option<ExactSurfaceBoundaryOperation> {
+    if design_feature_family(&scope.kind()) != Some(family) {
+        return None;
+    }
+    let mut references = scope.reference_members().values();
+    let distance_record_index = references.next()?;
+    let boundary_record_index = references.next()?;
+    let edge_record_indices = references;
+    if edge_record_indices.len() == 0 {
+        return None;
+    }
+    let scalar = exact_fixed_scalar(bytes, records, *distance_record_index)?;
+    if scalar.owner_record_index != Some(scope.record_index)
+        || scalar.ordinal != 0
+        || records
+            .frames(*distance_record_index)
+            .filter(|(start, end)| {
+                end.checked_sub(*start) == Some(104)
+                    && lp_ascii_filtered(bytes, *start, 0..=2000, u8::is_ascii_graphic).is_some_and(
+                        |(class_tag, after_tag)| {
+                            after_tag == *start + 7
+                                && class_tag.len() == 3
+                                && class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                        },
+                    )
+                    && bytes.get(*start + 11..*start + 19) == Some(&[0; 8])
+                    && bytes.get(*start + 19..*start + 24) == Some(&[1, 1, 0, 0, 0])
+                    && marked_record_reference(bytes, *start + 24) == Some(scope.record_index)
+                    && bytes.get(*start + 29..*start + 35) == Some(&[0; 6])
+                    && bytes.get(*start + 35..*start + 40) == Some(&[0; 5])
+                    && marked_record_reference(bytes, *start + 48)
+                        == distance_record_index.checked_sub(1)
+                    && bytes.get(*start + 53..*start + 59) == Some(&[0; 6])
+                    && View::u32_le_at(bytes, *start + 59).is_some_and(|value| value != 0)
+                    && bytes.get(*start + 63..*start + 67) == Some(&[0; 4])
+                    && marked_record_reference(bytes, *start + 67) == Some(scope.record_index)
+                    && bytes.get(*start + 72..*start + 78) == Some(&[0; 6])
+                    && bytes.get(*start + 78..*start + 81) == Some(&[1, 0, 0])
+                    && marked_record_reference(bytes, *start + 81)
+                        == distance_record_index.checked_add(1)
+                    && bytes.get(*start + 86..*start + 93) == Some(&[0; 7])
+                    && marked_record_reference(bytes, *start + 93) == Some(scope.record_index)
+                    && bytes.get(*start + 98..*start + 104) == Some(&[0; 6])
+            })
+            .count()
+            != 1
+    {
+        return None;
+    }
+    let candidates = records
+        .frames(*boundary_record_index)
+        .filter_map(|(start, end)| {
+            let member_bytes = edge_record_indices.len().checked_mul(11)?;
+            let tail = start.checked_add(25)?.checked_add(member_bytes)?;
+            (end.checked_sub(start)? == 113usize.checked_add(member_bytes)?).then_some(())?;
+            let (class_tag, after_tag) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+            if after_tag != start + 7
+                || class_tag.len() != 3
+                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                || bytes.get(start + 11..start + 21)? != [0; 10]
+                || View::u32_le_at(bytes, start + 21)?
+                    != u32::try_from(edge_record_indices.len()).ok()?
+                || edge_record_indices
+                    .clone()
+                    .enumerate()
+                    .any(|(ordinal, record_index)| {
+                        marked_record_reference(bytes, start + 25 + ordinal * 11)
+                            != Some(*record_index)
+                    })
+                || bytes.get(tail..tail + 2)? != [0; 2]
+                || bytes.get(tail + 11..tail + 21)? != [0; 10]
+                || View::u32_le_at(bytes, tail + 21)? != boundary_kind
+                || bytes.get(tail + 25..tail + 35)? != [0; 10]
+                || View::u32_le_at(bytes, tail + 35)? != 210
+                || View::u32_le_at(bytes, tail + 47)? != 210
+                || marked_record_reference(bytes, tail + 51) != boundary_record_index.checked_add(2)
+                || bytes.get(tail + 56..tail + 62)? != [0; 6]
+                || bytes.get(tail + 62..tail + 65)? != [1, 0, 0]
+                || marked_record_reference(bytes, tail + 65) != boundary_record_index.checked_add(1)
+                || bytes.get(tail + 70..tail + 77)? != [0; 7]
+                || marked_record_reference(bytes, tail + 77) != Some(scope.record_index)
+                || bytes.get(tail + 82..tail + 88)? != [0; 6]
+            {
+                return None;
+            }
+            let mode = View::u32_le_at(bytes, tail + 2)?;
+            let boundary_reference_record_index = marked_record_reference(bytes, tail + 6)?;
+            let tolerance = View::f64_le_at(bytes, tail + 39)?;
+            (tolerance.is_finite() && tolerance > 0.0).then_some(ExactSurfaceBoundaryOperation {
+                distance: scalar.value,
+                distance_offset: scalar.value_offset,
+                distance_record_index: *distance_record_index,
+                mode,
+                mode_offset: u64::try_from(tail + 2).ok()?,
+                boundary_record_index: *boundary_record_index,
+                boundary_reference_record_index,
+                boundary_reference_offset: u64::try_from(tail + 6).ok()?,
+                edge_record_indices: edge_record_indices.clone().copied().collect(),
+                tolerance,
+                tolerance_offset: u64::try_from(tail + 39).ok()?,
+            })
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}

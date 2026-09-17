@@ -8,7 +8,7 @@
 )]
 
 use super::prelude::*;
-use crate::design::decode::scopes::exact_derived_instance_construction;
+use crate::design::decode::scopes::component_constructions::exact_derived_instance_construction;
 use crate::layout::{
     derived_instance_relation_310_57 as relation_310, derived_instance_scope_279_261 as scope_279,
 };

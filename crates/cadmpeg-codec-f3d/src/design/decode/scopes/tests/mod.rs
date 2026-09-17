@@ -7,8 +7,6 @@
     clippy::wildcard_imports
 )]
 
-pub(super) use super::*;
-
 mod assembly;
 mod assembly_variable_reference;
 mod coil;

@@ -5,12 +5,14 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     let (bytes, _) = crate::test_support::generated_design_copy_paste_bodies_bulkstream();
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
     let headers =
-        crate::design::decode::scopes::parameter_scope_candidate_headers(&bytes, &records)
-            .into_iter()
-            .filter(|header| header.record_index == 1_400)
-            .collect::<Vec<_>>();
+        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
+            &bytes, &records,
+        )
+        .into_iter()
+        .filter(|header| header.record_index == 1_400)
+        .collect::<Vec<_>>();
     assert_eq!(headers.len(), 1);
-    let scope = crate::design::decode::scopes::parse_parameter_scope(
+    let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
         &bytes,
         &records,
         headers[0].record_index,
@@ -32,8 +34,10 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     );
     assert_eq!(scope.frame_length(), 225);
     let operation =
-        crate::design::decode::scopes::exact_copy_paste_bodies_operation(&bytes, &records, &scope)
-            .expect("CopyPasteBodies operation");
+        crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
+            &bytes, &records, &scope,
+        )
+        .expect("CopyPasteBodies operation");
     assert_eq!(operation.body_group_record_index, 1_500);
     assert_eq!(operation.relation_record_index, 1_700);
     assert_eq!(

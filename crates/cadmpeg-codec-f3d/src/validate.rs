@@ -9,11 +9,12 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
-use crate::design::decode::scopes::extrude_sheet_metal::{
-    is_class_296_legacy_one_sided_distance_layout, is_class_296_legacy_one_sided_to_face_layout,
-    is_class_296_one_sided_to_face_layout, is_class_296_symmetric_distance_layout,
-    is_class_296_two_sided_to_faces_layout, is_class_296_two_sided_to_faces_scope,
-};
+use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_legacy_one_sided_distance_layout;
+use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_legacy_one_sided_to_face_layout;
+use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_one_sided_to_face_layout;
+use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_symmetric_distance_layout;
+use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_two_sided_to_faces_layout;
+use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::legacy_class_397::Class397SymmetricFrame;
 use crate::design::decode::scopes::legacy_class_415;
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
@@ -2538,7 +2539,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     };
                 let compact_scope = scope.class_tag.as_str() == "387"
                     && scope.paired_class_tag.as_str() == "258"
-                    && design::decode::scopes::parameter_scope_payload_length(scope) == Some(314);
+                    && design::decode::scopes::parameter_scope::parameter_scope_payload_length(
+                        scope,
+                    ) == Some(314);
                 let extended_reference_scope = scope.class_tag.as_str() == "329"
                     && scope.paired_class_tag.as_str() == "261"
                     && scope.frame_length() == 363;
