@@ -607,10 +607,20 @@ pub(crate) fn circular_helix_cache(
         return None;
     }
     let relative_tolerance = requested_tolerance / radius;
+    // The step whose chord sagitta is the requested tolerance is
+    // `2 * acos(1 - relative_tolerance)`. The refusals above state
+    // `requested_tolerance > 0` and `radius > 0`, so the relative tolerance is
+    // positive and `1 - relative_tolerance` never passes `acos`'s upper bound.
+    // It passes the lower bound when the tolerance reaches the diameter, and
+    // that is a stated step rather than a value out of domain: a tolerance at
+    // or past the diameter bounds every chord of the circle, so the step it
+    // states is the whole turn. Each of the three states has its own arm here.
     let max_step = if relative_tolerance < EPS_RELATIVE_TOLERANCE {
         2.0 * (2.0 * relative_tolerance).sqrt()
+    } else if relative_tolerance <= 2.0 {
+        2.0 * (1.0 - relative_tolerance).acos()
     } else {
-        2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
+        2.0 * std::f64::consts::PI
     };
     if !max_step.is_finite() || max_step <= 0.0 {
         return None;
@@ -1243,6 +1253,52 @@ mod tests {
             .iter()
             .copied()
             .all(super::finite_point3));
+    }
+
+    /// A tolerance at or past the diameter bounds every chord, so the step it
+    /// states is the whole turn, and the arm that states it is its own.
+    #[test]
+    fn a_relative_tolerance_at_or_past_the_diameter_states_the_whole_turn() {
+        // The sweep is longer than a half turn and shorter than a whole one,
+        // so a step of the whole turn states one segment and any shorter step
+        // states more than one.
+        let range = [0.0, 4.0];
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                range,
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("valid HelixCurveConstruction fixture"),
+        );
+        // The major axis is a unit vector, so the radius is one and the
+        // requested tolerance is the relative tolerance.
+        let cache = |tolerance| {
+            circular_helix_cache(
+                &definition,
+                tolerance,
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record",
+            )
+            .expect("a stated step")
+        };
+        let fine = cache(1.0e-4);
+        let diameter = cache(2.0);
+        let past = cache(2.5);
+        assert_eq!(past.curve.knots(), diameter.curve.knots());
+        assert_eq!(
+            past.curve.control_points(),
+            diameter.curve.control_points(),
+            "the diameter and every tolerance past it state one step"
+        );
+        assert!(fine.curve.control_points().len() > past.curve.control_points().len());
     }
 
     #[test]
