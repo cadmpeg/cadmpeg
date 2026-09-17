@@ -18,7 +18,7 @@ pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
     scan.framing
         .sections
         .iter()
-        .find(|section| offset >= section.offset() && offset < section.end())
+        .find(|section| section.contains(offset))
         .map_or_else(
             || {
                 if matches!(

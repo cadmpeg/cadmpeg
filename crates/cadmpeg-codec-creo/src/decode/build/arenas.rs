@@ -761,9 +761,7 @@ pub(in super::super) fn emit_geometry_arenas(
                 .framing
                 .sections
                 .iter()
-                .find(|section| {
-                    state.state_offset >= section.offset() && state.state_offset < section.end()
-                })
+                .find(|section| section.contains(state.state_offset))
                 .map_or("MdlStatus", |section| section.name());
             annotate(
                 annotations,

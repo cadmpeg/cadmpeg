@@ -206,6 +206,12 @@ impl Section {
         self.offset + self.length
     }
 
+    /// Whether `offset` is a byte of the section: at or after its offset and
+    /// before its end. This is the one range predicate over a section.
+    pub fn contains(&self, offset: usize) -> bool {
+        (self.offset()..self.end()).contains(&offset)
+    }
+
     /// Normalized section name.
     pub fn name(&self) -> &str {
         normalize_name(&self.raw_name)
@@ -894,9 +900,11 @@ pub(crate) fn expanded_section_for<'a>(
     section: &Section,
 ) -> Option<&'a ExpandedSection> {
     scan.framing.expanded_sections.iter().find(|expanded| {
+        // An expanded payload begins after its section's `#<name>\n` header, so
+        // its source offset is inside the section but never its first byte.
         expanded.name == section.name()
-            && expanded.source_offset > section.offset()
-            && expanded.source_offset < section.end()
+            && section.contains(expanded.source_offset)
+            && expanded.source_offset != section.offset()
     })
 }
 

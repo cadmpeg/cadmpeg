@@ -261,7 +261,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             .framing
             .sections
             .iter()
-            .find(|section| record.offset >= section.offset() && record.offset < section.end())
+            .find(|section| section.contains(record.offset))
         else {
             continue;
         };
@@ -507,7 +507,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             .framing
             .sections
             .iter()
-            .filter(|section| row.offset >= section.offset() && row.offset < section.end())
+            .filter(|section| section.contains(row.offset))
             .collect::<Vec<_>>();
         let [section] = sections.as_slice() else {
             continue;
@@ -525,9 +525,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             .surfaces
             .rows
             .iter()
-            .filter(|candidate| {
-                candidate.offset >= section.offset() && candidate.offset < section.end()
-            })
+            .filter(|candidate| section.contains(candidate.offset))
             .filter_map(|candidate| {
                 let mut candidate = candidate.clone();
                 candidate.offset = candidate.offset.checked_sub(section.offset())?;
