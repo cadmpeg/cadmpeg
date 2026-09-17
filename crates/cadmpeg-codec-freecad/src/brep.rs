@@ -3472,13 +3472,6 @@ impl<'a> BinaryCursor<'a> {
         self.view.remaining()
     }
 
-    fn unread(&self) -> &'a [u8] {
-        let Some(rel) = self.view.position().checked_sub(self.view.start()) else {
-            return &[];
-        };
-        self.view.window().get(rel..).unwrap_or_default()
-    }
-
     fn truncated(label: &str) -> CodecError {
         CodecError::malformed(format_args!("truncated {label}"))
     }
@@ -3498,7 +3491,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
-        let tail = self.unread();
+        let tail = self.view.unread();
         let length = tail
             .iter()
             .position(|byte| *byte == b'\n')

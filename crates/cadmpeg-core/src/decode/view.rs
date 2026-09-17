@@ -114,18 +114,28 @@ impl BoundedCount {
 /// A bounded window over one address space.
 ///
 /// The readable bytes are held as the slice itself, so [`View::window`] is a
-/// field read with no range to recompute. `start` and `end` place that slice
-/// in the space: `end - start == window.len()` and `start <= position <= end`
-/// for every view. The two constructors are the only places those bounds are
+/// field read with no range to recompute, and the bytes the cursor has not
+/// passed are held as a suffix of that slice, so [`View::unread`],
+/// [`View::remaining`] and [`View::take`] are slice operations with no offset
+/// to recompute. `start` and `end` place the window in the space:
+/// `end - start == window.len()`, and `unread` is a suffix of `window` for
+/// every view. The two constructors are the only places those bounds are
 /// proven — `over_space` takes a whole buffer, and `child` carves the
 /// sub-slice with the same `get` that bounds the child.
+///
+/// `end` restates `start + window.len()`. This file denies
+/// `clippy::arithmetic_side_effects` and `usize` states no total addition, so
+/// every spelling of [`View::end`] that derives the bound is either that
+/// denied `+` or a `checked_add` whose `None` no view can reach. The bound is
+/// therefore stored, and `over_space` and `child` are the only places it is
+/// proven.
 #[derive(Debug, Clone, Copy)]
 pub struct View<'a> {
     window: &'a [u8],
+    unread: &'a [u8],
     space: SpaceId,
     start: usize,
     end: usize,
-    position: usize,
 }
 
 impl<'a> View<'a> {
@@ -133,10 +143,10 @@ impl<'a> View<'a> {
     pub(crate) fn over_space(bytes: &'a [u8], space: SpaceId) -> View<'a> {
         View {
             window: bytes,
+            unread: bytes,
             space,
             start: 0,
             end: bytes.len(),
-            position: 0,
         }
     }
 
@@ -156,7 +166,19 @@ impl<'a> View<'a> {
 
     /// Returns the absolute position within the space.
     pub fn position(self) -> usize {
-        self.position
+        // The unread bytes are the window suffix at or after the position, so
+        // their count is the distance from the position to `end` and never
+        // passes it. `abs_diff` is total at that distance.
+        self.end.abs_diff(self.remaining())
+    }
+
+    /// Returns the window offset of the current position.
+    ///
+    /// Every view holds the unread bytes as a suffix of the window, so the
+    /// bytes already read are the rest of it. `abs_diff` is total at that
+    /// count: `unread` is never longer than `window`.
+    pub fn read_len(self) -> usize {
+        self.window.len().abs_diff(self.unread.len())
     }
 
     /// Returns the window's inclusive lower bound.
@@ -171,27 +193,35 @@ impl<'a> View<'a> {
 
     /// Returns the window offset of an absolute position in this space.
     ///
-    /// `None` is the lower-bound refusal [`View::child`] states: a position
-    /// under this window's own start names no byte of the window.
+    /// `None` is the lower-bound refusal [`View::child`] and [`View::seek`]
+    /// state: a position under this window's own start names no byte of the
+    /// window.
     fn offset_of(self, position: usize) -> Option<usize> {
         position.checked_sub(self.start)
     }
 
+    /// Returns the unread bytes of the window.
+    ///
+    /// The cursor is the split of the window, so this is a field read.
+    pub fn unread(self) -> &'a [u8] {
+        self.unread
+    }
+
     /// Returns the number of unread bytes before the window's end.
     pub fn remaining(self) -> usize {
-        self.end.saturating_sub(self.position)
+        self.unread.len()
     }
 
     /// Returns whether all bounded bytes have been read.
     pub fn is_empty(self) -> bool {
-        self.remaining() == 0
+        self.unread.is_empty()
     }
 
     /// Returns this view's current source location.
     pub fn location(self) -> SourceLocation {
         SourceLocation {
             space: self.space,
-            offset: self.position as u64,
+            offset: u64_from_index(self.position()),
         }
     }
 
@@ -199,7 +229,7 @@ impl<'a> View<'a> {
     pub fn location_at(self, offset: usize) -> SourceLocation {
         SourceLocation {
             space: self.space,
-            offset: offset as u64,
+            offset: u64_from_index(offset),
         }
     }
 
@@ -210,14 +240,12 @@ impl<'a> View<'a> {
 
     /// Takes `count` bytes, advancing only on success.
     ///
-    /// The window slice is the upper bound: `get` refuses a count the unread
-    /// bytes cannot serve, so no separate end test stands beside it.
+    /// The unread slice is the upper bound: `split_at_checked` refuses a count
+    /// the unread bytes cannot serve, so no separate end test stands beside
+    /// it, and the cursor moves only when the split holds.
     pub fn take(&mut self, count: usize) -> Option<&'a [u8]> {
-        let end = self.position.checked_add(count)?;
-        let bytes = self
-            .window
-            .get(self.offset_of(self.position)?..self.offset_of(end)?)?;
-        self.position = end;
+        let (bytes, unread) = self.unread.split_at_checked(count)?;
+        self.unread = unread;
         Some(bytes)
     }
 
@@ -232,8 +260,12 @@ impl<'a> View<'a> {
     }
 
     /// Moves to an absolute offset, honoring the stored lower bound.
+    ///
+    /// The window states both bounds: `offset_of` refuses a position under the
+    /// window's own start, and `get` refuses one past its end.
     pub fn seek(&mut self, position: usize) -> Option<()> {
-        (self.start <= position && position <= self.end).then(|| self.position = position)
+        self.unread = self.window.get(self.offset_of(position)?..)?;
+        Some(())
     }
 
     /// Reads a single byte.
@@ -252,10 +284,10 @@ impl<'a> View<'a> {
             .get(self.offset_of(start)?..self.offset_of(end)?)?;
         Some(View {
             window,
+            unread: window,
             space: self.space,
             start,
             end,
-            position: start,
         })
     }
 
@@ -317,7 +349,7 @@ impl<'a> View<'a> {
     pub fn req_take(&mut self, count: usize) -> Result<&'a [u8], ParseError> {
         match self.take(count) {
             Some(bytes) => Ok(bytes),
-            None => Err(self.eof(count as u64)),
+            None => Err(self.eof(u64_from_index(count))),
         }
     }
 
@@ -519,6 +551,37 @@ mod tests {
         assert!(inner.child(2, 7).is_none(), "upper bound past the window");
         assert!(inner.child(5, 3).is_none(), "inverted range");
         assert_eq!(inner.child(3, 5).map(View::window), payload.get(3..5));
+    }
+
+    /// The cursor is the split of the window: the unread bytes are the suffix
+    /// the reader has not passed, and the bytes already read are the rest.
+    #[test]
+    fn the_unread_bytes_are_the_window_suffix_the_cursor_has_not_passed() {
+        let payload = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        let mut view = View::over_space(&payload, SpaceId::ROOT)
+            .child(2, 7)
+            .expect("contained child");
+        assert_eq!(view.unread(), payload.get(2..7).expect("fixture range"));
+        assert_eq!(view.read_len(), 0);
+        assert_eq!(view.remaining(), 5);
+        assert_eq!(view.position(), 2);
+        assert_eq!(view.take(3), payload.get(2..5));
+        assert_eq!(view.unread(), payload.get(5..7).expect("fixture range"));
+        assert_eq!(view.read_len(), 3);
+        assert_eq!(view.remaining(), 2);
+        assert_eq!(view.position(), 5);
+        assert_eq!(view.take(3), None, "a refused take states no bytes");
+        assert_eq!(view.unread(), payload.get(5..7).expect("fixture range"));
+        assert_eq!(view.position(), 5, "a refused take does not move the cursor");
+        assert_eq!(view.seek(7), Some(()));
+        assert!(view.unread().is_empty());
+        assert!(view.is_empty());
+        assert_eq!(view.read_len(), 5);
+        assert_eq!(view.position(), 7);
+        assert_eq!(view.seek(2), Some(()));
+        assert_eq!(view.read_len(), 0);
+        assert_eq!(view.remaining(), 5);
+        assert_eq!(view.window(), payload.get(2..7).expect("fixture range"));
     }
 
     #[test]
