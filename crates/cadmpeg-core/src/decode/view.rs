@@ -273,11 +273,14 @@ impl<'a> View<'a> {
     /// This is the one seek the window proves at construction. `seek(end)`
     /// reads `offset_of(end)`, which is the window length, and the suffix of a
     /// slice at its own length is the empty slice, so neither bound of `seek`
-    /// can refuse it. The window's suffix at `end` is written directly and the
-    /// move states no refusal to thread: `remaining` is then 0, `read_len` the
-    /// whole window, and `position` the stored `end`.
+    /// can refuse it. The suffix is taken from `window` itself: `split_at` is
+    /// total for every `mid <= len` by its own contract, and the `mid` here is
+    /// that length, so the invariant that `unread` is a suffix of `window`
+    /// holds by derivation and the move states no refusal to thread.
+    /// `remaining` is then 0, `read_len` the whole window, and `position` the
+    /// stored `end`.
     pub fn seek_to_end(&mut self) {
-        self.unread = &[];
+        self.unread = self.window.split_at(self.window.len()).1;
     }
 
     /// Reads a single byte.
