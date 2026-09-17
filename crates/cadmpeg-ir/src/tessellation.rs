@@ -258,7 +258,7 @@ fn strip_triangles<V>(strips: &Strips<V>) -> Vec<[u32; 3]> {
         let mut index: u32 = 0;
         for _ in 0..strip.triangle_count() {
             let a = base + index;
-            triangles.push(if index % 2 == 0 {
+            triangles.push(if index.is_multiple_of(2) {
                 [a, a + 1, a + 2]
             } else {
                 [a, a + 2, a + 1]
