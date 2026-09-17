@@ -32,6 +32,7 @@ use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::{design, history, ids, native, records};
+use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{Check, Finding, Severity};
@@ -975,7 +976,7 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .map(|(ordinals, witness)| (ordinals, witness, "channel registry")),
         )
     {
-        let contiguous = u32::try_from(ordinals.len()).ok().is_some_and(|length| {
+        let contiguous = id_from_index(ordinals.len()).is_some_and(|length| {
             ordinals
                 .iter()
                 .max()
@@ -4570,7 +4571,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .map(|member| &member.value)
                             .enumerate()
                             .all(|(ordinal, record_index)| {
-                                u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                                id_from_index(ordinal).is_some_and(|ordinal| {
                                     native.design_body_recipe_operands.iter().any(|operand| {
                                         design_stream(&operand.id) == native_stream
                                             && operand.scope_record_index == scope.record_index
@@ -5551,7 +5552,7 @@ fn validate_operand_group_carriers<'a>(
                 .map(|member| &member.value)
                 .enumerate()
                 .all(|(ordinal, record_index)| {
-                    u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                    id_from_index(ordinal).is_some_and(|ordinal| {
                         native
                             .design_entity_selection_operands
                             .iter()
@@ -5571,7 +5572,7 @@ fn validate_operand_group_carriers<'a>(
                 .map(|member| &member.value)
                 .enumerate()
                 .all(|(ordinal, record_index)| {
-                    u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                    id_from_index(ordinal).is_some_and(|ordinal| {
                         native.design_face_operands.iter().any(|operand| {
                             design_stream(&operand.id) == native_stream
                                 && operand.scope_record_index == group.scope_record_index
@@ -5588,7 +5589,7 @@ fn validate_operand_group_carriers<'a>(
                 .map(|member| &member.value)
                 .enumerate()
                 .all(|(ordinal, record_index)| {
-                    u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                    id_from_index(ordinal).is_some_and(|ordinal| {
                         native.design_body_recipe_operands.iter().any(|operand| {
                             design_stream(&operand.id) == native_stream
                                 && operand.scope_record_index == group.scope_record_index
@@ -6333,9 +6334,9 @@ fn validate_face_operands<'a>(
                                         == node.program.get(3..).and_then(
                                             design::decode::operands::face_recipe_structure,
                                         )
-                                    && u64::try_from(node.program.len()).ok().is_some_and(|words| {
-                                        start.saturating_add(words.saturating_mul(4)) == end
-                                    })
+                                    && start.saturating_add(
+                                        u64_from_index(node.program.len()).saturating_mul(4),
+                                    ) == end
                             },
                         )
                         && operand.recipe_nodes.first().is_none_or(|first_node| {

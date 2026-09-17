@@ -17,6 +17,7 @@ use crate::records::{
     DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
     SketchPoint, SketchRelation, SketchSurface, SketchText,
 };
+use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -314,7 +315,7 @@ pub fn project_sketch_design(
                 poles,
                 ..
             } if *degree != 0
-                && usize::try_from(*degree).is_ok_and(|degree| poles.point_count() > degree)
+                && poles.point_count() > index_from_u32(*degree)
                 && poles.points().all(planar_point) =>
             {
                 SketchGeometry::nurbs(cadmpeg_ir::geometry::PcurveNurbs::from_lanes(

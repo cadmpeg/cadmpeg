@@ -15,6 +15,7 @@ use super::selections::{
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
@@ -158,7 +159,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let Some(scalar) = lane
                 .scalars
                 .iter()
-                .filter(|scalar| u64::try_from(offset).is_ok_and(|offset| scalar.offset > offset))
+                .filter(|scalar| scalar.offset > u64_from_index(offset))
                 .min_by_key(|scalar| scalar.offset)
             else {
                 continue;
@@ -274,8 +275,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             .scalars
                             .iter()
                             .filter(|scalar| {
-                                usize::try_from(scalar.offset)
-                                    .is_ok_and(|scalar| scalar > offset && scalar < end)
+                                scalar.offset > u64_from_index(offset)
+                                    && scalar.offset < u64_from_index(end)
                             })
                             .filter_map(|scalar| {
                                 let name = names_by_id.get(scalar.name.as_str())?;
@@ -671,8 +672,8 @@ pub(crate) fn enrich_history_sweep_paths(
                 .iter()
                 .filter(|class| {
                     class.name == "moGeneralCurveRef_w"
-                        && usize::try_from(class.offset)
-                            .is_ok_and(|offset| offset >= start && offset < end)
+                        && class.offset >= u64_from_index(start)
+                        && class.offset < u64_from_index(end)
                 })
                 .filter_map(|class| usize::try_from(class.offset).ok())
                 .collect::<Vec<_>>();

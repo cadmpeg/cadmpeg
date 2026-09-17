@@ -21,6 +21,7 @@ use crate::records::{
     ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
     DesignParameterOwner, DesignRecordHeader,
 };
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
@@ -1030,8 +1031,8 @@ fn companion_payload<S: std::hash::BuildHasher>(
                         && scope.sketch_entity().is_some_and(|binding| {
                             binding.entity_id.suffix() == entity.entity_id.suffix()
                         })
-                        && usize::try_from(entity.byte_offset)
-                            .is_ok_and(|offset| offset >= start && offset < end)
+                        && entity.byte_offset >= u64_from_index(start)
+                        && entity.byte_offset < u64_from_index(end)
                 })
                 .filter_map(|entity| usize::try_from(entity.byte_offset).ok())
                 .min()
@@ -1044,8 +1045,8 @@ fn companion_payload<S: std::hash::BuildHasher>(
         .iter()
         .filter(|recipe| {
             native_stream(&recipe.id) == Some(stream)
-                && usize::try_from(recipe.byte_offset)
-                    .is_ok_and(|offset| offset >= start && offset < end)
+                && recipe.byte_offset >= u64_from_index(start)
+                && recipe.byte_offset < u64_from_index(end)
         })
         .collect::<Vec<_>>();
     owned.sort_by_key(|recipe| recipe.byte_offset);

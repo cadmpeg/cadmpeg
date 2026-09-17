@@ -21,6 +21,7 @@ use crate::records::{
     DesignParameterKind, DesignParameterOwner, DesignRecordHeader, DesignSketchPlacement,
     PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
 };
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
@@ -747,7 +748,7 @@ pub(crate) fn find_dimension_locus_pair(
 ) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
         parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| usize::try_from(pair.paired_byte_offset()).is_ok_and(|at| at < end))
+            .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
     };
     let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
     let mut position = start.saturating_add(1);
@@ -961,7 +962,7 @@ pub(crate) fn find_dimension_null_locus_pair(
 ) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
         parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| usize::try_from(pair.paired_byte_offset()).is_ok_and(|at| at < end))
+            .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
     };
     let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
     let mut position = start.saturating_add(1);
@@ -1722,7 +1723,7 @@ pub(crate) fn find_dimension_locus_groups(
             geometry_indices,
             sketch_entities,
         )
-        .filter(|group| usize::try_from(group.next_byte_offset).is_ok_and(|at| at <= end))
+        .filter(|group| group.next_byte_offset <= u64_from_index(end))
     };
     let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
     let mut position = start.saturating_add(1);

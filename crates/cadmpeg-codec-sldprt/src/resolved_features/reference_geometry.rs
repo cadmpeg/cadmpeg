@@ -34,6 +34,7 @@ use crate::layout::coordinate_system_xy_tail as xy_tail;
 use crate::layout::reference_point_long_solved_cache as pt_long;
 use crate::layout::reference_point_short_solved_cache as pt_short;
 use crate::records::ObjectId;
+use cadmpeg_core::decode::u64_from_index;
 
 const EPS_REFERENCE_GEOMETRY_RECONCILE_REFERENCE_PLANE_FRAME_WITH_SOURCE_E9: f64 = 1e-9;
 const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_TWO_POINT_FRAME_E9: f64 = 1e-9;
@@ -1615,8 +1616,7 @@ pub(crate) fn enrich_history_reference_axes(
                     matches!(
                         class.name.as_str(),
                         "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
-                    ) && usize::try_from(class.offset)
-                        .is_ok_and(|offset| (start..end).contains(&offset))
+                    ) && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 })
                 .collect::<Vec<_>>();
             let mut anchored_frames = axis_data_classes

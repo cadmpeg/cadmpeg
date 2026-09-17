@@ -15,6 +15,8 @@ use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
+use cadmpeg_core::decode::index_from_u64;
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -194,8 +196,7 @@ pub(super) fn linear_pattern_display_directions(
             let mut records = names.iter().filter(|name| {
                 name.object_id == Some(ObjectId::Absent)
                     && name.value == dimension_name
-                    && usize::try_from(name.offset)
-                        .is_ok_and(|offset| (object_start..end).contains(&offset))
+                    && (u64_from_index(object_start)..u64_from_index(end)).contains(&name.offset)
             });
             let name = records.next()?;
             if records.next().is_some() {
@@ -239,16 +240,15 @@ pub(super) fn typed_linear_pattern_dimensions(
     let parameter = |class_name: &str| {
         let mut classes = lane.classes.iter().filter(|class| {
             class.name == class_name
-                && usize::try_from(class.offset)
-                    .is_ok_and(|offset| (object_start..object_end).contains(&offset))
+                && (u64_from_index(object_start)..u64_from_index(object_end))
+                    .contains(&class.offset)
         });
         let class = classes.next().filter(|_| classes.next().is_none())?;
         let class_offset = usize::try_from(class.offset).ok()?;
         let name_end = class_offset.checked_add(128)?.min(object_end);
         let mut names = lane.names.iter().filter(|name| {
             name.object_id == Some(ObjectId::Absent)
-                && usize::try_from(name.offset)
-                    .is_ok_and(|offset| (class_offset..name_end).contains(&offset))
+                && (u64_from_index(class_offset)..u64_from_index(name_end)).contains(&name.offset)
                 && feature.parameters.contains_key(name.value.as_str())
         });
         let name = names.next().filter(|_| names.next().is_none())?;
@@ -1192,7 +1192,7 @@ pub(super) fn profile_roster_construction_axis(
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .filter_map(|marker| {
-            let offset = usize::try_from(marker.offset()).ok()?;
+            let offset = index_from_u64(marker.offset())?;
             if !marker_is_selected_construction_line(&lane.native_payload, offset) {
                 return None;
             }
@@ -1634,7 +1634,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .iter()
         .copied()
         .filter(|marker| {
-            usize::try_from(marker.offset()).ok().is_some_and(|offset| {
+            index_from_u64(marker.offset()).is_some_and(|offset| {
                 lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
             })
         })
@@ -1675,7 +1675,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .filter(|marker| {
-            usize::try_from(marker.offset()).ok().is_some_and(|offset| {
+            index_from_u64(marker.offset()).is_some_and(|offset| {
                 extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset)
                     .is_some()
             })

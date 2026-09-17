@@ -62,6 +62,21 @@ pub const fn u64_from_index(value: usize) -> u64 {
     value as u64
 }
 
+/// Narrows an offset stated in a wire `u64` to an index into bytes held in
+/// memory.
+///
+/// `None` states that no index of this target names the offset, so the offset
+/// names no byte of any payload the decoder holds. That is a refusal about the
+/// offset, not about the payload's length: a reader that also needs the offset
+/// to be inside a window tests the window itself.
+///
+/// It is the counterpart of [`u64_from_index`], which carries an index that
+/// already exists in memory into the wider type a stored offset is stated in.
+#[must_use]
+pub fn index_from_u64(offset: u64) -> Option<usize> {
+    usize::try_from(offset).ok()
+}
+
 /// Narrows the position of one item already held in memory to the `u32` an IR
 /// identifier, order or index field is stated in.
 ///
@@ -232,7 +247,9 @@ impl<'a> View<'a> {
     /// lower bound under this window's own, and `get` refuses an inverted
     /// range or an upper bound past this window's end.
     pub fn child(self, start: usize, end: usize) -> Option<View<'a>> {
-        let window = self.window.get(self.offset_of(start)?..self.offset_of(end)?)?;
+        let window = self
+            .window
+            .get(self.offset_of(start)?..self.offset_of(end)?)?;
         Some(View {
             window,
             space: self.space,
@@ -408,7 +425,10 @@ impl View<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_len, id_from_index, index_from_u32, u64_from_index, BoundedCount, View};
+    use super::{
+        bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount,
+        View,
+    };
     use crate::decode::space::SpaceId;
 
     #[test]
@@ -417,6 +437,19 @@ mod tests {
         assert_eq!(id_from_index(0), Some(0));
         assert_eq!(id_from_index(index_from_u32(u32::MAX)), Some(u32::MAX));
         assert_eq!(id_from_index(index_from_u32(u32::MAX) + 1), None);
+    }
+
+    /// The widening and the narrowing agree on every index the target holds,
+    /// and an offset past the index width states no index.
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn an_offset_past_the_index_width_states_no_index() {
+        assert_eq!(index_from_u64(0), Some(0));
+        assert_eq!(index_from_u64(u64_from_index(usize::MAX)), Some(usize::MAX));
+        assert_eq!(
+            index_from_u64(u64::from(u32::MAX)),
+            Some(index_from_u32(u32::MAX))
+        );
     }
 
     #[test]

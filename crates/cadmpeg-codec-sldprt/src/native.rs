@@ -1209,17 +1209,22 @@ fn surface_selection_disagrees_with_payload(
     record: &FeatureInputSurfaceSelection,
     surface_features: &[crate::records::Feature],
 ) -> bool {
-    !usize::try_from(record.offset).ok().is_some_and(|offset| {
-        crate::resolved_features::selections::surface_reference_matches_at(
+    // An offset no index can name names no byte of the payload in memory, so
+    // the selection states nothing the payload agrees with.
+    let matches_payload = match usize::try_from(record.offset) {
+        Ok(offset) => crate::resolved_features::selections::surface_reference_matches_at(
             &lane.native_payload,
             offset,
             &record.components,
-        )
-    }) || crate::resolved_features::component_paths::surface_selection_producer_features(
-        &record.components,
-        record.terminal_feature_ref.as_deref(),
-        surface_features,
-    ) != record.producer_feature_refs
+        ),
+        Err(_) => false,
+    };
+    !matches_payload
+        || crate::resolved_features::component_paths::surface_selection_producer_features(
+            &record.components,
+            record.terminal_feature_ref.as_deref(),
+            surface_features,
+        ) != record.producer_feature_refs
         || usize::try_from(record.offset).ok().and_then(|offset| {
             crate::resolved_features::selections::surface_selection_terminal_feature_at(
                 &lane.native_payload,
