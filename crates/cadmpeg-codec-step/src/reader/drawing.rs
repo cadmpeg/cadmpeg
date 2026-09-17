@@ -186,6 +186,15 @@ pub(super) fn decode(
             }
         }
 
+        // The stored order is stated in a `u32`; a position past that width
+        // states no order, and the drawing is not typed.
+        let Ok(order) = u32::try_from(order) else {
+            losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
+                "drawing #{id} position in the stored order exceeds the stated order width"
+            )));
+            continue;
+        };
+
         let mut relationships = BTreeMap::new();
         add_reference_fields(
             &mut relationships,
@@ -202,7 +211,7 @@ pub(super) fn decode(
                 object: identity.as_str().to_owned(),
                 kind: drawing_kind(name),
                 runtime_type: name.into(),
-                order: u32::try_from(order).unwrap_or(u32::MAX),
+                order,
                 visible: hidden_drawing_ids.contains(&id).then_some(false),
                 relationships,
                 template: None,

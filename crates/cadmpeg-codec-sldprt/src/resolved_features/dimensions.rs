@@ -1534,13 +1534,18 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
                     .map(|marker| marker.offset() as usize)
                     .collect::<Vec<_>>();
-                let start = range.iter().min().copied().unwrap_or(0);
-                let end = range.iter().max().copied().unwrap_or(0);
+                // A lane with no marker for this feature states no offset
+                // range, so it admits no radial record.
+                let start = range.iter().min().copied();
+                let end = range.iter().max().copied();
                 radial_records_by_lane
                     .get(lane.id.as_str())
                     .into_iter()
                     .flatten()
-                    .filter(move |(offset, ..)| *offset >= start && *offset <= end)
+                    .filter(move |(offset, ..)| {
+                        start.is_some_and(|start| *offset >= start)
+                            && end.is_some_and(|end| *offset <= end)
+                    })
                     .map(move |record| (*lane, *record))
             })
             .filter(|(lane, (offset, ..))| {
@@ -1630,9 +1635,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                                     && marker.offset() == *candidate_offset as u64
                             })
                             && (*candidate_offset == *offset
-                                || pair_radial_object_indices.contains(
-                                    &u32::try_from(*candidate_radial_index).unwrap_or(u32::MAX),
-                                ))
+                                || u32::try_from(*candidate_radial_index).is_ok_and(|index| {
+                                    pair_radial_object_indices.contains(&index)
+                                }))
                     })
                     .map(|(candidate_offset, ..)| {
                         format!("sldprt:feature-input:sketch-entity#{lane_key}:{candidate_offset}")

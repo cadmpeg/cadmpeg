@@ -114,6 +114,8 @@ pub enum StepLossCode {
     ContextDependentStyleUnresolved,
     /// A drawing record has too few parameters and was retained opaque.
     DrawingRecordTooFewParameters,
+    /// A drawing's position in the stored order passes the stated order width.
+    DrawingOrderUnstatable,
     /// A drawing relationship references a source-typed record without identity.
     DrawingRelationshipUntypedTarget,
     /// A drawing relationship references a source record with multiple identities.
@@ -356,6 +358,7 @@ impl StepLossCode {
         Self::SurfaceTransparencyConflict,
         Self::ContextDependentStyleUnresolved,
         Self::DrawingRecordTooFewParameters,
+        Self::DrawingOrderUnstatable,
         Self::DrawingRelationshipUntypedTarget,
         Self::DrawingRelationshipTargetAmbiguous,
         Self::DrawingSheetRevisionUnresolved,
@@ -512,6 +515,8 @@ impl StepLossCode {
                 "presentation.context-dependent-style-unresolved"
             }
             Self::DrawingRecordTooFewParameters => "drawing.record-too-few-parameters",
+            Self::DrawingOrderUnstatable => "drawing.order-unstatable",
+
             Self::DrawingRelationshipUntypedTarget => "drawing.relationship-untyped-target",
             Self::DrawingRelationshipTargetAmbiguous => "drawing.relationship-target-ambiguous",
             Self::DrawingSheetRevisionUnresolved => "drawing.sheet-revision-unresolved",
@@ -683,9 +688,9 @@ impl StepLossCode {
             Self::DecodeWarning
             | Self::ByteAccountingUnclassified
             | Self::PcurveGlobalFidelityUnproved => LossTaxonomy::DecodeDiagnostic,
-            Self::OpaqueRecordPreserved | Self::DrawingRecordTooFewParameters => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::OpaqueRecordPreserved
+            | Self::DrawingRecordTooFewParameters
+            | Self::DrawingOrderUnstatable => LossTaxonomy::RecordNotTyped,
             Self::ImplementationLevelUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
@@ -899,6 +904,7 @@ mod tests {
                 "presentation.surface-transparency-conflict",
                 "presentation.context-dependent-style-unresolved",
                 "drawing.record-too-few-parameters",
+                "drawing.order-unstatable",
                 "drawing.relationship-untyped-target",
                 "drawing.relationship-target-ambiguous",
                 "drawing.sheet-revision-unresolved",

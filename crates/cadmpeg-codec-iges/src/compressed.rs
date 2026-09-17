@@ -8,7 +8,7 @@
 //! fields, then delegates all semantic work to the existing parser.
 
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
 
@@ -746,7 +746,7 @@ fn append_terminate(
 
 fn charge_normalization(ctx: &DecodeContext<'_>, bytes: usize) -> Result<(), CodecError> {
     ctx.charge_work(
-        u64::try_from(bytes).unwrap_or(u64::MAX),
+        u64_from_index(bytes),
         "iges_compressed_ascii_normalization",
     )
 }

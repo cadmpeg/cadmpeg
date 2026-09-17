@@ -1858,11 +1858,14 @@ fn project_with_type_130_policy(
             losses.push(entity_loss(entry, "child count is invalid"));
             continue;
         };
-        if raw_child_count > MAX_COMPOSITE_CHILDREN as i64 {
+        if let Some(observed) = u64::try_from(raw_child_count)
+            .ok()
+            .filter(|count| *count > MAX_COMPOSITE_CHILDREN as u64)
+        {
             return Err(refuse_local_limit(
                 "iges_composite_children",
                 MAX_COMPOSITE_CHILDREN as u64,
-                u64::try_from(raw_child_count).unwrap_or(u64::MAX),
+                observed,
             ));
         }
         let minimum_child_count = composite_minimum_child_count(global.global_table());

@@ -175,7 +175,10 @@ pub(super) fn decode(
         }
     }
     ir.model.points.retain(|point| {
-        let id = step_id(point.id.as_str());
+        // A point whose identity names no entity is not a validation point.
+        let Some(id) = step_id(point.id.as_str()) else {
+            return true;
+        };
         !validation_points.contains(&id) || referenced_validation_points.contains(&id)
     });
     StageOutcome {
@@ -414,11 +417,10 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
     })
 }
 
-fn step_id(id: &str) -> u64 {
-    id.rsplit('#')
-        .next()
-        .and_then(|id| id.parse().ok())
-        .unwrap_or(u64::MAX)
+/// The numeric entity identifier an IR identity ends with, or `None` when it
+/// names none.
+fn step_id(id: &str) -> Option<u64> {
+    id.rsplit('#').next().and_then(|id| id.parse().ok())
 }
 
 fn collect_validation_references(

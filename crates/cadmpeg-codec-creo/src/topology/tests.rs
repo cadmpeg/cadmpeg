@@ -122,7 +122,7 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         },
     ];
 
-    let (vertices, _) = vertex_orbits(&edges);
+    let (vertices, _) = vertex_orbits(&edges).expect("orbits within the vertex id space");
     assert!(vertices.iter().any(|vertex| vertex.half_edges
         == vec![
             HalfEdgeId {

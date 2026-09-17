@@ -11,7 +11,9 @@ use crate::loss::Diagnostics;
 use std::borrow::Cow;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
@@ -175,7 +177,7 @@ fn commit_mesh_buffer(
     expand
         .ctx
         .charge_retained(
-            u64::try_from(declared).unwrap_or(u64::MAX),
+            u64_from_index(declared),
             "rhino_mesh_buffer",
         )
         .map_err(|refusal| expansion_refused(position, &refusal))

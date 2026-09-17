@@ -5,6 +5,37 @@ use super::*;
 
 mod surface_styles;
 
+/// A style whose override walk does not terminate states no depth. Its
+/// position is stated as absence and sorts after every stated depth; the
+/// decoder does not read it as the deepest style.
+#[test]
+fn a_style_with_no_stated_depth_takes_a_position_of_its_own() {
+    let (exchange, _) = crate::parse::parse(
+        b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
+#1=COLOUR_RGB('surface',1.,0.,0.);\
+#2=SURFACE_STYLE_FILL_AREA(#1);\
+#3=PRESENTATION_STYLE_ASSIGNMENT((#2));\
+#4=CARTESIAN_POINT('',(0.,0.,0.));\
+#5=STYLED_ITEM('',(#3),#4);\
+#6=OVER_RIDING_STYLED_ITEM('',(#3),#4,#6);\
+ENDSEC;END-ISO-10303-21;",
+    )
+    .expect("parse style graph");
+    let graph_limit = 64;
+
+    assert_eq!(
+        style_application_order(5, &exchange, graph_limit),
+        (false, Some(0))
+    );
+    assert_eq!(
+        style_application_order(6, &exchange, graph_limit),
+        (true, None)
+    );
+    let mut styles = vec![6_u64, 5_u64];
+    styles.sort_by_key(|id| style_application_order(*id, &exchange, graph_limit));
+    assert_eq!(styles, [5, 6]);
+}
+
 #[test]
 fn surface_color_search_ignores_curve_style_colors() {
     let (exchange, _) = crate::parse::parse(

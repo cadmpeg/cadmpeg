@@ -4,7 +4,7 @@
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::report::LossNote;
@@ -613,8 +613,7 @@ pub(crate) fn summarize(
             );
             let size = lines.iter().fold(0_u64, |size, line| {
                 size.saturating_add(
-                    u64::try_from(line.payload.len() + line.ending.bytes().len())
-                        .unwrap_or(u64::MAX),
+                    u64_from_index(line.payload.len() + line.ending.bytes().len()),
                 )
             });
             Some(ContainerEntry {
@@ -641,7 +640,7 @@ pub(crate) fn summarize(
         let size = post_terminate.iter().fold(0_u64, |size, line| {
             let line = line.physical();
             size.saturating_add(
-                u64::try_from(line.payload.len() + line.ending.bytes().len()).unwrap_or(u64::MAX),
+                u64_from_index(line.payload.len() + line.ending.bytes().len()),
             )
         });
         entries.push(ContainerEntry {

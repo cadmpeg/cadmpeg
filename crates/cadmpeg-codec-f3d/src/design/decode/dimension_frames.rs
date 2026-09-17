@@ -2,6 +2,7 @@
 //! Parse dimension recipe, locus, and annotation frames.
 
 use cadmpeg_core::container::ContainerRole;
+use cadmpeg_core::decode::index_from_u32;
 
 use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
@@ -227,7 +228,7 @@ fn decode_paired_recipe_references(
 ) -> Vec<crate::records::DesignRecipeReference> {
     const MINIMUM_PAIR_SIZE: usize = 42;
 
-    let Some(pair_count) = usize::try_from(View::u32_le_at(prefix, 18).unwrap_or(0)).ok() else {
+    let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
         return Vec::new();
     };
     if pair_count == 0 || pair_count > prefix.len().saturating_sub(22) / MINIMUM_PAIR_SIZE {
@@ -295,8 +296,7 @@ fn decode_grouped_recipe_references(
         return Vec::new();
     }
     for _ in 0..group_count {
-        let Some(operand_count) = usize::try_from(View::u32_le_at(prefix, at).unwrap_or(0)).ok()
-        else {
+        let Some(operand_count) = View::u32_le_at(prefix, at).map(index_from_u32) else {
             return Vec::new();
         };
         let Some(next) = at.checked_add(4) else {

@@ -12,7 +12,7 @@ use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
 use self::implementation_level::{DeclaredImplementationLevel, ImplementationLevel};
@@ -1341,7 +1341,7 @@ impl Parser<'_, '_, '_> {
         operation: &'static str,
     ) -> Result<(), ParseError> {
         self.charge_retained(
-            u64::try_from(value.capacity()).unwrap_or(u64::MAX),
+            u64_from_index(value.capacity()),
             operation,
         )
     }
@@ -1375,9 +1375,8 @@ impl Parser<'_, '_, '_> {
 }
 
 fn allocation_bytes(capacity: usize, element_size: usize) -> u64 {
-    u64::try_from(capacity)
-        .unwrap_or(u64::MAX)
-        .saturating_mul(u64::try_from(element_size).unwrap_or(u64::MAX))
+    u64_from_index(capacity)
+        .saturating_mul(u64_from_index(element_size))
 }
 
 fn compact_vec<T>(values: &mut Vec<T>) -> u64 {
@@ -1409,9 +1408,8 @@ fn value_node_storage_bytes(value: &Value) -> u64 {
         | Value::Omitted
         | Value::Derived => 0,
     };
-    u64::try_from(size_of::<Value>())
-        .unwrap_or(u64::MAX)
-        .saturating_add(u64::try_from(dynamic).unwrap_or(u64::MAX))
+    u64_from_index(size_of::<Value>())
+        .saturating_add(u64_from_index(dynamic))
 }
 
 fn value_storage_bytes(value: &Value) -> u64 {
@@ -2140,7 +2138,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 
     fn charge_nodes(&self, count: usize) -> Result<(), ResolveError> {
-        let count = u64::try_from(count).unwrap_or(u64::MAX);
+        let count = u64_from_index(count);
         if let Some(budget) = self.budget {
             budget
                 .charge_collection_items(count, "step_anchor_materialization")
@@ -2361,7 +2359,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             ResolveError::Syntax("REFERENCE expansion exceeds 1000000 nodes".into())
         })?;
         if let Some(budget) = self.budget {
-            let nodes = u64::try_from(nodes).unwrap_or(u64::MAX);
+            let nodes = u64_from_index(nodes);
             budget
                 .charge_collection_items(nodes, "step_reference_materialization")
                 .map_err(ResolveError::Resource)?;

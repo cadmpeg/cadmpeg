@@ -1197,7 +1197,13 @@ impl TessellationChannel {
                 "contains a malformed tessellation channel",
             ));
         }
-        let count = u32::try_from(data.len().checked_div(item_size_usize).unwrap_or(0))
+        let element_count = match data.len().checked_div(item_size_usize) {
+            Some(count) => count,
+            // A zero item size is admitted only with empty data, checked
+            // above, so the channel holds no element.
+            None => 0,
+        };
+        let count = u32::try_from(element_count)
             .map_err(|_| tessellation_error("tessellation channel count overflows u32"))?;
         if addressing.indices().iter().any(|index| *index >= count) {
             return Err(tessellation_error(
@@ -1247,7 +1253,12 @@ impl TessellationChannel {
     #[must_use]
     pub fn count(&self) -> u32 {
         let item_size = self.item_size as usize;
-        self.data.len().checked_div(item_size).unwrap_or(0) as u32
+        match self.data.len().checked_div(item_size) {
+            Some(count) => count as u32,
+            // A zero item size is admitted only with empty data, so the
+            // channel holds no element.
+            None => 0,
+        }
     }
 
     /// Raw channel payload.

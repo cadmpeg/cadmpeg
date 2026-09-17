@@ -149,7 +149,10 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store catalogs");
     let mut catalogs: Vec<serde_json::Value> = namespace.arena_as("catalogs").unwrap();
-    catalogs[0]["declared_count"] = serde_json::json!(native.catalogs[0].declared_count() + 1);
+    catalogs[0]["declared_count"] = serde_json::json!(native.catalogs[0]
+        .declared_count()
+        .expect("decoded catalog states a count")
+        + 1);
     namespace.set_arena("catalogs", &catalogs).unwrap();
     assert!(matches!(
         crate::native::CatiaNative::load(&namespace),

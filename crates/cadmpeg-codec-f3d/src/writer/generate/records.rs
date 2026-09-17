@@ -715,7 +715,10 @@ fn encode_sketch_nurbs(
             "source-less sketch NURBS knot count must equal control points + degree + 1".into(),
         ));
     }
-    record.extend_from_slice(&carrier_reference.unwrap_or(u64::MAX).to_le_bytes());
+    // `docs/formats/f3d.md`: the payload begins with "either an eight-byte
+    // all-`0xff` null sentinel or a non-null u64 carrier reference".
+    const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
+    record.extend_from_slice(&carrier_reference.unwrap_or(NULL_CARRIER_REFERENCE).to_le_bytes());
     record.extend_from_slice(&3u32.to_le_bytes());
     record.extend_from_slice(subtype_class_tag.as_bytes());
     record.extend_from_slice(&subtype_record_index.to_le_bytes());

@@ -26,8 +26,8 @@ pub fn bounded_len(count: u64, element_size: usize, remaining: usize) -> Option<
     (bytes <= remaining).then_some(count)
 }
 
-/// [`index_from_u32`] widens a 32-bit declaration to an index. The widening is
-/// exact on every target the assertion admits, and it justifies nothing else.
+// The proof `index_from_u32` rests on. It justifies that one widening and
+// nothing else.
 const _: () = assert!(
     usize::BITS >= 32,
     "a target whose usize is narrower than 32 bits cannot hold a u32 index"
@@ -35,11 +35,31 @@ const _: () = assert!(
 
 /// Widens a 32-bit count, identifier or index to a `usize` index.
 ///
-/// The assertion above admits only targets whose `usize` holds every `u32`, so
-/// the cast is total and this conversion states no refusal. A count that must
-/// also fit the unread input goes through [`bounded_len`] instead.
+/// A `const` assertion beside this function admits only targets whose `usize`
+/// holds every `u32`, so the widening is exact, it is total, and it states no
+/// refusal. A count that must also fit the unread input goes through
+/// [`bounded_len`] instead.
 pub const fn index_from_u32(value: u32) -> usize {
     value as usize
+}
+
+// The proof `u64_from_index` rests on. It justifies that one widening and
+// nothing else.
+const _: () = assert!(
+    usize::BITS <= 64,
+    "a target whose usize is wider than 64 bits cannot hold every index in a u64"
+);
+
+/// Widens an in-memory length, index or capacity to a `u64`.
+///
+/// A `const` assertion beside this function admits only targets whose `u64`
+/// holds every `usize`, so the widening is exact, it is total, and it states
+/// no refusal. It is the counterpart of [`index_from_u32`]: it carries a
+/// figure that already exists in memory into the wider type a work budget, a
+/// byte offset or a limit report is stated in. It proves nothing about a
+/// declared count read from input; such a count goes through [`bounded_len`].
+pub const fn u64_from_index(value: usize) -> u64 {
+    value as u64
 }
 
 /// A count proven to fit in the unread input.
@@ -347,13 +367,24 @@ impl View<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_len, index_from_u32, BoundedCount, View};
+    use super::{bounded_len, index_from_u32, u64_from_index, BoundedCount, View};
     use crate::decode::space::SpaceId;
 
     #[test]
     fn a_u32_index_widens_to_the_same_value() {
         assert_eq!(index_from_u32(0), 0);
         assert_eq!(index_from_u32(u32::MAX), u32::MAX as usize);
+    }
+
+    /// The widening is exact at the widest index the target can hold, so the
+    /// conversion states no refusal and needs no sentinel.
+    #[test]
+    fn an_index_widens_to_the_same_value_and_back() {
+        assert_eq!(u64_from_index(0), 0);
+        assert_eq!(u64_from_index(1), 1);
+        let widest = u64_from_index(usize::MAX);
+        assert_eq!(widest, usize::MAX as u64);
+        assert_eq!(usize::try_from(widest), Ok(usize::MAX));
     }
 
     #[test]

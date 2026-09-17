@@ -2,7 +2,7 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use crate::loss::Diagnostics;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{alloc_filled, u64_from_index};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
@@ -418,7 +418,7 @@ impl<'a> DecodeContext<'a> {
                     .map_err(CandidateError::Admission)?;
                 session
                     .charge_entities(
-                        u64::try_from(entity_count).unwrap_or(u64::MAX),
+                        u64_from_index(entity_count),
                         "rhino_instance_entities",
                     )
                     .map_err(|error| CandidateError::Admission(error.to_string()))?;
@@ -2466,7 +2466,7 @@ impl<'a> DecodeContext<'a> {
         self.expand
             .ctx()
             .charge_entities(
-                u64::try_from(amount).unwrap_or(u64::MAX),
+                u64_from_index(amount),
                 "rhino_instance_entities",
             )
             .map_err(|error| error.to_string())
@@ -2479,7 +2479,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), String> {
         self.expand
             .ctx()
-            .charge_collection_items(u64::try_from(amount).unwrap_or(u64::MAX), operation)
+            .charge_collection_items(u64_from_index(amount), operation)
             .map_err(|error| error.to_string())
     }
 

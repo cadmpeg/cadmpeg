@@ -225,7 +225,14 @@ pub fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32,
 
 /// Build topological vertex orbits under `twin(previous(h))` and bind each
 /// half-edge's start and end vertex.
-pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdgeVertexIncidence>) {
+/// Groups half-edges into start-vertex orbits.
+///
+/// Returns `None` when the orbits outnumber the one-based `u32` vertex
+/// identifier space, because two orbits would then carry one identifier and
+/// the incidence map would bind the wrong half-edges.
+pub fn vertex_orbits(
+    edges: &[HalfEdge],
+) -> Option<(Vec<TopologicalVertex>, Vec<HalfEdgeVertexIncidence>)> {
     let by_id = edges
         .iter()
         .map(|edge| (edge.id, edge))
@@ -283,8 +290,11 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
                     .copied(),
             );
         }
+        let id = u32::try_from(vertices.len())
+            .ok()
+            .and_then(|position| position.checked_add(1))?;
         vertices.push(TopologicalVertex {
-            id: u32::try_from(vertices.len() + 1).unwrap_or(u32::MAX),
+            id,
             half_edges: orbit.into_iter().collect(),
         });
     }
@@ -307,7 +317,7 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
             })
         })
         .collect();
-    (vertices, incidence)
+    Some((vertices, incidence))
 }
 
 /// Group bounded face references connected by uniquely identified curve

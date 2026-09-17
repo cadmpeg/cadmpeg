@@ -199,11 +199,14 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "tuple count is invalid"));
             continue;
         };
-        if raw_tuple_count > MAX_COPIOUS_TUPLES as i64 {
+        if let Some(observed) = u64::try_from(raw_tuple_count)
+            .ok()
+            .filter(|count| *count > MAX_COPIOUS_TUPLES as u64)
+        {
             return Err(refuse_local_limit(
                 "iges_copious_tuples",
                 MAX_COPIOUS_TUPLES as u64,
-                u64::try_from(raw_tuple_count).unwrap_or(u64::MAX),
+                observed,
             ));
         }
         let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {

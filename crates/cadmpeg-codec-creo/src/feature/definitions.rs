@@ -604,8 +604,10 @@ pub struct FeatureTrimBucket {
     pub index: u32,
     /// Number of entries declared by the bucket array opener.
     pub declared_entry_count: u32,
-    /// Number of structurally complete entries decoded within the bucket frame.
-    pub decoded_entry_count: u32,
+    /// Number of structurally complete entries decoded within the bucket
+    /// frame. Absent when the scan decodes more entries than the stored `u32`
+    /// count can be compared against.
+    pub decoded_entry_count: Option<u32>,
     /// Byte offset of the stored bucket index.
     pub offset: usize,
 }
@@ -613,7 +615,7 @@ pub struct FeatureTrimBucket {
 impl FeatureTrimBucket {
     /// Whether every declared entry has one complete stored body.
     pub fn is_complete(&self) -> bool {
-        self.decoded_entry_count == self.declared_entry_count
+        self.decoded_entry_count == Some(self.declared_entry_count)
     }
 }
 
@@ -2639,13 +2641,14 @@ pub(crate) fn trim_buckets(
         body_start: first_body,
     }];
     while starts.len() < index_from_u32(header.declared_count) {
-        let expected = u32::try_from(starts.len()).unwrap_or(u32::MAX);
         let Some((offset, index, next)) = (cursor..end).find_map(|offset| {
             (preceding_byte(payload, offset) == Some(0xe2)).then_some(())?;
             let (Some(index), next) = segment_int(payload, offset) else {
                 return None;
             };
-            (index == expected).then_some((offset, index, next))
+            // The stored index is compared in the wider type the position is
+            // counted in.
+            (index_from_u32(index) == starts.len()).then_some((offset, index, next))
         }) else {
             break;
         };
@@ -2746,7 +2749,7 @@ fn trim_bucket_entry_count(
     classes: TrimTableClasses,
     kind: TrimEntryKind,
     named_first: bool,
-) -> u32 {
+) -> Option<u32> {
     match kind {
         TrimEntryKind::Entity => {
             let rows = (start..end)
@@ -2758,9 +2761,10 @@ fn trim_bucket_entry_count(
             let prototype = usize::from(
                 named_first && named_trim_entity_prototype_complete(payload, start, end, classes),
             );
-            // Decoded rows counted over `start..end`, not a stated count: the
-            // sum is bounded by the scanned region.
-            u32::try_from(rows + prototype).unwrap_or(u32::MAX)
+            // Decoded rows counted over `start..end`, not a stated count. The
+            // count is stated in the width the declared count is stored in,
+            // and a scan that passes that width states none.
+            u32::try_from(rows + prototype).ok()
         }
         TrimEntryKind::Vertex => {
             let mut rows = BTreeSet::new();
@@ -2782,9 +2786,10 @@ fn trim_bucket_entry_count(
             let prototype = usize::from(
                 named_first && named_trim_vertex_prototype_complete(payload, start, end, classes),
             );
-            // Decoded rows counted over `start..end`, not a stated count: the
-            // sum is bounded by the scanned region.
-            u32::try_from(rows.len() + prototype).unwrap_or(u32::MAX)
+            // Decoded rows counted over `start..end`, not a stated count. The
+            // count is stated in the width the declared count is stored in,
+            // and a scan that passes that width states none.
+            u32::try_from(rows.len() + prototype).ok()
         }
     }
 }

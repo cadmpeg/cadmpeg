@@ -34,7 +34,7 @@ use crate::records::{
     FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
     SketchInputKind, SketchRelationKind,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
@@ -1822,7 +1822,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .filter(|class| class.offset > slot_class.offset)
         .map(|class| class.offset)
         .min()
-        .unwrap_or_else(|| u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX))
+        .unwrap_or_else(|| u64_from_index(lane.native_payload.len()))
         .min(marker.offset());
     let class_start = usize::try_from(slot_class.offset).ok()?;
     let class_end =

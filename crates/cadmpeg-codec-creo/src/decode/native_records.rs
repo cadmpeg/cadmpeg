@@ -216,7 +216,7 @@ fn serialize_sketch_table_kind<S: serde::Serializer>(
 pub(crate) struct CreoSketchBucketHeader {
     pub(crate) index: u32,
     pub(crate) declared_entry_count: u32,
-    pub(crate) decoded_entry_count: u32,
+    pub(crate) decoded_entry_count: Option<u32>,
     pub(crate) offset: usize,
 }
 
