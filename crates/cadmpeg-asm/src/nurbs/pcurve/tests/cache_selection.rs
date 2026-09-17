@@ -120,7 +120,9 @@ fn pcurve_fit_tolerance_withholds_nested_only_cache() {
         bytes.push(0x10);
 
         let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
-        assert!(super::pcurve_fit_tolerance(&tokens).is_none());
+        let scope = crate::nurbs::toks::subtype_span(&tokens, 0)
+            .expect("the fixture opens one balanced scope");
+        assert!(super::pcurve_fit_tolerance(scope).is_none());
     }
 }
 
