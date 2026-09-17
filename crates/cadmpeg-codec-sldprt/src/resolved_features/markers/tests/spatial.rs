@@ -741,7 +741,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         "lane",
         &[class],
         &[scalar],
-        &[(0, 100, "first".into()), (100, u64::MAX, "second".into())],
+        &[(0, Some(100), "first".into()), (100, None, "second".into())],
     )
     .is_empty());
 }

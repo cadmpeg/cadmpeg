@@ -35,10 +35,15 @@ fn same_scalar_name(
     })
 }
 
+/// The offset interval each feature owns, in start order.
+///
+/// An interval's end is the next feature's start. The last feature has no
+/// next start, so its end is `None`: the interval is open, and every offset at
+/// or after its start is inside it.
 pub(super) fn feature_intervals(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Vec<(u64, u64, String)> {
+) -> Vec<(u64, Option<u64>, String)> {
     let mut starts = histories
         .iter()
         .flat_map(|history| {
@@ -62,18 +67,26 @@ pub(super) fn feature_intervals(
         .map(|(index, (start, feature))| {
             (
                 *start,
-                starts.get(index + 1).map_or(u64::MAX, |(next, _)| *next),
+                starts.get(index + 1).map(|(next, _)| *next),
                 feature.clone(),
             )
         })
         .collect()
 }
 
-fn feature_at_offset(offset: u64, intervals: &[(u64, u64, String)]) -> Option<&str> {
+/// The interval that contains `offset`, if one does.
+fn feature_at_offset(
+    offset: u64,
+    intervals: &[(u64, Option<u64>, String)],
+) -> Option<&(u64, Option<u64>, String)> {
     intervals
         .iter()
-        .find(|(start, end, _)| offset >= *start && offset < *end)
-        .map(|(_, _, feature)| feature.as_str())
+        .find(|(start, end, _)| offset >= *start && end.is_none_or(|end| offset < end))
+}
+
+/// The feature that owns `offset`, if one does.
+fn feature_name_at_offset(offset: u64, intervals: &[(u64, Option<u64>, String)]) -> Option<&str> {
+    feature_at_offset(offset, intervals).map(|(_, _, feature)| feature.as_str())
 }
 
 /// Bytes a class with no feature interval may carry its relation over.
@@ -81,16 +94,17 @@ const UNKNOWN_FEATURE_SPAN: u64 = 128;
 
 /// Where a relation's scope ends.
 ///
-/// The three states are separate because the last one is not an absent bound:
-/// a class whose unknown-feature span no `u64` can name states no scope, and
-/// reading its scalars under an unbounded scope would take every scalar after
-/// it. Saturating that sum answered `u64::MAX`, which the reader below reads
-/// as "no limit".
+/// The three states are separate because neither of the last two is an offset.
+/// The last feature interval is open, so a class inside it that no later
+/// relation class of the same feature follows states a scope no offset bounds,
+/// and every scalar after the class is in it. A class outside every interval
+/// states no scope at all when no `u64` can name its unknown-feature span,
+/// because reading its scalars unbounded would take every scalar after it.
 enum RelationScope {
     /// The exclusive offset the scope ends at.
     Ends(u64),
-    /// No following class, feature interval or unknown-feature span bounds
-    /// the scope.
+    /// The class sits in the open last feature interval and no later relation
+    /// class of that feature bounds it.
     Unbounded,
     /// The class states an offset whose unknown-feature span no `u64` can
     /// name. The class is refused: it declares no relation.
@@ -101,31 +115,31 @@ enum RelationScope {
 fn relation_scope_end(
     class: &FeatureInputClass,
     classes: &[FeatureInputClass],
-    intervals: &[(u64, u64, String)],
+    intervals: &[(u64, Option<u64>, String)],
 ) -> RelationScope {
-    let class_feature = feature_at_offset(class.offset, intervals);
+    let class_interval = feature_at_offset(class.offset, intervals);
+    let class_feature = class_interval.map(|(_, _, feature)| feature.as_str());
     let next_class = classes
         .iter()
         .filter(|candidate| {
             candidate.offset > class.offset
                 && relation_family(&candidate.name).is_some()
                 && class_feature.is_some_and(|feature| {
-                    feature_at_offset(candidate.offset, intervals) == Some(feature)
+                    feature_name_at_offset(candidate.offset, intervals) == Some(feature)
                 })
         })
         .map(|candidate| candidate.offset)
         .min();
-    let feature_end = intervals
-        .iter()
-        .find(|(start, end, _)| class.offset >= *start && class.offset < *end)
-        .map(|(_, end, _)| *end);
-    let unknown_feature_limit = if class_feature.is_some() {
-        None
-    } else {
-        let Some(limit) = class.offset.checked_add(UNKNOWN_FEATURE_SPAN) else {
-            return RelationScope::Unstatable;
-        };
-        Some(limit)
+    // The interval the class sits in states its own end; a class in no
+    // interval carries its relation over the unknown-feature span instead.
+    let (feature_end, unknown_feature_limit) = match class_interval {
+        Some((_, end, _)) => (*end, None),
+        None => {
+            let Some(limit) = class.offset.checked_add(UNKNOWN_FEATURE_SPAN) else {
+                return RelationScope::Unstatable;
+            };
+            (None, Some(limit))
+        }
     };
     match [next_class, feature_end, unknown_feature_limit]
         .into_iter()
@@ -140,7 +154,7 @@ fn relation_scope_end(
 pub(super) fn relation_declaration_candidates<'a>(
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
-    intervals: &[(u64, u64, String)],
+    intervals: &[(u64, Option<u64>, String)],
 ) -> Vec<(
     &'a FeatureInputClass,
     &'a FeatureInputScalar,
@@ -152,7 +166,7 @@ pub(super) fn relation_declaration_candidates<'a>(
 fn relation_declaration_candidates_with_dynamic<'a>(
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
-    intervals: &[(u64, u64, String)],
+    intervals: &[(u64, Option<u64>, String)],
 ) -> Vec<(
     &'a FeatureInputClass,
     &'a FeatureInputScalar,
@@ -164,7 +178,7 @@ fn relation_declaration_candidates_with_dynamic<'a>(
 fn relation_declaration_candidates_impl<'a>(
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
-    intervals: &[(u64, u64, String)],
+    intervals: &[(u64, Option<u64>, String)],
     allow_dynamic: bool,
 ) -> Vec<(
     &'a FeatureInputClass,
@@ -175,7 +189,7 @@ fn relation_declaration_candidates_impl<'a>(
         .iter()
         .filter_map(|class| {
             let family = relation_family(&class.name)?;
-            let class_feature = feature_at_offset(class.offset, intervals);
+            let class_feature = feature_name_at_offset(class.offset, intervals);
             let scope_end = match relation_scope_end(class, classes, intervals) {
                 RelationScope::Ends(end) => Some(end),
                 RelationScope::Unbounded => None,
@@ -203,7 +217,7 @@ fn relation_declaration_candidates_impl<'a>(
 pub(super) fn unique_relation_declaration_candidates<'a>(
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
-    intervals: &[(u64, u64, String)],
+    intervals: &[(u64, Option<u64>, String)],
 ) -> Vec<(
     &'a FeatureInputClass,
     &'a FeatureInputScalar,
@@ -856,6 +870,91 @@ mod relation_records_tests {
         );
 
         assert!(relation_instances(&sketch_history(), &lane).is_empty());
+    }
+
+    /// Two features, so the first interval ends at the second's start. A class
+    /// inside the first interval reaches a scalar past its own
+    /// unknown-feature span but inside the interval: the scope the class takes
+    /// is the interval's end, not the span.
+    #[test]
+    fn a_class_inside_an_interval_takes_the_interval_end_not_the_unknown_span() {
+        let mut history = sketch_history();
+        history[0].features[0].id = "first".into();
+        history[0].features[0].name = "First".into();
+        let mut second = history[0].features[0].clone();
+        second.id = "second".into();
+        second.name = "Second".into();
+        second.ordinal = 1;
+        history[0].features.push(second);
+
+        let mut relation_scalar = scalar(150, FeatureInputScalarRole::Driving);
+        relation_scalar.feature_ref = Some("first".into());
+        let mut lane = lane(
+            vec![class(10, "sgPntPntHorDist")],
+            vec![relation_scalar.clone()],
+        );
+        lane.names = vec![
+            FeatureInputName {
+                id: "name-first".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                object_id: None,
+                value: "First".into(),
+            },
+            FeatureInputName {
+                id: "name-second".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 200,
+                object_id: None,
+                value: "Second".into(),
+            },
+        ];
+
+        let intervals = feature_intervals(&history, &lane);
+        assert_eq!(
+            intervals,
+            vec![
+                (0, Some(200), "first".to_owned()),
+                (200, None, "second".to_owned()),
+            ]
+        );
+        // 150 is past 10 + UNKNOWN_FEATURE_SPAN and inside the interval.
+        assert!(relation_scalar.offset > 10 + UNKNOWN_FEATURE_SPAN);
+        assert_eq!(
+            relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals).len(),
+            1
+        );
+    }
+
+    /// The last feature interval is open, so a class inside it is bounded by
+    /// nothing and reaches a scalar at the highest offset a `u64` states.
+    #[test]
+    fn a_class_in_the_open_last_interval_reaches_the_highest_scalar_offset() {
+        let history = sketch_history();
+        let mut relation_scalar = scalar(10, FeatureInputScalarRole::Driving);
+        relation_scalar.offset = u64::MAX;
+        let mut lane = lane(
+            vec![class(u64::MAX - 1, "sgPntPntHorDist")],
+            vec![relation_scalar],
+        );
+        lane.names = vec![FeatureInputName {
+            id: "name-sketch".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: None,
+            value: "Sketch".into(),
+        }];
+
+        let intervals = feature_intervals(&history, &lane);
+        assert_eq!(
+            relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals).len(),
+            1,
+            "the open last interval bounds no scalar offset"
+        );
+        assert_eq!(intervals, vec![(0, None, "sketch".to_owned())]);
     }
 
     #[test]
