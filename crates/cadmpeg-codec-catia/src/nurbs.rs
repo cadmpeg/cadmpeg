@@ -1256,7 +1256,12 @@ mod tests {
     }
 
     /// A tolerance at or past the diameter bounds every chord, so the step it
-    /// states is the whole turn, and the arm that states it is its own.
+    /// states is the whole turn.
+    ///
+    /// The three arms are value-identical to the clamp they replaced on every
+    /// input this route admits, so no test separates the shapes. What proves
+    /// the clamp is gone is the census: `.clamp(` is absent from this file.
+    /// This test states the value the whole-turn arm answers.
     #[test]
     fn a_relative_tolerance_at_or_past_the_diameter_states_the_whole_turn() {
         // The sweep is longer than a half turn and shorter than a whole one,
