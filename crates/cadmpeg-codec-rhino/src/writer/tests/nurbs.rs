@@ -644,8 +644,8 @@ fn the_nurbs_surface_pole_lane_is_the_admitted_count() {
     )
     .expect("valid patch surface");
 
-    let pole_count = super::super::check_nurbs_surface("surface-1", &surface)
-        .expect("admissible NURBS surface");
+    let pole_count =
+        super::super::check_nurbs_surface("surface-1", &surface).expect("admissible NURBS surface");
     assert_eq!(pole_count, 4);
     assert_eq!(surface.poles().len(), 4);
 
