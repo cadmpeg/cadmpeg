@@ -476,10 +476,6 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     // defined witness; an ambiguous arc-center carrier must remain unresolved
     // instead of being bypassed by a coincidental whole-sketch distance.
     let dynamic_roster_point_pair = if dynamic
-        && matches!(
-            relation.family,
-            PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance
-        )
         && dynamic_point_pair.is_none()
         && dynamic_direct_point_pair.is_none()
         && relation

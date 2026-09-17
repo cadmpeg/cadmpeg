@@ -5931,6 +5931,20 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
     }
 }
 
+/// Bytes from a face recipe header to the recipe program, by recipe kind.
+///
+/// `None` states a recipe kind that carries no face operand: it states no
+/// program offset at all.
+fn recipe_program_operand_length(kind: records::ConstructionRecipeKind) -> Option<u64> {
+    match kind {
+        records::ConstructionRecipeKind::Face => Some(16),
+        records::ConstructionRecipeKind::BoundedFace => Some(24),
+        records::ConstructionRecipeKind::Body
+        | records::ConstructionRecipeKind::Edge
+        | records::ConstructionRecipeKind::Vertex => None,
+    }
+}
+
 fn recipe_reference_frames_match(
     actual: &[records::DesignRecipeReference],
     expected: &[records::DesignRecipeReference],
@@ -6540,22 +6554,15 @@ fn validate_face_operands<'a>(
                 &expected_references,
                 historical_candidates_retained,
             )
-            && matches!(
-                operand.recipe_kind,
-                records::ConstructionRecipeKind::Face
-                    | records::ConstructionRecipeKind::BoundedFace
-            )
             && valid_program
-            && operand.recipe_program_offset
-                == recipe.map_or(u64::MAX, |recipe| {
-                    recipe
-                        .byte_offset
-                        .saturating_add(match operand.recipe_kind {
-                            records::ConstructionRecipeKind::Face => 16,
-                            records::ConstructionRecipeKind::BoundedFace => 24,
-                            _ => u64::MAX,
-                        })
-                })
+            && recipe_program_operand_length(operand.recipe_kind).is_some_and(
+                |operand_length| {
+                    recipe.is_some_and(|recipe| {
+                        operand.recipe_program_offset
+                            == recipe.byte_offset.saturating_add(operand_length)
+                    })
+                },
+            )
             && operand.next_byte_offset()
                 == operand
                     .recipe_program_offset

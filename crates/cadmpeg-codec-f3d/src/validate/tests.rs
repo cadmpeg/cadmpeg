@@ -1655,3 +1655,25 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         .iter()
         .any(invalid_entity_selection));
 }
+
+#[test]
+fn only_a_face_recipe_kind_states_a_program_operand_length() {
+    use crate::records::ConstructionRecipeKind;
+
+    assert_eq!(
+        super::recipe_program_operand_length(ConstructionRecipeKind::Face),
+        Some(16)
+    );
+    assert_eq!(
+        super::recipe_program_operand_length(ConstructionRecipeKind::BoundedFace),
+        Some(24)
+    );
+    for kind in [
+        ConstructionRecipeKind::Body,
+        ConstructionRecipeKind::Edge,
+        ConstructionRecipeKind::Vertex,
+    ] {
+        assert_eq!(super::recipe_program_operand_length(kind), None);
+    }
+}
+
