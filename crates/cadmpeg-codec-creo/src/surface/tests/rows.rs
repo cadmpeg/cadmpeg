@@ -744,3 +744,26 @@ fn tabulated_cylinder_frame_rejects_nonfinite_coordinates() {
     assert_eq!(frame.values(), values);
     assert_eq!(frame.prefixes(), prefixes);
 }
+
+/// A byte that no scalar encoding defines is one absent slot. The format
+/// states that an undefined prefix does not remove that slot and that no byte
+/// may be skipped between slot encodings, so the slots after it keep their
+/// stored positions.
+#[test]
+fn an_undefined_prefix_in_a_scalar_body_is_one_absent_slot_and_moves_no_other_slot() {
+    let cache = scalar::ScalarCache::default();
+
+    // `0x00` defines no scalar form; `0xe4` is one and `0x0f` is zero.
+    assert_eq!(
+        super::super::scalar_slots(&[0x00, 0xe4, 0x0f], 3, &cache),
+        [None, Some(1.0), Some(0.0)]
+    );
+    assert_eq!(
+        super::super::scalar_slots(&[0xe4, 0x0f], 3, &cache),
+        [Some(1.0), Some(0.0), None]
+    );
+    assert_eq!(
+        super::super::scalar_slots(&[0x00, 0x00], 3, &cache),
+        [None, None, None]
+    );
+}

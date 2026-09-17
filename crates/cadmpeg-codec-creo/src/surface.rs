@@ -7607,6 +7607,13 @@ fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     scalar::ieee7_with_prefix(body, offset, first, second)
 }
 
+/// The declared slots of a bounded scalar body, in stored order.
+///
+/// A byte that no scalar encoding defines is one absent slot, not a byte to
+/// pass over: `docs/formats/creo_prt.md` states that "an undefined prefix does
+/// not remove that slot" and that a bounded scalar body "encodes its declared
+/// slots sequentially; no byte may be skipped between slot encodings". A body
+/// that ends before the declared count leaves the rest absent.
 fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
@@ -7615,6 +7622,7 @@ fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<O
             slots.push(Some(value));
             cursor = next;
         } else {
+            slots.push(None);
             cursor += 1;
         }
     }
