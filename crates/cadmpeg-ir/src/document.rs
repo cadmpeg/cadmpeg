@@ -1179,10 +1179,10 @@ struct CadIrReadWire {
     #[serde(
         default,
         rename = "ir_version",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_ir_version"
     )]
     ir_version: Option<serde_json::Value>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_source")]
     source: Option<SourceMeta>,
     #[serde(default, rename = "units")]
     _units: CanonicalUnitsWire,
@@ -1575,3 +1575,7 @@ impl SourceMeta {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_ir_version, serde_json::Value, "ir_version");
+cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");

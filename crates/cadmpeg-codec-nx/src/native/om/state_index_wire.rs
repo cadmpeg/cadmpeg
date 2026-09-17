@@ -17,7 +17,7 @@ pub(super) struct OmAuditTrailRowWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_frame_selector"
     )]
     frame_selector: Option<u8>,
     timestamp: u32,
@@ -416,3 +416,6 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_frame_selector, u8, "frame_selector");

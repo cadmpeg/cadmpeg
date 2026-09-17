@@ -102,7 +102,7 @@ pub struct FeatureOperationLabel {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_stable_identity"
     )]
     pub stable_identity: Option<String>,
     /// Absolute file offset of the `03` label tag.
@@ -265,7 +265,7 @@ struct FeatureOperationObjectReferenceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_tag"
     )]
     pub tag: Option<u8>,
     /// Referenced feature object index.
@@ -276,7 +276,7 @@ struct FeatureOperationObjectReferenceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Absolute offset of the object-index token.
@@ -432,7 +432,7 @@ struct FeatureBodyReferenceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_ordinal"
     )]
     pub ordinal: Option<u32>,
     /// Serialized reference index interpreted through its resolved namespace.
@@ -650,7 +650,7 @@ pub struct FeatureInputColumnRowUse {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_column_table"
     )]
     pub column_table: Option<String>,
     /// Zero-based slot in the row's four-block lane.
@@ -721,19 +721,19 @@ struct FeatureInputColumnTargetWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_leading_index"
     )]
     leading_index: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_leading_index_source_offset"
     )]
     leading_index_source_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_discriminator"
     )]
     discriminator: Option<crate::om::discriminators::LinkedIndexDiscriminator>,
     field_indices: [u32; 3],
@@ -742,7 +742,7 @@ struct FeatureInputColumnTargetWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_flag"
     )]
     flag: Option<crate::om::discriminators::LinkedIndexFlag>,
     mode: crate::om::discriminators::IndexRowMode,
@@ -862,7 +862,7 @@ pub struct FeatureParameterBinding {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_expression"
     )]
     pub expression: Option<String>,
     /// Persistent OM object ID of the declaration.
@@ -1060,7 +1060,7 @@ pub struct FeatureDatumCsysColumnRowUse {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_column_table"
     )]
     pub column_table: Option<String>,
     /// Zero-based slot in the row's four-block lane.
@@ -1616,13 +1616,13 @@ struct FeatureDatumPlanePayloadWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_index_lane_offset"
     )]
     index_lane_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_index_lane_declared_count"
     )]
     index_lane_declared_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1634,7 +1634,7 @@ struct FeatureDatumPlanePayloadWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_index_lane_trailer"
     )]
     index_lane_trailer: Option<u32>,
 }
@@ -2557,7 +2557,7 @@ pub struct FeatureSketchReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
@@ -2580,7 +2580,7 @@ pub struct FeatureProjectedCurveReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
@@ -2620,7 +2620,7 @@ pub struct FeaturePointConstructionHeader {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Serialized header mode.
@@ -2651,7 +2651,7 @@ pub struct FeatureSurfaceConstructionReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
@@ -2725,7 +2725,7 @@ pub struct FeatureExtrudeProfileReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_witness_source_offset"
     )]
     pub witness_source_offset: Option<u64>,
     /// Checked index retaining the exact serialized token.
@@ -2735,7 +2735,7 @@ pub struct FeatureExtrudeProfileReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
@@ -2921,7 +2921,7 @@ struct FeatureOperationBodyOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_operand_data_block"
     )]
     pub operand_data_block: Option<String>,
     /// Segment body bindings naming the same body image.
@@ -8144,3 +8144,40 @@ fn deserialize_reference_lane_count<'de, D: serde::Deserializer<'de>>(
 
 #[cfg(test)]
 mod test_support;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_stable_identity, String, "stable_identity");
+cadmpeg_core::named_optional_field!(deserialize_tag, u8, "tag");
+cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");
+cadmpeg_core::named_optional_field!(deserialize_ordinal, u32, "ordinal");
+cadmpeg_core::named_optional_field!(deserialize_column_table, String, "column_table");
+cadmpeg_core::named_optional_field!(deserialize_leading_index, u32, "leading_index");
+cadmpeg_core::named_optional_field!(
+    deserialize_leading_index_source_offset,
+    u64,
+    "leading_index_source_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_discriminator,
+    crate::om::discriminators::LinkedIndexDiscriminator,
+    "discriminator"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_flag,
+    crate::om::discriminators::LinkedIndexFlag,
+    "flag"
+);
+cadmpeg_core::named_optional_field!(deserialize_expression, String, "expression");
+cadmpeg_core::named_optional_field!(deserialize_index_lane_offset, u64, "index_lane_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_index_lane_declared_count,
+    usize,
+    "index_lane_declared_count"
+);
+cadmpeg_core::named_optional_field!(deserialize_index_lane_trailer, u32, "index_lane_trailer");
+cadmpeg_core::named_optional_field!(
+    deserialize_witness_source_offset,
+    u64,
+    "witness_source_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_operand_data_block, String, "operand_data_block");

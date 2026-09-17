@@ -186,10 +186,7 @@ pub(super) fn resolved_helper_route(resolved: &ResolvedPath) -> Option<InputRout
             if symbol.kind == SymbolKind::Function
                 && ((symbol.path.ends_with("/src/bytes.rs") && symbol.name == "deserialize")
                     || (symbol.path.ends_with("/src/units.rs")
-                        && matches!(
-                            symbol.name.as_str(),
-                            "deserialize_named" | "deserialize_named_optional"
-                        ))) =>
+                        && symbol.name == "deserialize_named")) =>
         {
             Some(InputRoute::Keyless)
         }

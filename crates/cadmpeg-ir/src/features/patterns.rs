@@ -367,7 +367,7 @@ pub enum PatternTransform<C = CompositePattern> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_form"
         )]
         form: Option<PatternForm>,
     },
@@ -377,7 +377,7 @@ pub enum PatternTransform<C = CompositePattern> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_direction"
         )]
         direction: Option<Vector3>,
         /// Distance between consecutive instances.
@@ -388,7 +388,7 @@ pub enum PatternTransform<C = CompositePattern> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_second"
         )]
         second: Option<LinearPatternDirection>,
     },
@@ -398,7 +398,7 @@ pub enum PatternTransform<C = CompositePattern> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_direction"
         )]
         direction: Option<Vector3>,
         /// Cumulative distances from the original instance, beginning with zero.
@@ -430,7 +430,7 @@ pub enum PatternTransform<C = CompositePattern> {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_path"
         )]
         path: Option<PathRef>,
         /// Arc-length spacing between consecutive instances.
@@ -683,3 +683,9 @@ pub struct LinearPatternDirection {
     /// Total number of instances, including the original.
     pub count: u32,
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_form, PatternForm, "form");
+cadmpeg_core::named_optional_field!(deserialize_direction, Vector3, "direction");
+cadmpeg_core::named_optional_field!(deserialize_second, LinearPatternDirection, "second");
+cadmpeg_core::named_optional_field!(deserialize_path, PathRef, "path");

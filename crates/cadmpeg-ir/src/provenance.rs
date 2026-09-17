@@ -210,28 +210,28 @@ pub struct SourceObjectAssociation {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
     /// Effective source object color, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_color"
     )]
     pub color: Option<Color>,
     /// Effective source object visibility, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
     /// Native source layer identifier, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_layer"
     )]
     pub layer: Option<String>,
     /// Native instance identifiers from outermost to innermost.
@@ -514,7 +514,7 @@ struct AnnotationProvenanceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_tag"
     )]
     tag: Option<String>,
 }
@@ -568,14 +568,14 @@ struct SourceProvenanceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_stream"
     )]
     stream: Option<StreamName>,
     offset: u64,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_tag"
     )]
     tag: Option<String>,
 }
@@ -738,3 +738,11 @@ mod tests {
         assert!(error.to_string().contains("object_id"));
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_layer, String, "layer");
+cadmpeg_core::named_optional_field!(deserialize_tag, String, "tag");
+cadmpeg_core::named_optional_field!(deserialize_stream, StreamName, "stream");

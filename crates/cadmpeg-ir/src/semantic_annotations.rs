@@ -64,7 +64,7 @@ pub struct SemanticAnnotation {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_format"
     )]
     pub format: Option<String>,
     /// Persisted model- or page-space annotation position.
@@ -82,10 +82,13 @@ pub struct SemanticAnnotation {
     pub native_ref: String,
 }
 
-crate::units::named_optional_field!(deserialize_value, crate::scalar::FiniteReal, "value");
+cadmpeg_core::named_optional_field!(deserialize_value, crate::scalar::FiniteReal, "value");
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_position,
     crate::units::FiniteVector<3>,
     "position"
 );
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_format, String, "format");

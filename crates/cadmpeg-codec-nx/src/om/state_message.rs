@@ -77,7 +77,7 @@ impl<'de> Deserialize<'de> for StateMessage<String> {
             #[serde(flatten)]
             value: StateTaggedValue,
             count_or_severity: u16,
-            #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+            #[serde(default, deserialize_with = "deserialize_severity")]
             severity: Option<StateMessageSeverity>,
         }
         let wire = Wire::deserialize(deserializer)?;
@@ -179,3 +179,6 @@ mod tests {
         assert!(error.to_string().contains("null"), "{error}");
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_severity, StateMessageSeverity, "severity");

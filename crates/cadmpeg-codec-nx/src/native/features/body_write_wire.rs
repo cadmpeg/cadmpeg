@@ -14,7 +14,7 @@ pub(super) struct BodyWriteWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_operation_label"
     )]
     pub operation_label: Option<String>,
     /// Owning bounded operation-record identity.
@@ -37,7 +37,7 @@ pub(super) struct BodyWriteWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_body_image_data_block"
     )]
     pub body_image_data_block: Option<String>,
     /// Exact serialized body-image object token.
@@ -145,3 +145,11 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_operation_label, String, "operation_label");
+cadmpeg_core::named_optional_field!(
+    deserialize_body_image_data_block,
+    String,
+    "body_image_data_block"
+);

@@ -144,7 +144,7 @@ struct DesignSketchProfileOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_region_selection"
     )]
     region_selection: Option<DesignSketchProfileRegionSelection>,
     /// Source per-file dynamic three-digit ASCII paired class tag.
@@ -845,13 +845,13 @@ struct DesignConstructionOperandGroupSerde {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_extrude_role"
     )]
     extrude_role: Option<DesignExtrudeOperandRoleTag>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_extrude_face_role"
     )]
     extrude_face_role: Option<DesignExtrudeFaceRole>,
     role_offset: u64,
@@ -1596,21 +1596,21 @@ struct DesignConstructionOperandPathWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_transform"
     )]
     transform: Option<SketchPlacementMatrix>,
     /// Byte offset of the first transform scalar.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_transform_offset"
     )]
     transform_offset: Option<u64>,
     /// Compact-frame boolean; absent from the transform frame.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_compact_variant"
     )]
     compact_variant: Option<bool>,
     /// Owning feature-scope record.
@@ -1851,14 +1851,14 @@ struct DesignConstructionOperandIdentityWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_tracking_path"
     )]
     pub tracking_path: Option<DesignConstructionTrackingPath>,
     /// Fixed-width persistent identity, when the following record has that grammar.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_persistent_identity"
     )]
     pub persistent_identity: Option<DesignConstructionPersistentIdentity>,
 }
@@ -2141,25 +2141,25 @@ struct DesignConstructionTrackingPathWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_first_related_identity"
     )]
     first_related_identity: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_first_related_identity_offset"
     )]
     first_related_identity_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_second_related_identity"
     )]
     second_related_identity: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_second_related_identity_offset"
     )]
     second_related_identity_offset: Option<u64>,
     following_record_index: u32,
@@ -2405,7 +2405,7 @@ pub struct DesignFilletRadiusGroup {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_tangency_weight_parameter_record_index"
     )]
     pub tangency_weight_parameter_record_index: Option<u32>,
 }
@@ -2601,9 +2601,9 @@ pub struct HistoricalBinding {
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct OptionalHistoricalBindingWire {
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_historical_entity_kind")]
     historical_entity_kind: Option<AsmHistoricalEntityKind>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_historical_entity_ref")]
     historical_entity_ref: Option<i64>,
     #[serde(default)]
     historical_state_ids: Vec<i64>,
@@ -2787,7 +2787,7 @@ pub(crate) struct DesignExtrudeSelectionMemberDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_geometry"
     )]
     pub resolved_geometry: Option<SketchRelationOperand>,
     /// Construction-operand identity chains that terminate at this member.
@@ -3114,28 +3114,28 @@ struct DesignEntitySelectionOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_secondary_identity"
     )]
     secondary_identity: Option<u64>,
     /// Byte offset of `secondary_identity`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_secondary_identity_offset"
     )]
     secondary_identity_offset: Option<u64>,
     /// Optional secondary identity of the selected Sketch curve.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_curve_secondary_identity"
     )]
     curve_secondary_identity: Option<u64>,
     /// Byte offset of `curve_secondary_identity`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_curve_secondary_identity_offset"
     )]
     curve_secondary_identity_offset: Option<u64>,
     /// Input-state edge proofs derived from the two serialized identities.
@@ -3148,7 +3148,7 @@ struct DesignEntitySelectionOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_edge_slot"
     )]
     resolved_edge_slot: Option<i64>,
     /// Identity of the indexed record immediately following the identity record.
@@ -3333,13 +3333,13 @@ struct DesignLoftLegacyBodyCarrierSerde {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_trailing_scope_record_index"
     )]
     trailing_scope_record_index: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_trailing_scope_reference_offset"
     )]
     trailing_scope_reference_offset: Option<u64>,
     paired_class_tag: String,
@@ -3721,14 +3721,14 @@ struct DesignBodyRecipeOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_selector_tail"
     )]
     selector_tail: Option<[u8; 4]>,
     /// Byte offset of the raw selector-tail member.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_selector_tail_offset"
     )]
     selector_tail_offset: Option<u64>,
     /// Counted persistent Design references carried by this operand.
@@ -3743,21 +3743,21 @@ struct DesignBodyRecipeOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_face_slot"
     )]
     resolved_face_slot: Option<i64>,
     /// Exact ASM input state containing the resolved body.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_body_state_id"
     )]
     resolved_body_state_id: Option<i64>,
     /// Unique input-state body containing every reference's candidate faces.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_body_slot"
     )]
     resolved_body_slot: Option<i64>,
     /// Complete boundary-face set of the resolved body in its input state.
@@ -4172,13 +4172,13 @@ struct DesignEdgeIdentityOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_edge_slot"
     )]
     resolved_edge_slot: Option<i64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolution_identity_id"
     )]
     resolution_identity_id: Option<String>,
 }
@@ -4548,7 +4548,7 @@ pub(crate) struct DesignEdgeOperandDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_recipe_structure"
     )]
     pub recipe_structure: Option<DesignEdgeRecipeStructure>,
     /// Alternate two-clause structure decoded from a `SurfacePatch` edge
@@ -4556,7 +4556,7 @@ pub(crate) struct DesignEdgeOperandDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_surface_patch_recipe_structure"
     )]
     pub surface_patch_recipe_structure: Option<DesignSurfacePatchRecipeStructure>,
     /// Ordered local topology references when every nonzero root and side scalar
@@ -4564,7 +4564,7 @@ pub(crate) struct DesignEdgeOperandDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_local_topology_references"
     )]
     pub local_topology_references: Option<Vec<NonZeroU32>>,
     /// Active solved faces carrying the recipe's persistent Design reference.
@@ -4630,7 +4630,7 @@ pub(crate) struct DesignEdgeOperandDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_recipe_state_id"
     )]
     pub recipe_state_id: Option<i64>,
     /// Stable historical edge slot proven by the selector/reference candidate
@@ -4638,7 +4638,7 @@ pub(crate) struct DesignEdgeOperandDraft {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_edge_slot"
     )]
     pub resolved_edge_slot: Option<i64>,
     /// Selected historical carrier axis, when exact.
@@ -4714,13 +4714,13 @@ struct EdgeResolvedAxisWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_axis_origin"
     )]
     resolved_axis_origin: Option<Point3>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_axis_direction"
     )]
     resolved_axis_direction: Option<Vector3>,
 }
@@ -5090,7 +5090,7 @@ struct DesignEdgeRecipeSelectorContextWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_unique_incidence_edge_slot"
     )]
     unique_incidence_edge_slot: Option<i64>,
     /// Changed historical edges whose incident loop counts satisfy every
@@ -5359,7 +5359,7 @@ struct DesignTopologyRecipeEntryWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_common_incident_edge_ordinal"
     )]
     common_incident_edge_ordinal: Option<u32>,
 }
@@ -5435,14 +5435,14 @@ struct DesignTopologyRecipeTripletWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_incident_edge_ordinal"
     )]
     incident_edge_ordinal: Option<u32>,
     /// Whether the incident edge precedes or follows the vertex in loop order.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_incident_side"
     )]
     incident_side: Option<DesignTopologyIncidentSide>,
 }
@@ -5765,13 +5765,13 @@ struct DesignFaceOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_group_record_index"
     )]
     group_record_index: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_group_member_ordinal"
     )]
     group_member_ordinal: Option<u32>,
     /// Primary indexed-record identity named by a face operand group.
@@ -5839,7 +5839,7 @@ struct DesignFaceOperandWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_resolved_active_face"
     )]
     resolved_active_face: Option<FaceId>,
     /// Identity of the indexed record following the operand frame.
@@ -6226,3 +6226,175 @@ enum PersistentIdentityTail {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_region_selection,
+    DesignSketchProfileRegionSelection,
+    "region_selection"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_extrude_role,
+    DesignExtrudeOperandRoleTag,
+    "extrude_role"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_extrude_face_role,
+    DesignExtrudeFaceRole,
+    "extrude_face_role"
+);
+cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
+cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
+cadmpeg_core::named_optional_field!(deserialize_compact_variant, bool, "compact_variant");
+cadmpeg_core::named_optional_field!(
+    deserialize_tracking_path,
+    DesignConstructionTrackingPath,
+    "tracking_path"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_persistent_identity,
+    DesignConstructionPersistentIdentity,
+    "persistent_identity"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_first_related_identity,
+    u64,
+    "first_related_identity"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_first_related_identity_offset,
+    u64,
+    "first_related_identity_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_second_related_identity,
+    u64,
+    "second_related_identity"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_second_related_identity_offset,
+    u64,
+    "second_related_identity_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_tangency_weight_parameter_record_index,
+    u32,
+    "tangency_weight_parameter_record_index"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_historical_entity_kind,
+    AsmHistoricalEntityKind,
+    "historical_entity_kind"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_historical_entity_ref,
+    i64,
+    "historical_entity_ref"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_resolved_geometry,
+    SketchRelationOperand,
+    "resolved_geometry"
+);
+cadmpeg_core::named_optional_field!(deserialize_secondary_identity, u64, "secondary_identity");
+cadmpeg_core::named_optional_field!(
+    deserialize_secondary_identity_offset,
+    u64,
+    "secondary_identity_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_curve_secondary_identity,
+    u64,
+    "curve_secondary_identity"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_curve_secondary_identity_offset,
+    u64,
+    "curve_secondary_identity_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_resolved_edge_slot, i64, "resolved_edge_slot");
+cadmpeg_core::named_optional_field!(
+    deserialize_trailing_scope_record_index,
+    u32,
+    "trailing_scope_record_index"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_trailing_scope_reference_offset,
+    u64,
+    "trailing_scope_reference_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_selector_tail, [u8; 4], "selector_tail");
+cadmpeg_core::named_optional_field!(
+    deserialize_selector_tail_offset,
+    u64,
+    "selector_tail_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_resolved_face_slot, i64, "resolved_face_slot");
+cadmpeg_core::named_optional_field!(
+    deserialize_resolved_body_state_id,
+    i64,
+    "resolved_body_state_id"
+);
+cadmpeg_core::named_optional_field!(deserialize_resolved_body_slot, i64, "resolved_body_slot");
+cadmpeg_core::named_optional_field!(
+    deserialize_resolution_identity_id,
+    String,
+    "resolution_identity_id"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_recipe_structure,
+    DesignEdgeRecipeStructure,
+    "recipe_structure"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_surface_patch_recipe_structure,
+    DesignSurfacePatchRecipeStructure,
+    "surface_patch_recipe_structure"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_local_topology_references,
+    Vec<NonZeroU32>,
+    "local_topology_references"
+);
+cadmpeg_core::named_optional_field!(deserialize_recipe_state_id, i64, "recipe_state_id");
+cadmpeg_core::named_optional_field!(
+    deserialize_resolved_axis_origin,
+    Point3,
+    "resolved_axis_origin"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_resolved_axis_direction,
+    Vector3,
+    "resolved_axis_direction"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_unique_incidence_edge_slot,
+    i64,
+    "unique_incidence_edge_slot"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_common_incident_edge_ordinal,
+    u32,
+    "common_incident_edge_ordinal"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_incident_edge_ordinal,
+    u32,
+    "incident_edge_ordinal"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_incident_side,
+    DesignTopologyIncidentSide,
+    "incident_side"
+);
+cadmpeg_core::named_optional_field!(deserialize_group_record_index, u32, "group_record_index");
+cadmpeg_core::named_optional_field!(
+    deserialize_group_member_ordinal,
+    u32,
+    "group_member_ordinal"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_resolved_active_face,
+    FaceId,
+    "resolved_active_face"
+);

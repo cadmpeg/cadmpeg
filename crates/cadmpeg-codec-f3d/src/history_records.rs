@@ -53,13 +53,13 @@ struct AsmHistorySerde {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_stream_size"
     )]
     stream_size: Option<i64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_history_entry_count"
     )]
     #[serde(alias = "high_water_mark")]
     history_entry_count: Option<i64>,
@@ -223,20 +223,20 @@ struct AsmDeltaStateWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_previous_ref"
     )]
     previous_ref: Option<i64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_next_ref"
     )]
     next_ref: Option<i64>,
     node_index: i64,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_partner_ref"
     )]
     partner_ref: Option<i64>,
     owner_ref: i64,
@@ -257,14 +257,14 @@ struct AsmDeltaStateWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_topology"
     )]
     topology: Option<AsmHistoricalTopology>,
     /// Forward change from the state reached by `next_ref` to this state.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_transition"
     )]
     transition: Option<AsmHistoricalTransition>,
 }
@@ -512,7 +512,7 @@ pub(crate) struct AsmHistoricalOptionalCarrierBinding {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_carrier"
     )]
     pub carrier: Option<i64>,
 }
@@ -524,7 +524,7 @@ pub(crate) struct AsmHistoricalTransition {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_previous_state_id"
     )]
     pub previous_state_id: Option<i64>,
     /// Changes across the complete normalized `RecordTable`.
@@ -610,7 +610,7 @@ struct AsmHistoryRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_revision_id"
     )]
     revision_id: Option<i64>,
     /// Snapshot-local record ordinal. This is not the revision identity.
@@ -623,7 +623,7 @@ struct AsmHistoryRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_framing_error"
     )]
     framing_error: Option<String>,
     /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
@@ -745,13 +745,13 @@ struct AsmEntityChangeSerde {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_old_ref"
     )]
     old_ref: Option<i64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_new_ref"
     )]
     new_ref: Option<i64>,
 }
@@ -888,3 +888,22 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_stream_size, i64, "stream_size");
+cadmpeg_core::named_optional_field!(deserialize_history_entry_count, i64, "history_entry_count");
+cadmpeg_core::named_optional_field!(deserialize_previous_ref, i64, "previous_ref");
+cadmpeg_core::named_optional_field!(deserialize_next_ref, i64, "next_ref");
+cadmpeg_core::named_optional_field!(deserialize_partner_ref, i64, "partner_ref");
+cadmpeg_core::named_optional_field!(deserialize_topology, AsmHistoricalTopology, "topology");
+cadmpeg_core::named_optional_field!(
+    deserialize_transition,
+    AsmHistoricalTransition,
+    "transition"
+);
+cadmpeg_core::named_optional_field!(deserialize_carrier, i64, "carrier");
+cadmpeg_core::named_optional_field!(deserialize_previous_state_id, i64, "previous_state_id");
+cadmpeg_core::named_optional_field!(deserialize_revision_id, i64, "revision_id");
+cadmpeg_core::named_optional_field!(deserialize_framing_error, String, "framing_error");
+cadmpeg_core::named_optional_field!(deserialize_old_ref, i64, "old_ref");
+cadmpeg_core::named_optional_field!(deserialize_new_ref, i64, "new_ref");

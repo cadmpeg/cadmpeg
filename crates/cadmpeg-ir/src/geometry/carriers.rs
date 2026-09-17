@@ -4215,19 +4215,19 @@ pub struct PcurveGeneralForm {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_wrapper_reversed"
     )]
     pub wrapper_reversed: Option<bool>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_parameter_range"
     )]
     parameter_range: Option<[f64; 2]>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_fit_tolerance"
     )]
     fit_tolerance: Option<FitTolerance>,
 }
@@ -4236,11 +4236,14 @@ pub struct PcurveGeneralForm {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PcurveGeneralFormWire {
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_wrapper_reversed")]
     wrapper_reversed: Option<bool>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_parameter_range")]
     parameter_range: Option<[f64; 2]>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_pcurve_general_form_wire_fit_tolerance"
+    )]
     fit_tolerance: Option<f64>,
 }
 
@@ -4298,3 +4301,13 @@ impl PcurveGeneralForm {
         Ok(())
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_wrapper_reversed, bool, "wrapper_reversed");
+cadmpeg_core::named_optional_field!(deserialize_parameter_range, [f64; 2], "parameter_range");
+cadmpeg_core::named_optional_field!(deserialize_fit_tolerance, FitTolerance, "fit_tolerance");
+cadmpeg_core::named_optional_field!(
+    deserialize_pcurve_general_form_wire_fit_tolerance,
+    f64,
+    "fit_tolerance"
+);

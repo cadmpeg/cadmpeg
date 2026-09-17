@@ -22,7 +22,7 @@ pub(crate) struct FeatureBlockConstructionReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
@@ -127,3 +127,6 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");

@@ -48,28 +48,28 @@ pub struct ProductDefinition {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_name"
     )]
     pub source_name: Option<String>,
     /// User-visible component label, when distinct from the source name.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_label"
     )]
     pub label: Option<String>,
     /// User-maintained BOM description.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_description"
     )]
     pub description: Option<String>,
     /// User-maintained part or stock number.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_part_number"
     )]
     pub part_number: Option<String>,
     /// Additional persisted BOM identity fields by exact property name.
@@ -83,7 +83,7 @@ pub struct ProductDefinition {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
 }
@@ -107,7 +107,7 @@ pub enum PrototypeReference {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_object"
         )]
         object: Option<String>,
     },
@@ -234,7 +234,7 @@ pub struct Occurrence {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_linked_prototype"
     )]
     pub linked_prototype: Option<Transform>,
     /// Per-axis instance scale.
@@ -244,28 +244,28 @@ pub struct Occurrence {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
     /// Per-element visibility override.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
     /// `FreeCAD` `App::Link`-specific occurrence state.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_link"
     )]
     pub link: Option<LinkState>,
     /// Format-native object supplying this instance.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
 }
@@ -435,21 +435,21 @@ pub struct CopyOnChange {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source"
     )]
     pub source: Option<PrototypeReference>,
     /// Internal component or external object holding owned copies.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_group"
     )]
     pub group: Option<PrototypeReference>,
     /// Whether the tracked source was persisted as changed.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_touched"
     )]
     pub touched: Option<bool>,
 }
@@ -1208,7 +1208,7 @@ pub enum JointOperands {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_offset_frame"
         )]
         offset_frame: Option<Transform>,
     },
@@ -1222,7 +1222,7 @@ pub enum JointOperands {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_offset_frames"
         )]
         offset_frames: Option<[Transform; 2]>,
     },
@@ -1239,28 +1239,28 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_translation_offset"
         )]
         translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled angular interval in radians.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angular_limits"
         )]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_linear_limits"
         )]
         linear_limits: Option<JointLimits>,
     },
@@ -1270,14 +1270,14 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angular_limits"
         )]
         angular_limits: Option<JointLimits>,
     },
@@ -1287,21 +1287,21 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance"
         )]
         distance: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_translation_offset"
         )]
         translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled linear interval in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_linear_limits"
         )]
         linear_limits: Option<JointLimits>,
     },
@@ -1311,28 +1311,28 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<FiniteReal>,
         /// Primary linear offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance"
         )]
         distance: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angular_limits"
         )]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_linear_limits"
         )]
         linear_limits: Option<JointLimits>,
     },
@@ -1344,7 +1344,7 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance"
         )]
         distance: Option<FiniteReal>,
     },
@@ -1358,7 +1358,7 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<FiniteReal>,
     },
@@ -1368,14 +1368,14 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance"
         )]
         distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
     },
@@ -1385,7 +1385,7 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance"
         )]
         distance: Option<FiniteReal>,
     },
@@ -1395,14 +1395,14 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance"
         )]
         distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
     },
@@ -1412,14 +1412,14 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance"
         )]
         distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
     },
@@ -1431,42 +1431,42 @@ pub enum PairedJointKind {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angle"
         )]
         angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_translation_offset"
         )]
         translation_offset: Option<[FiniteReal; 3]>,
         /// Primary linear offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance"
         )]
         distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_distance2"
         )]
         distance2: Option<FiniteReal>,
         /// Enabled angular interval in radians.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_angular_limits"
         )]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_linear_limits"
         )]
         linear_limits: Option<JointLimits>,
     },
@@ -1499,7 +1499,7 @@ pub struct AssemblyJoint {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
 }
@@ -1717,3 +1717,30 @@ mod nonblank_literal_tests {
         assert_eq!(cadmpeg_core::nonblank_literal!("d6").as_str(), "d6");
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_source_name, String, "source_name");
+cadmpeg_core::named_optional_field!(deserialize_label, String, "label");
+cadmpeg_core::named_optional_field!(deserialize_description, String, "description");
+cadmpeg_core::named_optional_field!(deserialize_part_number, String, "part_number");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
+cadmpeg_core::named_optional_field!(deserialize_linked_prototype, Transform, "linked_prototype");
+cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_link, LinkState, "link");
+cadmpeg_core::named_optional_field!(deserialize_source, PrototypeReference, "source");
+cadmpeg_core::named_optional_field!(deserialize_group, PrototypeReference, "group");
+cadmpeg_core::named_optional_field!(deserialize_touched, bool, "touched");
+cadmpeg_core::named_optional_field!(deserialize_offset_frame, Transform, "offset_frame");
+cadmpeg_core::named_optional_field!(deserialize_offset_frames, [Transform; 2], "offset_frames");
+cadmpeg_core::named_optional_field!(deserialize_angle, FiniteReal, "angle");
+cadmpeg_core::named_optional_field!(
+    deserialize_translation_offset,
+    [FiniteReal; 3],
+    "translation_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_angular_limits, JointLimits, "angular_limits");
+cadmpeg_core::named_optional_field!(deserialize_linear_limits, JointLimits, "linear_limits");
+cadmpeg_core::named_optional_field!(deserialize_distance, FiniteReal, "distance");
+cadmpeg_core::named_optional_field!(deserialize_distance2, FiniteReal, "distance2");

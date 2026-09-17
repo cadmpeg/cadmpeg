@@ -153,21 +153,21 @@ pub struct Body {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_transform"
     )]
     pub transform: Option<Transform>,
     /// Optional display name.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
     /// Optional display color.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_color"
     )]
     pub color: Option<Color>,
     /// Whether the source document displays the body. `None` when the source
@@ -175,7 +175,7 @@ pub struct Body {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
 }
@@ -428,14 +428,14 @@ pub struct Face {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
     /// Optional display color.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_color"
     )]
     pub color: Option<Color>,
     /// Optional geometric tolerance in the document's length unit.
@@ -650,14 +650,14 @@ pub struct PcurveUse {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_isoparametric"
     )]
     pub isoparametric: Option<bool>,
     /// Interval on the pcurve's own parameterization used by this coedge.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_parameter_range"
     )]
     pub parameter_range: Option<crate::geometry::DirectedParameterRange>,
 }
@@ -969,7 +969,7 @@ pub struct Coedge {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_use_curve"
     )]
     pub use_curve: Option<CoedgeUseCurve>,
 }
@@ -1046,13 +1046,13 @@ struct EdgeCarrierWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_curve"
     )]
     curve: Option<CurveId>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_param_range"
     )]
     param_range: Option<[f64; 2]>,
 }
@@ -1174,12 +1174,12 @@ pub struct Point {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
 }
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_tolerance,
     crate::scalar::PositiveReal,
     "tolerance"
@@ -1795,3 +1795,23 @@ mod tests {
         assert!(error.contains("boundary_role"), "{error}");
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_transform, Transform, "transform");
+cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_isoparametric, bool, "isoparametric");
+cadmpeg_core::named_optional_field!(
+    deserialize_parameter_range,
+    crate::geometry::DirectedParameterRange,
+    "parameter_range"
+);
+cadmpeg_core::named_optional_field!(deserialize_use_curve, CoedgeUseCurve, "use_curve");
+cadmpeg_core::named_optional_field!(deserialize_curve, CurveId, "curve");
+cadmpeg_core::named_optional_field!(deserialize_param_range, [f64; 2], "param_range");
+cadmpeg_core::named_optional_field!(
+    deserialize_source_object,
+    crate::provenance::SourceObjectAssociation,
+    "source_object"
+);

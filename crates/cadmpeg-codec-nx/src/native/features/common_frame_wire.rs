@@ -31,14 +31,14 @@ pub(super) struct CommonFrameWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_legacy_inactive_modules"
     )]
     pub legacy_inactive_modules: Option<bool>,
     /// Whether the operation modifies Parasolid data, when the stored field is boolean.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_modifies_parasolid_data"
     )]
     pub modifies_parasolid_data: Option<bool>,
     /// Exact two-byte `m_splitTrackingData` representation.
@@ -59,7 +59,7 @@ pub(super) struct CommonFrameWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Exact serialized frame byte length.
@@ -87,7 +87,7 @@ pub(super) struct TerminalFrameWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_immediate_common_frame"
     )]
     pub immediate_common_frame: Option<String>,
     /// Duplicated frame-local ordinal.
@@ -102,7 +102,7 @@ pub(super) struct TerminalFrameWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Absolute offset of the first local-ordinal token.
@@ -321,4 +321,57 @@ mod tests {
             );
         }
     }
+
+    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
+        let mut wire = serde_json::json!({});
+        wire[key] = serde_json::Value::Null;
+        let Err(refused) = serde_json::from_value::<T>(wire) else {
+            panic!("{key}: null was admitted")
+        };
+        refused.to_string()
+    }
+
+    fn states_the_key(key: &str, message: &str) {
+        assert!(
+            message.contains(key),
+            "the refusal of a null {key} states {message}"
+        );
+        assert!(
+            message.contains("it does not state null"),
+            "the refusal of a null {key} states {message}"
+        );
+    }
+
+    /// A top-level optional key on a frame wire names itself in its refusal.
+    #[test]
+    fn a_top_level_frame_key_names_itself_in_its_refusal() {
+        for key in [
+            "legacy_inactive_modules",
+            "modifies_parasolid_data",
+            "data_block",
+        ] {
+            states_the_key(key, &refusal::<super::CommonFrameWire>(key));
+        }
+        for key in ["immediate_common_frame", "data_block"] {
+            states_the_key(key, &refusal::<super::TerminalFrameWire>(key));
+        }
+    }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_legacy_inactive_modules,
+    bool,
+    "legacy_inactive_modules"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_modifies_parasolid_data,
+    bool,
+    "modifies_parasolid_data"
+);
+cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");
+cadmpeg_core::named_optional_field!(
+    deserialize_immediate_common_frame,
+    String,
+    "immediate_common_frame"
+);

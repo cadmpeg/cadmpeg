@@ -224,7 +224,7 @@ pub struct DatumReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_common_group"
     )]
     pub common_group: Option<u32>,
     /// Source-defined material-condition and translation modifiers.
@@ -372,28 +372,28 @@ pub enum PmiDefinition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_defined_unit"
         )]
         defined_unit: Option<PmiValue>,
         /// Explicit area-unit shape for the tolerance zone.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_defined_area_unit"
         )]
         defined_area_unit: Option<String>,
         /// Second unit for rectangular, cylindrical, or spherical zones.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_defined_area_second_unit"
         )]
         defined_area_second_unit: Option<PmiValue>,
         /// Referenced datum-system annotation.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_datum_system"
         )]
         datum_system: Option<PmiId>,
         /// Source-defined geometric-tolerance modifiers.
@@ -408,14 +408,14 @@ pub enum PmiDefinition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_nominal"
         )]
         nominal: Option<PmiValue>,
         /// Optional plus/minus or limits-and-fits tolerance.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_tolerance"
         )]
         tolerance: Option<DimensionTolerance>,
     },
@@ -425,14 +425,14 @@ pub enum PmiDefinition {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_text"
         )]
         text: Option<String>,
         /// Model-space graphical placement.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_placement"
         )]
         placement: Option<Transform>,
         /// Semantic annotations depicted by this presentation.
@@ -452,14 +452,14 @@ pub struct PmiAnnotation {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
     /// Whether the source explicitly displays this annotation occurrence.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
     /// Qualified model objects.
@@ -841,3 +841,20 @@ mod tests {
         assert_eq!(reference.precedence.get(), 1);
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_common_group, u32, "common_group");
+cadmpeg_core::named_optional_field!(deserialize_defined_unit, PmiValue, "defined_unit");
+cadmpeg_core::named_optional_field!(deserialize_defined_area_unit, String, "defined_area_unit");
+cadmpeg_core::named_optional_field!(
+    deserialize_defined_area_second_unit,
+    PmiValue,
+    "defined_area_second_unit"
+);
+cadmpeg_core::named_optional_field!(deserialize_datum_system, PmiId, "datum_system");
+cadmpeg_core::named_optional_field!(deserialize_nominal, PmiValue, "nominal");
+cadmpeg_core::named_optional_field!(deserialize_tolerance, DimensionTolerance, "tolerance");
+cadmpeg_core::named_optional_field!(deserialize_text, String, "text");
+cadmpeg_core::named_optional_field!(deserialize_placement, Transform, "placement");
+cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");

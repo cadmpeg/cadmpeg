@@ -99,13 +99,13 @@ struct PresentationDocumentWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_schema_version"
     )]
     schema_version: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_active_view"
     )]
     active_view: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -113,7 +113,7 @@ struct PresentationDocumentWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_native_ref"
     )]
     native_ref: Option<String>,
 }
@@ -220,7 +220,7 @@ pub struct ViewPresentation {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_object"
     )]
     pub object: Option<String>,
     /// Source order in the provider table.
@@ -229,28 +229,28 @@ pub struct ViewPresentation {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_expanded"
     )]
     pub expanded: Option<bool>,
     /// Persisted object visibility.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
     /// Display mode name or numeric code.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_display_mode"
     )]
     pub display_mode: Option<String>,
     /// Selection rendering mode.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_selection_style"
     )]
     pub selection_style: Option<String>,
     /// Line width in persisted display units.
@@ -269,7 +269,7 @@ pub struct ViewPresentation {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
 }
@@ -363,14 +363,14 @@ pub struct PresentationLayer {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_description"
     )]
     pub description: Option<String>,
     /// Explicit layer visibility; `false` means the layer is hidden.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
     /// Assigned items in deterministic projection order; order has no semantic meaning.
@@ -378,25 +378,25 @@ pub struct PresentationLayer {
     pub items: Vec<PresentationItem>,
 }
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_position,
     crate::units::FiniteVector<3>,
     "position"
 );
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_orientation,
     crate::units::NonzeroVector<4>,
     "orientation"
 );
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_line_width,
     crate::scalar::NonNegativeReal,
     "line_width"
 );
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_point_size,
     crate::scalar::NonNegativeReal,
     "point_size"
@@ -590,3 +590,14 @@ mod tests {
         assert!(document.states().is_empty());
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_schema_version, u32, "schema_version");
+cadmpeg_core::named_optional_field!(deserialize_active_view, String, "active_view");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
+cadmpeg_core::named_optional_field!(deserialize_expanded, bool, "expanded");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_display_mode, String, "display_mode");
+cadmpeg_core::named_optional_field!(deserialize_selection_style, String, "selection_style");
+cadmpeg_core::named_optional_field!(deserialize_description, String, "description");

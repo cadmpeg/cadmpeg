@@ -23,7 +23,7 @@ pub struct SubdSurface {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
 }
@@ -578,7 +578,7 @@ pub struct SubdVertex {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_secondary_grips"
     )]
     secondary_grips: Option<SubdVertexGripLayout>,
 }
@@ -589,7 +589,7 @@ pub struct SubdVertex {
 struct SubdVertexWire {
     point: Point3,
     tag: SubdVertexTag,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_secondary_grips")]
     secondary_grips: Option<SubdVertexGripLayout>,
 }
 
@@ -829,7 +829,7 @@ pub struct SubdEdge {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_knot_interval"
     )]
     knot_interval: Option<f64>,
     /// Sector coefficients at the two endpoints.
@@ -843,7 +843,7 @@ struct SubdEdgeWire {
     vertices: [u32; 2],
     sharpness: [f64; 2],
     tag: SubdEdgeTag,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_knot_interval")]
     knot_interval: Option<f64>,
     sector_coefficients: [f64; 2],
 }
@@ -985,3 +985,16 @@ pub struct SubdEdgeUse {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_source_object,
+    SourceObjectAssociation,
+    "source_object"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_secondary_grips,
+    SubdVertexGripLayout,
+    "secondary_grips"
+);
+cadmpeg_core::named_optional_field!(deserialize_knot_interval, f64, "knot_interval");

@@ -133,7 +133,7 @@ struct SpreadsheetWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_native_ref"
     )]
     native_ref: Option<String>,
 }
@@ -379,3 +379,6 @@ mod tests {
         assert_eq!(decoded, sheet);
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

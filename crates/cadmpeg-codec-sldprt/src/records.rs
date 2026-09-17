@@ -70,9 +70,9 @@ mod pmi_display_text_wire {
 
     #[derive(Deserialize)]
     pub(super) struct Wire {
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(default, deserialize_with = "deserialize_display_text")]
         display_text: Option<String>,
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(default, deserialize_with = "deserialize_display_text_offset")]
         display_text_offset: Option<u64>,
     }
 
@@ -102,6 +102,14 @@ mod pmi_display_text_wire {
             )),
         }
     }
+
+    // Each optional key below names itself in whatever it refuses.
+    cadmpeg_core::named_optional_field!(deserialize_display_text, String, "display_text");
+    cadmpeg_core::named_optional_field!(
+        deserialize_display_text_offset,
+        u64,
+        "display_text_offset"
+    );
 }
 
 fn default_pmi_item_count() -> u32 {
@@ -129,7 +137,7 @@ pub(crate) struct Configuration {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_index"
     )]
     pub(crate) source_index: Option<u32>,
     /// Source configuration name.
@@ -139,7 +147,7 @@ pub(crate) struct Configuration {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_material"
     )]
     pub(crate) material: Option<String>,
     /// Source custom-property name/value pairs local to this configuration.
@@ -246,9 +254,9 @@ mod tree_parent_wire {
 
     #[derive(Deserialize)]
     pub(super) struct Wire {
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(default, deserialize_with = "deserialize_tree_parent")]
         tree_parent: Option<String>,
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(default, deserialize_with = "deserialize_parent_source_id")]
         parent_source_id: Option<super::FeatureSource>,
     }
 
@@ -283,6 +291,14 @@ mod tree_parent_wire {
             (None, None) => None,
         })
     }
+
+    // Each optional key below names itself in whatever it refuses.
+    cadmpeg_core::named_optional_field!(deserialize_tree_parent, String, "tree_parent");
+    cadmpeg_core::named_optional_field!(
+        deserialize_parent_source_id,
+        super::FeatureSource,
+        "parent_source_id"
+    );
 }
 
 impl Feature {
@@ -317,7 +333,7 @@ pub(crate) struct Feature {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_id"
     )]
     pub(crate) source_id: Option<FeatureSource>,
     /// Position of this feature in the construction-history timeline, in
@@ -331,7 +347,7 @@ pub(crate) struct Feature {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_input_class"
     )]
     pub(crate) input_class: Option<String>,
     /// Whether this feature is suppressed and excluded from regeneration.
@@ -350,7 +366,7 @@ pub(crate) struct Feature {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_text"
     )]
     pub(crate) text: Option<String>,
     /// Source order of dimensions, nested feature nodes, and text content.
@@ -391,7 +407,7 @@ pub(crate) struct FeatureHistory {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_part_name"
     )]
     pub(crate) part_name: Option<String>,
     /// Source attributes on the `Keywords` root, excluding its `Name` key.
@@ -467,7 +483,7 @@ struct FeatureInputLaneWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_configuration"
     )]
     configuration: Option<String>,
     /// Complete native feature-input byte stream, retained undecoded for
@@ -560,7 +576,7 @@ pub(crate) struct FeatureInputBodySelection {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_mode"
     )]
     pub(crate) mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
 }
@@ -595,7 +611,7 @@ pub(crate) struct FeatureInputEdgeSelection {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_terminal_feature_ref"
     )]
     pub(crate) terminal_feature_ref: Option<String>,
 }
@@ -628,7 +644,7 @@ pub(crate) struct FeatureInputSurfaceSelection {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_terminal_feature_ref"
     )]
     pub(crate) terminal_feature_ref: Option<String>,
     /// Ordered typed entries in the persistent surface-component path.
@@ -660,7 +676,7 @@ mod surface_selection_kind_wire {
 
     #[derive(Deserialize)]
     pub(super) struct Wire {
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(default, deserialize_with = "deserialize_endpoint_selector")]
         endpoint_selector: Option<u32>,
     }
 
@@ -688,6 +704,9 @@ mod surface_selection_kind_wire {
             None => FeatureInputSurfaceSelectionKind::Component,
         })
     }
+
+    // Each optional key below names itself in whatever it refuses.
+    cadmpeg_core::named_optional_field!(deserialize_endpoint_selector, u32, "endpoint_selector");
 }
 
 /// One persistent identity of a surface produced by a regenerated feature.
@@ -719,7 +738,7 @@ pub(crate) struct FeatureInputComponentPathEntry {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_instance"
     )]
     pub(crate) instance: Option<u16>,
     /// Twelve-byte serialized component type identity.
@@ -728,7 +747,7 @@ pub(crate) struct FeatureInputComponentPathEntry {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_local_id"
     )]
     pub(crate) local_id: Option<u32>,
 }
@@ -754,7 +773,7 @@ pub(crate) struct FeatureInputRelationBinding {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_feature_ref"
     )]
     pub(crate) feature_ref: Option<String>,
 }
@@ -828,7 +847,7 @@ pub(crate) struct FeatureInputReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_feature_ref"
     )]
     pub(crate) feature_ref: Option<String>,
     /// Position among reference cells in stream order.
@@ -841,7 +860,7 @@ pub(crate) struct FeatureInputReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_class_ref"
     )]
     pub(crate) class_ref: Option<String>,
     /// Local object index carried by the cell.
@@ -864,7 +883,7 @@ pub(crate) struct FeatureInputName {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_object_id"
     )]
     pub(crate) object_id: Option<ObjectId>,
     /// Decoded object name.
@@ -934,7 +953,7 @@ pub(crate) struct FeatureInputScalar {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_feature_ref"
     )]
     pub(crate) feature_ref: Option<String>,
     /// Position among named scalars in stream order.
@@ -967,7 +986,7 @@ mod scalar_operands_wire {
 
     #[derive(Deserialize)]
     pub(super) struct Wire {
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(default, deserialize_with = "deserialize_entity_indices")]
         entity_indices: Option<Vec<u16>>,
         #[serde(default)]
         operands: Vec<FeatureInputOperand>,
@@ -1010,6 +1029,9 @@ mod scalar_operands_wire {
         }
         Ok(wire.operands)
     }
+
+    // Each optional key below names itself in whatever it refuses.
+    cadmpeg_core::named_optional_field!(deserialize_entity_indices, Vec<u16>, "entity_indices");
 }
 
 /// One native entity-reference cell attached to a feature-input scalar.
@@ -1027,7 +1049,7 @@ pub(crate) struct FeatureInputOperand {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_entity_ref"
     )]
     pub(crate) entity_ref: Option<String>,
 }
@@ -1086,7 +1108,7 @@ mod feature_class_wire {
     #[derive(Deserialize)]
     pub(super) struct Wire {
         name: String,
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(default, deserialize_with = "deserialize_role")]
         role: Option<FeatureInputClassRole>,
     }
 
@@ -1111,6 +1133,9 @@ mod feature_class_wire {
         }
         Ok(wire.name)
     }
+
+    // Each optional key below names itself in whatever it refuses.
+    cadmpeg_core::named_optional_field!(deserialize_role, FeatureInputClassRole, "role");
 }
 
 /// Design-intent role declared by a feature-input class.
@@ -1182,7 +1207,7 @@ pub(crate) struct SketchInputEntityWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_feature_ref"
     )]
     feature_ref: Option<String>,
     /// Position of this marker within the owning `FeatureInputLane`, in stream order.
@@ -1193,14 +1218,14 @@ pub(crate) struct SketchInputEntityWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_object_index"
     )]
     object_index: Option<u32>,
     /// Feature-local object identifier stored in the marker trailer.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_local_id"
     )]
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
@@ -1209,14 +1234,14 @@ pub(crate) struct SketchInputEntityWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_state_value"
     )]
     state_value: Option<f64>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_coordinates_m"
     )]
     coordinates_m: Option<[f64; 2]>,
     /// Resolved links and their selector from the reference-bearing layout.
@@ -1259,7 +1284,7 @@ mod sketch_input_links_wire {
     pub(super) struct Wire {
         #[serde(default)]
         links: Vec<SketchInputLink>,
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(default, deserialize_with = "deserialize_link_selector")]
         link_selector: Option<u16>,
     }
 
@@ -1289,6 +1314,9 @@ mod sketch_input_links_wire {
             )),
         }
     }
+
+    // Each optional key below names itself in whatever it refuses.
+    cadmpeg_core::named_optional_field!(deserialize_link_selector, u16, "link_selector");
 }
 
 impl SketchInputEntity {
@@ -2349,4 +2377,122 @@ mod tests {
         assert!(SketchInputKind::from_native_code(86).owns_constraint());
         assert!(!SketchInputKind::Point.owns_constraint());
     }
+
+    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
+        let mut wire = serde_json::json!({});
+        wire[key] = serde_json::Value::Null;
+        let Err(refused) = serde_json::from_value::<T>(wire) else {
+            panic!("{key}: null was admitted")
+        };
+        refused.to_string()
+    }
+
+    fn states_the_key(key: &str, message: &str) {
+        assert!(
+            message.contains(key),
+            "the refusal of a null {key} states {message}"
+        );
+        assert!(
+            message.contains("it does not state null"),
+            "the refusal of a null {key} states {message}"
+        );
+    }
+
+    /// Every flattened record reader names the key it refuses.
+    ///
+    /// Serde buffers a flattened field's keys into its own content map before
+    /// the reader runs, so no path a surrounding deserializer tracks reaches
+    /// inside one. The key reaches the refusal because the reading declaration
+    /// states it.
+    #[test]
+    fn a_flattened_record_reader_names_the_null_key_it_refuses() {
+        #[derive(serde::Deserialize)]
+        struct Display {
+            #[serde(flatten, with = "super::pmi_display_text_wire")]
+            #[allow(dead_code)]
+            value: Option<(String, u64)>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Parent {
+            #[serde(flatten, with = "super::tree_parent_wire")]
+            #[allow(dead_code)]
+            value: Option<super::TreeParent>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Selection {
+            #[serde(flatten, with = "super::surface_selection_kind_wire")]
+            #[allow(dead_code)]
+            value: super::FeatureInputSurfaceSelectionKind,
+        }
+        #[derive(serde::Deserialize)]
+        struct Operands {
+            #[serde(flatten, with = "super::scalar_operands_wire")]
+            #[allow(dead_code)]
+            value: Vec<super::FeatureInputOperand>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Class {
+            #[serde(flatten, with = "super::feature_class_wire")]
+            #[allow(dead_code)]
+            value: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct Links {
+            #[serde(flatten, with = "super::sketch_input_links_wire")]
+            #[allow(dead_code)]
+            value: Option<super::SketchInputLinks>,
+        }
+        for key in ["display_text", "display_text_offset"] {
+            states_the_key(key, &refusal::<Display>(key));
+        }
+        for key in ["tree_parent", "parent_source_id"] {
+            states_the_key(key, &refusal::<Parent>(key));
+        }
+        states_the_key(
+            "endpoint_selector",
+            &refusal::<Selection>("endpoint_selector"),
+        );
+        states_the_key("entity_indices", &refusal::<Operands>("entity_indices"));
+        states_the_key("role", &refusal::<Class>("role"));
+        states_the_key("link_selector", &refusal::<Links>("link_selector"));
+    }
+
+    /// A top-level optional key on a record names itself in its refusal.
+    #[test]
+    fn a_top_level_record_key_names_itself_in_its_refusal() {
+        for key in ["source_index", "material"] {
+            states_the_key(key, &refusal::<super::Configuration>(key));
+        }
+        for key in ["source_id", "input_class", "text"] {
+            states_the_key(key, &refusal::<super::Feature>(key));
+        }
+    }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_source_index, u32, "source_index");
+cadmpeg_core::named_optional_field!(deserialize_material, String, "material");
+cadmpeg_core::named_optional_field!(deserialize_source_id, FeatureSource, "source_id");
+cadmpeg_core::named_optional_field!(deserialize_input_class, String, "input_class");
+cadmpeg_core::named_optional_field!(deserialize_text, String, "text");
+cadmpeg_core::named_optional_field!(deserialize_part_name, String, "part_name");
+cadmpeg_core::named_optional_field!(deserialize_configuration, String, "configuration");
+cadmpeg_core::named_optional_field!(
+    deserialize_mode,
+    cadmpeg_ir::features::BodyRetentionMode,
+    "mode"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_terminal_feature_ref,
+    String,
+    "terminal_feature_ref"
+);
+cadmpeg_core::named_optional_field!(deserialize_instance, u16, "instance");
+cadmpeg_core::named_optional_field!(deserialize_local_id, u32, "local_id");
+cadmpeg_core::named_optional_field!(deserialize_feature_ref, String, "feature_ref");
+cadmpeg_core::named_optional_field!(deserialize_class_ref, String, "class_ref");
+cadmpeg_core::named_optional_field!(deserialize_object_id, ObjectId, "object_id");
+cadmpeg_core::named_optional_field!(deserialize_entity_ref, String, "entity_ref");
+cadmpeg_core::named_optional_field!(deserialize_object_index, u32, "object_index");
+cadmpeg_core::named_optional_field!(deserialize_state_value, f64, "state_value");
+cadmpeg_core::named_optional_field!(deserialize_coordinates_m, [f64; 2], "coordinates_m");

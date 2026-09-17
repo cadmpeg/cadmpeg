@@ -14,9 +14,10 @@ fail the static check when used as a read route.
 
 A second, independent rule runs over every crate: an optional key whose writer
 omits it for ``None`` (``skip_serializing_if = "Option::is_none"``) must read
-through ``cadmpeg_core::absent_key::present``, so an absent key is that key's
-one spelling of ``None`` and ``null`` is refused. A key that states neither the
-``default`` nor the helper is an undeclared key and is named here.
+through a reader declared by ``cadmpeg_core::named_optional_field!``, so an
+absent key is that key's one spelling of ``None``, ``null`` is refused, and the
+refusal names the key it refuses. A key that states neither the ``default`` nor
+such a reader is an undeclared key and is named here.
 
 An item that derives ``Deserialize`` passes when its serde attributes state one
 of:
@@ -1014,10 +1015,12 @@ def deserializer_macro_contracts(path):
                 r"\bT\s*::\s*deserialize\b", body
             ) else None
         else:
-            target = "deserialize_named_optional" if name == "named_optional_field" else "deserialize_named"
-            contract = "named" if re.search(
-                rf"\$crate\s*::\s*units\s*::\s*{target}\b", body
-            ) else None
+            target = (
+                r"\$crate\s*::\s*absent_key\s*::\s*named_present"
+                if name == "named_optional_field"
+                else r"\$crate\s*::\s*units\s*::\s*deserialize_named"
+            )
+            contract = "named" if re.search(rf"{target}\b", body) else None
         if name in contracts:
             # A same-named macro with a different body leaves no reliable
             # forwarding contract, including valid plus unproved bodies.
@@ -1054,7 +1057,9 @@ def deserializer_helpers(path, contracts=None):
         parts = list(split_metadata(args))
         if not parts:
             continue
-        name = strip_variant_attributes(parts[0]).strip()
+        # A shim whose value type mentions its container's type parameters
+        # names them after the shim: `deserialize_side<S>`.
+        name = strip_variant_attributes(parts[0]).strip().split("<", 1)[0].strip()
         if not re.fullmatch(r"[A-Za-z_]\w*", name):
             continue
         if call.group("macro") == "selection_field_deserializer":
@@ -1457,9 +1462,7 @@ QUALIFIED_KEYLESS_ADAPTERS = {
 OPTIONAL_TYPES = {"Option"}
 DELEGATING_TYPES = {"Box", "Rc", "Arc", "Pin", "RefCell", "Cell", "Mutex", "RwLock"}
 ABSENT_KEY_HELPERS = {
-    "crate::absent_key::present",
     "crate::absent_key::nullable",
-    "cadmpeg_core::absent_key::present",
     "cadmpeg_core::absent_key::nullable",
 }
 DISTINCT_MAP_HELPERS = {
@@ -1626,17 +1629,17 @@ def resolve_item(index, name, owner, ambiguities):
 ANY_ATTRIBUTE = re.compile(r"#\s*\[(?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*\]")
 ATTRIBUTE_GAP = re.compile(r"(?:\s|///[^\n]*|//![^\n]*|//[^\n]*)*\Z")
 OMITTED_OPTIONAL_KEY = re.compile(r'skip_serializing_if\s*=\s*"Option::is_none"')
-ABSENT_KEY_PRESENT = re.compile(
-    r'deserialize_with\s*=\s*"(?:crate|cadmpeg_core)::absent_key::present"'
-)
 DESERIALIZE_WITH = re.compile(r'deserialize_with\s*=\s*"([\w:]+)"')
 SERDE_WITH = re.compile(r'(?<!\w)with\s*=\s*"([\w:]+)"')
 ABSENT_KEY_NULLABLE = re.compile(
     r'deserialize_with\s*=\s*"(?:crate|cadmpeg_core)::absent_key::nullable"'
 )
 # The one workspace macro that declares a named reader forwarding to
-# ``absent_key::present``. Its expansion carries the same absence spelling.
-PRESENT_FORWARDER_MACRO = re.compile(r"named_optional_field!\s*\(\s*(\w+)")
+# ``absent_key::named_present``. Its expansion carries the same absence
+# spelling and names the key in whatever it refuses.
+PRESENT_FORWARDER_MACRO = re.compile(
+    r"named_optional_field!\s*\(\s*(?:pub\s*(?:\([^)]*\)\s*)?)?(\w+)"
+)
 PRESENT_FORWARDER_FN = re.compile(r"\bfn\s+(\w+)\s*<")
 SERDE_DEFAULT = re.compile(r"(?:^|[(,])\s*default\s*(?:[,)]|=)")
 # A flattened field has no key of its own, so an absent key names nothing
@@ -1723,7 +1726,7 @@ def struct_fields(body):
 
 
 def present_forwarders():
-    """Named readers, per crate, that forward to ``absent_key::present``."""
+    """Named readers, per crate, that forward to ``absent_key::named_present``."""
     forwarders = {}
     for path in absent_key_source_files():
         crate = Path(*path.parts[:path.parts.index("src")])
@@ -1739,7 +1742,7 @@ def present_forwarders():
             end = delimited_end(source, opening)
             if end is None:
                 continue
-            if "absent_key::present" in source[opening:end]:
+            if "absent_key::named_present" in source[opening:end]:
                 names.add(match.group(1))
     return forwarders
 
@@ -1943,7 +1946,7 @@ def reader_option_failures(path, item, owner, field, reader, forwarders):
             continue
         if f"{path.as_posix()}:{name}" in ABSENT_KEY_EXCEPTIONS:
             continue
-        declared = ABSENT_KEY_PRESENT.search(text) is not None or any(
+        declared = any(
             named.rsplit("::", 1)[-1] in forwarders
             for named in DESERIALIZE_WITH.findall(text)
         )
@@ -1951,16 +1954,16 @@ def reader_option_failures(path, item, owner, field, reader, forwarders):
             if declared:
                 continue
             spelling = (
-                "an omitted optional key states no absence spelling; read it "
-                "with cadmpeg_core::absent_key::present beside serde(default)"
+                "an omitted optional key states no absence spelling; declare it "
+                "with cadmpeg_core::named_optional_field! beside serde(default)"
             )
         else:
             if ABSENT_KEY_NULLABLE.search(text) or declared:
                 continue
             spelling = (
                 "a stated optional key states no absence spelling; read it "
-                "with cadmpeg_core::absent_key::nullable, or with "
-                "cadmpeg_core::absent_key::present beside serde(default)"
+                "with cadmpeg_core::absent_key::nullable, or declare it with "
+                "cadmpeg_core::named_optional_field! beside serde(default)"
             )
         found.append((
             path,
@@ -2037,8 +2040,6 @@ def absent_key_failures():
                             "serde(default), so its absence is no spelling at all",
                         ))
                     continue
-                if ABSENT_KEY_PRESENT.search(text):
-                    continue
                 named = [
                     reader.rsplit("::", 1)[-1]
                     for reader in DESERIALIZE_WITH.findall(text)
@@ -2049,8 +2050,8 @@ def absent_key_failures():
                     path,
                     item.line + item.body.count("\n", 0, offset),
                     f"{item.name}.{name}: an omitted optional key states no "
-                    "absence spelling; read it with "
-                    "cadmpeg_core::absent_key::present beside serde(default)",
+                    "absence spelling; declare it with "
+                    "cadmpeg_core::named_optional_field! beside serde(default)",
                 ))
     return found
 

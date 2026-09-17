@@ -357,10 +357,7 @@ pub(super) fn macro_helper_route_at(
         [prefix, module, name]
             if matches!(prefix.as_str(), "$crate" | "crate")
                 && module == "units"
-                && matches!(
-                    name.as_str(),
-                    "deserialize_named" | "deserialize_named_optional"
-                ) =>
+                && name == "deserialize_named" =>
         {
             Some(InputRoute::Keyless)
         }
@@ -373,10 +370,7 @@ pub(super) fn macro_helper_route_at(
         }
         _ => None,
     }?;
-    if !matches!(
-        function,
-        "deserialize_named" | "deserialize_named_optional" | "json_object" | "btree_map"
-    ) {
+    if !matches!(function, "deserialize_named" | "json_object" | "btree_map") {
         return None;
     }
     let Some(Node::Group(Delimiter::Parenthesis, arguments)) = nodes.get(position + 1) else {

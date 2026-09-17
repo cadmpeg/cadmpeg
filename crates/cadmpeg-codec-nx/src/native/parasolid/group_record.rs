@@ -49,7 +49,7 @@ pub(super) struct GroupWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_partition_stream_ordinal"
     )]
     partition_stream_ordinal: Option<u32>,
     xmt: u32,
@@ -153,3 +153,10 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_partition_stream_ordinal,
+    u32,
+    "partition_stream_ordinal"
+);

@@ -225,7 +225,7 @@ struct VariableBlendShapeWireTest {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_v_lower"
     )]
     v_lower: Option<f64>,
 }
@@ -1469,3 +1469,6 @@ fn the_ir_scalar_mints_name_no_native_sentinel() {
         Some(211)
     );
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_v_lower, f64, "v_lower");

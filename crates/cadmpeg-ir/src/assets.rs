@@ -86,14 +86,14 @@ pub struct Asset {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_name"
     )]
     pub name: Option<NonBlankString>,
     /// IANA media type when identified from the source container.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_media_type"
     )]
     pub media_type: Option<NonBlankString>,
     /// Embedded bytes or an external resource location.
@@ -102,7 +102,7 @@ pub struct Asset {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
 }
@@ -119,14 +119,14 @@ fn deserialize_uri<'de, D: serde::Deserializer<'de>>(
 #[serde(deny_unknown_fields)]
 struct AssetWire {
     id: AssetId,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_asset_wire_name")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<NonBlankString>"))]
     name: Option<String>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_asset_wire_media_type")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<NonBlankString>"))]
     media_type: Option<String>,
     content: AssetContent,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_native_ref")]
     native_ref: Option<String>,
 }
 
@@ -264,3 +264,10 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_name, NonBlankString, "name");
+cadmpeg_core::named_optional_field!(deserialize_media_type, NonBlankString, "media_type");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+cadmpeg_core::named_optional_field!(deserialize_asset_wire_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_asset_wire_media_type, String, "media_type");
