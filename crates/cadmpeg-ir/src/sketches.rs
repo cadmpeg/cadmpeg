@@ -1886,14 +1886,75 @@ pub struct SketchCircularPattern {
     angle_parameter: Option<ParameterId>,
     count_parameter: Option<ParameterId>,
     seed: Vec<SketchEntityId>,
-    instances: crate::features::NonEmptyMembers<SketchCircularPatternInstance>,
-    /// Instance count including the seed, proven to fit the IR width by
-    /// `new`, which is the only constructor. The field restates
-    /// `instances.len() + 1`, and it is stored because every derived spelling
-    /// states a refusal no population can reach: `new` proves the figure once,
-    /// and `SketchCircularPatternWire` carries no `count` key and refuses an
-    /// unknown one, so no document can state a figure that disagrees.
+    /// Instances after the seed, at a population whose count the IR width can
+    /// state. The type carries the bound and the figure, so the pattern
+    /// stores no count of its own.
+    instances: SeededMembers<SketchCircularPatternInstance>,
+}
+
+/// A nonempty population whose count, with the seed counted, fits the IR
+/// width.
+///
+/// The pattern states its instance count as the population plus the seed, in
+/// a `u32`. The bound therefore belongs on the population, not on the count:
+/// this type is the one place it is proven, `count` is exact for every value
+/// that exists, and a population the width cannot count is refused at
+/// construction. `TryFrom<Vec<T>>` is the only constructor, and the type
+/// hands out a slice, so no value can grow past the count it proved.
+#[derive(Debug, Clone, PartialEq)]
+struct SeededMembers<T> {
+    members: Vec<T>,
     count: u32,
+}
+
+impl<T> SeededMembers<T> {
+    /// The population with the seed counted.
+    fn count(&self) -> u32 {
+        self.count
+    }
+}
+
+impl<T> TryFrom<Vec<T>> for SeededMembers<T> {
+    type Error = &'static str;
+
+    fn try_from(members: Vec<T>) -> Result<Self, Self::Error> {
+        if members.is_empty() {
+            return Err("population states no member");
+        }
+        let Some(count) = u32::try_from(members.len())
+            .ok()
+            .and_then(|population| population.checked_add(1))
+        else {
+            return Err("population holds more members than the seeded count can state");
+        };
+        Ok(Self { members, count })
+    }
+}
+
+impl<T> std::ops::Deref for SeededMembers<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        &self.members
+    }
+}
+
+impl<T> IntoIterator for SeededMembers<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.members.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a SeededMembers<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.members.iter()
+    }
 }
 
 impl SketchCircularPattern {
@@ -1907,7 +1968,6 @@ impl SketchCircularPattern {
         seed: Vec<SketchEntityId>,
         instances: Vec<SketchCircularPatternInstance>,
     ) -> Option<Self> {
-        let count = u32::try_from(instances.len().checked_add(1)?).ok()?;
         let entity_arity = seed.len();
         if entity_arity == 0
             || instances
@@ -1934,8 +1994,7 @@ impl SketchCircularPattern {
             angle_parameter,
             count_parameter,
             seed,
-            instances: crate::features::NonEmptyMembers::try_from(instances).ok()?,
-            count,
+            instances: SeededMembers::try_from(instances).ok()?,
         })
     }
 
@@ -1953,12 +2012,11 @@ impl SketchCircularPattern {
 
     /// Number of instances, including the seed instance.
     ///
-    /// Stored at the IR width. `new` refuses a population whose count, seed
-    /// included, does not fit a `u32`, so the figure needs no cast and no
-    /// addition here.
+    /// The instance population carries the bound and states the figure, so
+    /// this derivation is total: no fold, no cast and no addition here.
     #[must_use]
     pub fn count(&self) -> u32 {
-        self.count
+        self.instances.count()
     }
 
     /// Seed entities in fixed order.

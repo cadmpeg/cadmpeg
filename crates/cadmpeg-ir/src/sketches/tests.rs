@@ -649,11 +649,11 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
     assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(ragged).is_err());
 }
 
-/// `count()` states the figure `new` proved at the IR width. The population
-/// is never narrowed a second time, and the stored figure survives the wire,
-/// which carries no count of its own.
+/// `count()` derives the figure from the instance population, which carries
+/// the bound and states the count. The figure survives the wire, which
+/// carries no count key of its own.
 #[test]
-fn a_circular_pattern_count_is_stored_at_the_ir_width() {
+fn a_circular_pattern_count_survives_a_wire_that_states_no_count() {
     use crate::scalar::Angle;
     use crate::sketches::{
         SketchCircularPattern, SketchCircularPatternInstance, SketchConstraintDefinitionInput,
@@ -685,6 +685,30 @@ fn a_circular_pattern_count_is_stored_at_the_ir_width() {
         panic!("circular pattern");
     };
     assert_eq!(pattern.count(), 3);
+}
+
+/// The bound is on the population's type. `SeededMembers` is the only way to
+/// build a circular pattern's instances; it refuses the empty population and
+/// one whose seeded count no `u32` can state, and its arithmetic is exact at
+/// the boundary.
+#[test]
+fn a_seeded_population_refuses_a_count_the_ir_width_cannot_state() {
+    use crate::sketches::SeededMembers;
+
+    assert!(SeededMembers::<()>::try_from(Vec::new()).is_err());
+    assert_eq!(
+        SeededMembers::try_from(vec![(); 1]).map(|members| members.count()),
+        Ok(2)
+    );
+    let widest = usize::try_from(u32::MAX).unwrap();
+    assert_eq!(
+        SeededMembers::try_from(vec![(); widest - 1]).map(|members| members.count()),
+        Ok(u32::MAX)
+    );
+    assert_eq!(
+        SeededMembers::try_from(vec![(); widest]).map(|members| members.count()),
+        Err("population holds more members than the seeded count can state")
+    );
 }
 
 #[test]
