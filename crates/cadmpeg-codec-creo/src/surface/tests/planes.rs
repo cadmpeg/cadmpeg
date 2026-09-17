@@ -1602,7 +1602,7 @@ fn a_surface_scalar_body_of_trailing_absent_slots_decodes() {
     assert_eq!(array.dimensions(), 12);
     assert_eq!(array.count(), 1);
     assert_eq!(array.values().len(), 12);
-    assert!(array.values().iter().all(|value| value.is_none()));
+    assert!(array.values().iter().all(Option::is_none));
 }
 
 #[test]

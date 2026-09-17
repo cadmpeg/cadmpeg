@@ -1036,7 +1036,6 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     assert_eq!(legacy.persistence.value_count(), 1);
     let classification = crate::dialect::classify(&scan);
     assert!(container::summarize(&scan, &classification)
-        .expect("the fixture states in-range sections")
         .notes
         .iter()
         .any(|note| {

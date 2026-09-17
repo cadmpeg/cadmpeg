@@ -195,7 +195,7 @@ fn scan_enumerates_and_classifies_sections() {
     assert_eq!(scan.framing.sections[1].name(), "AllFeatur");
     assert_eq!(scan.framing.sections[1].role(), SectionRole::ModelData);
     assert_eq!(scan.framing.sections[2].role(), SectionRole::Thumbnail);
-    assert!(container::has_thumbnail(&scan).expect("the fixture states in-range sections"));
+    assert!(container::has_thumbnail(&scan));
 }
 
 #[test]
@@ -293,8 +293,7 @@ fn scan_expands_toc_sized_unix_compress_payload() {
 
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
-    let summary =
-        container::summarize(&scan, &classification).expect("the fixture states in-range sections");
+    let summary = container::summarize(&scan, &classification);
     let cadmpeg_core::container::EntryStorage::Compressed {
         method,
         stored,
