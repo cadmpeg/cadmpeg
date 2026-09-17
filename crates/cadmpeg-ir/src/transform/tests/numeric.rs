@@ -1,19 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::math::Vector3;
 use crate::transform::{
-    scaled_finite, ExactSignedSum, Transform, TransformError, EXACT_PRODUCT_EXPONENT,
-    EXACT_SUM_WORDS, MIN_SIGNIFICAND_EXPONENT,
+    scaled_finite, ExactSignedSum, Transform, TransformError, MAX_SCALED_EXPONENT,
+    MIN_SCALED_EXPONENT, MIN_SIGNIFICAND_EXPONENT,
 };
-
-/// The least value `ScaledValue::exponent` holds: `ExactSignedSum::finish`
-/// states `EXACT_PRODUCT_EXPONENT + highest_bit + 1` with `highest_bit` at
-/// least zero, which is below everything `scaled_finite` can state.
-const MIN_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + 1;
-
-/// The greatest value `ScaledValue::exponent` holds: `ExactSignedSum::finish`
-/// states `EXACT_PRODUCT_EXPONENT + highest_bit + 2` in its rounding-carry arm,
-/// with `highest_bit` at most one below the accumulator's bit width.
-const MAX_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS as i32 * 64 + 1;
 
 const EPS_INVERSE_CHECK: f64 = 1.0e-12;
 const EPS_NORMAL_DIRECTION: f64 = 1.0e-15;
@@ -209,8 +199,8 @@ fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_
     let smallest_subnormal = f64::from_bits(1);
     let low = scaled_finite(smallest_subnormal).expect("finite value");
     let high = scaled_finite(f64::MAX).expect("finite value");
-    assert_eq!(low.exponent, MIN_SIGNIFICAND_EXPONENT + 1);
-    assert_eq!(high.exponent, 1024);
+    assert_eq!(low.exponent.0, MIN_SIGNIFICAND_EXPONENT + 1);
+    assert_eq!(high.exponent.0, 1024);
 
     // The two ends `ExactSignedSum::finish` reaches: three products of the
     // largest finite magnitude, and one product of two smallest subnormals.
@@ -226,9 +216,9 @@ fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_
     let range = MIN_SCALED_EXPONENT..=MAX_SCALED_EXPONENT;
     for value in [low, high, largest, smallest] {
         assert!(
-            range.contains(&value.exponent),
+            range.contains(&value.exponent.0),
             "exponent {} left {MIN_SCALED_EXPONENT}..={MAX_SCALED_EXPONENT}",
-            value.exponent
+            value.exponent.0
         );
     }
 
@@ -237,7 +227,7 @@ fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_
     let span = MAX_SCALED_EXPONENT - MIN_SCALED_EXPONENT;
     for left in [low, high, largest, smallest] {
         for right in [low, high, largest, smallest] {
-            let difference = left.exponent - right.exponent;
+            let difference = left.exponent.difference(right.exponent);
             assert!(
                 (-span..=span).contains(&difference),
                 "difference {difference} left -{span}..={span}"
@@ -254,7 +244,7 @@ fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_
         .max()
         .expect("nonempty set");
     for value in [low, high, largest, smallest] {
-        assert!(value.exponent - scale_exponent <= 0);
+        assert!(value.exponent.difference(scale_exponent) <= 0);
         let scaled = value.scaled_by(scale_exponent);
         assert!(scaled.is_finite(), "scaled value {scaled} is not finite");
     }
