@@ -439,6 +439,13 @@ pub struct SurfaceScan {
     /// Bounded named surface-prototype records from the separate invisible
     /// and construction geometry namespace.
     pub nonvisible_prototype_records: Vec<SurfacePrototypeRecord>,
+    /// Named prototype fields whose bounded scalar body the decoder refused,
+    /// each stating its record, field, declared slot count and the slot and
+    /// byte it refused at. The field bytes are retained opaque.
+    pub prototype_field_refusals: Vec<String>,
+    /// The same, for the separate invisible and construction geometry
+    /// namespace.
+    pub nonvisible_prototype_field_refusals: Vec<String>,
     /// Complete analytic carriers from legacy visible surface prototypes.
     pub legacy_carriers: Vec<crate::legacy_geometry::LegacySurfaceCarrier>,
 }
@@ -1297,12 +1304,15 @@ fn surface_prototype_count(sections: &[ScannedSection<'_>]) -> usize {
     total
 }
 
-fn surface_prototype_records(sections: &[ScannedSection<'_>]) -> Vec<SurfacePrototypeRecord> {
+fn surface_prototype_records(
+    sections: &[ScannedSection<'_>],
+    refusals: &mut crate::lane_refusal::LaneRefusals,
+) -> Vec<SurfacePrototypeRecord> {
     let mut records = Vec::new();
     for section in sections {
         let section_bytes = section.region;
         records.extend(
-            surface::named_prototype_records(section_bytes)
+            surface::named_prototype_records(section_bytes, refusals)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.section.offset();
@@ -2501,9 +2511,14 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
         &cross_section_plane_local_systems,
     );
     let surface_prototype_count = surface_prototype_count(&model_geometry_sections);
-    let nonvisible_surface_prototype_records =
-        surface_prototype_records(&nonvisible_geometry_sections);
-    let surface_prototype_records = surface_prototype_records(&model_geometry_sections);
+    let mut nonvisible_prototype_refusals = crate::lane_refusal::LaneRefusals::new();
+    let nonvisible_surface_prototype_records = surface_prototype_records(
+        &nonvisible_geometry_sections,
+        &mut nonvisible_prototype_refusals,
+    );
+    let mut prototype_refusals = crate::lane_refusal::LaneRefusals::new();
+    let surface_prototype_records =
+        surface_prototype_records(&model_geometry_sections, &mut prototype_refusals);
     let nonvisible_curve_prototypes = curve_prototypes(&nonvisible_geometry_sections);
     let curve_prototypes = curve_prototypes(&model_geometry_sections);
     let cross_section_curve_prototypes = cross_section_curve_prototypes(&sections);
@@ -2732,6 +2747,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
             prototype_count: surface_prototype_count,
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,
+            prototype_field_refusals: prototype_refusals.take_records(),
+            nonvisible_prototype_field_refusals: nonvisible_prototype_refusals.take_records(),
             legacy_carriers: legacy_geometry.carriers,
         },
         planes: PlaneScan {

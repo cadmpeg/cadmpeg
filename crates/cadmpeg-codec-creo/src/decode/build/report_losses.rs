@@ -626,6 +626,18 @@ pub(super) fn push_carrier_transfer_notes(
 }
 
 pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &ContainerScan) {
+    // Named prototype fields whose bounded scalar body the decoder refused.
+    // The field bytes are retained opaque; the note states which record and
+    // field, and the slot and byte the refusal stands at.
+    for refusal in scan
+        .surfaces
+        .prototype_field_refusals
+        .iter()
+        .chain(&scan.surfaces.nonvisible_prototype_field_refusals)
+    {
+        losses.push(CreoLossCode::SurfacePrototypeFieldRetained.note(refusal.clone()));
+    }
+
     // The specific undecoded PSB layers that gate per-instance geometry.
     losses.push(CreoLossCode::GeometryInstanceCarriersGated.note(
         "Additional model-space carriers are gated by unresolved lane-specific scalar \
