@@ -644,8 +644,9 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
-        crate::container::Section::new("VisibGeom".to_string(), 0, 1_000, None, &[0u8; 1_000])
-            .expect("section extent"),
+        crate::container::Section::scan("VisibGeom".to_string(), 0, 1_000, None, &[0u8; 1_000])
+            .expect("section extent")
+            .section,
     );
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {

@@ -622,21 +622,22 @@ fn a_section_extent_the_file_does_not_hold_is_not_a_section() {
 
     // One byte past the last byte of the file.
     assert!(
-        container::Section::new("Geomlists".to_string(), 0, data.len() + 1, None, data).is_none()
+        container::Section::scan("Geomlists".to_string(), 0, data.len() + 1, None, data).is_none()
     );
 
     // An offset and a length that state no address between them: the end is
     // before the offset, which is what an overflowing `offset + length` leaves.
     assert!(
-        container::Section::new("Geomlists".to_string(), usize::MAX - 3, 12, None, data).is_none()
+        container::Section::scan("Geomlists".to_string(), usize::MAX - 3, 12, None, data).is_none()
     );
 }
 
 #[test]
 fn a_section_that_ends_on_the_last_byte_is_admitted() {
     let data = b"#Geomlists\n0123";
-    let section = container::Section::new("Geomlists".to_string(), 0, data.len(), None, data)
-        .expect("section extent");
+    let section = container::Section::scan("Geomlists".to_string(), 0, data.len(), None, data)
+        .expect("section extent")
+        .section;
 
     assert_eq!(section.offset(), 0);
     assert_eq!(section.length(), data.len());
@@ -647,11 +648,29 @@ fn a_section_that_ends_on_the_last_byte_is_admitted() {
     );
 }
 
+/// Inside the scan a section carries the bytes it was admitted against, so a
+/// reader reads them with no second bound and no `Option`. The reader below
+/// takes `ScannedSection`; the owned `Section` carries no region and does not
+/// compile in its place.
+#[test]
+fn an_in_scan_reader_reads_the_region_its_section_was_admitted_against() {
+    let data = b"#VisibGeom\nsrf_array\0";
+    let scanned = container::Section::scan("VisibGeom".to_string(), 0, data.len(), None, data)
+        .expect("section extent");
+    assert_eq!(scanned.region, data.as_slice());
+
+    let selected = super::model_geometry_sections(std::slice::from_ref(&scanned));
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].section.name(), "VisibGeom");
+    assert_eq!(selected[0].region, data.as_slice());
+}
+
 #[test]
 fn a_section_contains_its_own_offset_and_every_byte_before_its_end() {
     let data = b"0123#Geomlists\n0123";
-    let section = container::Section::new("Geomlists".to_string(), 4, data.len(), None, data)
-        .expect("section extent");
+    let section = container::Section::scan("Geomlists".to_string(), 4, data.len(), None, data)
+        .expect("section extent")
+        .section;
 
     assert!(!section.contains(section.offset() - 1));
     assert!(section.contains(section.offset()));
