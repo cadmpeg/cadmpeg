@@ -2120,15 +2120,15 @@ mod tests {
     /// slot readers rest on that, so no caller tests the token for emptiness.
     #[test]
     fn a_surface_row_lane_decode_advances_inside_the_body() {
-        let cache = ScalarCache::from_section(&[
-            0x46, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x46, 0x11, 0x12, 0x13, 0x14, 0x15,
-            0x16, 0x17,
-        ]);
         // The second byte selects several arms, so it varies over the bytes
         // those arms name as well as over ordinary payload.
         const SECOND: [u8; 12] = [
             0x00, 0x01, 0x0e, 0x73, 0x92, 0xa0, 0xbb, 0xda, 0xe0, 0xe3, 0xf1, 0xf8,
         ];
+        let cache = ScalarCache::from_section(&[
+            0x46, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x46, 0x11, 0x12, 0x13, 0x14, 0x15,
+            0x16, 0x17,
+        ]);
         for opener in 0..=u8::MAX {
             for second in SECOND {
                 for length in 1..12usize {
