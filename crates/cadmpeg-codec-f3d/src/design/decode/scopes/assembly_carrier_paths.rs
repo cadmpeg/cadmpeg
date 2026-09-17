@@ -327,6 +327,7 @@ fn exact_class_363_node_frame(
         bytes,
         start.checked_add(class_363_child::LEADING_REFERENCE)?,
     )?;
+    // discarded-value: the leading record's frame is checked, not read; ? states the refusal
     let _ = exact_class_264_record_frame(
         bytes,
         records,

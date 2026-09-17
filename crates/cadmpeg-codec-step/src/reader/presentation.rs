@@ -1173,6 +1173,7 @@ fn find_color(
                 .flat_map(|partial| partial.parameters.iter())
                 .flat_map(references)
             {
+                // discarded-value: caching the colour and recording its losses is the whole effect; a record of an incompatible domain states no colour of its own
                 let _ = find_color(
                     reference,
                     exchange,

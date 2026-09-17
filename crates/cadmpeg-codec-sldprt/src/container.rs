@@ -624,6 +624,7 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
     }
     let payload_start = off + block_hdr::LEN + pre;
     let payload_end = payload_start.checked_add(comp)?;
+    // discarded-value: the payload range is proven to lie in the block; ? states the refusal and the slice has no reader
     let _ = bytes.get(payload_start..payload_end)?;
     Some((
         BlockFrame {

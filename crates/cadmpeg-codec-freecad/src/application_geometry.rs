@@ -151,6 +151,7 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
             reader.index(byte_order, point_count, "mesh facet point")?,
         ];
         for _ in 0..3 {
+            // discarded-value: the three facet padding words are skipped, not read; ? states the truncation refusal
             let _ = reader.u32(byte_order)?;
         }
         triangles.push(triangle);

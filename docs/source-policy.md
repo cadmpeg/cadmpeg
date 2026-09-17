@@ -14,6 +14,8 @@ each violation by rule, file, line, and explanation.
 - Tolerances from `1e-6` through `1e-12` use named constants or statics.
 - Vector repeats use literal sizes, admitted collection lengths, or checked
   allocation. This check recognizes syntax; it does not prove count safety.
+- A production `let _ =` states why the value it drops has no reader. Sites
+  with no reason fail.
 - Unit tests belong to their production owner. Crate-root `src/tests.rs` and
   test-only `#[path]` module includes are prohibited.
 - Test files and inline test modules have a 2,000-line limit. Golden test files
@@ -35,6 +37,24 @@ representations and `packed-color-order` for in-memory color sort keys. Neither
 permits an ordinary standard-width file read. Reviewers must verify that the
 reason matches the operation. Unknown or stale exceptions fail. Comments inside
 Rust strings do not grant exceptions.
+
+## Discarded values
+
+`let _ = ...` and `let _: T = ...` drop a value the code has already computed.
+Most such sites are a refusal to thread through `?` or a binding to delete. A
+site that survives states its reason in a standalone line comment immediately
+above it, which admits exactly one discard on the next line:
+
+```rust
+// discarded-value: the overflow test is the whole effect; ? states the refusal
+let _ = self.position().checked_add(len).ok_or_else(|| error())?;
+```
+
+The reason is free prose and must not be empty. Stale reasons — a comment with
+no discard on the next line — fail, and comments inside Rust strings grant
+nothing. Fuzz entry-point files are listed in the checker with the reason they
+are outside the rule: such a wrapper's whole contract is to run a parser over
+arbitrary bytes and drop the answer.
 
 ## Scope and limits
 

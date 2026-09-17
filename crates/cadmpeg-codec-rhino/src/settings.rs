@@ -1829,6 +1829,7 @@ pub(crate) fn parse_direct_linetype<'a>(
                 }
             }
             if version.1 >= 3 && item == 6 {
+                // discarded-value: the item's flag is skipped, not read; ? states the truncation refusal
                 let _ = payload.bool()?;
                 let _next_item = payload.u8()?;
             }
@@ -1882,6 +1883,7 @@ pub(crate) fn parse_direct_section_style<'a>(
         item = payload.u8()?;
     }
     if item == 3 {
+        // discarded-value: the item's flag is skipped, not read; ? states the truncation refusal
         let _ = payload.bool()?;
         item = payload.u8()?;
     }
@@ -1904,6 +1906,7 @@ pub(crate) fn parse_direct_section_style<'a>(
         item = payload.u8()?;
     }
     if item == 7 {
+        // discarded-value: the item's value is skipped, not read; ? states the truncation refusal
         let _ = payload.i32()?;
         item = payload.u8()?;
     }

@@ -741,6 +741,7 @@ fn validate_brep_topology(
             )));
         }
         if body.kind == BodyKind::Solid {
+            // discarded-value: a solid region must state an exterior shell; ? states the refusal and the split has no reader here
             let _ = solid_shell_roles(region)?;
         }
         if body.kind == BodyKind::Sheet && region.shells.len() != 1 {

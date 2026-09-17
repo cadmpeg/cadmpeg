@@ -752,6 +752,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
+        // discarded-value: the overflow test is the whole effect; ? states the refusal and the sum has no reader
         let _ = self.position().checked_add(len).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
         })?;
@@ -797,6 +798,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn peek_u32_at(&self, relative: usize, field: &str) -> Result<u32, CodecError> {
+        // discarded-value: the overflow test is the whole effect; ? states the refusal and the sum has no reader
         let _ = self.position().checked_add(relative).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
         })?;
@@ -848,6 +850,7 @@ impl<'a> Cursor<'a> {
             CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
         })?;
         ctx.charge_retained(len as u64, "retain UFRxDoc string")?;
+        // discarded-value: the overflow test is the whole effect; ? states the refusal and the sum has no reader
         let _ = self.position().checked_add(len).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
         })?;
