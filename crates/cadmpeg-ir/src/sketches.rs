@@ -1957,9 +1957,18 @@ impl<'a, T> IntoIterator for &'a SeededMembers<T> {
     }
 }
 
+/// The refusal every arity and ownership check of a circular pattern states.
+const CIRCULAR_PATTERN_ARITY: &str =
+    "circular pattern seed and instances must share one fixed positive entity arity over distinct entities";
+
 impl SketchCircularPattern {
     /// Construct a non-empty pattern whose instances have one fixed positive
     /// entity arity.
+    ///
+    /// This is the recognizer shape, for a caller that holds no channel to
+    /// state a cause in. The route that has one is
+    /// `TryFrom<SketchCircularPatternWire>`, which states the cause
+    /// [`Self::admit`] gives.
     pub fn new(
         center: SketchEntityId,
         angle: Angle,
@@ -1968,13 +1977,38 @@ impl SketchCircularPattern {
         seed: Vec<SketchEntityId>,
         instances: Vec<SketchCircularPatternInstance>,
     ) -> Option<Self> {
+        Self::admit(
+            center,
+            angle,
+            angle_parameter,
+            count_parameter,
+            seed,
+            instances,
+        )
+        .ok()
+    }
+
+    /// Admit the pattern, naming the cause of every refusal.
+    ///
+    /// The population bound is the one `SeededMembers` proves, and its two
+    /// texts are the ones this route states: an empty `instances` array is
+    /// refused as a population that states no member, not as an arity
+    /// disagreement.
+    fn admit(
+        center: SketchEntityId,
+        angle: Angle,
+        angle_parameter: Option<ParameterId>,
+        count_parameter: Option<ParameterId>,
+        seed: Vec<SketchEntityId>,
+        instances: Vec<SketchCircularPatternInstance>,
+    ) -> Result<Self, &'static str> {
         let entity_arity = seed.len();
         if entity_arity == 0
             || instances
                 .iter()
                 .any(|instance| instance.entities.len() != entity_arity)
         {
-            return None;
+            return Err(CIRCULAR_PATTERN_ARITY);
         }
         let mut entities = std::collections::HashSet::new();
         if seed
@@ -1986,15 +2020,15 @@ impl SketchCircularPattern {
             )
             .any(|entity| entity == &center || !entities.insert(entity))
         {
-            return None;
+            return Err(CIRCULAR_PATTERN_ARITY);
         }
-        Some(Self {
+        Ok(Self {
             center,
             angle,
             angle_parameter,
             count_parameter,
             seed,
-            instances: SeededMembers::try_from(instances).ok()?,
+            instances: SeededMembers::try_from(instances)?,
         })
     }
 
@@ -2159,16 +2193,13 @@ impl TryFrom<SketchCircularPatternWire> for SketchCircularPattern {
     type Error = &'static str;
 
     fn try_from(wire: SketchCircularPatternWire) -> Result<Self, Self::Error> {
-        Self::new(
+        Self::admit(
             wire.center,
             wire.angle,
             wire.angle_parameter,
             wire.count_parameter,
             wire.seed,
             wire.instances,
-        )
-        .ok_or(
-            "circular pattern seed and instances must share one fixed positive entity arity over distinct entities",
         )
     }
 }
