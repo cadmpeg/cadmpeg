@@ -50,9 +50,17 @@ impl AsmHistory {
 struct AsmHistorySerde {
     id: String,
     byte_offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     stream_size: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     #[serde(alias = "high_water_mark")]
     history_entry_count: Option<i64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -212,12 +220,24 @@ struct AsmDeltaStateWire {
     state_id: i64,
     version_flag: i64,
     state_flag: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     previous_ref: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     next_ref: Option<i64>,
     node_index: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     partner_ref: Option<i64>,
     owner_ref: i64,
     #[serde(default)]
@@ -234,10 +254,18 @@ struct AsmDeltaStateWire {
     topology_cache: AsmTopologyCacheKind,
     /// Stable `RecordTable` identities emitted by the ordinary B-rep decoder for
     /// this historical state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     topology: Option<AsmHistoricalTopology>,
     /// Forward change from the state reached by `next_ref` to this state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     transition: Option<AsmHistoricalTransition>,
 }
 
@@ -481,7 +509,11 @@ pub(crate) struct AsmHistoricalCarrierBinding {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalOptionalCarrierBinding {
     pub entity: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub carrier: Option<i64>,
 }
 
@@ -489,7 +521,11 @@ pub(crate) struct AsmHistoricalOptionalCarrierBinding {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTransition {
     /// Older state identity; absent only at the end of the reverse-history chain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub previous_state_id: Option<i64>,
     /// Changes across the complete normalized `RecordTable`.
     pub records: AsmHistoricalEntityDelta,
@@ -571,7 +607,11 @@ struct AsmHistoryRecordWire {
     /// Construction-history revision identity paired from the ordered
     /// old-reference run; absent only for the stream terminator or an opaque
     /// snapshot whose pairing cannot be established.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     revision_id: Option<i64>,
     /// Snapshot-local record ordinal. This is not the revision identity.
     index: u64,
@@ -580,7 +620,11 @@ struct AsmHistoryRecordWire {
     byte_offset: u64,
     name: String,
     /// Framing failure that forced this span to remain opaque.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     framing_error: Option<String>,
     /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -698,9 +742,17 @@ struct AsmEntityChangeSerde {
     parent: String,
     byte_offset: u64,
     kind: AsmEntityChangeKindWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     old_ref: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     new_ref: Option<i64>,
 }
 

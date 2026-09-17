@@ -26,7 +26,11 @@ struct EdgeDefinitionWire {
     class: ConsolidatedEdgeDefinitionClass,
     header_token: u32,
     payload: Vec<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     data: Option<ConsolidatedEdgeDefinitionData>,
 }
 

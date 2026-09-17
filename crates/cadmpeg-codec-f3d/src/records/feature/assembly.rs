@@ -495,18 +495,42 @@ struct DesignAssemblyAlignmentSerde {
     offset: [f64; 3],
     owner_record_indices: Vec<u32>,
     value_offsets: Vec<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     legacy_operand_carriers: Option<[DesignAssemblyLegacyOperandWire; 2]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     solved_frame: Option<DesignAssemblySolvedFrame>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     operand_qualifiers: Option<[DesignAssemblyOperandQualifier; 2]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     #[serde(alias = "angular_limits")]
     limits: Option<DesignAssemblyLimits>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     joint_origin_scope_record_index: Option<u32>,
 }
 
@@ -815,16 +839,32 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     /// Byte offset of `external_link_name`.
     external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     external_property_key_offset: Option<u64>,
     /// Optional referenced-document version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     external_version_urn: Option<String>,
     /// Byte offset of `external_version_urn` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     external_version_urn_offset: Option<u64>,
     /// Embedded record that carries the selected occurrence role.
     role_record_index: u32,

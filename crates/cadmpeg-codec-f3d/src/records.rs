@@ -511,7 +511,11 @@ pub struct SketchCurveLink {
     pub ref_b: u64,
     /// Which of the sketch curve's two senses this link takes, `0` or `1`.
     /// Absent when the source record leaves the sense unconstrained.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub sense: Option<SketchLinkSense>,
     /// Source role tag distinguishing how the sketch curve participates in the link
     /// (e.g. profile edge vs. construction reference).
@@ -740,25 +744,45 @@ struct ConstructionRecipeWire {
     /// Byte offset of this recipe's family marker in its Design `BulkStream`.
     pub byte_offset: u64,
     /// Byte offset of `record_index` in the Design `BulkStream`, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub record_index_offset: Option<u64>,
     /// Topology kind this recipe regenerates on replay.
     pub kind: ConstructionRecipeKind,
     /// Design entity id of the body this recipe is keyed to, if the source record
     /// carried a `generic_tag_attrib_def` construction id; `None` for body-less recipes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub design_id: Option<String>,
     /// Byte offset of `design_id` in the Design `BulkStream`, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub design_id_offset: Option<u64>,
     /// Selector following the Design entity id, when the recipe carries that id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub design_selector: Option<ConstructionRecipeSelector>,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub recipe_index: u32,
     /// Source `BulkStream` record index this recipe was decoded from, when the
     /// stream states one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub record_index: Option<i32>,
 }
 
@@ -1171,21 +1195,41 @@ struct DesignParameterSerde {
     byte_offset: u64,
     class_tag: String,
     record_index: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     family_discriminator: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     family_discriminator_offset: Option<u64>,
     source_ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     owner_record_index: Option<u32>,
     expression: String,
     expression_offset: u64,
     source_kind: String,
     source_kind_offset: u64,
     kind: DesignParameterKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     unit: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     unit_offset: Option<u64>,
     name: String,
     name_offset: u64,
@@ -1490,7 +1534,11 @@ pub struct DesignParameterOwnerWire {
     /// Native owner ordering value.
     pub owned_ordinal: u32,
     /// Source owner-frame variant flag when the frame carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub variant: Option<u8>,
     /// Paired indexed record following the parameter record.
     pub companion_record_index: u32,
@@ -1644,10 +1692,18 @@ pub struct DesignParameterCompanionWire {
     #[serde(alias = "opaque_value_offset")]
     pub timestamp_micros_offset: u64,
     /// First byte owned after the fixed companion prefix, when bound.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub payload_byte_offset: Option<u64>,
     /// Number of bytes owned before the next sibling Design record, when bound.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub payload_byte_length: Option<u64>,
     /// Construction recipes contained by the owned payload, in byte order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2004,9 +2060,17 @@ struct DesignDimensionLocusPairWire {
     class_tag: String,
     record_index: u32,
     frame_length: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     opaque_index: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     opaque_index_offset: Option<u64>,
     first_geometry_record_index: u32,
     first_geometry_reference_offset: u64,
@@ -2430,7 +2494,11 @@ struct DesignDimensionAnnotationFrameWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
     /// Companion record containing this frame, absent before the first companion in a scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     companion_record_index: Option<u32>,
     /// Companion record of the dimension parameter governed by this frame.
     governing_companion_record_index: u32,
@@ -3099,12 +3167,20 @@ struct DesignSketchPlacementWire {
     /// Owning parameter-scope record; absent when the sketch has no parameter
     /// scope. A localized Sketch scope can own a member-run head placement
     /// through record interval order without directly referencing it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     entity_id: String,
     /// Typed sketch-container visibility for the placed sketch entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     visibility: Option<DesignSketchVisibility>,
     /// Byte offset of the primary indexed record header.
     byte_offset: u64,
@@ -3117,7 +3193,11 @@ struct DesignSketchPlacementWire {
     /// Row-major local-to-model affine transform.
     transform: [[f64; 4]; 4],
     /// Byte offset of the explicit 16-f64 matrix; absent for the compact identity form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     transform_offset: Option<u64>,
     /// Per-file dynamic class tag of the paired header.
     paired_class_tag: String,
@@ -3496,16 +3576,32 @@ struct DesignMaterialAssignmentWire {
     /// Byte offset of the UTF-16 visual-token code units.
     pub visual_guid_offset: u64,
     /// Physical-material token, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub physical_token: Option<String>,
     /// Byte offset of the UTF-16 physical token, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub physical_token_offset: Option<u64>,
     /// Visual preset name, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visual_preset: Option<String>,
     /// Byte offset of the UTF-16 preset name, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visual_preset_offset: Option<u64>,
 }
 
@@ -3691,10 +3787,18 @@ struct SegmentTypeWire {
     pub type_guid_offset: u64,
     /// GUID of this type's base type; `None` for a root type, whose stored base
     /// GUID is the empty string.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub base_type_guid: Option<String>,
     /// Byte offset of the base-type-GUID bytes, when the entry names one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub base_type_guid_offset: Option<u64>,
     /// Record version of this type.
     pub version: u32,
@@ -4132,16 +4236,32 @@ struct DesignEntityHeaderWire {
     optional_slot_present: bool,
     /// Add-in module of the `MetaStream` type whose entity-id list contains this
     /// header's entity, when the `MetaStream` registers that entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     module: Option<String>,
     /// Index of an associated `BulkStream` record, when the header carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     record_reference: Option<u32>,
     /// Byte offset of `record_reference` in the Design `BulkStream`, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     record_reference_offset: Option<u64>,
     /// Declared count of reference entries the header claims to own, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     declared_reference_count: Option<usize>,
     /// Padded record-reference run owned by a sketch entity container.
     #[serde(default)]
@@ -5097,18 +5217,34 @@ struct DesignMeshBodyWire {
     /// Fixed Scene-state record owned by this mesh body.
     scene_state_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     scene_state_bounds: Option<DesignMeshSceneBoundsWire>,
     /// Scene node connecting `body_record` to its state and auxiliary cache.
     scene_node_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     scene_node_bounds: Option<DesignMeshSceneBoundsWire>,
     /// Optional row-major affine transform carried by the placed Scene-node form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     scene_node_transform: Option<MeshAffineTransform>,
     /// Byte offset of `scene_node_transform` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     scene_node_transform_offset: Option<u64>,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
     scene_auxiliary_record: DesignMeshRecordIdentity,
@@ -5123,7 +5259,11 @@ struct DesignMeshBodyWire {
     fusion_uuid: DesignGuidText,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     container_mesh_uuid: Option<DesignMeshUuid>,
     /// Byte offset of the ASCII `fusion_uuid` payload.
     fusion_uuid_offset: u64,
@@ -5154,7 +5294,11 @@ struct DesignMeshBodyWire {
     /// Byte offset of the Scene node's auxiliary-record reference.
     scene_auxiliary_reference_offset: u64,
     /// Neutral tessellation projected from the joined container, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     tessellation_id: Option<String>,
 }
 
@@ -6940,7 +7084,11 @@ struct SketchRelationSerde {
     pub auxiliary_references: Vec<u32>,
     #[serde(default)]
     pub auxiliary_reference_offsets: Vec<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub rectangular_counted_reference_count: Option<u32>,
     pub members: Vec<u32>,
     #[serde(default)]
@@ -7362,30 +7510,70 @@ struct SketchTextSerde {
     class_tag: String,
     class_version: u32,
     byte_offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     entity_genesis: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     persistent_id: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     base_id: Option<u64>,
     text: String,
     font_family: String,
     font_weight: i32,
     height: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     width_factor: Option<f64>,
     color: Color,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     anchor: Option<Point2>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     rotation: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     horizontal_alignment: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     vertical_alignment: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     first_reference: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     second_reference: Option<u32>,
     #[serde(with = "cadmpeg_ir::bytes")]
     raw_bytes: Vec<u8>,
@@ -8053,16 +8241,28 @@ enum SketchPointRecordFormSerde {
 struct SketchPointSerde {
     id: String,
     record_index: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     owner_reference: Option<u32>,
     class_tag: String,
     byte_offset: u64,
     coordinate_offset: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     entity_genesis: Option<u64>,
     #[serde(default)]
     record_form: SketchPointRecordFormSerde,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     persistent_id: Option<u64>,
     paired_reference: u32,
     #[serde(default, skip_serializing_if = "sketch_point_flags_are_zero")]
@@ -8070,7 +8270,11 @@ struct SketchPointSerde {
     coordinates: Point2,
     #[serde(default)]
     depth: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     closure: Option<SketchPointClosureSerde>,
     companion: SketchPointCompanionWire,
 }
@@ -8279,7 +8483,11 @@ pub struct SketchCurveIdentity {
     /// Index of this identity record within the `BulkStream` tree.
     pub record_index: u32,
     /// Direct owning-sketch backlink when the curve record form carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     pub class_tag: DesignClassTag,
@@ -8288,7 +8496,11 @@ pub struct SketchCurveIdentity {
     /// Byte offset of the fixed analytic geometry payload relative to the record start.
     pub geometry_offset: u32,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the curve identities.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub entity_genesis: Option<u64>,
     /// Primary persistent identifier of the source sketch curve.
     pub primary_id: std::num::NonZeroU64,
@@ -8297,7 +8509,11 @@ pub struct SketchCurveIdentity {
     pub secondary_id: u64,
     /// Exact analytic geometry carried by this sketch-curve record, when the
     /// decoder recovered one; `None` when the geometry subtype was not decoded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub geometry: Option<SketchCurveGeometry>,
 }
 
@@ -8309,14 +8525,22 @@ pub struct SketchSurface {
     /// Index of this surface record within the `BulkStream` tree.
     pub record_index: u32,
     /// Owning sketch entity derived from relations using this surface.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the surface identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub entity_genesis: Option<u64>,
     /// Persistent Fusion identifier for the sketch surface.
     pub persistent_id: std::num::NonZeroU64,
@@ -8806,7 +9030,11 @@ pub(crate) struct DesignBodyBindingWire {
     /// Byte offset of the UTF-16LE `blob_name` code units within `stream`.
     pub blob_name_offset: u64,
     /// Solved body in the BREP blob named by this pair.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub body: Option<BodyId>,
 }
 impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
@@ -9126,17 +9354,37 @@ impl ActEntity {
 struct ActEntitySerde {
     id: String,
     record_index: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     table_record_index_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     channel_record_index_offset: Option<u64>,
     entity_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     table_entity_id_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     channel_entity_id_offset: Option<u64>,
     in_table: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     channel_class_tag: Option<String>,
     #[serde(default)]
     channels: BTreeMap<String, String>,
@@ -9144,8 +9392,25 @@ struct ActEntitySerde {
     channel_guid_offsets: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     channel_class_tail: Vec<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_channel_class_tail_offset"
+    )]
     channel_class_tail_offset: Option<u64>,
+}
+
+/// Reads `channel_class_tail_offset`, naming the key in whatever it refuses.
+///
+/// The writer omits the key for `None`, so an absent key is its one spelling
+/// of absence and `null` is refused. The refusal names the key, because the
+/// tail and its offset are stated together.
+fn deserialize_channel_class_tail_offset<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u64>, D::Error> {
+    cadmpeg_core::absent_key::present(deserializer).map_err(|error| {
+        serde::de::Error::custom(format_args!("channel_class_tail_offset: {error}"))
+    })
 }
 
 impl TryFrom<ActEntitySerde> for ActEntity {
@@ -9844,7 +10109,11 @@ pub struct XrefReference {
     pub neutron_data: String,
     /// Source Design occurrence transform in centimetres. `None` is the
     /// serialized identity-placement form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub transform: Option<XrefPlacementTransform>,
 }
 

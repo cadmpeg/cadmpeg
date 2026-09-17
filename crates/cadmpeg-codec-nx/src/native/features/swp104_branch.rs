@@ -12,7 +12,11 @@ struct ReferenceWire {
     ordinal: u32,
     #[serde(flatten)]
     token: PayloadIndexToken,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     data_block: Option<String>,
     source_offset: u64,
 }
@@ -110,7 +114,11 @@ struct FeatureSwp104LeadingBranchWire {
     leading_zero: bool,
     mode: NonZeroU8,
     declared_count: u8,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     witnessed_count: Option<u8>,
     state_lane: Vec<u8>,
     members: BranchItems<ReferenceWire>,

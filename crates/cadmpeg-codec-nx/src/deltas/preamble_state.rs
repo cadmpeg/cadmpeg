@@ -143,7 +143,11 @@ impl PreambleState {
 struct PreambleWire {
     identity: u16,
     references: [u32; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     state_reference: Option<u32>,
     state_words: [u32; 4],
     count: u16,

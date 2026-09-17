@@ -55,16 +55,32 @@ enum RmCreationDisplayDataEncodingWire {
 pub(super) struct RmCreationDisplayDataRelationWire {
     id: String,
     ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     first_index: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     raw_first_index: Option<Vec<u8>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     first_index_source_offset: Option<u64>,
     class_name: String,
     class_definition: String,
     encoding: RmCreationDisplayDataEncodingWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     target_object_id: Option<String>,
     source_entry: String,
     source_offset: u64,

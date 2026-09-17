@@ -48,7 +48,11 @@ struct ReferenceWire {
     ordinal: u32,
     #[serde(flatten)]
     token: PayloadIndexToken,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     data_block: Option<String>,
     source_offset: u64,
 }

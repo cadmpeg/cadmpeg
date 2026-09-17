@@ -464,7 +464,11 @@ pub(crate) struct ExternalReferenceRecordWire {
     pub(crate) display_name: String,
     pub(crate) state_groups: Vec<[u16; 3]>,
     pub(crate) state: [u16; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) document_id: Option<String>,
     pub(crate) database_id: String,
     pub(crate) reference_id: u32,

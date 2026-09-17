@@ -132,9 +132,17 @@ impl CatiaOwnerChartBridgeReference {
 struct CatiaOwnerChartBridgeReferenceWire {
     value: u32,
     encoding: CatiaAllocationReferenceEncoding,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     alias_row: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     canonical_surface_tag: Option<u32>,
 }
 

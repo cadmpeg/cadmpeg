@@ -14,7 +14,11 @@ pub(super) struct OmAuditTrailRowWire {
     section_link: String,
     ordinal: u32,
     raw_ordinal: Vec<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     frame_selector: Option<u8>,
     timestamp: u32,
     #[serde(flatten)]

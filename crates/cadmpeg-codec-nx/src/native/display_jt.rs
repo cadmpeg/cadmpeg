@@ -1370,7 +1370,11 @@ struct DisplayJtMaterialAttributeWire {
     specular: [f32; 4],
     emission: [f32; 4],
     shininess: f32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     reflectivity: Option<f32>,
     source_offset: u64,
 }

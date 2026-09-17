@@ -92,10 +92,18 @@ struct DesignExtrudePrologueReferenceWire {
     /// Number of zero bytes between `record_index` and the operation or its marker.
     trailing_zero_count: u8,
     /// Optional marker byte between the zero run and the operation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     operation_prefix_marker: Option<u8>,
     /// Byte offset of `operation_prefix_marker` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     operation_prefix_marker_offset: Option<u64>,
 }
 
@@ -829,7 +837,11 @@ struct DesignCoilPlacementWire {
     /// centimetres for the translation column.
     transform: SketchPlacementMatrix,
     /// Byte offset of the matrix, or absent for the encoded identity form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     transform_offset: Option<u64>,
 }
 
@@ -990,10 +1002,18 @@ struct DesignCylinderPrimitiveWire {
     /// Byte offset of the evaluated diameter.
     diameter_offset: u64,
     /// Source frame carried by the shifted cylinder form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     transform: Option<SketchPlacementMatrix>,
     /// Byte offset of the shifted-form source frame.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     transform_offset: Option<u64>,
     /// Result Boolean operation.
     operation: DesignExtrudeOperation,
@@ -1209,10 +1229,18 @@ pub enum DesignFixedExtrudeDistance {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesignFixedExtrudeParameters {
     /// One-sided distance carrier in source centimetres.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub along_distance: Option<DesignFixedExtrudeDistance>,
     /// Taper-angle lane in radians.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub taper_angle: Option<DesignFixedExtrudeScalar>,
 }
 
@@ -1329,7 +1357,11 @@ impl DesignFixedFilletLaw {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct DesignFixedFilletGroupWire {
     /// Optional explicit dimensionless tangency-weight lane.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     tangency_weight: Option<DesignFixedFilletScalar>,
     /// One constant radius, or endpoint radii followed by intermediate radii,
     /// in source centimetres.
@@ -1702,7 +1734,11 @@ pub(crate) struct DesignRectangularPatternConstructionWire {
     /// Evaluated-value offsets parallel to `owner_record_indices`.
     pub value_offsets: [u64; 4],
     /// Exact serialized instance sequence when one pattern direction is active.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub instances: Option<DesignRectangularPatternInstances>,
 }
 
@@ -1822,7 +1858,11 @@ struct DesignRectangularPatternInstancesWire {
     /// Byte offsets of the first transform scalar parallel to `record_indices`.
     transform_offsets: Vec<u64>,
     /// Component occurrences carried by this run when the pattern repeats a component.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     component_occurrences: Option<DesignComponentPatternOccurrencesWire>,
 }
 
@@ -1988,7 +2028,11 @@ struct DesignComponentInsertConstructionWire {
     /// Grouped occurrence carrier named by the relation record.
     carrier_record_index: u32,
     /// Eight-byte occurrence identity carried by the scope prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     occurrence_identity: Option<u64>,
     /// Occurrence-role GUID joining the carrier to the external-reference table.
     /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
@@ -1999,11 +2043,19 @@ struct DesignComponentInsertConstructionWire {
     transform: SketchPlacementMatrix,
     /// Byte offset of the first scope-local transform scalar. `None` is the
     /// stored identity form, which has no scalar block.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     transform_offset: Option<u64>,
     /// Byte offset of the equal transform's first scalar in the grouped
     /// carrier; absent when the carrier stores no scalar block.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     carrier_transform_offset: Option<u64>,
 }
 
@@ -2226,10 +2278,18 @@ struct DesignComponentOccurrenceWire {
     /// One-based occurrence ordinal within the component definition.
     occurrence_ordinal: u32,
     /// Explicit local-to-model placement for placed occurrences.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     transform: Option<SketchPlacementMatrix>,
     /// Byte offset of the explicit placement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     transform_offset: Option<u64>,
 }
 
@@ -2369,36 +2429,72 @@ struct DesignMirrorConstructionWire {
     stitch_tolerance: f64,
     /// Parameter-owner record carrying `stitch_tolerance`, when the source
     /// stores the scalar in a separate owner record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     stitch_tolerance_record_index: Option<u32>,
     /// Byte offset of the evaluated stitch-tolerance scalar.
     stitch_tolerance_offset: u64,
     /// Inline scope-frame carrier used by the legacy Mirror envelope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     stitch_tolerance_scope: Option<DesignMirrorScopeTolerance>,
     /// Seed group selected by the source operation.
     seed_group_record_index: u32,
     /// Role-`0x5` mirror-plane group.
     plane_group_record_index: u32,
     /// Referenced seed feature scope when the seed is a complete feature.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     seed_feature_scope_record_index: Option<u32>,
     /// Byte offset of the optional seed-feature reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     seed_feature_reference_offset: Option<u64>,
     /// Referenced `WorkPlane` scope, when the plane operand names one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     plane_scope_record_index: Option<u32>,
     /// Byte offset of the optional `WorkPlane` reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     plane_reference_offset: Option<u64>,
     /// Persistent entity-selection record used as the mirror plane.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     plane_selection_record_index: Option<u32>,
     /// Proven selected-face mirror plane, when exact.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     plane_origin: Option<Point3>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     plane_normal: Option<Vector3>,
 }
 
@@ -2543,7 +2639,11 @@ struct DesignMirrorScopeToleranceWire {
     marker_offset: u64,
     /// Byte offset of the repeated scalar-lane marker, when this generation
     /// carries the marker twice.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     repeated_marker_offset: Option<u64>,
     /// First marked reference in the scalar lane.
     first_reference: u32,
@@ -2664,10 +2764,18 @@ struct DesignRevolveConstructionWire {
     /// Byte offset of the angular-travel scalar.
     angle_offset: u64,
     /// Zero-valued opposite-side angle scalar record, when serialized.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     opposite_angle_record_index: Option<u32>,
     /// Byte offset of the opposite-side angle scalar, when serialized.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     opposite_angle_offset: Option<u64>,
 }
 
@@ -2855,16 +2963,32 @@ pub struct DesignCombineExternalBodyIdentityWire {
     /// Byte offset of `external_link_name`.
     pub external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub external_property_key_offset: Option<u64>,
     /// Optional referenced-document version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub external_version_urn: Option<String>,
     /// Byte offset of `external_version_urn` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub external_version_urn_offset: Option<u64>,
     /// Retained u64 values around the fixed `u32 48` member in the selector tail.
     #[serde(default)]
@@ -3102,7 +3226,11 @@ pub struct DesignCombineBodySelection {
     /// Body-selection record index.
     pub record_index: u32,
     /// Complete external body identity when the selector crosses a document boundary.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub external_identity: Option<DesignCombineExternalBodyIdentity>,
 }
 
@@ -3355,10 +3483,18 @@ struct DesignThreadConstructionWire {
     /// Pitch diameter in Design length units.
     pitch_diameter: f64,
     /// Record named by the reference-bearing compact trailer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     trailing_reference_record_index: Option<u32>,
     /// Byte offset of `trailing_reference_record_index`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
     face_group_record_indices: Vec<u32>,
@@ -3492,7 +3628,11 @@ pub struct DesignWorkAxisConstruction {
     /// Byte offset of the first displacement component.
     pub displacement_offset: u64,
     /// Native record form that supplied or corroborated the axis geometry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source: Option<DesignWorkAxisSource>,
 }
 
@@ -3558,7 +3698,11 @@ pub(crate) struct DesignWorkPointInputDraft {
     /// Byte offset of the serialized reference target.
     pub reference_offset: u64,
     /// Exact source carrier selected by this reference, when decoded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub carrier: Option<Box<DesignWorkPointInputCarrier>>,
 }
 
@@ -3816,10 +3960,18 @@ struct DesignVertexRecipeWire {
     /// Complete post-name i32 program.
     recipe_program: Vec<i32>,
     /// Historical topology state against which the vertex recipe was evaluated.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     recipe_state_id: Option<i64>,
     /// Stable vertex slot proven by the persistent face references and solved point.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     resolved_vertex_slot: Option<i64>,
     /// Identity of the indexed record closing the envelope.
     next_record_index: u32,
@@ -4634,20 +4786,36 @@ struct DesignHoleConstructionWire {
     /// Byte offset of `reference_type`.
     reference_type_offset: u64,
     /// Tangent-point data carried by the version-four point-data base level.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     tangent_point_data: Option<[f64; 3]>,
     /// Serialized byte immediately before the version-four tangent-point data.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     tangent_point_data_prefix: Option<u8>,
     /// Byte offset of the first version-four tangent-point component.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     tangent_point_data_offset: Option<u64>,
     /// Record indices of the counted input-reference run.
     input_record_indices: Vec<u32>,
     /// Byte offsets of the input-reference targets.
     input_record_offsets: Vec<u64>,
     /// Direct persistent face selection carried by the Hole scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     face_selection: Option<DesignHoleFaceSelection>,
 }
 
@@ -4790,16 +4958,32 @@ struct DesignHoleFaceSelectionWire {
     /// Byte offset of the primary persistent identity.
     primary_identity_offset: u64,
     /// Optional secondary persistent identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     secondary_identity: Option<u64>,
     /// Byte offset of the optional secondary persistent identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     secondary_identity_offset: Option<u64>,
     /// Optional secondary identity of a selected Sketch curve.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     curve_secondary_identity: Option<u64>,
     /// Byte offset of the optional Sketch-curve secondary identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     curve_secondary_identity_offset: Option<u64>,
     /// History-qualified face proofs for the primary identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -5222,12 +5406,20 @@ struct DesignParameterScopeSerde {
     /// Byte offset of `feature_ordinal`.
     pub feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub history_state_id: Option<i64>,
     /// Byte offset of the encoded history-state identity or null sentinel.
     pub history_state_id_offset: u64,
     /// ASM delta-state identity immediately preceding this scope, when active.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub previous_history_state_id: Option<i64>,
     /// Byte offset of the encoded preceding-state identity, when present.
     #[serde(
@@ -5243,28 +5435,60 @@ struct DesignParameterScopeSerde {
     /// Byte offsets parallel to `reference_members`.
     pub reference_member_offsets: Vec<u64>,
     /// Exact solid-primitive construction carried by this scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub solid_primitive: Option<DesignSolidPrimitive>,
     /// Exact fixed-form construction carried by a direct-face scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub direct_face_operation: Option<DesignDirectFaceOperation>,
     /// Exact rigid transform carried by a Move scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub move_operation: Option<DesignMoveOperation>,
     /// Exact uniform body-scale construction carried by a Scale scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub scale_operation: Option<DesignScaleOperation>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
     /// Exact distance, method, and boundary records carried by a `SurfaceExtend` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub surface_extend_operation: Option<DesignSurfaceExtendOperation>,
     /// Exact distance and boundary records carried by a `SurfaceOffset` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub surface_offset_operation: Option<DesignSurfaceOffsetOperation>,
     /// Exact mode, parameter, and selection records carried by a `SurfaceRuled` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub ruled_surface_operation: Option<DesignRuledSurfaceOperation>,
     /// `BaseFlange` operation and sketch profile.
     #[serde(flatten)]
@@ -5276,17 +5500,33 @@ struct DesignParameterScopeSerde {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_patch_boundaries: Vec<DesignSurfacePatchBoundary>,
     /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub edge_flange_operation: Option<DesignEdgeFlangeOperation>,
     /// Exact edge, parameter, and settings records carried by a `Hem` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub hem_operation: Option<DesignHemOperation>,
 
     /// Exact fixed scalar lanes carried by a Fillet scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub fixed_fillet_parameters: Option<DesignFixedFilletParameters>,
     /// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub fixed_chamfer_parameters: Option<DesignFixedChamferParameters>,
     /// Path-feature construction and Sweep sketch profile.
     #[serde(flatten)]
@@ -5294,40 +5534,88 @@ struct DesignParameterScopeSerde {
     #[serde(deserialize_with = "deserialize_flattened_scope")]
     pub path_feature: Option<DesignPathFeatureWire>,
     /// Exact Boolean construction carried by a `Combine` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub combine_operation: Option<DesignCombineOperation>,
     /// Exact form and size construction carried by a `Thread` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub thread_construction: Option<DesignThreadConstruction>,
     /// Exact signed-angle construction carried by a `Draft` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub draft_operation: Option<DesignDraftOperation>,
     /// Exact construction carried by a circular-pattern scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub circular_pattern_construction: Option<DesignCircularPatternConstruction>,
     /// Exact scalar lanes carried by a rectangular-pattern scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub rectangular_pattern_construction: Option<DesignRectangularPatternConstruction>,
     /// Exact alignment scalars carried by an `Assemble` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub assembly_alignment: Option<DesignAssemblyAlignment>,
     /// Exact external-occurrence construction carried by a `Component Insert` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub component_insert_construction: Option<DesignComponentInsertConstruction>,
     /// Exact local-occurrence construction carried by a `DerivedInstance` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub derived_instance_construction: Option<DesignDerivedInstanceConstruction>,
     /// Exact local-component construction carried by a legacy `CopyPaste` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub copy_paste_component_operation: Option<DesignCopyPasteComponentOperation>,
     /// Exact construction carried by a Mirror scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub mirror_construction: Option<DesignMirrorConstruction>,
     /// Exact source-to-copy body mapping carried by a `CopyPasteBodies` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub copy_paste_bodies_operation: Option<DesignCopyPasteBodiesOperation>,
     /// Exact result-body references carried by a `Base Feature` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub base_feature_construction: Option<DesignBaseFeatureConstruction>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(flatten)]
@@ -5335,7 +5623,11 @@ struct DesignParameterScopeSerde {
     #[serde(deserialize_with = "deserialize_work_plane_frame")]
     pub work_plane_frame: Option<DesignWorkPlaneTransform>,
     /// Exact two-point construction carried by a `WorkAxis` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub work_axis_construction: Option<DesignWorkAxisConstruction>,
     /// Exact row-major local-to-model frame owned by a `JointOrigin` scope.
     #[serde(flatten)]
@@ -5344,14 +5636,22 @@ struct DesignParameterScopeSerde {
     pub joint_origin_frame: Option<DesignJointOriginTransform>,
 
     /// Exact solved construction carried by a `WorkPoint` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub work_point_construction: Option<DesignWorkPointConstruction>,
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unclosed_construction_operand_groups: Vec<u32>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub hole_construction: Option<DesignHoleConstruction>,
 
     /// Sketch-module entity bound to this sketch scope.
@@ -5570,10 +5870,18 @@ fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureWire>) ->
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct DesignBaseFlangeScope {
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub base_flange_operation: Option<DesignBaseFlangeOperation>,
     /// Sketch-profile operand carried by a `BaseFlange` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub base_flange_profile: Option<DesignSketchProfileOperand>,
 }
 
@@ -5581,13 +5889,25 @@ pub struct DesignBaseFlangeScope {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct DesignExtrudeScope {
     /// Extrude fixed prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub extrude_prologue: Option<DesignExtrudePrologue>,
     /// Exact fixed scalar lanes carried by an Extrude scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
     /// Profile operand carried by an Extrude scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub extrude_profile: Option<DesignSketchProfileOperand>,
 }
 
@@ -5616,10 +5936,18 @@ impl From<DesignPathFeatureConstruction> for DesignScopePayload {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 struct DesignPathFeatureWire {
     /// Exact fixed construction carried by a Loft, Sweep, Revolve, or Pipe scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub path_feature_construction: Option<DesignPathFeatureConstruction>,
     /// Sketch-profile operand carried by a `Sweep` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub sweep_profile: Option<DesignSketchProfileOperand>,
 }
 
@@ -5644,40 +5972,88 @@ pub struct DesignCoilScope {
 #[allow(clippy::struct_field_names)]
 struct DesignCoilScopeWire {
     /// Coil result operation from the fixed scope prologue.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_operation: Option<DesignExtrudeOperation>,
     /// Byte offset of the Coil operation enum.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_operation_offset: Option<u64>,
     /// Coil driving-dimension mode.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_extent: Option<DesignCoilExtent>,
     /// Byte offset of the Coil mode enum, when the form stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_extent_offset: Option<u64>,
     /// Generated Coil section family.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_section: Option<DesignCoilSection>,
     /// Byte offset of the Coil section enum, when the form stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_section_offset: Option<u64>,
     /// Radial placement of the generated Coil section.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_section_placement: Option<DesignCoilSectionPlacement>,
     /// Byte offset of the Coil section-placement enum, when the form stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_section_placement_offset: Option<u64>,
     /// Whether Coil angular travel is clockwise.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_clockwise: Option<bool>,
     /// Byte offset of the Coil direction enum, when the form stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_clockwise_offset: Option<u64>,
     /// Exact placement construction carried by a compact Coil scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_placement: Option<DesignCoilPlacement>,
     /// Direct rigid placement carried by the long ten-reference Coil form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub coil_transform: Option<DesignCoilTransform>,
 }
 
@@ -8460,10 +8836,18 @@ struct DesignScaleOperationWire {
     center_record_index: u32,
     /// Explicit center position carried by legacy point-data centers, in source
     /// model centimetres.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     center_position: Option<[f64; 3]>,
     /// Byte offset of the explicit center position.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     center_position_offset: Option<u64>,
     /// Positive uniform scale factor.
     uniform_factor: f64,

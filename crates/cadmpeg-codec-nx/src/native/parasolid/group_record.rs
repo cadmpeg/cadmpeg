@@ -46,7 +46,11 @@ pub(super) struct GroupWire {
     id: String,
     stream_ordinal: u32,
     stream_kind: StreamKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     partition_stream_ordinal: Option<u32>,
     xmt: u32,
     node_id: u32,

@@ -19,7 +19,11 @@ pub(crate) struct FeatureBlockConstructionReference {
     #[serde(flatten)]
     pub token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
     pub source_offset: u64,

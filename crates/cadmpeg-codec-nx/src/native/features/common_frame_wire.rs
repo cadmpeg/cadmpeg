@@ -28,10 +28,18 @@ pub(super) struct CommonFrameWire {
     /// separate serialized owner and typed-value joins.
     pub state: [u8; 8],
     /// Whether legacy operation modules are inactive, when the stored field is boolean.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub legacy_inactive_modules: Option<bool>,
     /// Whether the operation modifies Parasolid data, when the stored field is boolean.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub modifies_parasolid_data: Option<bool>,
     /// Exact two-byte `m_splitTrackingData` representation.
     #[serde(default)]
@@ -48,7 +56,11 @@ pub(super) struct CommonFrameWire {
     /// Exact canonical nullable object-reference token.
     pub raw_object_index: Vec<u8>,
     /// Unique target in the native offset-store data-block arena, when found.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub data_block: Option<String>,
     /// Exact serialized frame byte length.
     pub byte_len: u64,
@@ -72,7 +84,11 @@ pub(super) struct TerminalFrameWire {
     /// Owning bounded operation record.
     pub operation_record: String,
     /// Exact common frame when it occurs immediately before this suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub immediate_common_frame: Option<String>,
     /// Duplicated frame-local ordinal.
     pub local_ordinal: u32,
@@ -83,7 +99,11 @@ pub(super) struct TerminalFrameWire {
     /// Exact canonical nullable object-reference token.
     pub raw_object_index: Vec<u8>,
     /// Unique target in the native offset-store data-block arena, when found.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub data_block: Option<String>,
     /// Absolute offset of the first local-ordinal token.
     pub source_offset: u64,

@@ -359,7 +359,11 @@ pub(super) struct CatiaEntityRecordWire {
     byte_offset: u64,
     byte_len: u64,
     lead: u8,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     inline_body: Option<Vec<u8>>,
     definition_len: u64,
     #[serde(with = "cadmpeg_ir::bytes")]
@@ -376,47 +380,101 @@ pub(super) struct CatiaEntityRecordWire {
     value_fields: Vec<value_block::ValueField>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     value_schema_selections: Vec<CatiaEntityValueSchemaSelection>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     relation_expression: Option<CatiaRelationExpression>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     parameter_value: Option<CatiaParameterValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     range_interval: Option<CatiaRangeInterval>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     constraint_range: Option<CatiaConstraintRange>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     definition_value: Option<CatiaDefinitionValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     definition_chain_value: Option<CatiaDefinitionChainValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     relation_program_instance: Option<CatiaRelationProgramInstance>,
     #[serde(
         default,
         alias = "configuration_record",
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
     )]
     schema_configuration_record: Option<CatiaSchemaConfigurationRecord>,
     #[serde(
         default,
         alias = "configuration_row_link",
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
     )]
     schema_configuration_row_link: Option<CatiaSchemaConfigurationRowLink>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     formula_relation: Option<CatiaFormulaRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     value_packets: Vec<entity_table::EntityValuePacket>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     numeric_pair: Option<entity_table::NumericPair>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     reference_signature: Option<CatiaReferenceSignature>,
     #[serde(with = "cadmpeg_ir::bytes")]
     record_suffix: Vec<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     suffix_value: Option<CatiaEntitySuffixValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     suffix_framing: Option<CatiaEntitySuffixFraming>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
 }
 
