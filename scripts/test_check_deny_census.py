@@ -1771,7 +1771,7 @@ class AbsentKeyCensusTests(unittest.TestCase):
         self.assertIn("Wire.key", findings[0])
         self.assertIn("named_optional_field!", findings[0])
 
-    def test_a_named_forwarder_to_the_helper_states_the_spelling(self) -> None:
+    def test_a_hand_written_call_to_the_helper_is_no_declaration(self) -> None:
         declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
         forwarder = (
             "fn read_key<'de, D: serde::Deserializer<'de>>(d: D)"
@@ -1779,9 +1779,10 @@ class AbsentKeyCensusTests(unittest.TestCase):
             '    cadmpeg_core::absent_key::named_present(d, "key")\n'
             "}\n"
         )
-        self.assertEqual(
-            self.run_absent_key_census({"wire.rs": declared + forwarder}), []
-        )
+        findings = self.run_absent_key_census({"wire.rs": declared + forwarder})
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("Wire.key", findings[0])
+        self.assertIn("named_optional_field!", findings[0])
 
     def test_an_omitted_optional_key_without_a_default_is_named(self) -> None:
         findings = self.run_absent_key_census({
