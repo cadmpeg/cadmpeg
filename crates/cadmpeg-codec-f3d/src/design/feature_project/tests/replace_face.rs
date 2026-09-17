@@ -6,6 +6,9 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::feature_project::{
+    bind_surface_trim_cell_selections, project_replace_face, project_surface_trim,
+};
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
 use crate::records::{
@@ -181,7 +184,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         })
         .unwrap();
 
-    let definition = super::project_replace_face(
+    let definition = project_replace_face(
         &scope,
         &[replacement_group.clone(), target_group.clone()],
         std::slice::from_ref(&target),
@@ -209,7 +212,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(super::project_replace_face(
+    assert!(project_replace_face(
         &invalid_scope,
         &[replacement_group, target_group],
         std::slice::from_ref(&target),
@@ -282,7 +285,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         },
     )
     .unwrap();
-    let definition = super::project_surface_trim(
+    let definition = project_surface_trim(
         &scope,
         &[target_group.clone(), tool_group.clone()],
         std::slice::from_ref(&body),
@@ -373,7 +376,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     )
     .unwrap();
 
-    super::bind_surface_trim_cell_selections(
+    bind_surface_trim_cell_selections(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&operation),

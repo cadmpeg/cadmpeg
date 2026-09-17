@@ -7,6 +7,12 @@
     clippy::wildcard_imports
 )]
 
+use crate::design::feature_project::{
+    form_cage_objects, form_cage_serializers, form_cage_surface, form_class_325_cage_objects,
+    form_class_325_cage_surface, form_class_328_envelope, legacy_form_cage_count,
+    project_parameter_design,
+};
+
 fn indexed_frame(class: &[u8; 3], record_index: u32, length: usize) -> Vec<u8> {
     let mut frame = vec![0; length];
     frame[..4].copy_from_slice(&3u32.to_le_bytes());
@@ -36,7 +42,7 @@ fn reads_owned_cage_objects() {
     bytes.extend_from_slice(b"264");
     bytes.extend_from_slice(&2196u64.to_le_bytes());
     assert_eq!(
-        super::form_cage_objects(
+        form_cage_objects(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             2196,
@@ -47,7 +53,7 @@ fn reads_owned_cage_objects() {
     let mut alternate_pair = bytes.clone();
     alternate_pair[110 + 4..110 + 7].copy_from_slice(b"258");
     assert_eq!(
-        super::form_cage_objects(
+        form_cage_objects(
             &alternate_pair,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&alternate_pair),
             2196,
@@ -70,7 +76,7 @@ fn reads_owned_cage_objects() {
     empty.extend_from_slice(b"264");
     empty.extend_from_slice(&2196u64.to_le_bytes());
     assert_eq!(
-        super::form_cage_objects(
+        form_cage_objects(
             &empty,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&empty),
             2196,
@@ -93,7 +99,7 @@ fn reads_single_cage_list_with_opaque_tail() {
     let bytes = [list, paired].concat();
 
     assert_eq!(
-        super::form_cage_objects(
+        form_cage_objects(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             2196,
@@ -121,7 +127,7 @@ fn resolves_cage_surface_through_owned_object_chain() {
     let paired = indexed_frame(b"264", 8303, 15);
     let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
     assert_eq!(
-        super::form_cage_surface(
+        form_cage_surface(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             8300,
@@ -130,7 +136,7 @@ fn resolves_cage_surface_through_owned_object_chain() {
         Some(8304)
     );
     assert_eq!(
-        super::form_cage_surface(
+        form_cage_surface(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             8300,
@@ -155,7 +161,7 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
         let following = indexed_frame(b"457", 8306, 15);
         let bytes = [serializer, following].concat();
         assert_eq!(
-            super::form_cage_serializers(
+            form_cage_serializers(
                 &bytes,
                 &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             )
@@ -180,7 +186,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
     let surface = indexed_frame(b"358", 8304, 15);
     let bytes = [serializer, following, surface].concat();
     assert_eq!(
-        super::form_cage_serializers(
+        form_cage_serializers(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
         )
@@ -190,7 +196,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
 
     let mut wrong_pair = bytes.clone();
     wrong_pair[132 + 4..132 + 7].copy_from_slice(b"457");
-    assert!(!super::form_cage_serializers(
+    assert!(!form_cage_serializers(
         &wrong_pair,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
     )
@@ -199,7 +205,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
 
     let mut nonzero_tail = bytes;
     nonzero_tail[131] = 1;
-    assert!(!super::form_cage_serializers(
+    assert!(!form_cage_serializers(
         &nonzero_tail,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&nonzero_tail),
     )
@@ -228,7 +234,7 @@ fn serializers_preserve_primary_frame_order() {
         chunks.push(indexed_frame(b"457", record + 1, 15));
     }
     let bytes = chunks.concat();
-    let serializers = super::form_cage_serializers(
+    let serializers = form_cage_serializers(
         &bytes,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
     );
@@ -376,13 +382,13 @@ fn reads_class_328_form_envelope() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(super::form_class_328_envelope(&bytes, &records, &scope));
+    assert!(form_class_328_envelope(&bytes, &records, &scope));
 
     let mut wrong_pair = bytes;
     let group_start = crate::layout::form_class_328_scope::LEN + 15;
     let paired_class = group_start + crate::layout::form_class_328_cage_group::LEN + 4;
     wrong_pair[paired_class..paired_class + 3].copy_from_slice(b"266");
-    assert!(!super::form_class_328_envelope(
+    assert!(!form_class_328_envelope(
         &wrong_pair,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
         &scope,
@@ -422,7 +428,7 @@ fn reads_class_325_cage_table_entries() {
     ]
     .concat();
     assert_eq!(
-        super::form_class_325_cage_objects(
+        form_class_325_cage_objects(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             scope_record,
@@ -433,7 +439,7 @@ fn reads_class_325_cage_table_entries() {
     let mut duplicate_discriminator = bytes.clone();
     duplicate_discriminator[41 + 30 + 11..41 + 30 + 19].copy_from_slice(&307u64.to_le_bytes());
     assert_eq!(
-        super::form_class_325_cage_objects(
+        form_class_325_cage_objects(
             &duplicate_discriminator,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&duplicate_discriminator),
             scope_record,
@@ -452,7 +458,7 @@ fn resolves_class_325_cage_surface_from_unique_class_310_reference() {
     let surface = indexed_frame(b"310", 700, 15);
     let bytes = [object, paired, surface].concat();
     assert_eq!(
-        super::form_class_325_cage_surface(
+        form_class_325_cage_surface(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             1_000,
@@ -474,7 +480,7 @@ fn reads_compact_form_one_cage_envelope() {
     let object = indexed_frame(b"325", 971, 15);
     let bytes = [list, paired, object].concat();
     assert_eq!(
-        super::legacy_form_cage_count(
+        legacy_form_cage_count(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             205,
@@ -503,7 +509,7 @@ fn reads_legacy_form_one_cage_owner_envelopes() {
         let nested = indexed_frame(nested_class, 211, 15);
         let bytes = [owner, paired, nested].concat();
         assert_eq!(
-            super::legacy_form_cage_count(
+            legacy_form_cage_count(
                 &bytes,
                 &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
                 205,
@@ -528,7 +534,7 @@ fn rejects_legacy_form_owner_with_wrong_nested_class() {
     let nested = indexed_frame(b"329", 211, 15);
     let bytes = [owner, paired, nested].concat();
     assert_eq!(
-        super::legacy_form_cage_count(
+        legacy_form_cage_count(
             &bytes,
             &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
             205,
@@ -577,7 +583,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     );
 
     let (_, parameters) =
-        super::project_parameter_design(&[parameter], &[], &[scope], &[], &[], &[], &[], &[]);
+        project_parameter_design(&[parameter], &[], &[scope], &[], &[], &[], &[], &[]);
 
     let [parameter] = parameters.as_slice() else {
         panic!("expected one retained parameter");
@@ -616,7 +622,7 @@ fn duplicate_surface_serializers_stay_ambiguous() {
         chunks.push(indexed_frame(b"457", record + 1, 15));
     }
     let bytes = chunks.concat();
-    let serializers = super::form_cage_serializers(
+    let serializers = form_cage_serializers(
         &bytes,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
     );

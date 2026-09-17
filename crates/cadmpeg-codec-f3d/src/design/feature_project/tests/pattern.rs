@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 
-use super::project_rectangular_pattern_scalars;
+use crate::design::feature_project::project_rectangular_pattern_scalars;
 use crate::records::{
     feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
     topology::{

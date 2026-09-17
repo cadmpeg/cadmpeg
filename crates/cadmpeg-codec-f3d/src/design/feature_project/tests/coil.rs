@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 
-use super::project_coil;
+use crate::design::feature_project::project_coil;
 use crate::records::{
     feature::{
         coil::{

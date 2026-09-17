@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 
-use super::{
+use crate::design::decode::sketch::{
     decode_circular_arc, decode_line, decode_sketch_curve_geometry, SketchCurveClass,
     CURRENT_SKETCH_NURBS_TYPE, SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES,
     SKETCH_TEXT_FRAME_LINE_TYPE_GUID,

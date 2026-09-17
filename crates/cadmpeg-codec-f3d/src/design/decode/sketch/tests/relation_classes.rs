@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 
-use super::{
+use crate::design::decode::sketch::{
     decode_pattern_definition, parse_classed_sketch_relation, relation_mask_width,
     SketchRelationClass, SketchRelationMaskWidth,
 };

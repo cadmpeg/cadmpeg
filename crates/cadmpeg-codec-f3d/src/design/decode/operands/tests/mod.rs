@@ -7,8 +7,6 @@
     clippy::wildcard_imports
 )]
 
-pub(super) use super::*;
-
 mod construction;
 mod existing;
 mod face_sources;

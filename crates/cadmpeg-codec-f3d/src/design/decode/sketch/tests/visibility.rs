@@ -8,7 +8,7 @@
 )]
 use super::prelude::*;
 
-use super::{
+use crate::design::decode::sketch::{
     decode_sketch_visibilities_in_stream, decode_sketch_visibility_member,
     CURRENT_SKETCH_CONTAINER_VERSION, SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID,
     SKETCH_CONTAINER_MEMBER_TYPE_GUID, SKETCH_CONTAINER_MEMBER_VERSION, SKETCH_CONTAINER_TYPE_GUID,
