@@ -780,7 +780,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn skip_to_end(&mut self) {
-        let _ = self.view.seek(self.view.end());
+        self.view.seek_to_end();
     }
 
     fn truncated(&self, field: &str) -> CodecError {
