@@ -2020,10 +2020,7 @@ fn plane_surface_payload(
 ///
 /// `pole_count` is the figure `check_nurbs_surface` proved when the surface
 /// was admitted; the population is never narrowed again here.
-fn nurbs_surface_payload(
-    surface: &cadmpeg_ir::geometry::NurbsSurface,
-    pole_count: i32,
-) -> Vec<u8> {
+fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface, pole_count: i32) -> Vec<u8> {
     let rational = i32::from(surface.weights().is_some());
     let mut payload = vec![0x10];
     for value in [

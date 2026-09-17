@@ -634,12 +634,14 @@ pub(super) fn push_carrier_transfer_notes(
 fn unstatable_vertex_orbit_note(orbits: &[crate::topology::HalfEdgeId]) -> Option<LossNote> {
     let first = orbits.first()?;
     let count = orbits.len();
-    Some(CreoLossCode::TopologyVertexIdentifierUnstatable.note(format!(
-        "{count} half-edge orbit(s) lie past the one-based topological vertex identifier \
+    Some(
+        CreoLossCode::TopologyVertexIdentifierUnstatable.note(format!(
+            "{count} half-edge orbit(s) lie past the one-based topological vertex identifier \
          width, so they state no vertex and their half-edges carry no incidence. The first \
          is the orbit at half-edge curve {} side {}.",
-        first.curve_id, first.side,
-    )))
+            first.curve_id, first.side,
+        )),
+    )
 }
 
 pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &ContainerScan) {
@@ -755,6 +757,10 @@ mod tests {
             "{}",
             note.message
         );
-        assert!(note.message.starts_with("2 half-edge orbit(s)"), "{}", note.message);
+        assert!(
+            note.message.starts_with("2 half-edge orbit(s)"),
+            "{}",
+            note.message
+        );
     }
 }
