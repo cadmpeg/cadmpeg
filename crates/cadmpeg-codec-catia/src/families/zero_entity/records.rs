@@ -2148,7 +2148,7 @@ fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
 fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
     // The origin sits at offset 8; a one-byte gap separates it from the
     // contiguous frame-row block at offset 33.
-    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
     let origin = c.point3()?;
     c.skip(1)?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
@@ -2159,7 +2159,7 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
 }
 
 fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
-    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
     let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
     if !(radius.is_finite()
         && radius > 0.0
@@ -2173,7 +2173,7 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
 }
 
 fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
-    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8);
+    let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
     if !(major_radius.is_finite()
         && major_radius > 0.0

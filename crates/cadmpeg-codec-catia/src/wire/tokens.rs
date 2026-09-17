@@ -17,7 +17,7 @@ use super::cursor::Cursor;
 /// (`extended = true`), which additionally recognises `0x30`, `0x28`, and
 /// `0x20`. Any other lead byte fails the read without advancing.
 pub(crate) fn object_ref(bytes: &[u8], position: &mut usize, extended: bool) -> Option<u32> {
-    let mut cursor = Cursor::new_at(bytes, *position);
+    let mut cursor = Cursor::new_at(bytes, *position)?;
     let value = cursor.object_ref(extended)?;
     *position = cursor.position();
     Some(value)
@@ -27,7 +27,7 @@ pub(crate) fn object_ref(bytes: &[u8], position: &mut usize, extended: bool) -> 
 ///
 /// See [`Cursor::compact_uint`] for the encoding.
 pub(crate) fn compact_uint(bytes: &[u8], position: &mut usize) -> Option<u32> {
-    let mut cursor = Cursor::new_at(bytes, *position);
+    let mut cursor = Cursor::new_at(bytes, *position)?;
     let value = cursor.compact_uint()?;
     *position = cursor.position();
     Some(value)
