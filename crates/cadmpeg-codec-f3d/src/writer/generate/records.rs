@@ -689,6 +689,12 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecErr
     Ok(())
 }
 
+/// The sketch NURBS null carrier reference.
+///
+/// `docs/formats/f3d.md`: the payload begins with "either an eight-byte
+/// all-`0xff` null sentinel or a non-null u64 carrier reference".
+const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
+
 #[allow(clippy::too_many_arguments)]
 fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
@@ -715,9 +721,6 @@ fn encode_sketch_nurbs(
             "source-less sketch NURBS knot count must equal control points + degree + 1".into(),
         ));
     }
-    // `docs/formats/f3d.md`: the payload begins with "either an eight-byte
-    // all-`0xff` null sentinel or a non-null u64 carrier reference".
-    const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
     record.extend_from_slice(
         &carrier_reference
             .unwrap_or(NULL_CARRIER_REFERENCE)
