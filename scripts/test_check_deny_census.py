@@ -1831,6 +1831,18 @@ class AbsentKeyCensusTests(unittest.TestCase):
         self.assertIn("Wire.key", output)
         self.assertIn("no declaration this module reaches", output)
 
+    def test_a_qualified_reader_resolves_only_through_the_module_it_names(self) -> None:
+        field = self.OMITTED % ',\n        deserialize_with = "foo::read_key"'
+        unrelated = 'cadmpeg_core::named_optional_field!(read_key, u32, "key");\n'
+        status, output = self.run_absent_key_main(
+            {"records/wire.rs": field, "alpha/foo.rs": unrelated}
+        )
+        self.assertEqual(status, 1, output)
+        self.assertIn("records/wire.rs", output)
+        self.assertIn("Wire.key", output)
+        self.assertIn("`foo::read_key`", output)
+        self.assertIn("no declaration this module reaches", output)
+
     def test_an_imported_reader_resolves_to_its_declaration(self) -> None:
         field = (
             "use super::read_key;\n"

@@ -1888,11 +1888,6 @@ def declared_reader(declarations, path, item, name, text):
             resolved = [
                 candidate for candidate in candidates if candidate[1] == wanted
             ]
-            if not resolved:
-                resolved = [
-                    candidate for candidate in candidates
-                    if candidate[1][len(candidate[1]) - len(prefix):] == prefix
-                ]
         else:
             resolved = [
                 candidate for candidate in candidates if candidate[0] == path
