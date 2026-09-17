@@ -530,11 +530,11 @@ fn associated_spline_replay_prototype(
     let mut prototypes =
         named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new())
             .into_iter()
-        .filter(|prototype| {
-            matches!(prototype.family, SurfacePrototypeFamily::Spline(_))
-                && prototype.offset >= frame_start
-                && prototype.offset < frame_end
-        });
+            .filter(|prototype| {
+                matches!(prototype.family, SurfacePrototypeFamily::Spline(_))
+                    && prototype.offset >= frame_start
+                    && prototype.offset < frame_end
+            });
     let prototype = prototypes.next()?;
     prototypes.next().is_none().then_some(())?;
     (row.offset > prototype.offset).then_some(())?;
@@ -3032,14 +3032,14 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
     let prototype_parameter_spans =
         named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new())
             .into_iter()
-        .flat_map(|record| record.parameters)
-        .map(|parameter| {
-            (
-                parameter.value_offset,
-                parameter.value_offset + parameter.body.len(),
-            )
-        })
-        .collect::<Vec<_>>();
+            .flat_map(|record| record.parameters)
+            .map(|parameter| {
+                (
+                    parameter.value_offset,
+                    parameter.value_offset + parameter.body.len(),
+                )
+            })
+            .collect::<Vec<_>>();
     result.retain(|row| {
         !prototype_parameter_spans
             .iter()

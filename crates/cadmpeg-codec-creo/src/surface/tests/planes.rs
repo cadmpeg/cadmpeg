@@ -1043,7 +1043,9 @@ fn named_local_system_expands_row_lane_zero_forms() {
             "local_sys",
             &body,
             &scalar::ScalarCache::default(),
-         &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
         SurfaceNamedValue::ScalarArray({
             let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
                 .expect("valid scalar array");
@@ -1076,8 +1078,13 @@ fn named_local_system_splits_zero_before_coordinate_token() {
         0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
     ];
 
-    let slots = sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default(), &mut ScalarBodyRefusal::default())
-        .expect("complete local system");
+    let slots = sequential_named_local_system_slots(
+        &body,
+        12,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect("complete local system");
 
     assert_eq!(slots[2], Some(0.0));
     assert_eq!(slots[3], slots[1]);
@@ -1123,7 +1130,12 @@ fn named_local_system_advances_across_inherited_slots() {
     ];
 
     assert_eq!(
-        sequential_named_local_system_slots(&body, 12, &scalar::ScalarCache::default(), &mut ScalarBodyRefusal::default()),
+        sequential_named_local_system_slots(
+            &body,
+            12,
+            &scalar::ScalarCache::default(),
+            &mut ScalarBodyRefusal::default()
+        ),
         Some(vec![
             Some(1.0),
             Some(0.0),
@@ -1159,12 +1171,23 @@ fn a_named_local_system_body_that_is_not_exactly_its_declared_slots_is_refused()
         Some(12)
     );
     // Thirteen declared slots: the body ends one slot early.
-    assert_eq!(sequential_named_local_system_slots(&body, 13, &cache, &mut ScalarBodyRefusal::default()), None);
+    assert_eq!(
+        sequential_named_local_system_slots(&body, 13, &cache, &mut ScalarBodyRefusal::default()),
+        None
+    );
     // Eleven declared slots: the last byte is left over.
-    assert_eq!(sequential_named_local_system_slots(&body, 11, &cache, &mut ScalarBodyRefusal::default()), None);
+    assert_eq!(
+        sequential_named_local_system_slots(&body, 11, &cache, &mut ScalarBodyRefusal::default()),
+        None
+    );
     // An inherited run that ends the body far short of the declaration.
     assert_eq!(
-        sequential_named_local_system_slots(&[0xe4, 0xe7, 0x02], 12, &cache, &mut ScalarBodyRefusal::default()),
+        sequential_named_local_system_slots(
+            &[0xe4, 0xe7, 0x02],
+            12,
+            &cache,
+            &mut ScalarBodyRefusal::default()
+        ),
         None
     );
 }
@@ -1178,7 +1201,12 @@ fn named_local_system_rejects_invalid_inherited_slot_transitions() {
         &[0xe4, 0xe7, 0x0c],
     ] {
         assert_eq!(
-            sequential_named_local_system_slots(body, 12, &scalar::ScalarCache::default(), &mut ScalarBodyRefusal::default()),
+            sequential_named_local_system_slots(
+                body,
+                12,
+                &scalar::ScalarCache::default(),
+                &mut ScalarBodyRefusal::default()
+            ),
             None
         );
     }
@@ -1234,7 +1262,9 @@ fn named_local_system_decodes_positive_compact_half_coordinate_over_a_complete_b
         "local_sys",
         &body,
         &scalar::ScalarCache::default(),
-     &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()) else {
+        &"prototype fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    ) else {
         panic!("scalar local system");
     };
     let values = array.values();
@@ -1251,7 +1281,9 @@ fn dimensioned_scalar_arrays_decode_compact_extents() {
         "i_points",
         &body,
         &scalar::ScalarCache::default(),
-     &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()) else {
+        &"prototype fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    ) else {
         panic!("dimensioned scalar array");
     };
     let dimensions = array.dimensions();
@@ -1505,7 +1537,9 @@ fn spline_metadata_rejects_malformed_compact_wrappers() {
                 name,
                 body,
                 &scalar::ScalarCache::default(),
-             &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+                &"prototype fixture",
+                &mut crate::lane_refusal::LaneRefusals::new()
+            ),
             SurfaceNamedValue::Opaque(body.to_vec())
         );
     }
@@ -1541,7 +1575,9 @@ fn parent_feature_array_rejects_malformed_reference_trailers() {
                 "parent_feats",
                 &body,
                 &scalar::ScalarCache::default(),
-             &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+                &"prototype fixture",
+                &mut crate::lane_refusal::LaneRefusals::new()
+            ),
             SurfaceNamedValue::Opaque(body)
         );
     }
@@ -1554,12 +1590,26 @@ fn a_compact_integer_array_holding_fewer_values_than_it_declares_is_not_an_array
 
     // `f8 02` declares two values and the body states two.
     assert_eq!(
-        named_surface_value(&family, "dum_array", &[0xf8, 0x02, 0x07, 0x08], &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+        named_surface_value(
+            &family,
+            "dum_array",
+            &[0xf8, 0x02, 0x07, 0x08],
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
         SurfaceNamedValue::CompactIntArray(vec![7, 8])
     );
     // `f8 03` declares three and the body still states two.
     assert_eq!(
-        named_surface_value(&family, "dum_array", &[0xf8, 0x03, 0x07, 0x08], &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+        named_surface_value(
+            &family,
+            "dum_array",
+            &[0xf8, 0x03, 0x07, 0x08],
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
         SurfaceNamedValue::Opaque(vec![0xf8, 0x03, 0x07, 0x08])
     );
 }
@@ -1573,7 +1623,14 @@ fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_tr
     let mut two = vec![0xf8u8, 0x02, 0x07, 0x08];
     two.extend_from_slice(&trailer);
     assert_eq!(
-        named_surface_value(&family, "parent_feats", &two, &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+        named_surface_value(
+            &family,
+            "parent_feats",
+            &two,
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
         SurfaceNamedValue::CompactIntArray(vec![7, 8])
     );
 
@@ -1582,7 +1639,14 @@ fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_tr
     // the end and no bytes remain to state a trailer.
     let short = vec![0xf8u8, 0x03, 0x07, 0x08];
     assert_eq!(
-        named_surface_value(&family, "parent_feats", &short, &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+        named_surface_value(
+            &family,
+            "parent_feats",
+            &short,
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
         SurfaceNamedValue::Opaque(short.clone())
     );
 
@@ -1591,7 +1655,14 @@ fn a_parent_feature_array_that_states_fewer_values_than_it_declares_states_no_tr
     let mut three = vec![0xf8u8, 0x03, 0x07, 0x08];
     three.extend_from_slice(&trailer);
     assert_eq!(
-        named_surface_value(&family, "parent_feats", &three, &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+        named_surface_value(
+            &family,
+            "parent_feats",
+            &three,
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
         SurfaceNamedValue::Opaque(three.clone())
     );
 }
@@ -1607,7 +1678,14 @@ fn a_surface_scalar_body_with_fewer_bytes_than_slots_above_twelve_is_refused() {
     // `f9 0d 01`: thirteen dimensions, one entry, no value bytes.
     let body = [0xf9u8, 0x0d, 0x01];
     assert_eq!(
-        named_surface_value(&family, "dum_array", &body, &cache, &"prototype fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+        named_surface_value(
+            &family,
+            "dum_array",
+            &body,
+            &cache,
+            &"prototype fixture",
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
         SurfaceNamedValue::Opaque(body.to_vec())
     );
 }

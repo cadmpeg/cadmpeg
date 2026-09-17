@@ -745,10 +745,7 @@ fn append_terminate(
 }
 
 fn charge_normalization(ctx: &DecodeContext<'_>, bytes: usize) -> Result<(), CodecError> {
-    ctx.charge_work(
-        u64_from_index(bytes),
-        "iges_compressed_ascii_normalization",
-    )
+    ctx.charge_work(u64_from_index(bytes), "iges_compressed_ascii_normalization")
 }
 
 /// Expand one Compressed ASCII source into the fixed-card input consumed by

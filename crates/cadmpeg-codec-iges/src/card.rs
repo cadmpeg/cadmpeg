@@ -612,9 +612,9 @@ pub(crate) fn summarize(
                     .join(","),
             );
             let size = lines.iter().fold(0_u64, |size, line| {
-                size.saturating_add(
-                    u64_from_index(line.payload.len() + line.ending.bytes().len()),
-                )
+                size.saturating_add(u64_from_index(
+                    line.payload.len() + line.ending.bytes().len(),
+                ))
             });
             Some(ContainerEntry {
                 name: section.name().into(),
@@ -639,9 +639,9 @@ pub(crate) fn summarize(
     if !post_terminate.is_empty() {
         let size = post_terminate.iter().fold(0_u64, |size, line| {
             let line = line.physical();
-            size.saturating_add(
-                u64_from_index(line.payload.len() + line.ending.bytes().len()),
-            )
+            size.saturating_add(u64_from_index(
+                line.payload.len() + line.ending.bytes().len(),
+            ))
         });
         entries.push(ContainerEntry {
             name: "post-terminate".into(),

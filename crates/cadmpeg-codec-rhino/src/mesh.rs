@@ -176,10 +176,7 @@ fn commit_mesh_buffer(
     document_budget.commit(declared);
     expand
         .ctx
-        .charge_retained(
-            u64_from_index(declared),
-            "rhino_mesh_buffer",
-        )
+        .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")
         .map_err(|refusal| expansion_refused(position, &refusal))
 }
 

@@ -1614,8 +1614,8 @@ fn legacy_vertex(
     }
     let index = vertices.len();
     // The archive states a vertex index in an i32, as it states an edge index.
-    let stored_index = i32::try_from(index)
-        .map_err(|_| error(position, "legacy Brep vertex index overflow"))?;
+    let stored_index =
+        i32::try_from(index).map_err(|_| error(position, "legacy Brep vertex index overflow"))?;
     vertices.push(LegacyVertex {
         vertex: RawBrepVertex {
             index: stored_index,
