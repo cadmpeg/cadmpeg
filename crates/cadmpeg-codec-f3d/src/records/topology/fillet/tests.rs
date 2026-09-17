@@ -17,25 +17,6 @@ fn variable_fillet_midpoints_preserve_wire_and_reject_unpaired_records() {
     }
 }
 
-#[test]
-fn historical_binding_wire_refuses_a_null_key() {
-    #[derive(serde::Deserialize)]
-    struct Probe {
-        #[serde(flatten, deserialize_with = "super::deserialize_historical_binding")]
-        historical: Option<super::HistoricalBinding>,
-    }
-    for key in ["historical_entity_kind", "historical_entity_ref"] {
-        let mut wire = serde_json::json!({});
-        wire[key] = serde_json::Value::Null;
-        assert!(
-            serde_json::from_value::<Probe>(wire.clone()).is_err(),
-            "{wire}"
-        );
-    }
-    let absent: Probe = serde_json::from_value(serde_json::json!({})).unwrap();
-    assert!(absent.historical.is_none());
-}
-
 /// The flattened historical-binding reader names the key it refuses.
 ///
 /// Serde buffers a flattened field's keys into its own content map before the
@@ -46,10 +27,11 @@ fn the_flattened_historical_binding_names_the_null_key_it_refuses() {
     #[derive(serde::Deserialize)]
     struct Probe {
         #[serde(flatten, deserialize_with = "super::deserialize_historical_binding")]
-        #[allow(dead_code)]
         binding: Option<super::HistoricalBinding>,
     }
     for key in ["historical_entity_kind", "historical_entity_ref"] {
         states_the_key(key, &refusal::<Probe>(key));
     }
+    let absent: Probe = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert!(absent.binding.is_none());
 }
