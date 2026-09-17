@@ -281,7 +281,10 @@ mod tests {
             .unwrap();
         assert_eq!(raw, std::slice::from_ref(&record));
         let error = parsed.native_unknowns("synthetic").unwrap_err();
-        assert!(error.to_string().contains("unknown field"), "{error}");
+        assert_eq!(
+            error.to_string(),
+            "native arena unknowns: native record synthetic:source:unknown#0: unknown field `offset`, expected `id` or `links`"
+        );
 
         let mut inline = record;
         inline.retain_data(vec![1]);
@@ -306,7 +309,10 @@ mod tests {
             assert!(record.links.is_empty());
             wire["zz_bogus"] = true.into();
             let error = serde_json::from_value::<NativeUnknownRecord>(wire).unwrap_err();
-            assert!(error.to_string().contains("zz_bogus"), "{error}");
+            assert_eq!(
+                error.to_string(),
+                "unknown field `zz_bogus`, expected `id` or `links`"
+            );
         }
     }
 
