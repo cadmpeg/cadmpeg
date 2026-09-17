@@ -907,7 +907,7 @@ where
         }
         counts.elements = counts
             .elements
-            .saturating_add(usize::try_from(record.payload.element_count()).unwrap_or(usize::MAX));
+            .saturating_add(record.payload.element_count());
     }
     counts
 }

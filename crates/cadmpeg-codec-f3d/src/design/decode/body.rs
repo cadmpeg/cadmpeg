@@ -15,7 +15,7 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
@@ -52,7 +52,7 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
         }
         let Some(count) = view
             .u32_le()
-            .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
+            .map(|n| index_from_u32(n))
         else {
             continue;
         };

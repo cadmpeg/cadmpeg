@@ -21,6 +21,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::curves::{error, GeometryError};
+use crate::decode::session_ceiling;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::subd::MeshProxyFingerprint;
 use crate::wire::Uuid;
@@ -124,10 +125,12 @@ impl MeshBudget {
 
     /// Caps retained mesh-buffer bytes with the session retained-byte ceiling.
     pub(crate) fn from_session(ctx: &DecodeContext<'_>) -> Self {
-        let policy = usize::try_from(ctx.policy().limits.max_retained_bytes).unwrap_or(usize::MAX);
         Self {
             used: 0,
-            limit: policy.min(MAX_DOCUMENT_BUFFER_OUTPUT),
+            limit: session_ceiling(
+                ctx.policy().limits.max_retained_bytes,
+                MAX_DOCUMENT_BUFFER_OUTPUT,
+            ),
         }
     }
 
@@ -156,9 +159,10 @@ impl MeshBudget {
 }
 
 fn buffer_output_limit(expand: MeshExpand<'_>) -> usize {
-    usize::try_from(expand.ctx.policy().limits.max_decompressed_bytes_per_expand)
-        .unwrap_or(usize::MAX)
-        .min(MAX_BUFFER_OUTPUT)
+    session_ceiling(
+        expand.ctx.policy().limits.max_decompressed_bytes_per_expand,
+        MAX_BUFFER_OUTPUT,
+    )
 }
 
 fn commit_mesh_buffer(

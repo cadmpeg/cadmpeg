@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
-use cadmpeg_core::decode::{alloc_filled, bounded_len};
+use cadmpeg_core::decode::{alloc_filled, bounded_len, index_from_u32};
 
 use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
@@ -960,7 +960,7 @@ pub(crate) fn expression_records_with_model_name(
             });
             cursor = line_end + 1;
         }
-        if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
+        if lines.len() == index_from_u32(count) {
             let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
             let mut solve_program = curve_expression_solve_program(&lines);
             let mut evaluation = evaluate_expression_program_details(

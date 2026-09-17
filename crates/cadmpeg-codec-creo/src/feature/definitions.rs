@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, index_from_u32};
 
 use crate::psb;
 use crate::scalar;
@@ -1775,7 +1775,7 @@ pub(crate) fn positional_variable_table(
     let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
     cursor = after_row_class;
 
-    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    let row_limit = index_from_u32(declared_count);
     // Each row consumes at least one byte before its 0xe2 separator, so the row
     // count cannot exceed the unread bytes in the table window.
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
@@ -2638,7 +2638,7 @@ pub(crate) fn trim_buckets(
         offset: first_offset,
         body_start: first_body,
     }];
-    while starts.len() < usize::try_from(header.declared_count).unwrap_or(usize::MAX) {
+    while starts.len() < index_from_u32(header.declared_count) {
         let expected = u32::try_from(starts.len()).unwrap_or(u32::MAX);
         let Some((offset, index, next)) = (cursor..end).find_map(|offset| {
             (preceding_byte(payload, offset) == Some(0xe2)).then_some(())?;
@@ -4016,7 +4016,7 @@ pub(crate) fn positional_section_3d(
     };
     cursor = next;
 
-    let row_count = usize::try_from(reference_count).unwrap_or(usize::MAX);
+    let row_count = index_from_u32(reference_count);
     let mut reference_plane_rows = Vec::new();
     let mut separator = vec![0xf2, psb::token::ENTITY_REF];
     separator.extend_from_slice(&table_reference);
@@ -4187,7 +4187,7 @@ fn dimension_reference_table(
     }
     cursor = prototype_end + prototype_separator.len();
 
-    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    let row_limit = index_from_u32(declared_count);
     while rows.len() < row_limit && cursor < end {
         let row_offset = cursor;
         let Ok(item_id) = next_nullable_segment_int(payload, &mut cursor) else {
@@ -4351,7 +4351,7 @@ pub(crate) fn dimension_table(
     if reference_bytes.is_some() {
         let mut replay = first_end;
         while replay < region_end
-            && rows.len() < usize::try_from(declared_count).unwrap_or(usize::MAX)
+            && rows.len() < index_from_u32(declared_count)
         {
             if payload.get(replay..replay + separator.len()) != Some(separator.as_slice()) {
                 break;
@@ -4406,7 +4406,7 @@ pub(crate) fn positional_dimension_table(
     separator.extend_from_slice(&reference_bytes);
     separator.push(0xe2);
     let mut rows = Vec::new();
-    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    let row_limit = index_from_u32(declared_count);
     while cursor < end && rows.len() < row_limit {
         let row_end = find_bytes(payload, &separator, cursor, end).unwrap_or(end);
         let Some(row) = positional_dimension(payload, cursor, row_end, cache) else {
@@ -4544,7 +4544,7 @@ pub(crate) fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<Fe
     };
     item_cursor = named_item_end + named_item_close_len;
     let mut prototype_items = named_item.into_iter().collect::<Vec<_>>();
-    while prototype_items.len() < usize::try_from(prototype_item_count).unwrap_or(usize::MAX) {
+    while prototype_items.len() < index_from_u32(prototype_item_count) {
         let (Some(entity_id), next) = segment_int(payload, item_cursor) else {
             return Vec::new();
         };
@@ -4572,7 +4572,7 @@ pub(crate) fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<Fe
     };
     let mut rows = vec![prototype];
     cursor = prototype_end + trailer.len();
-    'rows: while rows.len() < usize::try_from(declared_count).unwrap_or(usize::MAX) {
+    'rows: while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
             break;
@@ -4600,7 +4600,7 @@ pub(crate) fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<Fe
         }
         cursor += 2;
         let mut items = Vec::new();
-        while items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
+        while items.len() < index_from_u32(item_count) {
             if !items.is_empty() && payload.get(cursor) == Some(&0xe2) {
                 cursor += 1;
             }
@@ -4775,7 +4775,7 @@ pub(crate) fn positional_feature_skamps(
     cursor = after_row_class;
     let mut rows = Vec::new();
     let mut item_classes = None::<(Vec<u8>, Vec<u8>)>;
-    'rows: while rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+    'rows: while rows.len() < index_from_u32(count) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
             break;
@@ -4804,7 +4804,7 @@ pub(crate) fn positional_feature_skamps(
         let classes = item_classes.get_or_insert((item_table_class, item_row_class));
         cursor = after_item_row_class;
         let mut items = Vec::new();
-        while items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
+        while items.len() < index_from_u32(item_count) {
             let Some(entity_id) = next_solver_int(payload, &mut cursor) else {
                 break 'rows;
             };
@@ -4812,7 +4812,7 @@ pub(crate) fn positional_feature_skamps(
                 break 'rows;
             };
             items.push(FeatureSkampItem { entity_id, sense });
-            if items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
+            if items.len() < index_from_u32(item_count) {
                 let Some(next) = consume_positional_separator(
                     payload,
                     cursor,
@@ -4833,7 +4833,7 @@ pub(crate) fn positional_feature_skamps(
             items,
             offset: row_offset,
         };
-        if rows.len() + 1 < usize::try_from(count).unwrap_or(usize::MAX) {
+        if rows.len() + 1 < index_from_u32(count) {
             let Some(next) =
                 consume_positional_separator(payload, cursor, end, &table_class_encoding, &[0xf3])
             else {
@@ -4935,7 +4935,7 @@ fn positional_skamp_item_array_body_end(
     item_table_class: &[u8],
     end: usize,
 ) -> Option<usize> {
-    let item_limit = usize::try_from(item_count).unwrap_or(usize::MAX);
+    let item_limit = index_from_u32(item_count);
     let mut items = 0;
     while items < item_limit {
         next_solver_int(payload, &mut cursor)?;
@@ -5069,13 +5069,13 @@ pub(crate) fn feature_relation_triples(
     }
     cursor += 1;
     let mut rows = vec![prototype];
-    while rows.len() < usize::try_from(declared_count).unwrap_or(usize::MAX) {
+    while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
         let relation_id = next_solver_int(payload, &mut cursor);
         let equation_id = next_solver_int(payload, &mut cursor);
         let skamp_id = next_solver_int(payload, &mut cursor);
         let terminal_named_boundary = rows.len() + 1
-            == usize::try_from(declared_count).unwrap_or(usize::MAX)
+            == index_from_u32(declared_count)
             && payload.get(cursor).is_some_and(|byte| *byte >= 0xe0);
         if payload.get(cursor) != Some(&0xe2) && !terminal_named_boundary {
             break;
@@ -5112,7 +5112,7 @@ pub(crate) fn positional_relation_triples(
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
-    while rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+    while rows.len() < index_from_u32(count) {
         let offset = cursor;
         let before_relation = cursor;
         let relation_id = next_solver_int(payload, &mut cursor);
@@ -5135,7 +5135,7 @@ pub(crate) fn positional_relation_triples(
             skamp_id,
             offset,
         };
-        if rows.len() + 1 < usize::try_from(count).unwrap_or(usize::MAX) {
+        if rows.len() + 1 < index_from_u32(count) {
             let Some(next) =
                 consume_positional_separator(payload, cursor, end, &class_encoding, &[0xf1])
             else {

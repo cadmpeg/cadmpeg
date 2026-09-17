@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::NumericRun;
+use cadmpeg_core::decode::index_from_u32;
 use serde::Serialize;
 
 /// Numeric source runs whose total count equals the declared extent product.
@@ -11,13 +12,19 @@ pub(crate) struct NumericArray<T> {
 }
 
 impl<T> NumericArray<T> {
+    /// Admits an array whose runs state the extent product.
+    ///
+    /// The extent product and the run-count sum are both taken as indices: an
+    /// array with more elements than the address space can index is refused
+    /// here, so [`NumericArray::element_count`] states an index and no later
+    /// conversion can fail.
     pub(super) fn try_new(dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Option<Self> {
-        let expected = dimensions.iter().try_fold(1u64, |count, dimension| {
-            count.checked_mul(u64::from(*dimension))
+        let expected = dimensions.iter().try_fold(1usize, |count, dimension| {
+            count.checked_mul(index_from_u32(*dimension))
         })?;
-        let actual = runs
-            .iter()
-            .try_fold(0u64, |count, run| count.checked_add(u64::from(run.count)))?;
+        let actual = runs.iter().try_fold(0usize, |count, run| {
+            count.checked_add(index_from_u32(run.count))
+        })?;
         (expected == actual).then_some(Self { dimensions, runs })
     }
 
@@ -30,8 +37,11 @@ impl<T> NumericArray<T> {
         &self.runs
     }
     /// Number of logical scalar elements.
-    pub(crate) fn element_count(&self) -> u64 {
-        self.runs.iter().map(|run| u64::from(run.count)).sum()
+    ///
+    /// [`NumericArray::try_new`] proved this sum an index, so it does not
+    /// overflow.
+    pub(crate) fn element_count(&self) -> usize {
+        self.runs.iter().map(|run| index_from_u32(run.count)).sum()
     }
 }
 

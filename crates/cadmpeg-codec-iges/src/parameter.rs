@@ -3446,7 +3446,9 @@ fn declared_range(entry: &DirectoryEntry, census: &Range<u32>) -> DeclaredRange 
     let (Some(start), Some(count)) = (start, count) else {
         return DeclaredRange::Unusable;
     };
-    let cards = usize::try_from(census.end.saturating_sub(census.start)).unwrap_or(usize::MAX);
+    // `Range<u32>` states its own length as an index; an empty or inverted
+    // census states zero cards.
+    let cards = census.len();
     if bounded_len(u64::from(count), 1, cards).is_none() {
         return DeclaredRange::CardMissing;
     }

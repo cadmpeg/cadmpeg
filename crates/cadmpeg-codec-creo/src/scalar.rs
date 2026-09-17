@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{index_from_u32, View};
 
 use crate::decode::axis::Axis;
 use crate::psb::{compact_int, short_form_float};
@@ -203,7 +203,7 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
             entries.push(slot);
             cursor = end;
         }
-        if entries.len() == usize::try_from(count).unwrap_or(usize::MAX)
+        if entries.len() == index_from_u32(count)
             && entries
                 .last()
                 .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
