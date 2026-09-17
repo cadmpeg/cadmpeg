@@ -305,6 +305,85 @@ fn token_surface_cache_ignores_later_nested_support_scope() {
     }
 }
 
+/// `docs/formats/asm.md` states construction-cache ownership: "the outer
+/// non-`ref` procedural subtype owns the record's solved curve or surface
+/// cache". Two cache-bearing owned scopes name no single owner, so the record
+/// states no cache and every route that reads one refuses. The record's own
+/// stream is not a second answer.
+#[test]
+fn two_cache_bearing_owned_scopes_state_no_record_cache() {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exact_int_cur");
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [2.0, 0.0, 0.0]));
+        bytes.push(0x10);
+        bytes.push(0x0f);
+        push_ident(&mut bytes, "exact_int_cur");
+        bytes.extend_from_slice(&curve_block_with_endpoint(int_width, [7.0, 0.0, 0.0]));
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        assert!(crate::nurbs::toks::cache_scope(&tokens).is_none());
+        assert!(curve_cache(&tokens).is_none());
+        assert!(procedural_curve_resolving_refs(
+            &tokens,
+            &test_table(&bytes, int_width).expect("valid single-record byte fixture")
+        )
+        .is_none());
+
+        let mut surfaces = vec![0x0f];
+        push_ident(&mut surfaces, "off_spl_sur");
+        surfaces.extend_from_slice(&surface_block_with_x_offset(int_width, 5.0));
+        surfaces.push(0x10);
+        surfaces.push(0x0f);
+        push_ident(&mut surfaces, "off_spl_sur");
+        surfaces.extend_from_slice(&surface_block_with_x_offset(int_width, 9.0));
+        surfaces.push(0x10);
+
+        let surface_tokens =
+            lex_test_span(&surfaces, int_width).expect("valid single-record byte fixture");
+        assert!(crate::nurbs::toks::cache_scope(&surface_tokens).is_none());
+        assert!(surface_cache(&surface_tokens).is_none());
+    }
+}
+
+/// A record that owns a construction whose scopes bear no B-spline marker
+/// states no cache: the blocks that remain belong to nested support, source,
+/// guide or child fields, which the ownership sentence excludes.
+#[test]
+fn a_construction_with_no_cache_bearing_owned_scope_states_no_record_cache() {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "spring_int_cur");
+        bytes.push(0x0f);
+        push_ident(&mut bytes, "support");
+        bytes.extend_from_slice(&curve_block(int_width));
+        bytes.push(0x10);
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        assert!(crate::nurbs::toks::cache_scope(&tokens).is_none());
+        assert!(curve_cache(&tokens).is_none());
+        assert!(surface_cache(&tokens).is_none());
+    }
+}
+
+/// A record that owns no non-`ref` subtype states no construction, so no
+/// construction's ownership rule applies to its blocks and its own stream is
+/// the cache span.
+#[test]
+fn a_record_with_no_construction_carries_its_cache_in_its_own_stream() {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let bytes = curve_block(int_width);
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+
+        assert_eq!(crate::nurbs::toks::cache_scope(&tokens), Some(&tokens[..]));
+        let curve = curve_cache(&tokens)
+            .unwrap_or_else(|| panic!("record-stream curve cache at width {int_width}"));
+        assert_eq!(curve.degree(), 1);
+    }
+}
+
 /// The token-space owned-cache decoder reads the scope, not a raw stream.
 /// `subtype_span` is its only source, so the balance the raw walk refuses is a
 /// state the argument cannot hold and the decoder states no refusal for it.
