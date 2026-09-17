@@ -4,6 +4,8 @@
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_ascii_filtered;
+use crate::bytes::lp_utf16_bounded;
+use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
@@ -11,10 +13,14 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::surface_ops::DesignRuledSurfaceCorner;
+use crate::records::feature::surface_ops::DesignRuledSurfaceMethod;
+use crate::records::feature::surface_ops::DesignRuledSurfaceOperation;
 use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
 use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
+use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::View;
 use std::collections::HashSet;
@@ -316,4 +322,132 @@ fn exact_surface_boundary_operation(
         return None;
     };
     Some(candidate.clone())
+}
+
+pub(crate) fn exact_surface_stitch_operation(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope_record_index: u32,
+    references: &[u32],
+) -> Option<DesignSurfaceStitchOperation> {
+    if references.len() < 4 || !references.len().is_multiple_of(2) {
+        return None;
+    }
+    let tolerance_record_index = references[references.len() - 2];
+    let settings_record_index = references[references.len() - 1];
+    let scalar = exact_fixed_scalar(bytes, records, tolerance_record_index)?;
+    if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
+        return None;
+    }
+    let gap_tolerance =
+        crate::records::feature::sheet_metal::DesignPositiveScalar::new(scalar.value)?;
+    Some(DesignSurfaceStitchOperation {
+        gap_tolerance,
+        gap_tolerance_offset: scalar.value_offset,
+        tolerance_record_index,
+        settings_record_index,
+    })
+}
+
+pub(crate) fn exact_ruled_surface_operation(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    reference_count_at: usize,
+    reference_members: &[u32],
+) -> Option<DesignRuledSurfaceOperation> {
+    if bytes.get(start.checked_add(11)?..start.checked_add(20)?)? != [0; 9] {
+        return None;
+    }
+    let method_offset = start.checked_add(20)?;
+    let method = match View::u32_le_at(bytes, method_offset)? {
+        0 => DesignRuledSurfaceMethod::Tangent,
+        1 => DesignRuledSurfaceMethod::Normal,
+        2 => DesignRuledSurfaceMethod::Direction,
+        _ => return None,
+    };
+    if bytes.get(start.checked_add(24)?..start.checked_add(27)?)? != [0; 3] {
+        return None;
+    }
+    let alternate_face_offset = start.checked_add(27)?;
+    let alternate_face = match bytes.get(alternate_face_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let fixed_reference = |at: usize| {
+        let mut cursor = at;
+        let reference = take_reference(bytes, &mut cursor)?;
+        (cursor == at.checked_add(11)?).then(|| u32::try_from(reference.local()?.0).ok())?
+    };
+    let angle_owner_record_index = fixed_reference(start.checked_add(28)?)?;
+    let distance_owner_record_index = fixed_reference(start.checked_add(39)?)?;
+    let corner_offset = start.checked_add(50)?;
+    let corner = match View::u32_le_at(bytes, corner_offset)? {
+        0 => DesignRuledSurfaceCorner::Rounded,
+        1 => DesignRuledSurfaceCorner::Mitered,
+        _ => return None,
+    };
+    let take_reference_list = |mut cursor: usize| {
+        let count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
+        if count > 100_000 {
+            return None;
+        }
+        cursor = cursor.checked_add(4)?;
+        let mut records = Vec::with_capacity(count);
+        for _ in 0..count {
+            records.push(fixed_reference(cursor)?);
+            cursor = cursor.checked_add(11)?;
+        }
+        Some((records, cursor))
+    };
+    let (mut edge_group_record_indices, mut cursor) = take_reference_list(start.checked_add(54)?)?;
+    if View::u32_le_at(bytes, cursor)? != 0 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let (auxiliary_record_indices, next) = take_reference_list(cursor)?;
+    cursor = next;
+    if View::u32_le_at(bytes, cursor)? != 0 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let (trailing_edge_groups, next) = take_reference_list(cursor)?;
+    cursor = next;
+    edge_group_record_indices.extend(trailing_edge_groups);
+    let (direction_entity_id, direction_end) = lp_utf16_bounded(bytes, cursor, 36..=36)?;
+    let direction_absent = direction_entity_id == "00000000-0000-0000-0000-000000000000";
+    if direction_end.checked_add(3)? != reference_count_at
+        || bytes.get(direction_end..reference_count_at)? != [0; 3]
+        || paired_at <= reference_count_at
+    {
+        return None;
+    }
+    let direction_entity_id = if direction_absent {
+        None
+    } else {
+        Some(crate::records::mesh::DesignRelaxedGuidText::try_from(direction_entity_id).ok()?)
+    };
+    if reference_members.first() != Some(&distance_owner_record_index)
+        || reference_members.get(1) != Some(&angle_owner_record_index)
+        || edge_group_record_indices.is_empty()
+        || edge_group_record_indices
+            .iter()
+            .any(|record_index| !reference_members.contains(record_index))
+    {
+        return None;
+    }
+    Some(DesignRuledSurfaceOperation {
+        method,
+        method_offset: method_offset as u64,
+        corner,
+        corner_offset: corner_offset as u64,
+        alternate_face,
+        alternate_face_offset: alternate_face_offset as u64,
+        angle_owner_record_index,
+        distance_owner_record_index,
+        edge_group_record_indices,
+        auxiliary_record_indices,
+        direction_entity_id,
+    })
 }

@@ -2,7 +2,7 @@
 #![allow(clippy::default_trait_access, clippy::wildcard_imports)]
 
 use super::prelude::*;
-use crate::design::decode::scopes::extrude_sheet_metal::{
+use crate::design::decode::scopes::extrude::{
     exact_class_338_two_sided_distance_extrude_prologue, exact_extrude_extent,
 };
 
