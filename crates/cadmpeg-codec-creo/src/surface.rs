@@ -7761,11 +7761,24 @@ fn trailing_scalar_body_refusal(body: &[u8], count: usize, cursor: usize) -> Str
 
 type ScalarTokenSlot = (Option<f64>, Vec<u8>);
 
+/// The `count` surface-row scalar slots `body` states, each with the bytes it
+/// was decoded from, and the offset the decode ended at.
+///
+/// `None` when the body states no such table. The format skips no byte between
+/// slot encodings, so a byte this lane defines no scalar form for ends the
+/// table, and a body that runs out before `count` slots states fewer slots than
+/// it declares. Neither is padded. Every slot of a returned table therefore
+/// holds a value and the non-empty byte run it was decoded from, and those byte
+/// runs are exactly the bytes from zero to the returned offset.
+///
+/// The offset is returned because a caller that owns the field's end decides
+/// whether the table is allowed to stop short of it; that is the caller's
+/// question, not this one's.
 fn scalar_slots_with_tokens_and_end(
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
-) -> (Vec<ScalarTokenSlot>, usize) {
+) -> Option<(Vec<ScalarTokenSlot>, usize)> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
@@ -7774,21 +7787,27 @@ fn scalar_slots_with_tokens_and_end(
             cursor += 1;
         } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
         {
-            slots.push((Some(value), body[cursor..next].to_vec()));
+            let token = body.get(cursor..next).filter(|token| !token.is_empty())?;
+            slots.push((Some(value), token.to_vec()));
             cursor = next;
         } else {
-            cursor += 1;
+            return None;
         }
     }
-    slots.resize_with(count, || (None, Vec::new()));
-    (slots, cursor)
+    (slots.len() == count).then_some((slots, cursor))
 }
 
+/// The `count` plane-envelope scalar slots `body` states, each with the bytes
+/// it was decoded from, and the offset the decode ended at.
+///
+/// The envelope lane adds the compact positive half `0e` to the surface-row
+/// lane. Everything [`scalar_slots_with_tokens_and_end`] states about an
+/// undefined byte, a short body and the returned offset holds here too.
 fn plane_envelope_scalar_slots_with_tokens_and_end(
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
-) -> (Vec<ScalarTokenSlot>, usize) {
+) -> Option<(Vec<ScalarTokenSlot>, usize)> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
@@ -7800,14 +7819,14 @@ fn plane_envelope_scalar_slots_with_tokens_and_end(
             cursor += 1;
         } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
         {
-            slots.push((Some(value), body[cursor..next].to_vec()));
+            let token = body.get(cursor..next).filter(|token| !token.is_empty())?;
+            slots.push((Some(value), token.to_vec()));
             cursor = next;
         } else {
-            cursor += 1;
+            return None;
         }
     }
-    slots.resize_with(count, || (None, Vec::new()));
-    (slots, cursor)
+    (slots.len() == count).then_some((slots, cursor))
 }
 
 fn complete_plane_envelope_slots(
@@ -7815,13 +7834,11 @@ fn complete_plane_envelope_slots(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<ScalarTokenSlot>> {
-    let (slots, consumed) = plane_envelope_scalar_slots_with_tokens_and_end(body, count, cache);
-    (consumed == body.len()
-        && slots
-            .iter()
-            .all(|(value, token)| value.is_some() && !token.is_empty())
-        && slots.iter().map(|(_, token)| token.len()).sum::<usize>() == consumed)
-        .then_some(slots)
+    let (slots, consumed) = plane_envelope_scalar_slots_with_tokens_and_end(body, count, cache)?;
+    // The helper states every other condition. This is the caller's own: the
+    // envelope owns the whole body, so a table that stops short of its end
+    // leaves bytes no slot accounts for.
+    (consumed == body.len()).then_some(slots)
 }
 
 fn complete_plane_envelope_slots_with_final_positive_dict(
@@ -8473,14 +8490,14 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
             &cache,
         )
         .map_or(named_end, |relative| scalar_start + relative);
-        let (slots, consumed) =
-            scalar_slots_with_tokens_and_end(&payload[scalar_start..field_end], 6, &cache);
-        if slots
-            .iter()
-            .any(|slot| slot.0.is_none() || slot.1.is_empty())
-            || consumed != field_end - scalar_start
-            || slots.iter().map(|slot| slot.1.len()).sum::<usize>() != consumed
-        {
+        let Some((slots, consumed)) =
+            scalar_slots_with_tokens_and_end(&payload[scalar_start..field_end], 6, &cache)
+        else {
+            continue;
+        };
+        // The helper states every other condition. This is this caller's own:
+        // the outline field owns the bytes up to `field_end`.
+        if consumed != field_end - scalar_start {
             continue;
         }
         let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();

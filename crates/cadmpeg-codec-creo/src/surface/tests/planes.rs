@@ -674,7 +674,8 @@ fn plane_envelope_coordinates_decode_compact_positive_half() {
         0x0f, 0xe4, 0x0d, 0x0f, 0x43, 0xe0, 0x00, 0xe4, 0x0f, 0x0e, 0xe4, 0x0f,
     ];
     let (slots, consumed) =
-        plane_envelope_scalar_slots_with_tokens_and_end(&body, 10, &scalar::ScalarCache::default());
+        plane_envelope_scalar_slots_with_tokens_and_end(&body, 10, &scalar::ScalarCache::default())
+            .expect("a complete ten-slot envelope table");
 
     assert_eq!(consumed, body.len());
     assert_eq!(slots[4].0, Some(-0.5));
@@ -1011,7 +1012,9 @@ fn signed_surface_dict_slots_decode_as_mirrors() {
     let body = [
         0xbb, 1, 2, 3, 4, 5, 6, 0xbb, 1, 2, 3, 4, 5, 6, 0x73, 1, 2, 3, 4, 5, 6,
     ];
-    let slots = scalar_slots_with_tokens_and_end(&body, 3, &scalar::ScalarCache::default()).0;
+    let slots = scalar_slots_with_tokens_and_end(&body, 3, &scalar::ScalarCache::default())
+        .expect("a complete three-slot table")
+        .0;
 
     let magnitude = f64::from_be_bytes([0x3f, 0xe8, 1, 2, 3, 4, 5, 6]);
     assert_eq!(
@@ -1023,9 +1026,58 @@ fn signed_surface_dict_slots_decode_as_mirrors() {
 }
 
 #[test]
+fn a_surface_row_slot_table_states_no_slot_it_did_not_decode() {
+    let cache = scalar::ScalarCache::default();
+    // A byte the surface-row lane defines no scalar form for ends the table.
+    assert_eq!(
+        scalar_slots_with_tokens_and_end(&[0xe4, 0x01, 0xe4], 3, &cache),
+        None
+    );
+    // A body that runs out before its declared count states fewer slots than
+    // it declares.
+    assert_eq!(
+        scalar_slots_with_tokens_and_end(&[0xe4, 0x18], 3, &cache),
+        None
+    );
+    // A complete table states every slot with the bytes it was decoded from,
+    // and those bytes run from zero to the returned offset.
+    let (slots, consumed) = scalar_slots_with_tokens_and_end(&[0xe4, 0xe4, 0x18], 3, &cache)
+        .expect("a complete three-slot table");
+    assert_eq!(consumed, 3);
+    assert_eq!(
+        slots.iter().map(|slot| slot.1.len()).sum::<usize>(),
+        consumed
+    );
+    assert!(slots.iter().all(|slot| slot.0.is_some()));
+}
+
+#[test]
+fn a_plane_envelope_slot_table_states_no_slot_it_did_not_decode() {
+    let cache = scalar::ScalarCache::default();
+    assert_eq!(
+        plane_envelope_scalar_slots_with_tokens_and_end(&[0x0e, 0x01, 0x0e], 3, &cache),
+        None
+    );
+    assert_eq!(
+        plane_envelope_scalar_slots_with_tokens_and_end(&[0x0e, 0x18], 3, &cache),
+        None
+    );
+    let (slots, consumed) =
+        plane_envelope_scalar_slots_with_tokens_and_end(&[0x0e, 0x0e, 0x18], 3, &cache)
+            .expect("a complete three-slot envelope table");
+    assert_eq!(consumed, 3);
+    assert_eq!(
+        slots.iter().map(|slot| slot.1.len()).sum::<usize>(),
+        consumed
+    );
+    assert!(slots.iter().all(|slot| slot.0.is_some()));
+}
+
+#[test]
 fn terminal_positional_slot_zero_occupies_one_byte() {
-    let slots =
-        scalar_slots_with_tokens_and_end(&[0xe4, 0x18], 2, &scalar::ScalarCache::default()).0;
+    let slots = scalar_slots_with_tokens_and_end(&[0xe4, 0x18], 2, &scalar::ScalarCache::default())
+        .expect("a complete two-slot table")
+        .0;
 
     assert_eq!(slots, [(Some(1.0), vec![0xe4]), (Some(0.0), vec![0x18])]);
 }
