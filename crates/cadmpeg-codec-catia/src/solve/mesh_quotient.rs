@@ -4,6 +4,33 @@
 
 use cadmpeg_core::decode::{alloc_filled, work_units, WorkBudget};
 
+/// Words in a zeroed bitset over `bits` positions.
+///
+/// A domain of no choices states no words. Every reader of these masks indexes
+/// by a choice identifier below `bits`, and one that cannot prove the index
+/// reads through `get`/`get_mut` or `zip`, so no reader reads a word an empty
+/// domain does not have and no minimum is stated here.
+fn bitset_words(bits: usize) -> usize {
+    bits.div_ceil(64)
+}
+
+/// The roots a component still requires once the face choices merge what they
+/// can. Read by `remaining_equation_merge_capacity`, which is itself
+/// `#[cfg(test)]`.
+///
+/// A component exists, so it owns at least one root. `merge_capacity` counts
+/// the roots those choices can fuse away; a capacity that reaches or passes the
+/// component's root count fuses the component onto that one remaining root.
+/// The relation `roots > merge_capacity` is not proven - `merge_capacity` sums
+/// a per-face maximum reduction over every face - so both cases are stated.
+#[cfg(test)]
+fn required_component_roots(roots: usize, merge_capacity: usize) -> usize {
+    match roots.checked_sub(merge_capacity) {
+        Some(0) | None => 1,
+        Some(required) => required,
+    }
+}
+
 use super::mesh_gauge::{
     build_mesh_coordinate_gauge, canonicalize_complete_endpoint_pairs,
     canonicalize_endpoint_relation_state, canonicalize_mesh_candidate_for_output,
@@ -4943,7 +4970,7 @@ fn build_endpoint_relation_constraints(
                 .iter()
                 .map(|(_, key)| {
                     let mut mask = alloc_filled(
-                        (domains[neighbor].len().saturating_add(63) / 64).max(1),
+                        bitset_words(domains[neighbor].len()),
                         0u64,
                         "catia_endpoint_relation_support_mask",
                     )
@@ -4964,7 +4991,7 @@ fn build_endpoint_relation_constraints(
                 .iter()
                 .map(|(_, left_key)| {
                     let mut mask = alloc_filled(
-                        (domains[neighbor].len().saturating_add(63) / 64).max(1),
+                        bitset_words(domains[neighbor].len()),
                         0u64,
                         "catia_endpoint_relation_support_mask",
                     )
@@ -5034,7 +5061,7 @@ fn propagate_endpoint_relation_domains(
             .iter()
             .map(|&choice_count| {
                 alloc_filled(
-                    (choice_count.saturating_add(63) / 64).max(1),
+                    bitset_words(choice_count),
                     0u64,
                     "catia_endpoint_relation_active_mask",
                 )
@@ -6545,28 +6572,20 @@ impl MeshSelectionSearch<'_> {
         let required_root_count = possible_root_counts
             .iter()
             .map(|(component, roots)| {
-                roots
-                    .saturating_sub(
-                        component_merge_capacity
-                            .get(component)
-                            .copied()
-                            .unwrap_or(0),
-                    )
-                    .max(1)
+                required_component_roots(
+                    *roots,
+                    component_merge_capacity.get(component).copied().unwrap_or(0),
+                )
             })
             .sum::<usize>();
         if required_root_count > point_count {
             return None;
         }
         let required_count = |component: &usize| {
-            possible_root_counts[component]
-                .saturating_sub(
-                    component_merge_capacity
-                        .get(component)
-                        .copied()
-                        .unwrap_or(0),
-                )
-                .max(1)
+            required_component_roots(
+                possible_root_counts[component],
+                component_merge_capacity.get(component).copied().unwrap_or(0),
+            )
         };
         let universal_required = universal_components
             .iter()
@@ -9892,6 +9911,34 @@ fn singleton_mesh_path_handles_closed_endpoint_pairs() {
     };
     assert_eq!(topology.logical_vertex_count, 1);
     assert_eq!(point_assignment, vec![0]);
+}
+
+#[cfg(test)]
+mod bitset_and_root_count_tests {
+    use super::{bitset_words, required_component_roots};
+
+    /// A bitset over a domain of no choices states no words. Nothing floors it
+    /// at one: the readers index by a choice identifier below the bit count, so
+    /// an empty domain is never read.
+    #[test]
+    fn a_bitset_over_an_empty_domain_states_no_words() {
+        assert_eq!(bitset_words(0), 0);
+        assert_eq!(bitset_words(1), 1);
+        assert_eq!(bitset_words(64), 1);
+        assert_eq!(bitset_words(65), 2);
+        assert_eq!(bitset_words(128), 2);
+    }
+
+    /// A component owns at least one root, so a merge capacity that reaches or
+    /// passes its root count leaves that one root.
+    #[test]
+    fn a_merge_capacity_at_or_above_the_root_count_leaves_one_root() {
+        assert_eq!(required_component_roots(3, 0), 3);
+        assert_eq!(required_component_roots(3, 1), 2);
+        assert_eq!(required_component_roots(3, 3), 1);
+        assert_eq!(required_component_roots(3, 9), 1);
+        assert_eq!(required_component_roots(0, 0), 1);
+    }
 }
 
 #[cfg(test)]
