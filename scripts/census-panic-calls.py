@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """Census of a call spelling in non-test crate source.
 
+``--check`` fails on any production ``.expect(``, ``.unwrap(``, ``panic!`` or
+``unreachable!``. A ``panic!`` or ``unreachable!`` inside a ``const``
+initializer is a compile-time refusal of a source literal, not a runtime panic
+route, and is not counted; neither is a crate listed in ``TEST_ONLY_CRATES``,
+each with the reason it is outside the check.
+
 With no argument the census is ``.expect(`` and ``.unwrap(``. ``--pattern`` takes
 any Python regular expression and censuses that spelling over the same scope and
 the same walk, so a clamp census and a panic census can never come from two
@@ -40,6 +46,21 @@ sys.modules[SPEC.name] = SOURCE_POLICY
 SPEC.loader.exec_module(SOURCE_POLICY)
 
 PANIC_CALL = re.compile(r"\.\s*(?:expect|unwrap)\s*\(")
+PANIC_MACRO = re.compile(r"(?<![\w:])(?:panic|unreachable)\s*!")
+CONST_ITEM = re.compile(r"(?<![\w:])const\s+(?:[A-Za-z_]\w*|_)\s*:")
+CONST_BLOCK = re.compile(r"(?<![\w:])const\s*\{")
+CONST_FN = re.compile(r"(?<![\w:])const\s+fn\b")
+OPENERS = {"(": ")", "[": "]", "{": "}"}
+CLOSERS = {")", "]", "}"}
+
+# Crates whose refusals are the test's own assertion route, with the reason
+# each is outside the production panic check. The key is the crate directory.
+TEST_ONLY_CRATES = {
+    "crates/cadmpeg-test-support": (
+        "every dependent names it under [dev-dependencies], so no production "
+        "build links it; its `panic!` is the failing test's own assertion"
+    ),
+}
 EXPECT_CALL = re.compile(r"\.\s*expect\s*\(")
 BARE_UNWRAP = re.compile(r"\.\s*unwrap\s*\(\s*\)")
 INCLUDE = re.compile(r'include!\s*\(\s*"([^"]+)"\s*\)')
@@ -200,6 +221,99 @@ def census_pattern(pattern: re.Pattern[str], label: str, listing: bool = False) 
     return 0
 
 
+def matching_brace(code: str, opening: int) -> int | None:
+    """The offset one past the ``}`` that closes the ``{`` at ``opening``."""
+    depth = 0
+    cursor = opening
+    while cursor < len(code):
+        if code[cursor] == "{":
+            depth += 1
+        elif code[cursor] == "}":
+            depth -= 1
+            if depth == 0:
+                return cursor + 1
+        cursor += 1
+    return None
+
+
+def const_evaluated_spans(code: str) -> list[tuple[int, int]]:
+    """Every span a ``const`` evaluation owns, as half-open byte offsets.
+
+    Three forms: a ``const NAME: T = ...;`` initializer, an inline ``const {
+    ... }`` block, and a ``const fn`` body. A ``panic!`` inside one refuses a
+    source literal when the item is evaluated, so it opens no runtime panic
+    route at a ``const`` call site. A ``const fn`` called from a runtime
+    position would panic there; this census applies the rule rather than
+    proving every call site, which is the same limit its module walk states.
+    """
+    spans = []
+    for block in CONST_BLOCK.finditer(code):
+        opening = code.index("{", block.start())
+        end = matching_brace(code, opening)
+        if end is not None:
+            spans.append((opening, end))
+    for item in CONST_FN.finditer(code):
+        cursor = item.end()
+        depth = 0
+        while cursor < len(code):
+            character = code[cursor]
+            if character in "([":
+                depth += 1
+            elif character in ")]":
+                depth -= 1
+            elif character == "{" and depth == 0:
+                break
+            elif character == ";" and depth == 0:
+                cursor = len(code)
+                break
+            cursor += 1
+        if cursor < len(code):
+            end = matching_brace(code, cursor)
+            if end is not None:
+                spans.append((cursor, end))
+    for item in CONST_ITEM.finditer(code):
+        cursor = item.end()
+        depth = []
+        start = None
+        while cursor < len(code):
+            character = code[cursor]
+            if character in OPENERS:
+                depth.append(OPENERS[character])
+            elif character in CLOSERS:
+                if not depth:
+                    break
+                if depth[-1] != character:
+                    break
+                depth.pop()
+            elif not depth:
+                if character == "=" and code[cursor:cursor + 2] != "==" and start is None:
+                    start = cursor
+                elif character == ";":
+                    if start is not None:
+                        spans.append((start, cursor))
+                    break
+            cursor += 1
+    return spans
+
+
+def panic_macro_sites(code: str) -> list[int]:
+    """Every runtime ``panic!``/``unreachable!`` offset in production code."""
+    spans = const_evaluated_spans(code)
+    return [
+        site.start()
+        for site in PANIC_MACRO.finditer(code)
+        if not any(start <= site.start() < end for start, end in spans)
+    ]
+
+
+def test_only_reason(relative: str) -> str | None:
+    """The reason ``relative`` is outside the production panic check."""
+    for crate, reason in TEST_ONLY_CRATES.items():
+        if relative.startswith(f"{crate}/"):
+            return reason
+    return None
+
+
 def census_panic_calls(listing: bool = False, check: bool = False) -> int:
     """Print the ``.expect(`` and ``.unwrap(`` census."""
     kept, gated = production_files()
@@ -208,6 +322,7 @@ def census_panic_calls(listing: bool = False, check: bool = False) -> int:
     expect_lines = 0
     unreached = 0
     unwrap_buckets: dict[str, int] = {}
+    macro_buckets: dict[str, int] = {}
     files_in_scope = 0
     remaining_calls = 0
     for path in scope():
@@ -229,8 +344,11 @@ def census_panic_calls(listing: bool = False, check: bool = False) -> int:
             unwrap_buckets[relative] = bare
         if listing:
             list_sites(relative, source, code, PANIC_CALL)
-        if relative != SEED_GENERATOR:
-            remaining_calls += len(PANIC_CALL.findall(code))
+        macro_sites = panic_macro_sites(code)
+        if macro_sites:
+            macro_buckets[relative] = len(macro_sites)
+        if relative != SEED_GENERATOR and test_only_reason(relative) is None:
+            remaining_calls += len(PANIC_CALL.findall(code)) + len(macro_sites)
     print("census: .expect( and .unwrap( in crate source")
     print(f"scope: crates/*/src/**/*.rs, {files_in_scope} files")
     print(f"files the module walk keeps as non-test: {len(kept)}")
@@ -242,8 +360,13 @@ def census_panic_calls(listing: bool = False, check: bool = False) -> int:
     print(f"non-test bare .unwrap() calls: {sum(unwrap_buckets.values())}")
     for relative, count in sorted(unwrap_buckets.items()):
         print(f"  {relative} {count}")
+    print(f"non-test runtime panic!/unreachable! sites: {sum(macro_buckets.values())}")
+    for relative, count in sorted(macro_buckets.items()):
+        print(f"  {relative} {count}")
     if check:
         print(f"check excludes the seed-generation tool: {SEED_GENERATOR}")
+        for crate, reason in sorted(TEST_ONLY_CRATES.items()):
+            print(f"check excludes {crate}: {reason}")
         print(f"remaining production panic calls: {remaining_calls}")
     return int(check and remaining_calls != 0)
 
@@ -265,11 +388,12 @@ def main() -> int:
     )
     parser.add_argument(
         "--check", action="store_true",
-        help="fail on production expect/unwrap calls, except the declared seed-generation tool",
+        help="fail on production expect/unwrap calls and runtime panic!/unreachable! sites, "
+             "except the declared seed-generation tool and the declared test-only crates",
     )
     arguments = parser.parse_args()
     if arguments.check and arguments.pattern is not None:
-        parser.error("--check applies to expect/unwrap calls, not an arbitrary pattern")
+        parser.error("--check applies to the panic census, not an arbitrary pattern")
     if arguments.pattern is None:
         return census_panic_calls(arguments.list, arguments.check)
     return census_pattern(

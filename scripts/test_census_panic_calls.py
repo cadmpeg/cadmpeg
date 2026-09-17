@@ -172,6 +172,54 @@ fn production() { value.expect("production"); }
         with redirect_stdout(io.StringIO()):
             self.assertEqual(census.census_panic_calls(check=True), 1)
 
+    def test_check_fails_for_a_runtime_panic_macro(self) -> None:
+        self.write("lib.rs", 'fn f() { panic!("a runtime refusal"); }\n')
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(census.census_panic_calls(check=True), 1)
+
+    def test_check_fails_for_a_runtime_unreachable_macro(self) -> None:
+        self.write("lib.rs", "fn f() { unreachable!() }\n")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(census.census_panic_calls(check=True), 1)
+
+    def test_a_const_evaluated_panic_opens_no_runtime_route(self) -> None:
+        self.write(
+            "lib.rs",
+            "const A: u8 = match u8::checked_add(1, 1) {\n"
+            "    Some(value) => value,\n"
+            '    None => panic!("one plus one fits a byte"),\n'
+            "};\n"
+            "fn g() -> u8 {\n"
+            "    const {\n"
+            "        match u8::checked_add(2, 2) {\n"
+            "            Some(value) => value,\n"
+            '            None => panic!("two plus two fits a byte"),\n'
+            "        }\n"
+            "    }\n"
+            "}\n"
+            "pub const fn h(values: &[u8]) -> u8 {\n"
+            "    let [first, ..] = values else {\n"
+            '        panic!("a catalog states one row");\n'
+            "    };\n"
+            "    *first\n"
+            "}\n",
+        )
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(census.census_panic_calls(check=True), 0)
+
+    def test_a_declared_test_only_crate_is_named_and_excluded(self) -> None:
+        self.write("lib.rs", "fn f() {}\n")
+        crate = next(iter(census.TEST_ONLY_CRATES))
+        support = self.root / crate / "src" / "lib.rs"
+        support.parent.mkdir(parents=True)
+        support.write_text('pub fn assert_it() { panic!("the test\'s own assertion"); }\n')
+        result = io.StringIO()
+        with redirect_stdout(result):
+            self.assertEqual(census.census_panic_calls(check=True), 0)
+        output = result.getvalue()
+        self.assertIn(f"{crate}/src/lib.rs 1", output)
+        self.assertIn(f"check excludes {crate}:", output)
+
 
 if __name__ == "__main__":
     unittest.main()
