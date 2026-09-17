@@ -3878,7 +3878,7 @@ pub(crate) fn emit_pcurves(
                 let fit_tolerance = match (r.chunk(3), r.chunk(4)) {
                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                         nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
-                            .and_then(nurbs::pcurve::pcurve_fit_tolerance)
+                            .and_then(|scope| nurbs::pcurve::pcurve_fit_tolerance(scope.interior()))
                     }
                     _ => None,
                 };
