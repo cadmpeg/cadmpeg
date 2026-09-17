@@ -29,4 +29,4 @@ pub use space::{
     resolve_address, AddressStep, AddressStepKind, ByteRange, ResolvedAddress, SpaceDerivation,
     SpaceDescriptor, SpaceId,
 };
-pub use view::{bounded_len, index_from_u32, u64_from_index, BoundedCount, View};
+pub use view::{bounded_len, id_from_index, index_from_u32, u64_from_index, BoundedCount, View};

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
 
+use crate::loss::NxLossCode;
+use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
+use cadmpeg_ir::report::LossNote;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
@@ -214,6 +217,7 @@ pub(crate) fn attach(
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     let has_object_sections = !scan.container.indexed_om_sections().is_empty();
@@ -410,6 +414,7 @@ pub(crate) fn attach(
         &model.om.expressions,
         &model.segments.segment_body_bindings,
         annotations,
+        losses,
     )?;
     attach_block_dimension_parameter_consumers(
         ir,
@@ -1237,6 +1242,7 @@ fn attach_feature_operations(
     expressions: &[crate::native::om::Expression],
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
@@ -2021,9 +2027,7 @@ fn attach_feature_operations(
         .iter()
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect::<BTreeMap<_, _>>();
-    // The annotation order is stated in a `u32`; a population past that width
-    // states no order for the labels that follow it.
-    let annotation_base_order = u32::try_from(ir.model.semantic_annotations.len()).ok();
+    let annotation_base_order = id_from_index(ir.model.semantic_annotations.len());
     for (annotation_ordinal, label) in labels
         .iter()
         .filter(|label| label.value == "TEXT")
@@ -2035,11 +2039,15 @@ fn attach_feature_operations(
             .iter()
             .map(|value| value.value.as_str())
             .collect::<Vec<_>>();
-        let Some(order) = annotation_base_order.and_then(|base| {
-            u32::try_from(annotation_ordinal)
-                .ok()
-                .and_then(|ordinal| base.checked_add(ordinal))
-        }) else {
+        let order = annotation_base_order.and_then(|base| {
+            id_from_index(annotation_ordinal).and_then(|ordinal| base.checked_add(ordinal))
+        });
+        let Some(order) = order else {
+            losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note(format!(
+                "NX TEXT label {} lies past the stated semantic-annotation order width, so it \
+                 states no order and is not projected.",
+                label.id
+            )));
             continue;
         };
         let Some(annotation) = text_semantic_annotation(&label.id, order, &payload_strings) else {

@@ -113,6 +113,8 @@ loss_codes! {
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
     /// A face loop states no resolvable coedge ring and is omitted from its face.
     TopologyLoopRingUnresolved => ("topology.loop-ring-unresolved", Warning, TopologyNotTransferred),
+    /// A semantic annotation order is past the stated annotation order width.
+    SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
 }
 
 impl NxLossCode {
@@ -183,6 +185,7 @@ mod tests {
                 "carrier.lanes-unpaired",
                 "geometry.not-transferred",
                 "topology.loop-ring-unresolved",
+                "annotation.semantic-order-unstatable",
             ]
         );
     }

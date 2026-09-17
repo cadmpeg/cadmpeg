@@ -92,8 +92,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
     let mut admitted_entities = 0_u64;
     ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan, &dialects)?;
+        let (ir, annotations, unknowns, native_losses) =
+            build_metadata_ir(ctx, root, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
+        body.losses.extend(native_losses);
         report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
@@ -110,8 +112,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(ctx, root, &scan, &dialects)?;
+    let (ir, annotations, unknowns, native_losses) =
+        build_metadata_ir(ctx, root, &scan, &dialects)?;
     let mut body = build_container_body(&scan, dialect_losses, notes);
+    body.losses.extend(native_losses);
     report_untransferred_streams(&scan, &mut body, TypedNative::Available);
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
@@ -232,10 +236,19 @@ fn build_metadata_ir(
     root: View<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
-) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        cadmpeg_ir::Annotations,
+        Vec<UnknownRecord>,
+        Vec<LossNote>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::decoded(source_meta(scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
+    let mut losses = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
@@ -273,9 +286,10 @@ fn build_metadata_ir(
             scan,
             &mut annotations,
             &mut unknowns,
+            &mut losses,
         )?;
     }
-    Ok((ir, annotations.build(), unknowns))
+    Ok((ir, annotations.build(), unknowns, losses))
 }
 
 fn build_container_body(

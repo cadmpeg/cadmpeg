@@ -6,6 +6,7 @@
 //! half-edge.
 #![deny(clippy::disallowed_methods)]
 
+use cadmpeg_core::decode::id_from_index;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
@@ -223,16 +224,28 @@ pub fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32,
         .collect()
 }
 
+/// What one half-edge set states about its topological vertices.
+pub struct VertexOrbits {
+    /// Topological vertex identities, one per admitted half-edge orbit.
+    pub vertices: Vec<TopologicalVertex>,
+    /// Start and end vertex binding of every half-edge an admitted orbit holds.
+    pub incidence: Vec<HalfEdgeVertexIncidence>,
+    /// Orbits past the one-based `u32` vertex identifier space. Each is an
+    /// orbit this scan states no vertex for; its half-edges carry no incidence
+    /// and the decode report names the lane.
+    pub unstatable_orbits: usize,
+}
+
 /// Build topological vertex orbits under `twin(previous(h))` and bind each
 /// half-edge's start and end vertex.
 /// Groups half-edges into start-vertex orbits.
 ///
-/// Returns `None` when the orbits outnumber the one-based `u32` vertex
-/// identifier space, because two orbits would then carry one identifier and
-/// the incidence map would bind the wrong half-edges.
-pub fn vertex_orbits(
-    edges: &[HalfEdge],
-) -> Option<(Vec<TopologicalVertex>, Vec<HalfEdgeVertexIncidence>)> {
+/// An orbit past the one-based `u32` vertex identifier space states no vertex:
+/// two orbits would otherwise carry one identifier and the incidence map would
+/// bind the wrong half-edges. That orbit is counted in
+/// [`VertexOrbits::unstatable_orbits`] and refused at its own lane. The rest of
+/// the file's topology is unaffected, so it is not a whole-file refusal.
+pub fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
     let by_id = edges
         .iter()
         .map(|edge| (edge.id, edge))
@@ -270,6 +283,7 @@ pub fn vertex_orbits(
     }
     let mut visited = BTreeSet::new();
     let mut vertices = Vec::new();
+    let mut unstatable_orbits = 0_usize;
     for start in by_id.keys().copied() {
         if visited.contains(&start) {
             continue;
@@ -290,9 +304,12 @@ pub fn vertex_orbits(
                     .copied(),
             );
         }
-        let id = u32::try_from(vertices.len())
-            .ok()
-            .and_then(|position| position.checked_add(1))?;
+        let Some(id) =
+            id_from_index(vertices.len()).and_then(|position| position.checked_add(1))
+        else {
+            unstatable_orbits += 1;
+            continue;
+        };
         vertices.push(TopologicalVertex {
             id,
             half_edges: orbit.into_iter().collect(),
@@ -317,7 +334,11 @@ pub fn vertex_orbits(
             })
         })
         .collect();
-    Some((vertices, incidence))
+    VertexOrbits {
+        vertices,
+        incidence,
+        unstatable_orbits,
+    }
 }
 
 /// Group bounded face references connected by uniquely identified curve
