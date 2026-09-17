@@ -4350,9 +4350,7 @@ pub(crate) fn dimension_table(
     }
     if reference_bytes.is_some() {
         let mut replay = first_end;
-        while replay < region_end
-            && rows.len() < index_from_u32(declared_count)
-        {
+        while replay < region_end && rows.len() < index_from_u32(declared_count) {
             if payload.get(replay..replay + separator.len()) != Some(separator.as_slice()) {
                 break;
             }
@@ -5074,8 +5072,7 @@ pub(crate) fn feature_relation_triples(
         let relation_id = next_solver_int(payload, &mut cursor);
         let equation_id = next_solver_int(payload, &mut cursor);
         let skamp_id = next_solver_int(payload, &mut cursor);
-        let terminal_named_boundary = rows.len() + 1
-            == index_from_u32(declared_count)
+        let terminal_named_boundary = rows.len() + 1 == index_from_u32(declared_count)
             && payload.get(cursor).is_some_and(|byte| *byte >= 0xe0);
         if payload.get(cursor) != Some(&0xe2) && !terminal_named_boundary {
             break;

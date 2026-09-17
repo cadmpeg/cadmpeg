@@ -1582,7 +1582,6 @@ fn a_surface_scalar_body_with_fewer_bytes_than_slots_above_twelve_is_refused() {
     );
 }
 
-
 #[test]
 fn a_counted_parameter_body_whose_values_start_past_the_body_is_refused() {
     let body = [0xf8u8, 0x03, 0xe6];

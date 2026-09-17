@@ -163,10 +163,7 @@ pub(crate) fn resolved_section_radii(
             })
         {
             let radius_id = circle.radius_ref;
-            let Some(dimension) = dimensions
-                .rows
-                .get(index_from_u32(radius_id))
-            else {
+            let Some(dimension) = dimensions.rows.get(index_from_u32(radius_id)) else {
                 continue;
             };
             let Some(value) = dimension
