@@ -2159,12 +2159,21 @@ fn try_decode_standard_population(
             &consolidated_records,
         );
     let resolved_revolution_count = resolved_consolidated_revolutions.len();
-    let consolidated_revolutions = append_consolidated_revolutions(
+    // The bindings this call returns are read below, through
+    // `bind_consolidated_revolution_faces_and_seams`. Its refusal is a
+    // `CodecError`; this route states it in the lane-refusal sink, which is
+    // the caller's channel, before it transfers no model.
+    let consolidated_revolutions = match append_consolidated_revolutions(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    )
-    .ok()?;
+    ) {
+        Ok(bindings) => bindings,
+        Err(error) => {
+            refusal.push_construction(&error);
+            return None;
+        }
+    };
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId::compose(
