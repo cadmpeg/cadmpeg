@@ -21,6 +21,10 @@ each violation by rule, file, line, and explanation.
 - Test files and inline test modules have a 2,000-line limit. Golden test files
   are excluded. Production files have a 10,000-line limit after removing
   `cfg(test)` items. These are maintenance limits, not correctness proofs.
+- Every test a `scripts/test_*.py` file declares is collected. A test case class
+  or a free `test_` function declared at or after the file's
+  `if __name__ == "__main__":` block fails: discovery imports the module and
+  never runs that block.
 
 ## Endian exceptions
 
@@ -62,6 +66,7 @@ Source-pattern rules inspect production Rust under `crates/**/src`. They exclude
 test, test-support, golden, integration, and bench paths and filenames containing
 `test`. Comments, literals, and `cfg(test)` items are masked before matching.
 Placement rules inspect `crates/**/*.rs`, following test-only module ancestry.
+The test-collection rule reads `scripts/test_*.py` as Python syntax.
 Both scans recognize `cfg(test)` and flat `cfg(all(..., test, ...))` gates.
 Other conditions remain production, including `cfg(not(test))` and
 `cfg(any(feature = "examples", test))`. Comments and literals are masked

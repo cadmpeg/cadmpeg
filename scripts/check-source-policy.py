@@ -9,6 +9,7 @@ Use --json for structured findings. See docs/source-policy.md for scope and limi
 from __future__ import annotations
 
 import argparse
+import ast
 from bisect import bisect_right
 from dataclasses import asdict, dataclass
 import json
@@ -628,6 +629,86 @@ def scan_authoring_paths() -> list[Finding]:
     return findings
 
 
+def is_main_guard(node: ast.AST) -> bool:
+    """Whether one statement is the ``if __name__ == "__main__":`` block."""
+    if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
+        return False
+    left = node.test.left
+    if not isinstance(left, ast.Name) or left.id != "__name__":
+        return False
+    return any(
+        isinstance(value, ast.Constant) and value.value == "__main__"
+        for value in node.test.comparators
+    )
+
+
+def declares_tests(node: ast.ClassDef) -> bool:
+    """Whether one class is a test case: a `TestCase` base or a `test_` method."""
+    for base in node.bases:
+        name = base.attr if isinstance(base, ast.Attribute) else getattr(base, "id", "")
+        if name.endswith("TestCase"):
+            return True
+    return any(
+        isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and child.name.startswith("test_")
+        for child in node.body
+    )
+
+
+def script_test_definitions(tree: ast.Module):
+    """Each test class and free test function a script declares, with its line."""
+    methods = {
+        id(child)
+        for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
+        for child in node.body
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            if declares_tests(node):
+                yield node.lineno, f"class {node.name}"
+        elif (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+            and id(node) not in methods
+        ):
+            yield node.lineno, f"function {node.name}"
+
+
+def scan_script_tests() -> list[Finding]:
+    """Every test a script declares where unittest discovery cannot reach it.
+
+    Discovery imports the module and never runs its ``__main__`` block, so a
+    test declared after that block, or inside it, is collected by nothing.
+    """
+    findings: list[Finding] = []
+    for path in sorted(ROOT.glob("scripts/test_*.py")):
+        relative = str(path.relative_to(ROOT))
+        text = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            tree = ast.parse(text)
+        except SyntaxError as error:
+            findings.append(Finding(
+                "script_test_collection", relative, error.lineno or 1,
+                f"{path.name} does not parse, so the tests it collects cannot "
+                f"be read: {error.msg}.",
+            ))
+            continue
+        guards = [node.lineno for node in ast.walk(tree) if is_main_guard(node)]
+        if not guards:
+            continue
+        guard = min(guards)
+        for line, declaration in script_test_definitions(tree):
+            if line > guard:
+                findings.append(Finding(
+                    "script_test_collection", relative, line,
+                    f"{path.name} declares test {declaration} at or after its "
+                    f'if __name__ == "__main__" block on line {guard}; unittest '
+                    "discovery imports the module without running that block, "
+                    "so the test is collected by nothing.",
+                ))
+    return findings
+
+
 def check_source() -> list[Finding]:
     sources = {
         path.resolve(): path.read_text(encoding="utf-8", errors="replace")
@@ -638,6 +719,7 @@ def check_source() -> list[Finding]:
         if is_production_rs(path):
             findings.extend(scan_patterns(path, source))
     findings.extend(scan_authoring_paths())
+    findings.extend(scan_script_tests())
     return sorted(findings, key=lambda item: (item.path, item.line, item.rule))
 
 
