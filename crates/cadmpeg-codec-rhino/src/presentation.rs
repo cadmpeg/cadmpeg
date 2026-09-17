@@ -1712,6 +1712,7 @@ fn parse_light_record_attributes(
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<LightAttributesRecord>, FramingError> {
     let mut warnings = Diagnostics::new();
+    // discarded-value: the class prefix is checked and skipped; ? states the refusal and its range has no reader
     let _ = class_data_prefix(data, record, archive, LIGHT)?;
     let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let mut offset = wrapper.next_offset();

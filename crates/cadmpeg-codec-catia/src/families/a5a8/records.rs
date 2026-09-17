@@ -1189,6 +1189,7 @@ fn parse_object_stream_pcurve(
     object_id: u32,
 ) -> Option<A8Pcurve> {
     #[cfg(not(test))]
+    // discarded-value: pos is an argument only the test build reads; a cfg(not(test)) discard states that without an allow
     let _ = pos;
     let mut at = payload + 1;
     let support_id = object_stream_reference(data, &mut at)?;

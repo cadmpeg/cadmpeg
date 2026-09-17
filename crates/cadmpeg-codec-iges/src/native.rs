@@ -4968,6 +4968,7 @@ pub(crate) fn store(
                             .flatten()
                             .filter(|value| *value < 0)
                         {
+                            // discarded-value: recording the reference edge is the whole effect; the resolved sequence has no reader at this display
                             let _ = parameter_resolver.resolve_negative(
                                 entry.sequence,
                                 start + 3,
@@ -5062,6 +5063,7 @@ pub(crate) fn store(
                             .and_then(|record| record.integer(start + 3))
                             .filter(|value| *value < 0)
                         {
+                            // discarded-value: recording the reference edge is the whole effect; the resolved sequence has no reader at this display
                             let _ = parameter_resolver.resolve_negative(
                                 entry.sequence,
                                 start + 3,
@@ -5077,6 +5079,7 @@ pub(crate) fn store(
                             .and_then(|record| record.integer(start + 4))
                             .filter(|value| *value < 0)
                         {
+                            // discarded-value: recording the reference edge is the whole effect; the resolved sequence has no reader at this display
                             let _ = parameter_resolver.resolve_negative(
                                 entry.sequence,
                                 start + 4,

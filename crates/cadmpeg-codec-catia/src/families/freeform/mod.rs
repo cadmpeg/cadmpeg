@@ -576,6 +576,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             });
         }
     }
+    // discarded-value: the curves and surfaces this call appends are the whole effect here; the bindings have a reader only on the standard-family route
     let _ = append_consolidated_revolutions(
         &mut ir,
         &mut annotations,

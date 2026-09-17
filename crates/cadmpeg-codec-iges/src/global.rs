@@ -992,6 +992,7 @@ impl Resolution {
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
     ) {
+        // discarded-value: the declaration's own charge is the whole effect; this field states no value the model carries
         let _ = self.metadata_integer_value(index, global_table, admits);
     }
 
@@ -1364,6 +1365,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let line_weight_scale = resolution.line_weight_scale(global_table);
     resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
     let minimum_resolution = resolution.minimum_resolution(global_table);
+    // discarded-value: the charge the malformed and absent arms state is the whole effect; the coordinate is not carried into the model
     let _ = resolution.maximum_coordinate(global_table);
     resolution.metadata_string(FIELD_AUTHOR, global_table);
     resolution.metadata_string(FIELD_ORGANIZATION, global_table);

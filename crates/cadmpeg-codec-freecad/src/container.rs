@@ -240,6 +240,7 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<(DocumentFacts, String), Co
         crate::native::FileVersion::try_from(file_version).map_err(CodecError::Malformed)?;
     let schema = crate::dialect::FcstdDialect::from_schema_version(&schema_version);
     let (declaration_tag, data_tag, record_tag) = schema.persistence_tags();
+    // discarded-value: the data section's uniqueness is the check; ? states its refusal and the node has no reader
     let _ = unique_section(root, data_tag)?;
     let declarations = unique_section(root, declaration_tag)?
         .into_iter()

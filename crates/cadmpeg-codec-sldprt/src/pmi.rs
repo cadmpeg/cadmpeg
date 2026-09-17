@@ -1007,6 +1007,7 @@ fn parse_string(
 
 fn skip_bytes(bytes: &[u8], cursor: &mut usize, len: usize) -> Option<()> {
     let end = cursor.checked_add(len)?;
+    // discarded-value: the skipped range is proven to lie in the record; ? states the refusal and the slice has no reader
     let _ = bytes.get(*cursor..end)?;
     *cursor = end;
     Some(())

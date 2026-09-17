@@ -223,19 +223,43 @@ def mask_rust_non_code(text: str) -> str:
 
 ENDIAN_EXCEPTIONS = {"reconstructed-scalar", "packed-color-order"}
 ENDIAN_MARKER = re.compile(r"^\s*// endian-exception: ([a-z-]+)\s*$")
+# A `let _ = ...` in production source drops a value the code has already
+# computed. The value is a refusal to thread, a binding to delete, or a
+# side effect whose answer has no reader; only the third is a discard, and it
+# states its own reason on the line above.
+DISCARD = re.compile(r"(?<![\w:])let\s+_\s*(?::[^=;]+)?=")
+DISCARD_MARKER = re.compile(r"^\s*// discarded-value: (\S.*?)\s*$")
+# Fuzz entry points, with the reason each is outside the rule. A wrapper's whole
+# contract is to run a parser over arbitrary bytes and drop the answer: the
+# fuzzer reads the crash, never the value, and a refusal threaded out of one
+# would narrow the input the parser sees.
+DISCARD_EXEMPT_FILES = {
+    "crates/cadmpeg-codec-nx/src/fuzz.rs":
+        "fuzz entry points drop every parser answer by contract",
+}
 
 
-def endian_markers(source: str) -> dict[int, str]:
+def standalone_markers(source: str, pattern: re.Pattern[str]) -> dict[int, str]:
     """Read standalone line comments, excluding lookalikes inside Rust literals."""
     markers = {}
     for start, end in rust_non_code_spans(source):
-        marker = ENDIAN_MARKER.fullmatch(source[start:end])
+        marker = pattern.fullmatch(source[start:end])
         if marker is None:
             continue
         line_start = source.rfind("\n", 0, start) + 1
         if not source[line_start:start].strip():
             markers[source.count("\n", 0, start)] = marker[1]
     return markers
+
+
+def endian_markers(source: str) -> dict[int, str]:
+    """Read the standalone endian-exception comments of a source file."""
+    return standalone_markers(source, ENDIAN_MARKER)
+
+
+def discard_markers(source: str) -> dict[int, str]:
+    """Read the standalone discarded-value comments of a source file."""
+    return standalone_markers(source, DISCARD_MARKER)
 
 
 def _vec_repeat_count(text: str, macro: re.Match[str]) -> str | None:
@@ -442,6 +466,21 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
             calls = calls[1:]
         for _ in calls:
             report("unapproved_endian_read", index + 1, "Use a bounded View read; reconstructed scalars and packed color ordering require a local endian exception.")
+
+    if relative_path(path) not in DISCARD_EXEMPT_FILES:
+        discards = discard_markers(source)
+        for index in discards:
+            following = lines[index + 1] if index + 1 < len(lines) else ""
+            if len(DISCARD.findall(following)) != 1:
+                report("discarded_value", index + 1,
+                       "Stale discarded-value reason; state exactly one `let _ =` on the next line.")
+        for index, line in enumerate(lines):
+            sites = list(DISCARD.finditer(line))
+            if index - 1 in discards:
+                sites = sites[1:]
+            for _ in sites:
+                report("discarded_value", index + 1,
+                       "This `let _ =` drops a computed value. Thread its refusal, delete the binding, or state why the answer has no reader in a `// discarded-value:` comment on the line above.")
 
     # Exclude the type occurrence, not its entire line: the same function may
     # construct a LossNote immediately after its return type and opening brace.

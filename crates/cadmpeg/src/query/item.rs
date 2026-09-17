@@ -472,6 +472,7 @@ impl<'de> Visitor<'de> for DocumentVisitor<'_> {
                     })?;
                 }
                 _ => {
+                    // discarded-value: IgnoredAny states nothing; consuming the map value is the whole effect
                     let _ = map.next_value::<IgnoredAny>()?;
                 }
             }
