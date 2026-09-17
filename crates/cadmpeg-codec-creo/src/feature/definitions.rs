@@ -6131,6 +6131,19 @@ fn saved_dummy_entities(payload: &[u8], start: usize, end: usize) -> Vec<Feature
     entities
 }
 
+/// Interpolation points a saved-spline body of `remaining` bytes can state.
+///
+/// A point is three coordinate lanes and every answer
+/// [`scalar::decode_in_lane`] gives advances the cursor by at least one byte,
+/// so `declared` points need at least `declared * 3` bytes. A declaration that
+/// asks for more is not a count this body states, and the body decodes no
+/// points at all. There is no floor: a body with no bytes left states no
+/// point.
+fn admitted_interpolation_point_count(declared: u32, remaining: usize) -> Option<usize> {
+    let declared = usize::try_from(declared).ok()?;
+    (declared.checked_mul(3)? <= remaining).then_some(declared)
+}
+
 pub(crate) fn saved_spline_entities(
     payload: &[u8],
     start: usize,
@@ -6144,10 +6157,6 @@ pub(crate) fn saved_spline_entities(
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
     const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
     const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
-    // One encoded byte can carry at most one coordinate lane, and the shortest
-    // encoded point block still holds twelve lanes.
-    const COORDINATE_LANES_PER_BYTE: usize = 16;
-    const MINIMUM_COORDINATE_LANES: usize = 12;
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
@@ -6168,16 +6177,8 @@ pub(crate) fn saved_spline_entities(
             if dimensions_end > extents_start && cursor > dimensions_end && coordinate_count == 3 {
                 declared_point_count = Some(declared);
                 interpolation_points_body = payload[value_start..cursor].to_vec();
-                let coordinate_lanes = payload
-                    .get(cursor..body_end)
-                    .map_or(0, <[u8]>::len)
-                    .checked_mul(COORDINATE_LANES_PER_BYTE)
-                    .map(|lanes| lanes.max(MINIMUM_COORDINATE_LANES));
-                point_count = usize::try_from(declared).ok().filter(|point_count| {
-                    point_count
-                        .checked_mul(3)
-                        .zip(coordinate_lanes)
-                        .is_some_and(|(declared_lanes, lanes)| declared_lanes <= lanes)
+                point_count = payload.get(cursor..body_end).and_then(|remaining| {
+                    admitted_interpolation_point_count(declared, remaining.len())
                 });
                 if let Some(point_count) = point_count {
                     points.reserve(point_count);
@@ -7335,5 +7336,23 @@ mod tests {
         assert!(!table(2, 5).is_complete());
 
         assert_eq!(table(u32::MAX, 1).missing_rows(), u32::MAX as usize - 1);
+    }
+
+    #[test]
+    fn a_saved_spline_admits_only_the_points_the_remaining_bytes_can_state() {
+        use super::admitted_interpolation_point_count as admitted;
+
+        // A point is three lanes and a lane consumes at least one byte.
+        assert_eq!(admitted(1, 0), None);
+        assert_eq!(admitted(1, 2), None);
+        assert_eq!(admitted(1, 3), Some(1));
+        assert_eq!(admitted(2, 5), None);
+        assert_eq!(admitted(2, 6), Some(2));
+
+        // A body with no bytes left states no point, and zero points need no
+        // bytes.
+        assert_eq!(admitted(0, 0), Some(0));
+        assert_eq!(admitted(4, 0), None);
+        assert_eq!(admitted(u32::MAX, 0), None);
     }
 }
