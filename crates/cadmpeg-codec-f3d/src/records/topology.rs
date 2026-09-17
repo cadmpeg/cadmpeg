@@ -12,4 +12,6 @@ pub(crate) mod fillet;
 pub(crate) mod historical_context;
 pub(crate) mod sketch_profile;
 #[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;

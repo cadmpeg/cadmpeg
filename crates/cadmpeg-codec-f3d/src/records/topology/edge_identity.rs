@@ -80,7 +80,7 @@ pub struct DesignEdgeIdentityOperand {
     pub class_tag: DesignClassTag,
     /// Prologue framing, which fixes `local_id_offset` relative to
     /// `byte_offset`.
-    pub(super) layout: DesignEdgeIdentityLayout,
+    layout: DesignEdgeIdentityLayout,
     /// Local persistent selection identity preceding the two UUID fields.
     pub local_id: u64,
     /// Asset UUID qualifying the local selection identity.
@@ -896,3 +896,6 @@ cadmpeg_core::named_optional_field!(
     Vector3,
     "resolved_axis_direction"
 );
+
+#[cfg(test)]
+mod tests;

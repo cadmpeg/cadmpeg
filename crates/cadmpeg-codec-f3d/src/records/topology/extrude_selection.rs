@@ -547,3 +547,6 @@ cadmpeg_core::named_optional_field!(
     SketchRelationOperand,
     "resolved_geometry"
 );
+
+#[cfg(test)]
+mod tests;

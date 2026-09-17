@@ -256,3 +256,6 @@ cadmpeg_core::named_optional_field!(
     i64,
     "historical_entity_ref"
 );
+
+#[cfg(test)]
+mod tests;

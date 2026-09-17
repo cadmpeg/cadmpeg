@@ -497,3 +497,6 @@ cadmpeg_core::named_optional_field!(
     DesignTopologyIncidentSide,
     "incident_side"
 );
+
+#[cfg(test)]
+mod tests;
