@@ -4928,10 +4928,10 @@ fn build_endpoint_relation_constraints(
         .collect::<Vec<_>>();
     let choice_counts = domains.iter().map(Vec::len).collect::<Vec<_>>();
     for ((face, neighbor), edges) in shared_edges {
-        let index_work = domains[face]
-            .len()
-            .saturating_add(domains[neighbor].len())
-            .max(1);
+        // Plain `+`: both operands are lengths of live allocations, so each is
+        // at most `isize::MAX` and their sum is inside `usize`. The `.max(1)`
+        // is the charge an empty pair still owes the budget.
+        let index_work = (domains[face].len() + domains[neighbor].len()).max(1);
         if !budget.charge_by(index_work) {
             return None;
         }
