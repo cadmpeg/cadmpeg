@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::writer::brep_loop_type;
+use crate::writer::brep_trim_type;
+use crate::writer::object_attributes_payload;
+use crate::writer::utf16;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
@@ -12,7 +16,6 @@ use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Color, Point};
 
-use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]

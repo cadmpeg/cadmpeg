@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::writer::canonicalize_native_curve_knots;
+use crate::writer::check_knot_roundtrip;
+use crate::writer::CHANNEL_COLOR;
+use crate::writer::CHANNEL_CURVATURE;
+use crate::writer::CHANNEL_SURFACE_PARAMETERS;
+use crate::writer::CHANNEL_UV;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
@@ -14,7 +20,6 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::Point;
 use sha2::{Digest, Sha256};
 
-use super::*;
 use crate::layout::file_header;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
@@ -225,14 +230,14 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
         false,
     )
     .expect("valid unclamped curve");
-    super::canonicalize_native_curve_knots(&mut curve, "reversed")
+    canonicalize_native_curve_knots(&mut curve, "reversed")
         .expect("reflected stored knots reconstruct");
 
     assert_eq!(
         curve.knots(),
         [-1.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 12.0]
     );
-    super::check_knot_roundtrip("reversed", "curve", curve.knots(), 3, 6, curve.periodic())
+    check_knot_roundtrip("reversed", "curve", curve.knots(), 3, 6, curve.periodic())
         .expect("canonicalized knots serialize without another change");
 }
 

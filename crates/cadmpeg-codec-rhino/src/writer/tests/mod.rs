@@ -10,7 +10,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
 
-pub(crate) use super::*;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 mod encoding;
