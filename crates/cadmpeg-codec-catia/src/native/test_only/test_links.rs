@@ -287,7 +287,7 @@ pub(super) fn validate_native_links(
     value_blocks: &[CatiaValueBlock],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for catalog in catalogs {
-        let count_width = if catalog.declared_count().is_some_and(|count| count <= 0x50) {
+        let count_width = if catalog.declared_count() <= 0x50 {
             1
         } else {
             2
