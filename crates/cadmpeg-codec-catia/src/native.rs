@@ -1856,7 +1856,7 @@ impl TryFrom<CatiaValueSchemaSelectionWire> for CatiaValueSchemaSelection {
 
 /// One exact `7C02` source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "CatiaCatalogWire", into = "CatiaCatalogWire")]
+#[serde(from = "CatiaCatalogWire", into = "CatiaCatalogWire")]
 pub struct CatiaCatalog {
     /// Globally unique catalog identity.
     pub id: String,
@@ -1864,25 +1864,12 @@ pub struct CatiaCatalog {
     pub byte_offset: u64,
     /// Total framed byte length.
     pub byte_len: u64,
-    /// Catalog entries in serialized order, at a population the stored count
-    /// can name.
+    /// Catalog entries in serialized order.
     #[serde(default)]
-    pub entries: crate::catalog::CountedEntries<CatiaCatalogEntry>,
+    pub entries: Vec<CatiaCatalogEntry>,
 }
 
-impl CatiaCatalog {
-    /// The stored count, equal to the entry population plus one.
-    ///
-    /// The format states the count in a `u32`, so the bound is on the
-    /// population: `entries` refuses one the count cannot name at its own
-    /// construction, on both admissions. Every catalog that exists therefore
-    /// states a count.
-    pub fn declared_count(&self) -> u32 {
-        self.entries.declared_count()
-    }
-}
-
-// The stored header keeps its declared count until the entry arena is joined.
+// The stored header carries no entries until the entry arena is joined.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct CatiaCatalogWire {
     /// Globally unique catalog identity.
@@ -1891,45 +1878,9 @@ struct CatiaCatalogWire {
     byte_offset: u64,
     /// Total framed byte length.
     byte_len: u64,
-    /// Stored count, equal to the entry population plus one.
-    ///
-    /// The key is required and its value is a `u32`: a catalog always states
-    /// its count, because the format states it, `crate::catalog::
-    /// parse_candidate` derives the entry population from it, and `entries`
-    /// refuses a population no count can name. This declaration states no
-    /// `default`, so serde names the field when it is left out.
-    ///
-    /// Routes. The decode writes the count and reads it back on no route
-    /// this build compiles outside its tests. `CatiaCatalogWire::header`
-    /// copies the count out of a `CatiaCatalog` and leaves `entries` empty,
-    /// and `CatiaArenaProjection` puts those headers in the `catalogs` arena
-    /// while `catalog_entries` carries every catalog's population flattened
-    /// under its parent identity. A `CatiaCatalog` is built back from this
-    /// wire on two routes: `<CatiaCatalog as serde::Deserialize>`, whose
-    /// callers are `NativeNamespace::arena_as::<CatiaCatalog>` on the
-    /// `catalogs` arena and `CatiaNativeWire`, and the explicit `try_from` in
-    /// `CatiaNative::load`. Every caller of either route is compiled under
-    /// `#[cfg(test)]`, so in a production build the stored count is a datum
-    /// with no reader.
-    ///
-    /// `TryFrom` below is production code and is the bound on either reader.
-    /// The join fires in `CatiaNative::load`: it reads `catalogs` and
-    /// `catalog_entries` as two arenas, groups each entry under its parent
-    /// identity, and rebuilds `entries`, which mints its own count from the
-    /// joined population. `TryFrom` then admits the catalog only when that
-    /// count and the stored count agree, because one document can state the
-    /// two arenas apart.
-    ///
-    /// The decode route carries its own bound and does not use this one:
-    /// `crate::catalog::parse_candidate` builds `CountedEntries` from the
-    /// parsed entries, and `CountedEntries::map` carries the population one
-    /// to one into `CatiaCatalog`, so every catalog that exists states a
-    /// count.
-    declared_count: u32,
-    /// Catalog entries in serialized order, at a population the stored count
-    /// can name.
+    /// Catalog entries in serialized order.
     #[serde(default)]
-    entries: crate::catalog::CountedEntries<CatiaCatalogEntry>,
+    entries: Vec<CatiaCatalogEntry>,
 }
 
 impl CatiaCatalogWire {
@@ -1938,8 +1889,7 @@ impl CatiaCatalogWire {
             id: catalog.id.clone(),
             byte_offset: catalog.byte_offset,
             byte_len: catalog.byte_len,
-            declared_count: catalog.declared_count(),
-            entries: crate::catalog::CountedEntries::default(),
+            entries: Vec::new(),
         }
     }
 }
@@ -1947,7 +1897,6 @@ impl CatiaCatalogWire {
 impl From<CatiaCatalog> for CatiaCatalogWire {
     fn from(catalog: CatiaCatalog) -> Self {
         Self {
-            declared_count: catalog.declared_count(),
             id: catalog.id,
             byte_offset: catalog.byte_offset,
             byte_len: catalog.byte_len,
@@ -1956,22 +1905,14 @@ impl From<CatiaCatalog> for CatiaCatalogWire {
     }
 }
 
-impl TryFrom<CatiaCatalogWire> for CatiaCatalog {
-    type Error = &'static str;
-
-    fn try_from(wire: CatiaCatalogWire) -> Result<Self, Self::Error> {
-        // `entries` states the count its own population names. The stored key
-        // must agree with it; a catalog whose population no count can name was
-        // already refused when `entries` was built.
-        if wire.entries.declared_count() != wire.declared_count {
-            return Err("catalog count disagrees with entries");
-        }
-        Ok(Self {
+impl From<CatiaCatalogWire> for CatiaCatalog {
+    fn from(wire: CatiaCatalogWire) -> Self {
+        Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
             byte_len: wire.byte_len,
             entries: wire.entries,
-        })
+        }
     }
 }
 
@@ -9314,15 +9255,17 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
 impl From<catalog::Catalog> for CatiaCatalog {
     fn from(catalog: catalog::Catalog) -> Self {
         let id = format!("catia:outer:catalog#{:010}", catalog.pos);
-        // One entry maps to one entry, so the population the parser's `u32`
-        // count named carries over with its bound intact.
-        let entries = catalog.entries.map(|entry| CatiaCatalogEntry {
-            id: format!("catia:outer:catalog-entry#{:010}", entry.pos),
-            parent: id.clone(),
-            ordinal: entry.ordinal,
-            byte_offset: entry.pos as u64,
-            value: entry.value,
-        });
+        let entries = catalog
+            .entries
+            .into_iter()
+            .map(|entry| CatiaCatalogEntry {
+                id: format!("catia:outer:catalog-entry#{:010}", entry.pos),
+                parent: id.clone(),
+                ordinal: entry.ordinal,
+                byte_offset: entry.pos as u64,
+                value: entry.value,
+            })
+            .collect();
         Self {
             id,
             byte_offset: catalog.pos as u64,

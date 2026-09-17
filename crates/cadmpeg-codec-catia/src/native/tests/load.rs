@@ -135,101 +135,6 @@ fn native_load_rejects_dangling_cross_arena_links() {
 }
 
 #[test]
-fn a_catalog_states_its_count_or_is_refused() {
-    let mut bytes = object_graph_stream();
-    bytes.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Sketch",
-    ]));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native.store(&mut namespace).expect("store catalogs");
-    let stored: Vec<serde_json::Value> = namespace.arena_as("catalogs").unwrap();
-    assert!(
-        stored[0].get("declared_count").is_some(),
-        "a stored catalog states its count"
-    );
-
-    // The key is required: leaving it out is no spelling of anything.
-    let mut absent = stored.clone();
-    absent[0]
-        .as_object_mut()
-        .expect("catalog object")
-        .remove("declared_count");
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    namespace.set_arena("catalogs", &absent).unwrap();
-    let error = namespace
-        .arena_as::<crate::native::CatiaCatalog>("catalogs")
-        .expect_err("an absent declared_count key");
-    assert!(format!("{error}").contains("declared_count"), "{error}");
-}
-
-/// The count is a `u32`, so `null` is no value of the field at all. This
-/// replaces the `null` case the same test carried while `declared_count` was
-/// an `Option<u32>` whose `None` stood for a population past the count width.
-#[test]
-fn a_catalog_count_admits_no_null() {
-    let mut bytes = object_graph_stream();
-    bytes.extend(catalog_stream(&[
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "Sketch",
-    ]));
-    let native = crate::native::CatiaNative::decode(&bytes);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native.store(&mut namespace).expect("store catalogs");
-    let mut stored: Vec<serde_json::Value> = namespace.arena_as("catalogs").unwrap();
-    stored[0]["declared_count"] = serde_json::Value::Null;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    namespace.set_arena("catalogs", &stored).unwrap();
-    let error = namespace
-        .arena_as::<crate::native::CatiaCatalog>("catalogs")
-        .expect_err("a catalog stating no count");
-    assert!(format!("{error}").contains("expected u32"), "{error}");
-}
-
-/// The bound is on the population, not on the count: a population no `u32`
-/// count can name is refused where the entries are built, so every catalog
-/// that exists states a count.
-#[test]
-fn a_catalog_population_past_the_count_width_is_refused() {
-    use crate::catalog::CountedEntries;
-
-    let empty = CountedEntries::<crate::native::CatiaCatalogEntry>::default();
-    assert_eq!(empty.declared_count(), 1);
-    assert!(empty.is_empty());
-
-    let one = CountedEntries::try_from(vec![crate::native::CatiaCatalogEntry {
-        id: "catia:outer:catalog-entry#0000000000".to_string(),
-        parent: "catia:outer:catalog#0000000000".to_string(),
-        ordinal: 0,
-        byte_offset: 0,
-        value: "Sketch".to_string(),
-    }])
-    .expect("a population one count names");
-    assert_eq!(one.declared_count(), 2);
-    assert_eq!(one.len(), 1);
-
-    // The refusal itself. A zero-sized entry costs no allocation, so the one
-    // population no `u32` count can name is buildable here and reaches the
-    // same constructor the catalog entries go through.
-    let widest = usize::try_from(u32::MAX).expect("a 64-bit index holds every u32");
-    assert_eq!(
-        CountedEntries::try_from(vec![(); widest - 1]).map(|entries| entries.declared_count()),
-        Ok(u32::MAX)
-    );
-    assert_eq!(
-        CountedEntries::try_from(vec![(); widest]).map(|entries| entries.declared_count()),
-        Err("catalog holds more entries than its stored count can name")
-    );
-}
-
-#[test]
 fn native_load_rejects_noncanonical_catalog_and_record_views() {
     let mut bytes = object_graph_stream();
     bytes.extend(catalog_stream(&[
@@ -243,14 +148,6 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store catalogs");
-    let mut catalogs: Vec<serde_json::Value> = namespace.arena_as("catalogs").unwrap();
-    catalogs[0]["declared_count"] = serde_json::json!(native.catalogs[0].declared_count() + 1);
-    namespace.set_arena("catalogs", &catalogs).unwrap();
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
-
     let mut invalid_entry_ordinal = native.clone();
     invalid_entry_ordinal.catalogs[0].entries[0].ordinal = 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
