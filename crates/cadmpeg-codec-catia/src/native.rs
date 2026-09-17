@@ -1899,13 +1899,32 @@ struct CatiaCatalogWire {
     /// refuses a population no count can name. This declaration states no
     /// `default`, so serde names the field when it is left out.
     ///
-    /// The header and the entries are two arenas, read separately:
-    /// `CatiaNative::load` reads `catalogs` and `catalog_entries` and joins
-    /// each entry to its parent by identity. The header states this count and
-    /// the joined population mints its own, so `TryFrom` below compares two
-    /// independently read figures. That is the join's agreement, not a check
-    /// standing where a type belongs: one document can state the two arenas
-    /// apart, and only their agreement admits the catalog.
+    /// Routes. The decode writes the count and reads it back on no route
+    /// this build compiles outside its tests. `CatiaCatalogWire::header`
+    /// copies the count out of a `CatiaCatalog` and leaves `entries` empty,
+    /// and `CatiaArenaProjection` puts those headers in the `catalogs` arena
+    /// while `catalog_entries` carries every catalog's population flattened
+    /// under its parent identity. A `CatiaCatalog` is built back from this
+    /// wire on two routes: `<CatiaCatalog as serde::Deserialize>`, whose
+    /// callers are `NativeNamespace::arena_as::<CatiaCatalog>` on the
+    /// `catalogs` arena and `CatiaNativeWire`, and the explicit `try_from` in
+    /// `CatiaNative::load`. Every caller of either route is compiled under
+    /// `#[cfg(test)]`, so in a production build the stored count is a datum
+    /// with no reader.
+    ///
+    /// `TryFrom` below is production code and is the bound on either reader.
+    /// The join fires in `CatiaNative::load`: it reads `catalogs` and
+    /// `catalog_entries` as two arenas, groups each entry under its parent
+    /// identity, and rebuilds `entries`, which mints its own count from the
+    /// joined population. `TryFrom` then admits the catalog only when that
+    /// count and the stored count agree, because one document can state the
+    /// two arenas apart.
+    ///
+    /// The decode route carries its own bound and does not use this one:
+    /// `crate::catalog::parse_candidate` builds `CountedEntries` from the
+    /// parsed entries, and `CountedEntries::map` carries the population one
+    /// to one into `CatiaCatalog`, so every catalog that exists states a
+    /// count.
     declared_count: u32,
     /// Catalog entries in serialized order, at a population the stored count
     /// can name.
