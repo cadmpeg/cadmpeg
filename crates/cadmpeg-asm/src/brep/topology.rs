@@ -305,8 +305,11 @@ pub(crate) fn walk_reachable_topology(
                                         } else if let Some(span) =
                                             nurbs::toks::payload_subtype_toks(prec, 5, "ref")
                                         {
-                                            match span.first() {
-                                                Some(Token::Long(index)) =>
+                                            // The interior opens with the `ref`
+                                            // identifier the lookup matched; the
+                                            // index is the field after it.
+                                            match span.interior() {
+                                                [_name, Token::Long(index), ..] =>
                                                     nurbs::pcurve::explicit_pcurve_cache_from_subtype_ref(
                                                         *index,
                                                         token_table,

@@ -348,3 +348,24 @@ fn a_byte_scope_decodes_the_curve_cache_it_owns_through_the_scope_type() {
         assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
     }
 }
+
+/// The explicit-pcurve decoder reads an `exp_par_cur` scope, not a raw stream.
+/// `subtype_span` and `payload_subtype_toks` are its only sources, so the
+/// unbalanced stream the free walk refuses is a state the argument cannot hold.
+#[test]
+fn an_exp_par_cur_scope_decodes_its_own_bs2_field_through_the_scope_type() {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "exp_par_cur");
+        bytes.extend_from_slice(&pcurve_block(int_width));
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
+        let scope = crate::nurbs::toks::subtype_span(&tokens, 0).expect("balanced scope");
+        let pcurve = crate::nurbs::pcurve::explicit_pcurve_cache(scope)
+            .unwrap_or_else(|| panic!("explicit pcurve cache at width {int_width}"));
+
+        assert_eq!(pcurve.degree(), 1);
+        assert_eq!(pcurve.knots(), [0.0, 0.0, 1.0, 1.0]);
+    }
+}

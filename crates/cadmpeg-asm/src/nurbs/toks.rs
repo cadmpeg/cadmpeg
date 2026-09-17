@@ -403,22 +403,40 @@ pub(crate) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Optio
 /// token is the close that balances it. The walks that refuse an unbalanced
 /// stream are total over this type.
 ///
-/// The field is not reachable from another module:
+/// The fields are not reachable from another module:
 ///
 /// ```compile_fail
 /// use cadmpeg_asm::nurbs::toks::SubtypeScope;
 /// use cadmpeg_asm::sab::Token;
 ///
 /// let toks = [Token::SubtypeOpen, Token::SubtypeClose];
-/// let scope = SubtypeScope(&toks[..]);
+/// let scope = SubtypeScope {
+///     tokens: &toks[..],
+///     interior: &toks[1..1],
+/// };
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SubtypeScope<'a>(&'a [Token]);
+pub struct SubtypeScope<'a> {
+    tokens: &'a [Token],
+    interior: &'a [Token],
+}
 
 impl<'a> SubtypeScope<'a> {
     /// The scope's tokens, both delimiters included.
     pub fn tokens(&self) -> &'a [Token] {
-        self.0
+        self.tokens
+    }
+
+    /// The tokens the scope encloses: everything between its opening token and
+    /// the close that balances it. For a scope that names a construction the
+    /// first of these is the identifier that names it, and the rest are the
+    /// fields the construction states.
+    ///
+    /// Total: [`subtype_span`] takes the interior from the same slice and the
+    /// same bounds as [`Self::tokens`], so a value of this type always holds
+    /// both.
+    pub fn interior(&self) -> &'a [Token] {
+        self.interior
     }
 
     /// Token indices of the `nubs`/`nurbs` markers the scope itself owns: those
@@ -428,7 +446,7 @@ impl<'a> SubtypeScope<'a> {
     /// Total: the unbalanced stream that [`owned_marker_positions`] refuses is
     /// a state this type cannot hold.
     pub fn owned_marker_positions(&self) -> Vec<usize> {
-        walk_owned_markers(self.0).0
+        walk_owned_markers(self.tokens).0
     }
 }
 
@@ -441,7 +459,14 @@ pub(crate) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<
             Token::SubtypeClose => {
                 depth = depth.checked_sub(1)?;
                 if depth == 0 {
-                    return toks.get(start..=pos).map(SubtypeScope);
+                    // `pos > start`: reaching depth one needs a `SubtypeOpen`
+                    // at or after `start`, so the close that returns depth to
+                    // zero is never the token at `start` itself. Both slices
+                    // are therefore in range.
+                    return Some(SubtypeScope {
+                        tokens: toks.get(start..=pos)?,
+                        interior: toks.get(start + 1..pos)?,
+                    });
                 }
             }
             _ => {}
@@ -474,15 +499,18 @@ pub(crate) fn subtype_refs(toks: &[Token]) -> Vec<usize> {
     refs
 }
 
-/// The interior tokens of the subtype scope at payload chunk `chunk_index`
-/// when its immediately following identifier is `expected`: everything after
-/// that identifier up to (excluding) the matching close. Token-space
-/// counterpart of [`crate::sab::payload_subtype_span`].
+/// The subtype scope at payload chunk `chunk_index` when its immediately
+/// following identifier is `expected`. Token-space counterpart of
+/// [`crate::sab::payload_subtype_span`].
+///
+/// The scope carries its own balance proof, so a caller that walks it needs no
+/// walk of its own to establish one. The identifier this function matched is
+/// the first token of [`SubtypeScope::interior`].
 pub fn payload_subtype_toks<'r>(
     record: &'r crate::sab::Record,
     chunk_index: usize,
     expected: &str,
-) -> Option<&'r [Token]> {
+) -> Option<SubtypeScope<'r>> {
     let mut chunk = 0usize;
     let mut open = None;
     for (pos, token) in record.tokens.iter().enumerate() {
@@ -505,8 +533,7 @@ pub fn payload_subtype_toks<'r>(
     if name != expected {
         return None;
     }
-    let span = subtype_span(&record.tokens, open)?.tokens();
-    span.get(2..span.len() - 1)
+    subtype_span(&record.tokens, open)
 }
 
 /// Token positions of the stream's subtype definitions, in stream order.

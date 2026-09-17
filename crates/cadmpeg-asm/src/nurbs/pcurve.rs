@@ -238,9 +238,13 @@ fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<PcurveNurbs> {
 ///
 /// The scope grammar makes its first owned B-spline block the pcurve. Nested
 /// support references are not searched because they belong to other fields.
-pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<PcurveNurbs> {
-    let position = toks::owned_marker_positions(toks)?.into_iter().next()?;
-    pcurve_block(toks, position)
+///
+/// The argument is the scope, so the marker walk is total: the unbalanced
+/// stream the free walk refuses is a state [`toks::SubtypeScope`] cannot hold.
+/// Marker positions index the scope's own tokens.
+pub fn explicit_pcurve_cache(scope: toks::SubtypeScope<'_>) -> Option<PcurveNurbs> {
+    let position = scope.owned_marker_positions().into_iter().next()?;
+    pcurve_block(scope.tokens(), position)
 }
 
 /// Resolve an explicit pcurve through one subtype-table reference.
@@ -249,7 +253,7 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
     table: &toks::SubtypeTable,
 ) -> Option<PcurveNurbs> {
     let index = usize::try_from(index).ok()?;
-    explicit_pcurve_cache(table.span(index)?.tokens())
+    explicit_pcurve_cache(table.span(index)?)
 }
 
 /// The parameter-space fit tolerance immediately following the final valid 2D
