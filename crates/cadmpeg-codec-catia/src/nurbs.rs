@@ -102,6 +102,16 @@ impl LaneRefusals {
             .push(crate::loss::CatiaLossCode::SourceAnnotationCollision.note(error.to_string()));
     }
 
+    /// Retain the refusal the IR stated when a carrier construction was
+    /// admitted, so a route that transfers no model still names the cause.
+    pub(crate) fn push_construction(&mut self, error: &cadmpeg_core::CodecError) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+                "A CATIA carrier record states a construction the IR refuses: {error}"
+            )),
+        );
+    }
+
     /// Record one refusal against the record that stated it.
     fn push(&mut self, record: impl std::fmt::Display, error: &cadmpeg_ir::geometry::NurbsError) {
         self.notes.push(

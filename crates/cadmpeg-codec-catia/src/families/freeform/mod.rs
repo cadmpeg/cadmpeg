@@ -576,13 +576,18 @@ pub(crate) fn try_decode_freeform_surfaces(
             });
         }
     }
-    // discarded-value: the curves and surfaces this call appends are the whole effect here; the bindings have a reader only on the standard-family route
-    let _ = append_consolidated_revolutions(
+    // The bindings this call returns are read by the standard-family route
+    // alone; here the call is made for the curves and surfaces it appends, and
+    // the only thing this route takes from its result is the refusal, which it
+    // states before it transfers no model.
+    if let Err(error) = append_consolidated_revolutions(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    )
-    .ok()?;
+    ) {
+        refusal.push_construction(&error);
+        return None;
+    }
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     let line_profiles = consolidated_line_profiles(&scan.data, &consolidated_records);
     let mut standalone_wires = line_profiles
@@ -4199,5 +4204,76 @@ mod tests {
                             && *axis == Vector3::new(0.0, 1.0, 0.0)
                             && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
                 })));
+    }
+
+    /// The `Err` arm of `append_consolidated_revolutions` names the interval
+    /// the IR refused, so the freeform route can state a cause instead of
+    /// dropping the family. No byte input reaches this arm: every interval the
+    /// record decoder emits is already proven finite and strictly increasing.
+    #[test]
+    fn a_refused_revolution_construction_names_the_interval() {
+        use crate::checked::{ExactUnitVector3, OrderedInterval, PositiveFinite};
+        use crate::families::b2::records::{B2Circle, B2ResolvedRevolution, B2Revolution};
+        use crate::native::{CatiaCircleLayout, CatiaRevolutionReferenceToken};
+
+        let unit = |value: [f64; 3]| {
+            ExactUnitVector3::new(value).expect("fixture direction is a unit vector")
+        };
+        let positive =
+            |value: f64| PositiveFinite::new(value).expect("fixture scalar is finite positive");
+        let interval = |value: [f64; 2]| {
+            OrderedInterval::new(value).expect("fixture interval is finite and increasing")
+        };
+        let resolved = [B2ResolvedRevolution {
+            revolution_index: 0,
+            revolution: B2Revolution {
+                pos: 0,
+                reference_token: CatiaRevolutionReferenceToken::Compact,
+                profile_allocation_id: 1,
+                origin: [0.0, 0.0, 0.0],
+                direction_x: unit([1.0, 0.0, 0.0]),
+                direction_y: unit([0.0, 1.0, 0.0]),
+                axis: unit([0.0, 0.0, 1.0]),
+                // The one lane the record decoder does not prove by type.
+                angular_range: [1.0, 1.0],
+                profile_range: interval([0.0, 1.0]),
+                angular_scale: positive(1.0),
+            },
+            profile: B2Circle {
+                pos: 0,
+                layout: CatiaCircleLayout::Identity8Bit,
+                record_id: 1,
+                frame_token: 0x08,
+                center_pair: [2.0, 0.0],
+                radius: positive(1.0),
+                range: interval([0.0, 1.0]),
+                chart_shift: 0.0,
+            },
+        }];
+        let mut ir = CadIr::empty();
+        let mut annotations = AnnotationBuilder::default();
+        let Err(error) = append_consolidated_revolutions(&mut ir, &mut annotations, &resolved)
+        else {
+            panic!("an equal-endpoint angular interval is refused");
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("revolution angular_interval must be finite and strictly increasing"),
+            "the refusal must name the interval it refused: {error}"
+        );
+
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        refusal.push_construction(&error);
+        let notes = refusal.take_notes();
+        let [note] = notes.as_slice() else {
+            panic!("one construction refusal states one note");
+        };
+        assert!(
+            note.message
+                .contains("revolution angular_interval must be finite and strictly increasing"),
+            "the note the route states must carry the cause: {}",
+            note.message
+        );
     }
 }
