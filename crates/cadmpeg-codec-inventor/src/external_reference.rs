@@ -751,11 +751,22 @@ impl<'a> Cursor<'a> {
         self.view.position().saturating_sub(self.view.start())
     }
 
+    /// Refuses a range whose end no `usize` can state.
+    ///
+    /// The test is the whole effect. The sum is the end the caller is about
+    /// to reach, and every caller reaches it through the view instead, so
+    /// this answers whether the range is statable and nothing else.
+    fn require_statable_range(&self, len: usize, field: &str) -> Result<(), CodecError> {
+        if self.position().checked_add(len).is_none() {
+            return Err(CodecError::malformed(format_args!(
+                "UFRxDoc {field} range overflows"
+            )));
+        }
+        Ok(())
+    }
+
     fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        // discarded-value: the overflow test is the whole effect; ? states the refusal and the sum has no reader
-        let _ = self.position().checked_add(len).ok_or_else(|| {
-            CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
-        })?;
+        self.require_statable_range(len, field)?;
         self.view
             .take(len)
             .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
@@ -798,10 +809,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn peek_u32_at(&self, relative: usize, field: &str) -> Result<u32, CodecError> {
-        // discarded-value: the overflow test is the whole effect; ? states the refusal and the sum has no reader
-        let _ = self.position().checked_add(relative).ok_or_else(|| {
-            CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
-        })?;
+        self.require_statable_range(relative, field)?;
         let mut view = self.view;
         view.skip(relative)
             .and_then(|()| view.u32_le())
@@ -850,10 +858,7 @@ impl<'a> Cursor<'a> {
             CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
         })?;
         ctx.charge_retained(len as u64, "retain UFRxDoc string")?;
-        // discarded-value: the overflow test is the whole effect; ? states the refusal and the sum has no reader
-        let _ = self.position().checked_add(len).ok_or_else(|| {
-            CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
-        })?;
+        self.require_statable_range(len, field)?;
         self.view.utf16_le(count).ok_or_else(|| {
             if self.view.remaining() < len {
                 CodecError::malformed(format_args!("truncated UFRxDoc {field}"))
