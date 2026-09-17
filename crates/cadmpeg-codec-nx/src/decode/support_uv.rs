@@ -33,7 +33,7 @@ use crate::framing::node_kind::NodeKind;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::intersection::{SupportUv, SupportUvLane};
 use crate::topology::Graph;
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{work_units, WorkBudget};
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
@@ -1652,7 +1652,8 @@ fn complete_coupled_support_uv(
             continue;
         }
         let missing_lanes = missing.iter().filter(|missing| **missing).count();
-        if !coupled_support_budget.charge_by(points.len().saturating_mul(missing_lanes).max(1)) {
+        if !coupled_support_budget.charge_by(work_units(points.len().saturating_mul(missing_lanes)))
+        {
             break;
         }
         let seeds = std::array::from_fn(|side| {

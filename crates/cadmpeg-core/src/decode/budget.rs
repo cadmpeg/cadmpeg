@@ -450,6 +450,19 @@ impl<'a> WorkBudget<'a> {
 #[error("work budget exhausted")]
 pub struct BudgetExhausted;
 
+/// The work a step over `items` owes a [`WorkBudget`].
+///
+/// A step that walks no item still runs, so it owes one unit. Charging zero
+/// would leave an unbounded number of empty steps free of the budget, and the
+/// walk that makes them would not be bounded by it.
+#[must_use]
+pub const fn work_units(items: usize) -> usize {
+    match items {
+        0 => 1,
+        items => items,
+    }
+}
+
 /// Builds a correctly classified refusal for a codec-local ceiling.
 pub fn refuse_local_limit(what: &'static str, limit: u64, requested: u64) -> CodecError {
     local_limit_error(what, limit, requested, what)
@@ -490,7 +503,7 @@ fn local_limit_error(
 
 #[cfg(test)]
 mod tests {
-    use super::WorkBudget;
+    use super::{work_units, WorkBudget};
 
     fn descend(budget: &WorkBudget<'_>, depth: usize) -> usize {
         let Some(_guard) = budget.recursion_guard() else {
@@ -503,6 +516,20 @@ mod tests {
     fn recursion_guard_is_shared_and_bounded() {
         let budget = WorkBudget::new(10_000);
         assert_eq!(descend(&budget, 0), 256);
+        assert!(budget.exhausted());
+    }
+
+    #[test]
+    fn a_step_over_no_item_owes_exactly_one_unit() {
+        assert_eq!(work_units(0), 1);
+        for items in [1, 2, 7, usize::MAX] {
+            assert_eq!(work_units(items), items);
+        }
+
+        let budget = WorkBudget::new(1);
+        assert!(budget.charge_by(work_units(0)));
+        assert_eq!(budget.consumed(), 1);
+        assert!(!budget.charge_by(work_units(0)));
         assert!(budget.exhausted());
     }
 }

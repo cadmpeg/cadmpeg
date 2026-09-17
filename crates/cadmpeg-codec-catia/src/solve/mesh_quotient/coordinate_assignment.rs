@@ -9,6 +9,8 @@ use super::{
     MeshFaceBoundaryDomain, MeshQuotient, PointAssignmentOutcome, UnionFind, WorkBudget,
 };
 
+use cadmpeg_core::decode::work_units;
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn close_coordinate_roots_with_incidence(
     quotient: &mut MeshQuotient,
@@ -214,7 +216,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 edges
             }
         };
-        if budget.is_some_and(|budget| !budget.charge_by(relevant.len().max(1))) {
+        if budget.is_some_and(|budget| !budget.charge_by(work_units(relevant.len()))) {
             return false;
         }
         let value = |root| {
@@ -507,7 +509,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     };
                     let edge_faces = &incidence.edge_faces;
                     if work_budget
-                        .is_some_and(|budget| !budget.charge_by(root_edges[root].len().max(1)))
+                        .is_some_and(|budget| !budget.charge_by(work_units(root_edges[root].len())))
                     {
                         return false;
                     }
@@ -545,7 +547,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                             continue;
                         }
                         if work_budget.is_some_and(|budget| {
-                            !budget.charge_by(incidence.face_edges[face].len().max(1))
+                            !budget.charge_by(work_units(incidence.face_edges[face].len()))
                         }) {
                             return false;
                         }
@@ -1200,7 +1202,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             .collect::<HashMap<_, _>>();
         let local_incidence = match incidence.as_ref() {
             Some((edge_faces, boundary_domains, counts)) => {
-                if budget.is_some_and(|budget| !budget.charge_by(edge_ids.len().max(1))) {
+                if budget.is_some_and(|budget| !budget.charge_by(work_units(edge_ids.len()))) {
                     exhausted.set(true);
                     return None;
                 }
