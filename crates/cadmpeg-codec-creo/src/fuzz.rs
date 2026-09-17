@@ -55,7 +55,11 @@ pub fn psb_tokens(data: &[u8]) {
 
 /// Exercise Creo short-form float decoding.
 pub fn short_form_float(data: &[u8]) {
-    let _probe = crate::psb::is_short_form_float(data.first().copied().unwrap_or(0));
+    // `is_short_form_float` reads one byte. Bytes that state no first byte are
+    // the input this wrapper passes through: the predicate does not run for
+    // them and nothing stands in for the byte they do not state. The decoder
+    // below still sees the whole input.
+    let _probe = data.first().copied().map(crate::psb::is_short_form_float);
     let _probe = crate::psb::short_form_float(data, 0);
 }
 
