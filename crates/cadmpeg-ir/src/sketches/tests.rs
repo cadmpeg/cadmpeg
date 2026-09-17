@@ -688,6 +688,56 @@ fn a_circular_pattern_count_is_stored_at_the_ir_width() {
 }
 
 #[test]
+fn a_circular_pattern_count_cannot_disagree_with_its_instances() {
+    use crate::scalar::Angle;
+    use crate::sketches::{SketchCircularPattern, SketchCircularPatternInstance, SketchEntityId};
+
+    let instance = |index: u32| SketchCircularPatternInstance {
+        angle: crate::scalar::NonZeroAngle::new(1.0).unwrap(),
+        entities: vec![SketchEntityId::mint(format!("test:test:sketch-entity#{index}")).unwrap()],
+    };
+    let build = |instances: Vec<SketchCircularPatternInstance>| {
+        SketchCircularPattern::new(
+            SketchEntityId::mint("test:test:sketch-entity#center").unwrap(),
+            Angle::new(1.0).unwrap(),
+            None,
+            None,
+            vec![SketchEntityId::mint("test:test:sketch-entity#seed").unwrap()],
+            instances,
+        )
+        .unwrap()
+    };
+    for instances in [
+        vec![instance(1)],
+        vec![instance(1), instance(2)],
+        vec![instance(1), instance(2), instance(3)],
+    ] {
+        let instance_count = instances.len();
+        let pattern = build(instances);
+        assert_eq!(pattern.instances().len(), instance_count);
+        assert_eq!(
+            usize::try_from(pattern.count()).unwrap(),
+            instance_count + 1,
+            "the stored count is the instances and the seed"
+        );
+    }
+    // The wire states no count and refuses an unknown key, so no document can
+    // state a figure that disagrees with the instances it carries.
+    let pattern = build(vec![instance(1), instance(2)]);
+    let wire = serde_json::to_value(&pattern).unwrap();
+    assert!(wire.get("count").is_none());
+    let mut stated = wire.clone();
+    stated["count"] = serde_json::json!(9);
+    assert!(serde_json::from_value::<SketchCircularPattern>(stated).is_err());
+    assert_eq!(
+        serde_json::from_value::<SketchCircularPattern>(wire)
+            .unwrap()
+            .count(),
+        3
+    );
+}
+
+#[test]
 fn a_circular_pattern_states_its_count_only_as_instances() {
     use crate::scalar::Angle;
     use crate::sketches::{

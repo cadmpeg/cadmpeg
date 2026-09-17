@@ -1888,7 +1888,11 @@ pub struct SketchCircularPattern {
     seed: Vec<SketchEntityId>,
     instances: crate::features::NonEmptyMembers<SketchCircularPatternInstance>,
     /// Instance count including the seed, proven to fit the IR width by
-    /// `new`, which is the only constructor.
+    /// `new`, which is the only constructor. The field restates
+    /// `instances.len() + 1`, and it is stored because every derived spelling
+    /// states a refusal no population can reach: `new` proves the figure once,
+    /// and `SketchCircularPatternWire` carries no `count` key and refuses an
+    /// unknown one, so no document can state a figure that disagrees.
     count: u32,
 }
 
