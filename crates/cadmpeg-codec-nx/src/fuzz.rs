@@ -30,7 +30,13 @@ pub fn om(data: &[u8]) {
         crate::om_tokens::HOST_GLOBALS,
         crate::om_tokens::CLASS_NAME_PREFIX,
         crate::om_tokens::NUMBER_PREFIX,
-        crate::om_tokens::unit_for(std::str::from_utf8(data).unwrap_or("")),
+        // `unit_for` reads text. Bytes that state no text are the refusal this
+        // wrapper passes through: the lookup does not run for them and nothing
+        // stands in for the text they do not state. The walkers below still
+        // see the whole input.
+        std::str::from_utf8(data)
+            .ok()
+            .map(crate::om_tokens::unit_for),
     );
     let mut at = 0;
     while let Some(token) = crate::om::compact::NullableCompactIndex::read(data, at) {
@@ -171,5 +177,18 @@ mod tests {
     fn parasolid_wrapper_accepts_fixture() {
         let bytes = crate::test_support::single_part_prt();
         super::parasolid(&bytes);
+    }
+
+    /// Bytes that state no text are an input the wrapper carries to every
+    /// parser below it. Only the token lookup that reads text is skipped, and
+    /// nothing stands in for the text the input does not state.
+    #[test]
+    fn om_accepts_bytes_that_state_no_text() {
+        let bytes: Vec<u8> = vec![0xff, 0xfe, 0x80, 0x41, 0x00, 0xc3, 0x28];
+        assert!(
+            std::str::from_utf8(&bytes).is_err(),
+            "the fixture must state no text"
+        );
+        super::om(&bytes);
     }
 }
