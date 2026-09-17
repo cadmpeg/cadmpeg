@@ -463,7 +463,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(tree) = pointer(record, 1).filter(|sequence| {
+        let Some(_tree) = pointer(record, 1).filter(|sequence| {
             decoded.contains(sequence)
                 && entries
                     .get(sequence)
@@ -503,7 +503,6 @@ pub(super) fn project(
             ));
             continue;
         }
-        let _ = tree;
         decoded.insert(entry.sequence);
     }
 

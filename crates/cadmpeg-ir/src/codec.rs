@@ -275,8 +275,7 @@ pub trait CodecBackend {
     /// namespace or has no validator for it. The sealed wrapper exposes it as
     /// [`Codec::validate_native`], which the application runs after
     /// `validate_neutral`.
-    fn validate_native(ir: &CadIr) -> Vec<Finding> {
-        let _ = ir;
+    fn validate_native(_ir: &CadIr) -> Vec<Finding> {
         Vec::new()
     }
 

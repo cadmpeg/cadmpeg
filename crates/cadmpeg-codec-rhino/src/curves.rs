@@ -884,7 +884,7 @@ fn elevate_to_degree(
         return Err(error(offset, "polycurve segment has no nonempty span"));
     }
     let mut elevated = Vec::new();
-    for (span, boundary) in boundaries.iter().enumerate() {
+    for (span, _boundary) in boundaries.iter().enumerate() {
         let start = span * degree;
         let bezier = elevate_bezier(points[start..=start + degree].to_vec(), target);
         if span == 0 {
@@ -892,7 +892,6 @@ fn elevate_to_degree(
         } else {
             elevated.extend(bezier.into_iter().skip(1));
         }
-        let _ = boundary;
     }
     let mut elevated_knots = alloc_filled(
         target
@@ -1217,6 +1216,7 @@ pub(crate) fn consume_legacy_polycurve_2d(
     archive: ArchiveVersion,
 ) -> Result<Range<usize>, GeometryError> {
     let start = reader.position();
+    // discarded-value: the payload is consumed for the byte range the caller returns; the decoded curve has no reader
     let _ = read_polycurve_2d(data, reader, archive, 0)?;
     Ok(start..reader.position())
 }
@@ -1563,6 +1563,7 @@ pub(crate) fn consume_legacy_polycurve(
     archive: ArchiveVersion,
 ) -> Result<Range<usize>, GeometryError> {
     let start = reader.position();
+    // discarded-value: the payload is consumed for the byte range the caller returns; the decoded curve has no reader
     let _ = read_polycurve(data, reader, scale, archive, 0)?;
     Ok(start..reader.position())
 }
