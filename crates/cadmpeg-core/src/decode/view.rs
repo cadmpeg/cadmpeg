@@ -97,9 +97,16 @@ impl BoundedCount {
 }
 
 /// A bounded window over one address space.
+///
+/// The readable bytes are held as the slice itself, so [`View::window`] is a
+/// field read with no range to recompute. `start` and `end` place that slice
+/// in the space: `end - start == window.len()` and `start <= position <= end`
+/// for every view. The two constructors are the only places those bounds are
+/// proven — `over_space` takes a whole buffer, and `child` carves the
+/// sub-slice with the same `get` that bounds the child.
 #[derive(Debug, Clone, Copy)]
 pub struct View<'a> {
-    bytes: &'a [u8],
+    window: &'a [u8],
     space: SpaceId,
     start: usize,
     end: usize,
@@ -110,7 +117,7 @@ impl<'a> View<'a> {
     /// Creates a full-window view over an entire space buffer.
     pub(crate) fn over_space(bytes: &'a [u8], space: SpaceId) -> View<'a> {
         View {
-            bytes,
+            window: bytes,
             space,
             start: 0,
             end: bytes.len(),
@@ -147,6 +154,14 @@ impl<'a> View<'a> {
         self.end
     }
 
+    /// Returns the window offset of an absolute position in this space.
+    ///
+    /// `None` is the lower-bound refusal [`View::child`] states: a position
+    /// under this window's own start names no byte of the window.
+    fn offset_of(self, position: usize) -> Option<usize> {
+        position.checked_sub(self.start)
+    }
+
     /// Returns the number of unread bytes before the window's end.
     pub fn remaining(self) -> usize {
         self.end.saturating_sub(self.position)
@@ -175,16 +190,18 @@ impl<'a> View<'a> {
 
     /// Returns the readable window `start..end` as a slice.
     pub fn window(self) -> &'a [u8] {
-        self.bytes.get(self.start..self.end).unwrap_or_default()
+        self.window
     }
 
     /// Takes `count` bytes, advancing only on success.
+    ///
+    /// The window slice is the upper bound: `get` refuses a count the unread
+    /// bytes cannot serve, so no separate end test stands beside it.
     pub fn take(&mut self, count: usize) -> Option<&'a [u8]> {
         let end = self.position.checked_add(count)?;
-        if end > self.end {
-            return None;
-        }
-        let bytes = self.bytes.get(self.position..end)?;
+        let bytes = self
+            .window
+            .get(self.offset_of(self.position)?..self.offset_of(end)?)?;
         self.position = end;
         Some(bytes)
     }
@@ -210,18 +227,19 @@ impl<'a> View<'a> {
     }
 
     /// Returns an exactly contained child window.
+    ///
+    /// The containment test is the sub-slice itself: `offset_of` refuses a
+    /// lower bound under this window's own, and `get` refuses an inverted
+    /// range or an upper bound past this window's end.
     pub fn child(self, start: usize, end: usize) -> Option<View<'a>> {
-        if self.start <= start && start <= end && end <= self.end {
-            Some(View {
-                bytes: self.bytes,
-                space: self.space,
-                start,
-                end,
-                position: start,
-            })
-        } else {
-            None
-        }
+        let window = self.window.get(self.offset_of(start)?..self.offset_of(end)?)?;
+        Some(View {
+            window,
+            space: self.space,
+            start,
+            end,
+            position: start,
+        })
     }
 
     /// Proves a declared element count could fit in the unread bytes.
@@ -440,6 +458,34 @@ mod tests {
         assert_eq!(view.counted(10, 4).map(BoundedCount::get), Some(10));
         assert_eq!(view.counted(11, 4), None);
         assert_eq!(bounded_len(u64::MAX, 20, usize::MAX), None);
+    }
+
+    /// The window is the slice the constructor proved, not a range recomputed
+    /// against a wider buffer: `window()` reads the field a constructor stored.
+    #[test]
+    fn the_window_is_the_slice_the_constructor_proved() {
+        let payload = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        let view = View::over_space(&payload, SpaceId::ROOT);
+        assert_eq!(view.window(), payload.as_slice());
+        assert_eq!(view.start(), 0);
+        assert_eq!(view.end(), payload.len());
+        let mut child = view.child(2, 6).expect("contained child");
+        assert_eq!(child.window(), payload.get(2..6).expect("fixture range"));
+        assert_eq!(child.start(), 2);
+        assert_eq!(child.end(), 6);
+        assert_eq!(child.position(), 2);
+        assert_eq!(child.remaining(), 4);
+        assert_eq!(child.take(2), payload.get(2..4));
+        assert_eq!(child.position(), 4);
+        assert_eq!(child.remaining(), 2);
+        assert_eq!(child.window(), payload.get(2..6).expect("fixture range"));
+        assert_eq!(child.take(3), None);
+        assert_eq!(child.position(), 4);
+        let inner = view.child(2, 6).expect("contained child");
+        assert!(inner.child(1, 6).is_none(), "lower bound under the window");
+        assert!(inner.child(2, 7).is_none(), "upper bound past the window");
+        assert!(inner.child(5, 3).is_none(), "inverted range");
+        assert_eq!(inner.child(3, 5).map(View::window), payload.get(3..5));
     }
 
     #[test]
