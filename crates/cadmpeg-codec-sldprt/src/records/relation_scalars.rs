@@ -89,9 +89,9 @@ impl RelationScalars {
 #[derive(Deserialize)]
 pub(super) struct Wire {
     scalar_refs: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     parameter_scalar_ref: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     display_scalar_ref: Option<String>,
 }
 
@@ -141,5 +141,20 @@ mod tests {
             let error = serde_json::from_value::<RelationScalars>(invalid).unwrap_err();
             assert!(error.to_string().contains(field));
         }
+    }
+
+    #[test]
+    fn relation_scalars_wire_refuses_a_null_selected_scalar() {
+        for key in ["parameter_scalar_ref", "display_scalar_ref"] {
+            let mut wire = serde_json::json!({"scalar_refs": ["display", "driver"]});
+            wire[key] = serde_json::Value::Null;
+            assert!(
+                serde_json::from_value::<RelationScalars>(wire.clone()).is_err(),
+                "{wire}"
+            );
+        }
+        let absent: RelationScalars =
+            serde_json::from_value(serde_json::json!({"scalar_refs": []})).unwrap();
+        assert!(absent.parameter().is_none());
     }
 }

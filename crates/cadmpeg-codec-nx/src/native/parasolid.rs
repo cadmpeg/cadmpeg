@@ -752,7 +752,7 @@ pub struct ParasolidDeltasReferenceTypeMap {
     /// Ordered `(XMT identity, Parasolid type code)` entries.
     pub entries: MapEntries,
     /// Type code of the optional terminal map target.
-    #[serde(default, deserialize_with = "deserialize_map_target_kind")]
+    #[serde(deserialize_with = "deserialize_map_target_kind")]
     pub target_kind: Option<std::num::NonZeroU16>,
     /// Exact map byte length.
     pub byte_len: u64,
@@ -768,7 +768,7 @@ fn deserialize_map_target_kind<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    Option::<u16>::deserialize(deserializer)?
+    cadmpeg_core::absent_key::nullable::<D, u16>(deserializer)?
         .map(|kind| {
             std::num::NonZeroU16::new(kind).ok_or_else(|| {
                 serde::de::Error::custom("target_kind: must be nonzero when present")

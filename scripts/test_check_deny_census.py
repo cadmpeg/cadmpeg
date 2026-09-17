@@ -52,6 +52,26 @@ class DenyCensusTests(unittest.TestCase):
                     patch.object(census, "ABSENT_KEY_EXCEPTIONS", {}):
                 return [message for _, _, message in census.absent_key_failures()]
 
+    def run_absent_key_main(self, files: dict[str, str]) -> tuple[int, str]:
+        """The whole census over one fixture tree, absent-key rule included."""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for name, source in files.items():
+                path = Path(directory) / "crates" / "fixture" / "src" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source, encoding="utf-8")
+                paths.append(path)
+            output = io.StringIO()
+            with patch.object(census, "source_files", return_value=[]), \
+                    patch.object(census, "absent_key_source_files",
+                                 return_value=paths), \
+                    patch.object(census, "ABSENT_KEY_EXCEPTIONS", {}), \
+                    patch.object(census, "ABSENT_KEY_PROJECTIONS", {}), \
+                    contextlib.redirect_stdout(output), \
+                    contextlib.redirect_stderr(output):
+                status = census.main()
+            return status, output.getvalue()
+
     def item(self, path: str, name: str) -> census.Item:
         return census.Item(Path(path), 1, "struct", name, "", "")
 
@@ -1782,6 +1802,108 @@ class AbsentKeyCensusTests(unittest.TestCase):
             '}\n'
         )
         self.assertEqual(self.run_absent_key_census({"wire.rs": routed}), [])
+
+    run_absent_key_main = DenyCensusTests.run_absent_key_main
+
+    FLATTENED_MODULE = (
+        '#[derive(serde::Deserialize)]\n'
+        'struct Outer {\n'
+        '    #[serde(flatten, with = "inner_wire")]\n'
+        '    value: Option<u32>,\n'
+        '}\n'
+        'mod inner_wire {\n'
+        '    #[derive(serde::Deserialize)]\n'
+        '    pub(super) struct Wire {\n'
+        '        #[serde(default%s)]\n'
+        '        inner_key: Option<u32>,\n'
+        '    }\n'
+        '}\n'
+    )
+
+    def test_a_flattened_module_with_an_undeclared_option_is_named(self) -> None:
+        status, output = self.run_absent_key_main(
+            {"wire.rs": self.FLATTENED_MODULE % ""}
+        )
+        self.assertEqual(status, 1, output)
+        self.assertIn("Wire.inner_key", output)
+        self.assertIn("inner_wire reads this key for Outer.value", output)
+        self.assertIn("absent_key::present", output)
+
+    def test_a_flattened_module_that_declares_its_keys_passes(self) -> None:
+        declared = self.FLATTENED_MODULE % (
+            ', deserialize_with = "cadmpeg_core::absent_key::present"'
+        )
+        status, output = self.run_absent_key_main({"wire.rs": declared})
+        self.assertEqual(status, 0, output)
+
+    def test_a_flattened_reader_key_may_state_the_nullable_spelling(self) -> None:
+        nullable = (
+            '#[derive(serde::Deserialize)]\n'
+            'struct Outer {\n'
+            '    #[serde(flatten, deserialize_with = "read_inner")]\n'
+            '    value: Option<u32>,\n'
+            '}\n'
+            '#[derive(serde::Deserialize)]\n'
+            'struct InnerWire {\n'
+            '    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]\n'
+            '    inner_key: Option<u32>,\n'
+            '}\n'
+            "fn read_inner<'de, D: serde::Deserializer<'de>>(d: D)"
+            ' -> Result<Option<u32>, D::Error> {\n'
+            '    let wire = InnerWire::deserialize(d)?;\n'
+            '    Ok(wire.inner_key)\n'
+            '}\n'
+        )
+        status, output = self.run_absent_key_main({"wire.rs": nullable})
+        self.assertEqual(status, 0, output)
+        stated = nullable.replace(
+            '    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]\n',
+            "",
+        )
+        status, output = self.run_absent_key_main({"wire.rs": stated})
+        self.assertEqual(status, 1, output)
+        self.assertIn("InnerWire.inner_key", output)
+        self.assertIn("read_inner reads this key for Outer.value", output)
+
+    def test_an_optional_key_under_default_is_read_without_a_writer_hint(
+        self,
+    ) -> None:
+        findings = self.run_absent_key_census({
+            "wire.rs": (
+                '#[derive(serde::Deserialize)]\n'
+                'struct Wire {\n'
+                '    #[serde(default)]\n'
+                '    key: Option<u32>,\n'
+                '}\n'
+            )
+        })
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("Wire.key", findings[0])
+        self.assertIn("absent_key::present", findings[0])
+
+    def test_a_projection_admission_is_refused_for_a_writing_item(self) -> None:
+        source = (
+            '#[derive(serde::Serialize, serde::Deserialize)]\n'
+            'struct Probe {\n'
+            '    #[serde(default)]\n'
+            '    key: Option<u32>,\n'
+            '}\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "crates" / "fixture" / "src" / "probe.rs"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+            with patch.object(census, "absent_key_source_files",
+                              return_value=[path]), \
+                    patch.object(census, "ABSENT_KEY_EXCEPTIONS", {}), \
+                    patch.object(
+                        census, "ABSENT_KEY_PROJECTIONS",
+                        {f"{path.as_posix()}:Probe": "a stated reason"}):
+                findings = [
+                    message for _, _, message in census.absent_key_failures()
+                ]
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("derives Serialize", findings[0])
 
     def test_a_serialize_only_item_states_no_reader(self) -> None:
         writer = (

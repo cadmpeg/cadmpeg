@@ -1033,3 +1033,22 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
 mod construction_frame;
 
 mod frame_chains;
+
+#[test]
+fn historical_binding_wire_refuses_a_null_key() {
+    #[derive(serde::Deserialize)]
+    struct Probe {
+        #[serde(flatten, deserialize_with = "super::deserialize_historical_binding")]
+        historical: Option<super::HistoricalBinding>,
+    }
+    for key in ["historical_entity_kind", "historical_entity_ref"] {
+        let mut wire = serde_json::json!({});
+        wire[key] = serde_json::Value::Null;
+        assert!(
+            serde_json::from_value::<Probe>(wire.clone()).is_err(),
+            "{wire}"
+        );
+    }
+    let absent: Probe = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert!(absent.historical.is_none());
+}

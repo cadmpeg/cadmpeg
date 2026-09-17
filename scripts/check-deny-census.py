@@ -83,7 +83,46 @@ ABSENT_KEY_EXCEPTIONS = {
     "crates/cadmpeg-codec-f3d/src/records/topology.rs:postlude_value":
         "the key states a scalar run, not an option: its reader reads a Vec<i32>, "
         "which refuses null, and reads the empty run as None",
+    "crates/cadmpeg-codec-f3d/src/records/feature.rs:previous_history_state_id_offset":
+        "the writer states this key for every scope as a u64 and the format spells "
+        "the absent preceding state as offset 0, which no record header can occupy; "
+        "serialize_absent_u64_offset and deserialize_absent_u64_offset are that one "
+        "spelling, and neither an absent key nor null is admitted",
 }
+
+# Read-only projections, admitted by declaring file and item name. Each
+# states why an absent key and `null` are both the read artifact's own
+# spellings. The admission is honoured only for an item that derives no
+# writer of its own, so a round-trip wire type cannot take one.
+COMMAND_REPORT_PROJECTION = (
+    "a read-only projection over the command-report family: a section is "
+    "absent from a report whose payload type has no such section and `null` "
+    "in a report whose payload type has it and did not run it, so both "
+    "spellings are the family's own; each writing type states its own "
+    "spelling where it is written"
+)
+DOCUMENT_PROJECTION = (
+    "a read-only projection over a CADIR document and its decode sidecar: a "
+    "section this build does not find is one the writing build did not "
+    "state; each writing type states its own spelling where it is written"
+)
+ABSENT_KEY_PROJECTIONS = {
+    "crates/cadmpeg/src/query/mod.rs:ReportProbe": COMMAND_REPORT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:RefusalProbe": COMMAND_REPORT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:ContainerSummaryProbe":
+        COMMAND_REPORT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:ExportReportProbe":
+        COMMAND_REPORT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:DecodeReportProbe":
+        COMMAND_REPORT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:DecodeTransferProbe":
+        COMMAND_REPORT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:FindingProbe": COMMAND_REPORT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:LossProbe": COMMAND_REPORT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:CadirProbe": DOCUMENT_PROJECTION,
+    "crates/cadmpeg/src/query/mod.rs:SidecarProbe": DOCUMENT_PROJECTION,
+}
+
 
 # Items admitted by declaring file and name, each with the reason it cannot
 # carry a deny. Every entry is load-bearing: the item derives ``Deserialize``,
@@ -1138,6 +1177,15 @@ def derives_deserialize(attrs):
     return False
 
 
+def derives_serialize(attrs):
+    for arguments, _ in attribute_arguments(attrs, "derive"):
+        for name in split_metadata(arguments):
+            code = SOURCE_POLICY.mask_rust_non_code(name).strip()
+            if re.fullmatch(r"(?:::\s*)?(?:\w+\s*::\s*)*Serialize", code):
+                return True
+    return False
+
+
 def enum_body(item):
     open_brace = item.body.find("{")
     if open_brace < 0:
@@ -1582,6 +1630,10 @@ ABSENT_KEY_PRESENT = re.compile(
     r'deserialize_with\s*=\s*"(?:crate|cadmpeg_core)::absent_key::present"'
 )
 DESERIALIZE_WITH = re.compile(r'deserialize_with\s*=\s*"([\w:]+)"')
+SERDE_WITH = re.compile(r'(?<!\w)with\s*=\s*"([\w:]+)"')
+ABSENT_KEY_NULLABLE = re.compile(
+    r'deserialize_with\s*=\s*"(?:crate|cadmpeg_core)::absent_key::nullable"'
+)
 # The one workspace macro that declares a named reader forwarding to
 # ``absent_key::present``. Its expansion carries the same absence spelling.
 PRESENT_FORWARDER_MACRO = re.compile(r"named_optional_field!\s*\(\s*(\w+)")
@@ -1592,6 +1644,18 @@ SERDE_DEFAULT = re.compile(r"(?:^|[(,])\s*default\s*(?:[,)]|=)")
 # means.
 SERDE_FLATTEN = re.compile(r"(?:^|[(,])\s*flatten\s*[,)]")
 FIELD_NAME = re.compile(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(\w+)\s*:")
+# The declared field type, read only for the one question the absent-key rule
+# asks: is this key optional? A key whose writer omits it has an absence to
+# spell whatever its write-side metadata says.
+OPTION_FIELD = re.compile(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?\w+\s*:\s*Option\s*<")
+# Every field of a struct body, attributed or not, with its optionality.
+FIELD_PREFIX = (
+    r"(?:\s*(?:#\s*\[(?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*\]|//[^\n]*))*"
+)
+FIELD_DECLARATION = re.compile(
+    r"(?:^|[,{])" + FIELD_PREFIX + r"\s*"
+    r"(?:pub(?:\s*\([^)]*\))?\s+)?(\w+)\s*:\s*(Option\s*<)?"
+)
 # A container that reads through another type, reads transparently, or has no
 # key of its own is not read field by field. Its fields' write-side metadata
 # states nothing about any reader.
@@ -1636,9 +1700,26 @@ def field_attribute_runs(body):
                 attributes[index].start(),
                 body[attributes[index].start():attributes[end].end()],
                 field.group(1),
+                OPTION_FIELD.match(body, attributes[end].end()) is not None,
             ))
         index = end + 1
     return runs
+
+
+def struct_fields(body):
+    """Each field's attribute run, name and optionality; unattributed too."""
+    attributed = {
+        name: (offset, text)
+        for offset, text, name, _ in field_attribute_runs(body)
+    }
+    seen = set()
+    for match in FIELD_DECLARATION.finditer(body):
+        name = match.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+        offset, text = attributed.get(name, (match.start(1), ""))
+        yield offset, text, name, match.group(2) is not None
 
 
 def present_forwarders():
@@ -1663,10 +1744,148 @@ def present_forwarders():
     return forwarders
 
 
+def crate_sources():
+    """Every in-scope source file grouped by its owning crate."""
+    crates = {}
+    for path in absent_key_source_files():
+        crate = Path(*path.parts[:path.parts.index("src")])
+        crates.setdefault(crate, []).append(path)
+    return crates
+
+
+def flatten_readers(item):
+    """(field, reader) for each flattened field that names its own reader."""
+    for _, text, name, _ in field_attribute_runs(item.body):
+        if not SERDE_FLATTEN.search(text):
+            continue
+        for reader in DESERIALIZE_WITH.findall(text) + SERDE_WITH.findall(text):
+            yield name, reader
+
+
+def reader_structs(reader, crate_paths, crate_items):
+    """The structs a flattened field's named reader reads.
+
+    The name is a module path or a function path. A module contributes every
+    struct it declares; a function contributes the structs declared in its
+    body and the struct it deserializes by name.
+    """
+    segments = [part for part in reader.split("::")
+                if part not in ("crate", "super", "self")]
+    if not segments:
+        return []
+    last = segments[-1]
+    modules = [
+        (path, item)
+        for path in crate_paths
+        for item in crate_items[path]
+        if item.kind == "struct" and (path.stem == last or last in item.scope)
+    ]
+    if modules:
+        return modules
+    functions = []
+    for path in crate_paths:
+        source = path.read_text(encoding="utf-8")
+        code, _ = SOURCE_POLICY.production_source(source)
+        for match in re.finditer(r"\bfn\s+" + re.escape(last) + r"\s*[<(]", code):
+            opening = body_open(code, match.end() - 1)
+            if opening is None:
+                continue
+            end = delimited_end(code, opening)
+            if end is None:
+                continue
+            body = code[opening:end]
+            read = set(BODY_DESERIALIZE_CALL.findall(body))
+            for candidate_path in crate_paths:
+                for item in crate_items[candidate_path]:
+                    if item.kind != "struct":
+                        continue
+                    inside = (candidate_path == path
+                              and opening <= item.start < end)
+                    if inside or item.name in read:
+                        functions.append((candidate_path, item))
+    return functions
+
+
+BODY_DESERIALIZE_CALL = re.compile(r"\b(\w+)\s*(?:::\s*<[^<>]*>)?\s*::\s*deserialize\b")
+
+
+def flattened_reader_failures(crate, crate_paths, crate_items, forwarders):
+    """Every optional key a flattened field's own reader reads undeclared."""
+    found = []
+    seen = set()
+    for path in crate_paths:
+        for owner in crate_items[path]:
+            if owner.kind != "struct" or not derives_deserialize(owner.attrs):
+                continue
+            for field, reader in flatten_readers(owner):
+                for read_path, item in reader_structs(
+                    reader, crate_paths, crate_items
+                ):
+                    key = (read_path, item.start)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    found.extend(
+                        reader_option_failures(
+                            read_path, item, owner, field, reader,
+                            forwarders.get(crate, ()),
+                        )
+                    )
+    return found
+
+
+def reader_option_failures(path, item, owner, field, reader, forwarders):
+    """Optional keys of one reader struct that state no absence spelling."""
+    found = []
+    for offset, text, name, is_option in struct_fields(item.body):
+        if not is_option or SERDE_FLATTEN.search(text):
+            continue
+        if f"{path.as_posix()}:{name}" in ABSENT_KEY_EXCEPTIONS:
+            continue
+        declared = ABSENT_KEY_PRESENT.search(text) is not None or any(
+            named.rsplit("::", 1)[-1] in forwarders
+            for named in DESERIALIZE_WITH.findall(text)
+        )
+        if SERDE_DEFAULT.search(text):
+            if declared:
+                continue
+            spelling = (
+                "an omitted optional key states no absence spelling; read it "
+                "with cadmpeg_core::absent_key::present beside serde(default)"
+            )
+        else:
+            if ABSENT_KEY_NULLABLE.search(text) or declared:
+                continue
+            spelling = (
+                "a stated optional key states no absence spelling; read it "
+                "with cadmpeg_core::absent_key::nullable, or with "
+                "cadmpeg_core::absent_key::present beside serde(default)"
+            )
+        found.append((
+            path,
+            item.line + item.body.count("\n", 0, offset),
+            f"{item.name}.{name}: {reader} reads this key for "
+            f"{owner.name}.{field}; {spelling}",
+        ))
+    return found
+
+
 def absent_key_failures():
     """Optional keys whose writer omits them but whose reader admits ``null``."""
     found = []
     forwarders = present_forwarders()
+    crates = crate_sources()
+    crate_items = {}
+    for crate, crate_paths in crates.items():
+        for path in crate_paths:
+            try:
+                crate_items[path] = collect_items(path)
+            except ValueError:
+                crate_items[path] = []
+    for crate, crate_paths in crates.items():
+        found.extend(
+            flattened_reader_failures(crate, crate_paths, crate_items, forwarders)
+        )
     for path in absent_key_source_files():
         crate = Path(*path.parts[:path.parts.index("src")])
         try:
@@ -1685,20 +1904,37 @@ def absent_key_failures():
             # The body is read as written: a serde attribute is metadata, and
             # the lexer that masks string literals would erase the very
             # spellings this rule reads.
-            for offset, text, name in field_attribute_runs(item.body):
-                if not OMITTED_OPTIONAL_KEY.search(text):
+            if f"{path.as_posix()}:{item.name}" in ABSENT_KEY_PROJECTIONS:
+                if derives_serialize(item.attrs):
+                    found.append((
+                        path,
+                        item.line,
+                        f"{item.name}: a projection admission states no writer, "
+                        "but this item derives Serialize and writes its own keys",
+                    ))
+                continue
+            for offset, text, name, is_option in field_attribute_runs(item.body):
+                omitted = OMITTED_OPTIONAL_KEY.search(text) is not None
+                # The rule reads the declared type, so a hand-written
+                # serializer that omits keys without stating
+                # ``skip_serializing_if`` cannot hide an optional key.
+                if not (is_option or omitted):
                     continue
                 if SERDE_FLATTEN.search(text):
                     continue
                 if f"{path.as_posix()}:{name}" in ABSENT_KEY_EXCEPTIONS:
                     continue
                 if not SERDE_DEFAULT.search(text):
-                    found.append((
-                        path,
-                        item.line + item.body.count("\n", 0, offset),
-                        f"{item.name}.{name}: an omitted optional key states no "
-                        "serde(default), so its absence is no spelling at all",
-                    ))
+                    # Without ``serde(default)`` serde names an absent key, so
+                    # the writer states the key for every value and ``null`` is
+                    # its own spelling. Only a stated omission is a defect.
+                    if omitted:
+                        found.append((
+                            path,
+                            item.line + item.body.count("\n", 0, offset),
+                            f"{item.name}.{name}: an omitted optional key states no "
+                            "serde(default), so its absence is no spelling at all",
+                        ))
                     continue
                 if ABSENT_KEY_PRESENT.search(text):
                     continue

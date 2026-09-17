@@ -2601,7 +2601,9 @@ pub struct HistoricalBinding {
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct OptionalHistoricalBindingWire {
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     historical_entity_kind: Option<AsmHistoricalEntityKind>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     historical_entity_ref: Option<i64>,
     #[serde(default)]
     historical_state_ids: Vec<i64>,

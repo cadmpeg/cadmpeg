@@ -13,9 +13,14 @@ enum Value {
 }
 
 #[derive(Serialize, Deserialize)]
+// The target key states its own reader, so the derive adds no bound of its own.
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
 struct Wire<T> {
     #[serde(flatten)]
     value: Value,
+    /// The writer states this key for every reference, so `null` is its own
+    /// spelling of a direct reference and an absent key is no spelling at all.
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     target_record: Option<T>,
 }
 
@@ -104,5 +109,13 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<DataBlockControlReference>(&json).is_err());
         }
+    }
+
+    #[test]
+    fn typed_reference_wire_requires_the_target_key_it_always_writes() {
+        let json = r#"{"id":"r","record":"owner","object_id":1,"ordinal":0,"kind":"tagged28","value":268435455,"source_entry":"om","source_offset":10}"#;
+        let error = serde_json::from_str::<ObjectReference>(json)
+            .expect_err("an absent target_record is no spelling of a direct reference");
+        assert!(error.to_string().contains("target_record"), "{error}");
     }
 }

@@ -720,7 +720,9 @@ fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(
 ) -> Result<Option<DesignSecondaryIdentity<u64>>, D::Error> {
     #[derive(Deserialize)]
     struct Wire {
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         secondary_identity: Option<u64>,
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         curve_secondary_identity: Option<u64>,
     }
     let wire = Wire::deserialize(deserializer)?;
@@ -733,7 +735,9 @@ fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(
 ) -> Result<Option<ConstructionRecipeDesign<String>>, D::Error> {
     #[derive(Deserialize)]
     struct Wire {
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         design_id: Option<String>,
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         design_selector: Option<ConstructionRecipeSelector>,
     }
     let wire = Wire::deserialize(deserializer)?;
@@ -5678,10 +5682,15 @@ where
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct WorkPlaneFrameWire {
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     work_plane_transform: Option<SketchPlacementMatrix>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     work_plane_transform_offset: Option<u64>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     work_plane_reference: Option<u32>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     work_plane_reference_offset: Option<u64>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     work_plane_construction: Option<DesignWorkPlaneConstruction>,
 }
 
@@ -5729,9 +5738,13 @@ impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct JointOriginFrameWire {
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     joint_origin_transform: Option<SketchPlacementMatrix>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     joint_origin_transform_offset: Option<u64>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     joint_origin_reference: Option<u32>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     joint_origin_reference_offset: Option<u64>,
 }
 
@@ -5781,8 +5794,11 @@ impl<'de> Deserialize<'de> for DesignJointOriginTransform {
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct SketchEntityWire {
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     entity_id: Option<String>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     entity_suffix: Option<u64>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     entity_reference_offset: Option<u64>,
 }
 
@@ -8550,7 +8566,7 @@ struct DesignEdgeFlangeOperationSerde {
     #[serde(default)]
     height_extent: DesignEdgeFlangeHeightExtent,
     angle_owner_record_index: u32,
-    #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     width_mode: Option<DesignEdgeWidthMode>,
     width_distance_owner_record_indices: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
