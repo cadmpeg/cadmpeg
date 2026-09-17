@@ -32,6 +32,7 @@ impl Defect {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[must_use]
 enum Supplied<T> {
     Absent,
     Value(T),
@@ -942,50 +943,62 @@ impl Resolution {
             .push(recovered_real_loss_note(index, &source, value));
     }
 
-    fn metadata_string(&mut self, index: usize, global_table: GlobalTable) -> Option<String> {
-        match self.supplied_string(index) {
-            Supplied::Absent if global_table.field_requires_value(index) => {
-                self.charge(
-                    IgesLossCode::GlobalMetadataFieldUnusable,
-                    index,
-                    Defect::Absent,
-                    METADATA_CONSEQUENCE,
-                );
-                None
-            }
-            Supplied::Absent => None,
-            Supplied::Value(text) => Some(text),
-            Supplied::Malformed => {
-                self.charge(
-                    IgesLossCode::GlobalMetadataFieldUnusable,
-                    index,
-                    Defect::Malformed,
-                    METADATA_CONSEQUENCE,
-                );
-                None
-            }
+    /// Charges the field when the declaration states no value the model can use.
+    ///
+    /// This is the one place a metadata field states its defect. Every
+    /// metadata method below resolves its declaration into a `Supplied` and
+    /// then calls this; the value-returning methods hand the value on, and
+    /// the charging methods state the charge alone.
+    fn charge_metadata<T>(
+        &mut self,
+        index: usize,
+        supplied: &Supplied<T>,
+        global_table: GlobalTable,
+    ) {
+        let defect = match supplied {
+            Supplied::Absent if global_table.field_requires_value(index) => Defect::Absent,
+            Supplied::Malformed => Defect::Malformed,
+            Supplied::Absent | Supplied::Value(_) => return,
+        };
+        self.charge(
+            IgesLossCode::GlobalMetadataFieldUnusable,
+            index,
+            defect,
+            METADATA_CONSEQUENCE,
+        );
+    }
+
+    /// The supplied integer, with a value the field does not admit read as malformed.
+    fn admitted_integer(&self, index: usize, admits: fn(i64) -> bool) -> Supplied<i64> {
+        match self.supplied_integer(index) {
+            Supplied::Value(value) if admits(value) => Supplied::Value(value),
+            Supplied::Absent => Supplied::Absent,
+            Supplied::Malformed | Supplied::Value(_) => Supplied::Malformed,
         }
+    }
+
+    #[must_use]
+    fn metadata_string(&mut self, index: usize, global_table: GlobalTable) -> Option<String> {
+        let supplied = self.supplied_string(index);
+        self.charge_metadata(index, &supplied, global_table);
+        match supplied {
+            Supplied::Value(text) => Some(text),
+            Supplied::Absent | Supplied::Malformed => None,
+        }
+    }
+
+    /// Charges a metadata string field whose value the model does not carry.
+    fn charge_metadata_string(&mut self, index: usize, global_table: GlobalTable) {
+        let supplied = self.supplied_string(index);
+        self.charge_metadata(index, &supplied, global_table);
     }
 
     fn metadata_date(&mut self, index: usize, global_table: GlobalTable) {
         let supplied = self.supplied_date(index, global_table);
-        if matches!(&supplied, Supplied::Absent) && global_table.field_requires_value(index) {
-            self.charge(
-                IgesLossCode::GlobalMetadataFieldUnusable,
-                index,
-                Defect::Absent,
-                METADATA_CONSEQUENCE,
-            );
-        } else if matches!(&supplied, Supplied::Malformed) {
-            self.charge(
-                IgesLossCode::GlobalMetadataFieldUnusable,
-                index,
-                Defect::Malformed,
-                METADATA_CONSEQUENCE,
-            );
-        }
+        self.charge_metadata(index, &supplied, global_table);
     }
 
+    #[must_use]
     fn metadata_integer_value(
         &mut self,
         index: usize,
@@ -1002,30 +1015,20 @@ impl Resolution {
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
     ) -> Supplied<i64> {
-        let supplied = self.supplied_integer(index);
-        let absent = matches!(&supplied, Supplied::Absent);
-        let admitted = match &supplied {
-            Supplied::Absent => !global_table.field_requires_value(index),
-            Supplied::Value(value) => admits(*value),
-            Supplied::Malformed => false,
-        };
-        if !admitted {
-            self.charge(
-                IgesLossCode::GlobalMetadataFieldUnusable,
-                index,
-                if absent {
-                    Defect::Absent
-                } else {
-                    Defect::Malformed
-                },
-                METADATA_CONSEQUENCE,
-            );
-        }
-        match supplied {
-            Supplied::Value(value) if admitted => Supplied::Value(value),
-            Supplied::Absent => Supplied::Absent,
-            Supplied::Malformed | Supplied::Value(_) => Supplied::Malformed,
-        }
+        let supplied = self.admitted_integer(index, admits);
+        self.charge_metadata(index, &supplied, global_table);
+        supplied
+    }
+
+    /// Charges a metadata integer field whose value the model does not carry.
+    fn charge_metadata_integer(
+        &mut self,
+        index: usize,
+        global_table: GlobalTable,
+        admits: fn(i64) -> bool,
+    ) {
+        let supplied = self.admitted_integer(index, admits);
+        self.charge_metadata(index, &supplied, global_table);
     }
 
     /// Charges the maximum-coordinate field.
@@ -1310,8 +1313,8 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
 
     let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table);
     let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table);
-    resolution.metadata_string(FIELD_NATIVE_SYSTEM, global_table);
-    resolution.metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
+    resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table);
+    resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
     let integer_bits = resolution
         .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |_| true)
         .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
@@ -1359,16 +1362,16 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
     let minimum_resolution = resolution.minimum_resolution(global_table);
     resolution.charge_maximum_coordinate(global_table);
-    resolution.metadata_string(FIELD_AUTHOR, global_table);
-    resolution.metadata_string(FIELD_ORGANIZATION, global_table);
-    resolution.metadata_integer_declaration(FIELD_DRAFTING_STANDARD, global_table, |value| {
+    resolution.charge_metadata_string(FIELD_AUTHOR, global_table);
+    resolution.charge_metadata_string(FIELD_ORGANIZATION, global_table);
+    resolution.charge_metadata_integer(FIELD_DRAFTING_STANDARD, global_table, |value| {
         (0..=7).contains(&value)
     });
     if global_table.has_model_date() {
         resolution.metadata_date(FIELD_MODEL_DATE, global_table);
     }
     if global_table.has_application_protocol() {
-        resolution.metadata_string(FIELD_APPLICATION_PROTOCOL, global_table);
+        resolution.charge_metadata_string(FIELD_APPLICATION_PROTOCOL, global_table);
     }
 
     let resolved = ResolvedGlobal {
