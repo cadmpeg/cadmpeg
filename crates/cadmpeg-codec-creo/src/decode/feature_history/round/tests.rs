@@ -695,8 +695,9 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
-        crate::container::Section::new("VisibGeom#1".to_string(), 0, 20, None, &[0u8; 20])
-            .expect("section extent"),
+        crate::container::Section::scan("VisibGeom#1".to_string(), 0, 20, None, &[0u8; 20])
+            .expect("section extent")
+            .section,
     );
 
     let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
@@ -760,8 +761,9 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     );
 
     scan.framing.sections.push(
-        crate::container::Section::new("VisibGeom#2".to_string(), 20, 40, None, &[0u8; 40])
-            .expect("section extent"),
+        crate::container::Section::scan("VisibGeom#2".to_string(), 20, 40, None, &[0u8; 40])
+            .expect("section extent")
+            .section,
     );
     scan.surfaces.prototype_records.push(prototype(25));
     scan.surfaces.rows.push(row(2, 26));
