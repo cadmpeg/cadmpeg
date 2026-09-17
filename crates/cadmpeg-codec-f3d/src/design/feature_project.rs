@@ -54,10 +54,10 @@ use crate::records::{
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
     sketch_placement::DesignSketchPlacement,
     topology::{
-        face::DesignFaceOperand, DesignBodyRecipeOperand, DesignConstructionOperandGroup,
-        DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeFaceRole,
-        DesignExtrudeOperandRole, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
-        DesignLoftLegacyBodyCarrier, DesignOperandRole,
+        body_recipe::DesignBodyRecipeOperand, edge_identity::DesignEdgeIdentityOperand,
+        edge_identity::DesignEdgeOperand, face::DesignFaceOperand, DesignConstructionOperandGroup,
+        DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignFilletRadiusGroup,
+        DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier, DesignOperandRole,
     },
 };
 use cadmpeg_core::decode::{bounded_len, View};

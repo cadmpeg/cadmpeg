@@ -418,7 +418,7 @@ pub(crate) struct AsmHistoricalTopology {
 /// One persistent tag group attached to a historical face or edge revision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPersistentSubentityTag {
-    pub entity_kind: crate::records::topology::AsmHistoricalEntityKind,
+    pub entity_kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
     pub entity_ref: i64,
     pub selector: i64,
     pub token: String,

@@ -94,14 +94,15 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     use crate::records::{
         recipes::ConstructionRecipeKind,
         topology::{
-            face::DesignFaceOperand, DesignEdgeIdentityOperand,
-            DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
-            DesignHistoricalFaceSupportContext,
+            edge_identity::DesignEdgeIdentityOperand, face::DesignFaceOperand,
+            historical_context::DesignHistoricalFaceBoundaryContext,
+            historical_context::DesignHistoricalFaceLoopContext,
+            historical_context::DesignHistoricalFaceSupportContext,
         },
     };
 
     let mut identities = vec![DesignEdgeIdentityOperand::try_new(
-        crate::records::topology::DesignEdgeIdentityOperandDraft {
+        crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
             id: "f3d:Design/BulkStream.dat:edge-identity#10".into(),
             scope_record_index: 1,
             group_record_index: 2,
@@ -110,7 +111,7 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
             byte_offset: 100,
             class_tag: crate::records::references::DesignClassTag::try_from("297".to_owned())
                 .unwrap(),
-            layout: crate::records::topology::DesignEdgeIdentityLayout::Full,
+            layout: crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
             local_id: 13,
             asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                 "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
@@ -135,7 +136,7 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         id: "f3d:Design/BulkStream.dat:design-face-operand#10".into(),
         scope_record_index: 1,
         scope_reference_ordinal: 0,
-        group: Some(crate::records::topology::DesignOperandGroup {
+        group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
             group_record_index: 2,
             group_member_ordinal: 0,
         }),
@@ -169,17 +170,17 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
                 face_slot: 50,
                 loops: vec![DesignHistoricalFaceLoopContext {
                     loop_slot: 60,
-                    boundary: crate::records::topology::DesignHistoricalLoopBoundary::Coedges(
+                    boundary: crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Coedges(
                         vec![
-                            crate::records::topology::DesignHistoricalLoopCoedge {
+                            crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
                                 coedge_slot: 70,
                                 edge_slot: 8,
                             },
-                            crate::records::topology::DesignHistoricalLoopCoedge {
+                            crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
                                 coedge_slot: 71,
                                 edge_slot: 6,
                             },
-                            crate::records::topology::DesignHistoricalLoopCoedge {
+                            crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
                                 coedge_slot: 72,
                                 edge_slot: 7,
                             },

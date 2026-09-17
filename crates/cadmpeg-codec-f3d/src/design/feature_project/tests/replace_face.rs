@@ -12,7 +12,8 @@ use crate::records::{
     feature::surface_ops::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation},
     recipes::ConstructionRecipeKind,
     topology::{
-        DesignBodyRecipeReference, DesignConstructionOperandGroupFrame, DesignOperandOwner,
+        body_recipe::DesignBodyRecipeReference, body_recipe::DesignOperandOwner,
+        DesignConstructionOperandGroupFrame,
     },
 };
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
@@ -92,8 +93,8 @@ fn replace_face_projects_role_order_and_historical_inputs() {
 
     let replacement_group = group(1129, 0, 1130, 1133, DesignOperandRole::ROLE_0X9);
     let target_group = group(1129, 2, 1137, 1140, DesignOperandRole::ROLE_0X10);
-    let replacement =
-        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+    let replacement = DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: "f3d:Design/BulkStream.dat:body-recipe#1133".into(),
             scope_record_index: 1129,
             owner: DesignOperandOwner::Group {
@@ -134,14 +135,15 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             resolved_body_face_slots: vec![20],
             next_record_index: 1137,
             next_byte_offset: 256,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let target =
         DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
             id: "f3d:Design/BulkStream.dat:face-operand#1140".into(),
             scope_record_index: 1129,
             scope_reference_ordinal: 3,
-            group: Some(crate::records::topology::DesignOperandGroup {
+            group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
                 group_record_index: 1137,
                 group_member_ordinal: 0,
             }),
@@ -234,8 +236,8 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         .unwrap();
     let target_group = group(1200, 0, 1201, 1202, DesignOperandRole::BODIES_A);
     let tool_group = group(1200, 2, 1203, 1204, DesignOperandRole::ROLE_0X21);
-    let body =
-        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+    let body = DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),
             scope_record_index: 1200,
             owner: DesignOperandOwner::Group {
@@ -276,8 +278,9 @@ fn surface_trim_projects_body_target_and_curve_tool() {
             resolved_body_face_slots: vec![20],
             next_record_index: 1206,
             next_byte_offset: 256,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let definition = super::project_surface_trim(
         &scope,
         &[target_group.clone(), tool_group.clone()],

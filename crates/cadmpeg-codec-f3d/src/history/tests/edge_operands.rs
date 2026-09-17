@@ -24,7 +24,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let mut operand: crate::records::topology::DesignEdgeOperand =
+    let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
         serde_json::from_value(serde_json::json!({
             "id": format!("{stream}:design-edge-operand#20"),
             "scope_record_index": 10,

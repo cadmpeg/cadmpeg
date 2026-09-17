@@ -834,8 +834,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             offset: unrelated_target_group.members()[0].offset,
         }])
         .unwrap();
-    let mut target_shape_operand =
-        DesignBodyRecipeOperand::try_new(crate::records::topology::DesignBodyRecipeOperandDraft {
+    let mut target_shape_operand = DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
             scope_record_index: scope.record_index,
             owner: DesignOperandOwner::Group {
@@ -879,8 +879,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             resolved_body_face_slots: Vec::new(),
             next_record_index: 205,
             next_byte_offset: 256,
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
     let unresolved_target_shape = project_extrude(
         &scope,
         &[(0, &taper)],
@@ -978,7 +979,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     draft.nested_record_index = u64::from(draft.record_index + 3);
     draft.next_record_index = draft.record_index + 4;
     second_target_operand =
-        crate::records::topology::DesignBodyRecipeOperand::try_new(draft).unwrap();
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
     second_target_operand.resolved_body_slot = Some(4);
     second_target_operand.resolved_body_face_slots = vec![30, 31];
     let operands = [target_shape_operand.clone(), second_target_operand.clone()];

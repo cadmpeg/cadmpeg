@@ -82,7 +82,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
             id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
             scope_record_index: 42,
             scope_reference_ordinal: 3,
-            group: Some(crate::records::topology::DesignOperandGroup {
+            group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
                 group_record_index: 100,
                 group_member_ordinal: 0,
             }),
@@ -293,7 +293,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
             scope_record_index: 42,
             scope_reference_ordinal: 1,
-            group: Some(crate::records::topology::DesignOperandGroup {
+            group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
                 group_record_index: 100,
                 group_member_ordinal: 0,
             }),

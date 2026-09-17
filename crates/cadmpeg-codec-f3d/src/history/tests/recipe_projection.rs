@@ -72,20 +72,21 @@ fn projection_caches_end_after_history_consumers() {
 
 #[test]
 fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
-    let side =
-        |header_value, scalars: Vec<i32>| crate::records::topology::DesignTopologyRecipeSide {
+    let side = |header_value, scalars: Vec<i32>| {
+        crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
             header_value,
             scalars,
             payload_prefix: vec![0],
 
             entries: Vec::new(),
-        };
-    let structure = crate::records::topology::DesignEdgeRecipeStructure {
+        }
+    };
+    let structure = crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
         root: 2,
         sides: vec![side(1, vec![0, 2]), side(3, vec![0, 0])],
     };
     let context = |reference_ordinal, shared_edge_slots| {
-        crate::records::topology::DesignEdgeRecipeReferenceContext {
+        crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
             reference_ordinal,
             result_faces: Vec::new(),
             result_face_boundaries: Vec::new(),
@@ -115,7 +116,7 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
         context(1, vec![40, 41]),
         context(2, vec![99]),
     ];
-    let selector = crate::records::topology::DesignEdgeRecipeSelectorContext {
+    let selector = crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
         selector: 0,
         clauses: vec![None, None],
         incidence_matching_edge_slots: vec![41],

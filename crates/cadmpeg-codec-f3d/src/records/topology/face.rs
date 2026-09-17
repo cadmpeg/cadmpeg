@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face operands, face source groups and face recipe structures.
 
+use super::body_recipe::DesignOperandGroup;
+use super::edge_recipe::DesignTopologyRecipeSide;
+use super::historical_context::DesignHistoricalFaceSupportContext;
 use super::DesignConstructionPersistentIdentity;
-use super::DesignHistoricalFaceSupportContext;
-use super::DesignOperandGroup;
-use super::DesignTopologyRecipeSide;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::identity::Located;
 use crate::records::identity::NonEmptyByteSpan;
@@ -13,6 +13,7 @@ use crate::records::references::DesignClassTag;
 use cadmpeg_ir::ids::FaceId;
 use serde::Deserialize;
 use serde::Serialize;
+
 /// Face-selection operand owned by a parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignFaceOperandWire", into = "DesignFaceOperandWire")]

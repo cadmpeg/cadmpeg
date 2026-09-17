@@ -54,11 +54,11 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::SketchRelation,
     topology::{
-        face::DesignFaceOperand, face::DesignFaceSourceGroup, DesignBodyRecipeOperand,
+        body_recipe::DesignBodyRecipeOperand, edge_identity::DesignEdgeIdentityOperand,
+        edge_identity::DesignEdgeOperand, face::DesignFaceOperand, face::DesignFaceSourceGroup,
         DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-        DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntitySelectionOperand,
-        DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFilletRadiusGroup,
-        DesignLoftLegacyBodyCarrier,
+        DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+        DesignFilletRadiusGroup, DesignLoftLegacyBodyCarrier,
     },
     xref::{XrefDesign, XrefReference},
 };

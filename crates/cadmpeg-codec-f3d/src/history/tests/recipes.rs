@@ -412,7 +412,10 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
     };
     use crate::records::{
         dimensions::DesignRecipeReference,
-        topology::{DesignSurfacePatchRecipeClause, DesignSurfacePatchRecipeStructure},
+        topology::{
+            edge_recipe::DesignSurfacePatchRecipeClause,
+            edge_recipe::DesignSurfacePatchRecipeStructure,
+        },
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
@@ -501,23 +504,24 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
-    let reference = |faces: &[&str]| crate::records::topology::DesignBodyRecipeReference {
-        design_reference: 1,
-        design_reference_offset: 25,
-        form: 3,
-        form_offset: 33,
-        candidate_faces: faces
-            .iter()
-            .map(|face| FaceId::mint((*face).to_owned()).expect("identity grammar"))
-            .collect(),
-        preceding_candidate_faces: Vec::new(),
-        preceding_body_slots: Vec::new(),
-    };
-    let mut operand = crate::records::topology::DesignBodyRecipeOperand::try_new(
-        crate::records::topology::DesignBodyRecipeOperandDraft {
+    let reference =
+        |faces: &[&str]| crate::records::topology::body_recipe::DesignBodyRecipeReference {
+            design_reference: 1,
+            design_reference_offset: 25,
+            form: 3,
+            form_offset: 33,
+            candidate_faces: faces
+                .iter()
+                .map(|face| FaceId::mint((*face).to_owned()).expect("identity grammar"))
+                .collect(),
+            preceding_candidate_faces: Vec::new(),
+            preceding_body_slots: Vec::new(),
+        };
+    let mut operand = crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: "operand".into(),
             scope_record_index: 1,
-            owner: crate::records::topology::DesignOperandOwner::ScopeReference {
+            owner: crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal: 0,
             },
             record_index: 2,
@@ -647,7 +651,8 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     draft.references.push(added);
     draft.nested_record_index_offset = draft.byte_offset + 26 + draft.references.len() as u64 * 12;
     draft.asset_id_offset = draft.nested_record_index_offset + 18;
-    operand = crate::records::topology::DesignBodyRecipeOperand::try_new(draft).unwrap();
+    operand =
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
     assert_eq!(
         super::super::unique_external_body_candidate(
             &operand,
@@ -675,51 +680,55 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         })
         .unwrap();
     let candidate = FaceId::mint("f3d:brep:entity#10").expect("identity grammar");
-    let mut operands = vec![crate::records::topology::DesignBodyRecipeOperand::try_new(
-        crate::records::topology::DesignBodyRecipeOperandDraft {
-            id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
-            scope_record_index: 10,
-            owner: crate::records::topology::DesignOperandOwner::Group {
-                group_record_index: 20,
-                group_member_ordinal: 0,
-            },
-            record_index: 21,
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned())
+    let mut operands = vec![
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+            crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+                id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
+                scope_record_index: 10,
+                owner: crate::records::topology::body_recipe::DesignOperandOwner::Group {
+                    group_record_index: 20,
+                    group_member_ordinal: 0,
+                },
+                record_index: 21,
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned())
+                    .unwrap(),
+                asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+                )
                 .unwrap(),
-            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 56,
-            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 132,
-            selector_tail: None,
+                asset_id_offset: 56,
+                context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+                )
+                .unwrap(),
+                context_id_offset: 132,
+                selector_tail: None,
 
-            references: vec![crate::records::topology::DesignBodyRecipeReference {
-                design_reference: 301,
-                design_reference_offset: 25,
-                form: 33,
-                form_offset: 33,
-                candidate_faces: vec![candidate.clone()],
-                preceding_candidate_faces: Vec::new(),
-                preceding_body_slots: Vec::new(),
-            }],
-            nested_record_index: 24,
-            nested_record_index_offset: 38,
-            recipe_id: "recipe".into(),
-            resolved_face_slot: None,
-            resolved_body_state_id: None,
-            resolved_body_slot: None,
-            resolved_body_face_slots: Vec::new(),
-            next_record_index: 25,
-            next_byte_offset: 256,
-        },
-    )
-    .unwrap()];
+                references: vec![
+                    crate::records::topology::body_recipe::DesignBodyRecipeReference {
+                        design_reference: 301,
+                        design_reference_offset: 25,
+                        form: 33,
+                        form_offset: 33,
+                        candidate_faces: vec![candidate.clone()],
+                        preceding_candidate_faces: Vec::new(),
+                        preceding_body_slots: Vec::new(),
+                    },
+                ],
+                nested_record_index: 24,
+                nested_record_index_offset: 38,
+                recipe_id: "recipe".into(),
+                resolved_face_slot: None,
+                resolved_body_state_id: None,
+                resolved_body_slot: None,
+                resolved_body_face_slots: Vec::new(),
+                next_record_index: 25,
+                next_byte_offset: 256,
+            },
+        )
+        .unwrap(),
+    ];
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
         member_refs,
@@ -900,11 +909,11 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         },
     )
     .unwrap();
-    let operand = crate::records::topology::DesignBodyRecipeOperand::try_new(
-        crate::records::topology::DesignBodyRecipeOperandDraft {
+    let operand = crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
             scope_record_index: 10,
-            owner: crate::records::topology::DesignOperandOwner::Group {
+            owner: crate::records::topology::body_recipe::DesignOperandOwner::Group {
                 group_record_index: 20,
                 group_member_ordinal: 0,
             },
@@ -924,15 +933,19 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             context_id_offset: 132,
             selector_tail: None,
 
-            references: vec![crate::records::topology::DesignBodyRecipeReference {
-                design_reference: 301,
-                design_reference_offset: 25,
-                form: 33,
-                form_offset: 33,
-                candidate_faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
-                preceding_candidate_faces: Vec::new(),
-                preceding_body_slots: Vec::new(),
-            }],
+            references: vec![
+                crate::records::topology::body_recipe::DesignBodyRecipeReference {
+                    design_reference: 301,
+                    design_reference_offset: 25,
+                    form: 33,
+                    form_offset: 33,
+                    candidate_faces: vec![
+                        FaceId::mint("f3d:brep:entity#7").expect("identity grammar")
+                    ],
+                    preceding_candidate_faces: Vec::new(),
+                    preceding_body_slots: Vec::new(),
+                },
+            ],
             nested_record_index: 24,
             nested_record_index_offset: 38,
             recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#23".into(),
@@ -1024,9 +1037,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
 
     let mut direct_operand = operand.clone();
-    direct_operand.owner = crate::records::topology::DesignOperandOwner::ScopeReference {
-        scope_reference_ordinal: 0,
-    };
+    direct_operand.owner =
+        crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
+            scope_reference_ordinal: 0,
+        };
     let direct_inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: &[],

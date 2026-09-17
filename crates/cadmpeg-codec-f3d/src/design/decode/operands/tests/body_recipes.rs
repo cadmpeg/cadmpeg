@@ -138,7 +138,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
     assert_eq!(
         operand.owner,
-        crate::records::topology::DesignOperandOwner::Group {
+        crate::records::topology::body_recipe::DesignOperandOwner::Group {
             group_record_index: 90,
             group_member_ordinal: 0,
         }

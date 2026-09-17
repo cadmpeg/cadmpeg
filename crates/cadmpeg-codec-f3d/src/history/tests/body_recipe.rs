@@ -45,11 +45,11 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             FaceId::mint("test:model:face#2").expect("identity grammar"),
         ),
     ];
-    let operand = crate::records::topology::DesignBodyRecipeOperand::try_new(
-        crate::records::topology::DesignBodyRecipeOperandDraft {
+    let operand = crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
+        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: "f3d:Design/BulkStream.dat:body-recipe#1".into(),
             scope_record_index: 10,
-            owner: crate::records::topology::DesignOperandOwner::ScopeReference {
+            owner: crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal: 0,
             },
             record_index: 1,
@@ -68,18 +68,20 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             context_id_offset: 132,
             selector_tail: None,
 
-            references: vec![crate::records::topology::DesignBodyRecipeReference {
-                design_reference: 301,
-                design_reference_offset: 25,
-                form: 33,
-                form_offset: 33,
-                candidate_faces: vec![
-                    FaceId::mint("test:model:face#1").expect("identity grammar"),
-                    FaceId::mint("test:model:face#2").expect("identity grammar"),
-                ],
-                preceding_candidate_faces: Vec::new(),
-                preceding_body_slots: Vec::new(),
-            }],
+            references: vec![
+                crate::records::topology::body_recipe::DesignBodyRecipeReference {
+                    design_reference: 301,
+                    design_reference_offset: 25,
+                    form: 33,
+                    form_offset: 33,
+                    candidate_faces: vec![
+                        FaceId::mint("test:model:face#1").expect("identity grammar"),
+                        FaceId::mint("test:model:face#2").expect("identity grammar"),
+                    ],
+                    preceding_candidate_faces: Vec::new(),
+                    preceding_body_slots: Vec::new(),
+                },
+            ],
             nested_record_index: 4,
             nested_record_index_offset: 38,
             recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#3".into(),

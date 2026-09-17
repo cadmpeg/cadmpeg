@@ -28,11 +28,12 @@ use crate::records::{
     },
     references::DesignClassTag,
     topology::{
-        face::DesignFaceOperandDraft, DesignConstructionOperandGroupDraft,
-        DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
-        DesignConstructionOperandRole, DesignEdgeIdentityLayout, DesignEdgeIdentityOperand,
-        DesignEdgeIdentityOperandDraft, DesignEntitySelectionOperandDraft, DesignFilletMidpoint,
-        DesignFilletRadiusLaw, DesignOperandRole, HistoricalBinding,
+        edge_identity::DesignEdgeIdentityLayout, edge_identity::DesignEdgeIdentityOperand,
+        edge_identity::DesignEdgeIdentityOperandDraft, face::DesignFaceOperandDraft,
+        DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
+        DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
+        DesignEntitySelectionOperandDraft, DesignFilletMidpoint, DesignFilletRadiusLaw,
+        DesignOperandRole, HistoricalBinding,
     },
 };
 
@@ -659,7 +660,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     use crate::records::{
         feature::{direct_face::DesignDraftOperation, scope::DesignParameterScope},
         topology::{
-            AsmHistoricalEntityKind, DesignConstructionOperandGroup,
+            body_recipe::AsmHistoricalEntityKind, DesignConstructionOperandGroup,
             DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
             DesignEntitySelectionOperand,
         },
