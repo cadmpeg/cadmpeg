@@ -17,12 +17,16 @@ pub(crate) struct Cursor<'a> {
 
 impl<'a> Cursor<'a> {
     /// Creates a cursor positioned at `position` within `bytes`.
-    pub(crate) fn new_at(bytes: &'a [u8], position: usize) -> Self {
+    ///
+    /// `None` states a position past the payload: it names no byte of
+    /// `bytes`, and the payload's own end is a position, so a cursor there is
+    /// a cursor with nothing left to read rather than one that refuses. The
+    /// caller states what a position outside the payload means for its
+    /// record.
+    pub(crate) fn new_at(bytes: &'a [u8], position: usize) -> Option<Self> {
         let mut view = View::over_retained(bytes);
-        if view.seek(position).is_none() {
-            let _ = view.seek(view.end());
-        }
-        Self { view }
+        view.seek(position)?;
+        Some(Self { view })
     }
 
     /// Returns the absolute cursor offset.
@@ -136,7 +140,8 @@ mod tests {
     #[test]
     fn object_ref_extended_reads_all_dialect_leads() {
         let mut position = 0;
-        let mut cursor = Cursor::new_at(&[0x28, 0x34, 0x02], position);
+        let mut cursor =
+            Cursor::new_at(&[0x28, 0x34, 0x02], position).expect("a position inside the payload");
         assert_eq!(cursor.object_ref(true), Some(0x02_0034));
         position = cursor.position();
         assert_eq!(position, 3);
@@ -146,16 +151,45 @@ mod tests {
     fn object_ref_restricted_rejects_extended_only_leads() {
         // 0x30 is an extended-only lead; the restricted dialect rejects it.
         assert_eq!(
-            Cursor::new_at(&[0x30, 0x07, 0x00], 0).object_ref(false),
+            Cursor::new_at(&[0x30, 0x07, 0x00], 0)
+                .expect("a position inside the payload")
+                .object_ref(false),
             None
         );
-        assert_eq!(Cursor::new_at(&[0x8b], 0).object_ref(false), Some(11));
+        assert_eq!(
+            Cursor::new_at(&[0x8b], 0)
+                .expect("a position inside the payload")
+                .object_ref(false),
+            Some(11)
+        );
+    }
+
+    #[test]
+    fn new_at_refuses_a_position_past_the_payload() {
+        let bytes = [0x05u8, 0x08, 0x2a];
+        assert!(
+            Cursor::new_at(&bytes, 0).is_some(),
+            "the first byte is a position"
+        );
+        assert!(
+            Cursor::new_at(&bytes, bytes.len()).is_some(),
+            "the payload's end is a position with nothing left to read"
+        );
+        assert!(Cursor::new_at(&bytes, bytes.len() + 1).is_none());
+        assert!(Cursor::new_at(&bytes, usize::MAX).is_none());
+        assert!(Cursor::new_at(&[], 1).is_none());
     }
 
     #[test]
     fn compact_uint_matches_single_and_multi_byte_encodings() {
-        assert_eq!(Cursor::new_at(&[0x05], 0).compact_uint(), Some(1));
-        let mut cursor = Cursor::new_at(&[0x08, 0x2a, 0x00], 0);
+        assert_eq!(
+            Cursor::new_at(&[0x05], 0)
+                .expect("a position inside the payload")
+                .compact_uint(),
+            Some(1)
+        );
+        let mut cursor =
+            Cursor::new_at(&[0x08, 0x2a, 0x00], 0).expect("a position inside the payload");
         assert_eq!(cursor.compact_uint(), Some(42));
         assert_eq!(cursor.position(), 3);
     }

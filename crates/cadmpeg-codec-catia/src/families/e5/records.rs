@@ -730,7 +730,7 @@ fn expand_nurbs_axis(
 }
 
 fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
-    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
+    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let origin = c.point3()?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
     if !radius.is_finite() || radius <= 0.0 {
@@ -740,7 +740,7 @@ fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
 }
 
 fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
-    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
+    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
     if !(radius.is_finite()
         && radius > 0.0
@@ -754,7 +754,7 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
 }
 
 fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64, f64)> {
-    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
+    let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
     if !(major_radius.is_finite()
         && major_radius > 0.0

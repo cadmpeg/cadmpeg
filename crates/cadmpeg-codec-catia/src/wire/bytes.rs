@@ -59,7 +59,7 @@ pub(crate) fn u32_le_24(bytes: &[u8], at: usize) -> Option<u32> {
 }
 
 pub(crate) fn compact_int(bytes: &[u8], at: &mut usize) -> Option<u32> {
-    let mut cursor = Cursor::new_at(bytes, *at);
+    let mut cursor = Cursor::new_at(bytes, *at)?;
     let value = cursor.compact_uint()?;
     *at = cursor.position();
     Some(value)
