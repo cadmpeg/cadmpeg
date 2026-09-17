@@ -423,9 +423,6 @@ impl A8SurfaceHeader {
 #[derive(Debug, Clone)]
 /// Degree-5 UV jet stored in an `a8 <flag> 20` object record.
 pub struct A8Pcurve {
-    /// Record byte offset.
-    #[cfg(test)]
-    pub pos: usize,
     /// Inline object identifier.
     pub object_id: u32,
     /// Referenced support-surface object identifier.
@@ -1163,9 +1160,12 @@ fn distance3(a: [f64; 3], b: [f64; 3]) -> f64 {
 #[must_use]
 #[cfg(test)]
 pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
-    object_stream_pcurves(data)
+    object_stream_frames(data)
         .into_iter()
-        .filter(|pcurve| data.get(pcurve.pos) == Some(&0xa8))
+        .filter(|frame| frame.class == 0x20 && data.get(frame.pos) == Some(&0xa8))
+        .filter_map(|frame| {
+            parse_object_stream_pcurve(data, frame.payload, frame.end, frame.object_id)
+        })
         .collect()
 }
 
@@ -1176,21 +1176,17 @@ pub fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
         .into_iter()
         .filter(|frame| frame.class == 0x20)
         .filter_map(|frame| {
-            parse_object_stream_pcurve(data, frame.pos, frame.payload, frame.end, frame.object_id)
+            parse_object_stream_pcurve(data, frame.payload, frame.end, frame.object_id)
         })
         .collect()
 }
 
 fn parse_object_stream_pcurve(
     data: &[u8],
-    pos: usize,
     payload: usize,
     end: usize,
     object_id: u32,
 ) -> Option<A8Pcurve> {
-    #[cfg(not(test))]
-    // discarded-value: pos is an argument only the test build reads; a cfg(not(test)) discard states that without an allow
-    let _ = pos;
     let mut at = payload + 1;
     let support_id = object_stream_reference(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -1267,8 +1263,6 @@ fn parse_object_stream_pcurve(
         return None;
     }
     Some(A8Pcurve {
-        #[cfg(test)]
-        pos,
         object_id,
         support_id,
         #[cfg(test)]
