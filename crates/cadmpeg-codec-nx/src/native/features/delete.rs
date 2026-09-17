@@ -223,4 +223,30 @@ mod tests {
         }
         Ok(())
     }
+
+    // The substring assertion above admits any message that names the key.
+    // `raw_object_indices` is the case where the key appears only inside a
+    // composite path, so this pins the whole spelling the route emits:
+    // `TryFrom<DeleteReferenceFieldWire>` wraps the slot token error of
+    // `PayloadIndexToken::from_wire` in `object_indices/raw_object_indices[{slot}]: `.
+    #[test]
+    fn a_refused_delete_slot_token_states_its_whole_path() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let json = r#"{"id":"delete","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":[[240,32],[255],[241,2,8],[241,2,9],[255]],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
+        let mut wire: serde_json::Value = serde_json::from_str(json)?;
+        wire["raw_object_indices"] =
+            serde_json::json!([[32], [255], [241, 2, 8], [241, 2, 9], [255]]);
+
+        let error = serde_json::from_value::<FeatureDeleteReferenceField>(wire)
+            .err()
+            .ok_or("malformed DELETE field was accepted")?
+            .to_string();
+
+        assert_eq!(
+            error,
+            "object_indices/raw_object_indices[0]: raw_object_index: \
+             invalid payload reference token"
+        );
+        Ok(())
+    }
 }

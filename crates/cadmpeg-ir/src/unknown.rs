@@ -376,7 +376,11 @@ mod tests {
             let error = serde_json::from_value::<UnknownRecord>(restated)
                 .expect_err("the retained bytes own their extent and digest")
                 .to_string();
-            assert!(error.contains(key), "{error}");
+            assert_eq!(
+                error,
+                format!("unknown field `{key}`, expected `data`"),
+                "{key}"
+            );
         }
 
         let mut bogus = wire;
