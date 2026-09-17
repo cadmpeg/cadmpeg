@@ -256,9 +256,7 @@ pub(super) fn emit_model_features(
             .framing
             .sections
             .iter()
-            .find(|section| {
-                operation.offset >= section.offset() && operation.offset < section.end()
-            })
+            .find(|section| section.contains(operation.offset))
             .map_or("MdlStatus", |section| section.name());
         let name = current_operation.and_then(|operation| {
             operation.display_name_stored().then_some(())?;

@@ -204,7 +204,7 @@ pub(in super::super) fn transfer_positional_tori(
             .framing
             .sections
             .iter()
-            .find(|section| row.offset >= section.offset() && row.offset < section.end())
+            .find(|section| section.contains(row.offset))
         else {
             continue;
         };
@@ -438,7 +438,7 @@ pub(in super::super) fn section_contains_offset(
     section: &crate::container::Section,
     offset: usize,
 ) -> bool {
-    offset >= section.offset() && offset < section.end()
+    section.contains(offset)
 }
 
 /// Report every refused tabulated-cylinder lane against the row that stated it.

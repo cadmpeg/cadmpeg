@@ -306,13 +306,12 @@ pub(in super::super) fn unique_section_torus_minor_radius(
         .framing
         .sections
         .iter()
-        .find(|section| row.offset >= section.offset() && row.offset < section.end())?;
+        .find(|section| section.contains(row.offset))?;
     let prototype = exactly_one(scan.surfaces.prototype_records.iter().filter(|prototype| {
         matches!(
             prototype.family,
             crate::surface::SurfacePrototypeFamily::Torus(_)
-        ) && prototype.offset >= section.offset()
-            && prototype.offset < section.end()
+        ) && section.contains(prototype.offset)
     }))?;
     prototype_scalar(prototype, "radius2").filter(|radius| radius.is_finite() && *radius > 0.0)
 }

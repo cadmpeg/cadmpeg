@@ -646,6 +646,18 @@ fn a_section_that_ends_on_the_last_byte_is_admitted() {
 }
 
 #[test]
+fn a_section_contains_its_own_offset_and_every_byte_before_its_end() {
+    let data = b"0123#Geomlists\n0123";
+    let section = container::Section::new("Geomlists".to_string(), 4, data.len(), None, data)
+        .expect("section extent");
+
+    assert!(!section.contains(section.offset() - 1));
+    assert!(section.contains(section.offset()));
+    assert!(section.contains(section.end() - 1));
+    assert!(!section.contains(section.end()));
+}
+
+#[test]
 fn a_section_region_is_exactly_the_bytes_between_the_section_offset_and_its_end() {
     let data = build_prt(
         "test",
