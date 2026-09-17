@@ -173,7 +173,12 @@ pub fn load_matching_sidecar(
     cadir_bytes: &[u8],
     max_bytes: u64,
 ) -> Result<Option<DecodeSidecar>> {
-    let path = decode_sidecar_path(cadir_path);
+    let Some(path) = decode_sidecar_path(cadir_path) else {
+        return Err(anyhow!(
+            "{} names no file, so it has no decode sidecar",
+            cadir_path.display()
+        ));
+    };
     if !path.exists() {
         return Ok(None);
     }
@@ -301,7 +306,12 @@ pub fn persist_decode_sidecar(
     cadir_sha256: &Sha256Digest,
     origin: &LoadOrigin,
 ) -> Result<SidecarPersistOutcome> {
-    let path = decode_sidecar_path(cadir_path);
+    let Some(path) = decode_sidecar_path(cadir_path) else {
+        return Err(anyhow!(
+            "{} names no file, so it has no decode sidecar",
+            cadir_path.display()
+        ));
+    };
     match origin {
         LoadOrigin::Decoded {
             report, fidelity, ..
@@ -475,7 +485,7 @@ mod tests {
         .unwrap();
         let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
-            decode_sidecar_path(&path),
+            decode_sidecar_path(&path).unwrap(),
             sidecar.to_canonical_json().unwrap(),
         )
         .unwrap();
