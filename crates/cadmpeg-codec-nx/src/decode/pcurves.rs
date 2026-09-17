@@ -1210,7 +1210,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     let candidate_count = candidates.len();
     let mut replacements = Vec::new();
     for (candidate_index, (_, _, procedural_index)) in candidates.into_iter().enumerate() {
-        let candidates_remaining = candidate_count.saturating_sub(candidate_index);
+        // Plain `-`: `candidate_index` enumerates the vector `candidate_count`
+        // counted, so it is below that count on every iteration.
+        let candidates_remaining = candidate_count - candidate_index;
         let candidate_geometry_budget = geometry_budget.child_slice(
             opposite_chart_geometry_work_limit(candidates_remaining, geometry_budget.remaining()),
         );
