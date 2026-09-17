@@ -666,3 +666,6 @@ cadmpeg_core::named_optional_field!(
     FaceId,
     "resolved_active_face"
 );
+
+#[cfg(test)]
+mod tests;

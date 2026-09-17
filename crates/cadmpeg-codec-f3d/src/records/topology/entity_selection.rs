@@ -717,3 +717,6 @@ cadmpeg_core::named_optional_field!(
     u64,
     "trailing_scope_reference_offset"
 );
+
+#[cfg(test)]
+mod tests;

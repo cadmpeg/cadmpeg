@@ -345,3 +345,6 @@ cadmpeg_core::named_optional_field!(
     DesignSketchProfileRegionSelection,
     "region_selection"
 );
+
+#[cfg(test)]
+mod tests;

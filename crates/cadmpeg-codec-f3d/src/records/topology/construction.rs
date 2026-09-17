@@ -528,27 +528,27 @@ impl DesignConstructionOperandGroupFrame {
 
 /// Serialized framing of a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct DesignConstructionOperandGroupFrameWire {
+struct DesignConstructionOperandGroupFrameWire {
     member_count_offset: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     auxiliary_record_indices: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     auxiliary_record_offsets: Vec<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(super) auxiliary_paths: Vec<DesignConstructionOperandPath>,
+    auxiliary_paths: Vec<DesignConstructionOperandPath>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(super) trailing_record_indices: Vec<u32>,
+    trailing_record_indices: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(super) trailing_record_offsets: Vec<u64>,
+    trailing_record_offsets: Vec<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(super) trailing_transforms: Vec<DesignConstructionOperandTransform>,
+    trailing_transforms: Vec<DesignConstructionOperandTransform>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(super) trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
+    trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(super) trailing_flags: Vec<DesignConstructionOperandFlag>,
+    trailing_flags: Vec<DesignConstructionOperandFlag>,
     opaque_index: u32,
     opaque_index_offset: u64,
-    pub(super) opaque_scalar: f64,
+    opaque_scalar: f64,
     opaque_scalar_offset: u64,
     variant: bool,
 }
@@ -937,7 +937,7 @@ pub(crate) struct DesignConstructionOperandPathDraft {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct DesignConstructionOperandPathWire {
+struct DesignConstructionOperandPathWire {
     /// Indexed path-record identity.
     record_index: u32,
     /// Path-record header byte offset.
@@ -1481,7 +1481,7 @@ pub(crate) struct DesignConstructionTrackingPathDraft {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct DesignConstructionTrackingPathWire {
+struct DesignConstructionTrackingPathWire {
     wrapper_record_index: u32,
     wrapper_byte_offset: u64,
     wrapper_class_tag: String,
@@ -1802,3 +1802,6 @@ cadmpeg_core::named_optional_field!(
     u64,
     "second_related_identity_offset"
 );
+
+#[cfg(test)]
+mod tests;

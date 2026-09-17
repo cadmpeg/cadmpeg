@@ -513,3 +513,6 @@ cadmpeg_core::named_optional_field!(
 );
 
 cadmpeg_core::named_optional_field!(deserialize_resolved_body_slot, i64, "resolved_body_slot");
+
+#[cfg(test)]
+mod tests;

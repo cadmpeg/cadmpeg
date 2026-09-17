@@ -286,3 +286,6 @@ pub struct DesignHistoricalEdgeLoopContext {
     /// Stable edge slot used by the following coedge.
     pub next_edge_slot: i64,
 }
+
+#[cfg(test)]
+mod tests;
