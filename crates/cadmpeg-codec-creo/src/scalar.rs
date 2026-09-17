@@ -18,11 +18,19 @@ const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
 /// complete twelve-slot positional `local_sys`", and the ND-layout paragraph
 /// that numbers those slots.
 ///
-/// A scalar body states its slots with compact and absent encodings, so one
-/// remaining byte can state a complete table. A declared slot count at or below
-/// this width is therefore admitted whatever the remaining byte count; the
-/// exact proof that the bytes carry the slots is `decode_exact_scalars`, which
-/// requires the cursor to consume the body exactly.
+/// A scalar body states its slots with inherited and multi-slot encodings, so
+/// far fewer bytes than slots can state a complete table. The shortest is two:
+/// `e7 <count>` states the whole table, because `docs/formats/creo_prt.md:641`
+/// reads "Within a named prototype `local_sys`, `e7 <count>` advances over
+/// `count` inherited scalar slots", the count is one compact-integer byte for
+/// every count this table can hold, and
+/// `crate::surface::sequential_named_local_system_slots` requires that count to
+/// be positive. `18 e5` states three slots in the same two bytes. No one-byte
+/// token states a table: a bare terminal `18` states one slot.
+/// A declared slot count at or below this width is therefore admitted whatever
+/// the remaining byte count; the exact proof that the bytes carry the slots is
+/// `decode_exact_scalars`, which requires the cursor to consume the body
+/// exactly.
 pub(crate) const POSITIONAL_SLOT_TABLE_WIDTH: usize = 12;
 
 /// The remaining bytes of a scalar body whose declared slot count its own bytes
