@@ -641,7 +641,10 @@ fn a_section_that_ends_on_the_last_byte_is_admitted() {
     assert_eq!(section.offset(), 0);
     assert_eq!(section.length(), data.len());
     assert_eq!(section.end(), data.len());
-    assert_eq!(container::section_region(data, &section), data.as_slice());
+    assert_eq!(
+        container::section_region(data, &section).expect("the section is a region of `data`"),
+        data.as_slice()
+    );
 }
 
 #[test]
@@ -676,8 +679,40 @@ fn a_section_region_is_exactly_the_bytes_between_the_section_offset_and_its_end(
     // The region is read through the scan that proved it, so it is the file's
     // own bytes over the section's own extent, with no refusal in between.
     assert_eq!(
-        container::section_region(&scan.framing.data, section),
+        container::section_region(&scan.framing.data, section)
+            .expect("the scan enumerated the section over this file"),
         &data[section.offset()..section.end()]
     );
-    assert!(container::section_region(&scan.framing.data, section).starts_with(b"#Xsections\nABCD"));
+    assert!(container::section_region(&scan.framing.data, section)
+        .expect("the scan enumerated the section over this file")
+        .starts_with(b"#Xsections\nABCD"));
+}
+
+/// `section_region` answers `None` on a slice the section's extent leaves. The
+/// bound is the slice's own, so this is a statement about the function, not
+/// about a decode route: no production caller passes anything but the scanned
+/// file.
+#[test]
+fn a_section_region_is_absent_from_a_slice_shorter_than_the_section() {
+    let data = build_prt(
+        "test",
+        &[
+            ("Geomlists", b"0123".to_vec()),
+            ("Xsections", b"ABCD".to_vec()),
+        ],
+    );
+    let scan = container::scan_bytes_ok(data.clone());
+    let section = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "Xsections")
+        .expect("the scan enumerates the second section");
+
+    let truncated = &data[..section.end() - 1];
+    assert_eq!(container::section_region(truncated, section), None);
+    assert_eq!(
+        container::section_region(&data[..section.end()], section),
+        Some(&data[section.offset()..section.end()])
+    );
 }

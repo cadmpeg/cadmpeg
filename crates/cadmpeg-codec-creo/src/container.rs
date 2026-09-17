@@ -911,13 +911,12 @@ pub(crate) fn expanded_section_for<'a>(
 /// The payload bytes of one declared section, in the file the scan read it
 /// from.
 ///
-/// Total. [`Section::new`] admitted `offset..end` as a region of that file and
-/// stored the admitted length, so nothing here re-derives the extent and
-/// nothing refuses it: the `get` is the slice's own, and it answers `Some` for
-/// every section a scan over `data` enumerated.
-pub(crate) fn section_region<'a>(data: &'a [u8], section: &Section) -> &'a [u8] {
+/// The `None` is `data`'s own bound. `data` is a free parameter, so the type
+/// cannot state that it is the file the section was scanned from; [`Section::new`]
+/// admitted `offset..end` against that file and stored the admitted length, so
+/// every production caller — each passes the scanned file — reads `Some`.
+pub(crate) fn section_region<'a>(data: &'a [u8], section: &Section) -> Option<&'a [u8]> {
     data.get(section.offset()..section.end())
-        .unwrap_or_default()
 }
 
 fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
@@ -1082,7 +1081,15 @@ fn geom_census(data: &[u8], sections: &[Section]) -> Result<GeomCensus, CodecErr
     else {
         return Ok(GeomCensus::default());
     };
-    let region = section_region(data, vg);
+    let Some(region) = section_region(data, vg) else {
+        return Err(CodecError::malformed(format!(
+            "creo section `{}` declares the region {}..{}, past the file length {}",
+            vg.name(),
+            vg.offset(),
+            vg.end(),
+            data.len(),
+        )));
+    };
     Ok(GeomCensus {
         srf_array_count: read_array_count(region, b"srf_array")?,
         crv_array_count: read_array_count(region, b"crv_array")?,
@@ -1127,7 +1134,9 @@ fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize
         if section.role() == SectionRole::Thumbnail {
             continue;
         }
-        let region = section_region(data, section);
+        let Some(region) = section_region(data, section) else {
+            continue;
+        };
         let mut from = 0;
         while let Some(field) = find(region, FIELD, from) {
             let value_start = field + FIELD.len();
@@ -1200,7 +1209,9 @@ fn model_geometry_sections(data: &[u8], sections: &[Section]) -> Vec<Section> {
         .iter()
         .filter(|candidate| candidate.name() == VISIBGEOM)
     {
-        let payload = section_region(data, candidate);
+        let Some(payload) = section_region(data, candidate) else {
+            continue;
+        };
         if find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
         {
             visible_namespace_present = true;
@@ -1212,7 +1223,9 @@ fn model_geometry_sections(data: &[u8], sections: &[Section]) -> Vec<Section> {
         let keep = if visible_namespace_present {
             section.name() == VISIBGEOM
         } else if section.name() == "DEPDB_DATA" {
-            let payload = section_region(data, section);
+            let Some(payload) = section_region(data, section) else {
+                continue;
+            };
             find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
         } else {
             false
@@ -1227,7 +1240,9 @@ fn model_geometry_sections(data: &[u8], sections: &[Section]) -> Vec<Section> {
 fn surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceRow> {
     let mut rows = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         rows.extend(surface::rows(section_bytes).into_iter().map(|mut row| {
             row.offset += section.offset();
             row
@@ -1243,7 +1258,9 @@ fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceR
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1263,7 +1280,10 @@ fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceR
 fn surface_prototype_count(data: &[u8], sections: &[Section]) -> usize {
     let mut total = 0usize;
     for section in sections {
-        total += surface::prototype_count(section_region(data, section));
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
+        total += surface::prototype_count(section_bytes);
     }
     total
 }
@@ -1271,7 +1291,9 @@ fn surface_prototype_count(data: &[u8], sections: &[Section]) -> usize {
 fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototypeRecord> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             surface::named_prototype_records(section_bytes)
                 .into_iter()
@@ -1292,7 +1314,9 @@ fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePr
 fn surface_parameters(data: &[u8], sections: &[Section]) -> Vec<SurfaceParameterRecord> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             surface::parameter_records(section_bytes)
                 .into_iter()
@@ -1316,7 +1340,9 @@ fn cross_section_surface_parameters(
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1337,7 +1363,9 @@ fn cross_section_surface_parameters(
 fn surface_contours(data: &[u8], sections: &[Section]) -> Vec<SurfaceContourRecord> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             surface::contour_records(section_bytes)
                 .into_iter()
@@ -1359,7 +1387,9 @@ fn cross_section_surface_contours(data: &[u8], sections: &[Section]) -> Vec<Surf
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1382,7 +1412,9 @@ fn loop_array_scan(data: &[u8], sections: &[Section]) -> LoopArrayScan {
     let mut frames = Vec::new();
     let mut records = Vec::new();
     for section in sections {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         let scan = loop_array::scan(payload);
         frames.extend(scan.frames.into_iter().map(|mut frame| {
             frame.offset += section.offset();
@@ -1408,7 +1440,9 @@ fn tabulated_cylinder_curve_replays(
 ) -> Vec<TabulatedCylinderCurveReplay> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             surface::tabulated_cylinder_curve_replays(section_bytes)
                 .into_iter()
@@ -1426,7 +1460,9 @@ fn tabulated_cylinder_curve_replays(
 fn plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<PlaneLocalSystem> {
     let mut systems = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         systems.extend(surface::plane_local_systems(section_bytes).into_iter().map(
             |mut system| {
                 system.row_offset += section.offset();
@@ -1445,7 +1481,9 @@ fn cross_section_plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<P
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1466,7 +1504,9 @@ fn cross_section_plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<P
 fn plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<PlaneEnvelopeRecord> {
     let mut envelopes = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         envelopes.extend(surface::plane_envelopes(section_bytes).into_iter().map(
             |mut envelope| {
                 envelope.row_offset += section.offset();
@@ -1485,7 +1525,9 @@ fn cross_section_plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<Plane
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1505,7 +1547,9 @@ fn cross_section_plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<Plane
 fn curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
     let mut prototypes = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         prototypes.extend(
             curve::prototypes(section_bytes)
                 .into_iter()
@@ -1526,7 +1570,9 @@ fn curve_expressions(
 ) -> Vec<CurveExpressionRecord> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             curve::expression_records_with_model_name(section_bytes, model_name)
                 .into_iter()
@@ -1564,7 +1610,9 @@ fn curve_parameters(
 ) -> Vec<CurveParameterRecord> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             curve::parameter_records_with_face_ids(section_bytes, Some(face_ids))
                 .into_iter()
@@ -1587,7 +1635,9 @@ fn two_chart_pcurves(
 ) -> Vec<TwoChartPcurveSamples> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             curve::two_chart_pcurve_samples(section_bytes, Some(face_ids))
                 .into_iter()
@@ -1609,7 +1659,9 @@ fn two_chart_pcurves(
 fn prototype_pcurves(data: &[u8], sections: &[Section]) -> Vec<PrototypePcurveEndpoints> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             curve::prototype_pcurve_endpoints(section_bytes)
                 .into_iter()
@@ -1626,7 +1678,9 @@ fn prototype_pcurves(data: &[u8], sections: &[Section]) -> Vec<PrototypePcurveEn
 fn curve_prototype_topology(data: &[u8], sections: &[Section]) -> Vec<CurvePrototypeTopology> {
     let mut records = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             curve::prototype_topology(section_bytes)
                 .into_iter()
@@ -1647,7 +1701,9 @@ fn curve_topology_rows(
 ) -> Vec<CurveTopologyRow> {
     let mut rows = Vec::new();
     for section in sections {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         rows.extend(
             curve::topology_rows_with_face_ids(section_bytes, Some(face_ids))
                 .into_iter()
@@ -1667,7 +1723,9 @@ fn cross_section_curve_rows(data: &[u8], sections: &[Section]) -> Vec<DepdbCurve
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1690,7 +1748,9 @@ fn cross_section_curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<Curv
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1709,7 +1769,9 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlaneRecord> {
         .iter()
         .filter(|section| section.name() == "ActDatums")
     {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         planes.extend(datum::planes(section_bytes).into_iter().map(|mut plane| {
             plane.offset_in_payload += section.offset();
             plane
@@ -1729,7 +1791,9 @@ fn datum_cylinders(data: &[u8], sections: &[Section]) -> Vec<DatumCylinder> {
         .iter()
         .filter(|section| section.name() == "ActDatums")
     {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         cylinders.extend(
             datum::cylinders(section_bytes)
                 .into_iter()
@@ -1761,7 +1825,9 @@ fn structural_feature_ids(
         .iter()
         .filter(|section| section.role() == SectionRole::PsbGeometry)
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         let mut from = 0;
         while let Some(found) = find(payload, b"parent_feats\0", from) {
             let start = found + b"parent_feats\0".len();
@@ -1882,7 +1948,9 @@ fn feature_entity_tables(
         .iter()
         .filter(|section| section.name() == "AllFeatur")
     {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         tables.extend(
             feature::entity_tables(section_bytes, &feature_ids, &surface_ids)
                 .into_iter()
@@ -1907,7 +1975,9 @@ fn feature_rows(data: &[u8], sections: &[Section], feature_ids: &[u32]) -> Vec<F
         .iter()
         .filter(|section| section.name() == "AllFeatur")
     {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         rows.extend(feature::rows(section_bytes, &feature_ids, section.offset()));
     }
     rows.sort_by_key(|row| row.offset);
@@ -1924,7 +1994,9 @@ fn feature_entity_graph(
     else {
         return (Vec::new(), Vec::new());
     };
-    let section_bytes = section_region(data, section);
+    let Some(section_bytes) = section_region(data, section) else {
+        return (Vec::new(), Vec::new());
+    };
     // The payload follows the `#<name>\n` section header. A section without
     // that newline carries no header, so the whole region is the payload.
     let header_length = find(section_bytes, b"\n", 0).map_or(0, |newline| newline + 1);
@@ -2023,7 +2095,9 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
         .iter()
         .filter(|section| section.name() == "FeatDefs" || section.name() == "DEPDB_DATA")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         definitions.extend(
             (if section.name() == "DEPDB_DATA" {
                 feature::depdb_definitions(payload)
@@ -2096,7 +2170,9 @@ fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<Featu
         .iter()
         .filter(|section| section.name() == "FeatDefs")
     {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         definitions.extend(
             feature::positional_replay_definitions(section_bytes)
                 .into_iter()
@@ -2116,7 +2192,9 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
         .iter()
         .filter(|section| section.name() == "MdlStatus" || section.name() == "DEPDB_DATA")
     {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             feature::operations(section_bytes)
                 .into_iter()
@@ -2144,8 +2222,11 @@ fn feature_reference_names(data: &[u8], sections: &[Section]) -> Vec<FeatureRefe
         .iter()
         .filter(|section| section.name() == "MdlRefInfo")
     {
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
-            feature::reference_names(section_region(data, section))
+            feature::reference_names(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset();
@@ -2162,7 +2243,9 @@ fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOpe
         .iter()
         .filter(|section| section.name() == "MdlStatus" || section.name() == "DEPDB_DATA")
     {
-        let section_bytes = section_region(data, section);
+        let Some(section_bytes) = section_region(data, section) else {
+            continue;
+        };
         records.extend(
             feature::operation_states(section_bytes)
                 .into_iter()
@@ -2193,7 +2276,9 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
         .iter()
         .filter(|section| section.name() == "DEPDB_DATA")
     {
-        let payload = section_region(data, section);
+        let Some(payload) = section_region(data, section) else {
+            continue;
+        };
         let mut recipe_operations = feature::operation_states(payload)
             .into_iter()
             .filter_map(|operation| {
@@ -2234,7 +2319,7 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     let section = sections
         .iter()
         .find(|section| section.name() == "Geomlists")?;
-    let payload = section_region(data, section);
+    let payload = section_region(data, section)?;
     let value_offset = find(payload, label, 0)? + label.len();
     let (count, after) = psb::compact_int(payload, value_offset);
     (after > value_offset).then_some(count)
@@ -2299,7 +2384,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
         let mut scopes = Vec::with_capacity(sections.len() + 1);
         scopes.push(framing.object_offset..initial_end);
         for section in &sections {
-            let region = section_region(&data, section);
+            let Some(region) = section_region(&data, section) else {
+                continue;
+            };
             let Some(payload_start) = section
                 .offset()
                 .checked_add(section.raw_name.len())
@@ -2367,7 +2454,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
         .iter()
         .filter(|section| section.name() == "MdlRefInfo")
     {
-        let payload = section_region(&data, section);
+        let Some(payload) = section_region(&data, section) else {
+            continue;
+        };
         reference_lines.extend(
             reference::lines(payload)
                 .into_iter()
@@ -2427,7 +2516,10 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        if find(section_region(&data, section), b"Sld_Xsections\0", 0).is_some() {
+        let Some(payload) = section_region(&data, section) else {
+            continue;
+        };
+        if find(payload, b"Sld_Xsections\0", 0).is_some() {
             loop_array_sections.push(section.clone());
         }
     }
@@ -2782,7 +2874,9 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
         .iter()
         .filter(|s| s.role() == SectionRole::Thumbnail)
     {
-        let raw = section_region(&scan.framing.data, section);
+        let Some(raw) = section_region(&scan.framing.data, section) else {
+            continue;
+        };
         // The `#<name>\n` header precedes the payload.
         let payload_start = section.raw_name.len() + 2;
         let raw_is_compressed = raw

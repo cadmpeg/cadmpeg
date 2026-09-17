@@ -30,7 +30,15 @@ pub(in super::super) fn preserve_passthrough_sections(
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
     }) {
-        let section_bytes = container::section_region(&scan.framing.data, section);
+        let Some(section_bytes) = container::section_region(&scan.framing.data, section) else {
+            return Err(CodecError::malformed(format!(
+                "creo section `{}` declares the region {}..{}, past the scanned file length {}",
+                section.name(),
+                section.offset(),
+                section.end(),
+                scan.framing.data.len(),
+            )));
+        };
         let payload_start = section.raw_name.len().saturating_add(2);
         let raw_is_compressed = section_bytes
             .get(payload_start..)
