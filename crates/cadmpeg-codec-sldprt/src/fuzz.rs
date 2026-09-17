@@ -1,38 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `()`-returning wrappers over internal parsers for the `cadmpeg-fuzz` targets.
+//! Wrappers over internal parsers for the `cadmpeg-fuzz` targets.
 //!
-//! Each wrapper feeds arbitrary bytes to one internal parser and discards the
-//! result. The contract is that no input may panic.
+//! Each wrapper runs one internal parser over arbitrary bytes as an expression
+//! statement. None of the six scanning parsers states a refusal -- each answers
+//! a scan, a collection or a fact table for every input -- so there is no
+//! `Result` here and nothing is discarded: the answer is a value the wrapper
+//! has no use for, and the contract a target checks is only that no input
+//! panics. `pmi` states its own reparse invariant instead.
 #![doc(hidden)]
 
 /// Exercise outer-container scanning.
 pub fn container(data: &[u8]) {
-    let _ = crate::container::scan_bytes(data);
+    crate::container::scan_bytes(data);
 }
 
 /// Exercise embedded Parasolid stream extraction.
 pub fn parasolid(data: &[u8]) {
-    let _ = crate::parasolid::extract_streams_with_offsets(data);
+    crate::parasolid::extract_streams_with_offsets(data);
 }
 
 /// Exercise spline-curve carrier scanning.
 pub fn spline_curves(data: &[u8]) {
-    let _ = crate::brep::spline::scan_curve_carriers(data, &mut Vec::new());
+    crate::brep::spline::scan_curve_carriers(data, &mut Vec::new());
 }
 
 /// Exercise spline-surface carrier scanning.
 pub fn spline_surfaces(data: &[u8]) {
-    let _ = crate::brep::spline::scan_surface_carriers(data, &mut Vec::new());
+    crate::brep::spline::scan_surface_carriers(data, &mut Vec::new());
 }
 
 /// Exercise topology record scanning.
 pub fn topology(data: &[u8]) {
-    let _ = crate::brep::topology::scan(data);
+    crate::brep::topology::scan(data);
 }
 
 /// Exercise entity record scanning.
 pub fn entity(data: &[u8]) {
-    let _ = crate::brep::entity::scan_metadata(data, false);
+    crate::brep::entity::scan_metadata(data, false);
 }
 
 /// Exercise `PMISemanticDataDB` `MessagePack` parse/patch/reparse.
@@ -52,13 +56,12 @@ pub fn pmi(data: &[u8]) {
         let Some(end) = start.checked_add(8) else {
             continue;
         };
-        let Some(slot) = data.get(start..end) else {
+        if data.get(start..end).is_none() {
             continue;
-        };
+        }
         let mut patched = data.to_vec();
         let edited = f64::from_bits(record.value.to_bits() ^ 1);
         patched[start..end].copy_from_slice(&edited.to_be_bytes());
-        let _ = slot;
         let mut again_losses = Vec::new();
         let again = crate::pmi::parse_payload(&patched, &mut again_losses);
         if let Some(parsed) = again.iter().find(|candidate| candidate.guid == record.guid) {
