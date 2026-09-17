@@ -11,13 +11,15 @@ use super::{assembly::assembly_operand_frame_fixture, prelude::*};
 #[test]
 fn circular_pattern_axis_prefers_one_inline_carrier() {
     use crate::design::decode::scopes::CircularPatternAxisCandidate;
-    use crate::records::feature::DesignCircularPatternAxis;
+    use crate::records::feature::patterns::DesignCircularPatternAxis;
 
     let historical = DesignCircularPatternAxis::HistoricalEdge {
-        wrappers: vec![crate::records::feature::DesignPatternAxisWrapper {
-            record_index: 11,
-            identity_offset: 23,
-        }],
+        wrappers: vec![
+            crate::records::feature::patterns::DesignPatternAxisWrapper {
+                record_index: 11,
+                identity_offset: 23,
+            },
+        ],
         persistent_identity: 17,
         resolved: None,
     };
@@ -213,7 +215,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     bytes.extend_from_slice(&axis);
 
     let mut scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("291".to_owned())
@@ -239,7 +241,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
                 "reference_members",
             )
             .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::CPattern
+            payload: crate::records::feature::scope::DesignFeatureKind::CPattern
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
@@ -266,7 +268,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             angle: std::f64::consts::TAU,
             angle_record_index,
             angle_offset: (angle_start + 40) as u64,
-            axis: crate::records::feature::DesignCircularPatternAxis::Inline {
+            axis: crate::records::feature::patterns::DesignCircularPatternAxis::Inline {
                 origin: [1.0, 2.0, 3.0],
                 origin_offset: (axis_start + 25) as u64,
                 direction: [-1.0, 0.0, 0.0],
@@ -288,7 +290,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &[],
     )
     .expect("non-unit axis displacement is normalized");
-    let crate::records::feature::DesignCircularPatternAxis::Inline { direction, .. } =
+    let crate::records::feature::patterns::DesignCircularPatternAxis::Inline { direction, .. } =
         normalized.axis
     else {
         panic!("inline axis expected");
@@ -402,7 +404,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::RPattern
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::RPattern
                 .try_into()
                 .unwrap();
         })
@@ -519,7 +521,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Assemble
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Assemble
                 .try_into()
                 .unwrap();
             draft.frame_length = 627;
@@ -779,7 +781,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     legacy_assembly_bytes.extend_from_slice(b"258");
     legacy_assembly_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
     let legacy_assembly_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             frame_length: 633,
             paired_byte_offset: 633,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -805,7 +807,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut dynamic_standard_bytes = assembly_bytes.clone();
     dynamic_standard_bytes[641..644].copy_from_slice(b"262");
     let dynamic_standard_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "262".to_owned(),
             )
@@ -826,7 +828,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut dynamic_compact_bytes = legacy_assembly_bytes.clone();
     dynamic_compact_bytes[637..640].copy_from_slice(b"262");
     let dynamic_compact_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "262".to_owned(),
             )
@@ -859,7 +861,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     axial_assembly_bytes.extend_from_slice(b"261");
     axial_assembly_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
     let axial_assembly_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             frame_length: 772,
             paired_byte_offset: 772,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -894,7 +896,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     short_axial_bytes.extend_from_slice(b"261");
     short_axial_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
     let short_axial_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             frame_length: 705,
             paired_byte_offset: 705,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -938,7 +940,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut first_joint_origin = scope.clone();
     first_joint_origin
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::JointOrigin
                 .try_into()
                 .unwrap();
         })
@@ -957,8 +959,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut second_joint_origin = first_joint_origin.clone();
     second_joint_origin.record_index = 80;
     let mut linked_assembly = axial_assembly_scope.clone();
-    if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
-    | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::Assemble(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::AsBuilt(slot) =
         linked_assembly.payload_mut()
     {
         *slot = Some(axial_alignment.clone());
@@ -977,7 +979,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     assert_eq!(
         linked_scopes[0].assembly_alignment().and_then(
-            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+            crate::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index
         ),
         None
     );
@@ -1009,8 +1011,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
-    | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::Assemble(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::AsBuilt(slot) =
         single_frame_assembly.payload_mut()
     {
         *slot = Some(datum_envelope_alignment);
@@ -1018,7 +1020,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut single_frame_joint_origin = scope.clone();
     single_frame_joint_origin
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::JointOrigin
                 .try_into()
                 .unwrap();
         })
@@ -1051,7 +1053,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     assert_eq!(
         single_frame_scopes[0].assembly_alignment().and_then(
-            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+            crate::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index
         ),
         Some(91)
     );
@@ -1067,14 +1069,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(
         conflicting_scopes[0].assembly_alignment().and_then(
-            crate::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index
+            crate::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index
         ),
         None
     );
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
     let mut invalid_joint_origin = single_frame_scopes[1].clone();
-    if let crate::records::feature::DesignScopePayloadMut::JointOrigin(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::JointOrigin(slot) =
         invalid_joint_origin.payload_mut()
     {
         *slot = None;

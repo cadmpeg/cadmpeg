@@ -8,12 +8,12 @@
 use super::prelude::*;
 use crate::records::topology::DesignOperandRole;
 
-use crate::records::topology::{
-    DesignBodyRecipeReference, DesignConstructionOperandGroupFrame, DesignOperandOwner,
-};
 use crate::records::{
-    feature::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation},
+    feature::surface_ops::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation},
     recipes::ConstructionRecipeKind,
+    topology::{
+        DesignBodyRecipeReference, DesignConstructionOperandGroupFrame, DesignOperandOwner,
+    },
 };
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
@@ -71,7 +71,7 @@ fn group(
 fn replace_face_projects_role_order_and_historical_inputs() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#1129",
-        crate::records::feature::DesignFeatureKind::ReplaceFace,
+        crate::records::feature::scope::DesignFeatureKind::ReplaceFace,
         1129,
     );
     scope.class_tag =
@@ -215,7 +215,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
 fn surface_trim_projects_body_target_and_curve_tool() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#1200",
-        crate::records::feature::DesignFeatureKind::SurfaceTrim,
+        crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
         1200,
     );
     scope
@@ -296,7 +296,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
 fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#1200",
-        crate::records::feature::DesignFeatureKind::SurfaceTrim,
+        crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
         1200,
     );
     let mut feature = cadmpeg_ir::features::Feature::new(
@@ -310,7 +310,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     );
     feature.native_ref = Some(scope.id.clone());
     let operation = DesignSurfaceTrimOperation::try_from(
-        crate::records::feature::DesignSurfaceTrimOperationWire {
+        crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
             id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
             scope_record_index: 1200,
             selection_record_index: 1,
@@ -318,13 +318,13 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
             selection_next_record_index: 2,
             selection_next_byte_offset: 0,
             chain_records: [
-                crate::records::feature::DesignSurfaceTrimChainRecord {
+                crate::records::feature::surface_ops::DesignSurfaceTrimChainRecord {
                     record_index: 2,
                     byte_offset: 0,
                     class_tag: "288".to_owned().try_into().unwrap(),
                     frame_length: 11,
                 },
-                crate::records::feature::DesignSurfaceTrimChainRecord {
+                crate::records::feature::surface_ops::DesignSurfaceTrimChainRecord {
                     record_index: 6,
                     byte_offset: 11,
                     class_tag: "271".to_owned().try_into().unwrap(),

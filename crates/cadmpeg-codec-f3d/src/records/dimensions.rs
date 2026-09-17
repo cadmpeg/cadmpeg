@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design dimension recipe records: loci, annotation frames and presentation frames.
 
+use super::identity::Located;
+use super::recipes::ConstructionRecipeKind;
+use super::references::DesignClassTag;
 use super::sketch_relations::{
     constraint_kinds_from_state, SketchConstraintKind, SKETCH_CONSTRAINT_MASK,
 };
-use super::{identity::Located, recipes::ConstructionRecipeKind, references::DesignClassTag};
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::num::NonZeroU32;

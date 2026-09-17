@@ -2,7 +2,7 @@
 use super::prelude::*;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
-use crate::records::{topology::DesignLoftLegacyBodyCarrier, topology::DesignOperandRole};
+use crate::records::topology::{DesignLoftLegacyBodyCarrier, DesignOperandRole};
 
 pub(super) fn fixed_kind_path_operations(
     mut bytes: Vec<u8>,
@@ -17,7 +17,7 @@ pub(super) fn fixed_kind_path_operations(
     loft_scope
         .try_edit(|draft| {
             draft.byte_offset = loft_start as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::Loft
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Loft
                 .try_into()
                 .unwrap();
             draft.frame_length = 376;
@@ -35,7 +35,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
         ),
         Some(DesignPathFeatureConstruction::Loft(
-            crate::records::feature::DesignLoftConstruction {
+            crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: (loft_start + 29) as u64,
             }
@@ -44,7 +44,7 @@ pub(super) fn fixed_kind_path_operations(
     loft_scope.id = "stream:loft-scope".into();
     {
         let value = Some(DesignPathFeatureConstruction::Loft(
-            crate::records::feature::DesignLoftConstruction {
+            crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (loft_start + 29) as u64,
             },
@@ -117,7 +117,7 @@ pub(super) fn fixed_kind_path_operations(
     ));
     {
         let value = Some(DesignPathFeatureConstruction::Loft(
-            crate::records::feature::DesignLoftConstruction {
+            crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (loft_start + 29) as u64,
             },
@@ -211,7 +211,7 @@ pub(super) fn fixed_kind_path_operations(
     );
     {
         let value = Some(DesignPathFeatureConstruction::Loft(
-            crate::records::feature::DesignLoftConstruction {
+            crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (loft_start + 29) as u64,
             },
@@ -358,7 +358,7 @@ pub(super) fn fixed_kind_path_operations(
     sweep_scope
         .try_edit(|draft| {
             draft.byte_offset = sweep_start as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::Sweep
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Sweep
                 .try_into()
                 .unwrap();
             draft.frame_length = 499;
@@ -378,7 +378,7 @@ pub(super) fn fixed_kind_path_operations(
             &[],
         ),
         Some(DesignPathFeatureConstruction::Sweep(
-            crate::records::feature::DesignSweepConstruction {
+            crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (sweep_start + 25) as u64,
                 values: sweep_values,
@@ -438,7 +438,7 @@ pub(super) fn fixed_kind_path_operations(
     let rail = sweep_group(2, DesignOperandRole::ROLE_0X5);
     {
         let value = Some(DesignPathFeatureConstruction::Sweep(
-            crate::records::feature::DesignSweepConstruction {
+            crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (sweep_start + 25) as u64,
                 values: [0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
@@ -483,7 +483,7 @@ pub(super) fn fixed_kind_path_operations(
     let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
     {
         let value = Some(DesignPathFeatureConstruction::Sweep(
-            crate::records::feature::DesignSweepConstruction {
+            crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (sweep_start + 25) as u64,
                 values: complete_sweep_values,
@@ -554,7 +554,7 @@ pub(super) fn fixed_kind_path_operations(
             )
             .unwrap(),
         );
-        if let crate::records::feature::DesignScopePayloadMut::Sweep(slot) =
+        if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(slot) =
             sweep_scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).sweep_profile = value;
@@ -633,12 +633,14 @@ pub(super) fn fixed_kind_path_operations(
             guide_rail: None,
             ..
         })) if matches!((shape.referenced_profile(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface")));
-    if let crate::records::feature::DesignScopePayloadMut::Sweep(slot) = sweep_scope.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(slot) =
+        sweep_scope.payload_mut()
+    {
         slot.get_or_insert_with(Default::default).sweep_profile = None;
     }
     {
         let value = Some(DesignPathFeatureConstruction::Sweep(
-            crate::records::feature::DesignSweepConstruction {
+            crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (sweep_start + 25) as u64,
                 values: complete_sweep_values,
@@ -698,7 +700,7 @@ pub(super) fn fixed_kind_path_operations(
     pipe_scope
         .try_edit(|draft| {
             draft.byte_offset = pipe_start as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::Pipe
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Pipe
                 .try_into()
                 .unwrap();
             draft.frame_length = 464;
@@ -718,10 +720,11 @@ pub(super) fn fixed_kind_path_operations(
             &[],
         ),
         Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::feature::DesignPipeConstruction {
+            crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (pipe_start + 25) as u64,
-                section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
+                section_shape:
+                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
                 section_shape_offset: (pipe_start + 29) as u64,
                 filled: true,
                 filled_offset: (pipe_start + 30) as u64,
@@ -792,7 +795,7 @@ pub(super) fn fixed_kind_path_operations(
         crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap();
     owner_pipe_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Pipe
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Pipe
                 .try_into()
                 .unwrap();
             draft.frame_length = 405;
@@ -811,10 +814,11 @@ pub(super) fn fixed_kind_path_operations(
             &owner_pipe_owners,
         ),
         Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::feature::DesignPipeConstruction {
+            crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (owner_pipe_start + fixed_pipe_layout::OPERATION) as u64,
-                section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
+                section_shape:
+                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
                 section_shape_offset: (owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE) as u64,
                 filled: true,
                 filled_offset: (owner_pipe_start + fixed_pipe_layout::FILLED) as u64,
@@ -894,7 +898,7 @@ pub(super) fn fixed_kind_path_operations(
                 .unwrap();
         legacy_scope
             .try_edit(|draft| {
-                draft.payload = crate::records::feature::DesignFeatureKind::Pipe
+                draft.payload = crate::records::feature::scope::DesignFeatureKind::Pipe
                     .try_into()
                     .unwrap();
                 draft.frame_length = 383;
@@ -914,10 +918,11 @@ pub(super) fn fixed_kind_path_operations(
                 &[],
             ),
             Some(DesignPathFeatureConstruction::Pipe(
-                crate::records::feature::DesignPipeConstruction {
+                crate::records::feature::path_features::DesignPipeConstruction {
                     operation: DesignExtrudeOperation::NewBody,
                     operation_offset: (legacy_pipe_start + legacy_pipe_layout::OPERATION) as u64,
-                    section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
+                    section_shape:
+                        crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
                     section_shape_offset: (legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE)
                         as u64,
                     filled: true,
@@ -1064,12 +1069,12 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(payload.byte_length(), 7);
     assert_eq!(payload.owned_recipe_ids(), [recipe.id]);
 
-    if let crate::records::feature::DesignScopePayloadMut::Sketch(slot)
-    | crate::records::feature::DesignScopePayloadMut::Esquisse(slot)
-    | crate::records::feature::DesignScopePayloadMut::Skizze(slot)
-    | crate::records::feature::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Sketch(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Esquisse(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Skizze(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
     {
-        *slot = Some(crate::records::feature::DesignSketchEntityBinding {
+        *slot = Some(crate::records::feature::scope::DesignSketchEntityBinding {
             entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_99".to_owned())
                 .expect("valid entity identity"),
             entity_reference_offset: 0,

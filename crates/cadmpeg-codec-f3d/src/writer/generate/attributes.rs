@@ -4,9 +4,12 @@
 use std::collections::HashMap;
 
 use crate::native::F3dNative;
-use crate::records::recipes::CreationTimestamp;
-use crate::records::sketch_links::{
-    PersistentDesignLink, PersistentSubentityTag, SketchCurveLink, SKETCH_LINK_SENSE_UNCONSTRAINED,
+use crate::records::{
+    recipes::CreationTimestamp,
+    sketch_links::{
+        PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+        SKETCH_LINK_SENSE_UNCONSTRAINED,
+    },
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;

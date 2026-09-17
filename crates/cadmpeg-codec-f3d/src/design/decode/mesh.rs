@@ -33,14 +33,12 @@ use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
 use crate::records::mesh::{
-    DesignGuidText, DesignMeshCollection, DesignMeshCollectionOwner, DesignMeshEntryName,
-    DesignMeshGuid, DesignMeshPlacement, DesignMeshSceneNode, DesignMeshSceneState,
-    DesignMeshScope, DesignMeshTextureTable, MeshAffineTransform,
+    DesignGuidText, DesignMeshBody, DesignMeshCollection, DesignMeshCollectionOwner,
+    DesignMeshEntryName, DesignMeshFeature, DesignMeshFixedRecord, DesignMeshGuid,
+    DesignMeshPlacement, DesignMeshRecordIdentity, DesignMeshSceneBounds, DesignMeshSceneNode,
+    DesignMeshSceneState, DesignMeshScope, DesignMeshTextureResource, DesignMeshTextureTable,
+    MeshAffineTransform,
 };
-use crate::records::mesh::{
-    DesignMeshBody, DesignMeshFeature, DesignMeshSceneBounds, DesignMeshTextureResource,
-};
-use crate::records::{mesh::DesignMeshFixedRecord, mesh::DesignMeshRecordIdentity};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
@@ -913,7 +911,7 @@ fn parse_mesh_scope_record(
             identity.class_tag(),
             u64::try_from(frame.start).ok()?,
         )?;
-        (scope.kind() == crate::records::feature::DesignFeatureKind::BaseMeshFeature
+        (scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature
             && scope.byte_offset() == u64::try_from(frame.start).ok()?)
         .then_some(())?;
         let paired_at = usize::try_from(scope.paired_byte_offset()).ok()?;

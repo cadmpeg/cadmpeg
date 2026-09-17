@@ -16,11 +16,13 @@ use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn surface_stitch_binds_all_unique_entity_face_candidates() {
-    use crate::records::feature::DesignParameterScope;
-    use crate::records::topology::{
-        AsmHistoricalEntityKind, DesignConstructionOperandGroup,
-        DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
-        DesignEntitySelectionOperand,
+    use crate::records::{
+        feature::scope::DesignParameterScope,
+        topology::{
+            AsmHistoricalEntityKind, DesignConstructionOperandGroup,
+            DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
+            DesignEntitySelectionOperand,
+        },
     };
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
@@ -32,9 +34,12 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let history_id = format!("{stream}/BREP.surface:asm-1");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
-        crate::records::feature::DesignScopePayload::SurfaceStitch(
-            crate::records::feature::DesignSurfaceStitchOperation {
-                gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
+        crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
+            crate::records::feature::surface_ops::DesignSurfaceStitchOperation {
+                gap_tolerance: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
+                    0.01,
+                )
+                .unwrap(),
                 gap_tolerance_offset: 0,
                 tolerance_record_index: 300,
                 settings_record_index: 301,

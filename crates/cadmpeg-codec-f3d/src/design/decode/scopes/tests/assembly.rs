@@ -9,8 +9,9 @@
 use super::prelude::*;
 use crate::records::{
     feature::{
-        DesignAssemblyAlignmentForm, DesignComponentInsertMatrix, DesignFeatureKind,
-        DesignScopePayloadMut,
+        assembly::DesignAssemblyAlignmentForm,
+        assembly_features::DesignComponentInsertMatrix,
+        scope::{DesignFeatureKind, DesignScopePayloadMut},
     },
     identity::{Located, ReferenceRun},
     parameters::{DesignParameterOwner, DesignParameterOwnerWire},

@@ -43,7 +43,7 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut draft_scope = scope.clone();
     draft_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Draft
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Draft
                 .try_into()
                 .unwrap();
             draft.frame_length = 361;
@@ -56,7 +56,7 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     let expected = Some(DesignDraftOperation {
-        angle: crate::records::feature::DesignFiniteScalar::new(0.4).unwrap(),
+        angle: crate::records::feature::sheet_metal::DesignFiniteScalar::new(0.4).unwrap(),
         angle_record_index: 175,
         angle_offset: (draft_start + 40) as u64,
         opposite_angle_record_index: 176,
@@ -173,7 +173,7 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut fillet_scope = scope.clone();
     fillet_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Fillet
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Fillet
                 .try_into()
                 .unwrap();
             draft.reference_members =
@@ -187,30 +187,30 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
-            groups: vec![crate::records::feature::DesignFixedFilletGroup::try_new(
-                Some(crate::records::feature::DesignFixedFilletScalar {
+            groups: vec![crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
+                Some(crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                     value: 1.0,
                     record_index: 77,
                     value_offset: (fillet_start + 40) as u64,
                 }),
-                crate::records::feature::DesignFixedFilletLaw::Variable {
-                    start: crate::records::feature::DesignFixedFilletScalar {
+                crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Variable {
+                    start: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                         value: 0.0,
                         record_index: 78,
                         value_offset: (fillet_start + 115 + 40) as u64
                     },
-                    end: crate::records::feature::DesignFixedFilletScalar {
+                    end: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                         value: 0.65,
                         record_index: 79,
                         value_offset: (fillet_start + 230 + 40) as u64
                     },
-                    intermediate: vec![crate::records::feature::DesignFixedFilletIntermediate {
-                        radius: crate::records::feature::DesignFixedFilletScalar {
+                    intermediate: vec![crate::records::feature::fixed_parameters::DesignFixedFilletIntermediate {
+                        radius: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                             value: 0.4,
                             record_index: 87,
                             value_offset: (fillet_start + 345 + 40) as u64
                         },
-                        parameter: crate::records::feature::DesignFixedFilletScalar {
+                        parameter: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                             value: 0.2,
                             record_index: 88,
                             value_offset: (fillet_start + 460 + 40) as u64
@@ -234,17 +234,19 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
-            groups: vec![crate::records::feature::DesignFixedFilletGroup::try_new(
-                None,
-                crate::records::feature::DesignFixedFilletLaw::Constant(
-                    crate::records::feature::DesignFixedFilletScalar {
-                        value: 1.0,
-                        record_index: 77,
-                        value_offset: (fillet_start + 40) as u64
-                    }
-                ),
-            )
-            .unwrap()],
+            groups: vec![
+                crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
+                    None,
+                    crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(
+                        crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
+                            value: 1.0,
+                            record_index: 77,
+                            value_offset: (fillet_start + 40) as u64
+                        }
+                    ),
+                )
+                .unwrap()
+            ],
         })
     );
 
@@ -281,17 +283,19 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
-            groups: vec![crate::records::feature::DesignFixedFilletGroup::try_new(
-                None,
-                crate::records::feature::DesignFixedFilletLaw::Constant(
-                    crate::records::feature::DesignFixedFilletScalar {
-                        value: 0.5,
-                        record_index: 89,
-                        value_offset: (dynamic_scalar_at + 40) as u64
-                    }
-                ),
-            )
-            .unwrap()],
+            groups: vec![
+                crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
+                    None,
+                    crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(
+                        crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
+                            value: 0.5,
+                            record_index: 89,
+                            value_offset: (dynamic_scalar_at + 40) as u64
+                        }
+                    ),
+                )
+                .unwrap()
+            ],
         })
     );
 
@@ -368,7 +372,7 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut chamfer_scope = scope.clone();
     chamfer_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Chamfer
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Chamfer
                 .try_into()
                 .unwrap();
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![86]);
@@ -386,7 +390,7 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
         ),
         Some(DesignFixedChamferParameters::EqualDistance {
-            distance: crate::records::feature::DesignFixedChamferDistance {
+            distance: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
                 value: 0.04,
                 record_index: 86,
                 value_offset: (chamfer_scalar_start + 40) as u64,
@@ -420,12 +424,12 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
         ),
         Some(DesignFixedChamferParameters::TwoDistances {
-            first: crate::records::feature::DesignFixedChamferDistance {
+            first: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
                 value: 0.04,
                 record_index: 86,
                 value_offset: (chamfer_scalar_start + 40) as u64,
             },
-            second: crate::records::feature::DesignFixedChamferDistance {
+            second: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
                 value: 0.08,
                 record_index: 96,
                 value_offset: (second_chamfer_scalar_start + 40) as u64,
@@ -487,7 +491,7 @@ fn fixed_kind_edge_and_revolve_operations(
     revolve_scope
         .try_edit(|draft| {
             draft.byte_offset = revolve_start as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::Revolve
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Revolve
                 .try_into()
                 .unwrap();
             draft.frame_length = 386;
@@ -509,10 +513,11 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         revolve_construction,
         Some(DesignPathFeatureConstruction::Revolve(
-            crate::records::feature::DesignRevolveConstruction {
+            crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (revolve_start + 25) as u64,
-                angle: crate::records::feature::DesignPositiveScalar::new(3.5).unwrap(),
+                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(3.5)
+                    .unwrap(),
                 angle_record_index: 1_779,
                 angle_offset: (revolve_scalar_start + 40) as u64,
                 opposite_angle: Some(crate::records::identity::Located {
@@ -587,11 +592,13 @@ fn fixed_kind_edge_and_revolve_operations(
     assert_eq!(
         indexed_revolve_construction,
         Some(DesignPathFeatureConstruction::Revolve(
-            crate::records::feature::DesignRevolveConstruction {
+            crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (indexed_revolve_start + 21) as u64,
-                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
-                    .unwrap(),
+                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
+                    std::f64::consts::TAU
+                )
+                .unwrap(),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: 45,
                 opposite_angle: None,
@@ -652,11 +659,13 @@ fn fixed_kind_edge_and_revolve_operations(
             std::slice::from_ref(&class403_angle),
         ),
         Some(DesignPathFeatureConstruction::Revolve(
-            crate::records::feature::DesignRevolveConstruction {
+            crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (class403_start + 21) as u64,
-                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
-                    .unwrap(),
+                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
+                    std::f64::consts::TAU
+                )
+                .unwrap(),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: (class403_start + 40) as u64,
                 opposite_angle: None,
@@ -742,11 +751,13 @@ fn fixed_kind_edge_and_revolve_operations(
             std::slice::from_ref(&legacy_angle),
         ),
         Some(DesignPathFeatureConstruction::Revolve(
-            crate::records::feature::DesignRevolveConstruction {
+            crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
-                    .unwrap(),
+                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
+                    std::f64::consts::TAU
+                )
+                .unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,
@@ -783,11 +794,13 @@ fn fixed_kind_edge_and_revolve_operations(
             std::slice::from_ref(&legacy_angle),
         ),
         Some(DesignPathFeatureConstruction::Revolve(
-            crate::records::feature::DesignRevolveConstruction {
+            crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
-                    .unwrap(),
+                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
+                    std::f64::consts::TAU
+                )
+                .unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,
@@ -822,11 +835,13 @@ fn fixed_kind_edge_and_revolve_operations(
             std::slice::from_ref(&legacy_angle),
         ),
         Some(DesignPathFeatureConstruction::Revolve(
-            crate::records::feature::DesignRevolveConstruction {
+            crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: crate::records::feature::DesignPositiveScalar::new(std::f64::consts::TAU)
-                    .unwrap(),
+                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
+                    std::f64::consts::TAU
+                )
+                .unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,

@@ -110,7 +110,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             keep_tools: true,
             keep_tools_offset: 25,
             target_record_index: 96,
-            tools: crate::records::feature::DesignCombineTools {
+            tools: crate::records::feature::combine::DesignCombineTools {
                 first: DesignCombineBodySelection {
                     record_index: 92,
                     external_identity: None,
@@ -122,7 +122,9 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             },
         }
     );
-    if let crate::records::feature::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
+        scope.payload_mut()
+    {
         *slot = Some(operation);
     }
     assert_eq!(
@@ -302,7 +304,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
 
     let mut scope = DesignParameterScope::empty(
         "scope",
-        crate::records::feature::DesignFeatureKind::Combine,
+        crate::records::feature::scope::DesignFeatureKind::Combine,
         scope_record_index,
     );
     scope

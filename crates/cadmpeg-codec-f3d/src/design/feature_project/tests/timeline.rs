@@ -14,12 +14,12 @@ use cadmpeg_ir::features::FeatureOperation;
 fn work_point_history_state_keys_are_history_qualified() {
     let scope_a = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#a",
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         1,
     );
     let scope_b = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#b",
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         2,
     );
     let graph = ScopeHistoryGraph {
@@ -49,7 +49,7 @@ fn history_state_predecessors_are_component_qualified() {
     let stream = format!("f3d:{bulk_stream}");
     let mut first = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#15"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         15,
     );
     first
@@ -59,7 +59,7 @@ fn history_state_predecessors_are_component_qualified() {
         .unwrap();
     let mut local_predecessor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#22"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         22,
     );
     local_predecessor
@@ -69,7 +69,7 @@ fn history_state_predecessors_are_component_qualified() {
         .unwrap();
     let mut second = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#25"),
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         25,
     );
     second
@@ -113,7 +113,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut earlier = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#900"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         100,
     );
     earlier
@@ -130,7 +130,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         .unwrap();
     let mut later = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         200,
     );
     later
@@ -281,7 +281,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut predecessor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         100,
     );
     predecessor
@@ -291,7 +291,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         .unwrap();
     let mut internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#150"),
-        crate::records::feature::DesignFeatureKind::BaseFeature,
+        crate::records::feature::scope::DesignFeatureKind::BaseFeature,
         150,
     );
     internal
@@ -303,7 +303,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         .unwrap();
     let mut successor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         200,
     );
     successor
@@ -428,11 +428,12 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     let stream = "f3d:Design/BulkStream.dat";
     let mut assembly = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
-        crate::records::feature::DesignFeatureKind::Assemble,
+        crate::records::feature::scope::DesignFeatureKind::Assemble,
         10,
     );
-    if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
-    | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) = assembly.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Assemble(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::AsBuilt(slot) =
+        assembly.payload_mut()
     {
         *slot = Some(
             DesignAssemblyAlignment::try_new(
@@ -440,7 +441,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
                 [0.0; 3],
                 Vec::new(),
                 Some(
-                    crate::records::feature::DesignAssemblyAlignmentForm::DatumEnvelope {
+                    crate::records::feature::assembly::DesignAssemblyAlignmentForm::DatumEnvelope {
                         joint_origin_scope_record_index: 20,
                     },
                 ),
@@ -450,7 +451,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     }
     let mut origin = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#20"),
-        crate::records::feature::DesignFeatureKind::JointOrigin,
+        crate::records::feature::scope::DesignFeatureKind::JointOrigin,
         20,
     );
     origin.with_joint_origin_transform(
@@ -458,7 +459,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     );
     let mut internal_origin = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#30"),
-        crate::records::feature::DesignFeatureKind::JointOrigin,
+        crate::records::feature::scope::DesignFeatureKind::JointOrigin,
         30,
     );
     internal_origin.with_joint_origin_transform(
@@ -571,11 +572,12 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
     let envelope = |record_index| {
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{record_index}"),
-            crate::records::feature::DesignFeatureKind::Assemble,
+            crate::records::feature::scope::DesignFeatureKind::Assemble,
             record_index,
         );
-        if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
-        | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut()
+        if let crate::records::feature::scope::DesignScopePayloadMut::Assemble(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::AsBuilt(slot) =
+            scope.payload_mut()
         {
             *slot = Some(
                 DesignAssemblyAlignment::try_new(
@@ -583,7 +585,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
                     [0.0; 3],
                     Vec::new(),
                     Some(
-                        crate::records::feature::DesignAssemblyAlignmentForm::DatumEnvelope {
+                        crate::records::feature::assembly::DesignAssemblyAlignmentForm::DatumEnvelope {
                             joint_origin_scope_record_index: 20,
                         },
                     ),
@@ -595,7 +597,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
     };
     let mut origin = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#20"),
-        crate::records::feature::DesignFeatureKind::JointOrigin,
+        crate::records::feature::scope::DesignFeatureKind::JointOrigin,
         20,
     );
     origin.with_joint_origin_transform(
@@ -638,7 +640,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut first_internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
-        crate::records::feature::DesignFeatureKind::BaseFeature,
+        crate::records::feature::scope::DesignFeatureKind::BaseFeature,
         10,
     );
     first_internal
@@ -650,7 +652,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
         .unwrap();
     let mut second_internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#20"),
-        crate::records::feature::DesignFeatureKind::BaseFeature,
+        crate::records::feature::scope::DesignFeatureKind::BaseFeature,
         20,
     );
     second_internal
@@ -662,7 +664,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
         .unwrap();
     let mut consumer = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#30"),
-        crate::records::feature::DesignFeatureKind::Move,
+        crate::records::feature::scope::DesignFeatureKind::Move,
         30,
     );
     consumer
@@ -721,7 +723,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut predecessor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         100,
     );
     predecessor
@@ -732,7 +734,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
     let internal = |record_index| {
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{record_index}"),
-            crate::records::feature::DesignFeatureKind::BaseFeature,
+            crate::records::feature::scope::DesignFeatureKind::BaseFeature,
             record_index,
         );
         scope
@@ -746,7 +748,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
     };
     let mut successor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         200,
     );
     successor
@@ -814,13 +816,13 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut first = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         100,
     );
     first.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let mut second = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         200,
     );
     second.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
@@ -833,7 +835,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     let mut mixed = second;
     mixed
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Fillet
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Fillet
                 .try_into()
                 .unwrap();
         })
@@ -850,13 +852,13 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
 fn authored_scope_validation_orders_independent_streams_separately() {
     let mut first = DesignParameterScope::empty(
         "f3d:DesignA/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         10,
     );
     first.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let mut second = DesignParameterScope::empty(
         "f3d:DesignB/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         10,
     );
     second.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
@@ -899,7 +901,7 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
 fn history_state_identity_orders_cross_family_feature_dependencies() {
     let scope = |record_index, byte_offset, kind: &str, current, previous| {
         DesignParameterScope::try_new(
-            crate::records::feature::DesignParameterScopeDraft {
+            crate::records::feature::scope::DesignParameterScopeDraft {
                 id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
                 byte_offset,
                 class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -920,10 +922,12 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
                     "reference_members",
                 )
                 .unwrap(),
-                payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
-                    .expect("nonempty family name")
-                    .try_into()
-                    .unwrap(),
+                payload: crate::records::feature::scope::DesignFeatureKind::try_from(
+                    kind.to_owned(),
+                )
+                .expect("nonempty family name")
+                .try_into()
+                .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "261".to_owned(),

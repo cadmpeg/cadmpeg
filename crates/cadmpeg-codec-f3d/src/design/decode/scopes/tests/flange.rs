@@ -128,7 +128,7 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
             .selection
             .shape()
             .edges()
-            .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
+            .map(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::operand_record_index)
             .collect::<Vec<_>>(),
         [254]
     );
@@ -149,11 +149,11 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
     assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
     assert_eq!(
         operation.bend_position,
-        crate::records::feature::DesignBendPosition::Inside
+        crate::records::feature::sheet_metal::DesignBendPosition::Inside
     );
     assert_eq!(
         operation.height_datum,
-        crate::records::feature::DesignSheetMetalHeightDatum::InnerFaces
+        crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum::InnerFaces
     );
     // The one table entry no slot claims is the width-distance owner, which
     // makes this the symmetric edge-width mode.
@@ -168,7 +168,7 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
     );
     assert_eq!(
         operation.selection.shape().mode(),
-        crate::records::feature::DesignEdgeWidthMode::Symmetric
+        crate::records::feature::sheet_metal::DesignEdgeWidthMode::Symmetric
     );
 }
 
@@ -204,15 +204,15 @@ fn edge_flange_scope_reads_the_shifted_header_form() {
             .expect("fixed EdgeFlange operation");
         assert_eq!(
             operation.bend_position,
-            crate::records::feature::DesignBendPosition::Adjacent
+            crate::records::feature::sheet_metal::DesignBendPosition::Adjacent
         );
         assert_eq!(
             operation.height_datum,
-            crate::records::feature::DesignSheetMetalHeightDatum::OuterFaces
+            crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum::OuterFaces
         );
         assert_eq!(
             operation.selection.shape().mode(),
-            crate::records::feature::DesignEdgeWidthMode::FullEdge
+            crate::records::feature::sheet_metal::DesignEdgeWidthMode::FullEdge
         );
         assert!(operation
             .selection
@@ -262,7 +262,7 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
                 .selection
                 .shape()
                 .edges()
-                .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
+                .map(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::operand_record_index)
                 .collect::<Vec<_>>(),
             [254]
         );
@@ -283,15 +283,15 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
         assert_eq!(operation.bend_radius_offset, 138);
         assert_eq!(
             operation.bend_position,
-            crate::records::feature::DesignBendPosition::Inside
+            crate::records::feature::sheet_metal::DesignBendPosition::Inside
         );
         assert_eq!(
             operation.height_datum,
-            crate::records::feature::DesignSheetMetalHeightDatum::OuterFaces
+            crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum::OuterFaces
         );
         assert_eq!(
             operation.selection.shape().mode(),
-            crate::records::feature::DesignEdgeWidthMode::FullEdge
+            crate::records::feature::sheet_metal::DesignEdgeWidthMode::FullEdge
         );
     }
 }
@@ -334,7 +334,7 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
                 .selection
                 .shape()
                 .edges()
-                .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
+                .map(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::operand_record_index)
                 .collect::<Vec<_>>(),
             [207, 216]
         );
@@ -355,15 +355,15 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
         assert_eq!(operation.bend_radius_offset, 165);
         assert_eq!(
             operation.bend_position,
-            crate::records::feature::DesignBendPosition::Inside
+            crate::records::feature::sheet_metal::DesignBendPosition::Inside
         );
         assert_eq!(
             operation.height_datum,
-            crate::records::feature::DesignSheetMetalHeightDatum::OuterFaces
+            crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum::OuterFaces
         );
         assert_eq!(
             operation.selection.shape().mode(),
-            crate::records::feature::DesignEdgeWidthMode::FullEdge
+            crate::records::feature::sheet_metal::DesignEdgeWidthMode::FullEdge
         );
     }
 }
@@ -407,7 +407,7 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
             .selection
             .shape()
             .edges()
-            .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
+            .map(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::operand_record_index)
             .collect::<Vec<_>>(),
         [207, 219]
     );
@@ -435,7 +435,7 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
     assert_eq!(operation.settings_record_index, 240);
     assert_eq!(
         operation.selection.shape().mode(),
-        crate::records::feature::DesignEdgeWidthMode::SymmetricPerEdge
+        crate::records::feature::sheet_metal::DesignEdgeWidthMode::SymmetricPerEdge
     );
     assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
     assert_eq!(operation.bend_radius_offset, 165);
@@ -481,7 +481,7 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
                 .selection
                 .shape()
                 .edges()
-                .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
+                .map(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::operand_record_index)
                 .collect::<Vec<_>>(),
             [207, 219]
         );
@@ -506,8 +506,9 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
         );
         assert_eq!(
             match &operation.selection.shape() {
-                crate::records::feature::DesignEdgeFlangeShape::TwoSidesPerEdge {
-                    edges, ..
+                crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
+                    edges,
+                    ..
                 } => edges.iter().map(|row| row.owners).collect::<Vec<_>>(),
                 _ => Vec::new(),
             },
@@ -518,7 +519,7 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
         assert_eq!(operation.settings_record_index, 240);
         assert_eq!(
             operation.selection.shape().mode(),
-            crate::records::feature::DesignEdgeWidthMode::TwoSidesPerEdge
+            crate::records::feature::sheet_metal::DesignEdgeWidthMode::TwoSidesPerEdge
         );
         assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
         assert_eq!(operation.bend_radius_offset, 169);
@@ -562,7 +563,7 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
             .selection
             .shape()
             .edges()
-            .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
+            .map(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::operand_record_index)
             .collect::<Vec<_>>(),
         [254]
     );
@@ -583,15 +584,15 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
     assert_eq!(operation.bend_radius_offset, 142);
     assert_eq!(
         operation.bend_position,
-        crate::records::feature::DesignBendPosition::Adjacent
+        crate::records::feature::sheet_metal::DesignBendPosition::Adjacent
     );
     assert_eq!(
         operation.height_datum,
-        crate::records::feature::DesignSheetMetalHeightDatum::OuterFaces
+        crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum::OuterFaces
     );
     assert_eq!(
         operation.selection.shape().mode(),
-        crate::records::feature::DesignEdgeWidthMode::FullEdge
+        crate::records::feature::sheet_metal::DesignEdgeWidthMode::FullEdge
     );
     assert!(operation
         .selection
@@ -642,7 +643,7 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
             .selection
             .shape()
             .edges()
-            .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
+            .map(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::operand_record_index)
             .collect::<Vec<_>>(),
         [207, 219]
     );
@@ -667,8 +668,10 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
     );
     assert_eq!(
         match &operation.selection.shape() {
-            crate::records::feature::DesignEdgeFlangeShape::TwoSidesPerEdge { edges, .. } =>
-                edges.iter().map(|row| row.owners).collect::<Vec<_>>(),
+            crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
+                edges,
+                ..
+            } => edges.iter().map(|row| row.owners).collect::<Vec<_>>(),
             _ => Vec::new(),
         },
         vec![[210, 222], [234, 237]]
@@ -679,11 +682,11 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
     );
     assert_eq!(
         operation.selection.shape().source(),
-        crate::records::feature::DesignEdgeFlangeWidthParameterSource::EdgeOffset
+        crate::records::feature::sheet_metal::DesignEdgeFlangeWidthParameterSource::EdgeOffset
     );
     assert_eq!(
         operation.selection.shape().mode(),
-        crate::records::feature::DesignEdgeWidthMode::TwoSidesPerEdge
+        crate::records::feature::sheet_metal::DesignEdgeWidthMode::TwoSidesPerEdge
     );
     assert_eq!(operation.settings_record_index, 240);
     assert_eq!(operation.height_owner_record_index, 225);
@@ -726,7 +729,7 @@ fn edge_flange_scope_refuses_a_frame_whose_group_operand_is_absent() {
 
 #[test]
 fn edge_flange_scope_reads_the_single_edge_to_object_form() {
-    use crate::records::feature::DesignEdgeFlangeHeightExtent;
+    use crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent;
 
     let references = [201, 204, 207, 218, 221, 224, 240, 243, 251, 254, 270];
     for header_shift in [0usize, 4] {
@@ -764,7 +767,7 @@ fn edge_flange_scope_reads_the_single_edge_to_object_form() {
                 .selection
                 .shape()
                 .edges()
-                .map(crate::records::feature::DesignEdgeFlangeEdge::operand_record_index)
+                .map(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge::operand_record_index)
                 .collect::<Vec<_>>(),
             [254]
         );

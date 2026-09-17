@@ -98,9 +98,9 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         None
     );
 
-    let scope = crate::records::feature::DesignParameterScope::empty(
+    let scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#10",
-        crate::records::feature::DesignFeatureKind::Combine,
+        crate::records::feature::scope::DesignFeatureKind::Combine,
         10,
     );
     let native = "f3d:Design/BulkStream.dat:design-record#1".to_owned();

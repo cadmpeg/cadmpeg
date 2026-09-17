@@ -12,7 +12,9 @@ use crate::design::decode::scopes::exact_derived_instance_construction;
 use crate::layout::{
     derived_instance_relation_310_57 as relation_310, derived_instance_scope_279_261 as scope_279,
 };
-use crate::records::feature::{DesignComponentOccurrence, DesignParameterScope};
+use crate::records::feature::{
+    assembly_features::DesignComponentOccurrence, scope::DesignParameterScope,
+};
 
 const COMPONENT: &str = "3ad5b67c-2bc5-4ccd-bac9-26ac75616116";
 const OCCURRENCE: &str = "f867facf-edec-4109-9553-b3703c4e0caf";
@@ -110,7 +112,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#425",
-        crate::records::feature::DesignFeatureKind::DerivedInstance,
+        crate::records::feature::scope::DesignFeatureKind::DerivedInstance,
         385,
     );
     scope
@@ -139,7 +141,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
 
     let occurrence = DesignComponentOccurrence::try_new(
-        crate::records::feature::DesignComponentOccurrenceDraft {
+        crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
             id: "f3d:Design/BulkStream.dat:design-component-occurrence#0".into(),
             class_tag: crate::records::references::DesignClassTag::try_from("380".to_owned())
                 .unwrap(),
@@ -148,7 +150,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
             component_record_index: 305,
             component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
             occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
-            placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
+            placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: std::num::NonZeroU32::MIN,
                 transform: transform.try_into().unwrap(),
             },

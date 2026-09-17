@@ -19,7 +19,7 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
 
     let scope = DesignParameterScope::empty(
         "f3d:test:scope#1",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         1,
     );
     let mut scope = scope;
@@ -65,7 +65,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:test:scope#1",
-            crate::records::feature::DesignFeatureKind::WorkPlane,
+            crate::records::feature::scope::DesignFeatureKind::WorkPlane,
             1,
         );
         scope
@@ -98,7 +98,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
     invalid.extend_from_slice(&71u32.to_le_bytes());
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#2",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         2,
     );
     scope
@@ -170,7 +170,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:test:scope#opaque",
-            crate::records::feature::DesignFeatureKind::WorkPlane,
+            crate::records::feature::scope::DesignFeatureKind::WorkPlane,
             1,
         );
         scope
@@ -202,7 +202,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
     invalid.extend_from_slice(&84u32.to_le_bytes());
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#invalid",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         2,
     );
     scope

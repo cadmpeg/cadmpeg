@@ -8,11 +8,13 @@ use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
-use crate::records::canvas::{
-    DesignCanvasAsset, DesignCanvasBounds, DesignCanvasGeometry, DesignCanvasGeometryPayload,
-    DesignCanvasImage, DesignCanvasPrologue,
+use crate::records::{
+    canvas::{
+        DesignCanvasAsset, DesignCanvasBounds, DesignCanvasGeometry, DesignCanvasGeometryPayload,
+        DesignCanvasImage, DesignCanvasPrologue,
+    },
+    feature::scope::DesignParameterScope,
 };
-use crate::records::feature::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
@@ -38,7 +40,7 @@ pub fn decode_canvas_images(
             scopes
                 .iter()
                 .filter(|scope| {
-                    scope.kind() == crate::records::feature::DesignFeatureKind::Canvas
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::Canvas
                         && ids::native_stream(&scope.id) == Some(stream.as_str())
                 })
                 .filter_map(|scope| parse_canvas_image(bytes, &entry.name, scope)),

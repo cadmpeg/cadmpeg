@@ -16,7 +16,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::records::{feature::DesignScopePayload, topology::DesignOperandRole};
+use crate::records::{feature::scope::DesignScopePayload, topology::DesignOperandRole};
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -66,14 +66,16 @@ fn finalized_recipe_reference_validation_ignores_only_derived_candidates() {
 fn validation_accepts_class_410_component_insert_identity_frame() {
     use crate::records::{
         decal::DesignRecordHeader,
-        feature::{DesignComponentInsertConstruction, DesignParameterScope},
+        feature::{
+            assembly_features::DesignComponentInsertConstruction, scope::DesignParameterScope,
+        },
     };
 
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#100");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
-        crate::records::feature::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
         169,
     );
     scope
@@ -99,7 +101,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             draft.previous_history_state_id_offset = Some(315);
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::ComponentInsert(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
         scope.payload_mut()
     {
         *slot = Some(DesignComponentInsertConstruction {
@@ -151,12 +153,17 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
 
 #[test]
 fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
-    use crate::records::decal::DesignRecordHeader;
-    use crate::records::feature::{
-        DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeScope,
-        DesignExtrudeStart, DesignFeatureKind, DesignParameterScope,
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::{
+            extrude::{
+                DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+                DesignExtrudeStart,
+            },
+            scope::{DesignExtrudeScope, DesignFeatureKind, DesignParameterScope},
+        },
+        identity::ReferenceRun,
     };
-    use crate::records::identity::ReferenceRun;
 
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#0");
@@ -405,7 +412,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
 
 #[test]
 fn validation_accepts_carrier_local_component_references() {
-    use crate::records::feature::DesignComponentOccurrence;
+    use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
     const COMPONENT: &str = "11111111-2222-4333-8444-555555555555";
     let occurrence = |record_index: u32,
@@ -413,7 +420,7 @@ fn validation_accepts_carrier_local_component_references() {
                       component_record_index: u64,
                       occurrence_guid: &str| {
         DesignComponentOccurrence::try_new(
-            crate::records::feature::DesignComponentOccurrenceDraft {
+            crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
                 id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
                 class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                     .unwrap(),
@@ -422,7 +429,7 @@ fn validation_accepts_carrier_local_component_references() {
                 component_record_index,
                 component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
-                placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
+                placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
             },
         )
         .unwrap()
@@ -444,15 +451,14 @@ fn validation_accepts_carrier_local_component_references() {
 
 #[test]
 fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
-    use crate::records::decal::DesignRecordHeader;
-    use crate::records::feature::{
-        DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation, DesignParameterScope,
-    };
-    use crate::records::recipes::{
-        ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
-    };
-    use crate::records::topology::{
-        DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::{
+            combine::{DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation},
+            scope::DesignParameterScope,
+        },
+        recipes::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector},
+        topology::{DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner},
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -471,9 +477,9 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{scope_record_index}"),
             if hole_scope {
-                crate::records::feature::DesignFeatureKind::Hole
+                crate::records::feature::scope::DesignFeatureKind::Hole
             } else {
-                crate::records::feature::DesignFeatureKind::Combine
+                crate::records::feature::scope::DesignFeatureKind::Combine
             },
             scope_record_index,
         );
@@ -491,7 +497,9 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        if let crate::records::feature::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
+        if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
+            scope.payload_mut()
+        {
             *slot = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
                 operation: cadmpeg_ir::features::BooleanKind::Join,
@@ -503,7 +511,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 } else {
                     operand_record_index
                 },
-                tools: crate::records::feature::DesignCombineTools {
+                tools: crate::records::feature::combine::DesignCombineTools {
                     first: DesignCombineBodySelection {
                         record_index: if empty_legacy_tool {
                             operand_record_index
@@ -618,16 +626,17 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
 
 #[test]
 fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::scope::DesignParameterScope,
+        topology::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame},
     };
-    use crate::records::{decal::DesignRecordHeader, feature::DesignParameterScope};
 
     let stream = "f3d:Design/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
-        crate::records::feature::DesignFeatureKind::Hole,
+        crate::records::feature::scope::DesignFeatureKind::Hole,
         10,
     );
     scope
@@ -744,7 +753,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         let mut native = f3d_native_mut(&mut ir);
         native.design_parameter_scopes[0]
             .try_edit(|draft| {
-                draft.payload = crate::records::feature::DesignFeatureKind::SurfaceTrim
+                draft.payload = crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
                     .try_into()
                     .unwrap();
             })
@@ -767,12 +776,13 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
 #[test]
 fn validation_checks_pipe_path_group_roles() {
-    use crate::records::decal::DesignRecordHeader;
-    use crate::records::feature::{
-        DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
-    };
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::{
+            extrude::DesignExtrudeOperation, path_features::DesignPathFeatureConstruction,
+            scope::DesignParameterScope,
+        },
+        topology::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame},
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -780,15 +790,16 @@ fn validation_checks_pipe_path_group_roles() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
-        crate::records::feature::DesignFeatureKind::Pipe,
+        crate::records::feature::scope::DesignFeatureKind::Pipe,
         10,
     );
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::feature::DesignPipeConstruction {
+            crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
+                section_shape:
+                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
                 section_shape_offset: 0,
                 filled: true,
                 filled_offset: 0,
@@ -1299,11 +1310,16 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
 
 #[test]
 fn validation_accepts_grouped_and_direct_extrude_profiles() {
-    use crate::records::feature::{
-        DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
-        DesignParameterScope,
+    use crate::records::{
+        feature::{
+            extrude::{
+                DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+                DesignExtrudeStart,
+            },
+            scope::DesignParameterScope,
+        },
+        topology::{DesignConstructionOperandGroup, DesignSketchProfileOperand},
     };
-    use crate::records::topology::{DesignConstructionOperandGroup, DesignSketchProfileOperand};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let profile = DesignSketchProfileOperand::try_new(
@@ -1331,7 +1347,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     )
     .unwrap();
     let scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:test:scope#10".into(),
             byte_offset: 100,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -1340,7 +1356,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             frame_length: 200,
             kind_offset: 210,
             payload: DesignScopePayload::Extrude(Some(
-                crate::records::feature::DesignExtrudeScope {
+                crate::records::feature::scope::DesignExtrudeScope {
                     extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                         reference: None,
                         operation: DesignExtrudeOperation::NewBody,
@@ -1359,7 +1375,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                         start_offset: 142,
                     }),
                     extrude_profile: Some(profile),
-                    ..crate::records::feature::DesignExtrudeScope::default()
+                    ..crate::records::feature::scope::DesignExtrudeScope::default()
                 },
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
@@ -1484,10 +1500,12 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
 
 #[test]
 fn validation_accepts_unindexed_construction_identity_terminal() {
-    use crate::records::decal::DesignRecordHeader;
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-        DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+    use crate::records::{
+        decal::DesignRecordHeader,
+        topology::{
+            DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+            DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+        },
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -1620,10 +1638,12 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
 
 #[test]
 fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
-    use crate::records::decal::DesignRecordHeader;
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-        DesignEntitySelectionOperand,
+    use crate::records::{
+        decal::DesignRecordHeader,
+        topology::{
+            DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+            DesignEntitySelectionOperand,
+        },
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -1765,7 +1785,7 @@ fn only_a_face_recipe_kind_states_a_program_operand_length() {
 fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
     use crate::records::{
         decal::DesignRecordHeader,
-        feature::{DesignFeatureKind, DesignParameterScope},
+        feature::scope::{DesignFeatureKind, DesignParameterScope},
         recipes::{ConstructionRecipe, ConstructionRecipeKind},
         references::DesignClassTag,
         topology::{DesignFaceOperand, DesignFaceOperandDraft},

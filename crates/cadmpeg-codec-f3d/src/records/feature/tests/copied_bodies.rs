@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::feature::DesignCopyPasteBodiesOperation;
+use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
 
 fn copied_wire() -> serde_json::Value {
     serde_json::json!({

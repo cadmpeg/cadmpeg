@@ -19,7 +19,7 @@ use crate::layout::indexed_design_record_header as indexed_header;
 use crate::records::{
     decal::DesignRecordHeader,
     entity_header::DesignEntityHeader,
-    feature::DesignParameterScope,
+    feature::scope::DesignParameterScope,
     parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
     recipes::ConstructionRecipe,
 };

@@ -90,9 +90,9 @@ fn generated_source_less_rejects_translucent_direct_color() {
 
 #[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
-    use crate::records::recipes::CreationTimestamp;
-    use crate::records::sketch_links::{
-        PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    use crate::records::{
+        recipes::CreationTimestamp,
+        sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink},
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::topology::Color;

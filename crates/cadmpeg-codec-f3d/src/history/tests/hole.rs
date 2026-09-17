@@ -101,8 +101,8 @@ fn test_history() -> AsmHistory {
     }
 }
 
-fn hole_scope() -> crate::records::feature::DesignParameterScope {
-    let face_selection = crate::records::feature::DesignHoleFaceSelection {
+fn hole_scope() -> crate::records::feature::scope::DesignParameterScope {
+    let face_selection = crate::records::feature::hole::DesignHoleFaceSelection {
         record_index: 1,
         byte_offset: 0,
         class_tag: crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap(),
@@ -125,7 +125,7 @@ fn hole_scope() -> crate::records::feature::DesignParameterScope {
         next_record_index: 3,
         next_byte_offset: 0,
     };
-    let construction = crate::records::feature::DesignHoleConstruction {
+    let construction = crate::records::feature::hole::DesignHoleConstruction {
         point_record_index: 4,
         point_record_byte_offset: 0,
         position: [0.0, 0.0, 0.0],
@@ -143,9 +143,9 @@ fn hole_scope() -> crate::records::feature::DesignParameterScope {
         }],
         face_selection: Some(face_selection),
     };
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:scope#5",
-        crate::records::feature::DesignFeatureKind::Hole,
+        crate::records::feature::scope::DesignFeatureKind::Hole,
         5,
     );
     scope
@@ -155,7 +155,7 @@ fn hole_scope() -> crate::records::feature::DesignParameterScope {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(construction);
     }
     scope

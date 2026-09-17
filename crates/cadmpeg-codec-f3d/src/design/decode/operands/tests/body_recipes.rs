@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::prelude::*;
-use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
+use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
@@ -109,7 +109,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     };
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#80",
-        crate::records::feature::DesignFeatureKind::BoundaryFill,
+        crate::records::feature::scope::DesignFeatureKind::BoundaryFill,
         80,
     );
 
@@ -213,21 +213,21 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
 
     let mut combine_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#80",
-        crate::records::feature::DesignFeatureKind::Combine,
+        crate::records::feature::scope::DesignFeatureKind::Combine,
         80,
     );
-    if let crate::records::feature::DesignScopePayloadMut::Combine(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
         combine_scope.payload_mut()
     {
-        *slot = Some(crate::records::feature::DesignCombineOperation {
-            form: crate::records::feature::DesignCombineForm::Standard,
+        *slot = Some(crate::records::feature::combine::DesignCombineOperation {
+            form: crate::records::feature::combine::DesignCombineForm::Standard,
             operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
             target_record_index: 0,
-            tools: crate::records::feature::DesignCombineTools {
-                first: crate::records::feature::DesignCombineBodySelection {
+            tools: crate::records::feature::combine::DesignCombineTools {
+                first: crate::records::feature::combine::DesignCombineBodySelection {
                     record_index: record.record_index,
                     external_identity: None,
                 },

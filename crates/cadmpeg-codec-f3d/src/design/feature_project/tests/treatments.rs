@@ -10,10 +10,16 @@ use super::prelude::*;
 use crate::records::{
     entity_header::{DesignFeatureTimeline, DesignTimelineFrame},
     feature::{
-        DesignFeatureKind, DesignFiniteScalar, DesignFixedFilletGroup, DesignFixedFilletLaw,
-        DesignFixedFilletParameters, DesignFixedFilletScalar, DesignHoleTangentPoint,
-        DesignParameterScopeDraft, DesignPatchContinuity, DesignScopePayload,
-        DesignScopePayloadMut, DesignSurfacePatchBoundary,
+        fixed_parameters::{
+            DesignFixedFilletGroup, DesignFixedFilletLaw, DesignFixedFilletParameters,
+            DesignFixedFilletScalar,
+        },
+        hole::DesignHoleTangentPoint,
+        scope::{
+            DesignFeatureKind, DesignParameterScopeDraft, DesignScopePayload, DesignScopePayloadMut,
+        },
+        sheet_metal::DesignFiniteScalar,
+        surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
     },
     identity::{Located, ReferenceRun},
     mesh::DesignRelaxedGuidText,
@@ -22,13 +28,13 @@ use crate::records::{
     },
     references::DesignClassTag,
     topology::{
-        DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrameDraft,
-        DesignConstructionOperandRole, DesignEdgeIdentityLayout, DesignEdgeIdentityOperand,
-        DesignEdgeIdentityOperandDraft, DesignEntitySelectionOperandDraft, DesignFaceOperandDraft,
-        DesignFilletMidpoint, DesignFilletRadiusLaw, HistoricalBinding,
+        DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
+        DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
+        DesignEdgeIdentityLayout, DesignEdgeIdentityOperand, DesignEdgeIdentityOperandDraft,
+        DesignEntitySelectionOperandDraft, DesignFaceOperandDraft, DesignFilletMidpoint,
+        DesignFilletRadiusLaw, DesignOperandRole, HistoricalBinding,
     },
 };
-use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
 
 #[test]
 fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
@@ -650,11 +656,13 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
 
 #[test]
 fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
-    use crate::records::feature::{DesignDraftOperation, DesignParameterScope};
-    use crate::records::topology::{
-        AsmHistoricalEntityKind, DesignConstructionOperandGroup,
-        DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
-        DesignEntitySelectionOperand,
+    use crate::records::{
+        feature::{direct_face::DesignDraftOperation, scope::DesignParameterScope},
+        topology::{
+            AsmHistoricalEntityKind, DesignConstructionOperandGroup,
+            DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
+            DesignEntitySelectionOperand,
+        },
     };
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 

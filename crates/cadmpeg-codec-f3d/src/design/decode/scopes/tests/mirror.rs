@@ -6,9 +6,12 @@
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::prelude::*;
 use super::{
-    compact_feature_reference, exact_legacy_mirror_scope_count, exact_legacy_mirror_scope_tolerance,
+    prelude::*,
+    {
+        compact_feature_reference, exact_legacy_mirror_scope_count,
+        exact_legacy_mirror_scope_tolerance,
+    },
 };
 use crate::design::decode::sketch::IndexedRecordOffsets;
 
@@ -74,7 +77,7 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 32 + 89];
     let mut scope = DesignParameterScope::empty(
         "scope",
-        crate::records::feature::DesignFeatureKind::Mirror,
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
         10,
     );
     scope.class_tag =
@@ -110,7 +113,7 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 32 + 89];
     let mut scope = DesignParameterScope::empty(
         "scope",
-        crate::records::feature::DesignFeatureKind::Mirror,
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
         10,
     );
     scope.class_tag =
@@ -151,7 +154,7 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 32 + 88];
     let mut scope = DesignParameterScope::empty(
         "scope",
-        crate::records::feature::DesignFeatureKind::Mirror,
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
         10,
     );
     scope.class_tag =
@@ -192,7 +195,7 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 32 + 89];
     let mut scope = DesignParameterScope::empty(
         "scope",
-        crate::records::feature::DesignFeatureKind::Mirror,
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
         10,
     );
     scope.class_tag =
@@ -229,7 +232,7 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
     let mut bytes = vec![0; 32 + 84];
     let mut scope = DesignParameterScope::empty(
         "scope",
-        crate::records::feature::DesignFeatureKind::Mirror,
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
         10,
     );
     scope.class_tag =
@@ -288,7 +291,7 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
 
     let mut scope = DesignParameterScope::empty(
         "scope",
-        crate::records::feature::DesignFeatureKind::Mirror,
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
         scope_record_index,
     );
     scope.class_tag =

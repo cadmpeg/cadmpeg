@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::feature::{
+use crate::records::feature::work_geometry::{
     DesignVertexRecipe, DesignVertexResolution as Resolution, DesignWorkPlaneConstruction as Plane,
 };
 

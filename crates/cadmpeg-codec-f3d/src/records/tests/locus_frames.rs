@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::dimensions::{
-    DesignDimensionAnnotationOperand as Operand, DesignDimensionLocusPair as Pair,
-    DesignDimensionLocusPairDraft as Draft,
+use crate::records::{
+    dimensions::{
+        DesignDimensionAnnotationOperand as Operand, DesignDimensionLocusPair as Pair,
+        DesignDimensionLocusPairDraft as Draft,
+    },
+    identity::Located,
 };
-use crate::records::identity::Located;
 use std::num::NonZeroU32;
 
 fn draft(first: Option<NonZeroU32>, base: u64, length: u64) -> Draft {

@@ -7,9 +7,9 @@ fn coil_secondary_identity_wire_refuses_a_null_identity() {
     struct Probe {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_coil_secondary_identity"
+            deserialize_with = "crate::records::feature::coil::deserialize_coil_secondary_identity"
         )]
-        secondary: Option<crate::records::feature::DesignSecondaryIdentity<u64>>,
+        secondary: Option<crate::records::identity::DesignSecondaryIdentity<u64>>,
     }
     for key in ["secondary_identity", "curve_secondary_identity"] {
         let mut wire = serde_json::json!({});
@@ -29,9 +29,9 @@ fn coil_recipe_design_wire_refuses_a_null_design_key() {
     struct Probe {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_coil_recipe_design"
+            deserialize_with = "crate::records::feature::coil::deserialize_coil_recipe_design"
         )]
-        design: Option<crate::records::feature::ConstructionRecipeDesign<String>>,
+        design: Option<crate::records::recipes::ConstructionRecipeDesign<String>>,
     }
     for key in ["design_id", "design_selector"] {
         let mut wire = serde_json::json!({});
@@ -51,9 +51,9 @@ fn work_plane_frame_wire_refuses_a_null_key() {
     struct Probe {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_work_plane_frame"
+            deserialize_with = "crate::records::feature::scope::deserialize_work_plane_frame"
         )]
-        frame: Option<crate::records::feature::DesignWorkPlaneTransform>,
+        frame: Option<crate::records::feature::scope::DesignWorkPlaneTransform>,
     }
     for key in [
         "work_plane_transform",
@@ -79,9 +79,9 @@ fn joint_origin_frame_wire_refuses_a_null_key() {
     struct Probe {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_joint_origin_frame"
+            deserialize_with = "crate::records::feature::scope::deserialize_joint_origin_frame"
         )]
-        frame: Option<crate::records::feature::DesignJointOriginTransform>,
+        frame: Option<crate::records::feature::scope::DesignJointOriginTransform>,
     }
     for key in [
         "joint_origin_transform",
@@ -106,9 +106,9 @@ fn sketch_entity_wire_refuses_a_null_key() {
     struct Probe {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_sketch_entity"
+            deserialize_with = "crate::records::feature::scope::deserialize_sketch_entity"
         )]
-        entity: Option<crate::records::feature::DesignSketchEntityBinding>,
+        entity: Option<crate::records::feature::scope::DesignSketchEntityBinding>,
     }
     for key in ["entity_id", "entity_suffix", "entity_reference_offset"] {
         let mut wire = serde_json::json!({});
@@ -142,46 +142,46 @@ fn a_flattened_feature_reader_names_the_null_key_it_refuses() {
     struct Secondary {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_coil_secondary_identity"
+            deserialize_with = "crate::records::feature::coil::deserialize_coil_secondary_identity"
         )]
         #[allow(dead_code)]
-        value: Option<crate::records::feature::DesignSecondaryIdentity<u64>>,
+        value: Option<crate::records::identity::DesignSecondaryIdentity<u64>>,
     }
     #[derive(serde::Deserialize)]
     struct Design {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_coil_recipe_design"
+            deserialize_with = "crate::records::feature::coil::deserialize_coil_recipe_design"
         )]
         #[allow(dead_code)]
-        value: Option<crate::records::feature::ConstructionRecipeDesign<String>>,
+        value: Option<crate::records::recipes::ConstructionRecipeDesign<String>>,
     }
     #[derive(serde::Deserialize)]
     struct WorkPlane {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_work_plane_frame"
+            deserialize_with = "crate::records::feature::scope::deserialize_work_plane_frame"
         )]
         #[allow(dead_code)]
-        value: Option<crate::records::feature::DesignWorkPlaneTransform>,
+        value: Option<crate::records::feature::scope::DesignWorkPlaneTransform>,
     }
     #[derive(serde::Deserialize)]
     struct JointOrigin {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_joint_origin_frame"
+            deserialize_with = "crate::records::feature::scope::deserialize_joint_origin_frame"
         )]
         #[allow(dead_code)]
-        value: Option<crate::records::feature::DesignJointOriginTransform>,
+        value: Option<crate::records::feature::scope::DesignJointOriginTransform>,
     }
     #[derive(serde::Deserialize)]
     struct SketchEntity {
         #[serde(
             flatten,
-            deserialize_with = "crate::records::feature::deserialize_sketch_entity"
+            deserialize_with = "crate::records::feature::scope::deserialize_sketch_entity"
         )]
         #[allow(dead_code)]
-        value: Option<crate::records::feature::DesignSketchEntityBinding>,
+        value: Option<crate::records::feature::scope::DesignSketchEntityBinding>,
     }
 
     let refusals = [

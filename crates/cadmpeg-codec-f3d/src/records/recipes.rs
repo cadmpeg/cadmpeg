@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Construction recipes and the naming space and timestamp a component records.
 
-use super::{identity::RecordedValue, mesh::DesignRelaxedGuidText};
+use super::identity::RecordedValue;
+use super::mesh::DesignRelaxedGuidText;
 use cadmpeg_ir::attributes::AttributeTarget;
 use serde::{Deserialize, Serialize};
 

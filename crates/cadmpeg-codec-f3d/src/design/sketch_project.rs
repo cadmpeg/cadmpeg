@@ -13,10 +13,10 @@ use crate::ids::{
     neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id, neutral_spatial_sketch_point_id,
     neutral_spatial_sketch_record_id, neutral_spatial_sketch_surface_id,
 };
-use crate::records::sketch_geometry::{
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchSurface, SketchText,
-};
 use crate::records::{
+    sketch_geometry::{
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchSurface, SketchText,
+    },
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchConstraintKind, SketchRelation},
 };

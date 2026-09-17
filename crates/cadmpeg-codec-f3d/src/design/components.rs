@@ -9,7 +9,8 @@ use cadmpeg_ir::products::{
 };
 
 use crate::records::feature::{
-    DesignAssemblyOperandQualifier, {DesignComponentOccurrence, DesignParameterScope},
+    assembly::DesignAssemblyOperandQualifier, assembly_features::DesignComponentOccurrence,
+    scope::DesignParameterScope,
 };
 
 /// Project components and occurrences proven by local component history operations.
@@ -28,10 +29,9 @@ pub(crate) fn project_local_components(
     }
 
     for scope in scopes {
-        if let Some(qualifiers) = scope
-            .assembly_alignment()
-            .and_then(super::super::records::feature::DesignAssemblyAlignment::operand_qualifiers)
-        {
+        if let Some(qualifiers) = scope.assembly_alignment().and_then(
+            super::super::records::feature::assembly::DesignAssemblyAlignment::operand_qualifiers,
+        ) {
             for qualifier in &qualifiers {
                 let DesignAssemblyOperandQualifier::OccurrencePath { path } = qualifier else {
                     continue;
@@ -91,11 +91,13 @@ pub(crate) fn project_local_components(
                 construction.transform,
             )?;
         }
-        let Some(crate::records::feature::DesignRectangularPatternInstances::Components {
-            component_guid,
-            seed,
-            generated,
-        }) = scope
+        let Some(
+            crate::records::feature::patterns::DesignRectangularPatternInstances::Components {
+                component_guid,
+                seed,
+                generated,
+            },
+        ) = scope
             .rectangular_pattern_construction()
             .and_then(|construction| construction.instances.as_ref())
         else {
@@ -297,8 +299,11 @@ pub(crate) fn neutral_transform(
 #[cfg(test)]
 mod tests {
     use crate::records::feature::{
-        DesignComponentOccurrence, DesignCopyPasteComponentOperation,
-        DesignDerivedInstanceConstruction, DesignParameterScope,
+        assembly_features::{
+            DesignComponentOccurrence, DesignCopyPasteComponentOperation,
+            DesignDerivedInstanceConstruction,
+        },
+        scope::DesignParameterScope,
     };
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::products::PrototypeReference;
@@ -329,7 +334,7 @@ mod tests {
         const COPY: &str = "aaaaaaaa-bbbb-4ccc-8ddd-ffffffffffff";
         let occurrence = |record_index: u32, component_record_index: u64, occurrence_guid: &str| {
             DesignComponentOccurrence::try_new(
-                crate::records::feature::DesignComponentOccurrenceDraft {
+                crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
                     id: format!(
                         "f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"
                     ),
@@ -342,7 +347,7 @@ mod tests {
                     component_record_index,
                     component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                     occurrence_guid: occurrence_guid.to_owned().try_into().expect("GUID"),
-                    placement: crate::records::feature::DesignComponentOccurrencePlacement::Base,
+                    placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
                 },
             )
             .unwrap()
@@ -350,10 +355,11 @@ mod tests {
         let native_occurrences = [occurrence(100, 700, SOURCE), occurrence(101, 701, COPY)];
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-            crate::records::feature::DesignFeatureKind::CopyPaste,
+            crate::records::feature::scope::DesignFeatureKind::CopyPaste,
             10,
         );
-        if let crate::records::feature::DesignScopePayloadMut::CopyPaste(slot) = scope.payload_mut()
+        if let crate::records::feature::scope::DesignScopePayloadMut::CopyPaste(slot) =
+            scope.payload_mut()
         {
             *slot = Some(DesignCopyPasteComponentOperation {
                 relation_record_index: 20,
@@ -387,10 +393,10 @@ mod tests {
         const OCCURRENCE: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#385",
-            crate::records::feature::DesignFeatureKind::DerivedInstance,
+            crate::records::feature::scope::DesignFeatureKind::DerivedInstance,
             385,
         );
-        if let crate::records::feature::DesignScopePayloadMut::DerivedInstance(slot) =
+        if let crate::records::feature::scope::DesignScopePayloadMut::DerivedInstance(slot) =
             scope.payload_mut()
         {
             *slot = Some(DesignDerivedInstanceConstruction {
@@ -404,7 +410,7 @@ mod tests {
             });
         }
         let native_occurrence = DesignComponentOccurrence::try_new(
-            crate::records::feature::DesignComponentOccurrenceDraft {
+            crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
                 id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
                 class_tag: crate::records::references::DesignClassTag::try_from("380".to_owned())
                     .unwrap(),
@@ -413,7 +419,7 @@ mod tests {
                 component_record_index: 305,
                 component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
-                placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
+                placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
                     ordinal: std::num::NonZeroU32::MIN,
                     transform: identity_matrix().try_into().unwrap(),
                 },

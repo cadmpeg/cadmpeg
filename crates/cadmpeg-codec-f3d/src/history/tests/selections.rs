@@ -138,7 +138,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         record_table_binding_budget_exceeded: false,
         states: vec![state],
     };
-    let face_selection = crate::records::feature::DesignHoleFaceSelection {
+    let face_selection = crate::records::feature::hole::DesignHoleFaceSelection {
         record_index: 100,
         byte_offset: 0,
         class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned()).unwrap(),
@@ -161,7 +161,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         next_record_index: 104,
         next_byte_offset: 0,
     };
-    let construction = crate::records::feature::DesignHoleConstruction {
+    let construction = crate::records::feature::hole::DesignHoleConstruction {
         point_record_index: 55,
         point_record_byte_offset: 0,
         position: [0.0; 3],
@@ -179,12 +179,12 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         }],
         face_selection: Some(face_selection),
     };
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:scope#42",
-        crate::records::feature::DesignFeatureKind::Hole,
+        crate::records::feature::scope::DesignFeatureKind::Hole,
         42,
     );
-    if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(construction);
     }
 
@@ -224,7 +224,7 @@ fn compact_edge_treatment_deletions_require_exact_cardinality() {
 
 #[test]
 fn compact_transition_fallback_is_scoped_to_each_operand_group() {
-    let scope: crate::records::feature::DesignParameterScope =
+    let scope: crate::records::feature::scope::DesignParameterScope =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:test:scope",
             "byte_offset": 0,
@@ -450,11 +450,9 @@ fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
 
 #[test]
 fn combine_recipe_family_proves_unordered_generated_tools() {
-    use crate::records::recipes::{
-        ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
-    };
-    use crate::records::topology::{
-        DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
+    use crate::records::{
+        recipes::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector},
+        topology::{DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner},
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -595,7 +593,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     use cadmpeg_ir::features::BodySelection;
 
     let identity = |occurrence_reference| {
-        crate::records::feature::DesignCombineExternalBodyIdentityWire {
+        crate::records::feature::combine::DesignCombineExternalBodyIdentityWire {
             selector_asset_id: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
@@ -629,25 +627,28 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .try_into()
         .unwrap()
     };
-    let tool =
-        |record_index, occurrence_reference| crate::records::feature::DesignCombineBodySelection {
+    let tool = |record_index, occurrence_reference| {
+        crate::records::feature::combine::DesignCombineBodySelection {
             record_index,
             external_identity: Some(identity(occurrence_reference)),
-        };
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+        }
+    };
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::Combine,
+        crate::records::feature::scope::DesignFeatureKind::Combine,
         10,
     );
-    if let crate::records::feature::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
-        *slot = Some(crate::records::feature::DesignCombineOperation {
-            form: crate::records::feature::DesignCombineForm::ExtendedReference,
+    if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
+        scope.payload_mut()
+    {
+        *slot = Some(crate::records::feature::combine::DesignCombineOperation {
+            form: crate::records::feature::combine::DesignCombineForm::ExtendedReference,
             operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
             target_record_index: 11,
-            tools: crate::records::feature::DesignCombineTools {
+            tools: crate::records::feature::combine::DesignCombineTools {
                 first: tool(12, 500),
                 additional: vec![tool(13, 501)],
             },
@@ -1364,7 +1365,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 #[test]
 fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     use crate::records::{
-        feature::DesignParameterScope,
+        feature::scope::DesignParameterScope,
         topology::{DesignConstructionOperandGroup, DesignFaceOperand},
     };
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
@@ -1457,7 +1458,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         42,
     );
     scope
@@ -1678,9 +1679,9 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
 fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     use crate::history_records::AsmHistoricalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#42",
-        crate::records::feature::DesignFeatureKind::Mirror,
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
         42,
     );
     scope
@@ -1690,8 +1691,9 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::Mirror(slot)
-    | crate::records::feature::DesignScopePayloadMut::SymetrieMiroir(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::SymetrieMiroir(slot) =
+        scope.payload_mut()
     {
         *slot = Some(
             serde_json::from_value(serde_json::json!({
@@ -1791,7 +1793,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
         construction.plane,
-        Some(crate::records::feature::DesignPlane {
+        Some(crate::records::feature::patterns::DesignPlane {
             origin: Point3::new(1.0, 2.0, 3.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
         })
@@ -1810,7 +1812,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
         construction.plane,
-        Some(crate::records::feature::DesignPlane {
+        Some(crate::records::feature::patterns::DesignPlane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(1.0, 0.0, 0.0),
         })

@@ -11,17 +11,18 @@ use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::ids::{self, native_stream};
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
-use crate::records::decal::DesignRecordHeader;
-use crate::records::dimensions::{
-    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
-    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionPresentationFrame,
-    DesignDimensionPresentationOperand, DesignDimensionRecipeRecord,
-};
-use crate::records::parameters::{
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-};
-use crate::records::{entity_header::DesignEntityHeader, feature::DesignParameterScope};
 use crate::records::{
+    decal::DesignRecordHeader,
+    dimensions::{
+        DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
+        DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionPresentationFrame,
+        DesignDimensionPresentationOperand, DesignDimensionRecipeRecord,
+    },
+    entity_header::DesignEntityHeader,
+    feature::scope::DesignParameterScope,
+    parameters::{
+        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+    },
     recipes::ConstructionRecipe,
     sketch_geometry::{SketchCurveIdentity, SketchPoint},
     sketch_links::PersistentSubentityTag,

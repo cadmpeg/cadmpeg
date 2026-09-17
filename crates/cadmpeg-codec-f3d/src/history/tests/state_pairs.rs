@@ -81,9 +81,9 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
 
 #[test]
 fn ambiguous_scope_histories_use_exact_result_body_sources() {
-    use crate::records::bodies::DesignBodyBinding;
-    use crate::records::topology::{
-        DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
+    use crate::records::{
+        bodies::DesignBodyBinding,
+        topology::{DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner},
     };
     use cadmpeg_ir::ids::FaceId;
 
@@ -125,9 +125,9 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     };
     let histories = [history("first"), history("second")];
     let stream = "f3d:Design/BulkStream.dat";
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::DesignFeatureKind::Revolve,
+        crate::records::feature::scope::DesignFeatureKind::Revolve,
         100,
     );
     scope
@@ -137,9 +137,9 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let next_scope = crate::records::feature::DesignParameterScope::empty(
+    let next_scope = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        crate::records::feature::DesignFeatureKind::Sketch,
+        crate::records::feature::scope::DesignFeatureKind::Sketch,
         200,
     );
     let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
@@ -257,9 +257,9 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         unique_history_state_pair(&histories, 10, 4).expect("raw reachable state pair");
     assert_eq!(current.state_id, 10);
     assert_eq!(previous.state_id, 4);
-    let mut omitted_predecessor = crate::records::feature::DesignParameterScope::empty(
+    let mut omitted_predecessor = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:native:scope#0",
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         0,
     );
     omitted_predecessor
@@ -272,18 +272,18 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         Some(6)
     );
 
-    let mut root = crate::records::feature::DesignParameterScope::empty(
+    let mut root = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:native:scope#1",
-        crate::records::feature::DesignFeatureKind::BaseFlange,
+        crate::records::feature::scope::DesignFeatureKind::BaseFlange,
         1,
     );
     root.try_edit(|draft| {
         draft.history_state_id = Some(4);
     })
     .unwrap();
-    let mut successor = crate::records::feature::DesignParameterScope::empty(
+    let mut successor = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:native:scope#2",
-        crate::records::feature::DesignFeatureKind::EdgeFlange,
+        crate::records::feature::scope::DesignFeatureKind::EdgeFlange,
         2,
     );
     successor

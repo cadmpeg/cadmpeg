@@ -43,7 +43,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     bytes[25] = 1;
     let mut box_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#12",
-        crate::records::feature::DesignFeatureKind::BoxPrimitive,
+        crate::records::feature::scope::DesignFeatureKind::BoxPrimitive,
         12,
     );
     box_scope
@@ -67,7 +67,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
         Some(DesignSolidPrimitive::Box(
-            crate::records::feature::DesignBoxPrimitive {
+            crate::records::feature::primitives::DesignBoxPrimitive {
                 length: 3.0,
                 width: 4.0,
                 height: 2.0,
@@ -84,7 +84,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     let mut cylinder_scope = box_scope;
     cylinder_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::CylinderPrimitive
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::CylinderPrimitive
                 .try_into()
                 .unwrap();
         })
@@ -104,7 +104,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
         Some(DesignSolidPrimitive::Cylinder(
-            crate::records::feature::DesignCylinderPrimitive {
+            crate::records::feature::primitives::DesignCylinderPrimitive {
                 height: 0.7,
                 diameter: 3.0,
                 operation: DesignExtrudeOperation::NewBody,
@@ -171,7 +171,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         let id = format!("f3d:{stream}:scope#{record_index}");
         let mut scope = DesignParameterScope::empty(
             &id,
-            crate::records::feature::DesignFeatureKind::CylinderPrimitive,
+            crate::records::feature::scope::DesignFeatureKind::CylinderPrimitive,
             record_index,
         );
         scope
@@ -254,7 +254,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             &compact_owners,
         ),
         Some(DesignSolidPrimitive::Cylinder(
-            crate::records::feature::DesignCylinderPrimitive {
+            crate::records::feature::primitives::DesignCylinderPrimitive {
                 height: 0.7,
                 diameter: 3.0,
                 operation: DesignExtrudeOperation::NewBody,
@@ -303,7 +303,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 &expanded_owners,
             ),
             Some(DesignSolidPrimitive::Cylinder(
-                crate::records::feature::DesignCylinderPrimitive {
+                crate::records::feature::primitives::DesignCylinderPrimitive {
                     height: 0.7,
                     diameter: 3.0,
                     operation: DesignExtrudeOperation::Join,

@@ -1238,7 +1238,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     || {
                         scope
                             .assembly_alignment()
-                            .and_then(super::records::feature::DesignAssemblyAlignment::joint_origin_scope_record_index)
+                            .and_then(super::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index)
                             .is_none()
                     },
                     |ordinals| {
@@ -3457,7 +3457,7 @@ fn mesh_texture_assignments(
 /// tessellation identities.
 fn bind_mesh_feature_definitions(
     features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::feature::DesignParameterScope],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
     projection: &MeshProjection,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for feature in features {

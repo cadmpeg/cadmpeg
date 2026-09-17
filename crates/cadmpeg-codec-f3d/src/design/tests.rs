@@ -20,20 +20,18 @@ use crate::ids::{
     neutral_dimension_constraint_id, neutral_feature_id_parts, neutral_parameter_id_parts,
     neutral_sketch_curve_id, neutral_sketch_point_id,
 };
-use crate::records::sketch_relations::{
-    SketchRelation, SketchRelationMember, SketchRelationReturnMember,
-};
 use crate::records::{
     entity_header::{DesignEntityHeader, DESIGN_MODULE_SKETCH},
     sketch_geometry::SketchPoint,
     sketch_placement::DesignSketchPlacement,
+    sketch_relations::{SketchRelation, SketchRelationMember, SketchRelationReturnMember},
 };
 use cadmpeg_ir::math::Point2;
 use std::collections::HashSet;
 
 #[test]
 fn feature_family_tokens_are_localized() {
-    use crate::records::feature::DesignFeatureKind;
+    use crate::records::feature::scope::DesignFeatureKind;
     let family = |token: &str| {
         design_feature_family(
             &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),

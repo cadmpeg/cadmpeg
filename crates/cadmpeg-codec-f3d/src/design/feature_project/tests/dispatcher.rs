@@ -19,40 +19,42 @@ fn dispatcher_projects_datum_feature_scopes() {
 
     let mut joint_origin = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#1",
-        crate::records::feature::DesignFeatureKind::JointOrigin,
+        crate::records::feature::scope::DesignFeatureKind::JointOrigin,
         1,
     );
     joint_origin.with_joint_origin_transform(transform.try_into().unwrap());
 
     let mut work_plane = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#2",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         2,
     );
     work_plane.with_work_plane_transform(transform.try_into().unwrap());
 
     let mut work_point = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#3",
-        crate::records::feature::DesignFeatureKind::WorkPoint,
+        crate::records::feature::scope::DesignFeatureKind::WorkPoint,
         3,
     );
-    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::WorkPoint(slot) =
         work_point.payload_mut()
     {
-        *slot = Some(crate::records::feature::DesignWorkPointConstruction {
-            point_record_index: 4,
-            point_record_byte_offset: 0,
-            position: [4.0, 5.0, 6.0],
-            position_offset: 0,
-            rule: crate::records::feature::DesignWorkPointRule::try_from(
-                crate::records::feature::DesignWorkPointRuleForm::Native {
-                    reference_type: 1,
-                    inputs: Vec::new(),
-                },
-            )
-            .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
-        });
+        *slot = Some(
+            crate::records::feature::work_geometry::DesignWorkPointConstruction {
+                point_record_index: 4,
+                point_record_byte_offset: 0,
+                position: [4.0, 5.0, 6.0],
+                position_offset: 0,
+                rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
+                    crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
+                        reference_type: 1,
+                        inputs: Vec::new(),
+                    },
+                )
+                .expect("compatible WorkPoint rule"),
+                reference_type_offset: 0,
+            },
+        );
     }
 
     let scopes = vec![joint_origin, work_plane, work_point];
@@ -80,11 +82,11 @@ fn dispatcher_projects_datum_feature_scopes() {
 fn dispatcher_projects_scale_point_center_in_neutral_units() {
     let mut scale = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#4",
-        crate::records::feature::DesignFeatureKind::Scale,
+        crate::records::feature::scope::DesignFeatureKind::Scale,
         4,
     );
-    if let crate::records::feature::DesignScopePayloadMut::Scale(slot)
-    | crate::records::feature::DesignScopePayloadMut::Massstab(slot) = scale.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Massstab(slot) = scale.payload_mut()
     {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
@@ -128,7 +130,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
 fn dispatcher_projects_referenced_work_plane_frame() {
     let mut referenced = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         10,
     );
     referenced.with_work_plane_transform(
@@ -147,40 +149,42 @@ fn dispatcher_projects_referenced_work_plane_frame() {
 
 #[test]
 fn dispatcher_projects_three_point_work_plane_vertices() {
-    use crate::records::feature::{DesignVertexRecipe, DesignWorkPlaneConstruction};
+    use crate::records::feature::work_geometry::{DesignVertexRecipe, DesignWorkPlaneConstruction};
     use cadmpeg_ir::features::VertexSelection;
 
     let recipe = |record_index, vertex| {
-        DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
-            record_index,
-            byte_offset: u64::from(record_index),
-            class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
+        DesignVertexRecipe::try_new(
+            crate::records::feature::work_geometry::DesignVertexRecipeDraft {
+                record_index,
+                byte_offset: u64::from(record_index),
+                class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
+                    .unwrap(),
+                paired_byte_offset: u64::from(record_index) + 16,
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "261".to_owned(),
+                )
                 .unwrap(),
-            paired_byte_offset: u64::from(record_index) + 16,
-            paired_class_tag: crate::records::references::DesignClassTag::try_from(
-                "261".to_owned(),
-            )
-            .unwrap(),
-            recipe_record_index: record_index + 3,
-            recipe_record_byte_offset: u64::from(record_index) + 32,
-            recipe_id: format!("f3d:native/BulkStream.dat:construction-recipe#{record_index}"),
-            recipe_prefix_offset: u64::from(record_index) + 43,
-            recipe_prefix_bytes: Vec::new(),
-            recipe_references: Vec::new(),
-            recipe_program_offset: 4,
-            recipe_program: vec![0],
-            resolution: Some(
-                crate::records::feature::DesignVertexResolution::new(4, vertex)
-                    .expect("valid vertex slot"),
-            ),
-            next_record_index: record_index + 5,
-            next_byte_offset: u64::from(record_index) + 200,
-        })
+                recipe_record_index: record_index + 3,
+                recipe_record_byte_offset: u64::from(record_index) + 32,
+                recipe_id: format!("f3d:native/BulkStream.dat:construction-recipe#{record_index}"),
+                recipe_prefix_offset: u64::from(record_index) + 43,
+                recipe_prefix_bytes: Vec::new(),
+                recipe_references: Vec::new(),
+                recipe_program_offset: 4,
+                recipe_program: vec![0],
+                resolution: Some(
+                    crate::records::feature::work_geometry::DesignVertexResolution::new(4, vertex)
+                        .expect("valid vertex slot"),
+                ),
+                next_record_index: record_index + 5,
+                next_byte_offset: u64::from(record_index) + 200,
+            },
+        )
         .unwrap()
     };
     let mut plane = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#20",
-        crate::records::feature::DesignFeatureKind::WorkPlane,
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
         20,
     );
     plane.with_work_plane_transform(
@@ -214,7 +218,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
 
 #[test]
 fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
-    use crate::records::feature::{
+    use crate::records::feature::work_geometry::{
         DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
         DesignWorkPointPlaneSelection,
     };
@@ -224,7 +228,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         let id = format!("f3d:native/BulkStream.dat:parameter-scope#{record_index}");
         let mut scope = DesignParameterScope::empty(
             &id,
-            crate::records::feature::DesignFeatureKind::WorkPlane,
+            crate::records::feature::scope::DesignFeatureKind::WorkPlane,
             record_index,
         );
         scope.with_work_plane_transform(
@@ -233,12 +237,12 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         scope
     });
     let input = |record_index, work_plane_scope_record_index| {
-        DesignWorkPointInput::try_new(crate::records::feature::DesignWorkPointInputDraft {
+        DesignWorkPointInput::try_new(crate::records::feature::work_geometry::DesignWorkPointInputDraft {
             record_index,
             reference_offset: u64::from(record_index),
             carrier: Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection::try_new(
-                    crate::records::feature::DesignWorkPointPlaneSelectionDraft {
+                    crate::records::feature::work_geometry::DesignWorkPointPlaneSelectionDraft {
                         class_tag: crate::records::references::DesignClassTag::try_from(
                             "267".to_owned(),
                         )
@@ -269,17 +273,19 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     };
     let mut point = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#40",
-        crate::records::feature::DesignFeatureKind::WorkPoint,
+        crate::records::feature::scope::DesignFeatureKind::WorkPoint,
         40,
     );
-    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) = point.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::WorkPoint(slot) =
+        point.payload_mut()
+    {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 41,
             point_record_byte_offset: 0,
             position: [1.0, 2.0, 3.0],
             position_offset: 0,
-            rule: crate::records::feature::DesignWorkPointRule::try_from(
-                crate::records::feature::DesignWorkPointRuleForm::ThreePlaneIntersection {
+            rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
+                crate::records::feature::work_geometry::DesignWorkPointRuleForm::ThreePlaneIntersection {
                     inputs: [input(42, 10), input(46, 20), input(50, 30)],
                 },
             )
@@ -321,7 +327,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
 
 #[test]
 fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
-    use crate::records::feature::{
+    use crate::records::feature::work_geometry::{
         DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
         DesignWorkPointInputCarrier,
     };
@@ -329,7 +335,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
 
     let mut predecessor = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         10,
     );
     predecessor
@@ -338,43 +344,51 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         })
         .unwrap();
     let recipe_id = "f3d:native/BulkStream.dat:construction-recipe#vertex".to_string();
-    let recipe = DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
-        record_index: 12,
-        byte_offset: 0,
-        class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap(),
-        paired_byte_offset: 16,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
+    let recipe = DesignVertexRecipe::try_new(
+        crate::records::feature::work_geometry::DesignVertexRecipeDraft {
+            record_index: 12,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned())
+                .unwrap(),
+            paired_byte_offset: 16,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
             .unwrap(),
-        recipe_record_index: 15,
-        recipe_record_byte_offset: 32,
-        recipe_id: recipe_id.clone(),
-        recipe_prefix_offset: 43,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: Vec::new(),
-        recipe_program_offset: 4,
-        recipe_program: vec![0],
-        resolution: Some(
-            crate::records::feature::DesignVertexResolution::new(4, 43).expect("valid vertex slot"),
-        ),
-        next_record_index: 17,
-        next_byte_offset: 200,
-    })
+            recipe_record_index: 15,
+            recipe_record_byte_offset: 32,
+            recipe_id: recipe_id.clone(),
+            recipe_prefix_offset: 43,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_program_offset: 4,
+            recipe_program: vec![0],
+            resolution: Some(
+                crate::records::feature::work_geometry::DesignVertexResolution::new(4, 43)
+                    .expect("valid vertex slot"),
+            ),
+            next_record_index: 17,
+            next_byte_offset: 200,
+        },
+    )
     .unwrap();
     let mut point = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#20",
-        crate::records::feature::DesignFeatureKind::WorkPoint,
+        crate::records::feature::scope::DesignFeatureKind::WorkPoint,
         20,
     );
-    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) = point.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::WorkPoint(slot) =
+        point.payload_mut()
+    {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 21,
             point_record_byte_offset: 0,
             position: [4.0, 3.0, 0.0],
             position_offset: 0,
-            rule: crate::records::feature::DesignWorkPointRule::try_from(
-                crate::records::feature::DesignWorkPointRuleForm::Vertex {
+            rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
+                crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
-                        crate::records::feature::DesignWorkPointInputDraft {
+                        crate::records::feature::work_geometry::DesignWorkPointInputDraft {
                             record_index: 22,
                             reference_offset: 0,
                             carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
@@ -473,11 +487,14 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
 
 #[test]
 fn dispatcher_projects_remaining_operand_feature_scopes() {
-    use crate::records::feature::{
-        DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignCopyPasteBodiesOperation,
-        DesignCopyPasteComponentOperation,
+    use crate::records::{
+        feature::{
+            assembly_features::DesignCopyPasteComponentOperation,
+            base_feature::DesignBaseFeatureConstruction, body_ops::DesignCopyPasteBodiesOperation,
+            sheet_metal::DesignBaseFlangeOperation,
+        },
+        topology::DesignConstructionOperandGroupFrame,
     };
-    use crate::records::topology::DesignConstructionOperandGroupFrame;
     use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, SheetMetalThicknessSide};
 
     let stream = "f3d:native/BulkStream.dat";
@@ -536,19 +553,20 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut base_flange = DesignParameterScope::empty(
         &format!("{stream}:scope#base-flange"),
-        crate::records::feature::DesignFeatureKind::BaseFlange,
+        crate::records::feature::scope::DesignFeatureKind::BaseFlange,
         10,
     );
     {
         let value = Some(DesignBaseFlangeOperation {
-            thickness: crate::records::feature::DesignPositiveScalar::new(0.2).unwrap(),
+            thickness: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.2)
+                .unwrap(),
             thickness_offset: 0,
             profile_group_record_index: 100,
             profile_record_index: 101,
             thickness_record_index: 102,
             settings_record_index: 103,
         });
-        if let crate::records::feature::DesignScopePayloadMut::BaseFlange(slot) =
+        if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
             base_flange.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
@@ -586,7 +604,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             )
             .unwrap(),
         );
-        if let crate::records::feature::DesignScopePayloadMut::BaseFlange(slot) =
+        if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
             base_flange.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
@@ -596,7 +614,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut remove_body = DesignParameterScope::empty(
         &format!("{stream}:scope#remove-body"),
-        crate::records::feature::DesignFeatureKind::RemoveBody,
+        crate::records::feature::scope::DesignFeatureKind::RemoveBody,
         20,
     );
     remove_body
@@ -611,12 +629,17 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut surface_stitch = DesignParameterScope::empty(
         &format!("{stream}:scope#surface-stitch"),
-        crate::records::feature::DesignScopePayload::SurfaceStitch(DesignSurfaceStitchOperation {
-            gap_tolerance: crate::records::feature::DesignPositiveScalar::new(0.01).unwrap(),
-            gap_tolerance_offset: 0,
-            tolerance_record_index: 302,
-            settings_record_index: 303,
-        }),
+        crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
+            DesignSurfaceStitchOperation {
+                gap_tolerance: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
+                    0.01,
+                )
+                .unwrap(),
+                gap_tolerance_offset: 0,
+                tolerance_record_index: 302,
+                settings_record_index: 303,
+            },
+        ),
         30,
     );
     surface_stitch
@@ -632,10 +655,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut copy_paste = DesignParameterScope::empty(
         &format!("{stream}:scope#copy-paste"),
-        crate::records::feature::DesignFeatureKind::CopyPaste,
+        crate::records::feature::scope::DesignFeatureKind::CopyPaste,
         40,
     );
-    if let crate::records::feature::DesignScopePayloadMut::CopyPaste(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::CopyPaste(slot) =
         copy_paste.payload_mut()
     {
         *slot = Some(DesignCopyPasteComponentOperation {
@@ -663,15 +686,15 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut copy_paste_bodies = DesignParameterScope::empty(
         &format!("{stream}:scope#copy-paste-bodies"),
-        crate::records::feature::DesignFeatureKind::CopyPasteBodies,
+        crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies,
         50,
     );
-    if let crate::records::feature::DesignScopePayloadMut::CopyPasteBodies(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::CopyPasteBodies(slot) =
         copy_paste_bodies.payload_mut()
     {
         *slot = Some(
             DesignCopyPasteBodiesOperation::try_new(
-                vec![crate::records::feature::DesignCopiedBody {
+                vec![crate::records::feature::body_ops::DesignCopiedBody {
                     operand: crate::records::identity::Located {
                         value: 502,
                         offset: 26,
@@ -698,26 +721,26 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut base_feature = DesignParameterScope::empty(
         &format!("{stream}:scope#base-feature"),
-        crate::records::feature::DesignFeatureKind::BaseFeature,
+        crate::records::feature::scope::DesignFeatureKind::BaseFeature,
         60,
     );
-    if let crate::records::feature::DesignScopePayloadMut::BaseFeature(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::BaseFeature(slot) =
         base_feature.payload_mut()
     {
         *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
-            bodies: crate::records::feature::DesignBaseFeatureResults::WithoutRepeatedFields(vec![
-                crate::records::feature::DesignBaseFeatureResultBody {
-                    entity: crate::records::feature::DesignBaseFeatureEntry {
+            bodies: crate::records::feature::base_feature::DesignBaseFeatureResults::WithoutRepeatedFields(vec![
+                crate::records::feature::base_feature::DesignBaseFeatureResultBody {
+                    entity: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 21,
                         offset: 0,
                         field: [0; 6],
                     },
-                    reference: crate::records::feature::DesignBaseFeatureEntry {
+                    reference: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 601,
                         offset: 0,
                         field: [0; 6],
                     },
-                    result: crate::records::feature::DesignBaseFeatureEntry {
+                    result: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 603,
                         offset: 0,
                         field: [0; 6],
@@ -732,23 +755,27 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut thread = DesignParameterScope::empty(
         &format!("{stream}:scope#thread"),
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         70,
     );
-    if let crate::records::feature::DesignScopePayloadMut::Thread(slot) = thread.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::Thread(slot) =
+        thread.payload_mut()
+    {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
-            nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
+            nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "3.5".to_owned(),
             )
             .expect("nominal size"),
             profile: cadmpeg_core::text::NonBlankString::new("GB Metric profile").unwrap(),
-            pitch: crate::records::feature::DesignPositiveScalar::new(0.06).unwrap(),
+            pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.06).unwrap(),
             face_group_record_indices: vec![701],
-            diameters: crate::records::feature::DesignThreadDiameters::new(0.35995, 0.293, 0.3166)
-                .unwrap(),
+            diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+                0.35995, 0.293, 0.3166,
+            )
+            .unwrap(),
         });
     }
     thread
@@ -943,9 +970,9 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
     archive.write_all(&bulk).unwrap();
     let archive = archive.finish().unwrap().into_inner();
 
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("f3d:{stream}:scope#201"),
-        crate::records::feature::DesignFeatureKind::Form,
+        crate::records::feature::scope::DesignFeatureKind::Form,
         201,
     );
     scope
@@ -1034,9 +1061,9 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
     archive.write_all(&bulk).unwrap();
     let archive = archive.finish().unwrap().into_inner();
 
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("f3d:{stream}:scope#201"),
-        crate::records::feature::DesignFeatureKind::Form,
+        crate::records::feature::scope::DesignFeatureKind::Form,
         201,
     );
     scope

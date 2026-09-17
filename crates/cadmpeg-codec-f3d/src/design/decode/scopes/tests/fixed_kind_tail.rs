@@ -59,7 +59,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     .unwrap();
     assert_eq!(
         scope.kind(),
-        crate::records::feature::DesignFeatureKind::Sketch
+        crate::records::feature::scope::DesignFeatureKind::Sketch
     );
     assert_eq!(scope.feature_ordinal.get(), 1);
     assert_eq!(scope.feature_ordinal_offset(), feature_ordinal_at as u64);
@@ -115,7 +115,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     .expect("scope with compact fixed tail");
     assert_eq!(
         compact.kind(),
-        crate::records::feature::DesignFeatureKind::Sketch
+        crate::records::feature::scope::DesignFeatureKind::Sketch
     );
     assert_eq!(compact.frame_length(), paired_at as u64 - 1);
     assert_eq!(compact.previous_history_state_id(), Some(2));
@@ -142,7 +142,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         .expect("scope with legacy fixed tail");
         assert_eq!(
             decoded.kind(),
-            crate::records::feature::DesignFeatureKind::Sketch
+            crate::records::feature::scope::DesignFeatureKind::Sketch
         );
         assert_eq!(decoded.previous_history_state_id(), Some(2));
         assert_eq!(
@@ -191,7 +191,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         .expect("scope with extended no-history fixed tail");
         assert_eq!(
             decoded.kind(),
-            crate::records::feature::DesignFeatureKind::Sketch
+            crate::records::feature::scope::DesignFeatureKind::Sketch
         );
         assert_eq!(decoded.previous_history_state_id(), None);
         assert_eq!(decoded.previous_history_state_id_offset(), None);
@@ -227,7 +227,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     .expect("CopyPasteBodies scope with extended tail");
     assert_eq!(
         copy.kind(),
-        crate::records::feature::DesignFeatureKind::CopyPasteBodies
+        crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies
     );
     assert_eq!(copy.feature_ordinal.get(), 2);
     assert_eq!(
@@ -338,7 +338,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     .expect("generic-table Sketch scope");
     assert_eq!(
         generic_scope.kind(),
-        crate::records::feature::DesignFeatureKind::Sketch
+        crate::records::feature::scope::DesignFeatureKind::Sketch
     );
     assert_eq!(
         generic_scope
@@ -548,7 +548,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     axis_scope.id = "f3d:native/BulkStream.dat:parameter-scope#55".into();
     axis_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::WorkAxis
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::WorkAxis
                 .try_into()
                 .unwrap();
             draft.reference_members =
@@ -571,12 +571,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(construction.displacement_offset, 49);
     assert!(matches!(
         construction.source,
-        Some(crate::records::feature::DesignWorkAxisSource::TwoPoint {
-            point_record_indices: [102, 104],
-            ..
-        })
+        Some(
+            crate::records::feature::work_geometry::DesignWorkAxisSource::TwoPoint {
+                point_record_indices: [102, 104],
+                ..
+            }
+        )
     ));
-    if let crate::records::feature::DesignScopePayloadMut::WorkAxis(slot) = axis_scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::WorkAxis(slot) =
+        axis_scope.payload_mut()
     {
         *slot = Some(construction);
     }
@@ -875,7 +878,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut joint_origin_scope = scope.clone();
     joint_origin_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::JointOrigin
                 .try_into()
                 .unwrap();
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![60]);
@@ -932,7 +935,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut compact_joint_origin_scope = scope.clone();
     compact_joint_origin_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::JointOrigin
                 .try_into()
                 .unwrap();
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![67]);
@@ -974,7 +977,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     let mut legacy_joint_origin_scope = scope.clone();
     legacy_joint_origin_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::JointOrigin
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::JointOrigin
                 .try_into()
                 .unwrap();
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![72]);

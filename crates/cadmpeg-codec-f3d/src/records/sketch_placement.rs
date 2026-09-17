@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch visibility, placement and the frame a sketch is placed on.
 
-use super::{
-    identity::{DesignAffineTransform, DesignEntityId, IDENTITY_MATRIX},
-    references::DesignClassTag,
-};
+use super::identity::{DesignAffineTransform, DesignEntityId, IDENTITY_MATRIX};
+use super::references::DesignClassTag;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 

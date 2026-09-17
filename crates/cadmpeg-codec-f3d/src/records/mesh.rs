@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mesh records: texture tables, scene state and nodes, mesh bodies, collections and mesh features.
 
-use super::{identity::Located, references::DesignClassTag};
+use super::identity::Located;
+use super::references::DesignClassTag;
 use cadmpeg_ir::assets::AssetId;
 use serde::{Deserialize, Serialize};
 

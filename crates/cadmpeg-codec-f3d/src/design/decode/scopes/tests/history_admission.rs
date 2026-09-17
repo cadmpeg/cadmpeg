@@ -5,7 +5,7 @@ use crate::history_records::{
     AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory,
 };
-use crate::records::feature::DesignParameterScope;
+use crate::records::feature::scope::DesignParameterScope;
 
 fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState {
     AsmDeltaState {
@@ -52,7 +52,7 @@ fn scope(
 ) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         &format!("f3d:stream:design-parameter-scope#{byte_offset}"),
-        crate::records::feature::DesignFeatureKind::Chamfer,
+        crate::records::feature::scope::DesignFeatureKind::Chamfer,
         record_index,
     );
     scope

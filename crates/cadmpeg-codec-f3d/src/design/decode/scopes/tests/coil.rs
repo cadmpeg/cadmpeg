@@ -207,7 +207,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     assert_eq!(scope.frame_length(), 442);
     assert_eq!(
         scope.kind(),
-        crate::records::feature::DesignFeatureKind::CoilPrimitive
+        crate::records::feature::scope::DesignFeatureKind::CoilPrimitive
     );
     assert_eq!(
         scope.coil_operation(),

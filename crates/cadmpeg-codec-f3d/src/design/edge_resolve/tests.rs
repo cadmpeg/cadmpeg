@@ -8,10 +8,11 @@
 )]
 
 use super::*;
-use crate::records::topology::{
-    DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
+use crate::records::{
+    dimensions::DesignRecipeReference,
+    feature::scope::DesignParameterScope,
+    topology::{DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand},
 };
-use crate::records::{dimensions::DesignRecipeReference, feature::DesignParameterScope};
 use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
@@ -384,7 +385,9 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalEdge, AsmHistoricalTopology, AsmHistory,
     };
-    use crate::records::feature::{DesignEdgeTreatmentVertexOperand, DesignVertexRecipe};
+    use crate::records::feature::work_geometry::{
+        DesignEdgeTreatmentVertexOperand, DesignVertexRecipe,
+    };
 
     let mut selection_group = group(2, 10);
     selection_group
@@ -419,31 +422,33 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         scope_reference_ordinal: group_member_ordinal,
         group_record_index: 2,
         group_member_ordinal,
-        recipe: DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
-            record_index,
-            byte_offset: u64::from(record_index),
-            class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
+        recipe: DesignVertexRecipe::try_new(
+            crate::records::feature::work_geometry::DesignVertexRecipeDraft {
+                record_index,
+                byte_offset: u64::from(record_index),
+                class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned())
+                    .unwrap(),
+                paired_byte_offset: u64::from(record_index) + 16,
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "261".to_owned(),
+                )
                 .unwrap(),
-            paired_byte_offset: u64::from(record_index) + 16,
-            paired_class_tag: crate::records::references::DesignClassTag::try_from(
-                "261".to_owned(),
-            )
-            .unwrap(),
-            recipe_record_index: record_index + 3,
-            recipe_record_byte_offset: u64::from(record_index) + 32,
-            recipe_id: format!("f3d:test:construction-recipe#{record_index}"),
-            recipe_prefix_offset: u64::from(record_index) + 43,
-            recipe_prefix_bytes: Vec::new(),
-            recipe_references: Vec::new(),
-            recipe_program_offset: 4,
-            recipe_program: vec![0],
-            resolution: Some(
-                crate::records::feature::DesignVertexResolution::new(7, vertex)
-                    .expect("valid vertex slot"),
-            ),
-            next_record_index: record_index + 5,
-            next_byte_offset: u64::from(record_index) + 200,
-        })
+                recipe_record_index: record_index + 3,
+                recipe_record_byte_offset: u64::from(record_index) + 32,
+                recipe_id: format!("f3d:test:construction-recipe#{record_index}"),
+                recipe_prefix_offset: u64::from(record_index) + 43,
+                recipe_prefix_bytes: Vec::new(),
+                recipe_references: Vec::new(),
+                recipe_program_offset: 4,
+                recipe_program: vec![0],
+                resolution: Some(
+                    crate::records::feature::work_geometry::DesignVertexResolution::new(7, vertex)
+                        .expect("valid vertex slot"),
+                ),
+                next_record_index: record_index + 5,
+                next_byte_offset: u64::from(record_index) + 200,
+            },
+        )
         .unwrap(),
     };
     let state = AsmDeltaState {

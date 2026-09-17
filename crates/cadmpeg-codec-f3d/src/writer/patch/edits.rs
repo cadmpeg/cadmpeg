@@ -21,10 +21,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 
-use super::geometry::{
-    orthonormal_pair, valid_edited_curve_structure, valid_edited_nurbs_direction,
+use super::{
+    geometry::{orthonormal_pair, valid_edited_curve_structure, valid_edited_nurbs_direction},
+    records::native_stream,
 };
-use super::records::native_stream;
 use crate::native::F3dNative;
 use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
 use crate::writer::primitives::{finite_point, finite_vector, normalized_face_sense_to_native};
