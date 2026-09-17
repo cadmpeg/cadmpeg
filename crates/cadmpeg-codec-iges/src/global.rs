@@ -1028,9 +1028,15 @@ impl Resolution {
         }
     }
 
-    fn maximum_coordinate(&mut self, global_table: GlobalTable) -> Option<f64> {
+    /// Charges the maximum-coordinate field.
+    ///
+    /// The coordinate is not carried into the model, so the charge the
+    /// absent and malformed arms state is the whole effect and there is no
+    /// value for a caller to take. The arms are the ones the reading kept;
+    /// only the values they answered are gone.
+    fn charge_maximum_coordinate(&mut self, global_table: GlobalTable) {
         match self.supplied_real(FIELD_MAXIMUM_COORDINATE) {
-            SuppliedReal::Absent if global_table == GlobalTable::V5_0 => None,
+            SuppliedReal::Absent if global_table == GlobalTable::V5_0 => {}
             SuppliedReal::Absent if global_table == GlobalTable::V4_0 => {
                 self.charge(
                     IgesLossCode::GlobalMetadataFieldUnusable,
@@ -1038,13 +1044,11 @@ impl Resolution {
                     Defect::Absent,
                     METADATA_CONSEQUENCE,
                 );
-                None
             }
-            SuppliedReal::Absent => Some(0.0),
-            SuppliedReal::Value(value) if value >= 0.0 => Some(value),
+            SuppliedReal::Absent => {}
+            SuppliedReal::Value(value) if value >= 0.0 => {}
             SuppliedReal::Recovered(value) if value >= 0.0 => {
                 self.charge_recovered_real(FIELD_MAXIMUM_COORDINATE, value);
-                Some(value)
             }
             SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
                 self.charge(
@@ -1053,7 +1057,6 @@ impl Resolution {
                     Defect::Malformed,
                     METADATA_CONSEQUENCE,
                 );
-                None
             }
         }
     }
@@ -1355,8 +1358,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let line_weight_scale = resolution.line_weight_scale(global_table);
     resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
     let minimum_resolution = resolution.minimum_resolution(global_table);
-    // discarded-value: the charge the malformed and absent arms state is the whole effect; the coordinate is not carried into the model
-    let _ = resolution.maximum_coordinate(global_table);
+    resolution.charge_maximum_coordinate(global_table);
     resolution.metadata_string(FIELD_AUTHOR, global_table);
     resolution.metadata_string(FIELD_ORGANIZATION, global_table);
     resolution.metadata_integer_declaration(FIELD_DRAFTING_STANDARD, global_table, |value| {
