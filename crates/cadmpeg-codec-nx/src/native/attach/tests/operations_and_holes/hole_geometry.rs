@@ -1,4 +1,10 @@
 use super::super::*;
+use crate::native::attach::hole_axis_placements_for_operations;
+use crate::native::attach::hole_body_projection;
+use crate::native::attach::simple_hole_chamfers;
+use crate::native::attach::simple_hole_native_properties;
+use crate::native::attach::SolvedSurfaceGeometry;
+use crate::native::attach::SurfaceGeometry;
 
 #[test]
 fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
@@ -95,13 +101,8 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         ])
         .unwrap(),
     };
-    let properties = super::super::simple_hole_native_properties(
-        operation,
-        &[template],
-        &[lane],
-        &[blocks],
-        &[group],
-    );
+    let properties =
+        simple_hole_native_properties(operation, &[template], &[lane], &[blocks], &[group]);
     assert_eq!(properties["simple_hole_template"], "template");
     assert_eq!(properties["simple_hole_repeated_scalar_lane"], "lane");
     assert_eq!(
@@ -109,7 +110,7 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         "blocks"
     );
     assert_eq!(properties["simple_hole_construction_group"], "group");
-    assert!(super::super::simple_hole_native_properties(
+    assert!(simple_hole_native_properties(
         "nx:feature-history:operation-label#1-5",
         &[],
         &[],
@@ -279,9 +280,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ("hole-a".to_string(), vec![body.clone()]),
         ("hole-b".to_string(), vec![body]),
     ]);
-    let inferred =
-        super::super::hole_body_projection(&ir, &operations, &std::collections::BTreeMap::new())
-            .expect("complete bore bijection");
+    let inferred = hole_body_projection(&ir, &operations, &std::collections::BTreeMap::new())
+        .expect("complete bore bijection");
     assert_eq!(inferred.outputs, outputs);
     assert_eq!(
         simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,),
@@ -322,10 +322,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             ),
         ])
     );
-    assert!(
-        super::super::hole_axis_placements_for_operations(&ir, &operations, &outputs).is_empty()
-    );
-    assert!(super::super::hole_axis_placements_for_operations(
+    assert!(hole_axis_placements_for_operations(&ir, &operations, &outputs).is_empty());
+    assert!(hole_axis_placements_for_operations(
         &ir,
         &operations,
         &std::collections::BTreeMap::new(),
@@ -343,11 +341,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         outputs[&operations[1]].clone(),
     )]);
     assert_eq!(
-        super::super::hole_axis_placements_for_operations(
-            &single_hole,
-            &single_operation,
-            &single_output,
-        ),
+        hole_axis_placements_for_operations(&single_hole, &single_operation, &single_output,),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -373,11 +367,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, radius)
             .unwrap();
     assert_eq!(
-        super::super::hole_axis_placements_for_operations(
-            &single_hole,
-            &single_operation,
-            &single_output,
-        ),
+        hole_axis_placements_for_operations(&single_hole, &single_operation, &single_output,),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -422,11 +412,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 .unwrap();
     }
     assert_eq!(
-        super::super::hole_axis_placements_for_operations(
-            &opposite_axis,
-            &single_operation,
-            &single_output,
-        ),
+        hole_axis_placements_for_operations(&opposite_axis, &single_operation, &single_output,),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -471,7 +457,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 .unwrap();
     }
     assert!(hole_diameters_for_operations(&different_radii, &operations, &outputs,).is_empty());
-    assert!(super::super::hole_body_projection(
+    assert!(hole_body_projection(
         &different_radii,
         &operations,
         &std::collections::BTreeMap::new(),
@@ -479,7 +465,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     .is_none());
     let unresolved_primary =
         std::collections::BTreeMap::from([(operations[0].clone(), Vec::<BodyId>::new())]);
-    assert!(super::super::hole_body_projection(
+    assert!(hole_body_projection(
         &ir,
         std::slice::from_ref(&operations[0]),
         &unresolved_primary,
@@ -555,12 +541,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     *cylinder_surface =
         cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, radius)
             .unwrap();
-    assert!(super::super::hole_axis_placements_for_operations(
-        &nonparallel,
-        &single_operation,
-        &single_output,
-    )
-    .is_empty());
+    assert!(
+        hole_axis_placements_for_operations(&nonparallel, &single_operation, &single_output,)
+            .is_empty()
+    );
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
     assert!(hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
@@ -793,7 +777,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         }
     }
     assert_eq!(
-        super::super::simple_hole_chamfers(&chamfered, &templates, &outputs),
+        simple_hole_chamfers(&chamfered, &templates, &outputs),
         std::collections::BTreeMap::from([
             (
                 "hole-a".into(),
@@ -814,16 +798,12 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ])
     );
     assert_eq!(
-        super::super::simple_hole_chamfers(
-            &chamfered,
-            &templates,
-            &std::collections::BTreeMap::new(),
-        ),
-        super::super::simple_hole_chamfers(&chamfered, &templates, &outputs)
+        simple_hole_chamfers(&chamfered, &templates, &std::collections::BTreeMap::new(),),
+        simple_hole_chamfers(&chamfered, &templates, &outputs)
     );
     let mut sheet = chamfered.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(super::super::simple_hole_chamfers(&sheet, &templates, &outputs).is_empty());
+    assert!(simple_hole_chamfers(&sheet, &templates, &outputs).is_empty());
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
@@ -854,8 +834,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         tolerance: None,
     });
     assert_eq!(
-        super::super::simple_hole_chamfers(&unrelated, &templates, &outputs),
-        super::super::simple_hole_chamfers(&chamfered, &templates, &outputs)
+        simple_hole_chamfers(&unrelated, &templates, &outputs),
+        simple_hole_chamfers(&chamfered, &templates, &outputs)
     );
     let mut unequal_chamfers = chamfered;
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut unequal_chamfers
@@ -875,7 +855,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     radius += 0.1;
     *circle_curve =
         cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, radius).unwrap();
-    assert!(super::super::simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty());
+    assert!(simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty());
 
     let mut mismatched = ir;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =

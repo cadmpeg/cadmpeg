@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::attach::offset_store_trim_body_feature_definition;
 use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition, FeatureOperation};
 
 #[test]
@@ -32,7 +33,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     let mut mixed_store_operand = operand.clone();
     mixed_store_operand.operand_data_block = Some("nx:om-data-blocks-3:block#113".to_string());
     assert_eq!(
-        super::offset_store_trim_body_feature_definition(
+        offset_store_trim_body_feature_definition(
             std::slice::from_ref(&body),
             &[&mixed_store_operand],
         ),
@@ -43,7 +44,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     duplicate_block_operand.operand.atom =
         crate::om::compact::CompactIndexAtom::read(&[112]).unwrap();
     assert_eq!(
-        super::offset_store_trim_body_feature_definition(
+        offset_store_trim_body_feature_definition(
             std::slice::from_ref(&body),
             &[&operand, &duplicate_block_operand],
         ),
@@ -54,7 +55,7 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     target_alias_operand.operand.atom = crate::om::compact::CompactIndexAtom::read(&[115]).unwrap();
     target_alias_operand.operand_data_block = Some(body.1.clone());
     assert_eq!(
-        super::offset_store_trim_body_feature_definition(
+        offset_store_trim_body_feature_definition(
             std::slice::from_ref(&body),
             &[&target_alias_operand],
         ),

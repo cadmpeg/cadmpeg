@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::attach::body_writing_unresolved_feature_definition;
+use crate::native::attach::brep_feature_definition;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
@@ -9,13 +11,13 @@ use cadmpeg_ir::ids::BodyId;
 fn nx_brep_projects_to_stored_geometry_only_with_unique_result_bodies() {
     let body = BodyId::mint("test:model:entity#body%231").expect("identity grammar");
     assert!(matches!(
-        super::brep_feature_definition(std::slice::from_ref(&body)),
+        brep_feature_definition(std::slice::from_ref(&body)),
         Some(FeatureDefinition::Operation(
             FeatureOperation::StoredGeometry {}
         ))
     ));
-    assert!(super::brep_feature_definition(&[]).is_none());
-    assert!(super::brep_feature_definition(&[body.clone(), body]).is_none());
+    assert!(brep_feature_definition(&[]).is_none());
+    assert!(brep_feature_definition(&[body.clone(), body]).is_none());
 }
 
 #[test]
@@ -24,7 +26,7 @@ fn nx_body_writing_brep_retains_unresolved_family() {
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
     assert_eq!(
-        super::body_writing_unresolved_feature_definition("BREP", &source_properties),
+        body_writing_unresolved_feature_definition("BREP", &source_properties),
         Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Brep
         }))
@@ -34,7 +36,7 @@ fn nx_body_writing_brep_retains_unresolved_family() {
 #[test]
 fn nx_non_body_writing_brep_remains_native_for_result_review() {
     assert_eq!(
-        super::body_writing_unresolved_feature_definition("BREP", &BTreeMap::new()),
+        body_writing_unresolved_feature_definition("BREP", &BTreeMap::new()),
         None
     );
 }

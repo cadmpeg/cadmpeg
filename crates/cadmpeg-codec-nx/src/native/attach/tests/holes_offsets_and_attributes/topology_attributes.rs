@@ -1,4 +1,10 @@
-use super::*;
+use crate::native::attach::attach_parasolid_topology_numeric_attributes;
+use crate::native::attach::attach_parasolid_topology_structured_attributes;
+use crate::native::attach::ParasolidAttributeNameIndex;
+use crate::native::attach::ParasolidNumericAttributeSources;
+use crate::native::attach::ParasolidStructuredAttributeSources;
+use crate::native::attach::ParasolidTopologyAttributeIndex;
+use std::collections::BTreeMap;
 
 use crate::native::parasolid::topology_attribute_kind::TopologyAttributeKind;
 use crate::parasolid::attribute_action::AttributeAction;
@@ -11,7 +17,7 @@ fn attribute_field_name(
     field_uses: &[crate::native::parasolid::ParasolidAttributeFieldUse],
     field_names: &[crate::native::parasolid::ParasolidAttributeFieldNames],
 ) -> Option<String> {
-    super::ParasolidAttributeNameIndex::new(class_uses, definitions, field_uses, field_names)
+    ParasolidAttributeNameIndex::new(class_uses, definitions, field_uses, field_names)
         .field_name(topology_reference, value_use)
 }
 
@@ -114,22 +120,16 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     };
     let class_uses = [class_use];
     let definitions = [definition];
-    let sources = super::ParasolidNumericAttributeSources {
+    let sources = ParasolidNumericAttributeSources {
         numeric_uses: &uses,
         integers: &[integer],
         doubles: &[double],
     };
-    let topology_attribute_index = super::ParasolidTopologyAttributeIndex::new(
-        &ir,
-        &references,
-        &class_uses,
-        &definitions,
-        &[],
-        &[],
-    );
+    let topology_attribute_index =
+        ParasolidTopologyAttributeIndex::new(&ir, &references, &class_uses, &definitions, &[], &[]);
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_parasolid_topology_numeric_attributes(
+    attach_parasolid_topology_numeric_attributes(
         &mut ir,
         &sources,
         &topology_attribute_index,
@@ -558,7 +558,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             inflated_offset: 410,
         },
     ];
-    let index = super::ParasolidTopologyAttributeIndex::new(
+    let index = ParasolidTopologyAttributeIndex::new(
         &ir,
         std::slice::from_ref(&reference),
         &class_uses,
@@ -587,19 +587,14 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         Some("CLASS.field_0.parasolid_type_2")
     );
 
-    let sources = super::ParasolidNumericAttributeSources {
+    let sources = ParasolidNumericAttributeSources {
         numeric_uses: &numeric_uses,
         integers: &[],
         doubles: &doubles,
     };
     let mut annotations = AnnotationBuilder::new();
-    super::attach_parasolid_topology_numeric_attributes(
-        &mut ir,
-        &sources,
-        &index,
-        &mut annotations,
-    )
-    .expect("valid exactness fields");
+    attach_parasolid_topology_numeric_attributes(&mut ir, &sources, &index, &mut annotations)
+        .expect("valid exactness fields");
     let attributes = ir
         .model
         .attributes
@@ -719,14 +714,14 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     })
     .collect::<Vec<_>>();
     let mut annotations = AnnotationBuilder::new();
-    let sources = super::ParasolidStructuredAttributeSources {
+    let sources = ParasolidStructuredAttributeSources {
         structured_uses: &uses,
         vectors: &vectors,
         axes: &[axis],
         tags: &[tag],
         unicode: &[unicode],
     };
-    let topology_attribute_index = super::ParasolidTopologyAttributeIndex::new(
+    let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
         &ir,
         std::slice::from_ref(&reference),
         &[],
@@ -734,7 +729,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         &[],
         &[],
     );
-    super::attach_parasolid_topology_structured_attributes(
+    attach_parasolid_topology_structured_attributes(
         &mut ir,
         &sources,
         &topology_attribute_index,

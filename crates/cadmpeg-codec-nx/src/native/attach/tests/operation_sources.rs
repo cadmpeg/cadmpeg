@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
-
+use crate::native::attach::operation_source_properties;
+use std::collections::BTreeMap;
 #[test]
 fn operation_source_properties_require_unique_owned_structures() {
     let record = crate::native::features::operation_record::FeatureOperationRecord {
@@ -45,7 +45,7 @@ fn operation_source_properties_require_unique_owned_structures() {
         .unwrap(),
     };
     assert_eq!(
-        super::operation_source_properties(
+        operation_source_properties(
             &record.operation_label,
             std::slice::from_ref(&record),
             std::slice::from_ref(&common),
@@ -57,9 +57,9 @@ fn operation_source_properties_require_unique_owned_structures() {
             ("operation_terminal_frame".into(), "frame".into()),
         ])
     );
-    assert!(super::operation_source_properties("missing", &[], &[], &[]).is_empty());
+    assert!(operation_source_properties("missing", &[], &[], &[]).is_empty());
     assert_eq!(
-        super::operation_source_properties(
+        operation_source_properties(
             &record.operation_label,
             std::slice::from_ref(&record),
             &[],
@@ -70,7 +70,7 @@ fn operation_source_properties_require_unique_owned_structures() {
     let mut noncontiguous_common = common.clone();
     noncontiguous_common.ordinal = 1;
     assert_eq!(
-        super::operation_source_properties(
+        operation_source_properties(
             &record.operation_label,
             std::slice::from_ref(&record),
             std::slice::from_ref(&noncontiguous_common),
@@ -81,7 +81,7 @@ fn operation_source_properties_require_unique_owned_structures() {
             ("operation_terminal_frame".into(), "frame".into()),
         ])
     );
-    assert!(super::operation_source_properties(
+    assert!(operation_source_properties(
         &record.operation_label,
         &[record.clone(), record.clone()],
         std::slice::from_ref(&common),
@@ -89,7 +89,7 @@ fn operation_source_properties_require_unique_owned_structures() {
     )
     .is_empty());
     assert_eq!(
-        super::operation_source_properties(
+        operation_source_properties(
             &record.operation_label,
             std::slice::from_ref(&record),
             &[],

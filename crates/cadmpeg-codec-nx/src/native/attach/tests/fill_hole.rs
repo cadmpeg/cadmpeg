@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::attach::non_boolean_feature_definition;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_fill_hole_retains_body_affecting_family_without_roles() {
-    let definition = super::non_boolean_feature_definition("FILL_HOLE", &[], None, None, None);
+    let definition = non_boolean_feature_definition("FILL_HOLE", &[], None, None, None);
 
     assert_eq!(
         definition,

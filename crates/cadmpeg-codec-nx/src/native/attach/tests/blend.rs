@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::attach::body_writing_unresolved_feature_definition;
+use crate::native::attach::EdgeSelection;
+use crate::native::attach::FaceSelection;
+use crate::native::attach::RadiusSpec;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
-use super::*;
 
 #[test]
 fn nx_body_writing_blend_retains_unresolved_fillet_family() {
     let mut source_properties = BTreeMap::new();
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    let definition = super::body_writing_unresolved_feature_definition("BLEND", &source_properties);
+    let definition = body_writing_unresolved_feature_definition("BLEND", &source_properties);
 
     assert_eq!(
         definition,
@@ -31,7 +33,7 @@ fn nx_non_body_writing_blend_remains_native_for_semantic_review() {
     let source_properties = BTreeMap::new();
 
     assert_eq!(
-        super::body_writing_unresolved_feature_definition("BLEND", &source_properties),
+        body_writing_unresolved_feature_definition("BLEND", &source_properties),
         None
     );
 }
@@ -41,8 +43,7 @@ fn nx_body_writing_face_blend_retains_unresolved_face_blend_family() {
     let mut source_properties = BTreeMap::new();
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    let definition =
-        super::body_writing_unresolved_feature_definition("FACE_BLEND", &source_properties);
+    let definition = body_writing_unresolved_feature_definition("FACE_BLEND", &source_properties);
 
     assert_eq!(
         definition,
@@ -64,7 +65,7 @@ fn nx_non_body_writing_face_blend_remains_native_for_semantic_review() {
     let source_properties = BTreeMap::new();
 
     assert_eq!(
-        super::body_writing_unresolved_feature_definition("FACE_BLEND", &source_properties),
+        body_writing_unresolved_feature_definition("FACE_BLEND", &source_properties),
         None
     );
 }

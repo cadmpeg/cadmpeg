@@ -1,4 +1,17 @@
 use super::*;
+use crate::native::attach::attach_initial_segment_bodies;
+use crate::native::attach::boolean_feature_definition;
+use crate::native::attach::boolean_participant_writer;
+use crate::native::attach::boolean_target_writer;
+use crate::native::attach::feature_body_outputs;
+use crate::native::attach::feature_body_selection;
+use crate::native::attach::feature_body_selection_with_offset_blocks;
+use crate::native::attach::native_primary_body_references;
+use crate::native::attach::AnnotationBuilder;
+use crate::native::attach::CadIr;
+use crate::native::attach::FeatureId;
+use crate::native::history::BodyWriterHistory;
+use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::annotations::StreamHandle;
 
 #[test]
@@ -10,7 +23,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     let first = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
     let roots = BTreeMap::from([(94, 94), (122, 122)]);
     assert_eq!(
-        super::feature_body_selection(
+        feature_body_selection(
             &[94, 122],
             &roots,
             &BTreeMap::new(),
@@ -27,7 +40,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         .unwrap()
     );
     assert!(matches!(
-        super::feature_body_selection(
+        feature_body_selection(
             &[94, 123],
             &roots,
             &BTreeMap::new(),
@@ -38,7 +51,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     ));
     let aliases = BTreeMap::from([(94, 94), (150, 94)]);
     assert_eq!(
-        super::feature_body_selection(
+        feature_body_selection(
             &[94, 150],
             &aliases,
             &BTreeMap::new(),
@@ -66,7 +79,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     };
     let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
     assert_eq!(
-        super::feature_body_selection(
+        feature_body_selection(
             &[94],
             &roots,
             &bindings,
@@ -79,7 +92,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         }
     );
     assert_eq!(
-        super::feature_body_outputs(94, &segment_bindings, &bindings),
+        feature_body_outputs(94, &segment_bindings, &bindings),
         vec![first]
     );
     let ambiguous_body_bindings = BTreeMap::from([(
@@ -89,15 +102,13 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             BodyId::mint("nx:s2:body#4".to_string()).expect("identity grammar"),
         ],
     )]);
-    assert!(
-        super::feature_body_outputs(94, &segment_bindings, &ambiguous_body_bindings).is_empty()
-    );
-    assert!(super::feature_body_outputs(123, &segment_bindings, &bindings).is_empty());
+    assert!(feature_body_outputs(94, &segment_bindings, &ambiguous_body_bindings).is_empty());
+    assert!(feature_body_outputs(123, &segment_bindings, &bindings).is_empty());
     let ambiguous_bindings = [
         segment_binding("binding#0", 0, 94, 150),
         segment_binding("binding#1", 1, 94, 151),
     ];
-    assert!(super::feature_body_outputs(94, &ambiguous_bindings, &bindings).is_empty());
+    assert!(feature_body_outputs(94, &ambiguous_bindings, &bindings).is_empty());
 }
 
 #[test]
@@ -105,7 +116,7 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
     use cadmpeg_ir::features::BodySelection;
     use std::collections::BTreeMap;
 
-    let selection = super::feature_body_selection_with_offset_blocks(
+    let selection = feature_body_selection_with_offset_blocks(
         &[94],
         &BTreeMap::from([(94, 94)]),
         &BTreeMap::from([(94, "nx:om-data-blocks-3:block#94".to_string())]),
@@ -236,7 +247,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         ),
     ];
 
-    let native = super::native_primary_body_references(
+    let native = native_primary_body_references(
         &references,
         &data_block_uses,
         &[FeatureBodySegmentUse {
@@ -299,7 +310,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
-    let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream)
+    let id = attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream)
         .expect("one emitted body has an exact segment binding");
 
     assert_eq!(
@@ -345,8 +356,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
     assert!(
-        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream,)
-            .is_none()
+        attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream,).is_none()
     );
     assert!(ir.model.bodies.is_empty());
     assert!(ir.model.features.is_empty());
@@ -371,7 +381,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         source_offset: 0,
     };
     let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
-    let definition = super::boolean_feature_definition(
+    let definition = boolean_feature_definition(
         &operation,
         &BTreeMap::from([(94, 94), (122, 122)]),
         &BooleanOffsetStoreResolution::None,
@@ -439,7 +449,7 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
     ]);
 
     assert_eq!(
-        super::boolean_feature_definition(
+        boolean_feature_definition(
             &operation,
             &BTreeMap::new(),
             &BooleanOffsetStoreResolution::Complete(blocks.clone()),
@@ -491,7 +501,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         (401, "nx:om-data-blocks-3:block#401".to_string()),
         (402, "nx:om-data-blocks-3:block#402".to_string()),
     ]);
-    let definition = super::boolean_feature_definition(
+    let definition = boolean_feature_definition(
         &operation,
         &BTreeMap::new(),
         &BooleanOffsetStoreResolution::Complete(blocks.clone()),
@@ -509,21 +519,21 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         FeatureId::mint("synthetic:test:id#native-prior".to_string()).expect("identity grammar");
     let offset_prior =
         FeatureId::mint("synthetic:test:id#offset-prior".to_string()).expect("identity grammar");
-    let mut history = super::BodyWriterHistory::default();
+    let mut history = BodyWriterHistory::default();
     history.record_writer(Some(401), None, &[], &native_prior);
     history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);
     history.record_writer(None, Some(&blocks[&402]), &[], &offset_prior);
 
     assert_eq!(
-        super::boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
+        boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
         Some(&offset_prior)
     );
     assert_eq!(
-        super::boolean_participant_writer(tools, 402, Some(&blocks), &BTreeMap::new(), &history,),
+        boolean_participant_writer(tools, 402, Some(&blocks), &BTreeMap::new(), &history,),
         Some(&offset_prior)
     );
     assert_eq!(
-        super::boolean_target_writer(&definition, 401),
+        boolean_target_writer(&definition, 401),
         (None, Some("nx:om-data-blocks-3:block#401"))
     );
 
@@ -538,7 +548,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         keep_tools: false,
     });
     assert_eq!(
-        super::boolean_target_writer(&native_definition, 401),
+        boolean_target_writer(&native_definition, 401),
         (Some(401), None)
     );
 }

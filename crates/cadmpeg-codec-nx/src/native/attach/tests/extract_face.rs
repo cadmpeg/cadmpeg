@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::attach::non_boolean_feature_definition;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 #[test]
 fn nx_extract_face_retains_family_without_unproven_roles() {
-    let definition = super::non_boolean_feature_definition("EXTRACT_FACE", &[], None, None, None);
+    let definition = non_boolean_feature_definition("EXTRACT_FACE", &[], None, None, None);
 
     assert_eq!(
         definition,

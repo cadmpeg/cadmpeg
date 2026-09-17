@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::om::color_tables;
+use crate::om::expression_declaration_name;
+use crate::om::indexed_sections;
+use crate::om::ExpressionUnit;
 
 #[test]
 fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
@@ -38,7 +42,7 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
         }
     }
 
-    let tables = super::super::color_tables(&bytes);
+    let tables = color_tables(&bytes);
     assert_eq!(tables.len(), 1);
     assert_eq!(
         tables[0].background.map(|(component, _)| component.value()),
@@ -63,20 +67,20 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
 
     let mut wrong_background = bytes.clone();
     wrong_background[5] = b'b';
-    assert!(super::super::color_tables(&wrong_background).is_empty());
+    assert!(color_tables(&wrong_background).is_empty());
 
     let mut malformed = bytes.clone();
     *malformed.last_mut().unwrap() = 0x02;
-    assert!(super::super::color_tables(&malformed).is_empty());
+    assert!(color_tables(&malformed).is_empty());
     let truncated = &bytes[..bytes.len() - 1];
-    assert!(super::super::color_tables(truncated).is_empty());
+    assert!(color_tables(truncated).is_empty());
 }
 
 #[test]
 fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     let mut bytes = indexed_om_section();
     bytes.extend_from_slice(b"\x10UGS::PayloadText");
-    let sections = super::super::indexed_sections(&bytes);
+    let sections = indexed_sections(&bytes);
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].types.len(), 1);
     assert_eq!(sections[0].types[0].name, "UGS::EXP_expression");
@@ -87,7 +91,7 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
 #[test]
 fn om_numeric_expression_retains_identity_name_unit_and_value() {
     let bytes = indexed_om_section();
-    let section = super::super::indexed_sections(&bytes).remove(0);
+    let section = indexed_sections(&bytes).remove(0);
     let expression_records = section.numeric_expression_records();
     assert_eq!(expression_records[0].0, 1);
     let expressions = expression_records
@@ -105,13 +109,11 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
         expressions[0].name.qualifier(),
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
-    assert_eq!(expressions[0].unit, super::super::ExpressionUnit::Degree);
+    assert_eq!(expressions[0].unit, ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(expressions[0].constant_value(), Some(120.0));
-    let declaration = super::super::expression_declaration_name(
-        section.as_fixed().expect("fixed store")[1].bytes,
-    )
-    .unwrap();
+    let declaration =
+        expression_declaration_name(section.as_fixed().expect("fixed store")[1].bytes).unwrap();
     assert_eq!(
         declaration.name.as_str(),
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
@@ -122,14 +124,12 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
     assert_eq!(declaration.literal, Some("120"));
-    let declaration =
-        super::super::expression_declaration_name(b"\x04\x04p1\0\x04\x0a-5.1 * 2\0").unwrap();
+    let declaration = expression_declaration_name(b"\x04\x04p1\0\x04\x0a-5.1 * 2\0").unwrap();
     assert_eq!(declaration.name.as_str(), "p1");
     assert_eq!(declaration.literal, Some("-5.1 * 2"));
     let declaration =
-        super::super::expression_declaration_name(b"\x04\x04p1\0\x04\x055.1\0\x04\x05120\0")
-            .unwrap();
+        expression_declaration_name(b"\x04\x04p1\0\x04\x055.1\0\x04\x05120\0").unwrap();
     assert_eq!(declaration.literal, None);
-    assert!(super::super::expression_declaration_name(b"\x04\x04p1\0\x04\x04p2\0").is_none());
-    assert!(super::super::expression_declaration_name(b"\x04\x05p1-\0").is_none());
+    assert!(expression_declaration_name(b"\x04\x04p1\0\x04\x04p2\0").is_none());
+    assert!(expression_declaration_name(b"\x04\x05p1-\0").is_none());
 }

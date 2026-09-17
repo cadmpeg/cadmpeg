@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::attach::body_writing_unresolved_feature_definition;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
@@ -9,7 +10,7 @@ fn nx_cone_retains_body_family_without_dimensions() {
     let mut source_properties = BTreeMap::new();
     source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    let definition = super::body_writing_unresolved_feature_definition("CONE", &source_properties);
+    let definition = body_writing_unresolved_feature_definition("CONE", &source_properties);
 
     assert_eq!(
         definition,
@@ -25,7 +26,7 @@ fn nx_non_body_writing_cone_remains_native_for_semantic_review() {
     let source_properties = BTreeMap::new();
 
     assert_eq!(
-        super::body_writing_unresolved_feature_definition("CONE", &source_properties),
+        body_writing_unresolved_feature_definition("CONE", &source_properties),
         None
     );
 }

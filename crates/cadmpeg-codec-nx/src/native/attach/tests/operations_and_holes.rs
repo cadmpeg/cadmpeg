@@ -1,9 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::attach::block_placement;
+use crate::native::attach::boolean_feature_definition;
+use crate::native::attach::delete_body_feature_definition;
+use crate::native::attach::extract_body_feature_definition;
+use crate::native::attach::new_body_boolean_op;
+use crate::native::attach::non_boolean_feature_definition;
+use crate::native::attach::non_modeling_history_definition;
+use crate::native::attach::offset_store_trim_body_feature_definition;
+use crate::native::attach::projects_neutral_feature;
+use crate::native::attach::sew_body_feature_definition;
+use crate::native::attach::sphere_body_projection;
+use crate::native::attach::text_semantic_annotation;
+use crate::native::attach::trim_body_feature_definition;
+use crate::native::attach::BodyId;
+use crate::native::attach::BooleanOp;
+use crate::native::attach::CadIr;
+use crate::native::attach::DeleteBodyField;
+use crate::native::attach::FeatureDefinition;
+use crate::native::attach::FeatureId;
+use crate::native::attach::FeatureOperation;
+use crate::native::attach::FeatureTreeNodeRole;
+use crate::native::attach::Length;
+use crate::native::attach::NewBodyEvidence;
+use crate::native::attach::Point3;
+use crate::native::attach::UnresolvedFamily;
+use crate::native::history::BodyWriterHistory;
+use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Vector3;
-
-use super::*;
+use std::collections::BTreeMap;
 
 #[test]
 fn nx_boolean_keeps_body_namespace_proofs_atomic() {
@@ -25,7 +51,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
     let blocks = BTreeMap::from([(122, "nx:om-data-blocks-3:block#122".to_string())]);
 
     assert_eq!(
-        super::boolean_feature_definition(
+        boolean_feature_definition(
             &operation,
             &BTreeMap::from([(94, 94)]),
             &BooleanOffsetStoreResolution::Complete(blocks.clone()),
@@ -44,7 +70,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         })
     );
     assert_eq!(
-        super::boolean_feature_definition(
+        boolean_feature_definition(
             &operation,
             &BTreeMap::from([(94, 94), (122, 122)]),
             &BooleanOffsetStoreResolution::Unresolved,
@@ -71,7 +97,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         (122, "nx:om-data-blocks-3:block#122".to_string()),
     ]);
     assert_eq!(
-        super::boolean_feature_definition(
+        boolean_feature_definition(
             &operation,
             &BTreeMap::from([(94, 94)]),
             &BooleanOffsetStoreResolution::Complete(colliding_blocks.clone()),
@@ -118,7 +144,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         source_offset: 0,
     };
     assert_eq!(
-        super::boolean_feature_definition(
+        boolean_feature_definition(
             &mixed_store_operation,
             &BTreeMap::new(),
             &BooleanOffsetStoreResolution::Complete(mixed_store_blocks.clone()),
@@ -166,7 +192,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     let roots = BTreeMap::from([(10, 10), (20, 20), (30, 30)]);
 
     assert_eq!(
-        super::sew_body_feature_definition(Some(10), &[], &references, &roots, &BTreeMap::new(),),
+        sew_body_feature_definition(Some(10), &[], &references, &roots, &BTreeMap::new(),),
         Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::local(
                 vec![
@@ -183,7 +209,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         }))
     );
     assert!(matches!(
-    super::sew_body_feature_definition(
+    sew_body_feature_definition(
         Some(736),
         &[],
         &references,
@@ -215,7 +241,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         ),
     ]);
     assert_eq!(
-        super::sew_body_feature_definition(Some(10), &[], &references, &roots, &resolved,),
+        sew_body_feature_definition(Some(10), &[], &references, &roots, &resolved,),
         Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Resolved {
                 bodies: vec![
@@ -233,19 +259,13 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         }))
     );
     assert_eq!(
-        super::sew_body_feature_definition(Some(10), &[], &[], &roots, &BTreeMap::new(),),
+        sew_body_feature_definition(Some(10), &[], &[], &roots, &BTreeMap::new(),),
         None
     );
 
     let alias_roots = BTreeMap::from([(10, 10), (20, 20), (30, 20)]);
     assert_eq!(
-        super::sew_body_feature_definition(
-            Some(10),
-            &[],
-            &references,
-            &alias_roots,
-            &BTreeMap::new(),
-        ),
+        sew_body_feature_definition(Some(10), &[], &references, &alias_roots, &BTreeMap::new(),),
         Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::local(
                 vec![
@@ -286,7 +306,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     ];
     let offset_references = offset_operands.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::sew_body_feature_definition(
+        sew_body_feature_definition(
             None,
             &[(72, "nx:om-data-blocks-4:block#72".to_string())],
             &offset_references,
@@ -313,7 +333,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     mixed_operands[1].segment_body_bindings = vec!["segment-binding".to_string()];
     let mixed_references = mixed_operands.iter().collect::<Vec<_>>();
     assert!(matches!(
-        super::sew_body_feature_definition(
+        sew_body_feature_definition(
             None,
             &[(72, "nx:om-data-blocks-4:block#72".to_string())],
             &mixed_references,
@@ -334,11 +354,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
 
     let roots = BTreeMap::from([(20, 20)]);
     assert_eq!(
-        super::delete_body_feature_definition(
-            super::DeleteBodyField::Native(20),
-            &roots,
-            &BTreeMap::new()
-        ),
+        delete_body_feature_definition(DeleteBodyField::Native(20), &roots, &BTreeMap::new()),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#20".to_string()],
@@ -349,11 +365,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
         })
     );
     assert_eq!(
-        super::delete_body_feature_definition(
-            super::DeleteBodyField::Native(72),
-            &roots,
-            &BTreeMap::new()
-        ),
+        delete_body_feature_definition(DeleteBodyField::Native(72), &roots, &BTreeMap::new()),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::local(
                 vec!["nx:om-body-object#72".to_string()],
@@ -364,8 +376,8 @@ fn nx_delete_body_requires_a_primary_body_field() {
         })
     );
     assert_eq!(
-        super::delete_body_feature_definition(
-            super::DeleteBodyField::OffsetStore {
+        delete_body_feature_definition(
+            DeleteBodyField::OffsetStore {
                 object_index: 72,
                 data_block: "nx:om-data-blocks-2:block#72",
             },
@@ -402,7 +414,7 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
         segment_body_bindings: Vec::new(),
     };
     assert_eq!(
-        super::offset_store_trim_body_feature_definition(std::slice::from_ref(&body), &[&operand],),
+        offset_store_trim_body_feature_definition(std::slice::from_ref(&body), &[&operand],),
         Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
@@ -421,13 +433,12 @@ fn nx_trim_body_retains_exact_input_store_target_and_tools() {
             keep: BodyTrimSide::Unresolved,
         }))
     );
-    assert!(super::offset_store_trim_body_feature_definition(&[], &[&operand]).is_none());
+    assert!(offset_store_trim_body_feature_definition(&[], &[&operand]).is_none());
     assert!(
-        super::offset_store_trim_body_feature_definition(&[body.clone(), body], &[&operand],)
-            .is_none()
+        offset_store_trim_body_feature_definition(&[body.clone(), body], &[&operand],).is_none()
     );
     assert_eq!(
-        super::offset_store_trim_body_feature_definition(
+        offset_store_trim_body_feature_definition(
             std::slice::from_ref(&(114, "nx:om-data-blocks-2:block#114".to_string())),
             &[],
         ),
@@ -470,7 +481,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
     let roots = BTreeMap::from([(10, 10), (20, 20)]);
 
     assert_eq!(
-        super::trim_body_feature_definition(10, &references, &roots, &BTreeMap::new()).unwrap(),
+        trim_body_feature_definition(10, &references, &roots, &BTreeMap::new()).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
@@ -500,7 +511,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         ),
     ]);
     assert_eq!(
-        super::trim_body_feature_definition(10, &references, &roots, &resolved).unwrap(),
+        trim_body_feature_definition(10, &references, &roots, &resolved).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Resolved {
@@ -520,7 +531,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         })
     );
     assert_eq!(
-        super::trim_body_feature_definition(10, &[], &roots, &BTreeMap::new()).unwrap(),
+        trim_body_feature_definition(10, &[], &roots, &BTreeMap::new()).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::local(
@@ -538,7 +549,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 
     let same_body = BTreeMap::from([(10, 10), (20, 10)]);
     assert!(matches!(
-        super::trim_body_feature_definition(
+        trim_body_feature_definition(
             10,
             &references,
             &same_body,
@@ -554,7 +565,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
     mixed_operand.segment_body_bindings.clear();
     let mixed_references = vec![&mixed_operand];
     assert!(matches!(
-        super::trim_body_feature_definition(
+        trim_body_feature_definition(
             10,
             &mixed_references,
             &roots,
@@ -569,7 +580,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 #[test]
 fn nx_named_operation_families_preserve_unresolved_semantics() {
     assert!(matches!(
-        super::non_boolean_feature_definition("SKETCH", &[], None, None, None),
+        non_boolean_feature_definition("SKETCH", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
@@ -578,7 +589,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         )
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition(
+        non_boolean_feature_definition(
             "SIMPLE HOLE",
             &["Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer"],
             None,
@@ -599,13 +610,13 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
                 cadmpeg_ir::features::HoleForm::Chamfer,
             ))), None,))));
     assert!(matches!(
-        super::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None, None, None,),
+        non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None, None, None,),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Hole { extent: None, .. }
         )
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition(
+        non_boolean_feature_definition(
             "CBORE_HOLE",
             &["Hole_GeneralHole_Counterbored_Through"],
             None,
@@ -623,7 +634,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
                 ..
             }, None,))));
     assert!(matches!(
-        super::non_boolean_feature_definition(
+        non_boolean_feature_definition(
             "SIMPLE HOLE",
             &["Hole_GeneralHole_Simple_Blind"],
             None,
@@ -639,7 +650,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
                 ..
             }, None,))));
     assert!(matches!(
-        super::non_boolean_feature_definition(
+        non_boolean_feature_definition(
             "CSUNK_HOLE",
             &["Hole_GeneralHole_Countersunk_Through"],
             None,
@@ -661,7 +672,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         "Hole_Unknown",
     ] {
         assert!(matches!(
-            super::non_boolean_feature_definition(
+            non_boolean_feature_definition(
                 "SIMPLE HOLE",
                 &[
                     "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
@@ -681,7 +692,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
                 }, None,))));
     }
     assert!(matches!(
-        super::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
+        non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Unresolved {
                 family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
@@ -689,7 +700,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         )
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition("EXTRACT_DATUM_PLANE", &[], None, None, None,),
+        non_boolean_feature_definition("EXTRACT_DATUM_PLANE", &[], None, None, None,),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Unresolved {
                 family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
@@ -697,7 +708,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         )
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition("DATUM_CSYS", &[], None, None, None),
+        non_boolean_feature_definition("DATUM_CSYS", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Unresolved {
                 family: cadmpeg_ir::features::UnresolvedFamily::DatumCoordinateSystem
@@ -705,7 +716,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         )
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition("MASTER SNAPSHOT BODY", &[], None, None, None,),
+        non_boolean_feature_definition("MASTER SNAPSHOT BODY", &[], None, None, None,),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::BaseFeature {
                 bodies: cadmpeg_ir::features::BodySelection::Unresolved,
@@ -713,14 +724,14 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         )
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition("TEXT", &["annotation", "Arial"], None, None, None,),
+        non_boolean_feature_definition("TEXT", &["annotation", "Arial"], None, None, None,),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native { .. }
         )
     ));
-    assert!(!super::projects_neutral_feature("TEXT"));
+    assert!(!projects_neutral_feature("TEXT"));
     assert!(matches!(
-        super::non_boolean_feature_definition("BLOCK", &[], Some([10.0, 20.0, 30.0]), None, None,),
+        non_boolean_feature_definition("BLOCK", &[], Some([10.0, 20.0, 30.0]), None, None,),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Block {
             dimensions: Some([
                 actual_dimensions,
@@ -732,7 +743,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         }) if actual_dimensions.get() == 10.0 && actual_dimensions_2.get() == 20.0 && actual_dimensions_3.get() == 30.0
     ));
     assert_eq!(
-        super::non_boolean_feature_definition("BLOCK", &[], None, None, None),
+        non_boolean_feature_definition("BLOCK", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Block {
                 dimensions: None,
@@ -758,7 +769,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
         ),
     ]);
     assert!(matches!(
-        super::non_modeling_history_definition(
+        non_modeling_history_definition(
             "EXTRACT_STRING",
             &object_indices,
             &[],
@@ -816,7 +827,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
         ),
     ];
     for (object_indices, outputs, body_references, body_operands, strings, properties) in rejected {
-        assert!(super::non_modeling_history_definition(
+        assert!(non_modeling_history_definition(
             "EXTRACT_STRING",
             &object_indices,
             &outputs,
@@ -830,7 +841,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
 
     let mut extra_property = source_properties.clone();
     extra_property.insert("input_block.0".into(), "block".into());
-    assert!(super::non_modeling_history_definition(
+    assert!(non_modeling_history_definition(
         "EXTRACT_STRING",
         &object_indices,
         &[],
@@ -844,9 +855,8 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
 
 #[test]
 fn nx_text_payload_projects_semantic_text_and_font_family() {
-    let annotation =
-        super::text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
-            .expect("valid text annotation");
+    let annotation = text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
+        .expect("valid text annotation");
     assert_eq!(annotation.object, "nx:test:text#1");
     assert_eq!(
         annotation.kind,
@@ -857,14 +867,13 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
     assert_eq!(annotation.native_ref, "nx:test:text#1");
     assert_eq!(annotation.order, 7);
 
-    let empty = super::text_semantic_annotation("nx:test:text#empty", 8, &["", ""])
+    let empty = text_semantic_annotation("nx:test:text#empty", 8, &["", ""])
         .expect("empty text fields remain a valid annotation");
     assert_eq!(empty.text, [""]);
     assert_eq!(empty.parameters["font_family"], "");
 
     assert!(
-        super::text_semantic_annotation("nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],)
-            .is_none()
+        text_semantic_annotation("nx:test:text#2", 0, &["ambiguous", "Arial", "extra"],).is_none()
     );
 }
 
@@ -880,7 +889,7 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
     )]);
     assert_eq!(
-        super::extract_body_feature_definition(Some(20), &[], &roots, &bodies),
+        extract_body_feature_definition(Some(20), &[], &roots, &bodies),
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::Resolved {
                 bodies: vec![
@@ -891,7 +900,7 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         })
     );
     assert_eq!(
-        super::extract_body_feature_definition(
+        extract_body_feature_definition(
             None,
             &[(72, "nx:om-data-blocks-2:block#72".to_string())],
             &roots,
@@ -906,7 +915,7 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
         })
     );
     assert_eq!(
-        super::extract_body_feature_definition(
+        extract_body_feature_definition(
             None,
             &[
                 (72, "nx:om-data-blocks-2:block#72".to_string()),
@@ -934,7 +943,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         ("INTERSECT", BooleanKind::Intersect),
     ] {
         assert_eq!(
-            super::non_boolean_feature_definition(kind, &[], None, None, None),
+            non_boolean_feature_definition(kind, &[], None, None, None),
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Unresolved,
@@ -949,38 +958,38 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     }
 
     assert_eq!(
-        super::non_boolean_feature_definition("EXTRACT_BODY", &[], None, None, None),
+        non_boolean_feature_definition("EXTRACT_BODY", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::ExtractBody {
             source: BodySelection::Unresolved,
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("SKIN", &[], None, None, None),
+        non_boolean_feature_definition("SKIN", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Loft
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("Studio Surface", &[], None, None, None),
+        non_boolean_feature_definition("Studio Surface", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::FreeformSurface
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("POINT", &[], None, None, None),
+        non_boolean_feature_definition("POINT", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPoint
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("DRAFT", &[], None, None, None),
+        non_boolean_feature_definition("DRAFT", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Draft
         })
     );
 
     assert!(matches!(
-        super::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None), FeatureDefinition::Operation(FeatureOperation::Hole {
+        non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             ..
         }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
@@ -988,7 +997,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
                 ..
             },))));
     assert!(matches!(
-        super::non_boolean_feature_definition(
+        non_boolean_feature_definition(
             "HOLE PACKAGE",
             &[],
             None,
@@ -1003,7 +1012,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
                 ..
             },) if actual_diameter.get() == 8.0)));
     assert!(matches!(
-        super::non_boolean_feature_definition("RIB", &[], None, None, None),
+        non_boolean_feature_definition("RIB", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
                 draft: RibDraft::Unresolved,
@@ -1013,14 +1022,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         })
     ));
     assert_eq!(
-        super::non_boolean_feature_definition("BLEND", &[], None, None, None),
+        non_boolean_feature_definition("BLEND", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "BLEND".into(),
             parameters: BTreeMap::new(),
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("FACE_BLEND", &[], None, None, None),
+        non_boolean_feature_definition("FACE_BLEND", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "FACE_BLEND".into(),
             parameters: BTreeMap::new(),
@@ -1028,7 +1037,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     );
     for kind in ["CPROJ", "CPROJ_CMB"] {
         assert_eq!(
-            super::non_boolean_feature_definition(kind, &[], None, None, None),
+            non_boolean_feature_definition(kind, &[], None, None, None),
             FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
                 source: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
                 target_faces: FaceSelection::Unresolved,
@@ -1040,7 +1049,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         );
     }
     assert_eq!(
-        super::non_boolean_feature_definition("TRIMMED_SH", &[], None, None, None),
+        non_boolean_feature_definition("TRIMMED_SH", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: FaceSelection::Unresolved,
             tool: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
@@ -1048,7 +1057,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("EXTEND_SHEET", &[], None, None, None),
+        non_boolean_feature_definition("EXTEND_SHEET", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
@@ -1056,7 +1065,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         })
     );
     assert!(matches!(
-        super::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
+        non_boolean_feature_definition("CHAMFER", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             flip_direction: false,
@@ -1066,14 +1075,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         }])
     ));
     assert_eq!(
-        super::non_boolean_feature_definition("SEW", &[], None, None, None),
+        non_boolean_feature_definition("SEW", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Unresolved).try_into().unwrap(),
             gap_tolerance: None,
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("TRIM BODY", &[], None, None, None),
+        non_boolean_feature_definition("TRIM BODY", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Unresolved,
@@ -1085,7 +1094,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
+        non_boolean_feature_definition("EXTRUDE", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Planar(
                 cadmpeg_ir::features::PlanarProfileRef::Unresolved("EXTRUDE".into())
@@ -1107,14 +1116,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         })
     );
     assert_eq!(
-        super::non_boolean_feature_definition("OFFSET", &[], None, None, None),
+        non_boolean_feature_definition("OFFSET", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
         })
     );
     assert!(matches!(
-        super::non_boolean_feature_definition("THICKEN_SHEET", &[], None, None, None),
+        non_boolean_feature_definition("THICKEN_SHEET", &[], None, None, None),
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: FaceSelection::Unresolved,
             thickness: None,
@@ -1129,7 +1138,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         "Instance Feature",
     ] {
         assert!(
-            matches!(&(super::non_boolean_feature_definition(kind, &[], None, None, None)),
+            matches!(&(non_boolean_feature_definition(kind, &[], None, None, None)),
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds,
             pattern: admitted_pattern,
@@ -1141,8 +1150,8 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
 
 #[test]
 fn nx_container_record_is_not_a_modeling_feature() {
-    assert!(!super::projects_neutral_feature("Container"));
-    assert!(super::projects_neutral_feature("EXTRUDE"));
+    assert!(!projects_neutral_feature("Container"));
+    assert!(projects_neutral_feature("EXTRUDE"));
 }
 
 #[test]
@@ -1189,7 +1198,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     }
     let output = ir.model.bodies[0].id.clone();
     let placement = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
-        super::block_placement(ir, dimensions, outputs).map(|(_, transform)| transform)
+        block_placement(ir, dimensions, outputs).map(|(_, transform)| transform)
     };
 
     assert_eq!(
@@ -1197,7 +1206,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_eq!(
-        super::block_placement(&ir, dimensions, &[]),
+        block_placement(&ir, dimensions, &[]),
         Some((output.clone(), cadmpeg_ir::transform::Transform::identity()))
     );
     assert_eq!(
@@ -1385,7 +1394,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ));
 
     assert_eq!(
-        super::sphere_body_projection(&ir, &[]),
+        sphere_body_projection(&ir, &[]),
         Some((
             body.clone(),
             Point3::new(1., 2., 3.),
@@ -1393,7 +1402,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         ))
     );
     assert_eq!(
-        super::sphere_body_projection(&ir, std::slice::from_ref(&body)),
+        sphere_body_projection(&ir, std::slice::from_ref(&body)),
         Some((
             body.clone(),
             Point3::new(1., 2., 3.),
@@ -1440,8 +1449,8 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ir.model.faces.push(second_face);
     ir.model.surfaces.push(second_surface);
 
-    assert!(super::sphere_body_projection(&ir, &[]).is_none());
-    assert!(super::sphere_body_projection(
+    assert!(sphere_body_projection(&ir, &[]).is_none());
+    assert!(sphere_body_projection(
         &ir,
         &[
             body,
@@ -1460,7 +1469,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
 
     assert_eq!(
-        super::new_body_boolean_op(&super::NewBodyEvidence {
+        new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
@@ -1478,7 +1487,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     let mut fallback_history = BodyWriterHistory::default();
     fallback_history.record_writer(None, None, std::slice::from_ref(&body), &fallback_prior);
     assert_eq!(
-        super::new_body_boolean_op(&super::NewBodyEvidence {
+        new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
@@ -1494,7 +1503,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     let prior = FeatureId::mint("synthetic:test:id#prior-feature").expect("identity grammar");
     history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
     assert_eq!(
-        super::new_body_boolean_op(&super::NewBodyEvidence {
+        new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
@@ -1507,7 +1516,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::new_body_boolean_op(&super::NewBodyEvidence {
+        new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: false,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
@@ -1525,7 +1534,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     let mut offset_history = BodyWriterHistory::default();
     offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
     assert_eq!(
-        super::new_body_boolean_op(&super::NewBodyEvidence {
+        new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
@@ -1540,7 +1549,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
 
     let offset_without_prior = BodyWriterHistory::default();
     assert_eq!(
-        super::new_body_boolean_op(&super::NewBodyEvidence {
+        new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
@@ -1554,7 +1563,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     );
 
     assert_eq!(
-        super::new_body_boolean_op(&super::NewBodyEvidence {
+        new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
@@ -1568,7 +1577,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     );
 
     assert_eq!(
-        super::new_body_boolean_op(&super::NewBodyEvidence {
+        new_body_boolean_op(&NewBodyEvidence {
             has_complete_projection: true,
             has_complete_primitive_construction: true,
             outputs: std::slice::from_ref(&body),

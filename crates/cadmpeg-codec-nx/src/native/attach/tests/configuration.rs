@@ -3,11 +3,50 @@
 use crate::decode::feature_completeness::{
     combine_definition_is_incomplete, incomplete_expression_parameters,
 };
+use crate::native::attach::attach_active_configuration_feature_states;
+use crate::native::attach::attach_active_configuration_parameter_values;
+use crate::native::attach::attach_block_dimension_parameter_consumers;
+use crate::native::attach::attach_current_feature_states;
+use crate::native::attach::attach_expression_parameters;
+use crate::native::attach::attach_sketch_graph;
+use crate::native::attach::blind_hole_operations;
+use crate::native::attach::boolean_target_output;
+use crate::native::attach::expression_parameter_id;
+use crate::native::attach::extrude_boolean_op;
+use crate::native::attach::extrude_feature_definition;
+use crate::native::attach::hole_package_projection;
+use crate::native::attach::native_feature_parameters;
+use crate::native::attach::native_result_body_identity;
+use crate::native::attach::non_boolean_feature_definition_with_parameters;
+use crate::native::attach::parameter_owner_dependencies;
+use crate::native::attach::resolve_rm_source_color_bindings;
+use crate::native::attach::simple_hole_operations;
+use crate::native::attach::Angle;
+use crate::native::attach::AnnotationBuilder;
+use crate::native::attach::BodyId;
+use crate::native::attach::CadIr;
+use crate::native::attach::ConfigurationId;
+use crate::native::attach::DesignConfiguration;
+use crate::native::attach::DesignParameter;
+use crate::native::attach::Feature;
+use crate::native::attach::FeatureDefinition;
+use crate::native::attach::FeatureId;
+use crate::native::attach::FeatureOperation;
+use crate::native::attach::FeatureTreeNodeRole;
+use crate::native::attach::HoleProjection;
+use crate::native::attach::Length;
+use crate::native::attach::ParameterId;
+use crate::native::attach::ParameterValue;
+use crate::native::attach::RmSourceColorBinding;
+use crate::native::attach::SketchGeometryDefinition;
+use crate::native::attach::SketchSources;
+use crate::native::history::active_feature_closure;
+use crate::native::history::BodyWriterHistory;
 use cadmpeg_ir::annotations::StreamHandle;
+use std::collections::BTreeMap;
 
 use cadmpeg_ir::math::Point2;
 
-use super::*;
 use crate::native::om::display_color::{
     DisplayColorFrame, RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
 };
@@ -223,7 +262,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .map(|operation| (operation.clone(), chamfer))
         .collect();
 
-    let projection = super::hole_package_projection(
+    let projection = hole_package_projection(
         &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
@@ -249,7 +288,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
             template
         })
         .collect::<Vec<_>>();
-    let projection = super::hole_package_projection(
+    let projection = hole_package_projection(
         &cadmpeg_ir::document::CadIr::empty(),
         &untreated_templates,
         std::slice::from_ref(&group),
@@ -268,7 +307,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
 
     let mut mixed_templates = untreated_templates.clone();
     mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
-    let projection = super::hole_package_projection(
+    let projection = hole_package_projection(
         &cadmpeg_ir::document::CadIr::empty(),
         &mixed_templates,
         std::slice::from_ref(&group),
@@ -285,7 +324,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         "simple-b".into(),
         vec![BodyId::mint("test:model:entity#other-body").expect("identity grammar")],
     );
-    let projection = super::hole_package_projection(
+    let projection = hole_package_projection(
         &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
@@ -346,7 +385,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     });
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_active_configuration_parameter_values(&mut ir, &mut annotations)
+    attach_active_configuration_parameter_values(&mut ir, &mut annotations)
         .expect("valid exactness fields");
 
     assert_eq!(
@@ -441,7 +480,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ir.model.parameters = std::mem::take(parameters);
         ir.model.configurations.push(configuration());
 
-        super::attach_active_configuration_parameter_values(&mut ir, &mut annotations)
+        attach_active_configuration_parameter_values(&mut ir, &mut annotations)
             .expect("valid exactness fields");
 
         assert!(ir.model.configurations[0].parameter_values.is_empty());
@@ -503,7 +542,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     ir.model.configurations = vec![configuration(true, Some((vec![body]).try_into().unwrap()))];
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_active_configuration_feature_states(&mut ir, &mut annotations)
+    attach_active_configuration_feature_states(&mut ir, &mut annotations)
         .expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
@@ -574,15 +613,14 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     ];
     let mut annotations = AnnotationBuilder::new();
 
-    super::attach_current_feature_states(&mut ir, &mut annotations)
-        .expect("valid exactness fields");
+    attach_current_feature_states(&mut ir, &mut annotations).expect("valid exactness fields");
 
     assert_eq!(ir.model.features[0].suppressed, Some(false));
     assert_eq!(ir.model.features[1].suppressed, Some(false));
     assert_eq!(ir.model.features[2].suppressed, None);
 
     ir.model.features[0].ordinal = 2;
-    assert!(super::active_feature_closure(
+    assert!(active_feature_closure(
         &ir,
         &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
     )
@@ -590,7 +628,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     ir.model.features[0].ordinal = 1;
     ir.model.features[2].id =
         FeatureId::mint("synthetic:test:id#writer").expect("identity grammar");
-    assert!(super::active_feature_closure(
+    assert!(active_feature_closure(
         &ir,
         &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
     )
@@ -598,7 +636,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     ir.model.features[2].id =
         FeatureId::mint("synthetic:test:id#unrelated").expect("identity grammar");
     ir.model.features[1].suppressed = Some(true);
-    assert!(super::active_feature_closure(
+    assert!(active_feature_closure(
         &ir,
         &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
     )
@@ -657,7 +695,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ),
     )];
     let mut annotations = AnnotationBuilder::new();
-    super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations)
+    attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations)
         .expect("valid exactness fields");
     assert_eq!(missing_dependency.model.features[0].suppressed, None);
     assert!(missing_dependency.model.configurations[0]
@@ -669,7 +707,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     unresolved_bodies.model.features[0].dependencies.clear();
     unresolved_bodies.model.configurations =
         vec![configuration("synthetic:test:id#active", true, None)];
-    super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations)
+    attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations)
         .expect("valid exactness fields");
     assert_eq!(unresolved_bodies.model.features[0].suppressed, None);
     assert!(unresolved_bodies.model.configurations[0]
@@ -689,7 +727,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
                 .unwrap(),
         ),
     )];
-    super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations)
+    attach_active_configuration_feature_states(&mut contradicted, &mut annotations)
         .expect("valid exactness fields");
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
     assert!(contradicted.model.configurations[0]
@@ -719,7 +757,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
             ),
         ),
     ];
-    super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations)
+    attach_active_configuration_feature_states(&mut ambiguous, &mut annotations)
         .expect("valid exactness fields");
     assert_eq!(ambiguous.model.features[0].suppressed, None);
     assert!(ambiguous
@@ -761,10 +799,10 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let sketch = super::attach_sketch_graph(
+    let sketch = attach_sketch_graph(
         &mut ir,
         &label,
-        &super::SketchSources {
+        &SketchSources {
             point_uses: &[&point_use],
             point_groups: std::slice::from_ref(&group),
             points: &[],
@@ -787,10 +825,10 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut rejected_ir = CadIr::empty();
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    assert!(super::attach_sketch_graph(
+    assert!(attach_sketch_graph(
         &mut rejected_ir,
         &label,
-        &super::SketchSources {
+        &SketchSources {
             point_uses: &[&point_use, &point_use],
             point_groups: &[group],
             points: &[],
@@ -857,10 +895,10 @@ fn named_sketch_points_project_without_an_external_named_point() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let sketch = super::attach_sketch_graph(
+    let sketch = attach_sketch_graph(
         &mut ir,
         &label,
-        &super::SketchSources {
+        &SketchSources {
             point_uses: &[],
             point_groups: std::slice::from_ref(&group),
             points: std::slice::from_ref(&point),
@@ -919,7 +957,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         parameter_use("use-b", "expression-b"),
     ];
     let use_refs = uses.iter().collect::<Vec<_>>();
-    let parameters = super::native_feature_parameters(&use_refs, &expressions);
+    let parameters = native_feature_parameters(&use_refs, &expressions);
     assert_eq!(
         parameters,
         std::collections::BTreeMap::from([
@@ -928,12 +966,12 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         ])
     );
     assert_eq!(
-        super::non_boolean_feature_definition_with_parameters(
+        non_boolean_feature_definition_with_parameters(
             "UNKNOWN OPERATION",
             &[],
             None,
             None,
-            super::HoleProjection::default(),
+            HoleProjection::default(),
             cadmpeg_core::text::named_entries("UNKNOWN OPERATION", parameters)
                 .expect("the fixture states named parameters"),
         )
@@ -955,23 +993,23 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         )
     );
     assert!(matches!(
-        super::non_boolean_feature_definition_with_parameters(
+        non_boolean_feature_definition_with_parameters(
             "DELETE",
             &[],
             None,
             None,
-            super::HoleProjection::default(),
+            HoleProjection::default(),
             std::collections::BTreeMap::default(),
         ).unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. }) if kind.as_str() == "DELETE"
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition_with_parameters(
+        non_boolean_feature_definition_with_parameters(
             "THRU_CURVE",
             &[],
             None,
             None,
-            super::HoleProjection::default(),
+            HoleProjection::default(),
             std::collections::BTreeMap::new(),
         )
         .unwrap(),
@@ -982,12 +1020,12 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         )
     ));
     assert!(matches!(
-        super::non_boolean_feature_definition_with_parameters(
+        non_boolean_feature_definition_with_parameters(
             "SWP104",
             &[],
             None,
             None,
-            super::HoleProjection::default(),
+            HoleProjection::default(),
             std::collections::BTreeMap::new(),
         ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
@@ -1000,11 +1038,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),
     ];
-    assert!(super::native_feature_parameters(&use_refs, &duplicate_expressions).is_empty());
+    assert!(native_feature_parameters(&use_refs, &duplicate_expressions).is_empty());
     let unresolved = [parameter_use("use-c", "missing")];
     assert!(
-        super::native_feature_parameters(&unresolved.iter().collect::<Vec<_>>(), &expressions,)
-            .is_empty()
+        native_feature_parameters(&unresolved.iter().collect::<Vec<_>>(), &expressions,).is_empty()
     );
 }
 
@@ -1012,12 +1049,12 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
 fn nx_intersection_labels_project_without_fabricating_construction_fields() {
     for operation in ["ASSOCIATIVE_INTERSECTION", "Intersection Curve"] {
         assert!(matches!(
-            super::non_boolean_feature_definition_with_parameters(
+            non_boolean_feature_definition_with_parameters(
                 operation,
                 &[],
                 None,
                 None,
-                super::HoleProjection::default(),
+                HoleProjection::default(),
                 std::collections::BTreeMap::default(),
             ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::SectionShape {
                 operands,
@@ -1029,21 +1066,19 @@ fn nx_intersection_labels_project_without_fabricating_construction_fields() {
 
 #[test]
 fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
-    assert!(
-        matches!(&(super::non_boolean_feature_definition_with_parameters(
-                "Multi Instance Output",
-                &[],
-                None,
-                None,
-                super::HoleProjection::default(),
-                std::collections::BTreeMap::default(),
-            ).unwrap()),
-            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
-                seeds,
-                pattern: admitted_pattern,
-            }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Unresolved { form: None } if seeds.is_empty())
-        )
-    );
+    assert!(matches!(&(non_boolean_feature_definition_with_parameters(
+            "Multi Instance Output",
+            &[],
+            None,
+            None,
+            HoleProjection::default(),
+            std::collections::BTreeMap::default(),
+        ).unwrap()),
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
+            seeds,
+            pattern: admitted_pattern,
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Unresolved { form: None } if seeds.is_empty())
+    ));
 }
 
 #[test]
@@ -1063,7 +1098,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         source_offset: 0,
     };
     assert_eq!(
-        super::native_result_body_identity(None, Some(&boolean)),
+        native_result_body_identity(None, Some(&boolean)),
         Some((
             cadmpeg_core::nonblank_literal!("nx:test:boolean#0:target"),
             "nx:test:boolean#0".into(),
@@ -1078,7 +1113,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         source_offset: 3,
     };
     assert_eq!(
-        super::native_result_body_identity(Some(&primary), Some(&boolean)),
+        native_result_body_identity(Some(&primary), Some(&boolean)),
         Some((
             cadmpeg_core::nonblank_literal!("nx:test:primary#0"),
             "nx:test:primary#0".into(),
@@ -1105,7 +1140,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
         op: BooleanKind::Join,
         keep_tools: false,
     });
-    assert_eq!(super::boolean_target_output(Some(&definition)), Some(body));
+    assert_eq!(boolean_target_output(Some(&definition)), Some(body));
 
     let ambiguous = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
@@ -1117,7 +1152,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
         op: BooleanKind::Join,
         keep_tools: false,
     });
-    assert!(super::boolean_target_output(Some(&ambiguous)).is_none());
+    assert!(boolean_target_output(Some(&ambiguous)).is_none());
 }
 
 #[test]
@@ -1127,17 +1162,17 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
 
     for kind in ["SIMPLE HOLE", "HOLE PACKAGE"] {
         assert!(matches!(
-            super::non_boolean_feature_definition_with_parameters(
+            non_boolean_feature_definition_with_parameters(
                 kind,
                 &[],
                 None,
                 None,
-                super::HoleProjection {
+                HoleProjection {
                     placements: vec![HolePlacement::Axis {
                         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
                         axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
                     }],
-                    ..super::HoleProjection::default()
+                    ..HoleProjection::default()
                 },
                 std::collections::BTreeMap::new(),
             ).unwrap(),
@@ -1160,7 +1195,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     };
 
     assert_eq!(
-        super::extrude_feature_definition(
+        extrude_feature_definition(
             Some("nx:profile#1"),
             None,
             BooleanOp::NewBody,
@@ -1185,7 +1220,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
         })
     );
     assert!(matches!(
-        super::extrude_feature_definition(
+        extrude_feature_definition(
             None,
             None,
             BooleanOp::Unresolved,
@@ -1198,7 +1233,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
         })
     ));
     assert!(matches!(
-        super::extrude_feature_definition(
+        extrude_feature_definition(
             Some("nx:profile#1"),
             Some("nx:profile#2"),
             BooleanOp::Unresolved,
@@ -1220,14 +1255,14 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
-    let history = super::BodyWriterHistory::default();
+    let history = BodyWriterHistory::default();
     assert_eq!(
-        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid]),
+        extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid]),
         BooleanOp::NewBody
     );
     assert_eq!(
-        super::extrude_boolean_op(
-            &super::BodyWriterHistory::default(),
+        extrude_boolean_op(
+            &BodyWriterHistory::default(),
             None,
             None,
             &[BodyKind::Solid],
@@ -1235,37 +1270,36 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Sheet]),
+        extrude_boolean_op(&history, Some(7), None, &[BodyKind::Sheet]),
         BooleanOp::NewBody
     );
     assert_eq!(
-        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Wire]),
+        extrude_boolean_op(&history, Some(7), None, &[BodyKind::Wire]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::General]),
+        extrude_boolean_op(&history, Some(7), None, &[BodyKind::General]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid, BodyKind::Solid],),
+        extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid, BodyKind::Solid],),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(&history, Some(7), None, &[]),
+        extrude_boolean_op(&history, Some(7), None, &[]),
         BooleanOp::Unresolved
     );
 
-    let prior =
-        super::FeatureId::mint("synthetic:test:id#prior-offset-writer").expect("identity grammar");
+    let prior = FeatureId::mint("synthetic:test:id#prior-offset-writer").expect("identity grammar");
     let offset_body = "store:block#7";
-    let mut offset_history = super::BodyWriterHistory::default();
+    let mut offset_history = BodyWriterHistory::default();
     offset_history.record_writer(None, Some(offset_body), &[], &prior);
     assert_eq!(
-        super::extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
+        extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(
+        extrude_boolean_op(
             &offset_history,
             None,
             Some("store:block#8"),
@@ -1306,7 +1340,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
+    attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
         .expect("valid exactness fields");
     let parameter_owners = ir
         .model
@@ -1317,10 +1351,10 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     let parameter_references = dimensions
         .dimensions
         .iter()
-        .filter_map(|dimension| super::expression_parameter_id(&dimension.expression))
+        .filter_map(|dimension| expression_parameter_id(&dimension.expression))
         .collect::<Vec<_>>();
     assert_eq!(
-        super::parameter_owner_dependencies(&parameter_owners, &parameter_references),
+        parameter_owner_dependencies(&parameter_owners, &parameter_references),
         [ir.model.features[0].id.clone()]
     );
     assert_eq!(
@@ -1333,7 +1367,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             })
             .collect::<Vec<_>>()
     );
-    super::attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations)
+    attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations)
         .expect("valid exactness fields");
     assert_eq!(ir.model.parameters.len(), 3);
     for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
@@ -1373,7 +1407,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
+    attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
         .expect("valid exactness fields");
 
     assert_eq!(
@@ -1416,7 +1450,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations)
+    attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations)
         .expect("valid exactness fields");
 
     assert_eq!(ir.model.parameters[0].value, None);

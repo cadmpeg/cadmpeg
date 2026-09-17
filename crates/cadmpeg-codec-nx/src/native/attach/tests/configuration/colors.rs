@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::native::attach::resolve_rm_face_color_bindings;
+use crate::native::attach::resolve_rm_face_colors;
+use crate::native::attach::resolve_rm_source_color_bindings;
+use crate::native::attach::Color;
+use crate::native::attach::RmFaceColorBinding;
+use crate::native::attach::RmSourceColorBinding;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 #[test]
 fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {

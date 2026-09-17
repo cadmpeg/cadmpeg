@@ -2,11 +2,21 @@
 
 //! Feature-output lineage from operation body-write frames.
 
-use super::*;
+use crate::native::attach::body_writes_match_boolean_target;
+use crate::native::attach::complete_operation_body_image_outputs;
+use crate::native::attach::feature_result_group_members;
+use crate::native::attach::merge_operation_body_outputs;
+use crate::native::attach::operation_body_group_partition_outputs_by_write;
+use crate::native::attach::operation_body_identity_outputs_by_write;
+use crate::native::attach::operation_body_image_outputs_by_write;
+use crate::native::attach::operation_body_write_result_group_members;
+use crate::native::attach::BodyId;
 use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
 use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
 use crate::NxCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::io::Cursor;
 
 fn body_write(group: u8, image: u8) -> Vec<u8> {
@@ -79,7 +89,7 @@ fn body_image_outputs_require_one_body_per_binding() {
         ),
     ]);
 
-    let outputs = super::operation_body_image_outputs_by_write(&uses, &bodies);
+    let outputs = operation_body_image_outputs_by_write(&uses, &bodies);
 
     assert_eq!(
         outputs.get("write-a"),
@@ -104,7 +114,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
         ),
     ]);
     assert_eq!(
-        super::complete_operation_body_image_outputs(&writes, &complete),
+        complete_operation_body_image_outputs(&writes, &complete),
         [
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
             BodyId::mint("test:model:entity#body-b").expect("identity grammar")
@@ -115,7 +125,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
         "write-a",
         BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
     )]);
-    assert!(super::complete_operation_body_image_outputs(&writes, &partial).is_empty());
+    assert!(complete_operation_body_image_outputs(&writes, &partial).is_empty());
 
     let duplicate = BTreeMap::from([
         (
@@ -127,7 +137,7 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
             BodyId::mint("test:model:entity#body").expect("identity grammar"),
         ),
     ]);
-    assert!(super::complete_operation_body_image_outputs(&writes, &duplicate).is_empty());
+    assert!(complete_operation_body_image_outputs(&writes, &duplicate).is_empty());
 }
 
 fn native_boolean(
@@ -160,24 +170,21 @@ fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
     .unwrap();
     let boolean = native_boolean(40, vec![41, 42]);
 
-    assert!(super::body_writes_match_boolean_target(&[&write], None));
-    assert!(super::body_writes_match_boolean_target(&[], Some(&boolean)));
-    assert!(super::body_writes_match_boolean_target(
-        &[&write],
-        Some(&boolean)
-    ));
+    assert!(body_writes_match_boolean_target(&[&write], None));
+    assert!(body_writes_match_boolean_target(&[], Some(&boolean)));
+    assert!(body_writes_match_boolean_target(&[&write], Some(&boolean)));
 
     let wrong_target = native_boolean(43, vec![41, 42]);
-    assert!(!super::body_writes_match_boolean_target(
+    assert!(!body_writes_match_boolean_target(
         &[&write],
         Some(&wrong_target)
     ));
     let target_is_tool = native_boolean(40, vec![40, 41]);
-    assert!(!super::body_writes_match_boolean_target(
+    assert!(!body_writes_match_boolean_target(
         &[&write],
         Some(&target_is_tool)
     ));
-    assert!(!super::body_writes_match_boolean_target(
+    assert!(!body_writes_match_boolean_target(
         &[&write, &write],
         Some(&boolean)
     ));
@@ -194,7 +201,7 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
         vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
     )]);
 
-    assert!(super::operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
+    assert!(operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
 }
 
 #[test]
@@ -217,7 +224,7 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
         ),
     ]);
 
-    let outputs = super::operation_body_identity_outputs_by_write(&uses, &bodies);
+    let outputs = operation_body_identity_outputs_by_write(&uses, &bodies);
 
     assert_eq!(
         outputs.get("write-a"),
@@ -234,7 +241,7 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
     )]);
     let mut conflicts = BTreeSet::new();
 
-    super::merge_operation_body_outputs(
+    merge_operation_body_outputs(
         &mut outputs,
         &mut conflicts,
         [(
@@ -242,7 +249,7 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
             BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
         )],
     );
-    super::merge_operation_body_outputs(
+    merge_operation_body_outputs(
         &mut outputs,
         &mut conflicts,
         [(
@@ -287,7 +294,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     };
 
     let writes = [write_a, write_b];
-    let outputs = super::operation_body_group_partition_outputs_by_write(
+    let outputs = operation_body_group_partition_outputs_by_write(
         &writes,
         &[use_],
         std::slice::from_ref(&body),
@@ -355,7 +362,7 @@ fn result_topology_uses_only_unique_current_group_members() {
         group_member("historical", GroupNodeFamily::Face, None),
         group_member("shell", GroupNodeFamily::Shell, Some(43)),
     ];
-    let result = super::feature_result_group_members(
+    let result = feature_result_group_members(
         use_.partition_stream_ordinal,
         &use_.parasolid_group_members,
         &members,
@@ -370,7 +377,7 @@ fn result_topology_uses_only_unique_current_group_members() {
         group_member("face", GroupNodeFamily::Face, Some(40)),
     ];
     assert!(
-        super::feature_result_group_members(4, &["face".into()], &duplicate_members)
+        feature_result_group_members(4, &["face".into()], &duplicate_members)
             .faces
             .is_empty()
     );
@@ -385,13 +392,13 @@ fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
     let image = group_use(&["face"]);
     let direct = direct_group_use(&["face"]);
 
-    let from_image = super::operation_body_write_result_group_members(
+    let from_image = operation_body_write_result_group_members(
         "write",
         std::slice::from_ref(&image),
         &[],
         &members,
     );
-    let from_direct = super::operation_body_write_result_group_members(
+    let from_direct = operation_body_write_result_group_members(
         "write",
         &[],
         std::slice::from_ref(&direct),
@@ -402,7 +409,7 @@ fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
 
     let conflict = direct_group_use(&["edge"]);
     let rejected =
-        super::operation_body_write_result_group_members("write", &[image], &[conflict], &members);
+        operation_body_write_result_group_members("write", &[image], &[conflict], &members);
     assert!(rejected.faces.is_empty());
     assert!(rejected.edges.is_empty());
 }

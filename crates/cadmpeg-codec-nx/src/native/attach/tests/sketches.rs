@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::native::attach::AnnotationBuilder;
+use crate::native::attach::CadIr;
+use crate::native::attach::SketchGeometryDefinition;
 use cadmpeg_ir::annotations::StreamHandle;
 
 #[test]

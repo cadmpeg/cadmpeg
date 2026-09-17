@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset-store control-lane grammar tests.
 
-use super::*;
-
+use crate::om::offset_store_control_form;
+use crate::om::OffsetStoreControlForm;
 #[test]
 fn product_anchored_control_lane_crosses_the_first_column_boundary() {
     let control = [0x11, 0x01, 0x00, 0xe0];

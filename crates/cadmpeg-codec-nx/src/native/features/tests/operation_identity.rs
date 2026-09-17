@@ -1,8 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::native::features::assign_operation_header_identities;
+use crate::native::features::body_history_partition_stream;
+use crate::native::features::feature_body_write_group_partition_uses;
+use crate::native::features::feature_operation_body_identity_segment_uses;
+use crate::native::features::feature_operation_body_image_segment_uses;
+use crate::native::features::feature_operation_body_partition_uses;
+use crate::native::features::feature_operation_body_writes;
+use crate::native::features::feature_operation_labels;
+use crate::native::features::feature_operation_records;
+use crate::native::features::feature_operation_state_journal_uses;
 use crate::native::features::operation_record::FeatureOperationRecord;
+use crate::native::features::FeatureOperationBodyWrite;
+use crate::native::features::FeatureOperationLabel;
+use crate::native::features::FeatureOperationStateJournalUse;
+use crate::native::features::FeatureOperationTerminalFrame;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
+use crate::native::segments::SegmentBodyBinding;
 use crate::om::state_journal::JournalRow;
 use crate::test_support::{
     composed_feature_history_payload, composed_feature_history_section, prt_with_named_payloads,
@@ -99,11 +113,11 @@ fn feature_label_identity_retains_the_complete_header_ordinal() {
     )]))
     .expect("feature-history fixture");
 
-    let labels = super::feature_operation_labels(&container);
+    let labels = feature_operation_labels(&container);
     assert_eq!(labels.len(), 2);
     assert!(labels[0].id.ends_with("-0000000000"));
     assert!(labels[1].id.ends_with("-0000000002"));
-    let records = super::feature_operation_records(&container);
+    let records = feature_operation_records(&container);
     assert_eq!(records[1].operation_label, labels[1].id);
 }
 
@@ -146,8 +160,8 @@ fn operation_header_identity_survives_offset_store_insertion() {
     )]))
     .expect("second synthetic container");
 
-    let first_labels = super::feature_operation_labels(&first);
-    let second_labels = super::feature_operation_labels(&second);
+    let first_labels = feature_operation_labels(&first);
+    let second_labels = feature_operation_labels(&second);
     assert_eq!(
         first_labels[0].objects.values(),
         [Some(1), Some(2), None, None]
@@ -161,8 +175,8 @@ fn operation_header_identity_survives_offset_store_insertion() {
         second_labels[0].stable_identity
     );
 
-    let first_records = super::feature_operation_records(&first);
-    let second_records = super::feature_operation_records(&second);
+    let first_records = feature_operation_records(&first);
+    let second_records = feature_operation_records(&second);
     assert_eq!(
         first_records[0].stable_identity,
         second_records[0].stable_identity
@@ -189,7 +203,7 @@ fn operation_body_write_retains_identity_group_and_image() {
         payload,
     )]))
     .expect("synthetic body-write container");
-    let writes = super::feature_operation_body_writes(&container);
+    let writes = feature_operation_body_writes(&container);
     let [first, second] = writes.as_slice() else {
         panic!("two body-write frames");
     };
@@ -220,7 +234,7 @@ fn operation_body_write_resolves_one_unique_image_block() {
     )]))
     .expect("synthetic body-image store");
 
-    let writes = super::feature_operation_body_writes(&container);
+    let writes = feature_operation_body_writes(&container);
 
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].frame.body_image().value(), 65);
@@ -243,7 +257,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
         payload,
     )]))
     .expect("synthetic body-image store");
-    let writes = super::feature_operation_body_writes(&container);
+    let writes = feature_operation_body_writes(&container);
     let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
         id: id.to_string(),
         stream_link: format!("{id}:link"),
@@ -255,7 +269,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
         source_offset: 100,
     };
 
-    let uses = super::feature_operation_body_image_segment_uses(
+    let uses = feature_operation_body_image_segment_uses(
         &writes,
         &[
             binding("plain", crate::parasolid::StreamKind::Plain),
@@ -270,7 +284,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
         "nx:om-data-blocks-0:block#65"
     );
     assert_eq!(uses[0].segment_body_binding, "plain");
-    assert!(super::feature_operation_body_image_segment_uses(
+    assert!(feature_operation_body_image_segment_uses(
         &writes,
         &[
             binding("first", crate::parasolid::StreamKind::Plain),
@@ -308,7 +322,7 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
         source_offset: 100,
     };
 
-    let uses = super::feature_operation_body_identity_segment_uses(
+    let uses = feature_operation_body_identity_segment_uses(
         std::slice::from_ref(&write),
         &[
             binding("plain", crate::parasolid::StreamKind::Plain),
@@ -321,7 +335,7 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
     assert_eq!(uses[0].segment_body_binding, "plain");
 
     write.body_image_data_block = Some("irrelevant".into());
-    assert!(super::feature_operation_body_identity_segment_uses(
+    assert!(feature_operation_body_identity_segment_uses(
         &[write],
         &[
             binding("first", crate::parasolid::StreamKind::Plain),
@@ -344,7 +358,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         payload,
     )]))
     .expect("synthetic body-image store");
-    let writes = super::feature_operation_body_writes(&container);
+    let writes = feature_operation_body_writes(&container);
     let binding =
         |id: &str, stream_ordinal, body_alias_object_index, stream_role| SegmentBodyBinding {
             id: id.to_string(),
@@ -357,7 +371,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
             source_offset: 100,
         };
     let bindings = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 16)];
-    let image_uses = super::feature_operation_body_image_segment_uses(&writes, &bindings);
+    let image_uses = feature_operation_body_image_segment_uses(&writes, &bindings);
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
@@ -394,7 +408,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         };
     let groups = [group("owned", 2), group("collision", 4)];
 
-    let uses = super::feature_operation_body_partition_uses(
+    let uses = feature_operation_body_partition_uses(
         &writes,
         &image_uses,
         &bindings,
@@ -408,7 +422,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
     let unterminated = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 10)];
-    assert!(super::feature_operation_body_partition_uses(
+    assert!(feature_operation_body_partition_uses(
         &writes,
         &image_uses,
         &unterminated,
@@ -419,19 +433,17 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     .is_empty());
 
     let repeated_terminal = [binding("plain-0", 0, 11, 16), binding("plain-1", 1, 12, 16)];
-    assert!(super::body_history_partition_stream(
-        &repeated_terminal[1],
-        &repeated_terminal,
-        &streams,
-    )
-    .is_none());
+    assert!(
+        body_history_partition_stream(&repeated_terminal[1], &repeated_terminal, &streams,)
+            .is_none()
+    );
 
     let interrupted_streams = [
         stream(crate::parasolid::ParasolidSubtype::Plain),
         stream(crate::parasolid::ParasolidSubtype::Deltas),
         stream(crate::parasolid::ParasolidSubtype::Partition),
     ];
-    assert!(super::feature_operation_body_partition_uses(
+    assert!(feature_operation_body_partition_uses(
         &writes,
         &image_uses,
         &bindings,
@@ -475,7 +487,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
             inflated_offset: 0,
         };
 
-    let uses = super::feature_body_write_group_partition_uses(
+    let uses = feature_body_write_group_partition_uses(
         &[],
         std::slice::from_ref(&unlabeled),
         &[group("owned", 2)],
@@ -486,7 +498,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     assert_eq!(uses[0].partition_stream_ordinal, 2);
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
-    assert!(super::feature_body_write_group_partition_uses(
+    assert!(feature_body_write_group_partition_uses(
         &[],
         &[unlabeled],
         &[group("first", 2), group("collision", 4)],

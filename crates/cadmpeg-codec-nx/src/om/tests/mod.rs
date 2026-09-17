@@ -3,8 +3,6 @@
 
 #![allow(clippy::unwrap_used)]
 
-pub(crate) use super::*;
-
 #[test]
 fn unique_candidate_stops_after_second_hit() {
     let mut yielded = 0;
