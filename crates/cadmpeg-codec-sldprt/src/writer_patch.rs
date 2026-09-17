@@ -88,9 +88,17 @@ fn patch_partition_inner(
         .iter()
         .map(|(_, payload, header)| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
-    let native =
-        crate::brep::decode_bodies(&bodies, &cadmpeg_ir::stream_name!("native-patch-baseline"))
-            .ok()?;
+    // A baseline the source states and this decoder refuses is a refusal, not
+    // an absent patch: it travels the error channel this function already uses
+    // below, so the caller's `.transpose()` reports the cause instead of "no
+    // patch".
+    let native = match crate::brep::decode_bodies(
+        &bodies,
+        &cadmpeg_ir::stream_name!("native-patch-baseline"),
+    ) {
+        Ok(native) => native,
+        Err(error) => return Some(Err(error)),
+    };
     if !same_graph(ir, &native) {
         return None;
     }

@@ -626,3 +626,100 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     )));
 }
+
+/// A Parasolid stream whose header states a body offset past the bytes the
+/// extractor gives it: a second `PS\0\0` signature stands inside this stream's
+/// own description, so the extracted payload ends before the header does.
+/// `crate::brep::decode_bodies` refuses it by name.
+fn deltas_stream_whose_header_overruns_its_payload() -> Vec<u8> {
+    const SCHEMA: &[u8] = b"SCH_SW_33103_11000";
+    let mut nested = Vec::new();
+    nested.extend_from_slice(b"PS\0\0");
+    nested.extend_from_slice(&6u16.to_be_bytes());
+    nested.extend_from_slice(b"deltas");
+    nested.extend_from_slice(&[0x00, 0x00]);
+    nested.push(SCHEMA.len() as u8);
+    nested.extend_from_slice(SCHEMA);
+
+    let mut description = b"deltas ".to_vec();
+    description.extend_from_slice(&nested);
+
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"PS\0\0");
+    payload.extend_from_slice(&(description.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&description);
+    payload.extend_from_slice(&[0x00, 0x00]);
+    payload.push(SCHEMA.len() as u8);
+    payload.extend_from_slice(SCHEMA);
+    payload.extend_from_slice(&[0u8; 8]);
+    payload
+}
+
+#[test]
+fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 0));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    decoded.ir_mut().model.points[1].position.x = 1_250.0;
+
+    // The retained baseline carries a deltas site beside the partition the
+    // patch route edits. Both sites join the baseline decode.
+    let mut image = crate::test_support::outer_header();
+    image.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &body),
+    ));
+    image.extend(make_block(
+        0x20,
+        "Contents/Config-0-Deltas",
+        &deltas_stream_whose_header_overruns_its_payload(),
+    ));
+    let fidelity = decoded.source_fidelity_mut();
+    fidelity
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("the decode retains the source image");
+    fidelity
+        .insert_retained_record(
+            crate::source_image_id(),
+            cadmpeg_ir::RetainedSourceRecord::retained("source", 0, image)
+                .expect("the retained baseline is a source record"),
+        )
+        .expect("the source image record was removed first");
+
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message.contains("states body offset")
+                    && message.contains("past its")
+        ),
+        "the write must state the baseline decode's cause, not report no patch: {error}"
+    );
+}
