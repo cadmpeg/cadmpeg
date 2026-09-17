@@ -1919,9 +1919,6 @@ class AbsentKeyCensusTests(unittest.TestCase):
         )
         self.assertEqual(self.run_absent_key_census({"wire.rs": writer}), [])
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class GenericParameterProofTests(unittest.TestCase):
     """A generic payload parameter is proved over every type that reaches it."""
@@ -2000,3 +1997,7 @@ class GenericParameterProofTests(unittest.TestCase):
             "", "pub enum Reader<'a, T: Clone = Closed, const N: usize> { A(T) }",
         )
         self.assertEqual(census.generic_parameters(item), [("T", "Closed")])
+
+
+if __name__ == "__main__":
+    unittest.main()
