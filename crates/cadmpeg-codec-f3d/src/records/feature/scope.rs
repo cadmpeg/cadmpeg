@@ -944,7 +944,7 @@ struct WorkPlaneFrameWire {
     work_plane_construction: Option<DesignWorkPlaneConstruction>,
 }
 
-pub(super) fn deserialize_work_plane_frame<'de, D>(
+fn deserialize_work_plane_frame<'de, D>(
     deserializer: D,
 ) -> Result<Option<DesignWorkPlaneTransform>, D::Error>
 where
@@ -1004,7 +1004,7 @@ struct JointOriginFrameWire {
     joint_origin_reference_offset: Option<u64>,
 }
 
-pub(super) fn deserialize_joint_origin_frame<'de, D>(
+fn deserialize_joint_origin_frame<'de, D>(
     deserializer: D,
 ) -> Result<Option<DesignJointOriginTransform>, D::Error>
 where
@@ -1058,7 +1058,7 @@ struct SketchEntityWire {
     entity_reference_offset: Option<u64>,
 }
 
-pub(super) fn deserialize_sketch_entity<'de, D>(
+fn deserialize_sketch_entity<'de, D>(
     deserializer: D,
 ) -> Result<Option<DesignSketchEntityBinding>, D::Error>
 where
@@ -2782,3 +2782,6 @@ impl DesignParameterScope {
         .unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1964,5 +1964,3 @@ fn work_point_plane_carrier_is_bound_to_its_input_frame() {
 }
 
 mod three_point_planes;
-
-mod absent_keys;
