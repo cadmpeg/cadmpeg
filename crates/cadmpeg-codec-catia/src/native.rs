@@ -1898,6 +1898,14 @@ struct CatiaCatalogWire {
     /// parse_candidate` derives the entry population from it, and `entries`
     /// refuses a population no count can name. This declaration states no
     /// `default`, so serde names the field when it is left out.
+    ///
+    /// The header and the entries are two arenas, read separately:
+    /// `CatiaNative::load` reads `catalogs` and `catalog_entries` and joins
+    /// each entry to its parent by identity. The header states this count and
+    /// the joined population mints its own, so `TryFrom` below compares two
+    /// independently read figures. That is the join's agreement, not a check
+    /// standing where a type belongs: one document can state the two arenas
+    /// apart, and only their agreement admits the catalog.
     declared_count: u32,
     /// Catalog entries in serialized order, at a population the stored count
     /// can name.
