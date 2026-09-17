@@ -3270,7 +3270,7 @@ fn parsed_named_surface_value(
             let values = sequential_named_local_system_slots(remaining, slot_count, cache)?;
             array.fill_values(values)?;
         } else {
-            array.fill_values(scalar_slots(remaining, slot_count, cache))?;
+            array.fill_values(scalar_slots(remaining, slot_count, cache)?)?;
         }
         return Some(SurfaceNamedValue::ScalarArray(array));
     }
@@ -7607,27 +7607,31 @@ fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     scalar::ieee7_with_prefix(body, offset, first, second)
 }
 
-/// The declared slots of a bounded scalar body, in stored order.
+/// The declared slots of a bounded scalar body, in stored order, or `None` when
+/// the body states a slot it does not encode.
 ///
-/// A byte that no scalar encoding defines is one absent slot, not a byte to
-/// pass over: `docs/formats/creo_prt.md` states that "an undefined prefix does
-/// not remove that slot" and that a bounded scalar body "encodes its declared
-/// slots sequentially; no byte may be skipped between slot encodings". A body
-/// that ends before the declared count leaves the rest absent.
-fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
+/// `docs/formats/creo_prt.md` states of this body that it "encodes its declared
+/// slots sequentially; no byte may be skipped between slot encodings". A byte
+/// that no scalar encoding defines therefore cannot be passed over, and that
+/// line gives such a byte no width of its own. The decoder's decision: a body
+/// that states a byte no encoding defines, or that ends before its declared
+/// count, states a slot it does not encode and is refused; the record then
+/// takes the route a named value that does not decode already takes. The line
+/// states no rule for a body shorter than its declaration, so the decoder
+/// invents none.
+fn scalar_slots(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<Option<f64>>> {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
-    while cursor < body.len() && slots.len() < count {
-        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
-            slots.push(Some(value));
-            cursor = next;
-        } else {
-            slots.push(None);
-            cursor += 1;
-        }
+    while slots.len() < count {
+        let (value, next) = scalar::decode_in_lane(body, cursor, cache)?;
+        slots.push(Some(value));
+        cursor = next;
     }
-    slots.resize(count, None);
-    slots
+    Some(slots)
 }
 
 type ScalarTokenSlot = (Option<f64>, Vec<u8>);

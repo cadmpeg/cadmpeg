@@ -48,25 +48,15 @@ pub(crate) const POSITIONAL_SLOT_TABLE_WIDTH: usize = 12;
 /// the format defines is stated by a prototype body of any length and the exact
 /// proof that the bytes carry the slots is the decode itself.
 ///
-/// At the surface route this guard is the whole admission decision, and it
-/// rests on the decoder's own consumption bound above, not on any record
-/// family's slot count. `scalar_slots` (`crate::surface::scalar_slots`) states
-/// no refusal that could contradict it: it decodes the body's slots in
-/// sequence, states one absent slot for each byte that no scalar encoding
-/// defines, stops at the declared count or at the end of the body, and pads
-/// what is left with absent slots. Each of those is the format's encoding, not
-/// padding -- `docs/formats/creo_prt.md` states that "an undefined prefix does
-/// not remove that slot" and that the bounded scalar body "encodes its declared
-/// slots sequentially; no byte may be skipped between slot encodings", and
-/// `DimensionedScalars::empty` builds the array absent in every slot before a
-/// value is read. A shorter body is therefore a well-formed array of trailing
-/// absent slots, and the only refusal the surface route can make is this one.
-///
-/// The specification's sentence that a named record beginning before slot six
-/// terminates the body and leaves "the remaining slots absent and own no bytes"
-/// is scoped to the six-slot `feat_outl_info.outline`, `post_roll_back` and
-/// `post_regen` family. It is cited here for that family alone and carries no
-/// statement about an arbitrary declared slot count.
+/// At the surface route this guard admits the body; it does not decode it.
+/// `docs/formats/creo_prt.md` states that the bounded scalar body "encodes its
+/// declared slots sequentially; no byte may be skipped between slot encodings",
+/// and it gives a byte that no scalar encoding defines no width of its own.
+/// `scalar_slots` (`crate::surface::scalar_slots`) therefore refuses a body
+/// that states such a byte, and refuses a body that ends before its declared
+/// count, because that line states no rule for either. The two refusals are the
+/// decoder's, and they are the decode's own exact-consumption proof, not a
+/// contradiction of the admission above.
 pub(crate) fn admitted_scalar_body(
     payload: &[u8],
     dimensions_end: usize,
