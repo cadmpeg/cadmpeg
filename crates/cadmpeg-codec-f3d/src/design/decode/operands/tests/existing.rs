@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 
-use super::{
+use crate::design::decode::operands::{
     body_recipe_operand_end, body_recipe_prologue_end, parse_sketch_profile_region_selection,
     unique_body_recipe,
 };

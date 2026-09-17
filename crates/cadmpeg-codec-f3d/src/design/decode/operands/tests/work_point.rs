@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::parse_work_point_sketch_point_frame;
+use crate::design::decode::operands::parse_work_point_sketch_point_frame;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3u32.to_le_bytes());

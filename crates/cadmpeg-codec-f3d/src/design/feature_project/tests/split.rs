@@ -5,7 +5,8 @@
     clippy::wildcard_imports
 )]
 
-use super::{prelude::*, project_split_face};
+use super::prelude::*;
+use crate::design::feature_project::project_split_face;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };

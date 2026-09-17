@@ -8,7 +8,7 @@
 )]
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
-use super::project_mirror;
+use crate::design::feature_project::project_mirror;
 use crate::records::{
     feature::{mirror::DesignMirrorConstruction, scope::DesignParameterScope},
     topology::{

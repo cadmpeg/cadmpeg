@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 
-use super::{
+use crate::design::decode::sketch::{
     decode_sketch_point_companion, decode_sketch_point_record, SKETCH_CONTAINER_TYPE_GUID,
     SKETCH_POINT_COMPANION_TYPE, SKETCH_POINT_TYPE_GUID,
 };
