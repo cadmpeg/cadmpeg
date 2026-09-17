@@ -30,7 +30,7 @@ pub(in super::super) fn preserve_passthrough_sections(
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
     }) {
-        let section_bytes = container::section_region(&scan.framing.data, section)?;
+        let section_bytes = container::section_region(&scan.framing.data, section);
         let payload_start = section.raw_name.len().saturating_add(2);
         let raw_is_compressed = section_bytes
             .get(payload_start..)

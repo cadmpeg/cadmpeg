@@ -161,7 +161,7 @@ pub(in super::super) fn surface_prototype_frame_bounds(
     if scan.framing.data.is_empty() {
         return Ok(Some((section.offset(), section_end)));
     }
-    let payload = crate::container::section_region(&scan.framing.data, section)?;
+    let payload = crate::container::section_region(&scan.framing.data, section);
     let Some(relative_prototype_offset) = prototype_offset.checked_sub(section.offset()) else {
         return Ok(None);
     };
@@ -512,7 +512,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         let [section] = sections.as_slice() else {
             continue;
         };
-        let payload = crate::container::section_region(&scan.framing.data, section)?;
+        let payload = crate::container::section_region(&scan.framing.data, section);
         let Some(relative_row_offset) = row.offset.checked_sub(section.offset()) else {
             continue;
         };
