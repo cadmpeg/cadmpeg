@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::act::{
-    ActChannelGroup, ActEntity, ActGuid, ActRegistryChannel, ActRegistryFlag, ActRootComponent,
-    ActRootLayout, ActTableReference,
-};
 use crate::records::{
+    act::{
+        ActChannelGroup, ActEntity, ActGuid, ActRegistryChannel, ActRegistryFlag, ActRootComponent,
+        ActRootLayout, ActTableReference,
+    },
     entity_header::{DesignFeatureTimeline, DesignTimelineFrame},
     identity::Located,
 };

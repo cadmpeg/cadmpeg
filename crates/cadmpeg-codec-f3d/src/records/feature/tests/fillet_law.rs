@@ -1,4 +1,4 @@
-use crate::records::feature::{
+use crate::records::feature::fixed_parameters::{
     DesignFixedFilletGroup, DesignFixedFilletIntermediate, DesignFixedFilletLaw,
     DesignFixedFilletScalar,
 };

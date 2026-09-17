@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{DesignFeatureKind, DesignParameterScopeDraft};
+use super::scope::{DesignFeatureKind, DesignParameterScopeDraft};
 use crate::records::identity::{Located, ReferenceRun};
 
 impl DesignParameterScopeDraft {

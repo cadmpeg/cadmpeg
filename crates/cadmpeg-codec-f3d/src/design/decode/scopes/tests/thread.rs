@@ -36,13 +36,17 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         form: DesignThreadForm::Standard,
         designation_offset: 38,
         designation: cadmpeg_core::text::NonBlankString::new("M30x3.5").unwrap(),
-        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("30.0".to_owned())
-            .expect("nominal size"),
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
+            "30.0".to_owned(),
+        )
+        .expect("nominal size"),
         profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
-        pitch: crate::records::feature::DesignPositiveScalar::new(0.35).unwrap(),
+        pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.35).unwrap(),
         face_group_record_indices: vec![988],
-        diameters: crate::records::feature::DesignThreadDiameters::new(2.97345, 2.5732, 2.7568)
-            .unwrap(),
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+            2.97345, 2.5732, 2.7568,
+        )
+        .unwrap(),
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
@@ -62,7 +66,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#standard-thread",
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
     scope.class_tag =
@@ -134,13 +138,17 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         form: DesignThreadForm::StandardLegacy,
         designation_offset: 38,
         designation: cadmpeg_core::text::NonBlankString::new("M7x1").unwrap(),
-        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("7.0".to_owned())
-            .expect("nominal size"),
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
+            "7.0".to_owned(),
+        )
+        .expect("nominal size"),
         profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
-        pitch: crate::records::feature::DesignPositiveScalar::new(0.1).unwrap(),
+        pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.1).unwrap(),
         face_group_record_indices: vec![988],
-        diameters: crate::records::feature::DesignThreadDiameters::new(0.71472, 0.60355, 0.64255)
-            .unwrap(),
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+            0.71472, 0.60355, 0.64255,
+        )
+        .unwrap(),
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, ThreadPrefix::Standard, vec![988]),
@@ -149,7 +157,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#legacy-thread",
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
     scope.class_tag =
@@ -231,13 +239,17 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         form: DesignThreadForm::Compact(None),
         designation_offset: 38,
         designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
-        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("3.5".to_owned())
-            .expect("nominal size"),
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
+            "3.5".to_owned(),
+        )
+        .expect("nominal size"),
         profile: cadmpeg_core::text::NonBlankString::new("GB Metric profile").unwrap(),
-        pitch: crate::records::feature::DesignPositiveScalar::new(0.06).unwrap(),
+        pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.06).unwrap(),
         face_group_record_indices: vec![988],
-        diameters: crate::records::feature::DesignThreadDiameters::new(0.35995, 0.293, 0.3166)
-            .unwrap(),
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
+            0.35995, 0.293, 0.3166,
+        )
+        .unwrap(),
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, ThreadPrefix::Compact, vec![988]),
@@ -259,7 +271,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#compact-thread",
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
     scope.class_tag =
@@ -341,14 +353,14 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         form: DesignThreadForm::CompactLegacy,
         designation_offset: 38,
         designation: cadmpeg_core::text::NonBlankString::new("M190x8").unwrap(),
-        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
+        nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
             "190.0".to_owned(),
         )
         .expect("nominal size"),
         profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
-        pitch: crate::records::feature::DesignPositiveScalar::new(0.8).unwrap(),
+        pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.8).unwrap(),
         face_group_record_indices: vec![988],
-        diameters: crate::records::feature::DesignThreadDiameters::new(
+        diameters: crate::records::feature::thread::DesignThreadDiameters::new(
             19.08149, 18.18397, 18.50413,
         )
         .unwrap(),
@@ -360,7 +372,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#legacy-compact-thread",
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
     scope.class_tag =
@@ -425,7 +437,7 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
     .expect("localized Sketch scope");
     assert_eq!(
         scope.kind(),
-        crate::records::feature::DesignFeatureKind::Esquisse
+        crate::records::feature::scope::DesignFeatureKind::Esquisse
     );
     assert_eq!(
         scope

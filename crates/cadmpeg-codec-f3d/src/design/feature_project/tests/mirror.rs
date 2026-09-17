@@ -9,9 +9,9 @@
 use crate::records::topology::DesignOperandRole;
 
 use super::project_mirror;
-use crate::records::feature::{DesignMirrorConstruction, DesignParameterScope};
-use crate::records::topology::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+use crate::records::{
+    feature::{mirror::DesignMirrorConstruction, scope::DesignParameterScope},
+    topology::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame},
 };
 use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PatternSeed,
@@ -70,18 +70,19 @@ fn group(
 fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#10",
-        crate::records::feature::DesignFeatureKind::Mirror,
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
         10,
     );
-    if let crate::records::feature::DesignScopePayloadMut::Mirror(slot)
-    | crate::records::feature::DesignScopePayloadMut::SymetrieMiroir(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::SymetrieMiroir(slot) =
+        scope.payload_mut()
     {
         *slot = Some(DesignMirrorConstruction {
             count_record_index: 11,
             count_offset: 0,
             stitch_tolerance: 0.001,
             stitch_tolerance_offset: 0,
-            tolerance_source: crate::records::feature::DesignMirrorToleranceSource::Owner {
+            tolerance_source: crate::records::feature::mirror::DesignMirrorToleranceSource::Owner {
                 record_index: 12,
             },
             seed_group_record_index,
@@ -89,7 +90,7 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
             seed_feature_scope_record_index: None,
             plane_scope_record_index: None,
             plane_selection_record_index: None,
-            plane: Some(crate::records::feature::DesignPlane {
+            plane: Some(crate::records::feature::patterns::DesignPlane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
             }),

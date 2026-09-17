@@ -215,12 +215,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(
         referenced.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
-            reference: Some(crate::records::feature::DesignExtrudePrologueReference {
-                record_index: 77,
-                record_index_offset: 26,
-                trailing_zero_count: 8,
-                operation_prefix_marker_offset: None,
-            }),
+            reference: Some(
+                crate::records::feature::extrude::DesignExtrudePrologueReference {
+                    record_index: 77,
+                    record_index_offset: 26,
+                    trailing_zero_count: 8,
+                    operation_prefix_marker_offset: None,
+                }
+            ),
             operation: DesignExtrudeOperation::Intersect,
             operation_offset: 38,
             direction_face_extend_values: [2, 0],
@@ -319,7 +321,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         to_face.kind(),
-        crate::records::feature::DesignFeatureKind::Extrusion
+        crate::records::feature::scope::DesignFeatureKind::Extrusion
     );
     let Some(prologue) = to_face.extrude_prologue() else {
         panic!("to-face Extrude prologue");
@@ -384,10 +386,12 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(DesignExtrudePrologue::ReferenceAware {
             side_extent_discriminators: [2, 0],
             side_extent_discriminator_offsets: [92, 176],
-            first_side_target_ordinal: Some(crate::records::feature::DesignExtrudeTargetOrdinal {
-                scope_reference_ordinal: 0,
-                scope_reference_ordinal_offset: 87,
-            }),
+            first_side_target_ordinal: Some(
+                crate::records::feature::extrude::DesignExtrudeTargetOrdinal {
+                    scope_reference_ordinal: 0,
+                    scope_reference_ordinal_offset: 87,
+                }
+            ),
             extent: DesignExtrudeExtent::OneSidedToFace,
             ..
         })
@@ -681,7 +685,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false, None, None, None);
     assert_eq!(
         unrecognized.kind(),
-        crate::records::feature::DesignFeatureKind::Extrude
+        crate::records::feature::scope::DesignFeatureKind::Extrude
     );
     assert_eq!(unrecognized.extrude_prologue(), None);
     assert_eq!(

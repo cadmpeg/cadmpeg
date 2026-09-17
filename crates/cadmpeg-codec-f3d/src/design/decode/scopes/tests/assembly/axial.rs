@@ -31,7 +31,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     );
     let mut assembly = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:assembly#500",
-        crate::records::feature::DesignFeatureKind::Assemble,
+        crate::records::feature::scope::DesignFeatureKind::Assemble,
         500,
     );
     assembly
@@ -49,8 +49,9 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
-    | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) = assembly.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Assemble(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::AsBuilt(slot) =
+        assembly.payload_mut()
     {
         *slot = Some(axial_test_alignment([first_transform, second_transform]));
     }
@@ -65,13 +66,13 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     let targets = scopes[0]
         .assembly_alignment()
         .and_then(|alignment| {
-            let crate::records::feature::DesignAssemblyAlignmentForm::Qualified(operands) =
+            let crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(operands) =
                 alignment.form.as_ref()?
             else {
                 return None;
             };
             let [first, second] = operands.each_ref().map(|operand| match &operand.qualifier {
-                crate::records::feature::DesignAssemblyOperandQualifier::AxialTarget { target } => {
+                crate::records::feature::assembly::DesignAssemblyOperandQualifier::AxialTarget { target } => {
                     Some(target.clone())
                 }
                 _ => None,
@@ -137,13 +138,13 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         .assembly_alignment()
         .is_some_and(|alignment| !matches!(
             alignment.form.as_ref(),
-            Some(crate::records::feature::DesignAssemblyAlignmentForm::Qualified([
-                crate::records::feature::DesignQualifiedAssemblyOperand {
-                    qualifier: crate::records::feature::DesignAssemblyOperandQualifier::AxialTarget { .. },
+            Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified([
+                crate::records::feature::assembly::DesignQualifiedAssemblyOperand {
+                    qualifier: crate::records::feature::assembly::DesignAssemblyOperandQualifier::AxialTarget { .. },
                     ..
                 },
-                crate::records::feature::DesignQualifiedAssemblyOperand {
-                    qualifier: crate::records::feature::DesignAssemblyOperandQualifier::AxialTarget { .. },
+                crate::records::feature::assembly::DesignQualifiedAssemblyOperand {
+                    qualifier: crate::records::feature::assembly::DesignAssemblyOperandQualifier::AxialTarget { .. },
                     ..
                 },
             ]))
@@ -169,7 +170,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     );
     let mut assembly = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:assembly#500",
-        crate::records::feature::DesignFeatureKind::Assemble,
+        crate::records::feature::scope::DesignFeatureKind::Assemble,
         500,
     );
     assembly
@@ -183,14 +184,15 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::Assemble(slot)
-    | crate::records::feature::DesignScopePayloadMut::AsBuilt(slot) = assembly.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Assemble(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::AsBuilt(slot) =
+        assembly.payload_mut()
     {
         *slot = Some(axial_test_alignment([first_transform, second_transform]));
     }
     let mut origin = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:joint-origin#80",
-        crate::records::feature::DesignFeatureKind::JointOrigin,
+        crate::records::feature::scope::DesignFeatureKind::JointOrigin,
         80,
     );
     origin.with_joint_origin_transform(second_transform.try_into().unwrap());
@@ -200,13 +202,13 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     let targets = scopes[0]
         .assembly_alignment()
         .and_then(|alignment| {
-            let crate::records::feature::DesignAssemblyAlignmentForm::Qualified(operands) =
+            let crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(operands) =
                 alignment.form.as_ref()?
             else {
                 return None;
             };
             let [first, second] = operands.each_ref().map(|operand| match &operand.qualifier {
-                crate::records::feature::DesignAssemblyOperandQualifier::AxialTarget { target } => {
+                crate::records::feature::assembly::DesignAssemblyOperandQualifier::AxialTarget { target } => {
                     Some(target.clone())
                 }
                 _ => None,

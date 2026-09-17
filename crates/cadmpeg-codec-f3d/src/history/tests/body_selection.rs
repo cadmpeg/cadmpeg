@@ -4,9 +4,8 @@
 #![allow(clippy::default_trait_access)]
 
 use super::super::*;
-use crate::records::{
-    topology::DesignConstructionOperandGroup, topology::DesignConstructionOperandGroupFrame,
-    topology::DesignOperandRole,
+use crate::records::topology::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignOperandRole,
 };
 
 #[test]
@@ -19,9 +18,9 @@ fn move_body_selection_uses_unique_owning_history() {
         BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::Move,
+        crate::records::feature::scope::DesignFeatureKind::Move,
         10,
     );
     scope

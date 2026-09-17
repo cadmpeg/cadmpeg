@@ -64,7 +64,7 @@ fn parameter_scope_parses_named_variable_tail() {
     .expect("named variable-tail scope");
     assert_eq!(
         scope.kind(),
-        crate::records::feature::DesignFeatureKind::Draft
+        crate::records::feature::scope::DesignFeatureKind::Draft
     );
     assert_eq!(scope.feature_ordinal.get(), 1);
     assert_eq!(scope.history_state_id(), Some(7));

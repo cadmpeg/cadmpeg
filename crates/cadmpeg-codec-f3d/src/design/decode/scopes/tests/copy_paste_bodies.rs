@@ -20,7 +20,7 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     .expect("scope");
     assert_eq!(
         scope.kind(),
-        crate::records::feature::DesignFeatureKind::CopyPasteBodies
+        crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies
     );
     assert_eq!(
         scope

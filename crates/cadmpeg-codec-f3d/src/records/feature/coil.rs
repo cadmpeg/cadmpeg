@@ -1,0 +1,463 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Coil extents, sections, placements, transforms and the coil scope.
+
+use super::extrude::DesignExtrudeOperation;
+use super::scope::DesignFaceRecipeKind;
+use crate::records::identity::{
+    DesignSecondaryIdentity, Located, MaybeRecordedValue, RecordedValue, IDENTITY_MATRIX,
+};
+use crate::records::mesh::DesignRelaxedGuidText;
+use crate::records::recipes::{ConstructionRecipeDesign, ConstructionRecipeSelector};
+use crate::records::references::DesignClassTag;
+use crate::records::sketch_placement::SketchPlacementMatrix;
+use serde::{Deserialize, Deserializer, Serialize};
+
+cadmpeg_core::named_optional_field!(deserialize_coil_clockwise, bool, "coil_clockwise");
+cadmpeg_core::named_optional_field!(
+    deserialize_coil_clockwise_offset,
+    u64,
+    "coil_clockwise_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_coil_extent, DesignCoilExtent, "coil_extent");
+cadmpeg_core::named_optional_field!(deserialize_coil_extent_offset, u64, "coil_extent_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_coil_operation,
+    DesignExtrudeOperation,
+    "coil_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_coil_operation_offset,
+    u64,
+    "coil_operation_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_coil_placement,
+    DesignCoilPlacement,
+    "coil_placement"
+);
+cadmpeg_core::named_optional_field!(deserialize_coil_section, DesignCoilSection, "coil_section");
+cadmpeg_core::named_optional_field!(deserialize_coil_section_offset, u64, "coil_section_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_coil_section_placement,
+    DesignCoilSectionPlacement,
+    "coil_section_placement"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_coil_section_placement_offset,
+    u64,
+    "coil_section_placement_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_coil_transform,
+    DesignCoilTransform,
+    "coil_transform"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_curve_secondary_identity,
+    u64,
+    "curve_secondary_identity"
+);
+cadmpeg_core::named_optional_field!(deserialize_design_id, String, "design_id");
+cadmpeg_core::named_optional_field!(
+    deserialize_design_selector,
+    ConstructionRecipeSelector,
+    "design_selector"
+);
+cadmpeg_core::named_optional_field!(deserialize_secondary_identity, u64, "secondary_identity");
+cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transform_offset");
+/// Driving-dimension mode stored by a Coil parameter scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignCoilExtent {
+    /// Revolution count and total height are independent.
+    RevolutionsHeight,
+    /// Revolution count and pitch are independent.
+    RevolutionsPitch,
+    /// Total height and pitch are independent.
+    HeightPitch,
+    /// Revolution count and radial pitch define a planar spiral.
+    Spiral,
+}
+
+/// Generated section family stored by a Coil parameter scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignCoilSection {
+    /// Circular section.
+    Circular,
+    /// Square section.
+    Square,
+    /// Triangular section pointing away from the axis.
+    ExternalTriangle,
+    /// Triangular section pointing toward the axis.
+    InternalTriangle,
+}
+
+/// Radial section placement stored by a Coil parameter scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignCoilSectionPlacement {
+    /// Section inside the reference trajectory.
+    Inside,
+    /// Section centered on the reference trajectory.
+    Center,
+    /// Section outside the reference trajectory.
+    Outside,
+}
+
+pub(super) fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<DesignSecondaryIdentity<u64>>, D::Error> {
+    #[derive(Deserialize)]
+    struct Wire {
+        #[serde(default, deserialize_with = "deserialize_secondary_identity")]
+        secondary_identity: Option<u64>,
+        #[serde(default, deserialize_with = "deserialize_curve_secondary_identity")]
+        curve_secondary_identity: Option<u64>,
+    }
+    let wire = Wire::deserialize(deserializer)?;
+    DesignSecondaryIdentity::from_wire(wire.secondary_identity, wire.curve_secondary_identity)
+        .map_err(serde::de::Error::custom)
+}
+
+pub(super) fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<ConstructionRecipeDesign<String>>, D::Error> {
+    #[derive(Deserialize)]
+    struct Wire {
+        #[serde(default, deserialize_with = "deserialize_design_id")]
+        design_id: Option<String>,
+        #[serde(default, deserialize_with = "deserialize_design_selector")]
+        design_selector: Option<ConstructionRecipeSelector>,
+    }
+    let wire = Wire::deserialize(deserializer)?;
+    match (wire.design_id, wire.design_selector) {
+        (Some(id), selector) => Ok(Some(ConstructionRecipeDesign { id, selector })),
+        (None, None) => Ok(None),
+        (None, Some(_)) => Err(serde::de::Error::custom(
+            "design_selector requires design_id",
+        )),
+    }
+}
+
+/// Selection carrier used by a compact Coil placement.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignCoilSelection {
+    /// Nested entity-selection frame with one or two persistent identities.
+    Persistent {
+        /// Asset UUID qualifying the persistent selection namespace.
+        asset_id: DesignRelaxedGuidText,
+        /// Context UUID qualifying the persistent selection namespace.
+        context_id: DesignRelaxedGuidText,
+        /// Indexed nested record carrying the persistent identity pair.
+        identity_record_index: u32,
+        /// First persistent identity value.
+        primary_identity: u64,
+        /// Secondary identity and any dependent curve identity.
+        #[serde(flatten, deserialize_with = "deserialize_coil_secondary_identity")]
+        secondary: Option<DesignSecondaryIdentity<u64>>,
+    },
+    /// Face construction recipe carried by a placement selection frame.
+    FaceRecipe {
+        /// Asset UUID qualifying the recipe selection namespace.
+        asset_id: DesignRelaxedGuidText,
+        /// Context UUID qualifying the recipe selection namespace.
+        context_id: DesignRelaxedGuidText,
+        /// Indexed record containing the face recipe.
+        recipe_record_index: u32,
+        /// Byte offset of the face recipe record header.
+        recipe_record_byte_offset: u64,
+        /// Native construction-recipe arena identity.
+        recipe_id: String,
+        /// Exact face-recipe family.
+        recipe_kind: DesignFaceRecipeKind,
+        /// Recipe Design identity and its optional selector.
+        #[serde(flatten, deserialize_with = "deserialize_coil_recipe_design")]
+        design: Option<ConstructionRecipeDesign<String>>,
+    },
+}
+
+/// Exact placement construction carried by a compact Coil scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignCoilPlacementWire", into = "DesignCoilPlacementWire")]
+pub struct DesignCoilPlacement {
+    /// First ordered placement-construction reference.
+    pub selection_record_index: u32,
+    /// Byte offset of the support selection frame header.
+    pub selection_record_byte_offset: u64,
+    /// Dynamic class tag of the support selection frame.
+    pub selection_class_tag: DesignClassTag,
+    /// Exact selection semantics carried by the first placement reference.
+    pub selection: DesignCoilSelection,
+    /// Second ordered placement-construction reference: the frame carrier.
+    pub transform_record_index: u32,
+    /// Byte offset of the frame carrier header.
+    pub transform_record_byte_offset: u64,
+    /// Dynamic class tag of the frame carrier.
+    pub transform_class_tag: DesignClassTag,
+    /// Explicit matrix and its byte offset; absent for the encoded identity form.
+    pub explicit_transform: Option<Located<SketchPlacementMatrix>>,
+}
+
+impl DesignCoilPlacement {
+    /// Row-major local-to-model matrix with translation in source centimetres.
+    #[must_use]
+    pub fn transform(&self) -> &SketchPlacementMatrix {
+        self.explicit_transform
+            .as_ref()
+            .map_or(&SketchPlacementMatrix::IDENTITY, |matrix| &matrix.value)
+    }
+}
+
+/// Exact placement construction carried by a compact Coil scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct DesignCoilPlacementWire {
+    /// First ordered placement-construction reference.
+    selection_record_index: u32,
+    /// Byte offset of the support selection frame header.
+    selection_record_byte_offset: u64,
+    /// Dynamic class tag of the support selection frame.
+    selection_class_tag: String,
+    /// Exact selection semantics carried by the first placement reference.
+    selection: DesignCoilSelection,
+    /// Second ordered placement-construction reference: the frame carrier.
+    transform_record_index: u32,
+    /// Byte offset of the frame carrier header.
+    transform_record_byte_offset: u64,
+    /// Dynamic class tag of the frame carrier.
+    transform_class_tag: String,
+    /// Row-major local-to-model rigid transform. Matrix values are in source
+    /// centimetres for the translation column.
+    transform: SketchPlacementMatrix,
+    /// Byte offset of the matrix, or absent for the encoded identity form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform_offset"
+    )]
+    transform_offset: Option<u64>,
+}
+
+impl TryFrom<DesignCoilPlacementWire> for DesignCoilPlacement {
+    type Error = String;
+    fn try_from(wire: DesignCoilPlacementWire) -> Result<Self, Self::Error> {
+        let explicit_transform = match wire.transform_offset {
+            Some(offset) => Some(Located {
+                value: wire.transform,
+                offset,
+            }),
+            None => {
+                if wire
+                    .transform
+                    .iter()
+                    .flatten()
+                    .zip(IDENTITY_MATRIX.iter().flatten())
+                    .any(|(value, identity)| value.to_bits() != identity.to_bits())
+                {
+                    return Err("transform must be identity when transform_offset is absent".into());
+                }
+                None
+            }
+        };
+        Ok(Self {
+            selection_record_index: wire.selection_record_index,
+            selection_record_byte_offset: wire.selection_record_byte_offset,
+            selection_class_tag: wire.selection_class_tag.try_into()?,
+            selection: wire.selection,
+            transform_record_index: wire.transform_record_index,
+            transform_record_byte_offset: wire.transform_record_byte_offset,
+            transform_class_tag: wire.transform_class_tag.try_into()?,
+            explicit_transform,
+        })
+    }
+}
+
+impl From<DesignCoilPlacement> for DesignCoilPlacementWire {
+    fn from(record: DesignCoilPlacement) -> Self {
+        let transform = *record.transform();
+        Self {
+            selection_record_index: record.selection_record_index,
+            selection_record_byte_offset: record.selection_record_byte_offset,
+            selection_class_tag: record.selection_class_tag.into(),
+            selection: record.selection,
+            transform_record_index: record.transform_record_index,
+            transform_record_byte_offset: record.transform_record_byte_offset,
+            transform_class_tag: record.transform_class_tag.into(),
+            transform,
+            transform_offset: record.explicit_transform.map(|matrix| matrix.offset),
+        }
+    }
+}
+
+/// Direct rigid placement carried by the long ten-reference Coil form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesignCoilTransform {
+    /// Row-major local-to-model rigid transform. Translation is in source
+    /// centimetres.
+    pub transform: SketchPlacementMatrix,
+    /// Byte offset of the first matrix scalar.
+    pub transform_offset: u64,
+}
+
+/// Coil-specific records carried by a Coil parameter scope.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(try_from = "DesignCoilScopeWire", into = "DesignCoilScopeWire")]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
+pub struct DesignCoilScope {
+    pub coil_operation: Option<RecordedValue<DesignExtrudeOperation>>,
+    pub coil_extent: Option<MaybeRecordedValue<DesignCoilExtent>>,
+    pub coil_section: Option<MaybeRecordedValue<DesignCoilSection>>,
+    pub coil_section_placement: Option<MaybeRecordedValue<DesignCoilSectionPlacement>>,
+    pub coil_clockwise: Option<MaybeRecordedValue<bool>>,
+    pub coil_placement: Option<DesignCoilPlacement>,
+    pub coil_transform: Option<DesignCoilTransform>,
+}
+
+/// Coil-specific records carried by a Coil parameter scope.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+// Field names are the native record serialized keys.
+#[allow(clippy::struct_field_names)]
+struct DesignCoilScopeWire {
+    /// Coil result operation from the fixed scope prologue.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_operation"
+    )]
+    pub coil_operation: Option<DesignExtrudeOperation>,
+    /// Byte offset of the Coil operation enum.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_operation_offset"
+    )]
+    pub coil_operation_offset: Option<u64>,
+    /// Coil driving-dimension mode.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_extent"
+    )]
+    pub coil_extent: Option<DesignCoilExtent>,
+    /// Byte offset of the Coil mode enum, when the form stores one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_extent_offset"
+    )]
+    pub coil_extent_offset: Option<u64>,
+    /// Generated Coil section family.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_section"
+    )]
+    pub coil_section: Option<DesignCoilSection>,
+    /// Byte offset of the Coil section enum, when the form stores one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_section_offset"
+    )]
+    pub coil_section_offset: Option<u64>,
+    /// Radial placement of the generated Coil section.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_section_placement"
+    )]
+    pub coil_section_placement: Option<DesignCoilSectionPlacement>,
+    /// Byte offset of the Coil section-placement enum, when the form stores one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_section_placement_offset"
+    )]
+    pub coil_section_placement_offset: Option<u64>,
+    /// Whether Coil angular travel is clockwise.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_clockwise"
+    )]
+    pub coil_clockwise: Option<bool>,
+    /// Byte offset of the Coil direction enum, when the form stores one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_clockwise_offset"
+    )]
+    pub coil_clockwise_offset: Option<u64>,
+    /// Exact placement construction carried by a compact Coil scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_placement"
+    )]
+    pub coil_placement: Option<DesignCoilPlacement>,
+    /// Direct rigid placement carried by the long ten-reference Coil form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coil_transform"
+    )]
+    pub coil_transform: Option<DesignCoilTransform>,
+}
+
+impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
+    type Error = String;
+    fn try_from(wire: DesignCoilScopeWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            coil_operation: RecordedValue::from_wire(
+                wire.coil_operation,
+                wire.coil_operation_offset,
+                "coil_operation",
+            )?,
+            coil_extent: MaybeRecordedValue::from_wire(
+                wire.coil_extent,
+                wire.coil_extent_offset,
+                "coil_extent",
+            )?,
+            coil_section: MaybeRecordedValue::from_wire(
+                wire.coil_section,
+                wire.coil_section_offset,
+                "coil_section",
+            )?,
+            coil_section_placement: MaybeRecordedValue::from_wire(
+                wire.coil_section_placement,
+                wire.coil_section_placement_offset,
+                "coil_section_placement",
+            )?,
+            coil_clockwise: MaybeRecordedValue::from_wire(
+                wire.coil_clockwise,
+                wire.coil_clockwise_offset,
+                "coil_clockwise",
+            )?,
+            coil_placement: wire.coil_placement,
+            coil_transform: wire.coil_transform,
+        })
+    }
+}
+
+impl From<DesignCoilScope> for DesignCoilScopeWire {
+    fn from(value: DesignCoilScope) -> Self {
+        Self {
+            coil_operation: value.coil_operation.map(|field| field.value),
+            coil_operation_offset: value.coil_operation.map(|field| field.offset),
+            coil_extent: value.coil_extent.map(|field| field.value()),
+            coil_extent_offset: value.coil_extent.and_then(|field| field.offset()),
+            coil_section: value.coil_section.map(|field| field.value()),
+            coil_section_offset: value.coil_section.and_then(|field| field.offset()),
+            coil_section_placement: value.coil_section_placement.map(|field| field.value()),
+            coil_section_placement_offset: value
+                .coil_section_placement
+                .and_then(|field| field.offset()),
+            coil_clockwise: value.coil_clockwise.map(|field| field.value()),
+            coil_clockwise_offset: value.coil_clockwise.and_then(|field| field.offset()),
+            coil_placement: value.coil_placement,
+            coil_transform: value.coil_transform,
+        }
+    }
+}

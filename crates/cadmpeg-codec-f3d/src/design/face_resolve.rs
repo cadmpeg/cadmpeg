@@ -5,16 +5,18 @@ use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::{self, native_stream, neutral_feature_id};
-use crate::records::topology::{
-    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeOperand,
-    DesignExtrudeFaceRole, DesignFaceOperand,
-};
 use crate::records::{
-    feature::{DesignExtrudeExtent, DesignExtrudePrologue, DesignParameterScope},
+    feature::{
+        extrude::{DesignExtrudeExtent, DesignExtrudePrologue},
+        scope::DesignParameterScope,
+    },
     parameters::DesignParameter,
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
     sketch_placement::DesignSketchPlacement,
-    topology::DesignOperandRole,
+    topology::{
+        DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeOperand,
+        DesignExtrudeFaceRole, DesignFaceOperand, DesignOperandRole,
+    },
 };
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -629,7 +631,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
-    if scope.kind() != crate::records::feature::DesignFeatureKind::Loft
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Loft
         || !matches!(
             group.role(),
             DesignOperandRole::PROFILE | DesignOperandRole::ROLE_0X43
@@ -920,7 +922,7 @@ pub(crate) fn resolved_historical_split_face_target_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
     {
         return None;
@@ -945,7 +947,7 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
     {
         return None;
@@ -965,7 +967,7 @@ fn split_face_updated_target_slots(
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
 ) -> Option<Vec<i64>> {
-    if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
         || updated_face_slots.is_empty()
         || updated_face_slots.len() != group.members().len()
@@ -2229,12 +2231,15 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
-        DesignEdgeRecipeStructure, DesignFaceRecipeNode, DesignHistoricalFaceBoundaryContext,
-        DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
+    use crate::records::{
+        dimensions::DesignRecipeReference,
+        feature::scope::DesignParameterScope,
+        topology::{
+            DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
+            DesignEdgeRecipeStructure, DesignFaceRecipeNode, DesignHistoricalFaceBoundaryContext,
+            DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
+        },
     };
-    use crate::records::{dimensions::DesignRecipeReference, feature::DesignParameterScope};
 
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::FaceId;

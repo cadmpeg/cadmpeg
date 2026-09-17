@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
+use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 #[test]
@@ -550,7 +550,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     }
 
     let scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
             byte_offset: 1000,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -571,7 +571,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 "reference_members",
             )
             .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::Extrude
+            payload: crate::records::feature::scope::DesignFeatureKind::Extrude
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
@@ -771,9 +771,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     );
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
-    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = owning_scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+        owning_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_profile = Some(
             DesignSketchProfileOperand::try_new(

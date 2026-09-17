@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::feature::{
+use crate::records::feature::sheet_metal::{
     DesignEdgeFlangeEdge, DesignEdgeFlangeOperation, DesignEdgeFlangeSelection,
     DesignEdgeFlangeShape, DesignHemOperation,
 };
@@ -50,9 +50,9 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
     assert!(
         DesignEdgeFlangeEdge::from_columns(vec![1], vec![u32::MAX], &[u32::MAX], vec![3]).is_err()
     );
-    assert!(super::super::DesignRecipeGroupIndex::try_from(u32::MAX).is_err());
+    assert!(super::super::sheet_metal::DesignRecipeGroupIndex::try_from(u32::MAX).is_err());
     assert_eq!(
-        super::super::DesignRecipeGroupIndex::try_from(u32::MAX - 3)
+        super::super::sheet_metal::DesignRecipeGroupIndex::try_from(u32::MAX - 3)
             .unwrap()
             .operand(),
         u32::MAX
@@ -68,7 +68,7 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
     assert!(DesignEdgeFlangeSelection::try_new(
         DesignEdgeFlangeShape::FullEdge {
             edges: vec![edge],
-            height: crate::records::feature::DesignEdgeFlangeHeightExtent::Distance
+            height: crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent::Distance
         },
         30
     )
@@ -77,7 +77,7 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
     assert!(DesignEdgeFlangeSelection::try_new(
         DesignEdgeFlangeShape::FullEdge {
             edges: vec![edge],
-            height: crate::records::feature::DesignEdgeFlangeHeightExtent::Distance
+            height: crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent::Distance
         },
         30
     )
@@ -92,7 +92,7 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
                     aggregate_operand_record_index: 35
                 }
             ],
-            height: crate::records::feature::DesignEdgeFlangeHeightExtent::Distance
+            height: crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent::Distance
         },
         30
     )

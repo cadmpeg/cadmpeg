@@ -9,12 +9,10 @@ use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
 use crate::layout::indexed_design_record_header as indexed_header;
-use crate::records::recipes::{
-    ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
-};
 use crate::records::{
     bodies::{DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
     entity_header::{DesignEntityHeader, DESIGN_MODULE_BODY},
+    recipes::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector},
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;

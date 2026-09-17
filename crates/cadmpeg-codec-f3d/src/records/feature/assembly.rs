@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    ConstructionRecipeKind, DesignClassTag, DesignExternalVersion, DesignHoleConstruction,
-    DesignRecipeReference, DesignRelaxedGuidText, DesignWorkPointConstruction, Located,
-    SketchPlacementMatrix,
-};
+use super::combine::DesignExternalVersion;
+use super::hole::DesignHoleConstruction;
+use super::work_geometry::DesignWorkPointConstruction;
+use crate::records::dimensions::DesignRecipeReference;
+use crate::records::identity::Located;
+use crate::records::mesh::DesignRelaxedGuidText;
+use crate::records::recipes::ConstructionRecipeKind;
+use crate::records::references::DesignClassTag;
+use crate::records::sketch_placement::SketchPlacementMatrix;
 use serde::{Deserialize, Serialize};
 
 /// Domain of the two scalar limits carried by a legacy As-built scope.
@@ -379,11 +383,11 @@ impl DesignAssemblyAlignmentForm {
         let [first_frame, second_frame] = frames;
         let [first_qualifier, second_qualifier] = qualifiers;
         Self::Qualified([
-            super::DesignQualifiedAssemblyOperand {
+            super::assembly::DesignQualifiedAssemblyOperand {
                 frame: first_frame,
                 qualifier: first_qualifier,
             },
-            super::DesignQualifiedAssemblyOperand {
+            super::assembly::DesignQualifiedAssemblyOperand {
                 frame: second_frame,
                 qualifier: second_qualifier,
             },

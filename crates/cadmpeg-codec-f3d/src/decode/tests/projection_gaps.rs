@@ -10,7 +10,7 @@ use crate::records::{
     bodies::DesignBodyBinding,
     dimensions::{DesignDimensionLocusPair, DesignDimensionRecipeRecord},
     entity_header::DesignFeatureTimeline,
-    feature::DesignParameterScope,
+    feature::scope::DesignParameterScope,
     parameters::{DesignParameterCompanion, DesignParameterOwner},
     references::LostEdgeReference,
     sketch_geometry::{SketchCurveIdentity, SketchPoint},
@@ -375,7 +375,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
     native.design_parameter_scopes.push(
         DesignParameterScope::try_new(
-            crate::records::feature::DesignParameterScopeDraft {
+            crate::records::feature::scope::DesignParameterScopeDraft {
                 id: "native:unprojected-scope".into(),
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
@@ -395,7 +395,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                     "reference_members",
                 )
                 .unwrap(),
-                payload: crate::records::feature::DesignFeatureKind::try_from(
+                payload: crate::records::feature::scope::DesignFeatureKind::try_from(
                     "Unsupported".to_owned(),
                 )
                 .expect("native family name")
@@ -561,7 +561,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 fn design_projection_gaps_require_unique_scope_state_dependencies() {
     let scope = |record_index, current, previous| {
         DesignParameterScope::try_new(
-            crate::records::feature::DesignParameterScopeDraft {
+            crate::records::feature::scope::DesignParameterScopeDraft {
                 id: format!("f3d:native:scope#{record_index}"),
                 byte_offset: u64::from(record_index),
                 class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
@@ -581,7 +581,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                     "reference_members",
                 )
                 .unwrap(),
-                payload: crate::records::feature::DesignFeatureKind::try_from(
+                payload: crate::records::feature::scope::DesignFeatureKind::try_from(
                     "Unsupported".to_owned(),
                 )
                 .expect("native family name")
@@ -643,7 +643,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     let stream = "f3d:Design/BulkStream.dat";
     let mut predecessor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         100,
     );
     predecessor
@@ -653,7 +653,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         .unwrap();
     let mut internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#150"),
-        crate::records::feature::DesignFeatureKind::BaseFeature,
+        crate::records::feature::scope::DesignFeatureKind::BaseFeature,
         150,
     );
     internal
@@ -665,7 +665,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         .unwrap();
     let mut successor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        crate::records::feature::DesignFeatureKind::Fillet,
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
         200,
     );
     successor

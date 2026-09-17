@@ -91,10 +91,12 @@ fn bounded_face_copy_matches_cyclic_boundary_with_split_vertices() {
 
 #[test]
 fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
-    use crate::records::recipes::ConstructionRecipeKind;
-    use crate::records::topology::{
-        DesignEdgeIdentityOperand, DesignFaceOperand, DesignHistoricalFaceBoundaryContext,
-        DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
+    use crate::records::{
+        recipes::ConstructionRecipeKind,
+        topology::{
+            DesignEdgeIdentityOperand, DesignFaceOperand, DesignHistoricalFaceBoundaryContext,
+            DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
+        },
     };
 
     let mut identities = vec![DesignEdgeIdentityOperand::try_new(

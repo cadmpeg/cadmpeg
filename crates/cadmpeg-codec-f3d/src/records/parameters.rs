@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design parameters, their owners and the companion records that carry their expressions.
 
-use super::{
-    identity::{Located, RecordedValue},
-    references::DesignClassTag,
-};
+use super::identity::{Located, RecordedValue};
+use super::references::DesignClassTag;
 use cadmpeg_core::text::NonBlankString;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::num::NonZeroU64;

@@ -26,7 +26,7 @@ use crate::bytes::{
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
 use crate::records::{
-    feature::{DesignComponentInsertConstruction, DesignParameterScope},
+    feature::{assembly_features::DesignComponentInsertConstruction, scope::DesignParameterScope},
     xref::{XrefDesign, XrefReference},
 };
 

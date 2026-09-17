@@ -8,12 +8,11 @@
 )]
 
 use super::project_rectangular_pattern_scalars;
-use crate::records::topology::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-};
 use crate::records::{
-    feature::{DesignParameterScope, DesignRectangularPatternConstruction},
-    topology::DesignOperandRole,
+    feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
+    topology::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignOperandRole,
+    },
 };
 use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PatternSeed,
@@ -75,16 +74,16 @@ fn group(
 fn rectangular_scope() -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::RPattern,
+        crate::records::feature::scope::DesignFeatureKind::RPattern,
         10,
     );
-    if let crate::records::feature::DesignScopePayloadMut::RPattern(slot)
-    | crate::records::feature::DesignScopePayloadMut::RectangularPattern(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::RectangularPattern(slot) =
         scope.payload_mut()
     {
         *slot = Some(
             DesignRectangularPatternConstruction::try_from(
-                crate::records::feature::DesignRectangularPatternConstructionWire {
+                crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
                     u_count: 3,
                     v_count: 1,
                     u_extent: 10.0,

@@ -16,10 +16,10 @@ use super::{
     parse_parameter_owner,
 };
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
-use crate::records::parameters::{
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+use crate::records::{
+    parameters::{DesignParameterCompanion, DesignParameterKind, DesignParameterOwner},
+    recipes::{ConstructionRecipe, ConstructionRecipeKind},
 };
-use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
 use crate::test_support::*;
 
 fn compact_owned_parameter_record(

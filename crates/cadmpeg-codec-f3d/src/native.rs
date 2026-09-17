@@ -29,51 +29,37 @@ use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
     AsmHistoricalTransition, AsmHistory, AsmTopologyCacheKind,
 };
-use crate::records::act::{
-    ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference,
-};
-use crate::records::bodies::{
-    BodyVisibility, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-};
-use crate::records::dimension_locus_arenas::{
-    DesignDimensionLocusPairs, DesignDimensionNullLocusPairs,
-};
-use crate::records::dimensions::{
-    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionPresentationFrame,
-    DesignDimensionRecipeRecord,
-};
-use crate::records::entity_header::{DesignEntityHeader, DesignFeatureTimeline, SegmentType};
-use crate::records::feature::{
-    DesignComponentOccurrence, DesignEdgeTreatmentVertexOperand, DesignParameterScope,
-    DesignSurfaceTrimOperation,
-};
-use crate::records::references::{
-    DesignMaterialAssignment, LostEdgeReference, PersistentReference,
-};
-use crate::records::sketch_geometry::{
-    SketchCurveIdentity, SketchPoint, SketchSurface, SketchText,
-};
-use crate::records::topology::{
-    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntitySelectionOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFaceSourceGroup, DesignFilletRadiusGroup, DesignLoftLegacyBodyCarrier,
-};
-use crate::records::xref::{XrefDesign, XrefReference};
 use crate::records::{
+    act::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference},
+    bodies::{BodyVisibility, DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
     canvas::DesignCanvasImage,
     configuration::DesignConfiguration,
     decal::{DesignDecalImage, DesignRecordHeader},
-};
-use crate::records::{
+    dimension_locus_arenas::{DesignDimensionLocusPairs, DesignDimensionNullLocusPairs},
+    dimensions::{
+        DesignDimensionAnnotationFrame, DesignDimensionLocusGroup,
+        DesignDimensionPresentationFrame, DesignDimensionRecipeRecord,
+    },
+    entity_header::{DesignEntityHeader, DesignFeatureTimeline, SegmentType},
+    feature::{
+        assembly_features::DesignComponentOccurrence, scope::DesignParameterScope,
+        surface_ops::DesignSurfaceTrimOperation, work_geometry::DesignEdgeTreatmentVertexOperand,
+    },
     mesh::DesignMeshFeature,
     parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
     recipes::{ConstructionRecipe, CreationTimestamp, DesignComponentNamingSpace},
-};
-use crate::records::{
+    references::{DesignMaterialAssignment, LostEdgeReference, PersistentReference},
+    sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchSurface, SketchText},
     sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink},
     sketch_placement::DesignSketchPlacement,
     sketch_relations::SketchRelation,
+    topology::{
+        DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+        DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntitySelectionOperand,
+        DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
+        DesignFaceSourceGroup, DesignFilletRadiusGroup, DesignLoftLegacyBodyCarrier,
+    },
+    xref::{XrefDesign, XrefReference},
 };
 use cadmpeg_asm::brep::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,

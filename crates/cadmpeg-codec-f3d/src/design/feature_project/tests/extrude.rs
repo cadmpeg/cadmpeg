@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
+use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
 use cadmpeg_ir::features::FeatureOperation;
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
@@ -146,7 +146,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .expect("generated feature parameter is canonical")
     };
     let mut scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
             byte_offset: 100,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -155,7 +155,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             frame_length: 200,
             kind_offset: 210,
             payload: DesignScopePayload::Extrude(Some(
-                crate::records::feature::DesignExtrudeScope {
+                crate::records::feature::scope::DesignExtrudeScope {
                     extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                         reference: None,
                         operation: DesignExtrudeOperation::NewBody,
@@ -204,7 +204,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                         )
                         .unwrap(),
                     ),
-                    ..crate::records::feature::DesignExtrudeScope::default()
+                    ..crate::records::feature::scope::DesignExtrudeScope::default()
                 },
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
@@ -309,9 +309,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         })
     ));
-    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::LegacyShifted {
@@ -547,7 +547,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .expect("test placement carries a scope record index");
     sketch_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Sketch
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Sketch
                 .try_into()
                 .unwrap();
         })
@@ -793,9 +793,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         })
     ));
 
-    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue = reference_aware_prologue;
     }
@@ -1004,9 +1004,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
     let sketch_profile = scope.extrude_profile().cloned();
-    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_profile = None;
     }
@@ -1047,9 +1047,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         &[],
     )
     .is_none());
-    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_profile = sketch_profile;
     }
@@ -1087,9 +1087,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             )),
             taper_angle: None,
         });
-        if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-        | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-        | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+            scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
                 .fixed_extrude_parameters = value;
@@ -1147,9 +1148,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_direction_reversed(&mut scope, false);
     {
         let value = None;
-        if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-        | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-        | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) = scope.payload_mut()
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+            scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
                 .fixed_extrude_parameters = value;
@@ -1158,9 +1160,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut native_profile_scope = scope.clone();
     {
         let value = None;
-        if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-        | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-        | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
             native_profile_scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).extrude_profile = value;

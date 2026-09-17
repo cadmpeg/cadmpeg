@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::prelude::*;
-use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
+use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
 use cadmpeg_ir::features::FeatureOperation;
 
 pub(super) fn fixed_kind_tail_operations(
@@ -28,7 +28,7 @@ pub(super) fn fixed_kind_tail_operations(
     let mut move_scope = scope.clone();
     move_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Move
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Move
                 .try_into()
                 .unwrap();
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![90]);
@@ -65,7 +65,7 @@ pub(super) fn fixed_kind_tail_operations(
     let mut compact_move_scope = scope.clone();
     compact_move_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Move
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Move
                 .try_into()
                 .unwrap();
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![91]);
@@ -114,7 +114,7 @@ pub(super) fn fixed_kind_tail_operations(
     let mut class_433_move_scope = scope.clone();
     class_433_move_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Move
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Move
                 .try_into()
                 .unwrap();
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![92]);
@@ -151,7 +151,7 @@ pub(super) fn fixed_kind_tail_operations(
     scale_scope
         .try_edit(|draft| {
             draft.byte_offset = scale_at as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::Massstab
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Massstab
                 .try_into()
                 .unwrap();
             draft.frame_length = 317;
@@ -204,7 +204,7 @@ pub(super) fn fixed_kind_tail_operations(
     sphere_scope
         .try_edit(|draft| {
             draft.byte_offset = sphere_at as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::SpherePrimitive
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::SpherePrimitive
                 .try_into()
                 .unwrap();
             draft.frame_length = 462;
@@ -222,7 +222,7 @@ pub(super) fn fixed_kind_tail_operations(
             &[],
         ),
         Some(DesignSolidPrimitive::Sphere(
-            crate::records::feature::DesignSpherePrimitive {
+            crate::records::feature::primitives::DesignSpherePrimitive {
                 diameter: 8.0,
                 diameter_record_index: 70,
                 operation: DesignExtrudeOperation::NewBody,
@@ -264,7 +264,7 @@ pub(super) fn fixed_kind_tail_operations(
     torus_scope
         .try_edit(|draft| {
             draft.byte_offset = torus_at as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::TorusPrimitive
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::TorusPrimitive
                 .try_into()
                 .unwrap();
             draft.frame_length = 486;
@@ -282,7 +282,7 @@ pub(super) fn fixed_kind_tail_operations(
             &[],
         ),
         Some(DesignSolidPrimitive::Torus(
-            crate::records::feature::DesignTorusPrimitive {
+            crate::records::feature::primitives::DesignTorusPrimitive {
                 major_diameter: 15.0,
                 minor_diameter: 4.0,
                 operation: DesignExtrudeOperation::NewBody,
@@ -309,7 +309,7 @@ pub(super) fn fixed_kind_tail_operations(
     offset_scope
         .try_edit(|draft| {
             draft.byte_offset = offset_at as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::OffsetFaces
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::OffsetFaces
                 .try_into()
                 .unwrap();
             draft.frame_length = 286;
@@ -324,7 +324,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(
-            crate::records::feature::DesignOffsetFacesOperation {
+            crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance: -0.5,
                 distance_record_index: 73,
                 ..
@@ -363,7 +363,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(
-            crate::records::feature::DesignOffsetFacesOperation {
+            crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance: 0.254,
                 distance_record_index: 1_777,
                 ..
@@ -389,7 +389,7 @@ pub(super) fn fixed_kind_tail_operations(
     thicken_scope
         .try_edit(|draft| {
             draft.byte_offset = thicken_at as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::Thicken
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Thicken
                 .try_into()
                 .unwrap();
             draft.frame_length = 301;
@@ -404,7 +404,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(
-            crate::records::feature::DesignThickenOperation {
+            crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness: -1.0,
                 thickness_record_index: 74,
                 ..
@@ -442,7 +442,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(
-            crate::records::feature::DesignThickenOperation {
+            crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness: -1.0,
                 thickness_record_index: 74,
                 ..
@@ -457,7 +457,7 @@ pub(super) fn fixed_kind_tail_operations(
     shifted_thicken[48..52].copy_from_slice(&74u32.to_le_bytes());
     bytes.extend_from_slice(&shifted_thicken);
     let shifted_thicken_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             byte_offset: shifted_thicken_at as u64,
             reference_count_offset: (shifted_thicken_at + 9) as u64,
             frame_length: 312,
@@ -476,7 +476,7 @@ pub(super) fn fixed_kind_tail_operations(
             &shifted_thicken_scope,
         ),
         Some(DesignDirectFaceOperation::Thicken(
-            crate::records::feature::DesignThickenOperation {
+            crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness: -1.0,
                 thickness_record_index: 74,
                 ..
@@ -491,18 +491,22 @@ pub(super) fn fixed_kind_tail_operations(
         );
         match (thicken_scope.payload_mut(), construction) {
             (
-                crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
-                | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
+                | crate::records::feature::scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
+                    value,
+                )),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayloadMut::Shell(slot)
-                | crate::records::feature::DesignScopePayloadMut::Schale(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot)
+                | crate::records::feature::scope::DesignScopePayloadMut::Schale(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayloadMut::Thicken(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::Thicken(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Thicken(
+                    value,
+                )),
             ) => *slot = Some(value),
             _ => {}
         }
@@ -602,7 +606,7 @@ pub(super) fn fixed_kind_tail_operations(
     shell_scope
         .try_edit(|draft| {
             draft.byte_offset = shell_at as u64;
-            draft.payload = crate::records::feature::DesignFeatureKind::Shell
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Shell
                 .try_into()
                 .unwrap();
             draft.frame_length = 278;
@@ -619,26 +623,30 @@ pub(super) fn fixed_kind_tail_operations(
             exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &shell_scope);
         match (shell_scope.payload_mut(), construction) {
             (
-                crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
-                | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
+                | crate::records::feature::scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
+                    value,
+                )),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayloadMut::Shell(slot)
-                | crate::records::feature::DesignScopePayloadMut::Schale(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot)
+                | crate::records::feature::scope::DesignScopePayloadMut::Schale(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayloadMut::Thicken(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::Thicken(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Thicken(
+                    value,
+                )),
             ) => *slot = Some(value),
             _ => {}
         }
     }
     assert!(matches!(
         &shell_scope.payload(),
-        crate::records::feature::DesignScopePayload::Shell(Some(
-            crate::records::feature::DesignShellOperation {
+        crate::records::feature::scope::DesignScopePayload::Shell(Some(
+            crate::records::feature::direct_face::DesignShellOperation {
                 thickness: 0.5,
                 thickness_record_index: 1_778,
                 outward: true,
@@ -692,7 +700,7 @@ pub(super) fn fixed_kind_tail_operations(
     compact_shell_thickness.extend_from_slice(&9_000u32.to_le_bytes());
     bytes.extend_from_slice(&compact_shell_thickness);
     let mut compact_shell_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             byte_offset: compact_shell_at as u64,
             reference_count_offset: (compact_shell_at + 9) as u64,
             frame_length: 268,
@@ -706,7 +714,7 @@ pub(super) fn fixed_kind_tail_operations(
     .unwrap();
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_shell_scope),
-        Some(DesignDirectFaceOperation::Shell(crate::records::feature::DesignShellOperation {
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
             thickness: 0.25,
             thickness_record_index: 9_000,
             outward: true,
@@ -725,7 +733,7 @@ pub(super) fn fixed_kind_tail_operations(
     shifted_shell[56..60].copy_from_slice(&200u32.to_le_bytes());
     bytes.extend_from_slice(&shifted_shell);
     let shifted_shell_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             byte_offset: shifted_shell_at as u64,
             reference_count_offset: (shifted_shell_at + 9) as u64,
             frame_length: 278,
@@ -743,7 +751,7 @@ pub(super) fn fixed_kind_tail_operations(
             &IndexedRecordOffsets::build(&bytes),
             &shifted_shell_scope,
         ),
-        Some(DesignDirectFaceOperation::Shell(crate::records::feature::DesignShellOperation {
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
             thickness: 0.25,
             thickness_record_index: 9_000,
             outward: false,
@@ -759,18 +767,22 @@ pub(super) fn fixed_kind_tail_operations(
         );
         match (compact_shell_scope.payload_mut(), construction) {
             (
-                crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
-                | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
+                | crate::records::feature::scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
+                    value,
+                )),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayloadMut::Shell(slot)
-                | crate::records::feature::DesignScopePayloadMut::Schale(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot)
+                | crate::records::feature::scope::DesignScopePayloadMut::Schale(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayloadMut::Thicken(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::Thicken(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Thicken(
+                    value,
+                )),
             ) => *slot = Some(value),
             _ => {}
         }
@@ -799,18 +811,22 @@ pub(super) fn fixed_kind_tail_operations(
         );
         match (offset_scope.payload_mut(), construction) {
             (
-                crate::records::feature::DesignScopePayloadMut::OffsetFaces(slot)
-                | crate::records::feature::DesignScopePayloadMut::DecalerLesFaces(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::OffsetFaces(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
+                | crate::records::feature::scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
+                    value,
+                )),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayloadMut::Shell(slot)
-                | crate::records::feature::DesignScopePayloadMut::Schale(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::Shell(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot)
+                | crate::records::feature::scope::DesignScopePayloadMut::Schale(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
-                crate::records::feature::DesignScopePayloadMut::Thicken(slot),
-                Some(crate::records::feature::DesignDirectFaceOperation::Thicken(value)),
+                crate::records::feature::scope::DesignScopePayloadMut::Thicken(slot),
+                Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Thicken(
+                    value,
+                )),
             ) => *slot = Some(value),
             _ => {}
         }
@@ -858,14 +874,14 @@ pub(super) fn fixed_kind_tail_operations(
     let mut extrude_scope = scope.clone();
     extrude_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Extrude
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Extrude
                 .try_into()
                 .unwrap();
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::DesignScopePayloadMut::Extrusao(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
         extrude_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
@@ -1049,7 +1065,7 @@ pub(super) fn fixed_kind_tail_operations(
     extend_scope.id = "f3d:native/BulkStream.dat:parameter-scope#12".into();
     extend_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::SurfaceExtend
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::SurfaceExtend
                 .try_into()
                 .unwrap();
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
@@ -1083,7 +1099,7 @@ pub(super) fn fixed_kind_tail_operations(
             tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
         }
     );
-    if let crate::records::feature::DesignScopePayloadMut::SurfaceExtend(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::SurfaceExtend(slot) =
         extend_scope.payload_mut()
     {
         *slot = Some(operation);
@@ -1115,12 +1131,12 @@ pub(super) fn fixed_kind_tail_operations(
         .copy_from_slice(&65u32.to_le_bytes());
     extend_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::SurfaceOffset
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::SurfaceOffset
                 .try_into()
                 .unwrap();
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::SurfaceExtend(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::SurfaceExtend(slot) =
         extend_scope.payload_mut()
     {
         *slot = None;
@@ -1144,7 +1160,7 @@ pub(super) fn fixed_kind_tail_operations(
             },
         }
     );
-    if let crate::records::feature::DesignScopePayloadMut::SurfaceOffset(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::SurfaceOffset(slot) =
         extend_scope.payload_mut()
     {
         *slot = Some(operation);

@@ -1030,31 +1030,37 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let selected_construction = crate::records::feature::DesignComponentInsertConstruction {
-        relation_record_index: 1,
-        carrier_record_index: 2,
-        occurrence_identity: None,
-        neutron_role: "role".into(),
-        neutron_role_offset: 0,
-        placement: Some(crate::records::feature::DesignComponentInsertMatrix {
-            scope: crate::records::identity::Located {
-                value: selected.try_into().unwrap(),
-                offset: 0,
-            },
-            carrier_offset: Some(0),
-        }),
-    };
-    let ignored_construction = crate::records::feature::DesignComponentInsertConstruction {
-        neutron_role: "other".into(),
-        placement: Some(crate::records::feature::DesignComponentInsertMatrix {
-            scope: crate::records::identity::Located {
-                value: ignored.try_into().unwrap(),
-                offset: 0,
-            },
-            carrier_offset: Some(0),
-        }),
-        ..selected_construction.clone()
-    };
+    let selected_construction =
+        crate::records::feature::assembly_features::DesignComponentInsertConstruction {
+            relation_record_index: 1,
+            carrier_record_index: 2,
+            occurrence_identity: None,
+            neutron_role: "role".into(),
+            neutron_role_offset: 0,
+            placement: Some(
+                crate::records::feature::assembly_features::DesignComponentInsertMatrix {
+                    scope: crate::records::identity::Located {
+                        value: selected.try_into().unwrap(),
+                        offset: 0,
+                    },
+                    carrier_offset: Some(0),
+                },
+            ),
+        };
+    let ignored_construction =
+        crate::records::feature::assembly_features::DesignComponentInsertConstruction {
+            neutron_role: "other".into(),
+            placement: Some(
+                crate::records::feature::assembly_features::DesignComponentInsertMatrix {
+                    scope: crate::records::identity::Located {
+                        value: ignored.try_into().unwrap(),
+                        offset: 0,
+                    },
+                    carrier_offset: Some(0),
+                },
+            ),
+            ..selected_construction.clone()
+        };
 
     assert_eq!(
         super::select_component_insert_transforms(

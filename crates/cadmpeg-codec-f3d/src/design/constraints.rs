@@ -987,9 +987,12 @@ mod tests {
         exact_circular_pattern, exact_rectangular_pattern, exact_text_relation, scalar_close,
         translated_sketch_geometry_matches, RectangularPatternDistanceForm,
     };
-    use crate::records::parameters::DesignParameter;
-    use crate::records::sketch_relations::{
-        SketchPatternDefinition, SketchRelation, SketchRelationMember, SketchRelationReturnMember,
+    use crate::records::{
+        parameters::DesignParameter,
+        sketch_relations::{
+            SketchPatternDefinition, SketchRelation, SketchRelationMember,
+            SketchRelationReturnMember,
+        },
     };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{

@@ -214,7 +214,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         owner = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     let scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:native/BulkStream.dat:parameter-scope#12".into(),
             byte_offset: 100,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -223,7 +223,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
             frame_length: 200,
             kind_offset: 210,
             payload: DesignScopePayload::Extrude(Some(
-                crate::records::feature::DesignExtrudeScope {
+                crate::records::feature::scope::DesignExtrudeScope {
                     extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                         reference: None,
                         operation: DesignExtrudeOperation::NewBody,
@@ -241,7 +241,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
                         start: DesignExtrudeStart::ProfilePlane,
                         start_offset: 142,
                     }),
-                    ..crate::records::feature::DesignExtrudeScope::default()
+                    ..crate::records::feature::scope::DesignExtrudeScope::default()
                 },
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
@@ -391,7 +391,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     };
     let scope = |record_index| {
         DesignParameterScope::try_new(
-            crate::records::feature::DesignParameterScopeDraft {
+            crate::records::feature::scope::DesignParameterScopeDraft {
                 id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
                 byte_offset: u64::from(record_index),
                 class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -412,7 +412,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
                     "reference_members",
                 )
                 .unwrap(),
-                payload: crate::records::feature::DesignFeatureKind::CustomFeature
+                payload: crate::records::feature::scope::DesignFeatureKind::CustomFeature
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
@@ -554,7 +554,7 @@ fn parameter_expressions_project_feature_dependencies() {
     };
     let scope = |record_index, byte_offset, kind: &str| {
         DesignParameterScope::try_new(
-            crate::records::feature::DesignParameterScopeDraft {
+            crate::records::feature::scope::DesignParameterScopeDraft {
                 id: format!("f3d:native/BulkStream.dat:scope#{record_index}"),
                 byte_offset,
                 class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -575,10 +575,12 @@ fn parameter_expressions_project_feature_dependencies() {
                     "reference_members",
                 )
                 .unwrap(),
-                payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
-                    .expect("nonempty family name")
-                    .try_into()
-                    .unwrap(),
+                payload: crate::records::feature::scope::DesignFeatureKind::try_from(
+                    kind.to_owned(),
+                )
+                .expect("nonempty family name")
+                .try_into()
+                .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "261".to_owned(),

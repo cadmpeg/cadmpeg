@@ -11,8 +11,10 @@ use crate::design::decode::sketch::{
 };
 use crate::ids::{native_design_surface_trim_operation_id, native_stream};
 use crate::records::feature::{
-    DesignParameterScope, DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord,
-    DesignSurfaceTrimOperation,
+    scope::DesignParameterScope,
+    surface_ops::{
+        DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord, DesignSurfaceTrimOperation,
+    },
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -30,7 +32,7 @@ pub(crate) fn exact_surface_trim_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceTrimOperation> {
-    if scope.kind() != crate::records::feature::DesignFeatureKind::SurfaceTrim
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
         || scope.reference_members().len() != 4
     {
         return None;
@@ -119,26 +121,28 @@ pub(crate) fn exact_surface_trim_operation(
             ordinal_offset,
         });
     }
-    DesignSurfaceTrimOperation::try_from(crate::records::feature::DesignSurfaceTrimOperationWire {
-        id: String::new(),
-        scope_record_index: scope.record_index,
-        selection_record_index,
-        selection_byte_offset: u64::try_from(selection_byte_offset).ok()?,
-        selection_next_record_index: selection.next_record_index,
-        selection_next_byte_offset: selection.next_byte_offset,
-        chain_records,
-        cell_table_record_index,
-        cell_table_byte_offset: u64::try_from(primary).ok()?,
-        cell_table_class_tag,
-        cell_table_frame_length: u64::try_from(paired.checked_sub(primary)?).ok()?,
-        cell_table_paired_class_tag: cell_table_paired_class_tag.try_into().ok()?,
-        cell_table_paired_byte_offset: u64::try_from(paired).ok()?,
-        cell_count_offset: u64::try_from(cell_count_offset).ok()?,
-        cell_entries,
-        trailing_value,
-        trailing_value_offset: u64::try_from(trailing_value_offset).ok()?,
-        trailing_zero_offset: u64::try_from(trailing_zero_offset).ok()?,
-    })
+    DesignSurfaceTrimOperation::try_from(
+        crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
+            id: String::new(),
+            scope_record_index: scope.record_index,
+            selection_record_index,
+            selection_byte_offset: u64::try_from(selection_byte_offset).ok()?,
+            selection_next_record_index: selection.next_record_index,
+            selection_next_byte_offset: selection.next_byte_offset,
+            chain_records,
+            cell_table_record_index,
+            cell_table_byte_offset: u64::try_from(primary).ok()?,
+            cell_table_class_tag,
+            cell_table_frame_length: u64::try_from(paired.checked_sub(primary)?).ok()?,
+            cell_table_paired_class_tag: cell_table_paired_class_tag.try_into().ok()?,
+            cell_table_paired_byte_offset: u64::try_from(paired).ok()?,
+            cell_count_offset: u64::try_from(cell_count_offset).ok()?,
+            cell_entries,
+            trailing_value,
+            trailing_value_offset: u64::try_from(trailing_value_offset).ok()?,
+            trailing_zero_offset: u64::try_from(trailing_zero_offset).ok()?,
+        },
+    )
     .ok()
 }
 
@@ -149,10 +153,9 @@ pub(crate) fn decode_surface_trim_operations(
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
     let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| scope.kind() == crate::records::feature::DesignFeatureKind::SurfaceTrim)
-    {
+    for scope in scopes.iter().filter(|scope| {
+        scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
+    }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };

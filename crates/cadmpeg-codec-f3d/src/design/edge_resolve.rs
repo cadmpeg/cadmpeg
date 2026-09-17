@@ -2,9 +2,9 @@
 //! Resolve edge-selection operands to stable edge identities.
 
 use crate::ids::{self, native_stream, neutral_feature_id};
-use crate::records::feature::{DesignEdgeTreatmentVertexOperand, DesignParameterScope};
-use crate::records::topology::{
-    DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
+use crate::records::{
+    feature::{scope::DesignParameterScope, work_geometry::DesignEdgeTreatmentVertexOperand},
+    topology::{DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -2322,36 +2322,40 @@ pub(crate) fn project_fixed_fillet_with_corners(
 
     let fixed = scope.fixed_fillet_parameters()?;
     let stream = native_stream(&scope.id)?;
-    let radius_spec = |group: &crate::records::feature::DesignFixedFilletGroup| match group.law() {
-        crate::records::feature::DesignFixedFilletLaw::Constant(radius) => (radius.value > 0.0)
-            .then_some(RadiusSpec::Constant {
-                radius: cadmpeg_ir::scalar::PositiveLength::new(radius.value * 10.0)?,
-            }),
-        crate::records::feature::DesignFixedFilletLaw::Variable {
-            start,
-            end,
-            intermediate,
-        } => {
-            let mut points = Vec::with_capacity(intermediate.len() + 2);
-            points.push(VariableRadius {
-                parameter: 0.0,
-                radius: Length::new(start.value * 10.0)?,
-            });
-            for row in intermediate {
-                points.push(VariableRadius {
-                    parameter: row.parameter.value,
-                    radius: Length::new(row.radius.value * 10.0)?,
-                });
+    let radius_spec =
+        |group: &crate::records::feature::fixed_parameters::DesignFixedFilletGroup| match group
+            .law()
+        {
+            crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(radius) => {
+                (radius.value > 0.0).then_some(RadiusSpec::Constant {
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(radius.value * 10.0)?,
+                })
             }
-            points.push(VariableRadius {
-                parameter: 1.0,
-                radius: Length::new(end.value * 10.0)?,
-            });
-            Some(RadiusSpec::Variable {
-                points: cadmpeg_ir::features::VariableRadii::new(points).ok()?,
-            })
-        }
-    };
+            crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Variable {
+                start,
+                end,
+                intermediate,
+            } => {
+                let mut points = Vec::with_capacity(intermediate.len() + 2);
+                points.push(VariableRadius {
+                    parameter: 0.0,
+                    radius: Length::new(start.value * 10.0)?,
+                });
+                for row in intermediate {
+                    points.push(VariableRadius {
+                        parameter: row.parameter.value,
+                        radius: Length::new(row.radius.value * 10.0)?,
+                    });
+                }
+                points.push(VariableRadius {
+                    parameter: 1.0,
+                    radius: Length::new(end.value * 10.0)?,
+                });
+                Some(RadiusSpec::Variable {
+                    points: cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+                })
+            }
+        };
     let mut scope_groups = construction_groups
         .iter()
         .filter(|group| {

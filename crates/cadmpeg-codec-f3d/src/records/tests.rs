@@ -46,7 +46,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
                 wire
             };
             let encoded = if prefix == "{" {
-                let value: crate::records::feature::DesignHoleFaceSelection = serde_json::from_str(&wire).expect("hole selection");
+                let value: crate::records::feature::hole::DesignHoleFaceSelection = serde_json::from_str(&wire).expect("hole selection");
                 serde_json::to_string(&value).expect("hole selection wire")
             } else {
                 let value: crate::records::topology::DesignEntitySelectionOperand = serde_json::from_str(&wire).expect("entity selection");
@@ -57,7 +57,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
         for field in ["secondary_identity", "secondary_identity_offset", "curve_secondary_identity", "curve_secondary_identity_offset"] {
             let wire = format!("{prefix}{fields},\"{field}\":1{suffix}");
             let error = if prefix == "{" {
-                serde_json::from_str::<crate::records::feature::DesignHoleFaceSelection>(&wire).expect_err("partial hole selection identity").to_string()
+                serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(&wire).expect_err("partial hole selection identity").to_string()
             } else {
                 serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(&wire).expect_err("partial entity selection identity").to_string()
             };
@@ -65,7 +65,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
         }
         let wire = format!("{prefix}{fields},\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201{suffix}");
         let error = if prefix == "{" {
-            serde_json::from_str::<crate::records::feature::DesignHoleFaceSelection>(&wire).unwrap_err().to_string()
+            serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(&wire).unwrap_err().to_string()
         } else {
             serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(&wire).unwrap_err().to_string()
         };
@@ -77,7 +77,7 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
         ] {
             let wire = format!("{prefix}{fields}{suffix}").replace(guid, "not-a-guid");
             let error = if prefix == "{" {
-                serde_json::from_str::<crate::records::feature::DesignHoleFaceSelection>(&wire)
+                serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(&wire)
                     .expect_err("non-GUID hole selection identity")
                     .to_string()
             } else {
@@ -753,14 +753,15 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
         assert_eq!(id.as_str(), name);
         assert_eq!(id.suffix(), suffix);
         let wire = serde_json::json!({"entity_id": name, "entity_suffix": suffix, "entity_reference_offset": 20});
-        let binding: crate::records::feature::DesignSketchEntityBinding =
+        let binding: crate::records::feature::scope::DesignSketchEntityBinding =
             serde_json::from_value(wire.clone()).expect("matching suffix");
         assert_eq!(serde_json::to_value(binding).unwrap(), wire);
         let mut mismatch = wire;
         mismatch["entity_suffix"] = (suffix ^ 1).into();
-        let error =
-            serde_json::from_value::<crate::records::feature::DesignSketchEntityBinding>(mismatch)
-                .expect_err("contradictory suffix");
+        let error = serde_json::from_value::<
+            crate::records::feature::scope::DesignSketchEntityBinding,
+        >(mismatch)
+        .expect_err("contradictory suffix");
         assert!(error.to_string().contains("entity_suffix"));
     }
     for name in [

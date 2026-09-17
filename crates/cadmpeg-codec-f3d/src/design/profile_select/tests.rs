@@ -11,15 +11,16 @@ use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
     neutral_spatial_sketch_id,
 };
-use crate::records::topology::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-    DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
-    DesignSketchProfileRegionSelection,
-};
 use crate::records::{
-    sketch_geometry::SketchCurveIdentity, sketch_placement::DesignSketchPlacement,
-    sketch_relations::SketchRelationOperand, topology::DesignOperandRole,
+    sketch_geometry::SketchCurveIdentity,
+    sketch_placement::DesignSketchPlacement,
+    sketch_relations::SketchRelationOperand,
+    topology::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+        DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+        DesignOperandRole, DesignSketchProfileOperand, DesignSketchProfileRegion,
+        DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
+    },
 };
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::features::{PathRef, SketchProfileRegion};

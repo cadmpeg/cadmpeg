@@ -18,7 +18,7 @@ use super::super::{
 };
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
-use crate::records::feature::DesignParameterScope;
+use crate::records::feature::scope::DesignParameterScope;
 
 #[test]
 fn active_face_substitutions_have_a_distinct_loss_note() {
@@ -76,7 +76,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
     let mut scope = DesignParameterScope::empty(
         scope_id,
-        crate::records::feature::DesignFeatureKind::BaseMeshFeature,
+        crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature,
         10,
     );
     // The feature's owning entity reference is distinct from its scope index.

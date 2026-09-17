@@ -84,7 +84,7 @@ ABSENT_KEY_EXCEPTIONS = {
     "crates/cadmpeg-codec-f3d/src/records/topology.rs:postlude_value":
         "the key states a scalar run, not an option: its reader reads a Vec<i32>, "
         "which refuses null, and reads the empty run as None",
-    "crates/cadmpeg-codec-f3d/src/records/feature.rs:previous_history_state_id_offset":
+    "crates/cadmpeg-codec-f3d/src/records/feature/scope.rs:previous_history_state_id_offset":
         "the writer states this key for every scope as a u64 and the format spells "
         "the absent preceding state as offset 0, which no record header can occupy; "
         "serialize_absent_u64_offset and deserialize_absent_u64_offset are that one "

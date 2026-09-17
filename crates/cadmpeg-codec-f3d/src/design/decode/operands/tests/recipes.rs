@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::records::{topology::DesignConstructionOperandGroupFrame, topology::DesignOperandRole};
+use crate::records::topology::{DesignConstructionOperandGroupFrame, DesignOperandRole};
 
 #[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
@@ -36,7 +36,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     let next_at = header(&mut bytes, *b"306", 104);
     let scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#1".into(),
             byte_offset: 1000,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
@@ -57,7 +57,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 "reference_members",
             )
             .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::Fillet
+            payload: crate::records::feature::scope::DesignFeatureKind::Fillet
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
@@ -111,7 +111,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut work_point_scope = scope.clone();
     work_point_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::WorkPoint
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::WorkPoint
                 .try_into()
                 .unwrap();
         })
@@ -131,7 +131,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut sweep_scope = scope.clone();
     sweep_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Sweep
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Sweep
                 .try_into()
                 .unwrap();
         })
@@ -1096,7 +1096,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut face_scope = scope;
     face_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Extrude
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Extrude
                 .try_into()
                 .unwrap();
         })
@@ -1544,7 +1544,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut split_scope = face_scope.clone();
     split_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::SplitFace
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::SplitFace
                 .try_into()
                 .unwrap();
             draft.previous_history_state_id = Some(49);

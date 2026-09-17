@@ -14,20 +14,18 @@ use crate::container::ContainerScan;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
-use crate::records::sketch_geometry::{
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
-    SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
-    SketchSurface, SketchText, SketchTextAlignment, SketchTextLayout,
-};
-use crate::records::sketch_placement::{DesignSketchPlacement, DesignSketchVisibility};
-use crate::records::sketch_relations::{
-    SketchGlyphTransform, SketchRelation, SketchRelationOperand,
-};
 use crate::records::{
     decal::DesignRecordHeader,
     entity_header::{DesignEntityHeader, DESIGN_MODULE_SKETCH},
-    feature::DesignParameterScope,
+    feature::scope::DesignParameterScope,
     references::{LostEdgeReference, PersistentReference, PersistentReferenceKind},
+    sketch_geometry::{
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
+        SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
+        SketchSurface, SketchText, SketchTextAlignment, SketchTextLayout,
+    },
+    sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
+    sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
 };
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;

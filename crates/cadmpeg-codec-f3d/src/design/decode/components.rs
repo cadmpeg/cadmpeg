@@ -10,7 +10,7 @@ use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids;
-use crate::records::feature::DesignComponentOccurrence;
+use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
 const BASE_FRAME_LENGTH: usize = 229;
 const PLACED_FRAME_LENGTH: usize = 357;
@@ -87,7 +87,7 @@ pub(crate) fn exact_component_occurrence(
             {
                 return None;
             }
-            crate::records::feature::DesignComponentOccurrencePlacement::Base
+            crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base
         }
         PLACED_FRAME_LENGTH => {
             if (class_tag == "256" && occurrence_ordinal.get() < 2)
@@ -99,23 +99,25 @@ pub(crate) fn exact_component_occurrence(
                 return None;
             }
             let transform = super::scopes::rigid_transform_at(bytes, start + 209)?;
-            crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
+            crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: occurrence_ordinal,
                 transform,
             }
         }
         _ => return None,
     };
-    DesignComponentOccurrence::try_new(crate::records::feature::DesignComponentOccurrenceDraft {
-        id: format!("{stream}:design-component-occurrence#{start}"),
-        class_tag: class_tag.try_into().ok()?,
-        record_index,
-        byte_offset: u64::try_from(start).ok()?,
-        component_record_index,
-        component_guid,
-        occurrence_guid,
-        placement,
-    })
+    DesignComponentOccurrence::try_new(
+        crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
+            id: format!("{stream}:design-component-occurrence#{start}"),
+            class_tag: class_tag.try_into().ok()?,
+            record_index,
+            byte_offset: u64::try_from(start).ok()?,
+            component_record_index,
+            component_guid,
+            occurrence_guid,
+            placement,
+        },
+    )
     .ok()
 }
 

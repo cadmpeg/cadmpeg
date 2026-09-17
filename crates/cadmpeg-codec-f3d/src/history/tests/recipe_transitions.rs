@@ -7,10 +7,13 @@ use crate::records::topology::DesignOperandRole;
 #[test]
 fn split_face_targets_bind_from_a_transition_predecessor() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
+    use crate::records::{
+        feature::scope::DesignParameterScope,
+        recipes::ConstructionRecipeKind,
+        topology::{
+            DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
+        },
     };
-    use crate::records::{feature::DesignParameterScope, recipes::ConstructionRecipeKind};
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, SplitFaceTool,
     };
@@ -21,7 +24,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
     let face_id = FaceId::mint("f3d:brep:entity#7").expect("identity grammar");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
-        crate::records::feature::DesignFeatureKind::SplitFace,
+        crate::records::feature::scope::DesignFeatureKind::SplitFace,
         42,
     );
     scope
@@ -195,13 +198,16 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalTopology,
         AsmHistoricalTransition, AsmHistory,
     };
-    use crate::records::dimensions::DesignRecipeReference;
-    use crate::records::feature::{
-        DesignParameterScope, DesignThreadConstruction, DesignThreadForm,
-    };
-    use crate::records::recipes::ConstructionRecipeKind;
-    use crate::records::topology::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
+    use crate::records::{
+        dimensions::DesignRecipeReference,
+        feature::{
+            scope::DesignParameterScope,
+            thread::{DesignThreadConstruction, DesignThreadForm},
+        },
+        recipes::ConstructionRecipeKind,
+        topology::{
+            DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignFaceOperand,
+        },
     };
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -210,7 +216,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let mut scope = DesignParameterScope::empty(
         scope_id,
-        crate::records::feature::DesignFeatureKind::Thread,
+        crate::records::feature::scope::DesignFeatureKind::Thread,
         42,
     );
     scope
@@ -388,21 +394,22 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(operands[0].resolved_face_slots, [7]);
 
     let mut cylinder_scope = scope.clone();
-    if let crate::records::feature::DesignScopePayloadMut::Thread(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::Thread(slot) =
         cylinder_scope.payload_mut()
     {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Standard,
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M4x0.7").unwrap(),
-            nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
+            nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "4.0".to_owned(),
             )
             .expect("nominal size"),
             profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
-            pitch: crate::records::feature::DesignPositiveScalar::new(0.07).unwrap(),
+            pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.07).unwrap(),
             face_group_record_indices: vec![100],
-            diameters: crate::records::feature::DesignThreadDiameters::new(0.4, 0.2, 0.3).unwrap(),
+            diameters: crate::records::feature::thread::DesignThreadDiameters::new(0.4, 0.2, 0.3)
+                .unwrap(),
         });
     }
     let mut cylinder_operand = operand.clone();
@@ -703,10 +710,13 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
     };
-    use crate::records::feature::{
-        DesignHoleConstruction, DesignHoleFaceSelection, DesignParameterScope,
+    use crate::records::{
+        feature::{
+            hole::{DesignHoleConstruction, DesignHoleFaceSelection},
+            scope::DesignParameterScope,
+        },
+        topology::DesignEntitySelectionFaceCandidate,
     };
-    use crate::records::topology::DesignEntitySelectionFaceCandidate;
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
         FeatureOperation, HoleKind, LinearTermination,
@@ -717,7 +727,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let mut scope = DesignParameterScope::empty(
         scope_id,
-        crate::records::feature::DesignFeatureKind::Hole,
+        crate::records::feature::scope::DesignFeatureKind::Hole,
         42,
     );
     scope
@@ -727,7 +737,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+    if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(DesignHoleConstruction {
             point_record_index: 55,
             point_record_byte_offset: 0,

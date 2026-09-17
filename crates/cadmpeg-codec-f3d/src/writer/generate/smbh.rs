@@ -14,23 +14,23 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{ShellId, VertexId};
 use cadmpeg_ir::topology::Sense;
 
-use super::attributes::{
-    edge_persistent_attribute_ref, encode_source_less_attributes, owner_color_or_body_tag_ref,
-    owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
-    timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts, SurfaceOwnerStarts,
-};
-use super::index::NativeGenerationIndex;
-use super::native_bytes::{
-    native_curve_base, native_f64, native_history_tail, native_i64, native_ident, native_point,
-    native_record_index, native_ref, native_string, native_surface_base, native_transform,
-    native_vector,
-};
-use super::native_geometry::{
-    native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
-    native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
-    native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, NativePcurveForm,
-};
 use super::{
+    attributes::{
+        edge_persistent_attribute_ref, encode_source_less_attributes, owner_color_or_body_tag_ref,
+        owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
+        timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts, SurfaceOwnerStarts,
+    },
+    index::NativeGenerationIndex,
+    native_bytes::{
+        native_curve_base, native_f64, native_history_tail, native_i64, native_ident, native_point,
+        native_record_index, native_ref, native_string, native_surface_base, native_transform,
+        native_vector,
+    },
+    native_geometry::{
+        native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
+        native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
+        native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, NativePcurveForm,
+    },
     preconditions::{validate_source_less_body_kinds, validate_source_less_wire_ownership},
     records::{native_tolerant_coedge_extension, tolerant_coedge_range},
 };

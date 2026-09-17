@@ -11,11 +11,14 @@ use cadmpeg_core::CodecError;
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
-use crate::records::act::{
-    ActChannelGroup, ActClassTail, ActEntity, ActGuid, ActRegistryChannel, ActRootComponent,
-    ActTableReference, ActTableRow,
+use crate::records::{
+    act::{
+        ActChannelGroup, ActClassTail, ActEntity, ActGuid, ActRegistryChannel, ActRootComponent,
+        ActTableReference, ActTableRow,
+    },
+    identity::Located,
+    references::DesignClassTag,
 };
-use crate::records::{identity::Located, references::DesignClassTag};
 
 pub struct DecodedAct {
     pub entities: Vec<ActEntity>,

@@ -8,7 +8,7 @@
 )]
 use super::*;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::records::feature::DesignParameterScope;
+use crate::records::feature::scope::DesignParameterScope;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -64,7 +64,7 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#800",
-        crate::records::feature::DesignFeatureKind::SurfaceTrim,
+        crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
         800,
     );
     scope

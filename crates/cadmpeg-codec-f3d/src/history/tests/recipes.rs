@@ -12,9 +12,8 @@
 )]
 
 use super::super::*;
-use crate::records::{
-    topology::DesignConstructionOperandGroup, topology::DesignConstructionOperandGroupFrame,
-    topology::DesignOperandRole,
+use crate::records::topology::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignOperandRole,
 };
 
 #[test]
@@ -59,18 +58,21 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
         AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistory,
     };
-    use crate::records::feature::{
-        DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
-        DesignWorkPointInputCarrier,
+    use crate::records::{
+        dimensions::DesignRecipeReference,
+        entity_header::DesignFeatureTimeline,
+        feature::work_geometry::{
+            DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
+            DesignWorkPointInputCarrier,
+        },
     };
-    use crate::records::{dimensions::DesignRecipeReference, entity_header::DesignFeatureTimeline};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::Point3;
 
     let stream = "f3d:Design/BulkStream.dat";
-    let mut extrude = crate::records::feature::DesignParameterScope::empty(
+    let mut extrude = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         100,
     );
     extrude
@@ -92,32 +94,37 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let recipe = DesignVertexRecipe::try_new(crate::records::feature::DesignVertexRecipeDraft {
-        record_index: 202,
-        byte_offset: 0,
-        class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned()).unwrap(),
-        paired_byte_offset: 16,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
+    let recipe = DesignVertexRecipe::try_new(
+        crate::records::feature::work_geometry::DesignVertexRecipeDraft {
+            record_index: 202,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned())
+                .unwrap(),
+            paired_byte_offset: 16,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
             .unwrap(),
-        recipe_record_index: 205,
-        recipe_record_byte_offset: 32,
-        recipe_id: format!("{stream}:construction-recipe#vertex"),
-        recipe_prefix_offset: 43,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: vec![reference(10), reference(11), reference(12)],
-        recipe_program_offset: 4,
-        recipe_program: vec![0],
-        resolution: None,
-        next_record_index: 207,
-        next_byte_offset: 200,
-    })
+            recipe_record_index: 205,
+            recipe_record_byte_offset: 32,
+            recipe_id: format!("{stream}:construction-recipe#vertex"),
+            recipe_prefix_offset: 43,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: vec![reference(10), reference(11), reference(12)],
+            recipe_program_offset: 4,
+            recipe_program: vec![0],
+            resolution: None,
+            next_record_index: 207,
+            next_byte_offset: 200,
+        },
+    )
     .unwrap();
-    let mut work_point = crate::records::feature::DesignParameterScope::empty(
+    let mut work_point = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        crate::records::feature::DesignFeatureKind::WorkPoint,
+        crate::records::feature::scope::DesignFeatureKind::WorkPoint,
         200,
     );
-    if let crate::records::feature::DesignScopePayloadMut::WorkPoint(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::WorkPoint(slot) =
         work_point.payload_mut()
     {
         *slot = Some(DesignWorkPointConstruction {
@@ -125,10 +132,10 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             point_record_byte_offset: 0,
             position: [4.0, 3.0, 0.0],
             position_offset: 0,
-            rule: crate::records::feature::DesignWorkPointRule::try_from(
-                crate::records::feature::DesignWorkPointRuleForm::Vertex {
+            rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
+                crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
-                        crate::records::feature::DesignWorkPointInputDraft {
+                        crate::records::feature::work_geometry::DesignWorkPointInputDraft {
                             record_index: 202,
                             reference_offset: 0,
                             carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
@@ -265,7 +272,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let construction = scopes[1]
         .work_point_construction()
         .expect("WorkPoint construction");
-    let crate::records::feature::DesignWorkPointRuleForm::Vertex { input } =
+    let crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex { input } =
         construction.rule.form()
     else {
         unreachable!("test construction is vertex-based")
@@ -280,7 +287,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     assert_eq!(
         recipe
             .resolution
-            .map(crate::records::feature::DesignVertexResolution::vertex_slot),
+            .map(crate::records::feature::work_geometry::DesignVertexResolution::vertex_slot),
         Some(40)
     );
 
@@ -305,7 +312,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let construction = ambiguous[1]
         .work_point_construction()
         .expect("WorkPoint construction");
-    let crate::records::feature::DesignWorkPointRuleForm::Vertex { input } =
+    let crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex { input } =
         construction.rule.form()
     else {
         unreachable!("test construction is vertex-based")
@@ -321,9 +328,9 @@ fn feature_input_topology_projects_historical_vertices() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:design:scope#work-point",
-        crate::records::feature::DesignFeatureKind::WorkPoint,
+        crate::records::feature::scope::DesignFeatureKind::WorkPoint,
         7,
     );
     scope
@@ -403,9 +410,9 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
     use crate::history_records::{
         AsmHistoricalCoedge, AsmHistoricalRelation, AsmHistoricalTopology,
     };
-    use crate::records::dimensions::DesignRecipeReference;
-    use crate::records::topology::{
-        DesignSurfacePatchRecipeClause, DesignSurfacePatchRecipeStructure,
+    use crate::records::{
+        dimensions::DesignRecipeReference,
+        topology::{DesignSurfacePatchRecipeClause, DesignSurfacePatchRecipeStructure},
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
@@ -657,9 +664,9 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
 fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     use cadmpeg_ir::ids::FaceId;
 
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::Extrude,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         10,
     );
     scope
@@ -844,9 +851,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
-    let scope = crate::records::feature::DesignParameterScope::empty(
+    let scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::DesignFeatureKind::CoilPrimitive,
+        crate::records::feature::scope::DesignFeatureKind::CoilPrimitive,
         10,
     );
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
@@ -1054,7 +1061,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let mut scale_scope = scope.clone();
     scale_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Scale
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Scale
                 .try_into()
                 .unwrap();
             draft.previous_history_state_id = Some(7);
@@ -1100,7 +1107,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let mut move_scope = scope;
     move_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignFeatureKind::Move
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Move
                 .try_into()
                 .unwrap();
             draft.history_state_id = Some(42);

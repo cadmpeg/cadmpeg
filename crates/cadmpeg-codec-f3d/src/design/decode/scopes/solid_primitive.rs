@@ -11,7 +11,10 @@ use crate::layout::named_solid_primitive_prologue as solid_prologue;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
 use crate::layout::shifted_cylinder_primitive_502_frame as shifted_cylinder_502;
 use crate::records::{
-    feature::{DesignExtrudeOperation, DesignParameterScope, DesignSolidPrimitive},
+    feature::{
+        extrude::DesignExtrudeOperation, primitives::DesignSolidPrimitive,
+        scope::DesignParameterScope,
+    },
     parameters::DesignParameterOwner,
     sketch_placement::valid_sketch_transform,
 };
@@ -84,7 +87,7 @@ pub(crate) fn exact_solid_primitive(
                 exact_primitive_diameter(bytes, records, diameter_record_index)?;
             let (transform, transform_offset) = matrix(64)?;
             Some(DesignSolidPrimitive::Sphere(
-                crate::records::feature::DesignSpherePrimitive {
+                crate::records::feature::primitives::DesignSpherePrimitive {
                     transform,
                     transform_offset,
                     diameter,
@@ -114,7 +117,7 @@ pub(crate) fn exact_solid_primitive(
                 exact_primitive_diameter(bytes, records, minor_diameter_record_index)?;
             let (transform, transform_offset) = matrix(75)?;
             Some(DesignSolidPrimitive::Torus(
-                crate::records::feature::DesignTorusPrimitive {
+                crate::records::feature::primitives::DesignTorusPrimitive {
                     transform,
                     transform_offset,
                     major_diameter,
@@ -140,7 +143,7 @@ pub(crate) fn exact_solid_primitive(
                 && width.evaluated_value() > 0.0
                 && height.evaluated_value() > 0.0)
                 .then_some(DesignSolidPrimitive::Box(
-                    crate::records::feature::DesignBoxPrimitive {
+                    crate::records::feature::primitives::DesignBoxPrimitive {
                         length: length.evaluated_value(),
                         length_record_index: length.record_index(),
                         length_offset: length.evaluated_value_offset(),
@@ -170,17 +173,19 @@ pub(crate) fn exact_solid_primitive(
                 return None;
             };
             (height.evaluated_value() > 0.0 && diameter.evaluated_value() > 0.0).then_some(
-                DesignSolidPrimitive::Cylinder(crate::records::feature::DesignCylinderPrimitive {
-                    height: height.evaluated_value(),
-                    height_record_index: height.record_index(),
-                    height_offset: height.evaluated_value_offset(),
-                    diameter: diameter.evaluated_value(),
-                    diameter_record_index: diameter.record_index(),
-                    diameter_offset: diameter.evaluated_value_offset(),
-                    transform: cylinder_transform,
-                    operation,
-                    operation_offset: operation_offset as u64,
-                }),
+                DesignSolidPrimitive::Cylinder(
+                    crate::records::feature::primitives::DesignCylinderPrimitive {
+                        height: height.evaluated_value(),
+                        height_record_index: height.record_index(),
+                        height_offset: height.evaluated_value_offset(),
+                        diameter: diameter.evaluated_value(),
+                        diameter_record_index: diameter.record_index(),
+                        diameter_offset: diameter.evaluated_value_offset(),
+                        transform: cylinder_transform,
+                        operation,
+                        operation_offset: operation_offset as u64,
+                    },
+                ),
             )
         }
         _ => None,

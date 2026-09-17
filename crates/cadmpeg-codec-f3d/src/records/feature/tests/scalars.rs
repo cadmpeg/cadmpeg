@@ -1,6 +1,8 @@
 use crate::records::feature::{
-    DesignBaseFlangeOperation, DesignDraftOperation, DesignFiniteScalar, DesignPositiveScalar,
-    DesignRevolveConstruction, DesignSurfaceStitchOperation,
+    direct_face::DesignDraftOperation,
+    path_features::DesignRevolveConstruction,
+    sheet_metal::{DesignBaseFlangeOperation, DesignFiniteScalar, DesignPositiveScalar},
+    surface_ops::DesignSurfaceStitchOperation,
 };
 use serde::Deserialize;
 

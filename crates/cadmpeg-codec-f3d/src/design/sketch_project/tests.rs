@@ -5,12 +5,10 @@ use super::*;
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_geometry};
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
-use crate::records::sketch_relations::{
-    SketchRelation, SketchRelationMember, SketchRelationReturnMember,
-};
 use crate::records::{
     sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchText},
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
+    sketch_relations::{SketchRelation, SketchRelationMember, SketchRelationReturnMember},
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{

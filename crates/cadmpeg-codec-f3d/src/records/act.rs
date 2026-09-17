@@ -4,11 +4,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use super::{
-    identity::{Located, NativeRecordId},
-    mesh::DesignGuidText,
-    references::DesignClassTag,
-};
+use super::identity::{Located, NativeRecordId};
+use super::mesh::DesignGuidText;
+use super::references::DesignClassTag;
 
 cadmpeg_core::named_optional_field!(deserialize_channel_class_tag, String, "channel_class_tag");
 cadmpeg_core::named_optional_field!(

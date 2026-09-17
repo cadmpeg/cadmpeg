@@ -52,13 +52,16 @@ fn rejects_transform<T: for<'de> Deserialize<'de>>(mut wire: serde_json::Value, 
 
 #[test]
 fn placement_record_serde_routes_reject_unchecked_matrices() {
-    use crate::records::feature::{
-        DesignAssemblyOperandFrame, DesignAssemblySolvedFrame, DesignCoilTransform,
-        DesignCopyPasteComponentOperation, DesignJointOriginTransform, DesignMoveOperation,
-        DesignSpherePrimitive, DesignTorusPrimitive, DesignWorkPlaneTransform,
-    };
-    use crate::records::topology::{
-        DesignConstructionOperandDualTransform, DesignConstructionOperandTransform,
+    use crate::records::{
+        feature::{
+            assembly::{DesignAssemblyOperandFrame, DesignAssemblySolvedFrame},
+            assembly_features::DesignCopyPasteComponentOperation,
+            coil::DesignCoilTransform,
+            direct_face::DesignMoveOperation,
+            primitives::{DesignSpherePrimitive, DesignTorusPrimitive},
+            scope::{DesignJointOriginTransform, DesignWorkPlaneTransform},
+        },
+        topology::{DesignConstructionOperandDualTransform, DesignConstructionOperandTransform},
     };
     rejects_transform::<DesignAssemblyOperandFrame>(
         serde_json::json!({

@@ -8,19 +8,17 @@ use crate::ids::{
     native_stream, neutral_dimension_constraint_id, neutral_parameter_id,
     neutral_sketch_constraint_id, neutral_sketch_id, neutral_spatial_sketch_id,
 };
-use crate::records::dimensions::{
-    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionRecipeRecord,
-};
-use crate::records::parameters::{
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-};
-use crate::records::sketch_relations::{
-    SketchConstraintKind, SketchRelation, SketchRelationOperand,
-};
 use crate::records::{
+    dimensions::{
+        DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
+        DesignDimensionRecipeRecord,
+    },
+    parameters::{
+        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+    },
     sketch_geometry::{SketchCurveIdentity, SketchPoint},
     sketch_placement::DesignSketchPlacement,
+    sketch_relations::{SketchConstraintKind, SketchRelation, SketchRelationOperand},
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};

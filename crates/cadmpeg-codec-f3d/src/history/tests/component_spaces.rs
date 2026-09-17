@@ -312,8 +312,8 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
             alternate_selector_faces: Vec::new(),
             alternate_selector_edges: Vec::new(),
         };
-    let recipe = crate::records::feature::DesignVertexRecipe::try_new(
-        crate::records::feature::DesignVertexRecipeDraft {
+    let recipe = crate::records::feature::work_geometry::DesignVertexRecipe::try_new(
+        crate::records::feature::work_geometry::DesignVertexRecipeDraft {
             record_index: 1,
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())

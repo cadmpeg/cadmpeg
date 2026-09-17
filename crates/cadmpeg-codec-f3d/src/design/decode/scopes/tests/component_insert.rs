@@ -57,7 +57,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     }
     header(&mut bytes, b"259", 30);
     let scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:design-parameter-scope#30".into(),
             byte_offset: scope_at as u64,
             class_tag: crate::records::references::DesignClassTag::try_from("451".to_owned())
@@ -78,7 +78,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
                 "reference_members",
             )
             .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::ComponentInsert
+            payload: crate::records::feature::scope::DesignFeatureKind::ComponentInsert
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
@@ -144,7 +144,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
             30,
         );
         let legacy_scope = DesignParameterScope::try_new(
-            crate::records::feature::DesignParameterScopeDraft {
+            crate::records::feature::scope::DesignParameterScopeDraft {
                 frame_length: frame_length as u64,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     paired_class_tag.to_owned(),
@@ -208,7 +208,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     }
     header(&mut expanded, b"260", 30);
     let expanded_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             byte_offset: expanded_scope_at as u64,
             class_tag: crate::records::references::DesignClassTag::try_from("335".to_owned())
                 .unwrap(),
@@ -298,7 +298,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     }
     header(&mut legacy, b"261", 30);
     let legacy_scope = DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
+        crate::records::feature::scope::DesignParameterScopeDraft {
             byte_offset: legacy_scope_at as u64,
             reference_count_offset: (legacy_scope_at + 33) as u64,
             frame_length: 381,
@@ -411,7 +411,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-        crate::records::feature::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
         30,
     );
     scope
@@ -544,7 +544,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#169",
-        crate::records::feature::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
         169,
     );
     scope
@@ -686,7 +686,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#169",
-        crate::records::feature::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
         169,
     );
     scope
@@ -834,7 +834,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-        crate::records::feature::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
         30,
     );
     scope
@@ -1018,7 +1018,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-            crate::records::feature::DesignFeatureKind::ComponentInsert,
+            crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
             30,
         );
         scope

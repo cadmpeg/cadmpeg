@@ -15,14 +15,18 @@ use crate::ids::{
     self, native_stream, neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
     neutral_sketch_record_id, neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id,
 };
-use crate::records::topology::{
-    DesignConstructionOperandGroup, DesignEntitySelectionOperand, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignSketchProfileOperand, DesignSketchProfileRegionMember,
-};
 use crate::records::{
-    decal::DesignRecordHeader, entity_header::DesignEntityHeader, feature::DesignParameterScope,
-    sketch_geometry::SketchCurveIdentity, sketch_placement::DesignSketchPlacement,
-    sketch_relations::SketchRelationOperand, topology::DesignOperandRole,
+    decal::DesignRecordHeader,
+    entity_header::DesignEntityHeader,
+    feature::scope::DesignParameterScope,
+    sketch_geometry::SketchCurveIdentity,
+    sketch_placement::DesignSketchPlacement,
+    sketch_relations::SketchRelationOperand,
+    topology::{
+        DesignConstructionOperandGroup, DesignEntitySelectionOperand, DesignExtrudeSelectionGroup,
+        DesignExtrudeSelectionMember, DesignOperandRole, DesignSketchProfileOperand,
+        DesignSketchProfileRegionMember,
+    },
 };
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;

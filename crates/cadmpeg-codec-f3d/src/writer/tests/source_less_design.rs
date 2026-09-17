@@ -161,9 +161,9 @@ fn generated_source_less_writes_design_type_metastream() {
 
 #[test]
 fn generated_source_less_writes_design_recipes_and_persistent_references() {
-    use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
-    use crate::records::references::{
-        LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    use crate::records::{
+        recipes::{ConstructionRecipe, ConstructionRecipeKind},
+        references::{LostEdgeReference, PersistentReference, PersistentReferenceKind},
     };
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -494,12 +494,10 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
 
 #[test]
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
-    use crate::records::sketch_relations::{
-        SketchRelation, SketchRelationMember, SketchRelationReturnMember,
-    };
     use crate::records::{
         entity_header::{DesignEntityHeader, SegmentType},
         sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
+        sketch_relations::{SketchRelation, SketchRelationMember, SketchRelationReturnMember},
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 

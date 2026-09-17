@@ -8,21 +8,30 @@ use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
 use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;
 use crate::layout::assembly_as_built_421_frame_448 as as_built_421_frame_448;
 use crate::layout::assembly_as_built_421_scope as as_built_421;
-use crate::records::decal::DesignRecordHeader;
-use crate::records::feature::{
-    DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands, DesignAssemblyLegacySelection,
-    DesignAssemblyLimits, DesignAssemblyLimitsWire, DesignAssemblySolvedFrame,
-    DesignParameterScope, DesignWorkPointRule,
+use crate::records::{
+    decal::DesignRecordHeader,
+    feature::{
+        assembly::{
+            DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands,
+            DesignAssemblyLegacySelection, DesignAssemblyLimits, DesignAssemblyLimitsWire,
+            DesignAssemblySolvedFrame,
+        },
+        scope::DesignParameterScope,
+        work_geometry::DesignWorkPointRule,
+    },
+    parameters::DesignParameterOwner,
+    recipes::ConstructionRecipe,
 };
-use crate::records::{parameters::DesignParameterOwner, recipes::ConstructionRecipe};
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
-use super::scopes::{
-    exact_hole_construction, exact_indexed_header_at, exact_point_data_construction,
-    marked_record_reference, rigid_transform_at,
+use super::{
+    scopes::{
+        exact_hole_construction, exact_indexed_header_at, exact_point_data_construction,
+        marked_record_reference, rigid_transform_at,
+    },
+    sketch::IndexedRecordOffsets,
 };
-use super::sketch::IndexedRecordOffsets;
 
 pub(crate) struct LegacyAsBuilt421Alignment {
     pub(crate) angle: f64,
@@ -42,7 +51,7 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
         scope.paired_class_tag.as_str(),
     )?;
     let references = scope.reference_members().located_rows()?;
-    if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt
         || lanes.len() != 6
         || references.len() != 11
     {
@@ -165,7 +174,7 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
     let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references else {
         return None;
     };
-    if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt {
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt {
         return None;
     }
     let frame_record_index = frame_reference.value;
@@ -252,7 +261,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     else {
         return None;
     };
-    if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt
         || solved_frame.reference_record_index != frame_reference.value
     {
         return None;
@@ -265,7 +274,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     let mut hole_scope = scope.clone();
     hole_scope
         .try_edit(|draft| {
-            draft.payload = crate::records::feature::DesignScopePayload::Hole(None);
+            draft.payload = crate::records::feature::scope::DesignScopePayload::Hole(None);
         })
         .ok()?;
     let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
@@ -318,7 +327,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     )?;
     let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset)?;
     let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
-    crate::records::feature::DesignAssemblyLegacyOperands::try_new(
+    crate::records::feature::assembly::DesignAssemblyLegacyOperands::try_new(
         DesignAssemblyLegacyOperand {
             construction_class_tag: point_class_tag.try_into().ok()?,
             construction: Box::new(point),
@@ -338,7 +347,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
 fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
     rule.inputs()
         .iter()
-        .map(crate::records::feature::DesignWorkPointInput::record_index)
+        .map(crate::records::feature::work_geometry::DesignWorkPointInput::record_index)
         .collect()
 }
 

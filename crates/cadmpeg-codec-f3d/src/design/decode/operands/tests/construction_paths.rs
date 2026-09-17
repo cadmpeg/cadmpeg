@@ -311,16 +311,16 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         bytes
     }
 
-    let mut scope = crate::records::feature::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat",
-        crate::records::feature::DesignFeatureKind::Loft,
+        crate::records::feature::scope::DesignFeatureKind::Loft,
         12,
     );
     {
         let value = Some(
-            crate::records::feature::DesignPathFeatureConstruction::Loft(
-                crate::records::feature::DesignLoftConstruction {
-                    operation: crate::records::feature::DesignExtrudeOperation::Cut,
+            crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(
+                crate::records::feature::path_features::DesignLoftConstruction {
+                    operation: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
                     operation_offset: 0,
                 },
             ),

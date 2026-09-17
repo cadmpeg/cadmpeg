@@ -1056,11 +1056,14 @@ mod tests {
     // Hand-built relations assert the written bytes; the drafts are valid by construction.
     #![allow(clippy::unwrap_used)]
     use super::{encode_sketch_relation, SKETCH_RELATION_RECORD_FILLED_LEN};
-    use crate::records::sketch_relations::{
-        SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
-        SketchRelationReturnMember,
+    use crate::records::{
+        identity::ReferenceRun,
+        references::DesignClassTag,
+        sketch_relations::{
+            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+            SketchRelationReturnMember,
+        },
     };
-    use crate::records::{identity::ReferenceRun, references::DesignClassTag};
 
     /// One member whose ordinal the wire states, which is what the writer
     /// needs: `SketchRelationMember::from_index` retains none.
@@ -1151,11 +1154,14 @@ mod tests {
 mod relation_ordinal_tests {
     #![allow(clippy::unwrap_used)]
     use super::encode_sketch_relation;
-    use crate::records::sketch_relations::{
-        SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
-        SketchRelationReturnMember,
+    use crate::records::{
+        identity::ReferenceRun,
+        references::DesignClassTag,
+        sketch_relations::{
+            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+            SketchRelationReturnMember,
+        },
     };
-    use crate::records::{identity::ReferenceRun, references::DesignClassTag};
 
     /// The record states a u32 ordinal for every member, so a member that
     /// retains none has no bytes to write. Writing `0` there would state the
