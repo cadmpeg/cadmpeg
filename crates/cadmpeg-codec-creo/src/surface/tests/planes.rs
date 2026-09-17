@@ -1141,6 +1141,34 @@ fn named_local_system_advances_across_inherited_slots() {
     );
 }
 
+/// The bounded `local_sys` scalar body obeys the rules of the bounded scalar
+/// body it is: a body that ends before its declared count is refused rather
+/// than read as trailing absent slots, and a body with a byte left after its
+/// last declared slot is refused.
+#[test]
+fn a_named_local_system_body_that_is_not_exactly_its_declared_slots_is_refused() {
+    let cache = scalar::ScalarCache::default();
+    // The twelve-slot body of `named_local_system_advances_across_inherited_slots`.
+    let body = [
+        0xe4, 0x0f, 0xe7, 0x03, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+    ];
+
+    assert_eq!(
+        sequential_named_local_system_slots(&body, 12, &cache)
+            .map(|slots| slots.len()),
+        Some(12)
+    );
+    // Thirteen declared slots: the body ends one slot early.
+    assert_eq!(sequential_named_local_system_slots(&body, 13, &cache), None);
+    // Eleven declared slots: the last byte is left over.
+    assert_eq!(sequential_named_local_system_slots(&body, 11, &cache), None);
+    // An inherited run that ends the body far short of the declaration.
+    assert_eq!(
+        sequential_named_local_system_slots(&[0xe4, 0xe7, 0x02], 12, &cache),
+        None
+    );
+}
+
 #[test]
 fn named_local_system_rejects_invalid_inherited_slot_transitions() {
     for body in [
@@ -1196,9 +1224,11 @@ fn named_local_system_uses_the_signed_coordinate_dict_lane() {
     assert_eq!(&values[9..12], &[Some(-180.0), Some(-3.0), Some(40.0)]);
 }
 
+/// `0x0e` is the positive compact half coordinate of the `local_sys` scalar
+/// lane. The body declares three slots and encodes three.
 #[test]
-fn named_local_system_decodes_positive_compact_half_coordinate() {
-    let body = [0xf9, 0x04, 0x03, 0x0e];
+fn named_local_system_decodes_positive_compact_half_coordinate_over_a_complete_body() {
+    let body = [0xf9, 0x01, 0x03, 0x0e, 0x0f, 0x0f];
     let SurfaceNamedValue::ScalarArray(array) = named_surface_value(
         &SurfacePrototypeFamily::Plane,
         "local_sys",
@@ -1209,7 +1239,7 @@ fn named_local_system_decodes_positive_compact_half_coordinate() {
     };
     let values = array.values();
 
-    assert_eq!(values[0], Some(0.5));
+    assert_eq!(values, [Some(0.5), Some(0.0), Some(0.0)]);
 }
 
 #[test]

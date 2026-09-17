@@ -515,7 +515,8 @@ fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
         &body,
         2,
         &scalar::ScalarCache::default(),
-    );
+    )
+    .expect("complete spline body");
 
     assert_eq!(
         slots,
@@ -536,7 +537,8 @@ fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
             &body,
             6,
             &scalar::ScalarCache::default(),
-        );
+        )
+        .expect("complete spline body");
         assert_eq!(
             slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
             [
@@ -565,7 +567,8 @@ fn spline_tangents_use_the_signed_coordinate_dict_lattice() {
             &body,
             3,
             &scalar::ScalarCache::default(),
-        );
+        )
+        .expect("complete spline body");
 
         assert_eq!(
             slots[0].0,
@@ -750,7 +753,7 @@ fn tabulated_cylinder_frame_rejects_nonfinite_coordinates() {
 /// encoding defines no width. A body that states such a byte is refused, and
 /// the slot it refuses at is the one the byte stands in.
 #[test]
-fn an_undefined_prefix_in_a_scalar_body_refuses_the_body_at_that_slot() {
+fn an_undefined_prefix_in_a_scalar_body_refuses_the_complete_body() {
     let cache = scalar::ScalarCache::default();
 
     // `0xe4` is one and `0x0f` is zero; `0x00` defines no scalar form.
@@ -772,16 +775,17 @@ fn an_undefined_prefix_in_a_scalar_body_refuses_the_body_at_that_slot() {
         None
     );
     // The first two slots decode, so the refusal is at slot 2 and not earlier:
-    // a two-slot declaration over the same prefix decodes.
+    // a two-slot declaration over the same two prefixes decodes.
     assert_eq!(
-        super::super::scalar_slots(&[0xe4, 0x0f, 0x00], 2, &cache),
+        super::super::scalar_slots(&[0xe4, 0x0f], 2, &cache),
         Some(vec![Some(1.0), Some(0.0)])
     );
 }
 
-/// The format states no rule for a bounded scalar body that ends before its
-/// declared slot count, so such a body states a slot it does not encode and is
-/// refused. It is not read as trailing absent slots.
+/// The field declares exactly its slot count and each declared slot consumes
+/// one complete scalar token, so a bounded scalar body that ends before its
+/// declared count states a slot it does not encode and is refused. It is not
+/// read as trailing absent slots.
 #[test]
 fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
     let cache = scalar::ScalarCache::default();
@@ -793,4 +797,47 @@ fn a_scalar_body_shorter_than_its_declared_count_is_refused() {
     assert_eq!(super::super::scalar_slots(&[0xe4, 0x0f], 3, &cache), None);
     assert_eq!(super::super::scalar_slots(&[], 1, &cache), None);
     assert_eq!(super::super::scalar_slots(&[], 0, &cache), Some(Vec::new()));
+}
+
+/// The format states no rule for a byte left in a bounded scalar body after
+/// its last declared slot, so such a body is refused and no rule is invented
+/// for the byte.
+#[test]
+fn a_scalar_body_longer_than_its_declared_count_is_refused() {
+    let cache = scalar::ScalarCache::default();
+
+    assert_eq!(
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 3, &cache),
+        Some(vec![Some(1.0), Some(0.0), Some(0.0)])
+    );
+    assert_eq!(
+        super::super::scalar_slots(&[0xe4, 0x0f, 0x0f], 2, &cache),
+        None
+    );
+    assert_eq!(super::super::scalar_slots(&[0xe4], 0, &cache), None);
+}
+
+/// The bounded spline scalar body obeys the rules of the bounded scalar body
+/// it is: a body shorter than its declared count, and a body with a byte left
+/// after its last declared slot, are both refused.
+#[test]
+fn a_spline_scalar_body_that_is_not_exactly_its_declared_slots_is_refused() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline);
+    // Three complete eight-byte `2d` world coordinates.
+    let body = [
+        0x2d, 1, 2, 3, 4, 5, 6, 7, 0x2d, 1, 2, 3, 4, 5, 6, 8, 0x2d, 1, 2, 3, 4, 5, 6, 9,
+    ];
+
+    assert!(named_spline_scalar_slots(&family, "tangts", &body, 3, &cache).is_some());
+    // The same bytes under a four-slot declaration end one slot early.
+    assert_eq!(
+        named_spline_scalar_slots(&family, "tangts", &body, 4, &cache),
+        None
+    );
+    // The same bytes under a two-slot declaration leave eight bytes over.
+    assert_eq!(
+        named_spline_scalar_slots(&family, "tangts", &body, 2, &cache),
+        None
+    );
 }
