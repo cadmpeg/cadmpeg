@@ -273,7 +273,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                         section.set_referenced_profile(profile);
                     }
                 }
-                let resolve_path = |path: &mut PathRef| -> Option<()> {
+                let resolve_path = |path: &PathRef| -> Option<PathRef> {
                     let PathRef::Native(group_id) = path else {
                         return None;
                     };
@@ -287,14 +287,17 @@ pub(crate) fn bind_sweep_sketch_selections(
                     if matching_groups.next().is_some() || group.members().len() != 1 {
                         return None;
                     }
-                    *path = resolve_entity_selection_path(group, &path_resolution)?;
-                    Some(())
+                    resolve_entity_selection_path(group, &path_resolution)
                 };
                 if let Some(path) = path {
-                    let _ = resolve_path(path);
+                    if let Some(resolved) = resolve_path(path) {
+                        *path = resolved;
+                    }
                 }
                 if let Some(guide_rail) = guide_rail {
-                    let _ = resolve_path(&mut guide_rail.path);
+                    if let Some(resolved) = resolve_path(&guide_rail.path) {
+                        guide_rail.path = resolved;
+                    }
                 }
             }
         }

@@ -1789,4 +1789,43 @@ fn a_body_node_candidate_reads_the_strings_between_the_marker_and_the_visual_tok
     );
 }
 
+#[test]
+fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
+    // The record states its schema and GUID and then declares a third string
+    // no remaining byte can carry. The two strings after the GUID are never
+    // read, but their width is what places the colour carrier, so the record
+    // states no writable offset and the patch is a refusal.
+    let guid = "11111111-2222-3333-4444-555555555555";
+    let mut logical = RECORD_MARKER.to_vec();
+    super::push_lp(&mut logical, "GenericSchema").unwrap();
+    super::push_lp(&mut logical, guid).unwrap();
+    logical.extend_from_slice(&u32::MAX.to_le_bytes());
+    let instance = super::page_logical(&logical).unwrap();
+
+    let options = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("AssetData/InstanceProperties.bin", options)
+        .unwrap();
+    zip.write_all(&instance).unwrap();
+    let protein = zip.finish().unwrap().into_inner();
+
+    let edits = std::collections::BTreeMap::from([(
+        guid.to_string(),
+        crate::materials::ProteinAppearanceEdit {
+            color: Some(
+                cadmpeg_ir::topology::Color::new(0.5, 0.25, 0.125, 1.0).expect("valid color"),
+            ),
+            properties: std::collections::BTreeMap::new(),
+        },
+    )]);
+    let error = crate::materials::patch_protein_appearances(&protein, &edits, &mut Vec::new())
+        .expect_err("a record that ends at its GUID places no colour carrier");
+    assert!(
+        error
+            .to_string()
+            .contains("truncated at the string after its GUID"),
+        "{error}"
+    );
+}
+
 mod assignment_losses;
