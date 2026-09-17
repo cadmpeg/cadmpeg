@@ -81,7 +81,7 @@ ABSENT_KEY_ROOT = "crates"
 # Optional keys admitted by declaring path and field name, each with the
 # reason it states its own absence spelling without the shared helper.
 ABSENT_KEY_EXCEPTIONS = {
-    "crates/cadmpeg-codec-f3d/src/records/topology.rs:postlude_value":
+    "crates/cadmpeg-codec-f3d/src/records/topology/face.rs:postlude_value":
         "the key states a scalar run, not an option: its reader reads a Vec<i32>, "
         "which refuses null, and reads the empty run as None",
     "crates/cadmpeg-codec-f3d/src/records/feature/scope.rs:previous_history_state_id_offset":

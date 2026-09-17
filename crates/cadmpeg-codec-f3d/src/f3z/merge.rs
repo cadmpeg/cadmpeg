@@ -480,7 +480,7 @@ fn typed_fields(
         "design_edge_treatment_vertex_operands" => {
             typed!(crate::records::feature::work_geometry::DesignEdgeTreatmentVertexOperand)
         }
-        "design_face_operands" => typed!(crate::records::topology::DesignFaceOperand),
+        "design_face_operands" => typed!(crate::records::topology::face::DesignFaceOperand),
         "design_mesh_features" => typed!(crate::records::mesh::DesignMeshFeature),
         "design_parameter_scopes" => typed!(crate::records::feature::scope::DesignParameterScope),
         "persistent_design_links" => typed!(crate::records::sketch_links::PersistentDesignLink),

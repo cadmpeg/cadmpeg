@@ -1788,7 +1788,7 @@ fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
         feature::scope::{DesignFeatureKind, DesignParameterScope},
         recipes::{ConstructionRecipe, ConstructionRecipeKind},
         references::DesignClassTag,
-        topology::{DesignFaceOperand, DesignFaceOperandDraft},
+        topology::{face::DesignFaceOperand, face::DesignFaceOperandDraft},
     };
 
     let stream = "f3d:Design/BulkStream.dat";

@@ -14,8 +14,8 @@ use crate::records::{
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
     sketch_placement::DesignSketchPlacement,
     topology::{
-        DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeOperand,
-        DesignExtrudeFaceRole, DesignFaceOperand, DesignOperandRole,
+        face::DesignFaceOperand, DesignBodyRecipeOperand, DesignConstructionOperandGroup,
+        DesignEdgeOperand, DesignExtrudeFaceRole, DesignOperandRole,
     },
 };
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -2235,9 +2235,10 @@ mod tests {
         dimensions::DesignRecipeReference,
         feature::scope::DesignParameterScope,
         topology::{
-            DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
-            DesignEdgeRecipeStructure, DesignFaceRecipeNode, DesignHistoricalFaceBoundaryContext,
-            DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
+            face::DesignFaceRecipeNode, DesignConstructionOperandGroup, DesignEdgeOperand,
+            DesignEdgeRecipeReferenceContext, DesignEdgeRecipeStructure,
+            DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
+            DesignHistoricalFaceSupportContext,
         },
     };
 

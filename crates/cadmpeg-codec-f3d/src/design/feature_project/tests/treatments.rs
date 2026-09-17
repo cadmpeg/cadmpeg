@@ -28,10 +28,10 @@ use crate::records::{
     },
     references::DesignClassTag,
     topology::{
-        DesignConstructionOperandGroupDraft, DesignConstructionOperandGroupFrame,
-        DesignConstructionOperandGroupFrameDraft, DesignConstructionOperandRole,
-        DesignEdgeIdentityLayout, DesignEdgeIdentityOperand, DesignEdgeIdentityOperandDraft,
-        DesignEntitySelectionOperandDraft, DesignFaceOperandDraft, DesignFilletMidpoint,
+        face::DesignFaceOperandDraft, DesignConstructionOperandGroupDraft,
+        DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+        DesignConstructionOperandRole, DesignEdgeIdentityLayout, DesignEdgeIdentityOperand,
+        DesignEdgeIdentityOperandDraft, DesignEntitySelectionOperandDraft, DesignFilletMidpoint,
         DesignFilletRadiusLaw, DesignOperandRole, HistoricalBinding,
     },
 };

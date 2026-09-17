@@ -374,7 +374,7 @@ fn face_source_rows_preserve_wire_and_reject_unequal_offsets() {
         let wire = format!(
             "{prefix},\"source_reference_offsets\":{offsets},\"source_members\":{members}}}"
         );
-        let group: crate::records::topology::DesignFaceSourceGroup =
+        let group: crate::records::topology::face::DesignFaceSourceGroup =
             serde_json::from_str(&wire).expect("Face source rows");
         assert_eq!(
             serde_json::to_string(&group).expect("Face source wire"),
@@ -385,7 +385,7 @@ fn face_source_rows_preserve_wire_and_reject_unequal_offsets() {
             "\"source_reference_offsets\":[25,36,47]",
         );
         let error =
-            serde_json::from_str::<crate::records::topology::DesignFaceSourceGroup>(&invalid)
+            serde_json::from_str::<crate::records::topology::face::DesignFaceSourceGroup>(&invalid)
                 .expect_err("unequal source arrays")
                 .to_string();
         assert!(error.contains("source_members"));
@@ -404,12 +404,14 @@ fn face_source_span_rejects_empty_reversed_and_conflicting_lengths() {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).expect("Face source wire");
         invalid[field] = value.into();
         let error =
-            serde_json::from_value::<crate::records::topology::DesignFaceSourceGroup>(invalid)
-                .expect_err("invalid carrier span")
-                .to_string();
+            serde_json::from_value::<crate::records::topology::face::DesignFaceSourceGroup>(
+                invalid,
+            )
+            .expect_err("invalid carrier span")
+            .to_string();
         assert!(error.contains(field));
     }
-    let group: crate::records::topology::DesignFaceSourceGroup =
+    let group: crate::records::topology::face::DesignFaceSourceGroup =
         serde_json::from_str(wire).expect("positive carrier span");
     assert_eq!(
         serde_json::to_string(&group).expect("Face source wire"),
@@ -512,14 +514,15 @@ fn face_operand_wire_derives_node_offsets() {
                     .unwrap()
                     .remove("group_member_ordinal");
                 invalid[field] = serde_json::json!(5);
-                let error =
-                    serde_json::from_value::<crate::records::topology::DesignFaceOperand>(invalid)
-                        .unwrap_err()
-                        .to_string();
+                let error = serde_json::from_value::<
+                    crate::records::topology::face::DesignFaceOperand,
+                >(invalid)
+                .unwrap_err()
+                .to_string();
                 assert!(error.contains("group_record_index"));
                 assert!(error.contains("group_member_ordinal"));
             }
-            let operand: crate::records::topology::DesignFaceOperand =
+            let operand: crate::records::topology::face::DesignFaceOperand =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(&operand).unwrap(), wire);
             let mut invalid = wire.clone();
@@ -528,19 +531,23 @@ fn face_operand_wire_derives_node_offsets() {
                 .unwrap()
                 .push(serde_json::json!(999));
             assert!(
-                serde_json::from_value::<crate::records::topology::DesignFaceOperand>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("recipe_node_offsets")
+                serde_json::from_value::<crate::records::topology::face::DesignFaceOperand>(
+                    invalid
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("recipe_node_offsets")
             );
             if count != 0 {
                 let mut invalid = wire;
                 invalid["recipe_node_offsets"][0] = serde_json::json!(999);
                 assert!(
-                    serde_json::from_value::<crate::records::topology::DesignFaceOperand>(invalid)
-                        .unwrap_err()
-                        .to_string()
-                        .contains("recipe_node_offsets")
+                    serde_json::from_value::<crate::records::topology::face::DesignFaceOperand>(
+                        invalid
+                    )
+                    .unwrap_err()
+                    .to_string()
+                    .contains("recipe_node_offsets")
                 );
             }
         }
@@ -903,14 +910,14 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
     let prefix = format!(r#"{{"root":0,"prelude":[1,2],"sides":[{side},{side}]"#);
     for value in [i32::MIN, -1, 0, 4, i32::MAX] {
         let wire = format!(r#"{prefix},"postlude":[-1,{value},-1,0,0,-1]}}"#);
-        let structure: crate::records::topology::DesignFaceRecipeStructure =
+        let structure: crate::records::topology::face::DesignFaceRecipeStructure =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(structure.postlude_value, Some(value));
         assert_eq!(serde_json::to_string(&structure).unwrap(), wire);
     }
     let omitted = format!("{prefix}}}");
     for wire in [omitted.clone(), format!(r#"{prefix},"postlude":[]}}"#)] {
-        let structure: crate::records::topology::DesignFaceRecipeStructure =
+        let structure: crate::records::topology::face::DesignFaceRecipeStructure =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(structure.postlude_value, None);
         assert_eq!(serde_json::to_string(&structure).unwrap(), omitted);
@@ -923,10 +930,12 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
     ] {
         let wire = format!(r#"{prefix},"postlude":{postlude}}}"#);
         assert!(
-            serde_json::from_str::<crate::records::topology::DesignFaceRecipeStructure>(&wire)
-                .unwrap_err()
-                .to_string()
-                .contains("postlude")
+            serde_json::from_str::<crate::records::topology::face::DesignFaceRecipeStructure>(
+                &wire
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("postlude")
         );
     }
 }

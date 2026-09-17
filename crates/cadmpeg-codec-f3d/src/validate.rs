@@ -5390,7 +5390,7 @@ fn validate_construction_operand_identities<'a>(
 fn validate_edge_identity_operands<'a>(
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
-    expected_face_operands: &[records::topology::DesignFaceOperand],
+    expected_face_operands: &[records::topology::face::DesignFaceOperand],
 ) -> HashSet<(&'a str, u32)> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
@@ -6297,7 +6297,7 @@ fn validate_edge_treatment_groups<'a>(
 fn validate_face_operands<'a>(
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
-    expected_face_operands: &[records::topology::DesignFaceOperand],
+    expected_face_operands: &[records::topology::face::DesignFaceOperand],
 ) -> HashSet<(&'a str, u32, u32)> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;

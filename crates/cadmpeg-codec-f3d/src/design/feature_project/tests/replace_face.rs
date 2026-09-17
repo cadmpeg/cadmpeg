@@ -136,43 +136,47 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             next_byte_offset: 256,
         })
         .unwrap();
-    let target = DesignFaceOperand::try_new(crate::records::topology::DesignFaceOperandDraft {
-        id: "f3d:Design/BulkStream.dat:face-operand#1140".into(),
-        scope_record_index: 1129,
-        scope_reference_ordinal: 3,
-        group: Some(crate::records::topology::DesignOperandGroup {
-            group_record_index: 1137,
-            group_member_ordinal: 0,
-        }),
-        record_index: 1140,
-        byte_offset: 0,
-        class_tag: crate::records::references::DesignClassTag::try_from("272".to_owned()).unwrap(),
-        paired_byte_offset: 16,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
+    let target =
+        DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
+            id: "f3d:Design/BulkStream.dat:face-operand#1140".into(),
+            scope_record_index: 1129,
+            scope_reference_ordinal: 3,
+            group: Some(crate::records::topology::DesignOperandGroup {
+                group_record_index: 1137,
+                group_member_ordinal: 0,
+            }),
+            record_index: 1140,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("272".to_owned())
+                .unwrap(),
+            paired_byte_offset: 16,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
             .unwrap(),
-        recipe_record_index: 1143,
-        recipe_record_byte_offset: 32,
-        recipe_id: "f3d:Design/BulkStream.dat:recipe#1142".into(),
-        recipe_prefix_offset: 43,
-        recipe_prefix_bytes: Vec::new(),
-        recipe_references: Vec::new(),
-        recipe_kind: ConstructionRecipeKind::BoundedFace,
-        recipe_program_offset: 0,
-        recipe_program: Vec::new(),
+            recipe_record_index: 1143,
+            recipe_record_byte_offset: 32,
+            recipe_id: "f3d:Design/BulkStream.dat:recipe#1142".into(),
+            recipe_prefix_offset: 43,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::BoundedFace,
+            recipe_program_offset: 0,
+            recipe_program: Vec::new(),
 
-        recipe_nodes: Vec::new(),
-        candidate_faces: Vec::new(),
-        unreferenced_candidate_faces: Vec::new(),
-        alternate_selector_candidate_faces: Vec::new(),
-        preceding_candidate_faces: Vec::new(),
-        changed_candidate_faces: Vec::new(),
-        historical_support_contexts: Vec::new(),
-        resolved_face_slots: vec![622],
-        resolved_active_face: None,
-        next_record_index: 1144,
-        next_byte_offset: 200,
-    })
-    .unwrap();
+            recipe_nodes: Vec::new(),
+            candidate_faces: Vec::new(),
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: vec![622],
+            resolved_active_face: None,
+            next_record_index: 1144,
+            next_byte_offset: 200,
+        })
+        .unwrap();
 
     let definition = super::project_replace_face(
         &scope,
