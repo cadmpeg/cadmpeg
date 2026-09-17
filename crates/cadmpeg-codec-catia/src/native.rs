@@ -1873,9 +1873,13 @@ impl CatiaCatalog {
     /// The stored count, equal to the entry population plus one.
     ///
     /// The format states the count in a `u32`, so a catalog holding a
-    /// population that plus one does not fit a `u32` states no count. Every
-    /// decoded catalog derives its population from that same `u32`, so it
-    /// always states one.
+    /// population that plus one does not fit a `u32` states no count. That is
+    /// the one meaning of `None`, and it is unreachable through either
+    /// admission: a decoded catalog derives its population from that same
+    /// `u32`, and an admitted one is compared against it below. The population
+    /// is not bounded by a type -- `entries` is written by the arena join and
+    /// by the hand-written namespace load -- so this is stated rather than
+    /// asserted.
     pub fn declared_count(&self) -> Option<u32> {
         u32::try_from(self.entries.len())
             .ok()
@@ -1892,9 +1896,15 @@ struct CatiaCatalogWire {
     byte_offset: u64,
     /// Total framed byte length.
     byte_len: u64,
-    /// Stored count, equal to the entry population plus one. Absent when the
-    /// entry population plus one does not fit the stored `u32`.
-    #[serde(default)]
+    /// Stored count, equal to the entry population plus one.
+    ///
+    /// The key is required: a catalog always states its count, because the
+    /// format states it and `crate::catalog::parse_candidate` derives the entry
+    /// population from it. `null` is its one spelling of "this catalog holds
+    /// more entries than the `u32` the format states the count in can name",
+    /// which `TryFrom` refuses. `nullable` reads the key, and this declaration
+    /// states no `default`, so serde names the field when it is left out.
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     declared_count: Option<u32>,
     /// Catalog entries in serialized order.
     #[serde(default)]
@@ -1929,6 +1939,10 @@ impl TryFrom<CatiaCatalogWire> for CatiaCatalog {
     type Error = &'static str;
 
     fn try_from(wire: CatiaCatalogWire) -> Result<Self, Self::Error> {
+        // The wire states `null` only for a catalog holding more entries than
+        // the format's `u32` count can name. Such a catalog has no count to
+        // compare its entries against, so it is refused rather than admitted
+        // with an unchecked population.
         let Some(declared_count) = wire.declared_count else {
             return Err("catalog states no count");
         };

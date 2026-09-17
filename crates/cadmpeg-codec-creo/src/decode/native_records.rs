@@ -214,9 +214,24 @@ fn serialize_sketch_table_kind<S: serde::Serializer>(
 
 #[derive(Serialize)]
 pub(crate) struct CreoSketchBucketHeader {
+    /// Zero-based bucket index.
     pub(crate) index: u32,
+    /// Number of entries the bucket array opener declares.
     pub(crate) declared_entry_count: u32,
+    /// Number of structurally complete entries decoded within the bucket
+    /// frame.
+    ///
+    /// `None` states that the scan decoded more entries than the `u32` the
+    /// declared count is stored in can name, so the two counts cannot be
+    /// compared and the bucket states no completeness. It is copied from
+    /// `crate::feature::definitions::FeatureTrimBucket::decoded_entry_count`,
+    /// whose one producer is `trim_bucket_entry_count`
+    /// (`feature/definitions.rs:2745`): it counts decoded rows over the bucket
+    /// frame and answers `None` from `u32::try_from` when that count passes
+    /// the stored width. `FeatureTrimBucket::is_complete` is the reader that
+    /// acts on it, and `None` is not complete.
     pub(crate) decoded_entry_count: Option<u32>,
+    /// Byte offset of the stored bucket index.
     pub(crate) offset: usize,
 }
 

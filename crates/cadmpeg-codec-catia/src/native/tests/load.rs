@@ -135,6 +135,53 @@ fn native_load_rejects_dangling_cross_arena_links() {
 }
 
 #[test]
+fn a_catalog_states_its_count_or_is_refused() {
+    let mut bytes = object_graph_stream();
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store catalogs");
+    let stored: Vec<serde_json::Value> = namespace.arena_as("catalogs").unwrap();
+    assert!(
+        stored[0].get("declared_count").is_some(),
+        "a stored catalog states its count"
+    );
+
+    // The key is required: leaving it out is no spelling of anything.
+    let mut absent = stored.clone();
+    absent[0]
+        .as_object_mut()
+        .expect("catalog object")
+        .remove("declared_count");
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace.set_arena("catalogs", &absent).unwrap();
+    let error = namespace
+        .arena_as::<crate::native::CatiaCatalog>("catalogs")
+        .expect_err("an absent declared_count key");
+    assert!(
+        format!("{error}").contains("declared_count"),
+        "{error}"
+    );
+
+    // `null` is the one spelling of a population the format's count cannot
+    // name, and it is refused.
+    let mut null_count = stored;
+    null_count[0]["declared_count"] = serde_json::Value::Null;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace.set_arena("catalogs", &null_count).unwrap();
+    let error = namespace
+        .arena_as::<crate::native::CatiaCatalog>("catalogs")
+        .expect_err("a catalog stating no count");
+    assert!(format!("{error}").contains("states no count"), "{error}");
+}
+
+#[test]
 fn native_load_rejects_noncanonical_catalog_and_record_views() {
     let mut bytes = object_graph_stream();
     bytes.extend(catalog_stream(&[
