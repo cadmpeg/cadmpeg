@@ -1636,10 +1636,19 @@ ABSENT_KEY_NULLABLE = re.compile(
 )
 # The one workspace macro that declares a named reader forwarding to
 # ``absent_key::named_present``. Its expansion carries the same absence
-# spelling and names the key in whatever it refuses.
+# spelling and names the key in whatever it refuses. The macro path is read,
+# not the bare name: a ``macro_rules! named_optional_field`` anywhere else
+# expands to whatever it likes, so the census names that definition instead.
 PRESENT_FORWARDER_MACRO = re.compile(
-    r"named_optional_field!\s*\(\s*(?:pub\s*(?:\([^)]*\)\s*)?)?(\w+)"
+    r"(?:(cadmpeg_core|crate)\s*::\s*)?named_optional_field!\s*\("
 )
+DECLARED_READER_NAME = re.compile(r"\s*(?:pub\s*(?:\([^)]*\)\s*)?)?(\w+)")
+PRESENT_FORWARDER_DEFINITION = re.compile(r"macro_rules!\s*named_optional_field\b")
+# The crate and file that own the macro's definition.
+PRESENT_FORWARDER_OWNER = ("cadmpeg-core", "absent_key.rs")
+# The serde key a field states, where it is not the field's own name.
+SERDE_RENAME = re.compile(r'(?<!\w)rename\s*=\s*"([^"]+)"')
+USE_DECLARATION = re.compile(r"\buse\s+([^;]+);")
 SERDE_DEFAULT = re.compile(r"(?:^|[(,])\s*default\s*(?:[,)]|=)")
 # A flattened field has no key of its own, so an absent key names nothing
 # about it: its own reader states which keys it reads and what their absence
@@ -1724,22 +1733,204 @@ def struct_fields(body):
         yield offset, text, name, match.group(2) is not None
 
 
+def module_of(path, scope):
+    """One declaration's module path from its crate root."""
+    src = path.parts.index("src")
+    parts = path.parts[src + 1:]
+    module = parts[:-1] + (
+        () if path.name in {"lib.rs", "main.rs", "mod.rs"} else (path.stem,)
+    )
+    return module + tuple(name for name in scope if not name.startswith("@"))
+
+
+def macro_invocation_key(raw, source, opening):
+    """The key literal one ``named_optional_field!`` invocation states.
+
+    The arguments are read from the raw source: ``production_source`` masks
+    string literals, and the key is one.
+    """
+    end = delimited_end(source, opening, "(", ")")
+    if end is None:
+        return None, None
+    name = DECLARED_READER_NAME.match(raw, opening + 1)
+    if name is None:
+        return None, None
+    depth = 0
+    last = opening + 1
+    for index in range(opening + 1, end - 1):
+        character = source[index]
+        if character in "(<[":
+            depth += 1
+        elif character in ")>]":
+            depth -= 1
+        elif character == "," and depth == 0:
+            last = index + 1
+    literal = raw[last:end - 1].strip()
+    if len(literal) < 2 or literal[0] != '"' or literal[-1] != '"':
+        return name.group(1), None
+    return name.group(1), literal[1:-1]
+
+
 def present_forwarders():
-    """Named readers, per crate, declared by ``named_optional_field!``.
+    """Every ``named_optional_field!`` declaration, and the macro's own failures.
 
     The macro is the one sanctioned declaration. A hand-written function that
     calls ``absent_key::named_present`` itself states the key as an argument
-    the census cannot tie to the field, so it is not a declaration here.
+    the census cannot tie to the field, so it is not a declaration here. The
+    declarations are keyed by crate and reader name, and each carries the file
+    and module it was written in and the key literal it states, so a field is
+    resolved to the declaration its own module reaches rather than to a name.
     """
     forwarders = {}
+    failures = []
+    sources = {}
+    macro_crates = set()
     for path in absent_key_source_files():
+        raw = path.read_text(encoding="utf-8")
+        source, _ = SOURCE_POLICY.production_source(raw)
+        sources[path] = (raw, source)
+        definition = PRESENT_FORWARDER_DEFINITION.search(source)
+        if definition is None:
+            continue
         crate = Path(*path.parts[:path.parts.index("src")])
-        source, _ = SOURCE_POLICY.production_source(
-            path.read_text(encoding="utf-8")
-        )
-        names = forwarders.setdefault(crate, set())
-        names.update(match.group(1) for match in PRESENT_FORWARDER_MACRO.finditer(source))
-    return forwarders
+        macro_crates.add(crate)
+        if (crate.name, path.name) != PRESENT_FORWARDER_OWNER:
+            failures.append((
+                path,
+                raw.count("\n", 0, definition.start()) + 1,
+                "named_optional_field: this file defines a macro of that name; "
+                "the one declaration macro is "
+                "cadmpeg_core::named_optional_field!",
+            ))
+    for path, (raw, source) in sources.items():
+        crate = Path(*path.parts[:path.parts.index("src")])
+        offsets, scopes = lexical_scopes(source)
+        declarations = forwarders.setdefault(crate, {})
+        for match in PRESENT_FORWARDER_MACRO.finditer(source):
+            qualifier = match.group(1)
+            if qualifier is None:
+                continue
+            if qualifier == "crate" and crate not in macro_crates:
+                continue
+            name, key = macro_invocation_key(raw, source, match.end() - 1)
+            if name is None:
+                continue
+            scope = scopes[bisect_right(offsets, match.start()) - 1]
+            declarations.setdefault(name, []).append(
+                (path, module_of(path, scope), key)
+            )
+    return forwarders, failures
+
+
+def file_imports(path):
+    """The module path each ``use`` declaration of one file names."""
+    source, _ = SOURCE_POLICY.production_source(path.read_text(encoding="utf-8"))
+    bindings = {}
+    for match in USE_DECLARATION.finditer(source):
+        text = "".join(match.group(1).split())
+        head, brace, rest = text.partition("{")
+        if brace and ("{" in rest or "}" not in rest):
+            # A nested import tree states more than one prefix. The census
+            # reads none of it rather than the wrong one.
+            continue
+        prefix = tuple(part for part in head.split("::") if part)
+        names = rest.rsplit("}", 1)[0].split(",") if brace else prefix[-1:]
+        if not brace:
+            prefix = prefix[:-1]
+        for name in names:
+            if name and "as" not in name.split("::") and "*" not in name:
+                bindings[name.rsplit("::", 1)[-1]] = prefix
+    return bindings
+
+
+def reader_module(owner_module, prefix):
+    """The module a reader path names, read from the field's own module."""
+    if not prefix:
+        return owner_module
+    if prefix[0] == "crate":
+        return tuple(prefix[1:])
+    if prefix[0] == "self":
+        return owner_module + tuple(prefix[1:])
+    if prefix[0] == "super":
+        depth = 0
+        while depth < len(prefix) and prefix[depth] == "super":
+            depth += 1
+        kept = owner_module[:max(len(owner_module) - depth, 0)]
+        return kept + tuple(prefix[depth:])
+    return owner_module + tuple(prefix)
+
+
+def declared_reader(declarations, path, item, name, text):
+    """Why the readers one optional key names are no declaration, or None.
+
+    ``(True, None)`` states the field names a declaration whose key literal is
+    the field's own serde key. ``(False, reason)`` states a named reader that
+    resolves to no declaration, to more than one, or to one that declares
+    another key. ``(False, None)`` states a field that names no reader.
+    """
+    named = DESERIALIZE_WITH.findall(text)
+    if not named:
+        return False, None
+    rename = SERDE_RENAME.search(text)
+    key = rename.group(1) if rename is not None else name
+    owner_module = tuple(
+        part for part in item.scope if not part.startswith("@")
+    )
+    reasons = []
+    for reader in named:
+        segments = [part for part in reader.split("::") if part]
+        if not segments:
+            continue
+        candidates = declarations.get(segments[-1], ())
+        prefix = tuple(segments[:-1])
+        if prefix:
+            wanted = reader_module(owner_module, prefix)
+            resolved = [
+                candidate for candidate in candidates if candidate[1] == wanted
+            ]
+            if not resolved:
+                resolved = [
+                    candidate for candidate in candidates
+                    if candidate[1][len(candidate[1]) - len(prefix):] == prefix
+                ]
+        else:
+            resolved = [
+                candidate for candidate in candidates if candidate[0] == path
+            ]
+            if not resolved:
+                imported = file_imports(path).get(segments[-1])
+                if imported is not None:
+                    wanted = reader_module(owner_module, imported)
+                    resolved = [
+                        candidate for candidate in candidates
+                        if candidate[1] == wanted
+                    ]
+        if not resolved:
+            reasons.append(
+                f"the reader `{reader}` is no declaration this module reaches; "
+                "declare it with cadmpeg_core::named_optional_field! in the "
+                "field's own file"
+            )
+            continue
+        if len(resolved) > 1:
+            where = ", ".join(sorted(
+                f"{candidate[0].as_posix()}::{'::'.join(candidate[1])}"
+                for candidate in resolved
+            ))
+            reasons.append(
+                f"the reader `{reader}` resolves to {len(resolved)} "
+                f"declarations ({where}); name the one that declares the key"
+            )
+            continue
+        declared = resolved[0][2]
+        if declared != key:
+            reasons.append(
+                f"the reader `{reader}` declares the key `{declared}`, and "
+                f"this field's key is `{key}`"
+            )
+            continue
+        return True, None
+    return False, (reasons[0] if reasons else None)
 
 
 def crate_sources():
@@ -1899,7 +2090,7 @@ def reader_structs(reader, crate_paths, crate_items, owner, field):
 BODY_DESERIALIZE_CALL = re.compile(r"\b(\w+)\s*(?:::\s*<[^<>]*>)?\s*::\s*deserialize\b")
 
 
-def flattened_reader_failures(crate, crate_paths, crate_items, forwarders):
+def flattened_reader_failures(crate, crate_paths, crate_items, declarations):
     """Every optional key a flattened field's own reader reads undeclared."""
     found = []
     seen = set()
@@ -1927,13 +2118,13 @@ def flattened_reader_failures(crate, crate_paths, crate_items, forwarders):
                     found.extend(
                         reader_option_failures(
                             read_path, item, owner, field, reader,
-                            forwarders.get(crate, ()),
+                            declarations.get(crate, {}),
                         )
                     )
     return found
 
 
-def reader_option_failures(path, item, owner, field, reader, forwarders):
+def reader_option_failures(path, item, owner, field, reader, declarations):
     """Optional keys of one reader struct that state no absence spelling."""
     found = []
     for offset, text, name, is_option in struct_fields(item.body):
@@ -1941,21 +2132,18 @@ def reader_option_failures(path, item, owner, field, reader, forwarders):
             continue
         if f"{path.as_posix()}:{name}" in ABSENT_KEY_EXCEPTIONS:
             continue
-        declared = any(
-            named.rsplit("::", 1)[-1] in forwarders
-            for named in DESERIALIZE_WITH.findall(text)
-        )
+        declared, reason = declared_reader(declarations, path, item, name, text)
         if SERDE_DEFAULT.search(text):
             if declared:
                 continue
-            spelling = (
+            spelling = reason or (
                 "an omitted optional key states no absence spelling; declare it "
                 "with cadmpeg_core::named_optional_field! beside serde(default)"
             )
         else:
             if ABSENT_KEY_NULLABLE.search(text) or declared:
                 continue
-            spelling = (
+            spelling = reason or (
                 "a stated optional key states no absence spelling; read it "
                 "with cadmpeg_core::absent_key::nullable, or declare it with "
                 "cadmpeg_core::named_optional_field! beside serde(default)"
@@ -1972,7 +2160,8 @@ def reader_option_failures(path, item, owner, field, reader, forwarders):
 def absent_key_failures():
     """Optional keys whose writer omits them but whose reader admits ``null``."""
     found = []
-    forwarders = present_forwarders()
+    declarations, found_macro = present_forwarders()
+    found.extend(found_macro)
     crates = crate_sources()
     crate_items = {}
     for crate, crate_paths in crates.items():
@@ -1983,7 +2172,7 @@ def absent_key_failures():
                 crate_items[path] = []
     for crate, crate_paths in crates.items():
         found.extend(
-            flattened_reader_failures(crate, crate_paths, crate_items, forwarders)
+            flattened_reader_failures(crate, crate_paths, crate_items, declarations)
         )
     for path in absent_key_source_files():
         crate = Path(*path.parts[:path.parts.index("src")])
@@ -2035,18 +2224,19 @@ def absent_key_failures():
                             "serde(default), so its absence is no spelling at all",
                         ))
                     continue
-                named = [
-                    reader.rsplit("::", 1)[-1]
-                    for reader in DESERIALIZE_WITH.findall(text)
-                ]
-                if any(reader in forwarders.get(crate, ()) for reader in named):
+                admitted, reason = declared_reader(
+                    declarations.get(crate, {}), path, item, name, text
+                )
+                if admitted:
                     continue
                 found.append((
                     path,
                     item.line + item.body.count("\n", 0, offset),
-                    f"{item.name}.{name}: an omitted optional key states no "
-                    "absence spelling; declare it with "
-                    "cadmpeg_core::named_optional_field! beside serde(default)",
+                    f"{item.name}.{name}: " + (reason or (
+                        "an omitted optional key states no absence spelling; "
+                        "declare it with cadmpeg_core::named_optional_field! "
+                        "beside serde(default)"
+                    )),
                 ))
     return found
 

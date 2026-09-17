@@ -1820,6 +1820,59 @@ class AbsentKeyCensusTests(unittest.TestCase):
 
     run_absent_key_main = DenyCensusTests.run_absent_key_main
 
+    def test_a_reader_declared_in_another_file_is_not_this_field_s(self) -> None:
+        field = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        elsewhere = 'cadmpeg_core::named_optional_field!(read_key, u32, "key");\n'
+        status, output = self.run_absent_key_main(
+            {"wire.rs": field, "other.rs": elsewhere}
+        )
+        self.assertEqual(status, 1, output)
+        self.assertIn("wire.rs", output)
+        self.assertIn("Wire.key", output)
+        self.assertIn("no declaration this module reaches", output)
+
+    def test_an_imported_reader_resolves_to_its_declaration(self) -> None:
+        field = (
+            "use super::read_key;\n"
+            + self.OMITTED % ',\n        deserialize_with = "read_key"'
+        )
+        parent = 'cadmpeg_core::named_optional_field!(read_key, u32, "key");\n'
+        status, output = self.run_absent_key_main(
+            {"records/child.rs": field, "records.rs": parent}
+        )
+        self.assertEqual(status, 0, output)
+
+    def test_a_local_macro_of_the_declaring_name_is_named(self) -> None:
+        local = (
+            "macro_rules! named_optional_field {\n"
+            "    ($name:ident, $value:ty, $field:literal) => {};\n"
+            "}\n"
+            'named_optional_field!(read_key, u32, "key");\n'
+            + self.OMITTED % ',\n        deserialize_with = "read_key"'
+        )
+        status, output = self.run_absent_key_main({"wire.rs": local})
+        self.assertEqual(status, 1, output)
+        self.assertIn("wire.rs", output)
+        self.assertIn("this file defines a macro of that name", output)
+        self.assertIn("Wire.key", output)
+
+    def test_a_declaration_of_another_key_is_not_this_field_s(self) -> None:
+        field = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        shim = 'cadmpeg_core::named_optional_field!(read_key, u32, "other");\n'
+        status, output = self.run_absent_key_main({"wire.rs": field + shim})
+        self.assertEqual(status, 1, output)
+        self.assertIn("wire.rs", output)
+        self.assertIn("Wire.key", output)
+        self.assertIn("declares the key `other`", output)
+
+    def test_a_renamed_key_is_the_key_the_declaration_states(self) -> None:
+        field = self.OMITTED % (
+            ',\n        rename = "other",\n        deserialize_with = "read_key"'
+        )
+        shim = 'cadmpeg_core::named_optional_field!(read_key, u32, "other");\n'
+        status, output = self.run_absent_key_main({"wire.rs": field + shim})
+        self.assertEqual(status, 0, output)
+
     FLATTENED_MODULE = (
         '#[derive(serde::Deserialize)]\n'
         'struct Outer {\n'
