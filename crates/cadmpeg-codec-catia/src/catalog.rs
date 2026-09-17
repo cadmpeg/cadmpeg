@@ -5,111 +5,6 @@ use cadmpeg_core::decode::View;
 
 const PREFIX: [&str; 4] = ["CATCatalogManager", "catalogManager", "catalogLinks", ""];
 
-/// A catalog entry population the format's stored count can name.
-///
-/// The `7C02` frame states its count as the entry population plus one, in a
-/// `u32`. The bound therefore belongs on the population, not on the count:
-/// this type is the one place it is proven, and `declared_count` is exact for
-/// every value that exists. A population the count cannot name is refused at
-/// construction, so no catalog is representable without a count.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CountedEntries<T> {
-    entries: Vec<T>,
-    declared_count: u32,
-}
-
-impl<T> CountedEntries<T> {
-    /// The stored count, equal to the entry population plus one.
-    pub fn declared_count(&self) -> u32 {
-        self.declared_count
-    }
-
-    /// Maps every entry in serialized order.
-    ///
-    /// The map is one to one, so the population and its stored count are
-    /// unchanged and no bound is proven again.
-    pub fn map<U>(self, map: impl FnMut(T) -> U) -> CountedEntries<U> {
-        CountedEntries {
-            entries: self.entries.into_iter().map(map).collect(),
-            declared_count: self.declared_count,
-        }
-    }
-}
-
-impl<T> Default for CountedEntries<T> {
-    /// The empty population, whose stored count is one.
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-            declared_count: 1,
-        }
-    }
-}
-
-impl<T> TryFrom<Vec<T>> for CountedEntries<T> {
-    type Error = &'static str;
-
-    fn try_from(entries: Vec<T>) -> Result<Self, Self::Error> {
-        let Some(declared_count) = u32::try_from(entries.len())
-            .ok()
-            .and_then(|population| population.checked_add(1))
-        else {
-            return Err("catalog holds more entries than its stored count can name");
-        };
-        Ok(Self {
-            entries,
-            declared_count,
-        })
-    }
-}
-
-impl<T> std::ops::Deref for CountedEntries<T> {
-    type Target = [T];
-
-    fn deref(&self) -> &[T] {
-        &self.entries
-    }
-}
-
-impl<T> std::ops::DerefMut for CountedEntries<T> {
-    /// Entry order is editable; the population is not, because a slice states
-    /// no insertion.
-    fn deref_mut(&mut self) -> &mut [T] {
-        &mut self.entries
-    }
-}
-
-impl<T> IntoIterator for CountedEntries<T> {
-    type Item = T;
-    type IntoIter = std::vec::IntoIter<T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.entries.into_iter()
-    }
-}
-
-impl<'a, T> IntoIterator for &'a CountedEntries<T> {
-    type Item = &'a T;
-    type IntoIter = std::slice::Iter<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.entries.iter()
-    }
-}
-
-impl<T: serde::Serialize> serde::Serialize for CountedEntries<T> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.entries.serialize(serializer)
-    }
-}
-
-impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for CountedEntries<T> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let entries = Vec::<T>::deserialize(deserializer)?;
-        Self::try_from(entries).map_err(serde::de::Error::custom)
-    }
-}
-
 /// One exact `7C02` string catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Catalog {
@@ -117,9 +12,8 @@ pub struct Catalog {
     pub pos: usize,
     /// Total framed byte length.
     pub total_len: usize,
-    /// Catalog entries in serialized order, at a population the stored count
-    /// can name.
-    pub entries: CountedEntries<CatalogEntry>,
+    /// Catalog entries in serialized order.
+    pub entries: Vec<CatalogEntry>,
 }
 
 /// One inclusive-length ASCII catalog entry.
@@ -210,7 +104,7 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
     Some(Catalog {
         pos,
         total_len,
-        entries: CountedEntries::try_from(entries).ok()?,
+        entries,
     })
 }
 

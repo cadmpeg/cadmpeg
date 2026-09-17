@@ -64,10 +64,7 @@ impl CatiaNative {
                 .filter(|entry| entry.parent == catalog.id)
                 .cloned()
                 .collect::<Vec<_>>();
-            catalog.entries =
-                crate::catalog::CountedEntries::try_from(joined).map_err(|message| {
-                    cadmpeg_ir::NativeConvertError::InvalidOwner(message.to_owned())
-                })?;
+            catalog.entries = joined;
             catalog.entries.sort_by_key(|entry| entry.ordinal);
             if catalog
                 .entries
@@ -83,12 +80,8 @@ impl CatiaNative {
         }
         let catalogs = catalog_headers
             .into_iter()
-            .map(|header| {
-                CatiaCatalog::try_from(header).map_err(|message| {
-                    cadmpeg_ir::NativeConvertError::InvalidOwner(message.to_owned())
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(CatiaCatalog::from)
+            .collect::<Vec<_>>();
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
         let records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
         let entity_wires: Vec<crate::native::entity_record::CatiaEntityRecordWire> =
