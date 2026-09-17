@@ -1260,7 +1260,7 @@ mod tests {
     ///
     /// The three arms are value-identical to the clamp they replaced on every
     /// input this route admits, so no test separates the shapes. What proves
-    /// the clamp is gone is the census: `.clamp(` is absent from this file.
+    /// the clamp is gone is the census: no clamp remains in this file.
     /// This test states the value the whole-turn arm answers.
     #[test]
     fn a_relative_tolerance_at_or_past_the_diameter_states_the_whole_turn() {
