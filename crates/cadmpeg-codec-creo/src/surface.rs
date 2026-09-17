@@ -2837,6 +2837,12 @@ fn surface_array_frames(payload: &[u8]) -> Vec<SurfaceArrayFrame> {
         if after_count == start + 1 {
             continue;
         }
+        // The declared count is a slot extent every reader compares against a
+        // `usize` length, so a count this target cannot address states no
+        // frame.
+        let Ok(count) = usize::try_from(count) else {
+            continue;
+        };
         let mut end = labels.get(index + 1).copied().unwrap_or(payload.len());
         for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
             if let Some(offset) = find(payload, terminator, after_count) {
@@ -2846,7 +2852,7 @@ fn surface_array_frames(payload: &[u8]) -> Vec<SurfaceArrayFrame> {
         frames.push(SurfaceArrayFrame {
             start: after_count,
             end,
-            count: usize::try_from(count).unwrap_or(usize::MAX),
+            count,
         });
     }
     frames
@@ -3219,14 +3225,10 @@ fn parsed_named_surface_value(
                 values.push(value);
                 cursor = next;
             }
-            if values.len() == usize::try_from(count).unwrap_or(usize::MAX) && cursor == body.len()
-            {
+            if Some(values.len()) == usize::try_from(count).ok() && cursor == body.len() {
                 return Some(SurfaceNamedValue::CompactIntArray(values));
             }
-            if name == "parent_feats"
-                && values.len() == usize::try_from(count).unwrap_or(usize::MAX)
-                && parent_feature_array_trailer(&body[cursor..])
-            {
+            if name == "parent_feats" && parent_feature_array_trailer(&body[cursor..]) {
                 return Some(SurfaceNamedValue::CompactIntArray(values));
             }
             if name == "params" {
