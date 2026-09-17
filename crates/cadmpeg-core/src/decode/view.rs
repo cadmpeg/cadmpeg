@@ -572,7 +572,11 @@ mod tests {
         assert_eq!(view.position(), 5);
         assert_eq!(view.take(3), None, "a refused take states no bytes");
         assert_eq!(view.unread(), payload.get(5..7).expect("fixture range"));
-        assert_eq!(view.position(), 5, "a refused take does not move the cursor");
+        assert_eq!(
+            view.position(),
+            5,
+            "a refused take does not move the cursor"
+        );
         assert_eq!(view.seek(7), Some(()));
         assert!(view.unread().is_empty());
         assert!(view.is_empty());
