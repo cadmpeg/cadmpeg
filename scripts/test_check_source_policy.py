@@ -544,6 +544,37 @@ class DiscardedValues(TempSourceCase):
         self.assertEqual(self.findings("discarded_value"), [])
 
 
+class ScriptTestCollection(TempSourceCase):
+    GUARD = 'if __name__ == "__main__":\n    unittest.main()\n'
+    CASE = (
+        "import unittest\n\n\n"
+        "class ZzScratchTests(unittest.TestCase):\n"
+        "    def test_one(self) -> None:\n"
+        "        pass\n\n\n"
+    )
+
+    def test_a_case_after_the_main_block_is_named(self) -> None:
+        self.write("scripts/test_zz_scratch.py", self.GUARD + self.CASE)
+        findings = self.findings("script_test_collection")
+        self.assertEqual(len(findings), 1, findings)
+        self.assertEqual(findings[0].path, "scripts/test_zz_scratch.py")
+        self.assertIn("class ZzScratchTests", findings[0].message)
+        self.assertIn("test_zz_scratch.py", findings[0].message)
+
+    def test_a_free_test_function_after_the_main_block_is_named(self) -> None:
+        self.write(
+            "scripts/test_zz_scratch.py",
+            self.GUARD + "def test_loose() -> None:\n    pass\n",
+        )
+        findings = self.findings("script_test_collection")
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("function test_loose", findings[0].message)
+
+    def test_a_case_before_the_main_block_is_collected(self) -> None:
+        self.write("scripts/test_zz_scratch.py", self.CASE + self.GUARD)
+        self.assertEqual(self.findings("script_test_collection"), [])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
