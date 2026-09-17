@@ -2115,6 +2115,50 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 mod tests {
     use super::*;
 
+    /// Every arm of the surface-row lane reads the bytes it reports: a decode
+    /// that states a value advances the cursor and stops inside the body. The
+    /// slot readers rest on that, so no caller tests the token for emptiness.
+    #[test]
+    fn a_surface_row_lane_decode_advances_inside_the_body() {
+        let cache = ScalarCache::from_section(&[
+            0x46, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x46, 0x11, 0x12, 0x13, 0x14, 0x15,
+            0x16, 0x17,
+        ]);
+        // The second byte selects several arms, so it varies over the bytes
+        // those arms name as well as over ordinary payload.
+        const SECOND: [u8; 12] = [
+            0x00, 0x01, 0x0e, 0x73, 0x92, 0xa0, 0xbb, 0xda, 0xe0, 0xe3, 0xf1, 0xf8,
+        ];
+        for opener in 0..=u8::MAX {
+            for second in SECOND {
+                for length in 1..12usize {
+                    let mut body = vec![opener];
+                    if length > 1 {
+                        body.push(second);
+                    }
+                    body.extend((2..length).map(|index| index as u8));
+                    for offset in 0..body.len() {
+                        for decode in [
+                            decode_in_surface_row_lane,
+                            decode_in_row_lane,
+                            decode_in_lane,
+                            decode_in_pcurve_lane,
+                            decode_in_torus_row_lane,
+                        ] {
+                            if let Some((_, next)) = decode(&body, offset, &cache) {
+                                assert!(
+                                    next > offset && next <= body.len(),
+                                    "opener {opener:#04x} second {second:#04x} \
+                                     offset {offset} states {next} over {body:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn positive_subunit_coordinate(value: f64) -> [u8; 8] {
         let bytes = value.to_be_bytes();
         assert_eq!(bytes[0], 0x3f);
