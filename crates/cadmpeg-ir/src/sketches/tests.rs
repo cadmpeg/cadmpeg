@@ -662,7 +662,7 @@ fn a_circular_pattern_count_is_stored_at_the_ir_width() {
 
     let instance = |index: u32| SketchCircularPatternInstance {
         angle: crate::scalar::NonZeroAngle::new(1.0).unwrap(),
-        entities: vec![SketchEntityId::mint(&format!("test:test:sketch-entity#{index}")).unwrap()],
+        entities: vec![SketchEntityId::mint(format!("test:test:sketch-entity#{index}")).unwrap()],
     };
     let pattern = SketchCircularPattern::new(
         SketchEntityId::mint("test:test:sketch-entity#center").unwrap(),
