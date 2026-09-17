@@ -7646,7 +7646,7 @@ impl MeshSelectionSearch<'_> {
 /// Each assignment states `2^unknown` choices for its `unknown` boundary uses
 /// with no stated reversal. `None` states a figure the work counter cannot
 /// hold: more choices than any budget can enumerate.
-fn direction_work_estimate(unknown_uses: impl Iterator<Item = usize>) -> Option<usize> {
+fn direction_work_estimate(mut unknown_uses: impl Iterator<Item = usize>) -> Option<usize> {
     unknown_uses.try_fold(0usize, |total, unknown| {
         let choices = u32::try_from(unknown)
             .ok()
