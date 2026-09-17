@@ -27,21 +27,33 @@ pub(crate) use crate::design::decode::parameters::{
     bind_parameter_companion_payloads, parse_design_parameter_record as parse_design_parameter,
     parse_parameter_owner,
 };
-pub(crate) use crate::design::decode::scopes::extrude_sheet_metal::{
-    exact_ruled_surface_operation, exact_surface_stitch_operation,
-};
-pub(crate) use crate::design::decode::scopes::{
-    bind_axial_assembly_operand_targets, bind_joint_origin_frames_from_assemblies,
-    exact_assembly_alignment, exact_base_feature_construction,
-    exact_circular_pattern_construction_with_owners, exact_combine_operation,
-    exact_component_insert_construction, exact_direct_face_operation,
-    exact_draft_operation_with_owners, exact_fixed_chamfer_parameters,
-    exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_joint_origin_frame,
-    exact_path_feature_construction, exact_rectangular_pattern_construction, exact_scale_operation,
-    exact_surface_extend_operation, exact_surface_offset_operation, exact_thread_construction,
-    exact_work_axis_construction, exact_work_plane_frame, exact_work_point_construction,
-    parse_parameter_scope, parse_thread_payload, select_circular_pattern_axis,
-};
+pub(crate) use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
+pub(crate) use crate::design::decode::scopes::axial_assembly::bind_axial_assembly_operand_targets;
+pub(crate) use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from_assemblies;
+pub(crate) use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
+pub(crate) use crate::design::decode::scopes::combine::exact_combine_operation;
+pub(crate) use crate::design::decode::scopes::component_constructions::exact_component_insert_construction;
+pub(crate) use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
+pub(crate) use crate::design::decode::scopes::direct_face::exact_scale_operation;
+pub(crate) use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
+pub(crate) use crate::design::decode::scopes::extrude_sheet_metal::exact_ruled_surface_operation;
+pub(crate) use crate::design::decode::scopes::extrude_sheet_metal::exact_surface_stitch_operation;
+pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_chamfer_parameters;
+pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
+pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_fillet_parameters;
+pub(crate) use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+pub(crate) use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
+pub(crate) use crate::design::decode::scopes::pattern::exact_circular_pattern_construction_with_owners;
+pub(crate) use crate::design::decode::scopes::pattern::exact_rectangular_pattern_construction;
+pub(crate) use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
+pub(crate) use crate::design::decode::scopes::point_data::exact_work_point_construction;
+pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_extend_operation;
+pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_offset_operation;
+pub(crate) use crate::design::decode::scopes::thread::exact_thread_construction;
+pub(crate) use crate::design::decode::scopes::thread::parse_thread_payload;
+pub(crate) use crate::design::decode::scopes::work_geometry::exact_joint_origin_frame;
+pub(crate) use crate::design::decode::scopes::work_geometry::exact_work_axis_construction;
+pub(crate) use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
 pub(crate) use crate::design::decode::sketch::{
     bind_sketch_graph, decode_pattern_definition, next_indexed_record_offset,
     next_indexed_record_offset_with_index, parse_classed_sketch_relation,

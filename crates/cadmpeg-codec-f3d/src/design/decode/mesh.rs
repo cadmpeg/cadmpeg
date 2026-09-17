@@ -12,7 +12,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
 };
-use crate::design::decode::scopes::parse_parameter_scope;
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids;
 use crate::layout::indexed_design_record_header as indexed_header;

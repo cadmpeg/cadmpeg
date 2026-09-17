@@ -6,13 +6,10 @@
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use super::{
-    prelude::*,
-    {
-        compact_feature_reference, exact_legacy_mirror_scope_count,
-        exact_legacy_mirror_scope_tolerance,
-    },
-};
+use super::super::mirror::compact_feature_reference;
+use super::super::mirror::exact_legacy_mirror_scope_count;
+use super::super::mirror::exact_legacy_mirror_scope_tolerance;
+use super::prelude::*;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> usize {

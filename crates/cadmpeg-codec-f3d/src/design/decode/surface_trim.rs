@@ -5,7 +5,8 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
-use crate::design::decode::scopes::{exact_indexed_header_at, marked_record_reference};
+use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
+use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
     indexed_record_header_at, next_indexed_record_offset, IndexedRecordOffsets,
 };

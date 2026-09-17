@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse solid primitive construction frames and their parameter owners.
 
-use super::{exact_fixed_scalar, marked_record_reference};
+use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
 use crate::bytes::is_guid_relaxed;
 use crate::bytes::lp_utf16_bounded;

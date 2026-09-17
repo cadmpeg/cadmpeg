@@ -308,7 +308,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let decoded = crate::design::decode::scopes::exact_move_operation(
+        let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
             &scope,
@@ -325,7 +325,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             let paired_class_at = frame_at + 253 + 4;
             bytes[paired_class_at..paired_class_at + 3].copy_from_slice(b"262");
             assert!(
-                crate::design::decode::scopes::exact_move_operation(
+                crate::design::decode::scopes::direct_face::exact_move_operation(
                     &bytes,
                     &IndexedRecordOffsets::build(&bytes),
                     &scope,

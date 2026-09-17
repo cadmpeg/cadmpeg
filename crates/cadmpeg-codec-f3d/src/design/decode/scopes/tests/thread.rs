@@ -7,7 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
-use crate::design::decode::scopes::ThreadPrefix;
+use crate::design::decode::scopes::thread::ThreadPrefix;
 
 #[test]
 fn thread_scope_decodes_standard_size_and_face_group() {

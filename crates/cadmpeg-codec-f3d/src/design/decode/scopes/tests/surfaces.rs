@@ -1315,7 +1315,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
                 draft.feature_ordinal_offset = feature_ordinal as u64;
                 draft.previous_history_state_id_offset = Some(
                     (feature_ordinal
-                        + crate::design::decode::scopes::parameter_scope_previous_history_offset(
+                        + crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
                             "Base Feature",
                             bytes.len() - feature_ordinal,
                         )

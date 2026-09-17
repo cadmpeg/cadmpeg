@@ -7,12 +7,17 @@
     clippy::wildcard_imports
 )]
 
-use super::{
-    exact_coil_placement, exact_hole_construction, exact_hole_face_selection,
-    exact_path_feature_construction, exact_pattern_identity_wrapper, exact_work_point_construction,
-    named_parameter_scope_tail_is_valid, parse_parameter_scope, HOLE_FACE_SELECTION_TYPE_GUID,
-    HOLE_POINT_DATA_TYPE_GUID, POINT_DATA_TYPE_GUID,
-};
+use super::super::coil::exact_coil_placement;
+use super::super::hole::exact_hole_construction;
+use super::super::hole::exact_hole_face_selection;
+use super::super::hole::HOLE_FACE_SELECTION_TYPE_GUID;
+use super::super::hole::HOLE_POINT_DATA_TYPE_GUID;
+use super::super::parameter_scope::named_parameter_scope_tail_is_valid;
+use super::super::parameter_scope::parse_parameter_scope;
+use super::super::path_feature::exact_path_feature_construction;
+use super::super::pattern::exact_pattern_identity_wrapper;
+use super::super::point_data::exact_work_point_construction;
+use super::super::point_data::POINT_DATA_TYPE_GUID;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_selection;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;

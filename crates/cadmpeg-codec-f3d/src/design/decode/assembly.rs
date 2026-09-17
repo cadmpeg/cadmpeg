@@ -25,13 +25,12 @@ use crate::records::{
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
-use super::{
-    scopes::{
-        exact_hole_construction, exact_indexed_header_at, exact_point_data_construction,
-        marked_record_reference, rigid_transform_at,
-    },
-    sketch::IndexedRecordOffsets,
-};
+use super::scopes::hole::exact_hole_construction;
+use super::scopes::point_data::exact_point_data_construction;
+use super::scopes::shared_frames::exact_indexed_header_at;
+use super::scopes::shared_frames::marked_record_reference;
+use super::scopes::shared_frames::rigid_transform_at;
+use super::sketch::IndexedRecordOffsets;
 
 pub(crate) struct LegacyAsBuilt421Alignment {
     pub(crate) angle: f64,

@@ -98,7 +98,7 @@ pub(crate) fn exact_component_occurrence(
             {
                 return None;
             }
-            let transform = super::scopes::rigid_transform_at(bytes, start + 209)?;
+            let transform = super::scopes::shared_frames::rigid_transform_at(bytes, start + 209)?;
             crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: occurrence_ordinal,
                 transform,

@@ -85,21 +85,22 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(scope.frame_length(), paired_at as u64);
     assert_eq!(scope.paired_class_tag.as_str(), "261");
     assert_eq!(scope.paired_byte_offset(), paired_at as u64);
-    let discovered = crate::design::decode::scopes::parameter_scope_candidate_headers(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-    )
-    .into_iter()
-    .filter_map(|header| {
-        parse_parameter_scope(
+    let discovered =
+        crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            header.record_index,
-            &header.class_tag,
-            header.byte_offset,
         )
-    })
-    .collect::<Vec<_>>();
+        .into_iter()
+        .filter_map(|header| {
+            parse_parameter_scope(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                header.record_index,
+                &header.class_tag,
+                header.byte_offset,
+            )
+        })
+        .collect::<Vec<_>>();
     assert_eq!(discovered.len(), 1);
     assert_eq!(discovered[0].record_index, 12);
 
@@ -120,7 +121,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(compact.frame_length(), paired_at as u64 - 1);
     assert_eq!(compact.previous_history_state_id(), Some(2));
     assert!(
-        !crate::design::decode::scopes::parameter_scope_tail_length_is_valid("CopyPasteBodies", 78,)
+        !crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
+            "CopyPasteBodies",
+            78,
+        )
     );
 
     for tail_length in [72, 76] {
@@ -283,12 +287,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let operation = crate::design::decode::scopes::exact_copy_paste_bodies_operation(
-        &operation_bytes,
-        &IndexedRecordOffsets::build(&operation_bytes),
-        &operation_scope,
-    )
-    .expect("single-body CopyPasteBodies relation");
+    let operation =
+        crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
+            &operation_bytes,
+            &IndexedRecordOffsets::build(&operation_bytes),
+            &operation_scope,
+        )
+        .expect("single-body CopyPasteBodies relation");
     assert_eq!(operation.body_group_record_index, 55);
     assert_eq!(operation.body_group_byte_offset(), body_group_at as u64);
     assert_eq!(
