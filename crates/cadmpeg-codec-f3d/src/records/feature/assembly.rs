@@ -498,38 +498,38 @@ struct DesignAssemblyAlignmentSerde {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_operand_frames"
     )]
     operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_legacy_operand_carriers"
     )]
     legacy_operand_carriers: Option<[DesignAssemblyLegacyOperandWire; 2]>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_solved_frame"
     )]
     solved_frame: Option<DesignAssemblySolvedFrame>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_operand_qualifiers"
     )]
     operand_qualifiers: Option<[DesignAssemblyOperandQualifier; 2]>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_limits"
     )]
     #[serde(alias = "angular_limits")]
     limits: Option<DesignAssemblyLimits>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_joint_origin_scope_record_index"
     )]
     joint_origin_scope_record_index: Option<u32>,
 }
@@ -842,28 +842,28 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_external_property_key"
     )]
     external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_external_property_key_offset"
     )]
     external_property_key_offset: Option<u64>,
     /// Optional referenced-document version identity.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_external_version_urn"
     )]
     external_version_urn: Option<String>,
     /// Byte offset of `external_version_urn` when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_external_version_urn_offset"
     )]
     external_version_urn_offset: Option<u64>,
     /// Embedded record that carries the selected occurrence role.
@@ -1267,3 +1267,51 @@ pub struct DesignAssemblyOperandFrame {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_operand_frames,
+    [DesignAssemblyOperandFrame; 2],
+    "operand_frames"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_legacy_operand_carriers,
+    [DesignAssemblyLegacyOperandWire; 2],
+    "legacy_operand_carriers"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_solved_frame,
+    DesignAssemblySolvedFrame,
+    "solved_frame"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_operand_qualifiers,
+    [DesignAssemblyOperandQualifier; 2],
+    "operand_qualifiers"
+);
+cadmpeg_core::named_optional_field!(deserialize_limits, DesignAssemblyLimits, "limits");
+cadmpeg_core::named_optional_field!(
+    deserialize_joint_origin_scope_record_index,
+    u32,
+    "joint_origin_scope_record_index"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_external_property_key,
+    DesignRelaxedGuidText,
+    "external_property_key"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_external_property_key_offset,
+    u64,
+    "external_property_key_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_external_version_urn,
+    String,
+    "external_version_urn"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_external_version_urn_offset,
+    u64,
+    "external_version_urn_offset"
+);

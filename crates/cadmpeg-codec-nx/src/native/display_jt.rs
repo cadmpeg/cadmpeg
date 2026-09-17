@@ -1373,7 +1373,7 @@ struct DisplayJtMaterialAttributeWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_reflectivity"
     )]
     reflectivity: Option<f32>,
     source_offset: u64,
@@ -6110,3 +6110,6 @@ mod tests {
             .all(|packet| packet.values == Some(Vec::new())));
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_reflectivity, f32, "reflectivity");

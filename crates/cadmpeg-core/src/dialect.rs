@@ -354,7 +354,7 @@ pub struct DialectMatch {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::absent_key::present"
+        deserialize_with = "deserialize_instance"
     )]
     instance: Option<String>,
     /// How this layer was admitted.
@@ -1005,3 +1005,6 @@ mod tests {
         );
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+crate::named_optional_field!(deserialize_instance, String, "instance");

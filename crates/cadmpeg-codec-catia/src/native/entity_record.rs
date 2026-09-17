@@ -362,7 +362,7 @@ pub(super) struct CatiaEntityRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_inline_body"
     )]
     inline_body: Option<Vec<u8>>,
     definition_len: u64,
@@ -383,63 +383,63 @@ pub(super) struct CatiaEntityRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_relation_expression"
     )]
     relation_expression: Option<CatiaRelationExpression>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_parameter_value"
     )]
     parameter_value: Option<CatiaParameterValue>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_range_interval"
     )]
     range_interval: Option<CatiaRangeInterval>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_constraint_range"
     )]
     constraint_range: Option<CatiaConstraintRange>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_definition_value"
     )]
     definition_value: Option<CatiaDefinitionValue>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_definition_chain_value"
     )]
     definition_chain_value: Option<CatiaDefinitionChainValue>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_relation_program_instance"
     )]
     relation_program_instance: Option<CatiaRelationProgramInstance>,
     #[serde(
         default,
         alias = "configuration_record",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_schema_configuration_record"
     )]
     schema_configuration_record: Option<CatiaSchemaConfigurationRecord>,
     #[serde(
         default,
         alias = "configuration_row_link",
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_schema_configuration_row_link"
     )]
     schema_configuration_row_link: Option<CatiaSchemaConfigurationRowLink>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_formula_relation"
     )]
     formula_relation: Option<CatiaFormulaRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -447,13 +447,13 @@ pub(super) struct CatiaEntityRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_numeric_pair"
     )]
     numeric_pair: Option<entity_table::NumericPair>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_reference_signature"
     )]
     reference_signature: Option<CatiaReferenceSignature>,
     #[serde(with = "cadmpeg_ir::bytes")]
@@ -461,19 +461,19 @@ pub(super) struct CatiaEntityRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_suffix_value"
     )]
     suffix_value: Option<CatiaEntitySuffixValue>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_suffix_framing"
     )]
     suffix_framing: Option<CatiaEntitySuffixFraming>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_suffix_schema_selection"
     )]
     suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
 }
@@ -809,3 +809,81 @@ mod tests {
             .contains("incompatible value/suffix productions"));
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_inline_body, Vec<u8>, "inline_body");
+cadmpeg_core::named_optional_field!(
+    deserialize_relation_expression,
+    CatiaRelationExpression,
+    "relation_expression"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_parameter_value,
+    CatiaParameterValue,
+    "parameter_value"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_range_interval,
+    CatiaRangeInterval,
+    "range_interval"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_constraint_range,
+    CatiaConstraintRange,
+    "constraint_range"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_definition_value,
+    CatiaDefinitionValue,
+    "definition_value"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_definition_chain_value,
+    CatiaDefinitionChainValue,
+    "definition_chain_value"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_relation_program_instance,
+    CatiaRelationProgramInstance,
+    "relation_program_instance"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_schema_configuration_record,
+    CatiaSchemaConfigurationRecord,
+    "schema_configuration_record"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_schema_configuration_row_link,
+    CatiaSchemaConfigurationRowLink,
+    "schema_configuration_row_link"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_formula_relation,
+    CatiaFormulaRelation,
+    "formula_relation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_numeric_pair,
+    entity_table::NumericPair,
+    "numeric_pair"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_reference_signature,
+    CatiaReferenceSignature,
+    "reference_signature"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_suffix_value,
+    CatiaEntitySuffixValue,
+    "suffix_value"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_suffix_framing,
+    CatiaEntitySuffixFraming,
+    "suffix_framing"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_suffix_schema_selection,
+    CatiaEntitySuffixSchemaSelection,
+    "suffix_schema_selection"
+);

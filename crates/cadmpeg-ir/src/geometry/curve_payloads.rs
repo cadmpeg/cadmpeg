@@ -353,7 +353,7 @@ pub struct OffsetCurveConstruction {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_range"
     )]
     range: Option<CurveOffsetRange>,
 }
@@ -372,7 +372,7 @@ struct OffsetCurveConstructionWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_range"
     )]
     range: Option<CurveOffsetRange>,
 }
@@ -594,7 +594,7 @@ struct TwoSidedOffsetCurveConstructionWire {
     discontinuity_flag: bool,
     /// Signed offset distance for each support side, in document length units.
     offsets: [f64; 2],
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
 
@@ -675,7 +675,7 @@ struct VectorOffsetCurveConstructionWire {
     offset: Vector3,
     /// Integer codes attached to the two native roles.
     roles: VectorOffsetRoles,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
 
@@ -747,7 +747,7 @@ pub struct SubsetCurveConstruction {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_cache"
     )]
     cache: Option<LegacyCache>,
 }
@@ -763,7 +763,7 @@ struct SubsetCurveConstructionWire {
     /// Whether the subset follows increasing parent parameters.
     #[serde(default = "default_true")]
     sense: bool,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
 
@@ -1188,3 +1188,7 @@ impl SurfaceOffsetCurveConstruction {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_range, CurveOffsetRange, "range");
+cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");

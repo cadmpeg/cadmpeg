@@ -51,7 +51,7 @@ struct ReferenceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     data_block: Option<String>,
     source_offset: u64,
@@ -309,3 +309,6 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");

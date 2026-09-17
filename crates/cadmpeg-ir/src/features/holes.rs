@@ -57,9 +57,9 @@ pub struct HoleShape {
 #[serde(deny_unknown_fields)]
 struct HoleShapeWire {
     construction: HoleConstruction,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_exit_kind")]
     exit_kind: Option<HoleKind>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_diameter")]
     diameter: Option<PositiveLength>,
 }
 
@@ -215,7 +215,7 @@ pub enum HoleConstruction {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_specification"
         )]
         specification: Option<Box<HoleSpecification>>,
     },
@@ -229,7 +229,7 @@ pub enum HoleConstruction {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_pitch"
         )]
         pitch: Option<PositiveLength>,
         /// Included angle of the conical drill point.
@@ -338,7 +338,7 @@ enum HoleKindWire {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_form"
         )]
         form: Option<HoleForm>,
     },
@@ -374,7 +374,7 @@ enum HoleKindWire {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_entry_diameter"
         )]
         entry_diameter: Option<PositiveLength>,
         depth: PositiveLength,
@@ -578,14 +578,14 @@ pub enum HoleSpecification {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_designation"
         )]
         designation: Option<String>,
         /// Clearance-hole fit class.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_fit"
         )]
         fit: Option<String>,
         /// Whether exact standard geometry is modeled.
@@ -600,7 +600,7 @@ pub enum HoleSpecification {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_clearance"
         )]
         clearance: Option<Length>,
     },
@@ -613,14 +613,14 @@ pub enum HoleSpecification {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_designation"
         )]
         designation: Option<String>,
         /// Tolerance or thread class.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_class"
         )]
         class: Option<String>,
         /// Whether exact helical thread geometry is modeled.
@@ -631,14 +631,14 @@ pub enum HoleSpecification {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_pitch"
         )]
         pitch: Option<PositiveLength>,
         /// Nominal major thread diameter.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_major_diameter"
         )]
         major_diameter: Option<PositiveLength>,
         /// Thread handedness.
@@ -649,7 +649,7 @@ pub enum HoleSpecification {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_clearance"
         )]
         clearance: Option<Length>,
     },
@@ -726,3 +726,20 @@ pub enum HoleForm {
     /// Conical entry.
     Countersink,
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_exit_kind, HoleKind, "exit_kind");
+cadmpeg_core::named_optional_field!(deserialize_diameter, PositiveLength, "diameter");
+cadmpeg_core::named_optional_field!(
+    deserialize_specification,
+    Box<HoleSpecification>,
+    "specification"
+);
+cadmpeg_core::named_optional_field!(deserialize_pitch, PositiveLength, "pitch");
+cadmpeg_core::named_optional_field!(deserialize_form, HoleForm, "form");
+cadmpeg_core::named_optional_field!(deserialize_entry_diameter, PositiveLength, "entry_diameter");
+cadmpeg_core::named_optional_field!(deserialize_designation, String, "designation");
+cadmpeg_core::named_optional_field!(deserialize_fit, String, "fit");
+cadmpeg_core::named_optional_field!(deserialize_clearance, Length, "clearance");
+cadmpeg_core::named_optional_field!(deserialize_class, String, "class");
+cadmpeg_core::named_optional_field!(deserialize_major_diameter, PositiveLength, "major_diameter");

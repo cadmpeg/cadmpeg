@@ -22,14 +22,14 @@ pub struct Appearance {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
     /// Asset GUID stored in the Protein record.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_asset_guid"
     )]
     pub asset_guid: Option<String>,
     /// External library holding the preset named by `name`: a GUID for a shipped
@@ -37,42 +37,42 @@ pub struct Appearance {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_library_id"
     )]
     pub library_id: Option<String>,
     /// Visual asset GUID stored in the source, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visual_guid"
     )]
     pub visual_guid: Option<String>,
     /// Physical-material token stored in the source, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_physical_token"
     )]
     pub physical_token: Option<String>,
     /// Source schema family, such as `GenericSchema` or `PrismOpaqueSchema`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_schema"
     )]
     pub schema: Option<String>,
     /// Source material classification, when stored in the asset catalog.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_category"
     )]
     pub category: Option<String>,
     /// Resolved diffuse/albedo color.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_base_color"
     )]
     pub base_color: Option<Color>,
     /// Additional byte-decoded shader scalars keyed by schema property name.
@@ -102,7 +102,7 @@ pub struct TextureRef {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_urn"
     )]
     pub urn: Option<String>,
     /// Two-dimensional texture-coordinate mapping.
@@ -111,7 +111,7 @@ pub struct TextureRef {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_bump"
     )]
     pub bump: Option<BumpMap>,
 }
@@ -206,14 +206,14 @@ pub struct AppearanceBinding {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_entity_id"
     )]
     pub source_entity_id: Option<String>,
     /// Design `MetaStream` object type, such as `Body`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_object_type"
     )]
     pub object_type: Option<String>,
     /// Whether this presentation binding is visible; `None` means that the
@@ -221,7 +221,7 @@ pub struct AppearanceBinding {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
     /// ACT change-version channel GUIDs for this assigned entity.
@@ -232,3 +232,18 @@ pub struct AppearanceBinding {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_asset_guid, String, "asset_guid");
+cadmpeg_core::named_optional_field!(deserialize_library_id, String, "library_id");
+cadmpeg_core::named_optional_field!(deserialize_visual_guid, String, "visual_guid");
+cadmpeg_core::named_optional_field!(deserialize_physical_token, String, "physical_token");
+cadmpeg_core::named_optional_field!(deserialize_schema, String, "schema");
+cadmpeg_core::named_optional_field!(deserialize_category, String, "category");
+cadmpeg_core::named_optional_field!(deserialize_base_color, Color, "base_color");
+cadmpeg_core::named_optional_field!(deserialize_urn, String, "urn");
+cadmpeg_core::named_optional_field!(deserialize_bump, BumpMap, "bump");
+cadmpeg_core::named_optional_field!(deserialize_source_entity_id, String, "source_entity_id");
+cadmpeg_core::named_optional_field!(deserialize_object_type, String, "object_type");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");

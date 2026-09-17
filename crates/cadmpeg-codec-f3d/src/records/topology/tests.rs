@@ -1030,6 +1030,8 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
     }
 }
 
+mod absent_keys;
+
 mod construction_frame;
 
 mod frame_chains;

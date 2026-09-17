@@ -691,7 +691,7 @@ struct TessellationWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_body"
     )]
     body: Option<BodyId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -699,13 +699,13 @@ struct TessellationWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_chordal_deflection"
     )]
     chordal_deflection: Option<f64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_object"
     )]
     source_object: Option<SourceObjectAssociation>,
     mesh: TessellationMesh,
@@ -765,7 +765,7 @@ pub struct TessellationTriangleGroup {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_id"
     )]
     pub source_id: Option<String>,
     /// Strictly increasing triangle ordinals belonging to this group.
@@ -781,7 +781,7 @@ pub struct TessellationTextureAssignment {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_source_id"
     )]
     pub source_id: Option<String>,
     /// Assigned texture asset.
@@ -1373,3 +1373,13 @@ impl JsonSchema for TessellationChannel {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
+cadmpeg_core::named_optional_field!(deserialize_chordal_deflection, f64, "chordal_deflection");
+cadmpeg_core::named_optional_field!(
+    deserialize_source_object,
+    SourceObjectAssociation,
+    "source_object"
+);
+cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");

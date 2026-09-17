@@ -467,7 +467,7 @@ pub(crate) struct ExternalReferenceRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_document_id"
     )]
     pub(crate) document_id: Option<String>,
     pub(crate) database_id: String,
@@ -1039,4 +1039,36 @@ mod tests {
             assert!(UfrxRecord::read(&namespace).is_err());
         }
     }
+
+    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
+        let mut wire = serde_json::json!({});
+        wire[key] = serde_json::Value::Null;
+        let Err(refused) = serde_json::from_value::<T>(wire) else {
+            panic!("{key}: null was admitted")
+        };
+        refused.to_string()
+    }
+
+    fn states_the_key(key: &str, message: &str) {
+        assert!(
+            message.contains(key),
+            "the refusal of a null {key} states {message}"
+        );
+        assert!(
+            message.contains("it does not state null"),
+            "the refusal of a null {key} states {message}"
+        );
+    }
+
+    /// A top-level optional key on a UFRX record names itself in its refusal.
+    #[test]
+    fn a_top_level_ufrx_key_names_itself_in_its_refusal() {
+        states_the_key(
+            "document_id",
+            &refusal::<super::ExternalReferenceRecordWire>("document_id"),
+        );
+    }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_document_id, String, "document_id");

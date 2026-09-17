@@ -450,13 +450,13 @@ struct CompressedSizesWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::absent_key::present"
+        deserialize_with = "deserialize_stored"
     )]
     stored: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::absent_key::present"
+        deserialize_with = "deserialize_expanded"
     )]
     expanded: Option<u64>,
 }
@@ -961,3 +961,7 @@ mod tests {
         assert!(error.contains("zz_bogus"), "{error}");
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+crate::named_optional_field!(deserialize_stored, u64, "stored");
+crate::named_optional_field!(deserialize_expanded, u64, "expanded");

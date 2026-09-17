@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 mod reader_routes;
 
@@ -360,7 +361,7 @@ fn compiled_hand_readers_keep_their_admission_boundaries() {
 /// the item the impl reads through: a wire struct, or a wire enum and the
 /// variant, spelled `Wire::Variant`. The site is located by parsing the file,
 /// so an edit anywhere above it moves nothing; the named field must exist
-/// there and must state a helper from [`NULL_REFUSING_HELPERS`].
+/// there and must state a helper [`null_refusing_helpers`] derives.
 const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
     (
         "crates/cadmpeg-ir/src/features.rs",
@@ -607,7 +608,7 @@ fn every_hand_written_deserialize_refuses_a_null_spelling() {
             .map(|(_, _, field, site)| {
                 match helper_at_guard_site(&parsed.items, site, field) {
                     Ok(helper) => assert!(
-                        NULL_REFUSING_HELPERS.contains(&helper.as_str())
+                        refuses_null(path, &helper)
                             || NULL_STATING_HELPERS.contains(&helper.as_str()),
                         "{path} {site} is listed as where {name} states the spelling of null for {field}, but it states the unlisted helper {helper}"
                     ),
@@ -678,9 +679,9 @@ fn declared_optional_fields(items: &[syn::Item], name: &str, found: &mut Vec<Str
 ///
 /// An optional key has two writers and so two admitted forms. A field carrying
 /// `skip_serializing_if = "Option::is_none"` is written by omission: the
-/// reading declaration states `cadmpeg_core::absent_key::present` (or a
-/// field-local shim that ends in it) and a `default`, so absence is `None` and
-/// `null` is refused by name. A field with no skip is always written: the
+/// reading declaration states a `cadmpeg_core::named_optional_field!` shim and
+/// a `default`, so absence is `None` and `null` is refused by a message that
+/// names the key. A field with no skip is always written: the
 /// reading declaration states `cadmpeg_core::absent_key::nullable` and no
 /// `default`, so `null` is `None` and an absent key is a missing field serde
 /// names. Either way one state has one spelling.
@@ -703,20 +704,10 @@ fn declared_optional_fields(items: &[syn::Item], name: &str, found: &mut Vec<Str
 /// Offenders are named by `file:line`.
 #[test]
 fn every_read_optional_field_refuses_a_null_spelling() {
-    let definitions = shim_definitions();
-    for helper in NULL_REFUSING_HELPERS {
-        if helper.contains("::") {
-            continue;
-        }
-        let defined_by = definitions
-            .get(*helper)
-            .unwrap_or_else(|| panic!("{helper} is allowlisted but no source defines it"));
-        assert_eq!(
-            defined_by,
-            &BTreeSet::from(["named_optional_field".to_owned()]),
-            "{helper} is allowlisted as refusing null, but it is defined by {defined_by:?}"
-        );
-    }
+    assert!(
+        !null_refusing_helpers().is_empty(),
+        "no source defines a named_optional_field! shim, so no key could refuse null"
+    );
     let (readable, offenders) = optional_absence_census();
     assert!(
         readable > 0,
@@ -730,15 +721,23 @@ fn every_read_optional_field_refuses_a_null_spelling() {
     );
 }
 
-/// The macro every field-deserializer shim is defined by, keyed by shim name.
+/// The macro every field-deserializer shim is defined by, keyed by the file it
+/// is declared in and the shim's own name.
 ///
 /// A shim is a `named_field!` or `named_optional_field!` item invocation; the
 /// macro's first token is the shim's own name. The source is parsed, so an
 /// invocation wrapped over several lines or nested in an inline module reads
-/// the same. A name defined twice carries both macros, which is what lets the
-/// allowlist above refuse a shim that only some of its definitions guard.
-fn shim_definitions() -> BTreeMap<String, BTreeSet<String>> {
-    fn walk(items: &[syn::Item], found: &mut BTreeMap<String, BTreeSet<String>>) {
+/// the same. A shim is a module-scoped item and a `deserialize_with` names it
+/// without a path, so a name resolves within its own file: one file may read
+/// `deserialize_source_id` as a required key and another as an optional one.
+/// A name declared twice in one file carries both macros, which is what refuses
+/// a shim only some of whose definitions guard.
+fn shim_definitions() -> BTreeMap<(String, String), BTreeSet<String>> {
+    fn walk(
+        items: &[syn::Item],
+        relative: &str,
+        found: &mut BTreeMap<(String, String), BTreeSet<String>>,
+    ) {
         for item in items {
             match item {
                 syn::Item::Macro(invocation) => {
@@ -752,11 +751,14 @@ fn shim_definitions() -> BTreeMap<String, BTreeSet<String>> {
                     let mut tokens = Vec::new();
                     flatten_tokens(&invocation.mac.tokens, &mut tokens);
                     let Some(shim) = tokens.first() else { continue };
-                    found.entry(shim.clone()).or_default().insert(macro_name);
+                    found
+                        .entry((relative.to_owned(), shim.clone()))
+                        .or_default()
+                        .insert(macro_name);
                 }
                 syn::Item::Mod(module) => {
                     if let Some((_, nested)) = &module.content {
-                        walk(nested, found);
+                        walk(nested, relative, found);
                     }
                 }
                 _ => {}
@@ -770,7 +772,11 @@ fn shim_definitions() -> BTreeMap<String, BTreeSet<String>> {
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
     let mut found = BTreeMap::new();
-    for source in ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"] {
+    for source in [
+        "crates/cadmpeg-ir/src",
+        "crates/cadmpeg-core/src",
+        "crates/cadmpeg-asm/src",
+    ] {
         let mut files = Vec::new();
         collect_rust_sources(&root.join(source), &mut files)
             .unwrap_or_else(|error| panic!("cannot collect {source}: {error}"));
@@ -788,7 +794,7 @@ fn shim_definitions() -> BTreeMap<String, BTreeSet<String>> {
             let parsed = syn::parse_file(&text)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
-            walk(&parsed.items, &mut found);
+            walk(&parsed.items, &relative, &mut found);
         }
     }
     found
@@ -1215,31 +1221,31 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
 
 /// The `deserialize_with` helpers that refuse an explicit `null` at their key.
 ///
-/// Each entry was read at its definition, not inferred from its name.
-/// `cadmpeg_core::absent_key::present` implements both `visit_unit` and
-/// `visit_none` as the refusal, so neither serde path admits `null`, and
-/// `visit_some` delegates to the field's own type; `crate::absent_key::present`
-/// is the same function spelled from inside `cadmpeg-core`. The
-/// `named_optional_field!` shims — `deserialize_position`, `deserialize_scale`,
-/// `deserialize_direction`, `deserialize_rotation_degrees`,
-/// `deserialize_orientation`, `deserialize_line_width`, `deserialize_point_size`,
-/// `deserialize_value` and `deserialize_tolerance` — call it and add the field
-/// name to whatever it refuses. Anything else on a field that skips on `None`
-/// is an offender, because a `deserialize_with` that does not state the refusal
-/// gives `None` a second spelling.
-const NULL_REFUSING_HELPERS: &[&str] = &[
-    "cadmpeg_core::absent_key::present",
-    "crate::absent_key::present",
-    "deserialize_direction",
-    "deserialize_line_width",
-    "deserialize_orientation",
-    "deserialize_point_size",
-    "deserialize_position",
-    "deserialize_rotation_degrees",
-    "deserialize_scale",
-    "deserialize_tolerance",
-    "deserialize_value",
-];
+/// The set is derived, not listed: `cadmpeg_core::named_optional_field!` is the
+/// one declaration that reaches the refusal, because the visitor it forwards to
+/// is private to `cadmpeg_core::absent_key`. Every shim that macro defines
+/// refuses `null` and names its own key in the refusal. A name another macro
+/// also defines is left out, so a shim only some of whose definitions guard is
+/// no proof.
+///
+/// Anything else on a field that skips on `None` is an offender, because a
+/// `deserialize_with` that does not state the refusal gives `None` a second
+/// spelling.
+fn null_refusing_helpers() -> &'static BTreeSet<(String, String)> {
+    static HELPERS: OnceLock<BTreeSet<(String, String)>> = OnceLock::new();
+    HELPERS.get_or_init(|| {
+        shim_definitions()
+            .into_iter()
+            .filter(|(_, macros)| macros.len() == 1 && macros.contains("named_optional_field"))
+            .map(|(site, _)| site)
+            .collect()
+    })
+}
+
+/// Whether `helper`, read in `relative`, is a shim that refuses `null`.
+fn refuses_null(relative: &str, helper: &str) -> bool {
+    null_refusing_helpers().contains(&(relative.to_owned(), helper.to_owned()))
+}
 
 /// The `deserialize_with` helpers that state `null` is this key's own spelling
 /// of `None`.
@@ -1250,12 +1256,12 @@ const NULL_REFUSING_HELPERS: &[&str] = &[
 /// states that, and nothing else: it reads the field's own `Option`. The
 /// reading declaration states no `default` beside it, so an absent key is a
 /// missing field rather than a second spelling of `None`. A key that states
-/// neither this nor a helper from [`NULL_REFUSING_HELPERS`] declares no
+/// neither this nor a helper [`null_refusing_helpers`] derives declares no
 /// spelling at all, which is what this census refuses.
 const NULL_STATING_HELPERS: &[&str] = &["cadmpeg_core::absent_key::nullable"];
 
-/// Records every `Option` field of `fields` that states no helper from
-/// [`NULL_REFUSING_HELPERS`].
+/// Records every `Option` field of `fields` that states no helper
+/// [`null_refusing_helpers`] derives.
 ///
 /// The key is the field's own type. A field declared `Option<T>` on a type a
 /// document reads gives `null` a second spelling of absence unless a helper
@@ -1284,7 +1290,7 @@ fn record_unguarded_fields(
         let at = format!("{relative}:{} {reader}.{name}", span.start().line);
         let helper = absence_spelling(field);
         let read = match helper.as_deref() {
-            Some(helper) if NULL_REFUSING_HELPERS.contains(&helper) => ReadSpelling::Present,
+            Some(helper) if refuses_null(relative, helper) => ReadSpelling::Present,
             Some(helper) if NULL_STATING_HELPERS.contains(&helper) => ReadSpelling::Nullable,
             Some(helper) => {
                 offenders.push(format!("{at} states the unlisted helper {helper}"));

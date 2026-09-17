@@ -65,7 +65,7 @@ pub struct Drawing {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
@@ -76,7 +76,7 @@ pub struct Drawing {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_template"
     )]
     pub template: Option<DrawingId>,
     /// View origin on its page.
@@ -106,21 +106,21 @@ pub struct Drawing {
     pub native_ref: String,
 }
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_position,
     crate::units::FiniteVector<2>,
     "position"
 );
 
-crate::units::named_optional_field!(deserialize_scale, crate::scalar::PositiveReal, "scale");
+cadmpeg_core::named_optional_field!(deserialize_scale, crate::scalar::PositiveReal, "scale");
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_direction,
     crate::units::NonzeroVector<3>,
     "direction"
 );
 
-crate::units::named_optional_field!(
+cadmpeg_core::named_optional_field!(
     deserialize_rotation_degrees,
     crate::scalar::FiniteReal,
     "rotation_degrees"
@@ -207,3 +207,7 @@ mod tests {
         assert!(drawing.parameters.contains_key(" scale "));
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_template, DrawingId, "template");

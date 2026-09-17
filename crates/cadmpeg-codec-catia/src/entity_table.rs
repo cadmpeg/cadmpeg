@@ -86,7 +86,7 @@ pub struct RangeInterval {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_slots"
     )]
     pub slots: Option<[RangeIntervalSlot; 2]>,
 }
@@ -2178,3 +2178,6 @@ mod tests {
         assert!(unique_monotone_run(&[record(&[5]), record(&[4])]).is_none());
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_slots, [RangeIntervalSlot; 2], "slots");

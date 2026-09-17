@@ -269,7 +269,7 @@ pub struct FaceSidednessWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_containment"
     )]
     containment: Option<FaceContainment>,
 }
@@ -341,7 +341,7 @@ pub enum EvaluatedToleranceSlot {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_trailing"
         )]
         trailing: Option<i64>,
     },
@@ -353,7 +353,7 @@ pub enum EvaluatedToleranceSlot {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_trailing"
         )]
         trailing: Option<i64>,
     },
@@ -534,7 +534,7 @@ struct WireMembersWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_free_vertex"
     )]
     free_vertex: Option<VertexId>,
 }
@@ -814,3 +814,8 @@ mod tests {
         );
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_containment, FaceContainment, "containment");
+cadmpeg_core::named_optional_field!(deserialize_trailing, i64, "trailing");
+cadmpeg_core::named_optional_field!(deserialize_free_vertex, VertexId, "free_vertex");

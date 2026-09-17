@@ -58,19 +58,19 @@ pub(super) struct RmCreationDisplayDataRelationWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_first_index"
     )]
     first_index: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_raw_first_index"
     )]
     raw_first_index: Option<Vec<u8>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_first_index_source_offset"
     )]
     first_index_source_offset: Option<u64>,
     class_name: String,
@@ -79,7 +79,7 @@ pub(super) struct RmCreationDisplayDataRelationWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_target_object_id"
     )]
     target_object_id: Option<String>,
     source_entry: String,
@@ -276,3 +276,13 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_first_index, u32, "first_index");
+cadmpeg_core::named_optional_field!(deserialize_raw_first_index, Vec<u8>, "raw_first_index");
+cadmpeg_core::named_optional_field!(
+    deserialize_first_index_source_offset,
+    u64,
+    "first_index_source_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_target_object_id, String, "target_object_id");

@@ -110,22 +110,14 @@ pub(super) struct MemberWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_current_member_xmt"
     )]
     current_member_xmt: Option<u32>,
 }
 
-/// Reads `member_node_id`, naming the key in whatever it refuses.
-///
-/// The writer omits the key for `None`, so an absent key is its one spelling
-/// of absence and `null` is refused. The refusal names the key, because the
-/// family and the node identity are stated together.
-fn deserialize_member_node_id<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<u32>, D::Error> {
-    cadmpeg_core::absent_key::present(deserializer)
-        .map_err(|error| serde::de::Error::custom(format_args!("member_node_id: {error}")))
-}
+// The family and the node identity are stated together, so the refusal names
+// which half the document left unstated.
+cadmpeg_core::named_optional_field!(deserialize_member_node_id, u32, "member_node_id");
 
 impl From<ParasolidGroupMember> for MemberWire {
     fn from(value: ParasolidGroupMember) -> Self {
@@ -219,3 +211,6 @@ mod tests {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_current_member_xmt, u32, "current_member_xmt");

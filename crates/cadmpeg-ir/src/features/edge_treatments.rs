@@ -32,7 +32,7 @@ pub enum RadiusSpec {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_form"
         )]
         form: Option<RadiusForm>,
     },
@@ -80,7 +80,7 @@ pub struct FilletGroup {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_tangency_weight"
     )]
     pub tangency_weight: Option<FiniteReal>,
 }
@@ -282,7 +282,7 @@ pub enum ChamferSpec {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "cadmpeg_core::absent_key::present"
+            deserialize_with = "deserialize_chamfer_spec_form"
         )]
         form: Option<ChamferForm>,
     },
@@ -313,3 +313,8 @@ impl ChamferSpec {
         matches!(self, Self::Unresolved { .. })
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_form, RadiusForm, "form");
+cadmpeg_core::named_optional_field!(deserialize_tangency_weight, FiniteReal, "tangency_weight");
+cadmpeg_core::named_optional_field!(deserialize_chamfer_spec_form, ChamferForm, "form");

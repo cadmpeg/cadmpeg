@@ -46,7 +46,7 @@ struct SavedToggleEntryWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_stable_identity"
     )]
     stable_identity: Option<String>,
     state: SavedToggleState,
@@ -465,3 +465,6 @@ mod tests {
         assert!(parse_saved_toggle_stream(&bytes, 0).is_none());
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_stable_identity, String, "stable_identity");

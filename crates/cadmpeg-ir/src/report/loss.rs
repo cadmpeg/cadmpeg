@@ -440,7 +440,7 @@ pub struct NamespacedLossKind {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_strict_floor"
     )]
     strict_floor: Option<Severity>,
 }
@@ -559,7 +559,7 @@ pub struct LossNote {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_provenance"
     )]
     pub provenance: Option<SourceProvenance>,
 }
@@ -598,3 +598,7 @@ impl LossNote {
         }
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_strict_floor, Severity, "strict_floor");
+cadmpeg_core::named_optional_field!(deserialize_provenance, SourceProvenance, "provenance");

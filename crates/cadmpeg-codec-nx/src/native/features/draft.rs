@@ -50,7 +50,7 @@ pub struct FeatureDraftConstructionReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_block"
     )]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
@@ -92,7 +92,7 @@ struct FeatureDraftConstructionIndexLaneWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_data_blocks"
     )]
     data_blocks: Option<Vec<String>>,
     /// Absolute source offsets of the compact-index tokens.
@@ -994,3 +994,7 @@ use super::deserialize_reference_lane_count;
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");
+cadmpeg_core::named_optional_field!(deserialize_data_blocks, Vec<String>, "data_blocks");

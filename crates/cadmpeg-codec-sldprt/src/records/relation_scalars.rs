@@ -89,9 +89,9 @@ impl RelationScalars {
 #[derive(Deserialize)]
 pub(super) struct Wire {
     scalar_refs: Vec<String>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_parameter_scalar_ref")]
     parameter_scalar_ref: Option<String>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(default, deserialize_with = "deserialize_display_scalar_ref")]
     display_scalar_ref: Option<String>,
 }
 
@@ -158,3 +158,11 @@ mod tests {
         assert!(absent.parameter().is_none());
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_parameter_scalar_ref,
+    String,
+    "parameter_scalar_ref"
+);
+cadmpeg_core::named_optional_field!(deserialize_display_scalar_ref, String, "display_scalar_ref");

@@ -55,7 +55,7 @@ struct OperationRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_stable_identity"
     )]
     stable_identity: Option<String>,
     payload_source_offset: u64,
@@ -137,3 +137,6 @@ mod tests {
         assert!(OperationRecordSpan::new(6, 5, 0).is_none());
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_stable_identity, String, "stable_identity");

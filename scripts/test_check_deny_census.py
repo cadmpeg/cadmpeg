@@ -1753,20 +1753,30 @@ class AbsentKeyCensusTests(unittest.TestCase):
         findings = self.run_absent_key_census({"wire.rs": self.OMITTED % ""})
         self.assertEqual(len(findings), 1, findings)
         self.assertIn("Wire.key", findings[0])
-        self.assertIn("absent_key::present", findings[0])
+        self.assertIn("named_optional_field!", findings[0])
 
     def test_the_shared_helper_states_the_spelling(self) -> None:
+        declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        shim = 'cadmpeg_core::named_optional_field!(read_key, u32, "key");\n'
+        self.assertEqual(
+            self.run_absent_key_census({"wire.rs": declared + shim}), []
+        )
+
+    def test_the_unnamed_refusal_is_not_a_declaration(self) -> None:
         declared = self.OMITTED % (
             ',\n        deserialize_with = "cadmpeg_core::absent_key::present"'
         )
-        self.assertEqual(self.run_absent_key_census({"wire.rs": declared}), [])
+        findings = self.run_absent_key_census({"wire.rs": declared})
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("Wire.key", findings[0])
+        self.assertIn("named_optional_field!", findings[0])
 
     def test_a_named_forwarder_to_the_helper_states_the_spelling(self) -> None:
         declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
         forwarder = (
             "fn read_key<'de, D: serde::Deserializer<'de>>(d: D)"
             " -> Result<Option<u32>, D::Error> {\n"
-            "    cadmpeg_core::absent_key::present(d)\n"
+            '    cadmpeg_core::absent_key::named_present(d, "key")\n'
             "}\n"
         )
         self.assertEqual(
@@ -1831,11 +1841,17 @@ class AbsentKeyCensusTests(unittest.TestCase):
         self.assertEqual(status, 1, output)
         self.assertIn("Wire.inner_key", output)
         self.assertIn("inner_wire reads this key for Outer.value", output)
-        self.assertIn("absent_key::present", output)
+        self.assertIn("named_optional_field!", output)
 
     def test_a_flattened_module_that_declares_its_keys_passes(self) -> None:
         declared = self.FLATTENED_MODULE % (
-            ', deserialize_with = "cadmpeg_core::absent_key::present"'
+            ', deserialize_with = "read_inner_key"'
+        )
+        declared = declared.replace(
+            "    }\n}\n",
+            "    }\n"
+            '    cadmpeg_core::named_optional_field!(read_inner_key, u32, "inner_key");\n'
+            "}\n",
         )
         status, output = self.run_absent_key_main({"wire.rs": declared})
         self.assertEqual(status, 0, output)
@@ -1883,7 +1899,7 @@ class AbsentKeyCensusTests(unittest.TestCase):
         })
         self.assertEqual(len(findings), 1, findings)
         self.assertIn("Wire.key", findings[0])
-        self.assertIn("absent_key::present", findings[0])
+        self.assertIn("named_optional_field!", findings[0])
 
     def test_a_projection_admission_is_refused_for_a_writing_item(self) -> None:
         source = (

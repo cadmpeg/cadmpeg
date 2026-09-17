@@ -68,13 +68,13 @@ pub(super) struct CatiaConsolidatedEdgeNodeWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_allocation_owner"
     )]
     allocation_owner: Option<String>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_allocation_ordinal"
     )]
     allocation_ordinal: Option<u32>,
     curve_ref: u32,
@@ -82,7 +82,7 @@ pub(super) struct CatiaConsolidatedEdgeNodeWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_endpoint_records"
     )]
     endpoint_records: Option<[u64; 2]>,
     vertices: [String; 2],
@@ -90,44 +90,44 @@ pub(super) struct CatiaConsolidatedEdgeNodeWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_reference_encodings"
     )]
     reference_encodings: Option<[CatiaAllocationReferenceEncoding; 5]>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_terminal_value"
     )]
     terminal_value: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_terminal_encoding"
     )]
     terminal_encoding: Option<CatiaAllocationReferenceEncoding>,
     tail: u8,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_definition"
     )]
     definition: Option<CatiaConsolidatedEdgeDefinition>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_uses"
     )]
     uses: Option<CatiaConsolidatedEdgeUses>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_analytic_circle"
     )]
     analytic_circle: Option<CatiaConsolidatedAnalyticCircleBinding>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_class25_descriptor"
     )]
     class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
 }
@@ -366,4 +366,70 @@ mod tests {
             .expect_err("reject conflicting vertex join");
         assert!(error.to_string().contains("vertices differ"));
     }
+
+    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
+        let mut wire = serde_json::json!({});
+        wire[key] = serde_json::Value::Null;
+        let Err(refused) = serde_json::from_value::<T>(wire) else {
+            panic!("{key}: null was admitted")
+        };
+        refused.to_string()
+    }
+
+    fn states_the_key(key: &str, message: &str) {
+        assert!(
+            message.contains(key),
+            "the refusal of a null {key} states {message}"
+        );
+        assert!(
+            message.contains("it does not state null"),
+            "the refusal of a null {key} states {message}"
+        );
+    }
+
+    /// A top-level optional key on an edge node names itself in its refusal.
+    #[test]
+    fn a_top_level_edge_node_key_names_itself_in_its_refusal() {
+        for key in [
+            "allocation_owner",
+            "allocation_ordinal",
+            "endpoint_records",
+            "terminal_value",
+            "terminal_encoding",
+        ] {
+            states_the_key(key, &refusal::<super::CatiaConsolidatedEdgeNodeWire>(key));
+        }
+    }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_allocation_owner, String, "allocation_owner");
+cadmpeg_core::named_optional_field!(deserialize_allocation_ordinal, u32, "allocation_ordinal");
+cadmpeg_core::named_optional_field!(deserialize_endpoint_records, [u64; 2], "endpoint_records");
+cadmpeg_core::named_optional_field!(
+    deserialize_reference_encodings,
+    [CatiaAllocationReferenceEncoding; 5],
+    "reference_encodings"
+);
+cadmpeg_core::named_optional_field!(deserialize_terminal_value, u32, "terminal_value");
+cadmpeg_core::named_optional_field!(
+    deserialize_terminal_encoding,
+    CatiaAllocationReferenceEncoding,
+    "terminal_encoding"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_definition,
+    CatiaConsolidatedEdgeDefinition,
+    "definition"
+);
+cadmpeg_core::named_optional_field!(deserialize_uses, CatiaConsolidatedEdgeUses, "uses");
+cadmpeg_core::named_optional_field!(
+    deserialize_analytic_circle,
+    CatiaConsolidatedAnalyticCircleBinding,
+    "analytic_circle"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_class25_descriptor,
+    CatiaConsolidatedClass25Descriptor,
+    "class25_descriptor"
+);

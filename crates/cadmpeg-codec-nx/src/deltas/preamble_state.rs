@@ -146,7 +146,7 @@ struct PreambleWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_state_reference"
     )]
     state_reference: Option<u32>,
     state_words: [u32; 4],
@@ -232,3 +232,6 @@ mod tests {
         assert_eq!(serde_json::to_string(&state).unwrap(), linked);
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_state_reference, u32, "state_reference");

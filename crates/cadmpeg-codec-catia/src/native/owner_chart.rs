@@ -135,13 +135,13 @@ struct CatiaOwnerChartBridgeReferenceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_alias_row"
     )]
     alias_row: Option<String>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_canonical_surface_tag"
     )]
     canonical_surface_tag: Option<u32>,
 }
@@ -642,3 +642,11 @@ mod tests {
         assert!(serde_json::from_value::<CatiaOwnerChartBridgeReference>(wire).is_err());
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_alias_row, String, "alias_row");
+cadmpeg_core::named_optional_field!(
+    deserialize_canonical_surface_tag,
+    u32,
+    "canonical_surface_tag"
+);

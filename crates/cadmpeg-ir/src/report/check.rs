@@ -94,7 +94,7 @@ pub struct Finding {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_entity"
     )]
     pub entity: Option<String>,
 }
@@ -136,3 +136,6 @@ impl ValidationReport {
         self.error_count() == 0
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_entity, String, "entity");

@@ -384,13 +384,13 @@ struct ParasolidDeltasRecordWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_group_selector"
     )]
     group_selector: Option<GroupSelector>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_group_linked_reference_status"
     )]
     group_linked_reference_status: Option<GroupReferenceStatus>,
     position: Option<[f64; 3]>,
@@ -2038,7 +2038,7 @@ pub struct ParasolidTopologyAttributeListReference {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_attribute_list_record"
     )]
     pub attribute_list_record: Option<String>,
     /// Offset of the attribute-list field in the inflated stream.
@@ -5203,3 +5203,16 @@ mod tests {
     mod attribute_wire;
     mod carrier_and_attribute_resolution;
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_group_selector, GroupSelector, "group_selector");
+cadmpeg_core::named_optional_field!(
+    deserialize_group_linked_reference_status,
+    GroupReferenceStatus,
+    "group_linked_reference_status"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_attribute_list_record,
+    String,
+    "attribute_list_record"
+);

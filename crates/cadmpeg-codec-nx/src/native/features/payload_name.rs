@@ -32,25 +32,25 @@ struct FeaturePayloadNameWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_type_code"
     )]
     type_code: Option<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_raw_type_code"
     )]
     raw_type_code: Option<Vec<u8>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_type_code_payload_offset"
     )]
     type_code_payload_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_type_code_source_offset"
     )]
     type_code_source_offset: Option<u64>,
     payload_leading: bool,
@@ -173,3 +173,17 @@ mod tests {
         assert!(name.to_string().contains("payload_offset"));
     }
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_type_code, u32, "type_code");
+cadmpeg_core::named_optional_field!(deserialize_raw_type_code, Vec<u8>, "raw_type_code");
+cadmpeg_core::named_optional_field!(
+    deserialize_type_code_payload_offset,
+    u64,
+    "type_code_payload_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_type_code_source_offset,
+    u64,
+    "type_code_source_offset"
+);

@@ -258,14 +258,14 @@ struct FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_first_reference_prefix"
     )]
     first_reference_prefix: Option<[u8; 8]>,
     /// Exact optional wrapper before the repeated reference pair.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "cadmpeg_core::absent_key::present"
+        deserialize_with = "deserialize_second_reference_prefix"
     )]
     second_reference_prefix: Option<[u8; 8]>,
     /// Absolute offsets of the first pair of tagged-index tokens.
@@ -1166,3 +1166,15 @@ pub(crate) fn parse_threaded_hole_template(
 
 #[cfg(test)]
 mod tests;
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_first_reference_prefix,
+    [u8; 8],
+    "first_reference_prefix"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_second_reference_prefix,
+    [u8; 8],
+    "second_reference_prefix"
+);
