@@ -489,6 +489,55 @@ class EndianExceptions(TempSourceCase):
             self.assertEqual(len(self.findings("endian_exception")), 1)
 
 
+class DiscardedValues(TempSourceCase):
+    def test_an_unmarked_discard_is_named(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn f() {\n    let _ = g();\n}\n")
+        findings = self.findings("discarded_value")
+        self.assertEqual([(f.path, f.line) for f in findings],
+                         [("crates/demo/src/lib.rs", 2)])
+        self.assertIn("discarded-value", findings[0].message)
+
+    def test_a_typed_discard_is_named(self) -> None:
+        self.write("crates/demo/src/lib.rs", "fn f() {\n    let _: u32 = g();\n}\n")
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [2])
+
+    def test_a_reason_admits_exactly_one_discard(self) -> None:
+        self.write("crates/demo/src/lib.rs", """fn f() {
+    // discarded-value: the call's refusal is the whole effect
+    let _ = g();
+    let _ = h();
+}
+""")
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [4])
+
+    def test_a_stale_or_empty_reason_fails(self) -> None:
+        for reason, following in [("the answer has no reader", "0;"), ("", "let _ = g();")]:
+            self.write("crates/demo/src/lib.rs",
+                       f"fn f() {{\n// discarded-value: {reason}\n    {following}\n}}\n")
+            self.assertEqual(len(self.findings("discarded_value")), 1)
+
+    def test_a_literal_cannot_supply_a_reason(self) -> None:
+        self.write("crates/demo/src/lib.rs", '''fn f() {
+    let text = r#"
+// discarded-value: not a reason
+"#; let _ = g();
+}
+''')
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [4])
+
+    def test_a_declared_fuzz_entry_point_is_outside_the_rule(self) -> None:
+        self.write("crates/demo/src/fuzz.rs", "pub fn run(data: &[u8]) {\n    let _ = g(data);\n}\n")
+        self.assertEqual([f.line for f in self.findings("discarded_value")], [2])
+        with patch.object(policy, "DISCARD_EXEMPT_FILES",
+                          {"crates/demo/src/fuzz.rs": "the fuzzer reads the crash, never the value"}):
+            self.assertEqual(self.findings("discarded_value"), [])
+
+    def test_a_cfg_test_discard_is_not_production(self) -> None:
+        self.write("crates/demo/src/lib.rs",
+                   "#[cfg(test)]\nmod tests {\n    fn t() {\n        let _ = g();\n    }\n}\n")
+        self.assertEqual(self.findings("discarded_value"), [])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
