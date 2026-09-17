@@ -532,10 +532,10 @@ pub struct TopologyScan {
     pub vertices: Vec<TopologicalVertex>,
     /// Start/end vertex binding for each decoded half-edge.
     pub half_edge_vertex_incidence: Vec<HalfEdgeVertexIncidence>,
-    /// Half-edge orbits past the one-based `u32` vertex identifier space. Each
-    /// is an orbit that states no topological vertex, so its half-edges carry
-    /// no incidence.
-    pub unstatable_vertex_orbits: usize,
+    /// The seed half-edge of every orbit past the one-based `u32` vertex
+    /// identifier space. Each names an orbit that states no topological
+    /// vertex, so its half-edges carry no incidence.
+    pub unstatable_vertex_orbits: Vec<crate::topology::HalfEdgeId>,
 }
 
 /// Feature rows, definitions, operations, and the implicit entity graph.
