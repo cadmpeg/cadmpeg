@@ -1588,6 +1588,10 @@ class DenyCensusTests(unittest.TestCase):
                 paths.append(path)
             namespace["source_files"] = lambda: paths
             namespace["EXCEPTIONS"] = {}
+            # The absent-key rule has its own scope, the whole crates tree,
+            # and these fixtures state the unknown-key rule only. Without this
+            # the mutated census walks the real repository once per mutation.
+            namespace["absent_key_failures"] = lambda: []
             output = io.StringIO()
             with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 status = namespace["main"]()
