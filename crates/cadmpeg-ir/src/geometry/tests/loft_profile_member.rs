@@ -71,6 +71,10 @@ fn classic_loft_profile_data_states_only_its_own_fields() {
     assert!(data.direction.is_none());
     assert_eq!(serde_json::to_value(&data).expect("serializes"), wire);
 
+    // The classic form declares exactly these six keys, in this order
+    // (`ClassicLoftProfileData` in `crates/cadmpeg-ir/src/geometry.rs`), and
+    // `deny_unknown_fields` names them all in the refusal.
+    let declared = "`surface`, `pcurve`, `first_flag`, `asm_extension`, `subdata`, `direction`";
     for (key, value) in [
         ("support_bounds", serde_json::json!([null, null, null, 2.0])),
         ("secondary_pcurve", serde_json::json!(null)),
@@ -81,8 +85,11 @@ fn classic_loft_profile_data_states_only_its_own_fields() {
         let error = serde_json::from_value::<ClassicLoftProfileData>(orphan)
             .expect_err("the classic form states no such field")
             .to_string();
-        assert!(error.contains("unknown field"), "{key}: {error}");
-        assert!(error.contains(key), "{key}: {error}");
+        assert_eq!(
+            error,
+            format!("unknown field `{key}`, expected one of {declared}"),
+            "{key}"
+        );
     }
 
     for required in ["surface", "first_flag", "asm_extension", "subdata"] {
