@@ -1148,7 +1148,7 @@ pub(crate) fn relation_bindings_scoped(
     parent: &str,
     classes: &[FeatureInputClass],
     scalars: &[FeatureInputScalar],
-    intervals: &[(u64, u64, String)],
+    intervals: &[(u64, Option<u64>, String)],
 ) -> Vec<FeatureInputRelationBinding> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     unique_relation_declaration_candidates(classes, scalars, intervals)
