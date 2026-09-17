@@ -268,6 +268,17 @@ impl<'a> View<'a> {
         Some(())
     }
 
+    /// Moves the cursor to the window's exclusive upper bound.
+    ///
+    /// This is the one seek the window proves at construction. `seek(end)`
+    /// reads `offset_of(end)`, which is the window length, and the suffix at
+    /// a slice's own length is the empty slice, so neither bound of `seek`
+    /// can refuse it. The suffix is taken directly and the move states no
+    /// refusal to thread.
+    pub fn seek_to_end(&mut self) {
+        self.unread = &self.window[self.window.len()..];
+    }
+
     /// Reads a single byte.
     pub fn u8(&mut self) -> Option<u8> {
         self.array::<1>().map(|[value]| value)
@@ -598,6 +609,21 @@ mod tests {
         assert_eq!(view.seek(2), Some(()));
         assert_eq!(view.seek(6), Some(()));
         assert_eq!(view.seek(7), None);
+    }
+
+    #[test]
+    fn seek_to_end_lands_on_the_window_bound_with_nothing_unread() {
+        let payload = [0u8; 8];
+        let mut view = View::over_space(&payload, SpaceId::ROOT)
+            .child(2, 6)
+            .expect("valid child");
+        assert_eq!(view.u8(), Some(0));
+        view.seek_to_end();
+        assert_eq!(view.position(), view.end());
+        assert_eq!(view.remaining(), 0);
+        assert!(view.is_empty());
+        assert_eq!(view.read_len(), view.window().len());
+        assert_eq!(view.unread(), &[] as &[u8]);
     }
 
     #[test]
