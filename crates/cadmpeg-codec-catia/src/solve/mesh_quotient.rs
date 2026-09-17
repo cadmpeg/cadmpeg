@@ -7647,11 +7647,11 @@ impl MeshSelectionSearch<'_> {
 /// with no stated reversal. `None` states a figure the work counter cannot
 /// hold: more choices than any budget can enumerate.
 fn direction_work_estimate(unknown_uses: impl Iterator<Item = usize>) -> Option<usize> {
-    unknown_uses.fold(Some(0usize), |total, unknown| {
+    unknown_uses.try_fold(0usize, |total, unknown| {
         let choices = u32::try_from(unknown)
             .ok()
             .and_then(|unknown| 1usize.checked_shl(unknown))?;
-        total?.checked_add(choices)
+        total.checked_add(choices)
     })
 }
 
