@@ -372,9 +372,11 @@ fn an_exp_par_cur_scope_decodes_its_own_bs2_field_through_the_scope_type() {
     }
 }
 
-/// A `{ref N}` the subtype table does not hold is a malformed stream, so the
-/// reference search is refused there and does not go on to the resolvable
-/// reference behind it.
+/// Each subtype definition contributes one table entry in stream order, so an
+/// index at or beyond the table's length names no definition the stream states
+/// (`docs/formats/asm.md`). The decoder's decision at such an index: the
+/// reference search refuses the stream there and does not go on to the
+/// resolvable reference behind it.
 #[test]
 fn an_unresolvable_subtype_reference_refuses_the_search_behind_it() {
     for int_width in [RefWidth::Four, RefWidth::Eight] {

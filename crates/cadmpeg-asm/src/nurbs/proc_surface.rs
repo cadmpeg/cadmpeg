@@ -4422,14 +4422,16 @@ fn procedural_resolving_refs(
         if seen.contains(&index) {
             continue;
         }
-        // A `{ref N}` indexes the per-file subtype table, in which each
-        // subtype definition contributes one entry in stream order
-        // (`docs/formats/asm.md`, "A named `ref N` scope or compact
-        // `0x0F LONG N 0x10` scope nested inside a surface, curve, or pcurve
-        // body indexes a per-file subtype table, not a byte offset"). An index
-        // the table does not hold names no definition the stream states, so the
-        // stream is malformed and the search is refused rather than continued
-        // past it.
+        // The doc states what the index means. `docs/formats/asm.md`: "A named
+        // `ref N` scope or compact `0x0F LONG N 0x10` scope nested inside a
+        // surface, curve, or pcurve body indexes a per-file subtype table, not
+        // a byte offset. Each subtype definition -- a `0x0F` opening followed
+        // by a `0x0d`/`0x0e` name token other than `ref` -- contributes one
+        // table entry in stream order." An index at or beyond the table's
+        // length therefore names no definition the stream states. What the
+        // decoder does about it is the decoder's decision: the search refuses
+        // the stream rather than skipping the reference and reading the one
+        // behind it.
         let target = table.span(index)?.tokens();
         seen.push(index);
         if let Some(decoded) = procedural_resolving_refs(target, table, seen) {
