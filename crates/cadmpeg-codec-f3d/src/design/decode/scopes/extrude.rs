@@ -39,6 +39,33 @@ use crate::records::feature::extrude::DesignExtrudeTargetOrdinal;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 
+fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
+    match View::u32_le_at(bytes, offset)? {
+        1 => Some(DesignExtrudeOperation::Join),
+        2 => Some(DesignExtrudeOperation::Cut),
+        3 => Some(DesignExtrudeOperation::Intersect),
+        4 => Some(DesignExtrudeOperation::NewBody),
+        _ => None,
+    }
+}
+
+fn flag_byte_at(bytes: &[u8], offset: usize) -> Option<bool> {
+    match bytes.get(offset)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+fn extrude_start_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeStart> {
+    match bytes.get(offset)? {
+        0 => Some(DesignExtrudeStart::ProfilePlane),
+        1 => Some(DesignExtrudeStart::OffsetProfilePlane),
+        2 => Some(DesignExtrudeStart::FromFace),
+        _ => None,
+    }
+}
+
 pub(super) fn exact_extrude_prologue(
     bytes: &[u8],
     start: usize,
@@ -275,13 +302,7 @@ fn exact_compact_shifted_extrude_prologue(
         return None;
     }
     let operation_offset = start.checked_add(compact_extrude::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
         start.checked_add(compact_extrude::DIRECTION)?,
         start.checked_add(compact_extrude::FACE_EXTEND)?,
@@ -306,24 +327,11 @@ fn exact_compact_shifted_extrude_prologue(
     }
     let extent = exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
     let direction_reversed_offset = start.checked_add(compact_extrude::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = start.checked_add(compact_extrude::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(compact_extrude::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
@@ -365,13 +373,7 @@ fn exact_compact_shifted_extrude_mixed_prologue(
         return None;
     }
     let operation_offset = start.checked_add(compact_extrude::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
         start.checked_add(compact_extrude::DIRECTION)?,
         start.checked_add(compact_extrude::FACE_EXTEND)?,
@@ -395,24 +397,11 @@ fn exact_compact_shifted_extrude_mixed_prologue(
         return None;
     }
     let direction_reversed_offset = start.checked_add(compact_extrude::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = start.checked_add(compact_extrude::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(compact_extrude::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
@@ -468,13 +457,7 @@ fn exact_class_296_one_sided_to_face_extrude_prologue(
         return None;
     }
     let operation_offset = start.checked_add(class_296_to_face::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
         start.checked_add(class_296_to_face::DIRECTION)?,
         start.checked_add(class_296_to_face::FACE_EXTEND)?,
@@ -500,24 +483,11 @@ fn exact_class_296_one_sided_to_face_extrude_prologue(
         return None;
     }
     let direction_reversed_offset = start.checked_add(class_296_to_face::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = start.checked_add(class_296_to_face::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(class_296_to_face::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
@@ -573,13 +543,7 @@ fn exact_class_296_symmetric_distance_extrude_prologue(
         return None;
     }
     let operation_offset = start.checked_add(class_296_symmetric::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
         start.checked_add(class_296_symmetric::DIRECTION)?,
         start.checked_add(class_296_symmetric::FACE_EXTEND)?,
@@ -605,24 +569,11 @@ fn exact_class_296_symmetric_distance_extrude_prologue(
         return None;
     }
     let direction_reversed_offset = start.checked_add(class_296_symmetric::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = start.checked_add(class_296_symmetric::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(class_296_symmetric::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
@@ -680,13 +631,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
         return None;
     }
     let operation_offset = start.checked_add(class_296_two_faces::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
         start.checked_add(class_296_two_faces::DIRECTION)?,
         start.checked_add(class_296_two_faces::FACE_EXTEND)?,
@@ -699,24 +644,11 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
         return None;
     }
     let direction_reversed_offset = start.checked_add(class_296_two_faces::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = start.checked_add(class_296_two_faces::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(class_296_two_faces::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     if bytes.get(
         start.checked_add(class_296_two_faces::ZERO_RUN_3_AFTER_START)?
             ..start.checked_add(class_296_two_faces::PROFILE_NORMAL)?,
@@ -742,11 +674,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
     }
     let mut slot_offset = start.checked_add(class_296_two_faces::REFERENCE_SLOTS)?;
     for expected_present in [false, false, false, true, true, true, true] {
-        let present = match bytes.get(slot_offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
+        let present = flag_byte_at(bytes, slot_offset)?;
         if present != expected_present {
             return None;
         }
@@ -853,13 +781,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
         return None;
     }
     let operation_offset = start.checked_add(class_296_legacy_scalar_54::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
         start.checked_add(class_296_legacy_scalar_54::DIRECTION)?,
         start.checked_add(class_296_legacy_scalar_54::FACE_EXTEND)?,
@@ -873,24 +795,11 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     }
     let direction_reversed_offset =
         start.checked_add(class_296_legacy_scalar_54::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = start.checked_add(class_296_legacy_scalar_54::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(class_296_legacy_scalar_54::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     if bytes.get(
         start.checked_add(class_296_legacy_scalar_54::ZERO_AFTER_START)?
             ..start.checked_add(class_296_legacy_scalar_54::PROFILE_SCALAR_AT_54)?,
@@ -934,11 +843,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
         [true, false, true, true, false, true, false]
     };
     for expected_present in slot_presence {
-        let present = match bytes.get(slot_offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
+        let present = flag_byte_at(bytes, slot_offset)?;
         if present != expected_present {
             return None;
         }
@@ -1019,24 +924,14 @@ fn exact_legacy_distance_extrude_prologue(
     if reference_count_at.checked_sub(start)? != expected_reference_count_delta {
         return None;
     }
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let extent_kind_offset = operation_offset.checked_add(4)?;
     let extent_kind = View::u32_le_at(bytes, extent_kind_offset)?;
     if extent_kind != 2 {
         return None;
     }
     let direction_reversed_offset = extent_kind_offset.checked_add(4)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let geometry_kind_offset = direction_reversed_offset.checked_add(1)?;
     let solid_operation = match View::u32_le_at(bytes, geometry_kind_offset)? {
         0 => false,
@@ -1125,13 +1020,7 @@ fn exact_current_extrude_prologue(
         .map_or((direct_offset, None), |(offset, reference)| {
             (offset, Some(reference))
         });
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_offset = operation_offset.checked_add(extrude_fields::DIRECTION)?;
     let face_extend_offset = operation_offset.checked_add(extrude_fields::FACE_EXTEND)?;
     let direction_face_extend_values = [
@@ -1143,24 +1032,11 @@ fn exact_current_extrude_prologue(
     }
     let direction_reversed_offset =
         operation_offset.checked_add(extrude_fields::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = operation_offset.checked_add(extrude_fields::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = operation_offset.checked_add(extrude_fields::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     let profile_normal_offset = operation_offset.checked_add(extrude_fields::PROFILE_NORMAL)?;
     if bytes
         .get(operation_offset.checked_add(extrude_fields::ZERO_RUN_3)?..profile_normal_offset)?
@@ -1429,13 +1305,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
         return None;
     }
     let operation_offset = start.checked_add(shifted_reference_aware::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
         start.checked_add(shifted_reference_aware::DIRECTION)?,
         start.checked_add(shifted_reference_aware::FACE_EXTEND)?,
@@ -1454,24 +1324,11 @@ fn exact_shifted_reference_aware_extrude_prologue(
     }
     let direction_reversed_offset =
         start.checked_add(shifted_reference_aware::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = start.checked_add(shifted_reference_aware::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(shifted_reference_aware::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     let profile_normal_offset = start.checked_add(shifted_reference_aware::PROFILE_NORMAL)?;
     let profile_normal = f64s_at(bytes, profile_normal_offset, 3)?;
     let profile_normal_squared = profile_normal
@@ -1487,11 +1344,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     }
     let mut slot_offset = start.checked_add(shifted_reference_aware::REFERENCE_SLOTS)?;
     for expected_present in [false, false, false, true, true, true, true] {
-        let present = match bytes.get(slot_offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
+        let present = flag_byte_at(bytes, slot_offset)?;
         if present != expected_present {
             return None;
         }
@@ -1685,7 +1538,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     })
 }
 
-pub(crate) fn exact_extrude_extent(
+pub(super) fn exact_extrude_extent(
     direction: u32,
     side_extent_discriminators: [u32; 2],
 ) -> Option<DesignExtrudeExtent> {
@@ -1734,13 +1587,7 @@ fn exact_legacy_shifted_extrude_prologue(
     let reference_count_delta = reference_count_at
         .checked_sub(start)?
         .checked_sub(field_shift)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let first_extent_offset = operation_offset.checked_add(4)?;
     let second_extent_offset = operation_offset.checked_add(8)?;
     let direction_face_extend_values = [
@@ -1860,24 +1707,11 @@ fn exact_legacy_shifted_extrude_prologue(
         };
     let direction_reversed_offset =
         operation_offset.checked_add(extrude_fields::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = operation_offset.checked_add(extrude_fields::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = operation_offset.checked_add(extrude_fields::START_SUPPORT)?;
-    let start = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start = extrude_start_at(bytes, start_offset)?;
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset,
         operation,
@@ -1899,7 +1733,7 @@ fn exact_legacy_shifted_extrude_prologue(
     })
 }
 
-pub(crate) fn exact_class_338_two_sided_distance_extrude_prologue(
+pub(super) fn exact_class_338_two_sided_distance_extrude_prologue(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -1932,13 +1766,7 @@ pub(crate) fn exact_class_338_two_sided_distance_extrude_prologue(
         return None;
     }
     let operation_offset = start.checked_add(class_338_legacy::OPERATION)?;
-    let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
-        4 => DesignExtrudeOperation::NewBody,
-        _ => return None,
-    };
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     let direction_face_extend_offsets = [
         start.checked_add(class_338_legacy::DIRECTION)?,
         start.checked_add(class_338_legacy::FACE_EXTEND)?,
@@ -1956,24 +1784,11 @@ pub(crate) fn exact_class_338_two_sided_distance_extrude_prologue(
         return None;
     }
     let direction_reversed_offset = start.checked_add(class_338_legacy::DIRECTION_REVERSED)?;
-    let direction_reversed = match bytes.get(direction_reversed_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let direction_reversed = flag_byte_at(bytes, direction_reversed_offset)?;
     let solid_operation_offset = start.checked_add(class_338_legacy::GEOMETRY_KIND)?;
-    let solid_operation = match bytes.get(solid_operation_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
+    let solid_operation = flag_byte_at(bytes, solid_operation_offset)?;
     let start_offset = start.checked_add(class_338_legacy::START_SUPPORT)?;
-    let start_support = match bytes.get(start_offset)? {
-        0 => DesignExtrudeStart::ProfilePlane,
-        1 => DesignExtrudeStart::OffsetProfilePlane,
-        2 => DesignExtrudeStart::FromFace,
-        _ => return None,
-    };
+    let start_support = extrude_start_at(bytes, start_offset)?;
     let profile_normal = f64s_at(
         bytes,
         start.checked_add(class_338_legacy::PROFILE_NORMAL)?,
