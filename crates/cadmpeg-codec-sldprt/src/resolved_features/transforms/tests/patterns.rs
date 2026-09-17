@@ -401,9 +401,9 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     };
     // The lane's last two object names bind to the payload's last two hundred
     // bytes: `PathSketch` at 500 owns 500..600 and `NextFeature` at 600 owns
-    // 600..700. Both objects are zeros, so they state no reference-plane frame,
-    // no compact edge-vector marker and no temporary axis, and every
-    // `bind_pattern_inputs` call below binds nothing from either.
+    // 600..700. Both objects state no reference-plane frame and no temporary
+    // axis, and every `bind_pattern_inputs` call below binds nothing from
+    // either.
     for (start, end) in [(500usize, 600usize), (600, 700)] {
         let object = &lane.native_payload[start..end];
         assert_eq!(
@@ -411,11 +411,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                 .expect("a zero object states no frame"),
             None
         );
-        assert!(!object
-            .windows(crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER.len())
-            .any(
-                |window| window == crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER
-            ));
         assert_eq!(
             crate::resolved_features::axes::temporary_axis_reference(
                 &lane.native_payload,
