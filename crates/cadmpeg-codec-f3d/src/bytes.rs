@@ -107,6 +107,21 @@ pub(crate) fn take_lp_utf8(bytes: &[u8], at: &mut usize) -> Option<String> {
     String::from_utf8(take_lp_u32_bytes(bytes, at)?.to_vec()).ok()
 }
 
+/// Advance `at` past a u32-length-prefixed byte string, reading none of it.
+///
+/// `None` is the refusal a declared length the record cannot carry states.
+/// The caller that reads no content states its skip through this, so a
+/// truncation moves `at` nowhere and is a refusal rather than a short read
+/// every following offset inherits.
+pub(crate) fn skip_lp_u32_bytes(bytes: &[u8], at: &mut usize) -> Option<()> {
+    let mut view = View::over_retained(bytes);
+    view.seek(*at)?;
+    let length = usize::try_from(view.u32_le()?).ok()?;
+    view.skip(length)?;
+    *at = view.position();
+    Some(())
+}
+
 /// One reference member of a Fusion segment record
 /// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)
 /// "**References.**").

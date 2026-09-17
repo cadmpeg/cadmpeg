@@ -28,7 +28,9 @@ use cadmpeg_protein::{
     CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
 };
 
-use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
+use crate::bytes::{
+    is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, skip_lp_u32_bytes, take_lp_utf8,
+};
 use crate::container::ContainerScan;
 use crate::design::presentation::{
     APPEARANCE_LIBRARY_ID, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
@@ -273,8 +275,16 @@ fn patch_instance_colors(
         })?;
         let guid = take_lp_utf8(record, &mut position)
             .ok_or_else(|| CodecError::Malformed("Protein appearance GUID is truncated".into()))?;
-        let _ = take_lp_utf8(record, &mut position);
-        let _ = take_lp_utf8(record, &mut position);
+        skip_lp_u32_bytes(record, &mut position).ok_or_else(|| {
+            CodecError::Malformed(
+                "Protein appearance record is truncated at the string after its GUID".into(),
+            )
+        })?;
+        skip_lp_u32_bytes(record, &mut position).ok_or_else(|| {
+            CodecError::Malformed(
+                "Protein appearance record is truncated at the second string after its GUID".into(),
+            )
+        })?;
         let Some(edit) = edits.get(&guid) else {
             continue;
         };
