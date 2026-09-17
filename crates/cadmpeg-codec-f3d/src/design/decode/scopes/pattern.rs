@@ -578,7 +578,7 @@ fn exact_legacy_circular_pattern_axis(
     ))
 }
 
-pub(super) fn exact_pattern_identity_wrapper(
+fn exact_pattern_identity_wrapper(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
@@ -750,3 +750,6 @@ fn exact_fixed_pattern_count(
     };
     Some(*candidate)
 }
+
+#[cfg(test)]
+mod tests;

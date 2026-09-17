@@ -1001,7 +1001,7 @@ pub(crate) fn parse_parameter_scope(
     Some(scope)
 }
 
-pub(super) fn named_parameter_scope_tail_is_valid(
+fn named_parameter_scope_tail_is_valid(
     bytes: &[u8],
     kind_end: usize,
     paired_at: usize,
@@ -1054,3 +1054,6 @@ pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Op
         .checked_mul(2)?;
     scope.frame_length().checked_sub(kind_bytes)
 }
+
+#[cfg(test)]
+mod tests;

@@ -737,7 +737,7 @@ fn exact_component_insert_identity_scope(
     View::u64_le_at(bytes, start + component_identity_scope::OCCURRENCE_IDENTITY)
 }
 
-pub(super) fn exact_component_insert_identity_scope_shifted(
+fn exact_component_insert_identity_scope_shifted(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
@@ -773,7 +773,7 @@ pub(super) fn exact_component_insert_identity_scope_shifted(
     )
 }
 
-pub(super) fn exact_component_insert_scope_414_264_389(
+fn exact_component_insert_scope_414_264_389(
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
@@ -1059,3 +1059,6 @@ fn unique_indexed_record_before(
     };
     Some(*at)
 }
+
+#[cfg(test)]
+mod tests;
