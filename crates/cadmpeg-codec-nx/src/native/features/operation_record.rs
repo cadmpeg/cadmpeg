@@ -52,7 +52,11 @@ struct OperationRecordWire {
     sha256: crate::native::hex::Sha256Hex,
     payload_byte_len: u64,
     payload_sha256: crate::native::hex::Sha256Hex,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     stable_identity: Option<String>,
     payload_source_offset: u64,
     source_offset: u64,

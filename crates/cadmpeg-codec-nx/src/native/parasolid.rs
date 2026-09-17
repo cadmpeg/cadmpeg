@@ -381,9 +381,17 @@ struct ParasolidDeltasRecordWire {
     xmt: u32,
     node_id: Option<u32>,
     references: Vec<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     group_selector: Option<GroupSelector>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     group_linked_reference_status: Option<GroupReferenceStatus>,
     position: Option<[f64; 3]>,
     byte_len: u64,
@@ -2027,7 +2035,11 @@ pub struct ParasolidTopologyAttributeListReference {
     /// Stream-local attribute-list identity.
     pub attribute_list_xmt: u32,
     /// Uniquely resolved type-81 attribute-list record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub attribute_list_record: Option<String>,
     /// Offset of the attribute-list field in the inflated stream.
     pub inflated_offset: u64,

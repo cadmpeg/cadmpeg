@@ -12,6 +12,12 @@ Declarations without attributes are included when following a read route.
 Nongeneric type aliases are followed to their targets; other alias shapes
 fail the static check when used as a read route.
 
+A second, independent rule runs over every crate: an optional key whose writer
+omits it for ``None`` (``skip_serializing_if = "Option::is_none"``) must read
+through ``cadmpeg_core::absent_key::present``, so an absent key is that key's
+one spelling of ``None`` and ``null`` is refused. A key that states neither the
+``default`` nor the helper is an undeclared key and is named here.
+
 An item that derives ``Deserialize`` passes when its serde attributes state one
 of:
 
@@ -64,6 +70,20 @@ ROOTS = (
     "crates/cadmpeg-core/src",
     "crates/cadmpeg-asm/src",
 )
+
+# The absent-key rule is a separate census with its own scope. The unknown-key
+# rule follows the read routes of the three wire crates; the absent-key rule
+# follows a writer's own spelling, so it holds for every crate that writes an
+# optional key, codec-private records included. Every crate is in scope.
+ABSENT_KEY_ROOT = "crates"
+
+# Optional keys admitted by declaring path and field name, each with the
+# reason it states its own absence spelling without the shared helper.
+ABSENT_KEY_EXCEPTIONS = {
+    "crates/cadmpeg-codec-f3d/src/records/topology.rs:postlude_value":
+        "the key states a scalar run, not an option: its reader reads a Vec<i32>, "
+        "which refuses null, and reads the empty run as None",
+}
 
 # Items admitted by declaring file and name, each with the reason it cannot
 # carry a deny. Every entry is load-bearing: the item derives ``Deserialize``,
@@ -1555,6 +1575,149 @@ def resolve_item(index, name, owner, ambiguities):
     return None
 
 
+ANY_ATTRIBUTE = re.compile(r"#\s*\[(?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*\]")
+ATTRIBUTE_GAP = re.compile(r"(?:\s|///[^\n]*|//![^\n]*|//[^\n]*)*\Z")
+OMITTED_OPTIONAL_KEY = re.compile(r'skip_serializing_if\s*=\s*"Option::is_none"')
+ABSENT_KEY_PRESENT = re.compile(
+    r'deserialize_with\s*=\s*"(?:crate|cadmpeg_core)::absent_key::present"'
+)
+DESERIALIZE_WITH = re.compile(r'deserialize_with\s*=\s*"([\w:]+)"')
+# The one workspace macro that declares a named reader forwarding to
+# ``absent_key::present``. Its expansion carries the same absence spelling.
+PRESENT_FORWARDER_MACRO = re.compile(r"named_optional_field!\s*\(\s*(\w+)")
+PRESENT_FORWARDER_FN = re.compile(r"\bfn\s+(\w+)\s*<")
+SERDE_DEFAULT = re.compile(r"(?:^|[(,])\s*default\s*(?:[,)]|=)")
+# A flattened field has no key of its own, so an absent key names nothing
+# about it: its own reader states which keys it reads and what their absence
+# means.
+SERDE_FLATTEN = re.compile(r"(?:^|[(,])\s*flatten\s*[,)]")
+FIELD_NAME = re.compile(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(\w+)\s*:")
+# A container that reads through another type, reads transparently, or has no
+# key of its own is not read field by field. Its fields' write-side metadata
+# states nothing about any reader.
+ROUTED_CONTAINER_KEYS = {"from", "try_from", "transparent", "untagged"}
+
+
+def absent_key_source_files():
+    """Every non-test Rust source file under the workspace's crates."""
+
+    def fail(error):
+        raise error
+
+    base = Path(ABSENT_KEY_ROOT)
+    if not stat.S_ISDIR(base.stat().st_mode):
+        raise NotADirectoryError(base)
+    for directory, children, files in os.walk(base, onerror=fail):
+        children[:] = sorted(name for name in children if name not in SKIP_DIRS)
+        for name in sorted(files):
+            if not name.endswith(".rs") or name in SKIP_BASENAMES:
+                continue
+            path = Path(directory) / name
+            if "src" not in path.parts:
+                continue
+            yield path
+
+
+def field_attribute_runs(body):
+    """Each field's whole attribute run, as (offset, text, field name)."""
+    attributes = list(ANY_ATTRIBUTE.finditer(body))
+    runs = []
+    index = 0
+    while index < len(attributes):
+        end = index
+        while (
+            end + 1 < len(attributes)
+            and ATTRIBUTE_GAP.match(body, attributes[end].end(), attributes[end + 1].start())
+        ):
+            end += 1
+        field = FIELD_NAME.match(body, attributes[end].end())
+        if field is not None:
+            runs.append((
+                attributes[index].start(),
+                body[attributes[index].start():attributes[end].end()],
+                field.group(1),
+            ))
+        index = end + 1
+    return runs
+
+
+def present_forwarders():
+    """Named readers, per crate, that forward to ``absent_key::present``."""
+    forwarders = {}
+    for path in absent_key_source_files():
+        crate = Path(*path.parts[:path.parts.index("src")])
+        source, _ = SOURCE_POLICY.production_source(
+            path.read_text(encoding="utf-8")
+        )
+        names = forwarders.setdefault(crate, set())
+        names.update(match.group(1) for match in PRESENT_FORWARDER_MACRO.finditer(source))
+        for match in PRESENT_FORWARDER_FN.finditer(source):
+            opening = body_open(source, match.end())
+            if opening is None:
+                continue
+            end = delimited_end(source, opening)
+            if end is None:
+                continue
+            if "absent_key::present" in source[opening:end]:
+                names.add(match.group(1))
+    return forwarders
+
+
+def absent_key_failures():
+    """Optional keys whose writer omits them but whose reader admits ``null``."""
+    found = []
+    forwarders = present_forwarders()
+    for path in absent_key_source_files():
+        crate = Path(*path.parts[:path.parts.index("src")])
+        try:
+            items = collect_items(path)
+        except ValueError:
+            # The unknown-key census raises on the same file and names it.
+            continue
+        for item in items:
+            if item.kind != "struct" or not derives_deserialize(item.attrs):
+                continue
+            if any(
+                key in ROUTED_CONTAINER_KEYS
+                for key, _, _ in serde_options(item.attrs)
+            ):
+                continue
+            # The body is read as written: a serde attribute is metadata, and
+            # the lexer that masks string literals would erase the very
+            # spellings this rule reads.
+            for offset, text, name in field_attribute_runs(item.body):
+                if not OMITTED_OPTIONAL_KEY.search(text):
+                    continue
+                if SERDE_FLATTEN.search(text):
+                    continue
+                if f"{path.as_posix()}:{name}" in ABSENT_KEY_EXCEPTIONS:
+                    continue
+                if not SERDE_DEFAULT.search(text):
+                    found.append((
+                        path,
+                        item.line + item.body.count("\n", 0, offset),
+                        f"{item.name}.{name}: an omitted optional key states no "
+                        "serde(default), so its absence is no spelling at all",
+                    ))
+                    continue
+                if ABSENT_KEY_PRESENT.search(text):
+                    continue
+                named = [
+                    reader.rsplit("::", 1)[-1]
+                    for reader in DESERIALIZE_WITH.findall(text)
+                ]
+                if any(reader in forwarders.get(crate, ()) for reader in named):
+                    continue
+                found.append((
+                    path,
+                    item.line + item.body.count("\n", 0, offset),
+                    f"{item.name}.{name}: an omitted optional key states no "
+                    "absence spelling; read it with "
+                    "cadmpeg_core::absent_key::present beside serde(default)",
+                ))
+    return found
+
+
 def main():
     paths = list(source_files())
     raw_items = {path: collect_items(path) for path in paths}
@@ -2276,6 +2439,8 @@ def main():
             arms = [arm for arm in untagged_arms(item) if arm.untagged]
             if arms and not check_untagged_arms(item, arms):
                 failures.append((item.path, item.line, item.name))
+
+    failures.extend(absent_key_failures())
 
     for path, line, owner, name, candidates in sorted(set(ambiguities), key=str):
         locations = ", ".join(candidate.as_posix() for candidate in candidates)

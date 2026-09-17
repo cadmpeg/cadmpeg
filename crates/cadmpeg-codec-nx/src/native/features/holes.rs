@@ -255,10 +255,18 @@ struct FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire {
     /// Ordered blocks following the repeated scalar lane.
     second_data_blocks: [String; 2],
     /// Exact optional wrapper before the first reference pair.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     first_reference_prefix: Option<[u8; 8]>,
     /// Exact optional wrapper before the repeated reference pair.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     second_reference_prefix: Option<[u8; 8]>,
     /// Absolute offsets of the first pair of tagged-index tokens.
     first_reference_offsets: [u64; 2],

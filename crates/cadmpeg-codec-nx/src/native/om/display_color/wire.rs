@@ -189,7 +189,11 @@ pub(super) struct RmDisplayColorAssignmentWire {
     pub encoding: RmDisplayColorAssignmentEncoding,
     /// Member addressed by the row target index when it resolves in the
     /// `RMFastLoad` object-ID table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub target_object_id: Option<String>,
     /// One-based part palette index.
     pub color_index: u16,

@@ -83,7 +83,11 @@ pub struct RangeInterval {
     pub prefix: RangeIntervalPrefix,
     /// Source-ordered lower and upper slots. An absent pair uses one of the
     /// no-slot productions.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub slots: Option<[RangeIntervalSlot; 2]>,
 }
 

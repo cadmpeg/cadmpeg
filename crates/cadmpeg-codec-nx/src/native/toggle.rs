@@ -43,7 +43,11 @@ struct SavedToggleEntryWire {
     id: String,
     ordinal: u32,
     toggle_id: ToggleId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     stable_identity: Option<String>,
     state: SavedToggleState,
     raw_byte_len: [u8; 2],

@@ -29,11 +29,28 @@ class DenyCensusTests(unittest.TestCase):
                 path.write_text(source, encoding="utf-8")
                 paths.append(path)
             output = io.StringIO()
+            # The absent-key rule has its own scope, the whole crates tree.
+            # These fixtures state the unknown-key rule only, so that pass is
+            # held out here and exercised by `run_absent_key_census` below.
             with patch.object(census, "source_files", return_value=paths), \
                     patch.object(census, "EXCEPTIONS", {}), \
+                    patch.object(census, "absent_key_failures", return_value=[]), \
                     contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 status = census.main()
             return status, output.getvalue()
+
+    def run_absent_key_census(self, files: dict[str, str]) -> list[str]:
+        """The absent-key rule's findings over one fixture tree."""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for name, source in files.items():
+                path = Path(directory) / "crates" / "fixture" / "src" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(source, encoding="utf-8")
+                paths.append(path)
+            with patch.object(census, "absent_key_source_files", return_value=paths), \
+                    patch.object(census, "ABSENT_KEY_EXCEPTIONS", {}):
+                return [message for _, _, message in census.absent_key_failures()]
 
     def item(self, path: str, name: str) -> census.Item:
         return census.Item(Path(path), 1, "struct", name, "", "")
@@ -1692,6 +1709,89 @@ class DenyCensusTests(unittest.TestCase):
         )
         self.assertEqual(macro_contract_mutated, 0, macro_contract_output)
 
+
+
+class AbsentKeyCensusTests(unittest.TestCase):
+    """The absence spelling of an optional key whose writer omits it."""
+
+    run_absent_key_census = DenyCensusTests.run_absent_key_census
+
+    OMITTED = (
+        '#[derive(serde::Deserialize)]\n'
+        '#[serde(deny_unknown_fields)]\n'
+        'struct Wire {\n'
+        '    #[serde(default, skip_serializing_if = "Option::is_none"%s)]\n'
+        '    key: Option<u32>,\n'
+        '}\n'
+    )
+
+    def test_an_omitted_optional_key_without_a_declaration_is_named(self) -> None:
+        findings = self.run_absent_key_census({"wire.rs": self.OMITTED % ""})
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("Wire.key", findings[0])
+        self.assertIn("absent_key::present", findings[0])
+
+    def test_the_shared_helper_states_the_spelling(self) -> None:
+        declared = self.OMITTED % (
+            ',\n        deserialize_with = "cadmpeg_core::absent_key::present"'
+        )
+        self.assertEqual(self.run_absent_key_census({"wire.rs": declared}), [])
+
+    def test_a_named_forwarder_to_the_helper_states_the_spelling(self) -> None:
+        declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        forwarder = (
+            "fn read_key<'de, D: serde::Deserializer<'de>>(d: D)"
+            " -> Result<Option<u32>, D::Error> {\n"
+            "    cadmpeg_core::absent_key::present(d)\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.run_absent_key_census({"wire.rs": declared + forwarder}), []
+        )
+
+    def test_an_omitted_optional_key_without_a_default_is_named(self) -> None:
+        findings = self.run_absent_key_census({
+            "wire.rs": (
+                '#[derive(serde::Deserialize)]\n'
+                'struct Wire {\n'
+                '    #[serde(skip_serializing_if = "Option::is_none")]\n'
+                '    key: Option<u32>,\n'
+                '}\n'
+            )
+        })
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("serde(default)", findings[0])
+
+    def test_a_flattened_field_states_its_own_keys(self) -> None:
+        flattened = (
+            '#[derive(serde::Deserialize)]\n'
+            'struct Wire {\n'
+            '    #[serde(default, flatten, skip_serializing_if = "Option::is_none")]\n'
+            '    key: Option<u32>,\n'
+            '}\n'
+        )
+        self.assertEqual(self.run_absent_key_census({"wire.rs": flattened}), [])
+
+    def test_a_routed_container_is_not_read_field_by_field(self) -> None:
+        routed = (
+            '#[derive(serde::Deserialize)]\n'
+            '#[serde(try_from = "Other")]\n'
+            'struct Wire {\n'
+            '    #[serde(default, skip_serializing_if = "Option::is_none")]\n'
+            '    key: Option<u32>,\n'
+            '}\n'
+        )
+        self.assertEqual(self.run_absent_key_census({"wire.rs": routed}), [])
+
+    def test_a_serialize_only_item_states_no_reader(self) -> None:
+        writer = (
+            '#[derive(serde::Serialize)]\n'
+            'struct Wire {\n'
+            '    #[serde(default, skip_serializing_if = "Option::is_none")]\n'
+            '    key: Option<u32>,\n'
+            '}\n'
+        )
+        self.assertEqual(self.run_absent_key_census({"wire.rs": writer}), [])
 
 if __name__ == "__main__":
     unittest.main()

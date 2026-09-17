@@ -11,7 +11,11 @@ pub(super) struct BodyWriteWire {
     /// Globally unique relation identity.
     pub id: String,
     /// Owning operation-label identity, absent for an unlabeled record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub operation_label: Option<String>,
     /// Owning bounded operation-record identity.
     pub operation_record: String,
@@ -30,7 +34,11 @@ pub(super) struct BodyWriteWire {
     /// Offset-store object containing the body's serialized image.
     pub body_image_object_index: u32,
     /// Unambiguous offset-store block selected by the body-image object index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub body_image_data_block: Option<String>,
     /// Exact serialized body-image object token.
     pub raw_body_image_object_index: Vec<u8>,

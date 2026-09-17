@@ -47,7 +47,11 @@ pub struct FeatureDraftConstructionReference {
     #[serde(flatten)]
     pub token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
     pub source_offset: u64,
@@ -85,7 +89,11 @@ struct FeatureDraftConstructionIndexLaneWire {
     /// Exact compact-index tokens in serialized order.
     raw_indices: Vec<Vec<u8>>,
     /// Same-store native blocks when the complete lane and graph select one store.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     data_blocks: Option<Vec<String>>,
     /// Absolute source offsets of the compact-index tokens.
     source_offsets: Vec<u64>,

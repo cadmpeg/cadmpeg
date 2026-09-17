@@ -1693,8 +1693,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
                 "count": 2, "count_record_index": 11, "count_offset": 0,
                 "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
                 "stitch_tolerance_offset": 0, "seed_group_record_index": 20,
-                "plane_group_record_index": 30, "plane_selection_record_index": 40,
-                "plane_origin": null, "plane_normal": null
+                "plane_group_record_index": 30, "plane_selection_record_index": 40
             }))
             .expect("mirror construction"),
         );

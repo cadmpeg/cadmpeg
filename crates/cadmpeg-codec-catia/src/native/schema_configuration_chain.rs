@@ -70,7 +70,11 @@ struct LinkWire {
     row: CatiaEntityReference,
     successor_payload_offset: u64,
     successor: CatiaEntityReference,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     intervening_entities: Option<Vec<CatiaEntityReference>>,
 }
 

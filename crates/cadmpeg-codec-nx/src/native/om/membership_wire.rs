@@ -51,7 +51,11 @@ pub(super) struct MemberWire {
     table: String,
     ordinal: u32,
     value: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     stable_identity: Option<String>,
     raw: [u8; 4],
     source_offset: u64,

@@ -126,13 +126,21 @@ pub(crate) struct Configuration {
     #[serde(default)]
     pub(crate) ordinal: u32,
     /// Numeric key used by configuration-scoped container sections.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) source_index: Option<u32>,
     /// Source configuration name.
     pub(crate) name: String,
     /// Material assigned in this configuration, when overridden; `None` when the
     /// configuration inherits the part's default material.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) material: Option<String>,
     /// Source custom-property name/value pairs local to this configuration.
     #[serde(default)]
@@ -306,7 +314,11 @@ pub(crate) struct Feature {
     #[serde(flatten, with = "tree_parent_wire")]
     pub(crate) tree_parent: Option<TreeParent>,
     /// Native identifier of this feature, when the source assigned one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) source_id: Option<FeatureSource>,
     /// Position of this feature in the construction-history timeline, in
     /// regeneration order.
@@ -316,7 +328,11 @@ pub(crate) struct Feature {
     /// Native feature-type tag (e.g. `"Extrude"`, `"Fillet"`).
     pub(crate) kind: String,
     /// Serialized feature-input object class owning this feature, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) input_class: Option<String>,
     /// Whether this feature is suppressed and excluded from regeneration.
     #[serde(default)]
@@ -331,7 +347,11 @@ pub(crate) struct Feature {
     #[serde(default)]
     pub(crate) properties: BTreeMap<NonBlankString, String>,
     /// Text content of a native leaf feature element.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) text: Option<String>,
     /// Source order of dimensions, nested feature nodes, and text content.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -368,7 +388,11 @@ pub(crate) struct FeatureHistory {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Source part display name, when recorded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) part_name: Option<String>,
     /// Source attributes on the `Keywords` root, excluding its `Name` key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -440,7 +464,11 @@ struct FeatureInputLaneWire {
     id: String,
     /// Configuration this input lane applies to, when the source scoped inputs
     /// per configuration; `None` when the lane applies to all configurations.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     configuration: Option<String>,
     /// Complete native feature-input byte stream, retained undecoded for
     /// parametric replay and native rewrite.
@@ -529,7 +557,11 @@ pub(crate) struct FeatureInputBodySelection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) body_state_ids: Vec<u32>,
     /// Retention mode carried by the delete-body data record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
 }
 
@@ -560,7 +592,11 @@ pub(crate) struct FeatureInputEdgeSelection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) producer_feature_refs: Vec<String>,
     /// History feature owning the terminal edge component.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) terminal_feature_ref: Option<String>,
 }
 
@@ -589,7 +625,11 @@ pub(crate) struct FeatureInputSurfaceSelection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) producer_feature_refs: Vec<String>,
     /// Native history feature owning the terminal face component.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) terminal_feature_ref: Option<String>,
     /// Ordered typed entries in the persistent surface-component path.
     #[serde(default)]
@@ -676,12 +716,20 @@ pub(crate) struct FeatureInputGeneratedSurfaceIdentity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputComponentPathEntry {
     /// Serialized component instance tag; absent on anonymous path nodes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) instance: Option<u16>,
     /// Twelve-byte serialized component type identity.
     pub(crate) type_signature: [u8; 12],
     /// Feature-local identifier carried by terminal selection nodes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) local_id: Option<u32>,
 }
 
@@ -703,7 +751,11 @@ pub(crate) struct FeatureInputRelationBinding {
     /// Scalar record attached to the declaration.
     pub(crate) scalar_ref: String,
     /// Native history feature owning the relation, when unique.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) feature_ref: Option<String>,
 }
 
@@ -773,7 +825,11 @@ pub(crate) struct FeatureInputReference {
     /// Owning feature-input lane record id.
     pub(crate) parent: String,
     /// Native history feature enclosing this cell, when unique.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) feature_ref: Option<String>,
     /// Position among reference cells in stream order.
     pub(crate) ordinal: u32,
@@ -782,7 +838,11 @@ pub(crate) struct FeatureInputReference {
     /// Native reference-cell family.
     pub(crate) kind: FeatureInputOperandKind,
     /// Class declaration assigned to this lane-local token, when unique.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) class_ref: Option<String>,
     /// Local object index carried by the cell.
     pub(crate) object_index: u16,
@@ -801,7 +861,11 @@ pub(crate) struct FeatureInputName {
     pub(crate) offset: u64,
     /// Native object identifier stored after the UTF-16 name; `None` when the
     /// record has no identifier trailer at all.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) object_id: Option<ObjectId>,
     /// Decoded object name.
     pub(crate) value: String,
@@ -867,7 +931,11 @@ pub(crate) struct FeatureInputScalar {
     /// Owning feature-input lane record id.
     pub(crate) parent: String,
     /// Native history feature enclosing this scalar, when unique.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) feature_ref: Option<String>,
     /// Position among named scalars in stream order.
     pub(crate) ordinal: u32,
@@ -956,7 +1024,11 @@ pub(crate) struct FeatureInputOperand {
     /// Local entity index carried by the cell.
     pub(crate) entity_index: u16,
     /// Resolved sketch-input entity in the same feature object, when unique.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) entity_ref: Option<String>,
 }
 
@@ -1107,25 +1179,45 @@ pub(crate) struct SketchInputEntityWire {
     /// Owning feature-input lane record id.
     pub(crate) parent: String,
     /// Native history feature whose serialized object interval contains this marker.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     feature_ref: Option<String>,
     /// Position of this marker within the owning `FeatureInputLane`, in stream order.
     ordinal: u32,
     /// Byte offset of this marker within `FeatureInputLane::native_payload`.
     offset: u64,
     /// Feature-local object index stored immediately before the marker.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     object_index: Option<u32>,
     /// Feature-local object identifier stored in the marker trailer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     kind: SketchInputKind,
     /// Finite little-endian state scalar at the marker layout's state slot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     state_value: Option<f64>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     coordinates_m: Option<[f64; 2]>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]

@@ -595,10 +595,18 @@ struct ExpressionDeclarationWire {
     /// Decimal source parameter identifier following `p`.
     parameter_index: u32,
     /// Qualified role following the parameter identifier.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     qualifier: Option<String>,
     /// Independently framed constant numeric expression in the declaration record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     literal: Option<String>,
     /// Directory entry containing the declaration record.
     source_entry: String,
@@ -686,7 +694,11 @@ struct ExpressionWire {
     /// Owning entry in the native OM record directory, when externally bounded.
     record: Option<String>,
     /// Exact-name declaration record for this parameter, when unique.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     declaration: Option<String>,
     /// NX parameter name.
     name: String,
@@ -699,7 +711,11 @@ struct ExpressionWire {
     /// Exact serialized expression text.
     expression: String,
     /// Finite numeric value after context-free and dependency-graph evaluation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     value: Option<f64>,
     /// Directory entry containing the OM section.
     source_entry: String,
@@ -853,14 +869,26 @@ struct ClassDefinitionWire {
     /// First registry-token byte serialized after the class name (legacy field name).
     trailing_code: u8,
     /// Decoded storage token from the complete class registry tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     registry_storage_code: Option<u32>,
     /// One-based base-class ordinal from the complete class registry tail.
     /// Zero denotes the registry root.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     registry_base_class: Option<u32>,
     /// One-based reference-list ordinal from the complete class registry tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     registry_reference: Option<u32>,
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -869,10 +897,18 @@ struct ClassDefinitionWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     layout_prefix: Vec<u8>,
     /// Stable eight-byte class fingerprint in a framed registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     schema_fingerprint: Option<[u8; 8]>,
     /// Terminal byte of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section base.
     section_offset: u64,
@@ -985,10 +1021,18 @@ struct FieldDefinitionWire {
     /// First registry-token byte serialized immediately after the name (legacy field name).
     trailing_code: u8,
     /// Decoded storage token from the complete member registry head.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     registry_storage_code: Option<u32>,
     /// One-based declaring-class ordinal from the complete member registry head.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     registry_owner_class: Option<u32>,
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -997,10 +1041,18 @@ struct FieldDefinitionWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     layout_prefix: Vec<u8>,
     /// Stable eight-byte field fingerprint in a framed registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     schema_fingerprint: Option<[u8; 8]>,
     /// Terminal byte of a framed indexed-store registry suffix.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     layout_terminal: Option<u8>,
     /// Absolute file offset of the containing OM section signature.
     section_offset: u64,
@@ -1107,18 +1159,39 @@ pub struct ObjectRecord {
     pub source_offset: u64,
 }
 
+/// Reads `object_id_source_offset`, naming the key in whatever it refuses.
+///
+/// The writer omits the key for `None`, so an absent key is its one spelling
+/// of absence and `null` is refused. The refusal names the key, because the
+/// identity and its offset are stated together and a report reader needs to
+/// know which half is missing.
+fn deserialize_object_id_source_offset<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u64>, D::Error> {
+    cadmpeg_core::absent_key::present(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("object_id_source_offset: {error}")))
+}
+
 #[derive(Serialize, Deserialize)]
 struct ObjectRecordWire {
     id: String,
     object_id: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_object_id_source_offset"
+    )]
     object_id_source_offset: Option<u64>,
     section_ordinal: u32,
     record_ordinal: u32,
     section_offset: u64,
     byte_len: u64,
     sha256: crate::native::hex::Sha256Hex,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     stable_identity: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     dependencies: Vec<String>,
@@ -1425,7 +1498,11 @@ pub struct DataBlock {
     /// SHA-256 of the exact serialized block bytes.
     pub sha256: crate::native::hex::Sha256Hex,
     /// Content-backed identity when the scoped exact bytes are unique.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub stable_identity: Option<String>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
@@ -1486,9 +1563,17 @@ struct DataBlockControlFormWire {
     data_block: String,
     kind: DataBlockControlFormKindWire,
     value_count: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     leading_value_width: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     leading_value: Option<u32>,
     byte_len: u64,
     source_offset: u64,
@@ -1601,7 +1686,11 @@ pub struct DataBlockControlIndexValue {
     /// Unsigned little-endian value.
     pub value: u32,
     /// Same-section offset-store block addressed by an in-range value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub target_data_block: Option<String>,
     /// Absolute file offset of the four-byte value.
     pub source_offset: u64,
@@ -1641,9 +1730,17 @@ struct DataBlockControlClassReferenceWire {
     data_block: String,
     ordinal: u32,
     class_ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     class_definition: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     class_name: Option<String>,
     source_offset: u64,
 }
@@ -1723,10 +1820,18 @@ struct DataBlockReferenceWire {
     /// Exact serialized object-index token.
     pub raw_object_id: Vec<u8>,
     /// Uniquely resolved object record in the same directory entry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub target_record: Option<String>,
     /// Uniquely resolved parameter declaration carrying this object ID.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub target_expression_declaration: Option<String>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
@@ -2174,7 +2279,11 @@ pub struct ExternalReferenceIndexedRecord {
     /// SHA-256 of the exact serialized record bytes.
     pub sha256: crate::native::hex::Sha256Hex,
     /// Specialized handle-set record when that complete grammar resolves.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub handle_set_record: Option<String>,
     /// Directory entry containing the external-reference stream.
     pub source_entry: String,
