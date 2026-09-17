@@ -321,7 +321,11 @@ impl<'a> SubtypeScope<'a> {
 /// The byte span of the subtype definition that opens at `start`: from its
 /// `0x0f` opening through the matching `0x10` close, nested definitions
 /// included.
+///
+/// `None` unless the byte at `start` is `0x0f`. A definition opens at its own
+/// `0x0f`, so a `start` that names another byte names no definition.
 pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<SubtypeScope<'_>> {
+    (bytes.get(start) == Some(&0x0f)).then_some(())?;
     let mut depth = 0usize;
     let mut pos = start;
     while pos < bytes.len() {
@@ -431,6 +435,24 @@ mod ownership_tests {
             let owned: Vec<usize> = scope.owned_marker_positions(int_width);
             assert_eq!(owned, vec![owned_marker]);
             assert_eq!(scope.bytes(), bytes.as_slice());
+        }
+    }
+
+    /// A definition opens at its own `0x0f`. A start that names another byte
+    /// names no definition.
+    #[test]
+    fn a_byte_span_that_does_not_open_at_start_is_not_a_scope() {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
+            let mut bytes = vec![0x0du8, 0x01, b'x'];
+            let open_at = bytes.len();
+            open(&mut bytes, b"exact_int_cur");
+            bytes.push(0x10);
+
+            assert_eq!(subtype_span(&bytes, 0, int_width), None);
+            assert_eq!(subtype_span(&bytes, 1, int_width), None);
+            assert_eq!(subtype_span(&bytes, bytes.len(), int_width), None);
+            let scope = subtype_span(&bytes, open_at, int_width).expect("balanced scope");
+            assert_eq!(scope.bytes(), &bytes[open_at..]);
         }
     }
 }
