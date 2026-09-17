@@ -6,6 +6,7 @@ use super::axis::SectionAxis;
 use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
@@ -164,7 +165,7 @@ pub(crate) fn resolved_section_radii(
             let radius_id = circle.radius_ref;
             let Some(dimension) = dimensions
                 .rows
-                .get(usize::try_from(radius_id).unwrap_or(usize::MAX))
+                .get(index_from_u32(radius_id))
             else {
                 continue;
             };

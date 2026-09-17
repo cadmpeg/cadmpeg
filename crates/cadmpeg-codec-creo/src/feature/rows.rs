@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::{contains, find_from, find_in};
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, index_from_u32};
 
 use crate::psb;
 use crate::scalar;
@@ -848,7 +848,7 @@ fn geometry_table_at(
             entries.push(entry);
             entry_cursor = next;
         }
-        *ids = (entries.len() == usize::try_from(count).unwrap_or(usize::MAX)).then_some(entries);
+        *ids = (entries.len() == index_from_u32(count)).then_some(entries);
     }
     Some((count, entity_class, kind))
 }

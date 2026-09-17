@@ -55,7 +55,7 @@ use crate::records::{
     DesignParameterOwner, DesignRecordHeader, LostEdgeReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -2108,7 +2108,7 @@ pub(crate) fn parse_construction_operand_group(
     cursor += 4;
     // A reference is at least one byte, so a count the remaining bytes cannot
     // supply is corrupt and must not reach the allocator.
-    if usize::try_from(member_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
+    if index_from_u32(member_count) > bytes.len().saturating_sub(cursor) {
         return NotAGroup;
     }
     let mut members = Vec::new();
@@ -2141,7 +2141,7 @@ pub(crate) fn parse_construction_operand_group(
         return NotAGroup;
     };
     cursor += 4;
-    if usize::try_from(trailing_count).unwrap_or(usize::MAX) > bytes.len().saturating_sub(cursor) {
+    if index_from_u32(trailing_count) > bytes.len().saturating_sub(cursor) {
         return NotAGroup;
     }
     let mut trailing_records = Vec::new();

@@ -809,13 +809,19 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
 }
 
 /// Renders a bounded hexadecimal window of an in-memory buffer.
+///
+/// The window is the intersection of `start..start + len` with the buffer: a
+/// bound the buffer does not hold, including one the address space cannot
+/// name, selects the end of the buffer.
 fn window(bytes: &[u8], start: u64, len: u64) -> String {
-    let begin = usize::try_from(start)
-        .unwrap_or(usize::MAX)
-        .min(bytes.len());
-    let end = usize::try_from(start.saturating_add(len))
-        .unwrap_or(usize::MAX)
-        .min(bytes.len());
+    let begin = match usize::try_from(start) {
+        Ok(begin) if begin < bytes.len() => begin,
+        _ => bytes.len(),
+    };
+    let end = match start.checked_add(len).map(usize::try_from) {
+        Some(Ok(end)) if end < bytes.len() => end,
+        _ => bytes.len(),
+    };
     hexdump::render(
         begin as u64,
         &bytes[begin..end],

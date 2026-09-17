@@ -26,6 +26,22 @@ pub fn bounded_len(count: u64, element_size: usize, remaining: usize) -> Option<
     (bytes <= remaining).then_some(count)
 }
 
+/// [`index_from_u32`] widens a 32-bit declaration to an index. The widening is
+/// exact on every target the assertion admits, and it justifies nothing else.
+const _: () = assert!(
+    usize::BITS >= 32,
+    "a target whose usize is narrower than 32 bits cannot hold a u32 index"
+);
+
+/// Widens a 32-bit count, identifier or index to a `usize` index.
+///
+/// The assertion above admits only targets whose `usize` holds every `u32`, so
+/// the cast is total and this conversion states no refusal. A count that must
+/// also fit the unread input goes through [`bounded_len`] instead.
+pub const fn index_from_u32(value: u32) -> usize {
+    value as usize
+}
+
 /// A count proven to fit in the unread input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundedCount(usize);
@@ -331,8 +347,14 @@ impl View<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_len, BoundedCount, View};
+    use super::{bounded_len, index_from_u32, BoundedCount, View};
     use crate::decode::space::SpaceId;
+
+    #[test]
+    fn a_u32_index_widens_to_the_same_value() {
+        assert_eq!(index_from_u32(0), 0);
+        assert_eq!(index_from_u32(u32::MAX), u32::MAX as usize);
+    }
 
     #[test]
     fn read_counted_allocates_only_plausible_lengths() {

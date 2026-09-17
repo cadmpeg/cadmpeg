@@ -6,7 +6,7 @@ use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry,
@@ -1864,7 +1864,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "basis degree M is invalid"));
             continue;
         };
-        let degree_usize = usize::try_from(degree).unwrap_or(usize::MAX);
+        let degree_usize = index_from_u32(degree);
         if k < degree_usize {
             losses.push(entity_loss(
                 entry,

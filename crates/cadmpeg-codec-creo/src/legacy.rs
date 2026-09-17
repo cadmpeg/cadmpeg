@@ -114,7 +114,7 @@ impl<T> NumericPayload<T> {
     }
 
     /// Number of logical scalar elements represented by this payload.
-    pub fn element_count(&self) -> u64 {
+    pub fn element_count(&self) -> usize {
         match self {
             Self::Scalar { .. } => 1,
             Self::Array(array) => array.element_count(),

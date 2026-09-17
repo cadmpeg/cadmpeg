@@ -24,7 +24,7 @@ enum LimitScope {
 }
 
 /// Cap on the initial per-expand reservation before any output is produced.
-const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
+const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
 
 /// Shared monotonic decode state.
 #[derive(Debug)]
@@ -374,11 +374,15 @@ impl<'a> DecodeContext<'a> {
         }
         let mut buffer: Vec<u8> = Vec::new();
         let reserve = match spec {
-            ExpandSpec::Exact(size) => size.min(RESERVE_CLAMP),
+            // A declared size the address space cannot name is above the cap,
+            // so the cap is the reservation either way.
+            ExpandSpec::Exact(size) => match usize::try_from(size) {
+                Ok(size) => size.min(RESERVE_CLAMP),
+                Err(_) => RESERVE_CLAMP,
+            },
             ExpandSpec::Unknown => 0,
         };
         if reserve > 0 {
-            let reserve = usize::try_from(reserve).unwrap_or(usize::MAX);
             buffer.try_reserve(reserve).map_err(|_| {
                 self.fuse(
                     ResourceFailure::AllocationFailed,

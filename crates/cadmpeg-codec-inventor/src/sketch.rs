@@ -1798,12 +1798,14 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         }
     }
     profiles.sort_by_key(|profile| {
-        profile
+        let first = profile
             .iter()
             .filter_map(|entity| source_positions.get(entity.entity.as_str()))
             .copied()
-            .min()
-            .unwrap_or(usize::MAX)
+            .min();
+        // A profile whose entities state no source position sorts after every
+        // profile that states one.
+        (first.is_none(), first)
     });
     profiles
 }

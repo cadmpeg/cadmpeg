@@ -3586,15 +3586,21 @@ pub(crate) fn propagate_common_boundary_components(
             }
         }
     }
-    let mut faces_by_component = HashMap::<usize, Vec<usize>>::new();
+    let mut faces_by_component = HashMap::<usize, (usize, Vec<usize>)>::new();
     for face in active_faces {
         let root = components.find(active_index[&face]);
-        faces_by_component.entry(root).or_default().push(face);
+        // `active_faces` is built by an ascending enumeration, so the face that
+        // creates a component's entry is that component's smallest face.
+        faces_by_component
+            .entry(root)
+            .or_insert_with(|| (face, Vec::new()))
+            .1
+            .push(face);
     }
     let mut face_components = faces_by_component.into_values().collect::<Vec<_>>();
-    face_components.sort_by_key(|faces| faces.iter().copied().min().unwrap_or(usize::MAX));
+    face_components.sort_by_key(|(smallest_face, _)| *smallest_face);
 
-    for mut faces in face_components {
+    for (_, mut faces) in face_components {
         let face_key = |face: usize| match &domains[face] {
             MeshFaceBoundaryDomain::Ordered(assignments) => {
                 let direction_work = assignments
@@ -7297,7 +7303,14 @@ impl MeshSelectionSearch<'_> {
                             .flatten()
                             .filter(|use_| use_.reversed.is_none())
                             .count();
-                        1usize.checked_shl(unknown as u32).unwrap_or(usize::MAX)
+                        // The estimate is the `2^unknown` direction choices the
+                        // boundary states. A count at or above `usize::BITS`
+                        // states more choices than the work counter holds, so
+                        // the estimate stands at the counter's ceiling.
+                        match 1usize.checked_shl(unknown as u32) {
+                            Some(choices) => choices,
+                            None => usize::MAX,
+                        }
                     })
                     .fold(0usize, usize::saturating_add);
                 let can_merge = assignments

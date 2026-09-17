@@ -148,6 +148,19 @@ impl ReportBuckets {
     }
 }
 
+/// The lower of a session limit and a rhino ceiling.
+///
+/// [`ResourceLimits`](cadmpeg_core::decode::ResourceLimits) states its limits
+/// in `u64`; the ceilings below count in-memory items and are `usize`. A
+/// session limit the address space cannot name is above every ceiling, so the
+/// ceiling is the answer in that case.
+pub(crate) fn session_ceiling(limit: u64, ceiling: usize) -> usize {
+    match usize::try_from(limit) {
+        Ok(limit) => limit.min(ceiling),
+        Err(_) => ceiling,
+    }
+}
+
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
@@ -175,14 +188,13 @@ impl ExpansionBudget {
     }
 
     fn from_session(ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Self {
-        let collections =
-            usize::try_from(ctx.policy().limits.max_collection_items).unwrap_or(usize::MAX);
-        let entities = usize::try_from(ctx.policy().limits.max_entities).unwrap_or(usize::MAX);
+        let collections = ctx.policy().limits.max_collection_items;
+        let entities = ctx.policy().limits.max_entities;
         let mut budget = Self::new();
         budget.limits = [
-            collections.min(MAX_INSTANCE_REFERENCES),
-            collections.min(MAX_INSTANCE_MEMBERS),
-            entities.min(MAX_INSTANCE_ENTITIES),
+            session_ceiling(collections, MAX_INSTANCE_REFERENCES),
+            session_ceiling(collections, MAX_INSTANCE_MEMBERS),
+            session_ceiling(entities, MAX_INSTANCE_ENTITIES),
         ];
         budget
     }
@@ -1730,9 +1742,10 @@ impl<'a> DecodeContext<'a> {
             .map_err(|error| error.to_string())?;
         self.expansion_budget.reference()?;
         self.charge_session_collections(1, "rhino_instance_reference")?;
-        let depth_limit = usize::try_from(self.expand.ctx().policy().limits.max_recursion_depth)
-            .unwrap_or(usize::MAX)
-            .min(MAX_INSTANCE_DEPTH);
+        let depth_limit = session_ceiling(
+            self.expand.ctx().policy().limits.max_recursion_depth,
+            MAX_INSTANCE_DEPTH,
+        );
         if stack.len() >= depth_limit {
             return Err("instance nesting exceeds 64 levels".to_string());
         }

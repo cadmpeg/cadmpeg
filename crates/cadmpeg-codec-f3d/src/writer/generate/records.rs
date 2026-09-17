@@ -5,6 +5,7 @@ use crate::records::{
     ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchPointRecordForm,
     SketchText,
 };
+use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -707,7 +708,7 @@ fn encode_sketch_nurbs(
     }
     let expected_knots = poles
         .point_count()
-        .checked_add(usize::try_from(degree).unwrap_or(usize::MAX))
+        .checked_add(index_from_u32(degree))
         .and_then(|count| count.checked_add(1));
     if expected_knots != Some(knots.len()) {
         return Err(CodecError::Malformed(
