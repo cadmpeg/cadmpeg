@@ -711,6 +711,39 @@ fn a_seeded_population_refuses_a_count_the_ir_width_cannot_state() {
     );
 }
 
+/// A document that states an empty `instances` array is refused by the
+/// population's own text. `TryFrom<SketchCircularPatternWire>` states the
+/// cause `SeededMembers` gives; it does not fold it into the arity message,
+/// which names a disagreement this document does not hold.
+#[test]
+fn an_empty_circular_pattern_instance_array_is_refused_by_the_population() {
+    use crate::scalar::Angle;
+    use crate::sketches::{
+        SketchCircularPattern, SketchCircularPatternInstance, SketchConstraintDefinitionInput,
+        SketchEntityId,
+    };
+
+    let pattern = SketchCircularPattern::new(
+        SketchEntityId::mint("test:test:sketch-entity#center").unwrap(),
+        Angle::new(1.0).unwrap(),
+        None,
+        None,
+        vec![SketchEntityId::mint("test:test:sketch-entity#0").unwrap()],
+        vec![SketchCircularPatternInstance {
+            angle: crate::scalar::NonZeroAngle::new(1.0).unwrap(),
+            entities: vec![SketchEntityId::mint("test:test:sketch-entity#1").unwrap()],
+        }],
+    )
+    .unwrap();
+    let mut wire =
+        serde_json::to_value(SketchConstraintDefinitionInput::CircularPattern { pattern }).unwrap();
+    wire["pattern"]["instances"] = serde_json::json!([]);
+    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("population states no member"), "{error}");
+}
+
 #[test]
 fn a_circular_pattern_count_cannot_disagree_with_its_instances() {
     use crate::scalar::Angle;
