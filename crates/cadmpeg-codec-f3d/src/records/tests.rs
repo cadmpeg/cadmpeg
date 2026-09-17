@@ -129,7 +129,7 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
 
 #[test]
 fn recipe_design_id_preserves_source_and_authored_wire() {
-    let prefix = r#"{"id":"recipe#0","byte_offset":27,"kind":"body""#;
+    let prefix = r#"{"id":"recipe#0","byte_offset":27,"record_index_offset":11,"kind":"body""#;
     let suffix = r#","recipe_index":0,"record_index":12}"#;
     for value in ["\"\"", "\"301\""] {
         for offset in [0, 4] {
@@ -564,8 +564,34 @@ fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
 }
 
 #[test]
+fn a_construction_recipe_record_index_and_its_offset_occur_together() {
+    let prefix = r#"{"id":"recipe","byte_offset":80"#;
+    let suffix = r#","kind":"body","recipe_index":0"#;
+    let complete = format!(r#"{prefix},"record_index_offset":64{suffix},"record_index":7}}"#);
+    let recipe: crate::records::ConstructionRecipe =
+        serde_json::from_str(&complete).expect("complete record index");
+    assert_eq!(serde_json::to_string(&recipe).expect("recipe wire"), complete);
+
+    let absent = format!("{prefix}{suffix}}}");
+    let recipe: crate::records::ConstructionRecipe =
+        serde_json::from_str(&absent).expect("recipe stating no record index");
+    assert_eq!(recipe.record_index, None);
+    assert_eq!(serde_json::to_string(&recipe).expect("recipe wire"), absent);
+
+    for orphan in [
+        format!(r#"{prefix}{suffix},"record_index":7}}"#),
+        format!(r#"{prefix},"record_index_offset":64{suffix}}}"#),
+    ] {
+        let error = serde_json::from_str::<crate::records::ConstructionRecipe>(&orphan)
+            .expect_err("orphan record index")
+            .to_string();
+        assert!(error.contains("record_index"), "{error}");
+    }
+}
+
+#[test]
 fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
-    let prefix = r#"{"id":"recipe","byte_offset":80,"kind":"body"#;
+    let prefix = r#"{"id":"recipe","byte_offset":80,"record_index_offset":64,"kind":"body"#;
     let suffix = r#","recipe_index":0,"record_index":7}"#;
     for fields in [
         "",

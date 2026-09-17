@@ -286,13 +286,19 @@ fn decode_grouped_recipe_references(
 
     let mut references = Vec::new();
     let mut at = grouped_recipe::LEN;
-    if group_count
-        > prefix
-            .len()
-            .saturating_sub(at)
-            .checked_div(GROUP_COUNT_WORD_SIZE + MINIMUM_PACKED_OPERAND_SIZE)
-            .unwrap_or_default()
-    {
+    // `group_count` is parsed, so both refusals below are reachable: a prefix
+    // shorter than the grouped-recipe header states no group at all, and a
+    // group count whose packed groups do not fit the prefix states no group
+    // this decoder can read. The multiplication states the same bound the
+    // division stated, without a divisor whose zero case no input reaches.
+    let Some(available) = prefix.len().checked_sub(at) else {
+        return Vec::new();
+    };
+    let Some(required) = group_count.checked_mul(GROUP_COUNT_WORD_SIZE + MINIMUM_PACKED_OPERAND_SIZE)
+    else {
+        return Vec::new();
+    };
+    if required > available {
         return Vec::new();
     }
     for _ in 0..group_count {

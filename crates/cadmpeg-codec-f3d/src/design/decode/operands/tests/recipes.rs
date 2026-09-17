@@ -76,11 +76,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let recipe = ConstructionRecipe {
         id: "f3d:Design/BulkStream.dat:construction-recipe#60".into(),
         byte_offset: recipe_name_at as u64,
-        record_index_offset: Some(recipe_record_at + 8),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 7,
-        record_index: 303,
+        record_index: Some(crate::records::RecordedValue {
+            value: 303,
+            offset: recipe_record_at + 8,
+        }),
     };
 
     let mut edge_operand = parse_edge_operand(
@@ -202,11 +204,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let vertex_recipe = ConstructionRecipe {
         id: "f3d:Design/BulkStream.dat:construction-recipe#200".into(),
         byte_offset: u64::try_from(vertex_recipe_name_at).expect("generated offset fits u64"),
-        record_index_offset: Some(vertex_recipe_record_at + 8),
         kind: ConstructionRecipeKind::Vertex,
         design: None,
         recipe_index: 9,
-        record_index: 303,
+        record_index: Some(crate::records::RecordedValue {
+            value: 303,
+            offset: vertex_recipe_record_at + 8,
+        }),
     };
     let parsed_vertex = parse_vertex_recipe(
         &vertex_bytes,
@@ -1009,7 +1013,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")]
     );
     let mut local_recipe = recipe.clone();
-    local_recipe.record_index = -1335;
+    local_recipe.record_index = local_recipe
+        .record_index
+        .map(|index| crate::records::RecordedValue { value: -1335, ..index });
     bind_edge_operand_candidates(
         std::slice::from_mut(&mut edge_operand),
         std::slice::from_ref(&local_recipe),
@@ -1093,7 +1099,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         selector: None,
     });
     face_recipe.byte_offset = face_recipe_name_at as u64;
-    face_recipe.record_index_offset = Some(face_recipe_record_at + 8);
+    face_recipe.record_index = face_recipe.record_index.map(|index| {
+        crate::records::RecordedValue {
+            offset: face_recipe_record_at + 8,
+            ..index
+        }
+    });
     let mut operand = parse_face_operand(
         &face_bytes,
         &IndexedRecordOffsets::build(&face_bytes),
@@ -1220,7 +1231,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     header(&mut compact_bytes, *b"306", 104);
     let mut compact_recipe = face_recipe.clone();
     compact_recipe.byte_offset = compact_name_at as u64;
-    compact_recipe.record_index_offset = Some(compact_record_at + 8);
+    compact_recipe.record_index = compact_recipe.record_index.map(|index| {
+        crate::records::RecordedValue {
+            offset: compact_record_at + 8,
+            ..index
+        }
+    });
     let compact = parse_face_operand(
         &compact_bytes,
         &IndexedRecordOffsets::build(&compact_bytes),

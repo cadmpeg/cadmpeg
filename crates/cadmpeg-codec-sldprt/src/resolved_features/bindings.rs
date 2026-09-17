@@ -101,10 +101,17 @@ pub(crate) fn bind_pattern_inputs(
         } else {
             lane.generated_surface_identities.clone()
         };
+        // `lanes::admit` compares every stored name offset with the offset
+        // `object_names` read out of `native_payload`, so an admitted name
+        // offset is an index of that payload. It is narrowed once here, where
+        // that proof holds, and the objects below carry `usize` offsets.
         let mut starts = history_features
             .iter()
             .filter(|feature| !metadata_ids.contains(&feature.id))
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .filter_map(|feature| {
+                let offset = usize::try_from(feature_object_name(feature, lane)?.offset).ok()?;
+                Some((offset, *feature))
+            })
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|(offset, _)| *offset);
         for (start_index, (_, feature)) in starts.iter().enumerate() {
@@ -119,10 +126,10 @@ pub(crate) fn bind_pattern_inputs(
             // refuses a name whose offset the payload does not state.
             let pattern_object_end = || {
                 let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);
-                starts
-                    .get(next)
-                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
-                    .unwrap_or(lane.native_payload.len())
+                match starts.get(next) {
+                    Some((offset, _)) => *offset,
+                    None => lane.native_payload.len(),
+                }
             };
             if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
@@ -142,7 +149,7 @@ pub(crate) fn bind_pattern_inputs(
                 if !needs_plane && !needs_seeds {
                     continue;
                 }
-                let start = usize::try_from(starts[start_index].0).ok();
+                let start = Some(starts[start_index].0);
                 let end = pattern_object_end();
                 let Some(start) = start.filter(|start| *start < end) else {
                     continue;
@@ -226,9 +233,8 @@ pub(crate) fn bind_pattern_inputs(
                 if !needs_seed && !needs_axis {
                     continue;
                 }
-                let Some(start) = usize::try_from(starts[start_index].0)
-                    .ok()
-                    .filter(|start| *start < pattern_object_end())
+                let Some(start) =
+                    Some(starts[start_index].0).filter(|start| *start < pattern_object_end())
                 else {
                     continue;
                 };
@@ -285,7 +291,7 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                let object_start = usize::try_from(starts[start_index].0).ok();
+                let object_start = Some(starts[start_index].0);
                 let end = pattern_object_end();
                 if matches!(&(model_features[model_index].evaluation.definition()),
                     FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -367,8 +373,9 @@ pub(crate) fn bind_pattern_inputs(
                     .iter()
                     .filter(|class| {
                         class.name == "moLineRef_w"
-                            && class.offset > starts[start_index].0
-                            && usize::try_from(class.offset).is_ok_and(|offset| offset < end)
+                            && usize::try_from(class.offset).is_ok_and(|offset| {
+                                offset > starts[start_index].0 && offset < end
+                            })
                     })
                     .collect::<Vec<_>>();
                 let mut directions = declarations

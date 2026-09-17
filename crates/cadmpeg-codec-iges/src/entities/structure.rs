@@ -13,7 +13,7 @@ use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, ParameterRecord, TokenValue,
     TrailingPointerAnalysis,
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, VertexId};
@@ -847,7 +847,17 @@ fn property_fields_valid(
     end: usize,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    let exact = |count: i64| record.integer(1) == Some(count) && end == count as usize + 2;
+    // The property count is stated in `u64`: every caller derives it from an
+    // in-memory token count, and the record's own declaration is compared in
+    // that width. A declaration a `u64` cannot state — a negative one — equals
+    // no count, so it is refused by the comparison rather than folded.
+    let exact = |count: u64| {
+        record
+            .integer(1)
+            .and_then(|declared| u64::try_from(declared).ok())
+            == Some(count)
+            && u64_from_index(end) == count + 2
+    };
     let integer_range = |index, range: std::ops::RangeInclusive<i64>| {
         record
             .integer(index)
@@ -977,7 +987,7 @@ fn property_fields_valid(
             .count(2)
             .filter(|count| *count > 0)
             .is_some_and(|count| {
-                exact(i64::try_from(1 + 4 * count).unwrap_or_default())
+                exact(1 + 4 * u64_from_index(count))
                     && (0..count).all(|offset| {
                         let start = 3 + offset * 4;
                         record.integer(start).is_some_and(|value| value >= 0)
@@ -992,7 +1002,7 @@ fn property_fields_valid(
             .count(3)
             .filter(|count| *count > 0 && *count <= end)
             .is_some_and(|count| {
-                exact(i64::try_from(2 + count).unwrap_or_default())
+                exact(2 + u64_from_index(count))
                     && record.string(2).is_some_and(|value| !value.is_empty())
                     && (0..count)
                         .all(|offset| record.integer(4 + offset).is_some_and(|value| value >= 0))
@@ -1012,7 +1022,7 @@ fn property_fields_valid(
             .count(3)
             .filter(|count| *count > 0)
             .is_some_and(|count| {
-                exact(i64::try_from(2 + 2 * count).unwrap_or_default())
+                exact(2 + 2 * u64_from_index(count))
                     && record.string(2).is_some_and(|value| !value.is_empty())
                     && (0..count).all(|offset| {
                         let index = 4 + offset * 2;
@@ -1100,7 +1110,7 @@ fn property_fields_valid(
             .count(2)
             .filter(|count| *count > 0 && *count <= end)
             .is_some_and(|count| {
-                exact(i64::try_from(1 + count * 3).unwrap_or_default())
+                exact(1 + u64_from_index(count) * 3)
                     && (0..count).all(|offset| {
                         let start = 3 + offset * 3;
                         record.integer(start).is_some_and(|value| value > 0)

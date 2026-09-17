@@ -511,7 +511,6 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         recipes.push(ConstructionRecipe {
             id: recipe_id.clone(),
             byte_offset: byte_offset + 220,
-            record_index_offset: None,
             kind: ConstructionRecipeKind::Body,
             design: Some(crate::records::ConstructionRecipeDesign {
                 id: crate::records::RecordedValue {
@@ -524,7 +523,10 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 }),
             }),
             recipe_index: ordinal,
-            record_index: i32::try_from(operand_record_index + 3).unwrap(),
+            record_index: Some(crate::records::RecordedValue {
+                value: i32::try_from(operand_record_index + 3).unwrap(),
+                offset: 0,
+            }),
         });
         operands.push(
             DesignBodyRecipeOperand::try_new(

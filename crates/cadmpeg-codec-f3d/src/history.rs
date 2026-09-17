@@ -3854,7 +3854,7 @@ pub(crate) fn bind_face_operand_history_candidates(
     }
     let recipe_record_indices = recipes
         .iter()
-        .map(|recipe| (recipe.id.as_str(), recipe.record_index))
+        .filter_map(|recipe| Some((recipe.id.as_str(), recipe.record_index?.value)))
         .collect::<HashMap<_, _>>();
     for operand in &mut *operands {
         operand.preceding_candidate_faces.clear();
@@ -5699,7 +5699,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
     }
     let recipe_record_indices = recipes
         .iter()
-        .map(|recipe| (recipe.id.as_str(), recipe.record_index))
+        .filter_map(|recipe| Some((recipe.id.as_str(), recipe.record_index?.value)))
         .collect::<HashMap<_, _>>();
     let terminal_topologies = histories
         .iter()

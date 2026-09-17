@@ -15,7 +15,7 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{index_from_u32, View};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
@@ -283,14 +283,19 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
             *counter += 1;
-            let record_index_offset = offset.checked_sub(16);
-            let record_index = record_index_offset
-                .and_then(|at| View::i32_le_at(bytes, at))
-                .unwrap_or_default();
+            // The record index word precedes the family marker by sixteen
+            // bytes. A marker within the first sixteen bytes of the stream has
+            // no such word, so the stream states no record index for it; the
+            // word itself always lies inside `bytes` when the marker does.
+            let record_index = offset.checked_sub(16).and_then(|at| {
+                Some(crate::records::RecordedValue {
+                    value: View::i32_le_at(bytes, at)?,
+                    offset: u64_from_index(at),
+                })
+            });
             out.push(ConstructionRecipe {
                 id: ids::native_construction_recipe_id(stream, offset),
-                byte_offset: offset as u64,
-                record_index_offset: record_index_offset.map(|offset| offset as u64),
+                byte_offset: u64_from_index(offset),
                 kind,
                 design,
                 recipe_index,
@@ -298,7 +303,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             });
         }
     }
-    out.sort_by_key(|recipe| recipe.record_index);
+    out.sort_by_key(|recipe| recipe.record_index.map(|index| index.value));
 }
 
 fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String, usize)> {
@@ -1775,6 +1780,22 @@ mod tests {
     }
 
     #[test]
+    fn a_recipe_marker_before_the_record_index_word_states_no_record_index() {
+        // The family marker opens at offset four, so the stream holds no index
+        // word sixteen bytes before it.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(b"body_recipe_data");
+        let mut recipes = Vec::new();
+        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
+        assert_eq!(recipes.len(), 1);
+        assert_eq!(recipes[0].record_index, None);
+        let wire = serde_json::to_value(&recipes[0]).expect("recipe wire");
+        assert_eq!(wire.get("record_index"), None);
+        assert_eq!(wire.get("record_index_offset"), None);
+    }
+
+    #[test]
     fn bounded_face_record_identity_is_not_a_second_design_id() {
         let mut bytes = Vec::new();
         for _ in 0..2 {
@@ -1788,7 +1809,9 @@ mod tests {
         let mut recipes = Vec::new();
         crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
         assert_eq!(recipes.len(), 2);
-        assert!(recipes.iter().all(|recipe| recipe.record_index == 309));
+        assert!(recipes
+            .iter()
+            .all(|recipe| recipe.record_index.map(|index| index.value) == Some(309)));
         assert!(recipes.iter().all(|recipe| recipe.design.is_none()));
         assert_eq!(recipes[0].recipe_index, 0);
         assert_eq!(recipes[1].recipe_index, 1);

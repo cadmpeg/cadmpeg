@@ -38,9 +38,12 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Ve
         match bytes[pos] {
             0x0f => {
                 if depth == 0 && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
-                    let len = usize::from(*bytes.get(pos + 2).unwrap_or(&0));
-                    if let Some(name) = bytes.get(pos + 3..pos + 3 + len) {
-                        owned.push((pos, name));
+                    // A stream that ends at the name-length byte states no
+                    // name at all, which is not a name of zero bytes.
+                    if let Some(&len) = bytes.get(pos + 2) {
+                        if let Some(name) = bytes.get(pos + 3..pos + 3 + usize::from(len)) {
+                            owned.push((pos, name));
+                        }
                     }
                 }
                 depth += 1;
@@ -246,10 +249,13 @@ fn collect_defs_in_span(
     let mut pos = start;
     while pos < end {
         if bytes.get(pos) == Some(&0x0f) && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
-            let len = usize::from(*bytes.get(pos + 2).unwrap_or(&0));
-            if let Some(name) = bytes.get(pos + 3..pos + 3 + len) {
-                if name != b"ref" {
-                    table.push(pos);
+            // A stream that ends at the name-length byte states no name at
+            // all, which is not a name of zero bytes.
+            if let Some(&len) = bytes.get(pos + 2) {
+                if let Some(name) = bytes.get(pos + 3..pos + 3 + usize::from(len)) {
+                    if name != b"ref" {
+                        table.push(pos);
+                    }
                 }
             }
         }

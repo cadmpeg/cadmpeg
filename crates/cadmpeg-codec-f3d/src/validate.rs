@@ -5985,7 +5985,8 @@ fn validate_edge_operands<'a>(
         let header = records_by_index.get(&(native_stream, operand.record_index()));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
         let expected_faces = recipe
-            .map(|recipe| i64::from(recipe.record_index))
+            .and_then(|recipe| recipe.record_index)
+            .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0)
             .map(|design_reference| {
                 design::decode::operands::edge_operand_candidate_faces(
@@ -6239,7 +6240,8 @@ fn validate_face_operands<'a>(
         let header = records_by_index.get(&(native_stream, operand.record_index()));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
         let mut expected_faces = recipe
-            .map(|recipe| i64::from(recipe.record_index))
+            .and_then(|recipe| recipe.record_index)
+            .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0)
             .map(|design_reference| {
                 native
@@ -6272,7 +6274,8 @@ fn validate_face_operands<'a>(
             }
         }
         let recipe_design_reference = recipe
-            .map(|recipe| i64::from(recipe.record_index))
+            .and_then(|recipe| recipe.record_index)
+            .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0);
         let referenced_faces = expected_references
             .iter()

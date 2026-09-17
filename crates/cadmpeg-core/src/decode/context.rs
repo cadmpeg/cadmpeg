@@ -62,8 +62,14 @@ impl<'a> DecodeContext<'a> {
                 alloc_filled(256 * 1024, 0_u8, "decode root read chunk")?.into_boxed_slice();
             while (buffer.len() as u64) < cap {
                 let remaining = cap.saturating_sub(buffer.len() as u64);
-                let want =
-                    usize::try_from(remaining.min(chunk.len() as u64)).unwrap_or(chunk.len());
+                // The chunk length is already the bound: `remaining` above the
+                // chunk means this read takes the whole chunk, so the chunk
+                // length is the answer rather than a default standing in for
+                // a conversion that could not be made.
+                let want = match usize::try_from(remaining) {
+                    Ok(remaining) if remaining < chunk.len() => remaining,
+                    _ => chunk.len(),
+                };
                 let read = reader.read(&mut chunk[..want]).map_err(CodecError::Io)?;
                 if read == 0 {
                     break;
@@ -79,8 +85,14 @@ impl<'a> DecodeContext<'a> {
                 if remaining == 0 {
                     break;
                 }
-                let want =
-                    usize::try_from(remaining.min(chunk.len() as u64)).unwrap_or(chunk.len());
+                // The chunk length is already the bound: `remaining` above the
+                // chunk means this read takes the whole chunk, so the chunk
+                // length is the answer rather than a default standing in for
+                // a conversion that could not be made.
+                let want = match usize::try_from(remaining) {
+                    Ok(remaining) if remaining < chunk.len() => remaining,
+                    _ => chunk.len(),
+                };
                 let read = reader.read(&mut chunk[..want]).map_err(CodecError::Io)?;
                 if read == 0 {
                     break;

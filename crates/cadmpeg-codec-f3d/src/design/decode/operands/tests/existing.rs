@@ -90,11 +90,13 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     let early = ConstructionRecipe {
         id: "stream:recipe-early".into(),
         byte_offset: EARLY_RECIPE_AT as u64,
-        record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
         design: None,
         recipe_index: 0,
-        record_index: 0,
+        record_index: Some(crate::records::RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
     };
     let late = ConstructionRecipe {
         id: "stream:recipe-late".into(),

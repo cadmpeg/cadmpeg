@@ -350,6 +350,7 @@ fn decode_with_occurrence_limits(
         occurrence_expansion: product_occurrence_expansion,
         ambiguous_parameter_boundaries,
         overdeclared_counts,
+        unstatable_attribute_tables,
     } = native::store(
         &mut ir,
         &parse.scan,
@@ -449,6 +450,17 @@ fn decode_with_occurrence_limits(
             IgesLossCode::ParameterCountOverdeclared,
             format!(
                 "IGES entity D{source_sequence} declares a counted list of {declared} items; its Parameter Data record holds {present} in whole or in part, so the list was not read"
+            ),
+            source_sequence,
+            &parse.directory,
+        ));
+    }
+    for (source_sequence, refusal) in unstatable_attribute_tables {
+        losses.push(occurrence_loss(
+            IgesLossCode::AttributeTableCountUnstatable,
+            format!(
+                "IGES attribute table instance D{source_sequence} {}, so no attribute row was read",
+                refusal.reason()
             ),
             source_sequence,
             &parse.directory,

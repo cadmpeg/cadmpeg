@@ -123,7 +123,10 @@ pub(crate) fn generated_feature_source_ids(
         .flat_map(|history| &history.features)
         .filter_map(|feature| Some((feature.id.as_str(), feature.source_value()?)))
         .collect::<HashMap<_, _>>();
-    let mut next = 1u32;
+    // `next` is the lowest source id not yet offered. `None` states that the
+    // id space is exhausted: every allocation advances it, and the allocation
+    // that finds it exhausted is the one refusal.
+    let mut next = Some(1u32);
     let mut allocated = HashMap::new();
     for feature in features
         .iter()
@@ -133,15 +136,7 @@ pub(crate) fn generated_feature_source_ids(
         let source_id = if let Some(source_id) = existing.get(record_id.as_str()).copied() {
             source_id
         } else {
-            while used.contains(&next) {
-                next = next.checked_add(1).ok_or_else(|| {
-                    CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
-                })?;
-            }
-            let source_id = next;
-            used.insert(source_id);
-            next = next.checked_add(1).unwrap_or(next);
-            source_id
+            allocate_feature_source_id(&mut used, &mut next)?
         };
         let source_id = FeatureSource::from_value(source_id).ok_or_else(|| {
             CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
@@ -149,6 +144,27 @@ pub(crate) fn generated_feature_source_ids(
         allocated.insert(feature.id.clone(), source_id);
     }
     Ok(allocated)
+}
+
+/// Take the lowest source id no feature holds, and advance `next` past it.
+///
+/// `next` states the lowest id not yet offered; `None` states that the previous
+/// allocation took `u32::MAX` and the id space holds no further id. Every exit
+/// from this function either returns an id no other feature holds or refuses,
+/// so no caller writes a source id twice and none saturates.
+fn allocate_feature_source_id(
+    used: &mut HashSet<u32>,
+    next: &mut Option<u32>,
+) -> Result<u32, CodecError> {
+    loop {
+        let candidate = next.ok_or_else(|| {
+            CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
+        })?;
+        *next = candidate.checked_add(1);
+        if used.insert(candidate) {
+            return Ok(candidate);
+        }
+    }
 }
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
@@ -675,6 +691,8 @@ pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::Sldp
 #[cfg(test)]
 mod tests {
     use super::{generated_feature_record_id, neutral_feature_id, sync_neutral_features};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
     use crate::test_support::{
         make_block, plan_inherited_write, resolved_feature_classes_with_ids, sldprt_native,
         sldprt_with_body, triangle_body,
@@ -807,5 +825,32 @@ mod tests {
         assert!(cadmpeg_ir::ids::is_valid_identity(&record));
         let projected = neutral_feature_id(&record);
         assert!(cadmpeg_ir::ids::is_valid_identity(projected.as_str()));
+    }
+    #[test]
+    fn the_source_id_allocator_skips_held_ids_and_refuses_an_exhausted_space() {
+        let mut used = HashSet::from([1, 2, 4]);
+        let mut next = Some(1);
+        assert_eq!(
+            super::allocate_feature_source_id(&mut used, &mut next).expect("first free id"),
+            3
+        );
+        assert_eq!(
+            super::allocate_feature_source_id(&mut used, &mut next).expect("second free id"),
+            5
+        );
+
+        let mut used = HashSet::new();
+        let mut next = Some(u32::MAX);
+        assert_eq!(
+            super::allocate_feature_source_id(&mut used, &mut next).expect("last id"),
+            u32::MAX
+        );
+        assert_eq!(next, None);
+        let error = super::allocate_feature_source_id(&mut used, &mut next)
+            .expect_err("exhausted id space");
+        assert!(
+            matches!(&error, CodecError::Malformed(message) if message.contains("exhausted")),
+            "{error:?}"
+        );
     }
 }

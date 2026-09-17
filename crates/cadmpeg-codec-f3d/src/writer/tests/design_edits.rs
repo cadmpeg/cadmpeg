@@ -36,12 +36,14 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     reference.value = 9_001;
     let recipe = &mut native.construction_recipes[0];
     assert!(recipe.byte_offset > 0);
-    assert!(recipe.record_index_offset.is_some());
+    assert!(recipe.record_index.is_some());
     assert!(recipe
         .design
         .as_ref()
         .is_some_and(|design| design.id.offset > 0));
-    recipe.record_index = 777;
+    recipe.record_index = recipe
+        .record_index
+        .map(|index| crate::records::RecordedValue { value: 777, ..index });
     recipe.design.as_mut().expect("recipe id").id.value = "333".into();
     let member = native
         .design_body_members
@@ -175,8 +177,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .iter()
         .any(|reference| reference.value == 9_001));
     assert_eq!(
-        f3d_native(round_trip.ir()).construction_recipes[0].record_index,
-        777
+        f3d_native(round_trip.ir()).construction_recipes[0]
+            .record_index
+            .map(|index| index.value),
+        Some(777)
     );
     assert_eq!(
         f3d_native(round_trip.ir()).construction_recipes[0]
