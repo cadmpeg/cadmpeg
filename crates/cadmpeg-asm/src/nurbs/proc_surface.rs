@@ -4422,6 +4422,14 @@ fn procedural_resolving_refs(
         if seen.contains(&index) {
             continue;
         }
+        // A `{ref N}` indexes the per-file subtype table, in which each
+        // subtype definition contributes one entry in stream order
+        // (`docs/formats/asm.md`, "A named `ref N` scope or compact
+        // `0x0F LONG N 0x10` scope nested inside a surface, curve, or pcurve
+        // body indexes a per-file subtype table, not a byte offset"). An index
+        // the table does not hold names no definition the stream states, so the
+        // stream is malformed and the search is refused rather than continued
+        // past it.
         let target = table.span(index)?.tokens();
         seen.push(index);
         if let Some(decoded) = procedural_resolving_refs(target, table, seen) {

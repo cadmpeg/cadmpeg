@@ -369,3 +369,56 @@ fn an_exp_par_cur_scope_decodes_its_own_bs2_field_through_the_scope_type() {
         assert_eq!(pcurve.knots(), [0.0, 0.0, 1.0, 1.0]);
     }
 }
+
+/// A `{ref N}` the subtype table does not hold is a malformed stream, so the
+/// reference search is refused there and does not go on to the resolvable
+/// reference behind it.
+#[test]
+fn an_unresolvable_subtype_reference_refuses_the_search_behind_it() {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
+        let mut definition = vec![0x0f];
+        push_ident(&mut definition, "exact_int_cur");
+        definition.extend_from_slice(&curve_block(int_width));
+        definition.push(0x10);
+
+        let mut references = vec![0x0f];
+        push_ident(&mut references, "ref");
+        push_int(&mut references, 0x04, 99, int_width);
+        references.push(0x10);
+        references.push(0x0f);
+        push_ident(&mut references, "ref");
+        push_int(&mut references, 0x04, 0, int_width);
+        references.push(0x10);
+
+        let definition_tokens =
+            lex_test_span(&definition, int_width).expect("valid single-record byte fixture");
+        let reference_tokens =
+            lex_test_span(&references, int_width).expect("valid single-record byte fixture");
+        let records = [
+            crate::sab::Record {
+                index: 0,
+                name: String::new(),
+                tokens: definition_tokens,
+                offset: 0,
+                len: 0,
+            },
+            crate::sab::Record {
+                index: 1,
+                name: String::new(),
+                tokens: reference_tokens.clone(),
+                offset: 0,
+                len: 0,
+            },
+        ];
+        let table = crate::nurbs::toks::SubtypeTable::from_records(&records);
+
+        // Entry zero is the cache-bearing definition, and the record states
+        // `{ref 99}` before `{ref 0}`.
+        assert!(table.span(0).is_some());
+        assert!(table.span(99).is_none());
+        assert!(
+            crate::nurbs::core::curve_cache_resolving_refs(&reference_tokens, &table).is_none(),
+            "the unresolvable reference at width {int_width} must refuse the search"
+        );
+    }
+}
