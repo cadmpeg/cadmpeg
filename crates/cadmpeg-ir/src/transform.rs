@@ -138,36 +138,74 @@ impl Default for ExactSignedSum {
     }
 }
 
+/// The largest biased significand exponent a finite `f64` states. The field is
+/// eleven bits wide and a finite value never reaches the all-ones field, and
+/// biasing by [`MIN_SIGNIFICAND_EXPONENT`] subtracts one more.
+pub(crate) const MAX_BIASED_SIGNIFICAND_EXPONENT: i32 = 0x7fe - 1;
+
+/// The widest significand a finite `f64` states, the hidden bit included.
+pub(crate) const MAX_SIGNIFICAND_BITS: i32 = 53;
+
+/// The least power of two a [`ScaledExponent`] holds. `ExactSignedSum::finish`
+/// states `EXACT_PRODUCT_EXPONENT + highest_bit + 1` with `highest_bit` at
+/// least zero, which is below everything `scaled_finite` can state.
+pub(crate) const MIN_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + 1;
+
+/// The greatest power of two a [`ScaledExponent`] holds.
+/// `ExactSignedSum::finish` states `EXACT_PRODUCT_EXPONENT + highest_bit + 2`
+/// in its rounding-carry arm, with `highest_bit` at most one below the
+/// accumulator's bit width.
+pub(crate) const MAX_SCALED_EXPONENT: i32 =
+    EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS as i32 * 64 + 1;
+
+/// The power of two that scales a [`ScaledValue`]'s mantissa back to the value.
+///
+/// The field is private and the type has no constructor of its own, so the two
+/// construction expressions in [`scaled_finite`] and [`ExactSignedSum::finish`]
+/// are the only values that exist. Neither reads an exponent from outside, and
+/// the four `const` assertions below state that both reach only
+/// `MIN_SCALED_EXPONENT..=MAX_SCALED_EXPONENT`.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct ScaledExponent(i32);
+
+/// `scaled_finite` states `MIN_SIGNIFICAND_EXPONENT + biased + bits`, with
+/// `biased` from zero to `MAX_BIASED_SIGNIFICAND_EXPONENT` and `bits` from one
+/// to `MAX_SIGNIFICAND_BITS`.
+const _: () = assert!(MIN_SIGNIFICAND_EXPONENT + 1 >= MIN_SCALED_EXPONENT);
+const _: () = assert!(
+    MIN_SIGNIFICAND_EXPONENT + MAX_BIASED_SIGNIFICAND_EXPONENT + MAX_SIGNIFICAND_BITS
+        <= MAX_SCALED_EXPONENT
+);
+
+/// `ExactSignedSum::finish` states `EXACT_PRODUCT_EXPONENT + highest_bit + 1`,
+/// and `+ 2` in its rounding-carry arm, with `highest_bit` indexing an
+/// accumulator `EXACT_SUM_WORDS` words of 64 bits wide.
+const _: () = assert!(EXACT_PRODUCT_EXPONENT + 1 >= MIN_SCALED_EXPONENT);
+const _: () =
+    assert!(EXACT_PRODUCT_EXPONENT + (EXACT_SUM_WORDS as i32 * 64 - 1) + 2 <= MAX_SCALED_EXPONENT);
+
+impl ScaledExponent {
+    /// The exponent shift that rescales a value in this frame into `other`'s.
+    ///
+    /// Plain `-`: both sides lie in `MIN_SCALED_EXPONENT..=MAX_SCALED_EXPONENT`,
+    /// so the difference is at most `MAX_SCALED_EXPONENT - MIN_SCALED_EXPONENT`
+    /// in magnitude. This is the one operation the exponent is read for.
+    fn difference(self, other: Self) -> i32 {
+        self.0 - other.0
+    }
+}
+
 #[derive(Clone, Copy)]
 struct ScaledValue {
     sign: f64,
     mantissa: f64,
-    /// The power of two that scales `mantissa` back to the value.
-    ///
-    /// The range is
-    /// `EXACT_PRODUCT_EXPONENT + 1 ..= EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS * 64 + 1`,
-    /// that is `-2147..=2077`. Two constructors produce it, and neither reads
-    /// an exponent from outside:
-    ///
-    /// - `scaled_finite` states `MIN_SIGNIFICAND_EXPONENT + biased + bits`. The
-    ///   biased field of a finite `f64` is at most 2045 and `bits` is the
-    ///   significand width, 1 to 53, so this reaches `-1073..=1024`.
-    /// - `ExactSignedSum::finish` states
-    ///   `EXACT_PRODUCT_EXPONENT + highest_bit + 1`, and `+ 2` in its
-    ///   rounding-carry arm. `highest_bit` indexes an accumulator
-    ///   `EXACT_SUM_WORDS` words of 64 bits wide, so it is at most
-    ///   `EXACT_SUM_WORDS * 64 - 1`.
-    ///
-    /// A difference of two exponents is therefore at most 4224 in magnitude,
-    /// and the subtraction that rescales one value into another's frame is
-    /// plain arithmetic.
-    exponent: i32,
+    exponent: ScaledExponent,
 }
 
 impl ScaledValue {
     /// The value, rescaled into the frame whose exponent is `scale_exponent`.
-    fn scaled_by(self, scale_exponent: i32) -> f64 {
-        self.sign * self.mantissa * 2.0_f64.powi(self.exponent - scale_exponent)
+    fn scaled_by(self, scale_exponent: ScaledExponent) -> f64 {
+        self.sign * self.mantissa * 2.0_f64.powi(self.exponent.difference(scale_exponent))
     }
 }
 
@@ -271,7 +309,9 @@ impl ExactSignedSum {
                     return Some(ScaledValue {
                         sign: if negative { -1.0 } else { 1.0 },
                         mantissa: 0.5,
-                        exponent: EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 2,
+                        exponent: ScaledExponent(
+                            EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 2,
+                        ),
                     });
                 }
             }
@@ -279,7 +319,7 @@ impl ExactSignedSum {
         Some(ScaledValue {
             sign: if negative { -1.0 } else { 1.0 },
             mantissa: significand as f64 * 2.0_f64.powi(-i32::from(keep)),
-            exponent: EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1,
+            exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1),
         })
     }
 }
@@ -330,7 +370,7 @@ fn scaled_finite(value: f64) -> Option<ScaledValue> {
     Some(ScaledValue {
         sign: if negative { -1.0 } else { 1.0 },
         mantissa: significand as f64 * 2.0_f64.powi(-bits),
-        exponent: i32::from(exponent) + MIN_SIGNIFICAND_EXPONENT + bits,
+        exponent: ScaledExponent(i32::from(exponent) + MIN_SIGNIFICAND_EXPONENT + bits),
     })
 }
 
