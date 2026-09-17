@@ -59,11 +59,14 @@ impl CatiaNative {
             )));
         }
         for catalog in &mut catalog_headers {
-            catalog.entries = entries
+            let joined = entries
                 .iter()
                 .filter(|entry| entry.parent == catalog.id)
                 .cloned()
-                .collect();
+                .collect::<Vec<_>>();
+            catalog.entries = crate::catalog::CountedEntries::try_from(joined).map_err(|message| {
+                cadmpeg_ir::NativeConvertError::InvalidOwner(message.to_owned())
+            })?;
             catalog.entries.sort_by_key(|entry| entry.ordinal);
             if catalog
                 .entries

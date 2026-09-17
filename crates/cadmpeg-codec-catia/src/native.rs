@@ -1864,26 +1864,21 @@ pub struct CatiaCatalog {
     pub byte_offset: u64,
     /// Total framed byte length.
     pub byte_len: u64,
-    /// Catalog entries in serialized order.
+    /// Catalog entries in serialized order, at a population the stored count
+    /// can name.
     #[serde(default)]
-    pub entries: Vec<CatiaCatalogEntry>,
+    pub entries: crate::catalog::CountedEntries<CatiaCatalogEntry>,
 }
 
 impl CatiaCatalog {
     /// The stored count, equal to the entry population plus one.
     ///
-    /// The format states the count in a `u32`, so a catalog holding a
-    /// population that plus one does not fit a `u32` states no count. That is
-    /// the one meaning of `None`, and it is unreachable through either
-    /// admission: a decoded catalog derives its population from that same
-    /// `u32`, and an admitted one is compared against it below. The population
-    /// is not bounded by a type -- `entries` is written by the arena join and
-    /// by the hand-written namespace load -- so this is stated rather than
-    /// asserted.
-    pub fn declared_count(&self) -> Option<u32> {
-        u32::try_from(self.entries.len())
-            .ok()
-            .and_then(|population| population.checked_add(1))
+    /// The format states the count in a `u32`, so the bound is on the
+    /// population: `entries` refuses one the count cannot name at its own
+    /// construction, on both admissions. Every catalog that exists therefore
+    /// states a count.
+    pub fn declared_count(&self) -> u32 {
+        self.entries.declared_count()
     }
 }
 
@@ -1898,17 +1893,16 @@ struct CatiaCatalogWire {
     byte_len: u64,
     /// Stored count, equal to the entry population plus one.
     ///
-    /// The key is required: a catalog always states its count, because the
-    /// format states it and `crate::catalog::parse_candidate` derives the entry
-    /// population from it. `null` is its one spelling of "this catalog holds
-    /// more entries than the `u32` the format states the count in can name",
-    /// which `TryFrom` refuses. `nullable` reads the key, and this declaration
-    /// states no `default`, so serde names the field when it is left out.
-    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-    declared_count: Option<u32>,
-    /// Catalog entries in serialized order.
+    /// The key is required and its value is a `u32`: a catalog always states
+    /// its count, because the format states it, `crate::catalog::
+    /// parse_candidate` derives the entry population from it, and `entries`
+    /// refuses a population no count can name. This declaration states no
+    /// `default`, so serde names the field when it is left out.
+    declared_count: u32,
+    /// Catalog entries in serialized order, at a population the stored count
+    /// can name.
     #[serde(default)]
-    entries: Vec<CatiaCatalogEntry>,
+    entries: crate::catalog::CountedEntries<CatiaCatalogEntry>,
 }
 
 impl CatiaCatalogWire {
@@ -1918,7 +1912,7 @@ impl CatiaCatalogWire {
             byte_offset: catalog.byte_offset,
             byte_len: catalog.byte_len,
             declared_count: catalog.declared_count(),
-            entries: Vec::new(),
+            entries: crate::catalog::CountedEntries::default(),
         }
     }
 }
@@ -1939,18 +1933,10 @@ impl TryFrom<CatiaCatalogWire> for CatiaCatalog {
     type Error = &'static str;
 
     fn try_from(wire: CatiaCatalogWire) -> Result<Self, Self::Error> {
-        // The wire states `null` only for a catalog holding more entries than
-        // the format's `u32` count can name. Such a catalog has no count to
-        // compare its entries against, so it is refused rather than admitted
-        // with an unchecked population.
-        let Some(declared_count) = wire.declared_count else {
-            return Err("catalog states no count");
-        };
-        if u32::try_from(wire.entries.len())
-            .ok()
-            .and_then(|count| count.checked_add(1))
-            != Some(declared_count)
-        {
+        // `entries` states the count its own population names. The stored key
+        // must agree with it; a catalog whose population no count can name was
+        // already refused when `entries` was built.
+        if wire.entries.declared_count() != wire.declared_count {
             return Err("catalog count disagrees with entries");
         }
         Ok(Self {
@@ -9301,17 +9287,15 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
 impl From<catalog::Catalog> for CatiaCatalog {
     fn from(catalog: catalog::Catalog) -> Self {
         let id = format!("catia:outer:catalog#{:010}", catalog.pos);
-        let entries = catalog
-            .entries
-            .into_iter()
-            .map(|entry| CatiaCatalogEntry {
-                id: format!("catia:outer:catalog-entry#{:010}", entry.pos),
-                parent: id.clone(),
-                ordinal: entry.ordinal,
-                byte_offset: entry.pos as u64,
-                value: entry.value,
-            })
-            .collect();
+        // One entry maps to one entry, so the population the parser's `u32`
+        // count named carries over with its bound intact.
+        let entries = catalog.entries.map(|entry| CatiaCatalogEntry {
+            id: format!("catia:outer:catalog-entry#{:010}", entry.pos),
+            parent: id.clone(),
+            ordinal: entry.ordinal,
+            byte_offset: entry.pos as u64,
+            value: entry.value,
+        });
         Self {
             id,
             byte_offset: catalog.pos as u64,
