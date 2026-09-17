@@ -2,7 +2,7 @@
 //!
 //! Closes vertex-coordinate quotients and enumerates face endpoint configurations.
 
-use cadmpeg_core::decode::{alloc_filled, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, work_units, WorkBudget};
 
 use super::mesh_gauge::{
     build_mesh_coordinate_gauge, canonicalize_complete_endpoint_pairs,
@@ -242,7 +242,7 @@ fn enforce_edge_arc_consistency(
             let Some(supported) = supports[edge].get(point) else {
                 return false;
             };
-            if budget.is_some_and(|budget| !budget.charge_by(supported.len().max(1))) {
+            if budget.is_some_and(|budget| !budget.charge_by(work_units(supported.len()))) {
                 return false;
             }
             supported.iter().any(|point| other_domain.contains(point))
@@ -294,7 +294,7 @@ fn enforce_edge_arc_consistency_from(
         let other_domain = domains[other].iter().copied().collect::<HashSet<_>>();
         let before = domains[root].len();
         domains[root].retain(|point| {
-            if budget.is_some_and(|budget| !budget.charge_by(candidates.len().max(1))) {
+            if budget.is_some_and(|budget| !budget.charge_by(work_units(candidates.len()))) {
                 return false;
             }
             candidates.iter().any(|pair| {
@@ -1018,7 +1018,7 @@ impl MeshQuotient {
                     .saturating_add(self.domains[node].len());
             }
         }
-        work.max(1)
+        work_units(work)
     }
 
     fn monotone_measure(&mut self) -> (usize, usize) {
@@ -1269,7 +1269,7 @@ impl MeshQuotient {
         while let Some(edge) = queue.pop_front() {
             queued.remove(&edge);
             let candidates = &edge_candidates[edge];
-            if budget.is_some_and(|budget| !budget.charge_by(candidates.len().max(1))) {
+            if budget.is_some_and(|budget| !budget.charge_by(work_units(candidates.len()))) {
                 return false;
             }
             if candidates.is_empty() {
@@ -1957,12 +1957,8 @@ impl MeshQuotient {
             let mut output = Vec::new();
             let mut seen = HashSet::new();
             let combinations = 1usize << variable_count;
-            let orientation_work = assignment
-                .boundaries
-                .iter()
-                .map(Vec::len)
-                .sum::<usize>()
-                .max(1);
+            let orientation_work =
+                work_units(assignment.boundaries.iter().map(Vec::len).sum::<usize>());
             for mask in 0..combinations {
                 if output.len() >= limit {
                     break;
@@ -2103,12 +2099,7 @@ impl MeshQuotient {
         {
             return Vec::new();
         }
-        let work = assignment
-            .boundaries
-            .iter()
-            .map(Vec::len)
-            .sum::<usize>()
-            .max(1);
+        let work = work_units(assignment.boundaries.iter().map(Vec::len).sum::<usize>());
         let mut output = Vec::new();
         let mut seen = HashSet::<MeshOrientationSignature>::new();
         for directions in direction_options.iter().take(limit) {
@@ -2187,12 +2178,7 @@ impl MeshQuotient {
         {
             return None;
         }
-        let work = assignment
-            .boundaries
-            .iter()
-            .map(Vec::len)
-            .sum::<usize>()
-            .max(1);
+        let work = work_units(assignment.boundaries.iter().map(Vec::len).sum::<usize>());
         if budget.is_some_and(|budget| !budget.charge_by(work)) {
             return None;
         }
@@ -3546,7 +3532,7 @@ fn advance_boundary_component_states(
             if !budget.charge_by(
                 candidate
                     .signature_work()
-                    .saturating_add(next_oriented.len().max(1)),
+                    .saturating_add(work_units(next_oriented.len())),
             ) {
                 return None;
             }
@@ -4928,10 +4914,14 @@ fn build_endpoint_relation_constraints(
         .collect::<Vec<_>>();
     let choice_counts = domains.iter().map(Vec::len).collect::<Vec<_>>();
     for ((face, neighbor), edges) in shared_edges {
+        // A pair is in `shared_edges` only because both faces are in
+        // `edge_faces` for the shared edge, and a face reaches `edge_faces`
+        // only through an edge one of its own choices names. Both domains
+        // therefore hold at least one choice and the charge is at least two,
+        // so the pair owes no empty-step unit.
         // Plain `+`: both operands are lengths of live allocations, so each is
-        // at most `isize::MAX` and their sum is inside `usize`. The `.max(1)`
-        // is the charge an empty pair still owes the budget.
-        let index_work = (domains[face].len() + domains[neighbor].len()).max(1);
+        // at most `isize::MAX` and their sum is inside `usize`.
+        let index_work = domains[face].len() + domains[neighbor].len();
         if !budget.charge_by(index_work) {
             return None;
         }
@@ -4959,10 +4949,8 @@ fn build_endpoint_relation_constraints(
                 })
                 .collect::<Option<Vec<_>>>()?
         } else {
-            let comparison_work = domains[face]
-                .len()
-                .saturating_mul(domains[neighbor].len())
-                .max(1);
+            let comparison_work =
+                work_units(domains[face].len().saturating_mul(domains[neighbor].len()));
             if !budget.charge_by(comparison_work) {
                 return None;
             }
@@ -5017,7 +5005,7 @@ fn propagate_endpoint_relation_domains(
     loop {
         let mut changed = false;
         for (face, choices) in domains.iter_mut().enumerate() {
-            if !budget.charge_by(choices.len().max(1)) {
+            if !budget.charge_by(work_units(choices.len())) {
                 return false;
             }
             let before = choices.len();
@@ -5080,7 +5068,7 @@ fn propagate_endpoint_relation_domains(
                 let Some(supports) = arc.supports.get(choice.id) else {
                     return false;
                 };
-                if !budget.charge_by(supports.len().max(1)) {
+                if !budget.charge_by(work_units(supports.len())) {
                     return false;
                 }
                 supports
@@ -5111,7 +5099,7 @@ fn propagate_endpoint_relation_domains(
         // or boundary-direction alternatives. Record it before branching on
         // those independent alternatives.
         for choices in domains.iter() {
-            if !budget.charge_by(choices.len().max(1)) {
+            if !budget.charge_by(work_units(choices.len())) {
                 return false;
             }
             let choice_count = choices.len();

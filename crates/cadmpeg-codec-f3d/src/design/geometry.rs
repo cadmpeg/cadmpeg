@@ -851,7 +851,7 @@ fn arrangement_retain_cycle_edges(
 ) {
     loop {
         // Each retention pass may run a BFS per edge (O(E²) worst case).
-        if !budget.charge_by(edges.len().saturating_mul(edges.len().max(1))) {
+        if !budget.charge_by(edges.len().saturating_mul(edges.len())) {
             return;
         }
         let retained = edges

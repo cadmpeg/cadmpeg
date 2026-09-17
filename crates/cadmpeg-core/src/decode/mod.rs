@@ -18,8 +18,8 @@ mod tests;
 
 pub use arena::DecodeArena;
 pub use budget::{
-    alloc_filled, refuse_local_limit, BudgetExhausted, DepthGuard, ScopedReservation, WorkBudget,
-    WorkBudgetRecursionGuard,
+    alloc_filled, refuse_local_limit, work_units, BudgetExhausted, DepthGuard, ScopedReservation,
+    WorkBudget, WorkBudgetRecursionGuard,
 };
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};

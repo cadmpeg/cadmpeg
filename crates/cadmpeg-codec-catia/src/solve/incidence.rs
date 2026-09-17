@@ -2,7 +2,7 @@
 //!
 //! Reconstructs face/edge incidence from serialized boundary domains.
 
-use cadmpeg_core::decode::{alloc_filled, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, work_units, WorkBudget};
 
 use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
@@ -799,7 +799,7 @@ impl FaceFactorGraph {
             let mut present = HashMap::<usize, Vec<u64>>::new();
             let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
             for (configuration, candidate) in domain.iter().enumerate() {
-                if !budget.charge_by(candidate.len().max(1)) {
+                if !budget.charge_by(work_units(candidate.len())) {
                     return None;
                 }
                 let word = configuration / u64::BITS as usize;
@@ -837,7 +837,7 @@ impl FaceFactorGraph {
                 let (present, matching) = &right_indexes[right];
                 let mut supports = Vec::with_capacity(domains[left].len());
                 for candidate in &domains[left] {
-                    if !budget.charge_by(candidate.len().saturating_add(word_count).max(1)) {
+                    if !budget.charge_by(work_units(candidate.len().saturating_add(word_count))) {
                         return None;
                     }
                     let mut compatible = full_configuration_mask(domains[right].len())?;
@@ -890,7 +890,7 @@ impl FaceFactorGraph {
                 if !configuration_mask_contains(&active[arc.left], configuration) {
                     continue;
                 }
-                if !budget.charge_by(supports.len().max(1)) {
+                if !budget.charge_by(work_units(supports.len())) {
                     return None;
                 }
                 if supports
@@ -1060,7 +1060,7 @@ pub(crate) fn prune_face_configuration_support(
         let mut present = HashMap::<usize, Vec<u64>>::new();
         let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
         for (configuration, candidate) in domains[right].iter().enumerate() {
-            if !budget.charge_by(candidate.len().max(1)) {
+            if !budget.charge_by(work_units(candidate.len())) {
                 return true;
             }
             let word = configuration / u64::BITS as usize;
@@ -1091,7 +1091,7 @@ pub(crate) fn prune_face_configuration_support(
         }
         let mut keep = Vec::with_capacity(domains[left].len());
         for candidate in &domains[left] {
-            if !budget.charge_by(candidate.len().saturating_add(word_count).max(1)) {
+            if !budget.charge_by(work_units(candidate.len().saturating_add(word_count))) {
                 return true;
             }
             let Ok(mut viable) = alloc_filled(word_count, u64::MAX, "catia_face_config_viable")
@@ -1149,7 +1149,7 @@ pub(crate) fn prune_face_configuration_singleton_support(
     let Some(mut active) = graph.full_state() else {
         return true;
     };
-    let active_clone_work = active.iter().map(Vec::len).sum::<usize>().max(1);
+    let active_clone_work = work_units(active.iter().map(Vec::len).sum::<usize>());
     match graph.propagate_all(&mut active, budget) {
         Some(true) => {}
         Some(false) => return false,
@@ -1736,7 +1736,7 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
                     if !budget.charge_by(
                         candidate
                             .signature_work()
-                            .saturating_add(next_oriented.len().max(1)),
+                            .saturating_add(work_units(next_oriented.len())),
                     ) {
                         return CompactBoundaryAdvanceOutcome::Exhausted;
                     }
