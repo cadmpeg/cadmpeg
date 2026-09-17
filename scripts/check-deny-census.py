@@ -1640,7 +1640,6 @@ ABSENT_KEY_NULLABLE = re.compile(
 PRESENT_FORWARDER_MACRO = re.compile(
     r"named_optional_field!\s*\(\s*(?:pub\s*(?:\([^)]*\)\s*)?)?(\w+)"
 )
-PRESENT_FORWARDER_FN = re.compile(r"\bfn\s+(\w+)\s*<")
 SERDE_DEFAULT = re.compile(r"(?:^|[(,])\s*default\s*(?:[,)]|=)")
 # A flattened field has no key of its own, so an absent key names nothing
 # about it: its own reader states which keys it reads and what their absence
@@ -1726,7 +1725,12 @@ def struct_fields(body):
 
 
 def present_forwarders():
-    """Named readers, per crate, that forward to ``absent_key::named_present``."""
+    """Named readers, per crate, declared by ``named_optional_field!``.
+
+    The macro is the one sanctioned declaration. A hand-written function that
+    calls ``absent_key::named_present`` itself states the key as an argument
+    the census cannot tie to the field, so it is not a declaration here.
+    """
     forwarders = {}
     for path in absent_key_source_files():
         crate = Path(*path.parts[:path.parts.index("src")])
@@ -1735,15 +1739,6 @@ def present_forwarders():
         )
         names = forwarders.setdefault(crate, set())
         names.update(match.group(1) for match in PRESENT_FORWARDER_MACRO.finditer(source))
-        for match in PRESENT_FORWARDER_FN.finditer(source):
-            opening = body_open(source, match.end())
-            if opening is None:
-                continue
-            end = delimited_end(source, opening)
-            if end is None:
-                continue
-            if "absent_key::named_present" in source[opening:end]:
-                names.add(match.group(1))
     return forwarders
 
 
