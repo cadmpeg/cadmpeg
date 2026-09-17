@@ -4558,8 +4558,12 @@ fn native_conic_interval_curve(
         ));
     }
     let minor_direction = minor_direction.scale(1.0 / minor_norm);
+    // `native_interval_curve`, the only caller, refuses a range that is not
+    // finite and ordered before it reaches either conic arm, so `delta` is
+    // positive and the quarter-turn count is at least one span. No floor
+    // stands here.
     let delta = parameter_range[1] - parameter_range[0];
-    let span_count = (delta / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
+    let span_count = (delta / std::f64::consts::FRAC_PI_2).ceil();
     let too_large = || {
         CodecError::NotImplemented(
             "source-less F3D conic interval exceeds addressable NURBS cardinality".into(),
@@ -4657,6 +4661,35 @@ mod native_interval_curve_tests {
         assert!((midpoint.x - 2.0).abs() < EPS_GENERATED_CURVE);
         assert!((midpoint.y - 8.0).abs() < EPS_GENERATED_CURVE);
         assert!((midpoint.z - 4.0).abs() < EPS_GENERATED_CURVE);
+    }
+
+    /// The quarter-turn span count needs no floor. `native_interval_curve`
+    /// refuses a range that is not finite and ordered before either conic arm
+    /// is reached, so the shortest range that can reach one still states a
+    /// whole span, and a range that states no span is refused at the route.
+    #[test]
+    fn the_shortest_admitted_conic_range_states_one_span() {
+        let circle = SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                5.0,
+            )
+            .unwrap(),
+        );
+        let curve = native_interval_curve(&circle, [0.0, f64::MIN_POSITIVE])
+            .expect("the shortest admitted range");
+        assert_eq!(curve.degree(), 2);
+        assert_eq!(curve.knots().len(), 6);
+        assert_eq!(curve.control_points().len(), 3);
+
+        let error =
+            native_interval_curve(&circle, [1.0, 1.0]).expect_err("a range that states no span");
+        assert!(
+            error.to_string().contains("finite ordered range"),
+            "{error}"
+        );
     }
 
     #[test]
