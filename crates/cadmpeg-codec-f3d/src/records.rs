@@ -7104,9 +7104,9 @@ struct SketchRelationSerde {
     pub unknown_constraint_bits: u64,
     #[serde(default)]
     pub member_relation_ordinals: Vec<u32>,
-    #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     pub entity_genesis: Option<u64>,
-    #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     pub pattern: Option<SketchPatternDefinition>,
     pub return_members: Vec<u32>,
     #[serde(default)]

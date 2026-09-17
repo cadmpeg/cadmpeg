@@ -98,18 +98,19 @@ enum Kept {
     },
 }
 
-/// Tolerant id probe: a non-string `id` becomes `None` instead of failing the
-/// element.
+/// Tolerant id probe: an absent or non-string `id` becomes `None` instead of
+/// failing the element. `Value` spells an absent key and a stated `null` the
+/// same way, so the probe carries one datum.
 #[derive(Deserialize)]
 struct IdProbe {
     #[serde(default)]
-    id: Option<serde_json::Value>,
+    id: serde_json::Value,
 }
 
 fn string_id(raw: &RawValue) -> Option<String> {
     let probe: IdProbe = serde_json::from_str(raw.get()).ok()?;
     match probe.id {
-        Some(serde_json::Value::String(s)) => Some(s),
+        serde_json::Value::String(s) => Some(s),
         _ => None,
     }
 }

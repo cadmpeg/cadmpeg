@@ -77,7 +77,7 @@ impl<'de> Deserialize<'de> for StateMessage<String> {
             #[serde(flatten)]
             value: StateTaggedValue,
             count_or_severity: u16,
-            #[serde(default)]
+            #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
             severity: Option<StateMessageSeverity>,
         }
         let wire = Wire::deserialize(deserializer)?;
@@ -169,5 +169,13 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("severity"));
+    }
+
+    #[test]
+    fn state_message_wire_refuses_a_null_severity() {
+        let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":256,"severity":null}"#;
+        let error = serde_json::from_str::<StateMessage<String>>(json)
+            .expect_err("a null severity is not a spelling of an absent severity");
+        assert!(error.to_string().contains("null"), "{error}");
     }
 }

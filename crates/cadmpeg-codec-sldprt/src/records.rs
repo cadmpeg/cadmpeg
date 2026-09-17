@@ -70,9 +70,9 @@ mod pmi_display_text_wire {
 
     #[derive(Deserialize)]
     pub(super) struct Wire {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         display_text: Option<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         display_text_offset: Option<u64>,
     }
 
@@ -246,9 +246,9 @@ mod tree_parent_wire {
 
     #[derive(Deserialize)]
     pub(super) struct Wire {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         tree_parent: Option<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         parent_source_id: Option<super::FeatureSource>,
     }
 
@@ -660,7 +660,7 @@ mod surface_selection_kind_wire {
 
     #[derive(Deserialize)]
     pub(super) struct Wire {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         endpoint_selector: Option<u32>,
     }
 
@@ -967,7 +967,7 @@ mod scalar_operands_wire {
 
     #[derive(Deserialize)]
     pub(super) struct Wire {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         entity_indices: Option<Vec<u16>>,
         #[serde(default)]
         operands: Vec<FeatureInputOperand>,
@@ -1086,7 +1086,7 @@ mod feature_class_wire {
     #[derive(Deserialize)]
     pub(super) struct Wire {
         name: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         role: Option<FeatureInputClassRole>,
     }
 
@@ -1259,7 +1259,7 @@ mod sketch_input_links_wire {
     pub(super) struct Wire {
         #[serde(default)]
         links: Vec<SketchInputLink>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
         link_selector: Option<u16>,
     }
 
@@ -2022,6 +2022,112 @@ mod tests {
         }
         let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(serde_json::to_value(absent).unwrap(), serde_json::json!({}));
+    }
+
+    #[test]
+    fn pmi_display_text_wire_refuses_null_for_either_key() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Display {
+            #[serde(flatten, with = "super::pmi_display_text_wire")]
+            value: Option<(String, u64)>,
+        }
+        for wire in [
+            serde_json::json!({"display_text": null, "display_text_offset": null}),
+            serde_json::json!({"display_text": null, "display_text_offset": 17}),
+            serde_json::json!({"display_text": "25 mm", "display_text_offset": null}),
+        ] {
+            assert!(
+                serde_json::from_value::<Display>(wire.clone()).is_err(),
+                "{wire}"
+            );
+        }
+        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(absent.value.is_none());
+    }
+
+    #[test]
+    fn tree_parent_wire_refuses_null_for_either_key() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Parent {
+            #[serde(flatten, with = "super::tree_parent_wire")]
+            parent: Option<super::TreeParent>,
+        }
+        for wire in [
+            serde_json::json!({"tree_parent": null}),
+            serde_json::json!({"parent_source_id": null}),
+            serde_json::json!({"tree_parent": "record", "parent_source_id": null}),
+        ] {
+            assert!(
+                serde_json::from_value::<Parent>(wire.clone()).is_err(),
+                "{wire}"
+            );
+        }
+        let absent: Parent = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(absent.parent.is_none());
+    }
+
+    #[test]
+    fn surface_selection_kind_wire_refuses_a_null_selector() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Selection {
+            #[serde(flatten, with = "super::surface_selection_kind_wire")]
+            kind: super::FeatureInputSurfaceSelectionKind,
+        }
+        assert!(serde_json::from_value::<Selection>(
+            serde_json::json!({"endpoint_selector": null})
+        )
+        .is_err());
+        let absent: Selection = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(
+            absent.kind,
+            super::FeatureInputSurfaceSelectionKind::Component
+        );
+    }
+
+    #[test]
+    fn scalar_operands_wire_refuses_null_entity_indices() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Operands {
+            #[serde(flatten, with = "super::scalar_operands_wire")]
+            operands: Vec<super::FeatureInputOperand>,
+        }
+        assert!(
+            serde_json::from_value::<Operands>(serde_json::json!({"entity_indices": null}))
+                .is_err()
+        );
+        let absent: Operands = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(absent.operands.is_empty());
+    }
+
+    #[test]
+    fn feature_class_wire_refuses_a_null_role() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Class {
+            #[serde(flatten, with = "super::feature_class_wire")]
+            name: String,
+        }
+        assert!(serde_json::from_value::<Class>(
+            serde_json::json!({"name": "sgEntHandle", "role": null})
+        )
+        .is_err());
+        let absent: Class =
+            serde_json::from_value(serde_json::json!({"name": "sgEntHandle"})).unwrap();
+        assert_eq!(absent.name, "sgEntHandle");
+    }
+
+    #[test]
+    fn sketch_input_links_wire_refuses_a_null_selector() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Links {
+            #[serde(flatten, with = "super::sketch_input_links_wire")]
+            links: Option<super::SketchInputLinks>,
+        }
+        assert!(serde_json::from_value::<Links>(
+            serde_json::json!({"links": [], "link_selector": null})
+        )
+        .is_err());
+        let absent: Links = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(absent.links.is_none());
     }
 
     #[test]
