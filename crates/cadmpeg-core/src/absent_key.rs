@@ -93,7 +93,7 @@ where
 /// ```
 /// cadmpeg_core::named_optional_field!(deserialize_label, String, "label");
 ///
-/// #[derive(serde::Deserialize)]
+/// #[derive(Debug, serde::Deserialize)]
 /// struct Wire {
 ///     #[serde(default, deserialize_with = "deserialize_label")]
 ///     label: Option<String>,
