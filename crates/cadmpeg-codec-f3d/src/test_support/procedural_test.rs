@@ -54,7 +54,7 @@ pub(crate) fn generated_form_two_par_int_cur(first: [f64; 2], second: [f64; 2]) 
     push_tagged_i64(&mut scope, 0x15, 2);
     for bound in [0.0, 1.0] {
         scope.push(0x0a);
-        push_tagged_f64(&mut scope, bound);
+        t_dbl(&mut scope, bound);
     }
     push_tagged_i64(&mut scope, 0x15, 0);
     t_ident(&mut scope, "spline");
@@ -70,12 +70,12 @@ pub(crate) fn generated_form_two_par_int_cur(first: [f64; 2], second: [f64; 2]) 
     push_tagged_i64(&mut scope, 0x15, 0);
     push_tagged_i64(&mut scope, 0x04, 2);
     for (knot, multiplicity) in [(0.0, 1i64), (1.0, 1)] {
-        push_tagged_f64(&mut scope, knot);
+        t_dbl(&mut scope, knot);
         push_tagged_i64(&mut scope, 0x04, multiplicity);
     }
     for [u, v] in [first, second] {
-        push_tagged_f64(&mut scope, u);
-        push_tagged_f64(&mut scope, v);
+        t_dbl(&mut scope, u);
+        t_dbl(&mut scope, v);
     }
     t_ident(&mut scope, "nullbs");
     push_tagged_i64(&mut scope, 0x04, 0);

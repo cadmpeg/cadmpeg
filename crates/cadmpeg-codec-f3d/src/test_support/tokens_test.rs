@@ -94,11 +94,6 @@ pub(crate) fn t_str(b: &mut Vec<u8>, s: &str) {
     b.extend_from_slice(s.as_bytes());
 }
 
-pub(crate) fn push_tagged_f64(b: &mut Vec<u8>, v: f64) {
-    b.push(0x06);
-    b.extend_from_slice(&v.to_le_bytes());
-}
-
 /// Push a `tag`-prefixed little-endian i64 (used for `0x04` longs and `0x15`
 /// enum values in B-spline block fixtures).
 pub(crate) fn push_tagged_i64(b: &mut Vec<u8>, tag: u8, v: i64) {

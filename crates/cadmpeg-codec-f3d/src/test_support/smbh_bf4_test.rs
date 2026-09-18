@@ -44,12 +44,12 @@ pub(crate) fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
     tagged_i32(&mut curve, 0x15, 0);
     tagged_i32(&mut curve, 0x04, 2);
     for (knot, multiplicity) in [(0.0, 2), (1.0, 2)] {
-        push_tagged_f64(&mut curve, knot);
+        t_dbl(&mut curve, knot);
         tagged_i32(&mut curve, 0x04, multiplicity);
     }
     for point in [[0.0, 0.0, 0.0], [0.5, 0.5, 0.0], [1.0, 0.0, 0.0]] {
         for coordinate in point {
-            push_tagged_f64(&mut curve, coordinate);
+            t_dbl(&mut curve, coordinate);
         }
     }
     t_dbl(&mut curve, 0.0005);
