@@ -6,6 +6,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
+use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
@@ -251,10 +252,6 @@ fn parse_decal_asset_record(
         asset_name,
     )
     .ok()
-}
-
-fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
-    (bytes.get(at) == Some(&1)).then(|| View::u32_le_at(bytes, at + 1))?
 }
 
 #[cfg(test)]

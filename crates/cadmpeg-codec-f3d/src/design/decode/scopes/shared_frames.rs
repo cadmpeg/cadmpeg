@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Small record-reference, transform and fixed-scalar frame readers shared by several scope families.
+//! Small record-reference, transform, fixed-scalar and operation-code readers shared by several
+//! scope families.
 
 use crate::bytes::f64s_at;
 use crate::bytes::lp_ascii_filtered;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::records::feature::extrude::DesignExtrudeOperation;
 use cadmpeg_core::decode::View;
 
 pub(crate) fn exact_indexed_header_at(
@@ -97,9 +99,23 @@ pub(super) fn exact_fixed_scalar(
     Some(*candidate)
 }
 
+pub(crate) fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
+    (bytes.get(at) == Some(&1)).then(|| View::u32_le_at(bytes, at + 1))?
+}
+
 pub(crate) fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
     if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
         return None;
     }
     View::u32_le_at(bytes, at + 1)
+}
+
+pub(super) fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
+    match View::u32_le_at(bytes, offset)? {
+        1 => Some(DesignExtrudeOperation::Join),
+        2 => Some(DesignExtrudeOperation::Cut),
+        3 => Some(DesignExtrudeOperation::Intersect),
+        4 => Some(DesignExtrudeOperation::NewBody),
+        _ => None,
+    }
 }

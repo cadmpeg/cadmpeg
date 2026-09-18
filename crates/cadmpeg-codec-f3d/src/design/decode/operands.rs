@@ -15,6 +15,7 @@ use crate::design::decode::dimension_frames::{
 };
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
+use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
     indexed_record_header_at, next_indexed_record_offset, next_indexed_record_offset_with_index,
     IndexedRecordOffsets,
@@ -4521,13 +4522,6 @@ fn parse_sketch_profile_region_selection(
         companion_class_tag: companion_class_tag.try_into().ok()?,
         companion_byte_offset: u64::try_from(companion_at).ok()?,
     })
-}
-
-fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
-    if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
-        return None;
-    }
-    View::u32_le_at(bytes, at + 1)
 }
 
 struct ParsedRecipeOperand {

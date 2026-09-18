@@ -2,6 +2,7 @@
 //! Parse solid primitive construction frames and their parameter owners.
 
 use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
 use crate::bytes::is_guid_relaxed;
@@ -32,7 +33,7 @@ pub(crate) fn exact_solid_primitive(
         "SpherePrimitive" | "TorusPrimitive" => {
             let operation_offset = start.checked_add(25)?;
             (
-                primitive_operation(bytes, operation_offset)?,
+                extrude_operation_at(bytes, operation_offset)?,
                 operation_offset,
                 None,
             )
@@ -40,7 +41,7 @@ pub(crate) fn exact_solid_primitive(
         "BoxPrimitive" => {
             let operation_offset = exact_named_solid_primitive_operation(bytes, start)?;
             (
-                primitive_operation(bytes, operation_offset)?,
+                extrude_operation_at(bytes, operation_offset)?,
                 operation_offset,
                 None,
             )
@@ -48,7 +49,7 @@ pub(crate) fn exact_solid_primitive(
         "CylinderPrimitive" => {
             if let Some(operation_offset) = exact_named_solid_primitive_operation(bytes, start) {
                 (
-                    primitive_operation(bytes, operation_offset)?,
+                    extrude_operation_at(bytes, operation_offset)?,
                     operation_offset,
                     None,
                 )
@@ -272,7 +273,7 @@ fn exact_shifted_cylinder_primitive_prologue(
         return None;
     }
     let operation_offset = start.checked_add(operation)?;
-    let operation = primitive_operation(bytes, operation_offset)?;
+    let operation = extrude_operation_at(bytes, operation_offset)?;
     if bytes.get(start + first_reference) != Some(&1)
         || bytes.get(start + first_reference + 1) != Some(&1)
         || View::u32_le_at(bytes, start + first_reference + 2)?
@@ -442,16 +443,6 @@ fn cylinder_transform_preserves_projected_geometry(transform: &[[f64; 4]; 4]) ->
         && transform[0][2].abs() <= EPS_CYLINDER_FRAME
         && transform[1][2].abs() <= EPS_CYLINDER_FRAME
         && (transform[2][2] - 1.0).abs() <= EPS_CYLINDER_FRAME
-}
-
-fn primitive_operation(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
-    match View::u32_le_at(bytes, offset)? {
-        1 => Some(DesignExtrudeOperation::Join),
-        2 => Some(DesignExtrudeOperation::Cut),
-        3 => Some(DesignExtrudeOperation::Intersect),
-        4 => Some(DesignExtrudeOperation::NewBody),
-        _ => None,
-    }
 }
 
 fn exact_owned_primitive_parameters<'a>(

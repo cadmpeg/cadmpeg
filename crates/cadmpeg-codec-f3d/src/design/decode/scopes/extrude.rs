@@ -3,6 +3,7 @@
 
 use super::legacy_class_397;
 use super::legacy_class_415;
+use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
 use crate::bytes::is_guid_relaxed;
@@ -31,23 +32,12 @@ use crate::layout::shifted_reference_aware_extrude_class_323_symmetric_prefix as
 use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_reference_aware_323_tail;
 use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
 use crate::records::feature::extrude::DesignExtrudeExtent;
-use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudePrologueReference;
 use crate::records::feature::extrude::DesignExtrudeStart;
 use crate::records::feature::extrude::DesignExtrudeTargetOrdinal;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
-
-fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
-    match View::u32_le_at(bytes, offset)? {
-        1 => Some(DesignExtrudeOperation::Join),
-        2 => Some(DesignExtrudeOperation::Cut),
-        3 => Some(DesignExtrudeOperation::Intersect),
-        4 => Some(DesignExtrudeOperation::NewBody),
-        _ => None,
-    }
-}
 
 fn flag_byte_at(bytes: &[u8], offset: usize) -> Option<bool> {
     match bytes.get(offset)? {
