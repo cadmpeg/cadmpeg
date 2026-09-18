@@ -6211,7 +6211,7 @@ pub(crate) fn same_cone_generator_pair(
         origin.y + apex_offset * axis.y,
         origin.z + apex_offset * axis.z,
     );
-    if ![apex.x, apex.y, apex.z].into_iter().all(f64::is_finite) {
+    if !apex.is_finite() {
         return false;
     }
     let segment = end.vector_from(start);
@@ -9656,10 +9656,7 @@ fn plane_intersection_line(
         scaled_origin.y / direction_length,
         scaled_origin.z / direction_length,
     );
-    [origin.x, origin.y, origin.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some((origin, direction))
+    origin.is_finite().then_some((origin, direction))
 }
 
 pub(crate) fn plane_for_face(

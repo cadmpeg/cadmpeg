@@ -488,15 +488,8 @@ pub(crate) fn solve_e5_plane_frame(
 ) -> Option<(Vector3, Vector3, [f64; 2])> {
     if !origin.into_iter().all(f64::is_finite)
         || topology.vertex_refs.len() != points.len()
-        || points
-            .iter()
-            .copied()
-            .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
-        || expected_normal.is_some_and(|normal| {
-            ![normal.x, normal.y, normal.z]
-                .into_iter()
-                .all(f64::is_finite)
-        })
+        || points.iter().copied().any(|point| !point.is_finite())
+        || expected_normal.is_some_and(|normal| !normal.is_finite())
     {
         return None;
     }
@@ -662,10 +655,7 @@ pub(crate) fn solve_e5_plane_frame(
         )) else {
             continue;
         };
-        if ![normal.x, normal.y, normal.z]
-            .into_iter()
-            .all(f64::is_finite)
-        {
+        if !normal.is_finite() {
             continue;
         }
         if expected_normal.is_some_and(|expected| {
@@ -772,10 +762,9 @@ pub(crate) fn fit_e5_plane_axes(
     pairs: &[([f64; 2], Point3)],
 ) -> Option<(Vector3, Vector3, f64)> {
     if !origin.into_iter().all(f64::is_finite)
-        || pairs.iter().any(|(uv, point)| {
-            !uv.iter().copied().all(f64::is_finite)
-                || ![point.x, point.y, point.z].into_iter().all(f64::is_finite)
-        })
+        || pairs
+            .iter()
+            .any(|(uv, point)| !uv.iter().copied().all(f64::is_finite) || !point.is_finite())
     {
         return None;
     }
@@ -864,13 +853,10 @@ pub(crate) fn fit_rank_one_e5_plane_axes(
     normal: Vector3,
 ) -> Option<(Vector3, Vector3, f64)> {
     if !origin.into_iter().all(f64::is_finite)
-        || ![normal.x, normal.y, normal.z]
-            .into_iter()
-            .all(f64::is_finite)
-        || pairs.iter().any(|(uv, point)| {
-            !uv.iter().copied().all(f64::is_finite)
-                || ![point.x, point.y, point.z].into_iter().all(f64::is_finite)
-        })
+        || !normal.is_finite()
+        || pairs
+            .iter()
+            .any(|(uv, point)| !uv.iter().copied().all(f64::is_finite) || !point.is_finite())
     {
         return None;
     }
@@ -2382,12 +2368,8 @@ pub(crate) fn e5_boundary_curve(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
-    let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
-    let finite_vector = |vector: Vector3| {
-        [vector.x, vector.y, vector.z]
-            .into_iter()
-            .all(f64::is_finite)
-    };
+    let finite_point = |point: Point3| point.is_finite();
+    let finite_vector = |vector: Vector3| vector.is_finite();
     if !uv_scale
         .into_iter()
         .all(|value| value.is_finite() && value != 0.0)
