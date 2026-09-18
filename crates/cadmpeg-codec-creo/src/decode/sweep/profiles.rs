@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch profile connectivity, intersection, and containment.
 
-use super::super::holes::ExtrusionSpan;
+use super::super::holes::placement::ExtrusionSpan;
 use super::super::uniqueness::exactly_one;
 use super::nurbs::{oriented_sketch_nurbs_curve, sketch_nurbs_curve, sketch_nurbs_pcurve};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;

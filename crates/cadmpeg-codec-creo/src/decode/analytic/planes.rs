@@ -16,7 +16,7 @@ use cadmpeg_ir::ids::SurfaceId;
 use crate::container::ContainerScan;
 use crate::curve::CurveTopologyRow;
 
-use super::super::holes::plane_envelope_corners;
+use super::super::holes::placement::plane_envelope_corners;
 use super::super::surfaces::{
     fc05_cap_pair_model_frame, fc05_model_frame, intersect_plane_with_carrier_components,
 };

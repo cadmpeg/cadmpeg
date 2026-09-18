@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema, thicken, datum, and sweep-admission feature definitions.
 
-use super::super::holes::{
-    circular_sweep_feature_definition, circular_sweep_geometry, compact_simple_hole_cylinder_id,
-    compact_simple_hole_geometry, counterbore_axis_placement, counterbore_dimensions,
-    counterbore_directed_placement, extrusion_extent_and_direction, hole_placement,
+use super::super::holes::counterbore::{
+    counterbore_axis_placement, counterbore_dimensions, counterbore_directed_placement,
+};
+use super::super::holes::drilled::{
     simple_drilled_hole_axis_placement, simple_drilled_hole_dimensions,
     simple_drilled_hole_envelope_spans, simple_drilled_hole_placement, simple_drilled_hole_recipe,
-    simple_hole_geometry, stepped_hole_form,
+    stepped_hole_form,
+};
+use super::super::holes::placement::hole_placement;
+use super::super::holes::sweep::{
+    circular_sweep_feature_definition, circular_sweep_geometry, compact_simple_hole_cylinder_id,
+    compact_simple_hole_geometry, extrusion_extent_and_direction, simple_hole_geometry,
 };
 use super::super::sketch::approximately_equal;
 use super::super::sketch_ids::{feature_sketch_record_id_in_scan, model_sketch_id};

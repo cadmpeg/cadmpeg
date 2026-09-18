@@ -11,7 +11,8 @@ use crate::decode::feature_history::{
     section_sweep_allows_linear_extrusion, section_sweep_boolean_operation,
     surface_transition_dependencies, sweep_output_kind, thicken_plane_offset,
 };
-use crate::decode::holes::{extrusion_extent_and_direction, ExtrusionSpan};
+use crate::decode::holes::placement::ExtrusionSpan;
+use crate::decode::holes::sweep::extrusion_extent_and_direction;
 use crate::decode::sketch_transfer::recipe::{
     current_additive_feature_recipe, current_feature_recipe, current_feature_recipe_parent,
 };

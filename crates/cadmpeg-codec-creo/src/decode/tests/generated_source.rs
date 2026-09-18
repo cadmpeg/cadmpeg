@@ -11,16 +11,19 @@ use crate::decode::feature_history::{
     schema_feature_definition, section_entity_is_generated_profile,
     section_generated_profile_surface_kinds,
 };
-use crate::decode::holes::{
-    clipped_drilled_hole_placement_from_cone_points, counterbore_axis_placement_from_sources,
-    counterbore_cylinder_sources, counterbore_dimension_values, counterbore_directed_span,
-    counterbore_envelope_dimension_values, counterbore_placement_from_corner_envelopes,
-    counterbore_source_patch_geometries, counterbore_support_axis_placement,
-    counterbore_unenveloped_dimension_values, dimension_pair_matches_envelope_spans,
+use crate::decode::holes::counterbore::{
+    counterbore_axis_placement_from_sources, counterbore_cylinder_sources,
+    counterbore_dimension_values, counterbore_directed_span, counterbore_envelope_dimension_values,
+    counterbore_placement_from_corner_envelopes, counterbore_source_patch_geometries,
+    counterbore_support_axis_placement, counterbore_unenveloped_dimension_values,
+};
+use crate::decode::holes::drilled::{
+    clipped_drilled_hole_placement_from_cone_points, dimension_pair_matches_envelope_spans,
     drilled_hole_placement_from_corner_envelopes, paired_corner_envelope_axis_spans,
     simple_drilled_axis_placement_from_frames, simple_drilled_hole_dimension_values,
-    simple_drilled_hole_recipe, stepped_hole_form, ExtrusionSpan, SimpleDrilledDimensionFamily,
+    simple_drilled_hole_recipe, stepped_hole_form, SimpleDrilledDimensionFamily,
 };
+use crate::decode::holes::placement::ExtrusionSpan;
 use crate::decode::sketch::approximately_equal;
 use crate::decode::surfaces::rowless_round_cylinder_pairs;
 use crate::decode::sweep::profiles::ProfileEntity;

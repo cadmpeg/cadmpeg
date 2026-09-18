@@ -11,9 +11,10 @@ use crate::decode::feature_history::{
     schema_feature_definition, section_entity_is_generated_profile, slot_fillet_cylinder,
     unique_positive_length,
 };
-use crate::decode::holes::{
+use crate::decode::holes::placement::ExtrusionSpan;
+use crate::decode::holes::sweep::{
     compact_simple_hole_cylinder_id, extrusion_extent_and_direction,
-    single_cap_circular_sweep_geometry, two_cap_circular_sweep_geometry, ExtrusionSpan,
+    single_cap_circular_sweep_geometry, two_cap_circular_sweep_geometry,
 };
 use crate::decode::surfaces::{
     reference_cap_bound_round_frame, reference_circle_pair_cylinder_frame,

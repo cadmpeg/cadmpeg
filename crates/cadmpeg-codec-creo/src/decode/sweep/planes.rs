@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature plane equations and generated cylinder and cap extents.
 
-use super::super::holes::blind_extrude_side;
+use super::super::holes::sweep::blind_extrude_side;
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
