@@ -13,7 +13,7 @@ use crate::native::ufrx::UfrxRecord;
 use crate::native::{AssemblyPlacementRecordWire, StructuralIssueRecord};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
-use crate::test_support::{fixture_with_ufrx, primary_envelope_fixture};
+use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::InventorCodec;
 
 #[test]
