@@ -237,7 +237,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "primitive origin is invalid"));
             continue;
         };
-        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+        if !origin.is_finite() {
             losses.push(entity_loss(entry, "primitive origin is non-finite"));
             continue;
         }
@@ -307,12 +307,12 @@ pub(super) fn project(
             (Some(Vector3::new(0.0, 0.0, 0.0)), 3)
         };
         let direction = vector_or(record, direction_start, Vector3::new(0.0, 0.0, 1.0));
-        if origin.is_none_or(|origin| {
-            !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite()
-        }) || direction.is_none_or(|direction| {
-            declared_unit_vector(record, direction_start, direction, global.real_precision())
-                .is_none()
-        }) {
+        if origin.is_none_or(|origin| !origin.is_finite())
+            || direction.is_none_or(|direction| {
+                declared_unit_vector(record, direction_start, direction, global.real_precision())
+                    .is_none()
+            })
+        {
             losses.push(entity_loss(entry, "solid sweep axis is invalid"));
             continue;
         }

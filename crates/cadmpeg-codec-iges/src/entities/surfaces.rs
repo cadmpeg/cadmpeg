@@ -145,10 +145,7 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
             curve.degree() == 1
                 && curve.weights().is_none()
                 && curve.control_points().len() == 2
-                && curve
-                    .control_points()
-                    .iter()
-                    .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
+                && curve.control_points().iter().all(Point3::is_finite)
                 && curve.control_points()[0]
                     .distance(curve.control_points()[1])
                     .is_finite()

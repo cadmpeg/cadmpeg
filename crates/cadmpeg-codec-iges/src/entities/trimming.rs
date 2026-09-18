@@ -729,7 +729,7 @@ fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<
             None,
             parameter,
         )
-        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        .filter(Point3::is_finite)
     })
     .collect()
 }

@@ -113,7 +113,7 @@ impl CompositePointContext<'_, '_, '_, '_> {
             y * self.global.length_factor_mm(),
             z * self.global.length_factor_mm(),
         ));
-        (point.x.is_finite() && point.y.is_finite() && point.z.is_finite()).then_some(point)
+        (point.is_finite()).then_some(point)
     }
 }
 
@@ -395,7 +395,7 @@ fn euclidean_control_points(
             return None;
         }
         let point = Point3::new(x / weight, y / weight, z / weight);
-        if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+        if !point.is_finite() {
             return None;
         }
         control_points.push(point);
