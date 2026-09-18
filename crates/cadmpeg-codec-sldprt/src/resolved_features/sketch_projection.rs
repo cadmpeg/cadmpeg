@@ -44,7 +44,7 @@ pub(crate) fn sketches(
             source.ordinal()
         );
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
-            let brep = crate::brep::decode(&stream.payload, &stream.header, source_stream)?;
+            let brep = crate::brep::graph::decode(&stream.payload, &stream.header, source_stream)?;
             project_brep(
                 &brep,
                 source.ordinal(),
@@ -70,7 +70,7 @@ pub(crate) fn sketches(
 
 #[allow(clippy::too_many_arguments)]
 fn project_brep(
-    brep: &crate::brep::Brep,
+    brep: &crate::brep::graph::Brep,
     block_offset: usize,
     stream_ordinal: usize,
     stream_offset: usize,

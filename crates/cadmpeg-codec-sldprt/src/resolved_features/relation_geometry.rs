@@ -2764,7 +2764,7 @@ fn relation_parameter_matches_display_scalar(
                     same_dimension_length(value.get(), scalar.value * 1000.0)
                 }
                 Some(cadmpeg_ir::features::ParameterValue::Integer(value)) => {
-                    crate::history::exact_integer_f64(*value)
+                    crate::history::parameters::eval::exact_integer_f64(*value)
                         .is_some_and(|value| same_dimension_length(value, scalar.value * 1000.0))
                 }
                 // An untyped native real is still in the source scalar's SI

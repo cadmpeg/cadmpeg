@@ -207,7 +207,7 @@ pub(crate) fn enrich_history_reference_planes(
             let offset_frames = feature
                 .parameters
                 .get("D1")
-                .and_then(|value| crate::history::parse_dimension_length_mm(value))
+                .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
                 .and_then(|distance| offset_reference_plane_frame_pair(bytes, distance));
             if let Some((offset, reference)) = offset_frames {
                 reference_frame_candidates
@@ -413,7 +413,7 @@ pub(crate) fn enrich_history_reference_planes(
         let Some(distance) = feature
             .parameters
             .get("D1")
-            .and_then(|value| crate::history::parse_dimension_length_mm(value))
+            .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
         else {
             continue;
         };
@@ -437,7 +437,7 @@ pub(crate) fn enrich_history_reference_planes(
                 if let Some(distance) = histories[history_index].features[feature_index]
                     .parameters
                     .get("D1")
-                    .and_then(|value| crate::history::parse_dimension_length_mm(value))
+                    .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
                 {
                     let compatible = sources
                         .iter()
@@ -1674,7 +1674,7 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
 
-    let Ok(projected) = crate::history::project_features(histories) else {
+    let Ok(projected) = crate::history::project::project_features(histories) else {
         return;
     };
     let plane_frames = sketch_plane_frames(&projected, histories);
@@ -1722,8 +1722,12 @@ pub(crate) fn enrich_history_reference_axes(
                 let frames = indices.map(|index| {
                     let feature = &history.features[index];
                     Some((
-                        crate::history::parse_point3_mm(feature.properties.get("Origin")?)?,
-                        crate::history::parse_vector3(feature.properties.get("Direction")?)?,
+                        crate::history::literals::parse_point3_mm(
+                            feature.properties.get("Origin")?,
+                        )?,
+                        crate::history::literals::parse_vector3(
+                            feature.properties.get("Direction")?,
+                        )?,
                     ))
                 });
                 let (missing, frame) = complete_reference_axis_triad(frames)?;

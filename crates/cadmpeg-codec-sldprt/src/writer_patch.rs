@@ -92,7 +92,7 @@ fn patch_partition_inner(
     // an absent patch: it travels the error channel this function already uses
     // below, so the caller's `.transpose()` reports the cause instead of "no
     // patch".
-    let native = match crate::brep::decode_bodies(
+    let native = match crate::brep::graph::decode_bodies(
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
     ) {
@@ -145,7 +145,7 @@ fn patch_partition_inner(
 fn validate_changed_annotations(
     ir: &CadIr,
     annotations: &Annotations,
-    native: &crate::brep::Brep,
+    native: &crate::brep::graph::Brep,
     section: &str,
 ) -> Result<(), CodecError> {
     let points = native
@@ -238,7 +238,7 @@ fn site_key(block: &crate::container::Block) -> String {
     key.trim_end_matches(['-', '/', '_']).to_string()
 }
 
-fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
+fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
     ir.model
         .bodies
         .iter()
@@ -371,7 +371,7 @@ fn curve_class(value: &CurveGeometry) -> u8 {
 fn patch_points(
     ir: &CadIr,
     annotations: &Annotations,
-    native: &crate::brep::Brep,
+    native: &crate::brep::graph::Brep,
     payload: &mut [u8],
     body_start: usize,
     scale: f64,
@@ -414,7 +414,7 @@ fn patch_points(
 fn patch_surfaces(
     ir: &CadIr,
     annotations: &Annotations,
-    native: &crate::brep::Brep,
+    native: &crate::brep::graph::Brep,
     payload: &mut [u8],
     body_start: usize,
     scale: f64,
@@ -439,7 +439,7 @@ fn patch_surfaces(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(new)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(old)),
             ) => {
-                crate::brep::patch_nurbs_surface(
+                crate::brep::spline::patch_nurbs_surface(
                     payload.get_mut(body_start..)?,
                     raw_annotation_offset(annotations, &surface.id).ok()?,
                     old,
@@ -467,7 +467,7 @@ fn patch_surfaces(
 fn patch_curves(
     ir: &CadIr,
     annotations: &Annotations,
-    native: &crate::brep::Brep,
+    native: &crate::brep::graph::Brep,
     payload: &mut [u8],
     body_start: usize,
     scale: f64,
@@ -492,7 +492,7 @@ fn patch_curves(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(new)),
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(old)),
             ) => {
-                crate::brep::patch_nurbs_curve(
+                crate::brep::spline::patch_nurbs_curve(
                     payload.get_mut(body_start..)?,
                     raw_annotation_offset(annotations, &curve.id).ok()?,
                     old,

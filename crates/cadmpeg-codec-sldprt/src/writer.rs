@@ -71,22 +71,27 @@ pub(crate) fn write_semantic_with_records(
     assign_configuration_indices(&mut normalized.model.configurations)?;
     let source_scan = source_image(retained_records).map(crate::container::scan_bytes);
     let retained_partition = retained_partition(&normalized, source_scan.as_ref())?;
-    let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
+    let feature_name_changes =
+        crate::history::write::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
-        && crate::history::native_parameters_match_source(&normalized, native.as_ref())?;
-    crate::history::apply_feature_name_changes(
+        && crate::history::write::native_parameters_match_source(&normalized, native.as_ref())?;
+    crate::history::write::apply_feature_name_changes(
         &mut normalized.model.parameters,
         &feature_name_changes,
     );
     let ir = &normalized;
-    let feature_input_renames = crate::history::prepare_features_for_write(ir, &mut native)?;
+    let feature_input_renames = crate::history::write::prepare_features_for_write(ir, &mut native)?;
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
-    crate::history::prepare_parameters_for_write(
+    crate::history::write::parameters::prepare_parameters_for_write(
         ir,
         &mut native,
         feature_parameter_changes_authorized,
     )?;
-    crate::history::prepare_configurations_for_write(ir, &mut native, annotations)?;
+    crate::history::write::configurations::prepare_configurations_for_write(
+        ir,
+        &mut native,
+        annotations,
+    )?;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
     if !validation.is_ok() {
         let detail = validation

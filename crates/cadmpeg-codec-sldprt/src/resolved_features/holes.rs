@@ -279,7 +279,9 @@ pub(crate) fn enrich_history_hole_constructions(
                             let successor = successors.next()?;
                             if successors.next().is_some()
                                 || classify(successor) != Some(FeatureClass::Sketch)
-                                || !crate::history::is_hole_profile_construction(successor)
+                                || !crate::history::project::solid::is_hole_profile_construction(
+                                    successor,
+                                )
                             {
                                 return None;
                             }
@@ -308,7 +310,9 @@ pub(crate) fn enrich_history_hole_constructions(
                                 .source_value()
                                 .is_some_and(|source| adjacent_sources.contains(&source))
                                 && classify(candidate) == Some(FeatureClass::Sketch)
-                                && crate::history::is_hole_profile_construction(candidate)
+                                && crate::history::project::solid::is_hole_profile_construction(
+                                    candidate,
+                                )
                         });
                         let profile = profiles.next()?;
                         profiles.next().is_none().then_some(profile)
@@ -327,7 +331,9 @@ pub(crate) fn enrich_history_hole_constructions(
                             .source_value()
                             .is_some_and(|source| lower < source && source < upper)
                             && classify(candidate) == Some(FeatureClass::Sketch)
-                            && crate::history::is_hole_profile_construction(candidate)
+                            && crate::history::project::solid::is_hole_profile_construction(
+                                candidate,
+                            )
                     });
                     let bounded_profile = bounded_profiles.next();
                     if bounded_profiles.next().is_some() {
@@ -348,7 +354,9 @@ pub(crate) fn enrich_history_hole_constructions(
                         adjacent_ordinals.contains(&candidate.ordinal)
                             && candidate.id != position.id
                             && classify(candidate) == Some(FeatureClass::Sketch)
-                            && crate::history::is_hole_profile_construction(candidate)
+                            && crate::history::project::solid::is_hole_profile_construction(
+                                candidate,
+                            )
                     });
                     let profile = profiles.next()?;
                     profiles.next().is_none().then_some((profile, 1_u8))
@@ -376,9 +384,9 @@ pub(crate) fn enrich_history_hole_constructions(
                     {
                         return None;
                     }
-                    let mut profiles = children
-                        .into_iter()
-                        .filter(|child| crate::history::is_hole_profile_construction(child));
+                    let mut profiles = children.into_iter().filter(|child| {
+                        crate::history::project::solid::is_hole_profile_construction(child)
+                    });
                     let profile = profiles.next()?;
                     profiles.next().is_none().then_some((profile, 1_u8))
                 };
@@ -459,7 +467,7 @@ pub(crate) fn enrich_history_hole_constructions(
                             .source_value()
                             .is_some_and(|candidate| source < candidate && candidate < upper)
                         && classify(candidate) == Some(FeatureClass::Sketch)
-                        && crate::history::is_hole_profile_construction(candidate)
+                        && crate::history::project::solid::is_hole_profile_construction(candidate)
                 });
                 let profile = profiles.next()?;
                 profiles.next().is_none().then(|| {
@@ -521,7 +529,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                     .chain(selection.terminal_feature_ref.iter())
                     .filter_map(|producer| features_by_id.get(producer.as_str()).copied())
                     .filter_map(|producer| {
-                        crate::history::threaded_hole_major_diameter(
+                        crate::history::project::solid::threaded_hole_major_diameter(
                             producer,
                             &features_by_source,
                             &history.features,
@@ -557,7 +565,10 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
             }
             feature.parameters.insert(
                 cadmpeg_core::nonblank_literal!("D2"),
-                format!("<MOD-DIAM>{}", crate::history::format_length_mm(diameter)),
+                format!(
+                    "<MOD-DIAM>{}",
+                    crate::history::literals::format_length_mm(diameter)
+                ),
             );
         }
     }
@@ -673,27 +684,27 @@ fn profiled_hole_construction_with_evidence(
     let mut diameters = expressions
         .iter()
         .copied()
-        .filter_map(|value| crate::history::strip_diameter_modifier(value))
-        .filter_map(crate::history::parse_dimension_length_mm)
+        .filter_map(|value| crate::history::literals::strip_diameter_modifier(value))
+        .filter_map(crate::history::literals::parse_dimension_length_mm)
         .filter(|value| value.is_finite() && *value > 0.0)
         .collect::<Vec<_>>();
     let mut angles = expressions
         .iter()
         .copied()
-        .filter_map(crate::history::parse_bounded_angle_rad)
+        .filter_map(crate::history::literals::parse_bounded_angle_rad)
         .collect::<Vec<_>>();
     let flat_bottom = expressions.iter().copied().any(|value| {
-        crate::history::parse_angle_rad(value)
+        crate::history::literals::parse_angle_rad(value)
             .is_some_and(|angle| (angle - std::f64::consts::PI).abs() <= EPS_HOLE_EXACT_GEOMETRY)
     });
     let mut lengths = expressions
         .iter()
         .copied()
         .filter(|value| {
-            crate::history::strip_diameter_modifier(value).is_none()
-                && crate::history::parse_bounded_angle_rad(value).is_none()
+            crate::history::literals::strip_diameter_modifier(value).is_none()
+                && crate::history::literals::parse_bounded_angle_rad(value).is_none()
         })
-        .filter_map(crate::history::parse_dimension_length_mm)
+        .filter_map(crate::history::literals::parse_dimension_length_mm)
         .filter(|value| value.is_finite() && *value > 0.0)
         .collect::<Vec<_>>();
     diameters.sort_by(f64::total_cmp);
@@ -702,7 +713,7 @@ fn profiled_hole_construction_with_evidence(
     angles.dedup_by(|left, right| (*left - *right).abs() <= EPS_HOLE_EXACT_GEOMETRY);
     lengths.sort_by(f64::total_cmp);
     lengths.dedup_by(|left, right| (*left - *right).abs() <= EPS_HOLE_GEOMETRY);
-    let dimension_only = if crate::history::is_hole_profile_construction(profile) {
+    let dimension_only = if crate::history::project::solid::is_hole_profile_construction(profile) {
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
             ([diameter], [depth], []) => Some(DimensionOnlyHole {
                 diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
@@ -1119,7 +1130,10 @@ pub(crate) fn project_profiled_hole_constructions(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut enriched_histories = histories.to_vec();
-    crate::history::enrich_history_parameters_semantic(&mut enriched_histories, lanes);
+    crate::history::configuration::enrich_history_parameters_semantic(
+        &mut enriched_histories,
+        lanes,
+    );
     let mut ownership_histories = enriched_histories.clone();
     enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();

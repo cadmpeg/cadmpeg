@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rib, pattern, and helical-sweep write encoders.
 
-use super::super::{format_angle_rad, format_length_mm, pattern_form, NativePatternClass};
+use super::super::literals::{format_angle_rad, format_length_mm};
+use super::super::project::pattern::{pattern_form, NativePatternClass};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
     path_source, planar_profile_source, require_same_family, resolved_boolean_op,

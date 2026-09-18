@@ -15,8 +15,9 @@ use crate::history::hash::{
     configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
     native_configuration_hash,
 };
+use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
-    exact_integer_f64, global_parameter_owners, parameters_with_incoherent_evaluated_values,
+    global_parameter_owners, parameters_with_incoherent_evaluated_values,
 };
 use crate::history::project::project_configurations;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;

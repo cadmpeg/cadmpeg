@@ -32,7 +32,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::configuration_index;
 
-use crate::brep::{self, Brep};
+use crate::brep::graph::{decode_bodies, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
 use crate::records::ObjectId;
@@ -365,7 +365,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             )));
     }
     let unresolved_configuration_parameter_lanes = native.as_ref().map_or(0, |native| {
-        crate::history::unresolved_configuration_lanes(
+        crate::history::configuration::unresolved_configuration_lanes(
             &ir.model.configurations,
             &native.feature_input_lanes,
         )
@@ -562,7 +562,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 .map(|name| (feature.id.clone(), name.clone()))
         })
         .collect();
-    let global_parameter_owners = crate::history::global_parameter_owners(&ir.model.features);
+    let global_parameter_owners =
+        crate::history::parameters::global_parameter_owners(&ir.model.features);
     let incomplete_parameters = ir
         .model
         .parameters
@@ -575,17 +576,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     }))
         })
         .count();
-    let unresolved_parameter_references = crate::history::parameters_with_unresolved_references(
-        &ir.model.parameters,
-        &feature_names,
-        &global_parameter_owners,
-    );
-    let unevaluable_parameter_expressions = crate::history::parameters_with_unevaluable_expressions(
-        &ir.model.parameters,
-        &feature_names,
-        &global_parameter_owners,
-        &ir.model.configurations,
-    );
+    let unresolved_parameter_references =
+        crate::history::parameters::parameters_with_unresolved_references(
+            &ir.model.parameters,
+            &feature_names,
+            &global_parameter_owners,
+        );
+    let unevaluable_parameter_expressions =
+        crate::history::parameters::parameters_with_unevaluable_expressions(
+            &ir.model.parameters,
+            &feature_names,
+            &global_parameter_owners,
+            &ir.model.configurations,
+        );
     let feature_ordinals = ir
         .model
         .features
@@ -624,17 +627,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             })
         })
         .count();
-    let incoherent_parameter_dependencies = crate::history::parameters_with_incoherent_dependencies(
-        &ir.model.parameters,
-        &feature_names,
-        &global_parameter_owners,
-    );
-    let incoherent_parameter_values = crate::history::parameters_with_incoherent_evaluated_values(
-        &ir.model.parameters,
-        &feature_names,
-        &global_parameter_owners,
-        &ir.model.configurations,
-    );
+    let incoherent_parameter_dependencies =
+        crate::history::parameters::parameters_with_incoherent_dependencies(
+            &ir.model.parameters,
+            &feature_names,
+            &global_parameter_owners,
+        );
+    let incoherent_parameter_values =
+        crate::history::parameters::parameters_with_incoherent_evaluated_values(
+            &ir.model.parameters,
+            &feature_names,
+            &global_parameter_owners,
+            &ir.model.configurations,
+        );
     if incomplete_parameters > 0
         || unresolved_parameter_references > 0
         || unevaluable_parameter_expressions > 0
@@ -713,7 +718,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     }
 
     let incomplete_history_references = native.as_ref().map_or(0, |native| {
-        crate::history::incomplete_history_reference_features(&native.feature_histories)
+        crate::history::project::incomplete_history_reference_features(&native.feature_histories)
     });
     if incomplete_history_references > 0 {
         report.losses.push(SldprtLossCode::HistoryIncompleteReferences.note(format!(
@@ -1972,7 +1977,7 @@ fn try_decode_brep<'a>(
             .iter()
             .map(|index| (streams[*index].payload, streams[*index].header))
             .collect();
-        let decoded = brep::decode_bodies(&bodies, streams[first].source_stream())?;
+        let decoded = decode_bodies(&bodies, streams[first].source_stream())?;
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
@@ -2260,7 +2265,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     )?;
-    crate::history::align_configuration_parameter_kinds(&mut ir);
+    crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
@@ -2288,7 +2293,7 @@ fn build_geometry_ir(
         &[],
         &supplemental_config_lanes,
     )?;
-    crate::history::project_configuration_supplemental_edge_selections(
+    crate::history::configuration::project_configuration_supplemental_edge_selections(
         &mut ir,
         &supplemental_config_lanes,
     )?;
@@ -2326,7 +2331,7 @@ fn build_geometry_ir(
         &histories,
         &sketch_lanes,
     );
-    crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
+    crate::history::bind::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
         &sketches,
@@ -2408,7 +2413,9 @@ fn build_geometry_ir(
     );
     stamp_feature_baseline(&mut ir)?;
     let mut attributes = crate::metadata::attributes(scan, &mut annotations);
-    attributes.extend(crate::history::custom_property_attributes(&histories));
+    attributes.extend(crate::history::project::custom_property_attributes(
+        &histories,
+    ));
     lanes.extend(supplemental_config_lanes);
     let mut native = crate::native::SldprtNative {
         feature_histories: histories.clone(),
@@ -2470,7 +2477,7 @@ fn build_geometry_ir(
                 .map(|target| (target, modifier.history_ordinal))
         })
         .collect::<Vec<_>>();
-    crate::history::derive_feature_outputs(
+    crate::history::bind::derive_feature_outputs(
         &mut ir.model.features,
         &histories,
         &face_producers,
@@ -2479,7 +2486,7 @@ fn build_geometry_ir(
         &ir.model.shells,
         &ir.model.regions,
     );
-    let topology_selection_inputs = crate::history::TopologySelectionInputs {
+    let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
         bodies: &ir.model.bodies,
         faces: &ir.model.faces,
         surfaces: &ir.model.surfaces,
@@ -2488,7 +2495,7 @@ fn build_geometry_ir(
         lanes: &native.feature_input_lanes,
         face_identities: &face_identities,
     };
-    crate::history::bind_topology_selections(
+    crate::history::selections::bind_topology_selections(
         &mut ir.model.features,
         &histories,
         &topology_selection_inputs,
@@ -2585,15 +2592,17 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &native.feature_input_lanes,
     );
-    crate::history::order_features_for_regeneration(&mut ir.model.features);
+    crate::history::bind::order_features_for_regeneration(&mut ir.model.features);
     assign_configuration_bodies(&mut ir, &configuration_bodies)?;
-    pmi_losses.extend(crate::history::project_configuration_sketch_states(
-        &mut ir,
-        &histories,
-        &native.feature_input_lanes,
-        &mut annotations,
-    )?);
-    crate::history::bind_configuration_topology_selections(
+    pmi_losses.extend(
+        crate::history::configuration::project_configuration_sketch_states(
+            &mut ir,
+            &histories,
+            &native.feature_input_lanes,
+            &mut annotations,
+        )?,
+    );
+    crate::history::configuration::bind_configuration_topology_selections(
         &mut ir,
         &histories,
         &native.feature_input_lanes,
@@ -2612,9 +2621,9 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     );
-    crate::history::inherit_configuration_reference_plane_states(&mut ir);
+    crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
     sync_active_configuration_resolutions(&mut ir)?;
-    crate::history::order_model_features_for_regeneration(&mut ir);
+    crate::history::bind::order_model_features_for_regeneration(&mut ir);
     let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
     ir.model.pmi = crate::swift::annotations(
         scan,
@@ -2627,11 +2636,11 @@ fn build_geometry_ir(
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
-            crate::history::native_configuration_hash(&native.feature_histories)?,
+            crate::history::hash::native_configuration_hash(&native.feature_histories)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
-            crate::history::history_hash(&native.feature_histories)?,
+            crate::history::hash::history_hash(&native.feature_histories)?,
         );
     }
     ctx.admit_entities(
@@ -3308,7 +3317,9 @@ fn build_metadata_ir(
         constraints: sketch_constraints,
     } = crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
-    model_attributes.extend(crate::history::custom_property_attributes(&histories));
+    model_attributes.extend(crate::history::project::custom_property_attributes(
+        &histories,
+    ));
     ir.model.attributes = model_attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
@@ -3395,7 +3406,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     )?;
-    crate::history::align_configuration_parameter_kinds(&mut ir);
+    crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir);
     stamp_parameter_baseline(&mut ir)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
@@ -3418,7 +3429,7 @@ fn build_metadata_ir(
         &[],
         &supplemental_config_lanes,
     )?;
-    crate::history::project_configuration_supplemental_edge_selections(
+    crate::history::configuration::project_configuration_supplemental_edge_selections(
         &mut ir,
         &supplemental_config_lanes,
     )?;
@@ -3456,7 +3467,7 @@ fn build_metadata_ir(
         &histories,
         &sketch_lanes,
     );
-    crate::history::bind_unique_sketch_feature(
+    crate::history::bind::bind_unique_sketch_feature(
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
@@ -3622,15 +3633,17 @@ fn build_metadata_ir(
         &ir.model.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
-    crate::history::order_features_for_regeneration(&mut ir.model.features);
-    pmi_losses.extend(crate::history::project_configuration_sketch_states(
-        &mut ir,
-        &histories,
-        &lanes,
-        &mut annotations,
-    )?);
-    crate::history::inherit_configuration_reference_plane_states(&mut ir);
-    crate::history::order_model_features_for_regeneration(&mut ir);
+    crate::history::bind::order_features_for_regeneration(&mut ir.model.features);
+    pmi_losses.extend(
+        crate::history::configuration::project_configuration_sketch_states(
+            &mut ir,
+            &histories,
+            &lanes,
+            &mut annotations,
+        )?,
+    );
+    crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
+    crate::history::bind::order_model_features_for_regeneration(&mut ir);
     stamp_feature_baseline(&mut ir)?;
     lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {
@@ -3671,39 +3684,44 @@ fn project_design_history(
         &mut semantic_projection,
         &crate::tessellation::scene_feature_classes(scan),
     );
-    crate::history::enrich_history_semantic(
+    crate::history::configuration::enrich_history_semantic(
         &mut semantic_projection,
         lanes,
         pmi_dimensions,
-        crate::history::HistoryEnrichment::Read,
+        crate::history::configuration::HistoryEnrichment::Read,
     );
-    ir.model.semantic_annotations = crate::history::project_semantic_notes(&semantic_projection);
-    crate::history::project_feature_model(&semantic_projection)?.install(&mut ir.model, losses);
+    ir.model.semantic_annotations =
+        crate::history::project::project_semantic_notes(&semantic_projection);
+    crate::history::project::project_feature_model(&semantic_projection)?
+        .install(&mut ir.model, losses);
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
     )?;
-    crate::history::project_compact_and_generated(
+    crate::history::configuration::project_compact_and_generated(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
     )?;
-    ir.model.configurations = crate::history::project_configurations(&semantic_projection);
+    ir.model.configurations = crate::history::project::project_configurations(&semantic_projection);
     let mut parameter_projection = histories.to_vec();
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
         &mut parameter_projection,
         lanes,
     );
-    crate::history::enrich_history_parameters_values_only(&mut parameter_projection, lanes);
+    crate::history::configuration::enrich_history_parameters_values_only(
+        &mut parameter_projection,
+        lanes,
+    );
     crate::resolved_features::holes::
         enrich_history_cosmetic_thread_diameters_without_hole_constructions(
             &mut parameter_projection,
             lanes,
         );
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
-    ir.model.parameters = crate::history::project_parameters(&parameter_projection);
-    crate::history::project_configuration_design_states(
+    ir.model.parameters = crate::history::parameters::project_parameters(&parameter_projection);
+    crate::history::configuration::project_configuration_design_states(
         ir,
         histories,
         lanes,
@@ -3713,23 +3731,23 @@ fn project_design_history(
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
-            crate::history::feature_hash(&ir.model)?,
+            crate::history::hash::feature_hash(&ir.model)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
-            crate::history::history_hash(histories)?,
+            crate::history::hash::history_hash(histories)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
-            crate::history::native_configuration_hash(histories)?,
+            crate::history::hash::native_configuration_hash(histories)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"),
-            crate::history::parameter_hash(&ir.model.parameters)?,
+            crate::history::hash::parameter_hash(&ir.model.parameters)?,
         );
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_parameter_sha256"),
-            crate::history::native_parameter_hash(histories)?,
+            crate::history::hash::native_parameter_hash(histories)?,
         );
     }
 
@@ -3762,7 +3780,7 @@ fn parameter_identity_lanes(
 }
 
 fn stamp_parameter_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
-    let hash = crate::history::parameter_hash(&ir.model.parameters)?;
+    let hash = crate::history::hash::parameter_hash(&ir.model.parameters)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"),
@@ -4179,7 +4197,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
 }
 
 fn stamp_feature_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
-    let hash = crate::history::feature_hash(&ir.model)?;
+    let hash = crate::history::hash::feature_hash(&ir.model)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
@@ -4317,11 +4335,11 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
 }
 
 fn stamp_configuration_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
-    let hash = crate::history::configuration_hash(&ir.model.configurations)?;
+    let hash = crate::history::hash::configuration_hash(&ir.model.configurations)?;
     let parameter_value_hash =
-        crate::history::configuration_parameter_value_hash(&ir.model.configurations)?;
+        crate::history::hash::configuration_parameter_value_hash(&ir.model.configurations)?;
     let feature_state_hash =
-        crate::history::configuration_feature_state_hash(&ir.model.configurations)?;
+        crate::history::hash::configuration_feature_state_hash(&ir.model.configurations)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_neutral_configuration_local_sha256"),

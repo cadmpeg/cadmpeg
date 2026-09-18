@@ -13,7 +13,7 @@ use cadmpeg_ir::{
 };
 use std::collections::{HashMap, HashSet};
 
-use super::resolve_native_refs;
+use super::spin::resolve_native_refs;
 use crate::history::classify::extrude_feature_op;
 use crate::history::literals::{
     parse_angle_rad, parse_boolean_op, parse_bounded_angle_rad, parse_dimension_display_length,

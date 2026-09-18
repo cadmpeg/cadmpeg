@@ -1923,7 +1923,10 @@ pub(crate) fn project_sketch_block_profiles(
                 .iter()
                 .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
                 .filter(|(_, feature)| {
-                    !crate::history::is_history_metadata_record(feature, &history.features)
+                    !crate::history::classify::is_history_metadata_record(
+                        feature,
+                        &history.features,
+                    )
                 })
                 .collect::<Vec<_>>();
             objects.sort_by_key(|(offset, _)| *offset);

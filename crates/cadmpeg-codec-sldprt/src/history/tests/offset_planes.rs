@@ -3,14 +3,14 @@
 #![allow(clippy::unwrap_used)]
 
 use super::feature;
-use crate::history::bind_offset_plane_references;
-use crate::history::order_features_for_regeneration;
-use crate::history::project_features;
-use crate::history::project_offset_plane;
-use crate::history::resolve_offset_plane_face_selection;
-use crate::history::resolve_planar_face_selection;
-use crate::history::FaceSelectionContext;
-use crate::history::SurfaceSelectionFaceBindings;
+use crate::history::bind::order_features_for_regeneration;
+use crate::history::project::bind_offset_plane_references;
+use crate::history::project::datum::project_offset_plane;
+use crate::history::project::project_features;
+use crate::history::selections::resolve_offset_plane_face_selection;
+use crate::history::selections::resolve_planar_face_selection;
+use crate::history::selections::FaceSelectionContext;
+use crate::history::selections::SurfaceSelectionFaceBindings;
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::DatumPlaneReference;
 use cadmpeg_ir::features::FaceSelection;

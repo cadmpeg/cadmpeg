@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolve, sweep, and loft write encoders.
 
-use super::super::{format_angle_rad, valid_direction};
+use super::super::literals::{format_angle_rad, valid_direction};
 use super::format::{format_point3_mm, format_vector3};
 use super::support::{
     is_loft, is_revolve, is_sweep, path_source, planar_profile_source, profile_source,

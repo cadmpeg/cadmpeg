@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tree-node, cosmetic-thread, native, curve, helix, and unsupported write encoders.
 
-use super::super::{format_angle_rad, format_f64_literal, format_length_mm, valid_direction};
+use super::super::literals::{
+    format_angle_rad, format_f64_literal, format_length_mm, valid_direction,
+};
 use super::format::{format_angle_like, format_length_like, format_point3_mm, format_vector3};
 use super::support::{
     face_selection_value, feature_tree_node_kind, is_helix, path_source, require_same_family,

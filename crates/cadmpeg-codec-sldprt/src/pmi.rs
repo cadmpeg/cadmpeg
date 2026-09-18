@@ -163,7 +163,9 @@ pub(crate) fn enrich_history_parameters_with_features(
         let feature = &histories[*history_index].features[*feature_index];
         let empty_subtype_is_count = feature.parameters.get(name).is_some_and(|expression| {
             matches!(
-                crate::history::parse_native_parameter_literal(feature, name, expression),
+                crate::history::parameters::parse_native_parameter_literal(
+                    feature, name, expression
+                ),
                 Some(cadmpeg_ir::features::ParameterValue::Integer(_))
             )
         }) || neutral_features.iter().any(|neutral| {

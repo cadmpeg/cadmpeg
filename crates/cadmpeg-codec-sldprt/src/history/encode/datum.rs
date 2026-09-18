@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-plane, axis, point, and coordinate-system write encoders.
 
-use super::super::{valid_direction, valid_plane_frame};
+use super::super::literals::{valid_direction, valid_plane_frame};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::require_same_family;
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};

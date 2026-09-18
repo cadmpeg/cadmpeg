@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch, spatial-sketch, sketch-block, and wrap write encoders.
 
-use super::super::{format_length_mm, sketch_block_placement};
+use super::super::literals::format_length_mm;
+use super::super::project::sketch::sketch_block_placement;
 use super::support::{face_selection_value, planar_profile_source, require_same_family};
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;

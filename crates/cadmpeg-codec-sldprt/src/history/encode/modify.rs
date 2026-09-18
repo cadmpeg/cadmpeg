@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fillet, chamfer, combine, face/body edit, dome, flex, and scale write encoders.
 
-use super::super::{
-    body_retention_mode, format_angle_rad, format_length_mm, indexed_name, parse_bounded_angle_rad,
-};
+use super::super::classify::indexed_name;
+use super::super::literals::{format_angle_rad, format_length_mm, parse_bounded_angle_rad};
+use super::super::project::modify::body_retention_mode;
 use super::format::{format_angle_like, format_length_like, format_point3_mm, format_vector3};
 use super::support::{
     body_selection_value, edge_selection_value, face_selection_value, require_same_family,

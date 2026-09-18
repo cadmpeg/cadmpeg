@@ -246,7 +246,8 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     .into_iter()
                     .filter(|scalar| match parameter.value.as_ref() {
                         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
-                            let Some(expected) = crate::history::exact_integer_f64(*expected)
+                            let Some(expected) =
+                                crate::history::parameters::eval::exact_integer_f64(*expected)
                             else {
                                 return false;
                             };
@@ -280,9 +281,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     ) && !scalar_is_detached;
                     if scalar_is_detached && length_scalars.contains(scalar.id.as_str()) {
                         parameter.expression =
-                            crate::history::format_length_mm(scalar.value * 1000.0);
+                            crate::history::literals::format_length_mm(scalar.value * 1000.0);
                     } else if scalar_is_detached && angle_scalars.contains(scalar.id.as_str()) {
-                        parameter.expression = crate::history::format_angle_rad(scalar.value);
+                        parameter.expression =
+                            crate::history::literals::format_angle_rad(scalar.value);
                     }
                     let evaluated = if length_scalars.contains(scalar.id.as_str())
                         && !scalar_is_untyped_real
@@ -508,7 +510,7 @@ fn relation_display_parameter_value(
         FeatureInputRelationFamily::Angle => (
             ParameterValue::Angle(Angle::new(value)?),
             None,
-            crate::history::format_angle_rad(value),
+            crate::history::literals::format_angle_rad(value),
         ),
         FeatureInputRelationFamily::CircleDiameter => {
             let millimetres = value * 1000.0;
@@ -517,7 +519,7 @@ fn relation_display_parameter_value(
                 Some(DimensionDisplay::Diameter),
                 format!(
                     "<MOD-DIAM>{}",
-                    crate::history::format_length_mm(millimetres)
+                    crate::history::literals::format_length_mm(millimetres)
                 ),
             )
         }
@@ -530,7 +532,7 @@ fn relation_display_parameter_value(
             (
                 ParameterValue::Length(Length::new(millimetres)?),
                 None,
-                crate::history::format_length_mm(millimetres),
+                crate::history::literals::format_length_mm(millimetres),
             )
         }
     })
@@ -564,7 +566,7 @@ pub(crate) fn type_display_relation_parameters(
             FeatureInputRelationFamily::Angle => {
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
                     let value = value.get();
-                    parameter.expression = crate::history::format_angle_rad(value);
+                    parameter.expression = crate::history::literals::format_angle_rad(value);
                     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Angle(
                         cadmpeg_ir::scalar::Angle::new(value).ok_or_else(|| {
                             cadmpeg_core::CodecError::Malformed(
@@ -584,9 +586,12 @@ pub(crate) fn type_display_relation_parameters(
                     let value = value.get();
                     let value = value * 1000.0;
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
-                        format!("<MOD-DIAM>{}", crate::history::format_length_mm(value))
+                        format!(
+                            "<MOD-DIAM>{}",
+                            crate::history::literals::format_length_mm(value)
+                        )
                     } else {
-                        crate::history::format_length_mm(value)
+                        crate::history::literals::format_length_mm(value)
                     };
                     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
                         cadmpeg_ir::scalar::Length::new(value).ok_or_else(|| {
@@ -599,13 +604,17 @@ pub(crate) fn type_display_relation_parameters(
                 if let Some(cadmpeg_ir::features::ParameterValue::Integer(value)) =
                     parameter.value.as_ref()
                 {
-                    let Some(value) = crate::history::exact_integer_f64(*value) else {
+                    let Some(value) = crate::history::parameters::eval::exact_integer_f64(*value)
+                    else {
                         continue;
                     };
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
-                        format!("<MOD-DIAM>{}", crate::history::format_length_mm(value))
+                        format!(
+                            "<MOD-DIAM>{}",
+                            crate::history::literals::format_length_mm(value)
+                        )
                     } else {
-                        crate::history::format_length_mm(value)
+                        crate::history::literals::format_length_mm(value)
                     };
                     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
                         cadmpeg_ir::scalar::Length::new(value).ok_or_else(|| {
@@ -856,7 +865,7 @@ fn variable_fillet_radius_groups<'a>(
             .map(|name| {
                 variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
                     feature.parameters.get(*name).and_then(|value| {
-                        crate::history::parse_positive_dimension_length_mm(value)
+                        crate::history::literals::parse_positive_dimension_length_mm(value)
                     }),
                 )
             })
@@ -924,7 +933,7 @@ fn variable_fillet_radius_groups<'a>(
                         return None;
                     }
                     let radius = feature.parameters.get(name.as_str()).and_then(|value| {
-                        crate::history::parse_positive_dimension_length_mm(value)
+                        crate::history::literals::parse_positive_dimension_length_mm(value)
                     })?;
                     match vertex_radii.entry(vertex.type_signature) {
                         std::collections::hash_map::Entry::Vacant(entry) => {
@@ -964,7 +973,7 @@ fn variable_fillet_radius_groups<'a>(
             .map(|name| {
                 variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
                     feature.parameters.get(*name).and_then(|value| {
-                        crate::history::parse_positive_dimension_length_mm(value)
+                        crate::history::literals::parse_positive_dimension_length_mm(value)
                     }),
                 )
             })

@@ -528,7 +528,7 @@ fn classless_dimension_schema_class(feature: &crate::records::Feature) -> Option
         && feature
             .parameters
             .get("D1")
-            .and_then(|value| crate::history::parse_positive_dimension_length_mm(value))
+            .and_then(|value| crate::history::literals::parse_positive_dimension_length_mm(value))
             .is_some()
         && feature
             .parameters
@@ -537,7 +537,7 @@ fn classless_dimension_schema_class(feature: &crate::records::Feature) -> Option
                 let value = value.trim();
                 value.ends_with("deg") || value.ends_with('°') || value.ends_with("rad")
             })
-            .and_then(|value| crate::history::parse_angle_rad(value))
+            .and_then(|value| crate::history::literals::parse_angle_rad(value))
             .is_some_and(|angle| angle > 0.0 && angle < std::f64::consts::PI)
     {
         return Some("Chamfer_c");

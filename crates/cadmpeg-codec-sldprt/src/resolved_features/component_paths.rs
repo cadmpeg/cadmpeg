@@ -193,7 +193,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 !history_features
                     .get(feature.parent.as_str())
                     .is_some_and(|features| {
-                        crate::history::is_history_metadata_record(feature, features)
+                        crate::history::classify::is_history_metadata_record(feature, features)
                     })
             })
             .collect::<Vec<_>>();
