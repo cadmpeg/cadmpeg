@@ -1,13 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_parameter_owner;
+use crate::design::dimensions::expression_identifiers;
+use crate::design::feature_project::project_parameter_design;
+use crate::design::feature_project::untyped_parameter_unit_count;
+use crate::design::test_support::parameter_owner_frame;
+use crate::design::test_support::parameter_record;
+use crate::records::feature::extrude::DesignExtrudeExtent;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::extrude::DesignExtrudePrologue;
+use crate::records::feature::extrude::DesignExtrudeStart;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::scope::DesignScopePayload;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::Length;
 
 #[test]
 fn user_parameters_project_in_source_order_with_units_and_dependencies() {

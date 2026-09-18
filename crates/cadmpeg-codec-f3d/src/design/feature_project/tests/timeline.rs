@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::design::feature_project::{ScopeHistoryBinding, ScopeHistoryGraph};
+use crate::design::test_support::parameter_record;
+use crate::records::entity_header::DesignFeatureTimeline;
+use crate::records::feature::assembly::DesignAssemblyAlignment;
+use crate::records::feature::scope::DesignParameterScope;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
+use std::collections::HashMap;
 
 #[test]
 fn work_point_history_state_keys_are_history_qualified() {

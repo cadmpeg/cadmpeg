@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::default_trait_access,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
 
-use super::prelude::*;
+use crate::design::feature_project::project_parameter_design;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
+use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 
 const EPS_SURFACE_DISTANCE_MM: f64 = 1.0e-12;

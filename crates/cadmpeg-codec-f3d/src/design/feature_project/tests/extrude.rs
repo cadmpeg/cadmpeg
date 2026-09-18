@@ -1,16 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use crate::design::decode::operands::assign_extrude_face_roles;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_parameter_owner;
+use crate::design::face_resolve::resolved_body_recipe_shape;
+use crate::design::feature_project::project_extrude;
+use crate::design::feature_project::project_parameter_design;
+use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
+use crate::design::profile_select::bind_extrude_profile_selections;
+use crate::design::test_support::parameter_owner_frame;
+use crate::design::test_support::parameter_record;
+use crate::ids::neutral_sketch_id;
+use crate::ids::neutral_spatial_sketch_id;
+use crate::records::feature::extrude::DesignExtrudeExtent;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::extrude::DesignExtrudePrologue;
+use crate::records::feature::extrude::DesignExtrudeStart;
+use crate::records::feature::extrude::DesignExtrudeTargetOrdinal;
+use crate::records::feature::fixed_parameters::DesignFixedExtrudeDistance;
+use crate::records::feature::fixed_parameters::DesignFixedExtrudeParameters;
+use crate::records::feature::fixed_parameters::DesignFixedExtrudeScalar;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::scope::DesignScopePayload;
+use crate::records::sketch_placement::DesignSketchPlacement;
+use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
+use crate::records::topology::body_recipe::DesignBodyRecipeReference;
+use crate::records::topology::body_recipe::DesignOperandOwner;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::extrude_selection::DesignExtrudeFaceRole;
+use crate::records::topology::extrude_selection::DesignExtrudeSelectionGroup;
+use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
+use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::ProfileRef;
+use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::sketches::SketchId;
+use std::collections::BTreeMap;
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
     let Some(

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Chamfer projection: the edge groups the source states and the parameter
 //! lanes they pair with.
-#![allow(
-    clippy::default_trait_access,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::{
-    prelude::*,
-    treatments::{localized_fillet_group, localized_fillet_owner, localized_fillet_parameter},
+use super::treatments::{
+    localized_fillet_group, localized_fillet_owner, localized_fillet_parameter,
 };
+use crate::design::feature_project::project_parameter_design;
+use crate::records::feature::scope::DesignParameterScope;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureOperation;
 
 fn localized_chamfer_scope() -> DesignParameterScope {
     DesignParameterScope::try_new(

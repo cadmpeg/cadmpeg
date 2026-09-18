@@ -3,8 +3,7 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
 
 mod chamfer;
@@ -17,7 +16,6 @@ mod parameter_cycles;
 mod parameters;
 mod pattern;
 mod pipe;
-mod prelude;
 mod replace_face;
 mod sheet_metal;
 mod split;

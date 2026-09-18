@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
 
-use super::prelude::*;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::{
     feature::path_features::DesignPathFeatureConstruction,
     topology::extrude_selection::DesignOperandRole,

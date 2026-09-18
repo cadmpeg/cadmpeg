@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use crate::design::decode::operands::decode_fillet_radius_groups;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_parameter_owner;
+use crate::design::feature_project::project_parameter_design;
+use crate::design::test_support::parameter_owner_frame;
+use crate::design::test_support::parameter_record;
+use crate::records::feature::hole::DesignHoleConstruction;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::recipes::ConstructionRecipeKind;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::face::DesignFaceOperand;
 use crate::records::{
     entity_header::{DesignFeatureTimeline, DesignTimelineFrame},
     feature::{
@@ -38,6 +41,12 @@ use crate::records::{
         fillet::HistoricalBinding,
     },
 };
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
