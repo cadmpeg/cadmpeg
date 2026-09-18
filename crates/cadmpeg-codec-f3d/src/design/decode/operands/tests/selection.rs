@@ -3,16 +3,47 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+use crate::design::decode::operands::bind_extrude_selection_geometry;
+use crate::design::decode::operands::bind_extrude_selection_identities;
+use crate::design::decode::operands::bind_lost_edge_groups;
+use crate::design::decode::operands::parse_construction_operand_identity;
+use crate::design::decode::operands::parse_entity_selection_operand;
+use crate::design::decode::operands::parse_extrude_selection_group;
+use crate::design::decode::operands::parse_extrude_selection_member;
+use crate::design::decode::operands::parse_sketch_profile;
 use crate::design::decode::operands::parse_sketch_profile_region_selection;
+use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
+use crate::design::profile_select::resolved_extrude_profile_selection;
 use crate::design::test_support::indexed_header;
-use crate::records::topology::{
-    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
-};
+use crate::ids::neutral_sketch_curve_id;
+use crate::ids::neutral_sketch_point_id;
+use crate::records::decal::DesignRecordHeader;
+use crate::records::entity_header::DesignEntityHeader;
+use crate::records::entity_header::DESIGN_MODULE_SKETCH;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::references::LostEdgeReference;
+use crate::records::sketch_geometry::SketchCurveIdentity;
+use crate::records::sketch_relations::SketchRelationOperand;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
+use crate::records::topology::construction::DesignConstructionOperandIdentity;
+use crate::records::topology::construction::DesignConstructionPersistentIdentity;
+use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
+use crate::test_support::lp_utf16;
+use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::SketchEntityUse;
+use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
+use cadmpeg_ir::sketches::SketchId;
 
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {

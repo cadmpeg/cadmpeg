@@ -3,14 +3,38 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+use crate::design::decode::operands::bind_edge_operand_candidates;
+use crate::design::decode::operands::bind_face_operand_candidates;
+use crate::design::decode::operands::face_recipe_program_kind;
+use crate::design::decode::operands::parse_edge_operand;
+use crate::design::decode::operands::parse_face_operand;
+use crate::design::decode::operands::parse_vertex_recipe;
+use crate::design::decode::operands::FaceRecipeProgramKind;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::edge_resolve::feature_input_topology_id;
+use crate::design::face_resolve::resolved_face_group;
+use crate::design::face_resolve::resolved_historical_split_face_target_group;
 use crate::design::test_support::indexed_header;
-use crate::records::topology::{
-    construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
-};
+use crate::records::decal::DesignRecordHeader;
+use crate::records::dimensions::DesignDimensionRecipeRecord;
+use crate::records::dimensions::DesignRecipeReference;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::recipes::ConstructionRecipe;
+use crate::records::recipes::ConstructionRecipeKind;
+use crate::records::sketch_links::PersistentSubentityTag;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
+use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
+use crate::records::topology::edge_recipe::DesignTopologyRecipeSide;
+use crate::records::topology::extrude_selection::DesignExtrudeFaceRole;
+use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::records::topology::face::DesignFaceRecipeNode;
+use crate::records::topology::face::DesignFaceRecipeStructure;
+use cadmpeg_ir::attributes::AttributeTarget;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::ids::FaceId;
 
 #[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
