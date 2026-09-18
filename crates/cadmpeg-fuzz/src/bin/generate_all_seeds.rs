@@ -13,11 +13,11 @@ type SeedError = Box<dyn std::error::Error>;
 fn main() -> Result<(), SeedError> {
     generate_f3d_seeds()?;
     generate_sldprt_seeds()?;
-    generate_catia_seeds();
-    generate_creo_seeds();
+    generate_catia_seeds()?;
+    generate_creo_seeds()?;
     generate_nx_seeds()?;
-    generate_ir_seeds();
-    generate_mutated_seeds();
+    generate_ir_seeds()?;
+    generate_mutated_seeds()?;
     println!("All seeds generated.");
     Ok(())
 }
@@ -228,9 +228,9 @@ fn generate_sldprt_seeds() -> Result<(), SeedError> {
 // CATIA seeds
 // ============================================================================
 
-fn generate_catia_seeds() {
+fn generate_catia_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/catia_container");
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -240,18 +240,19 @@ fn generate_catia_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).unwrap();
+        fs::write(dir.join(name), &data)?;
         println!("  catia/{} ({} bytes)", name, data.len());
     }
+    Ok(())
 }
 
 // ============================================================================
 // CREO seeds
 // ============================================================================
 
-fn generate_creo_seeds() {
+fn generate_creo_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/creo_container");
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
@@ -261,9 +262,10 @@ fn generate_creo_seeds() {
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).unwrap();
+        fs::write(dir.join(name), &data)?;
         println!("  creo/{} ({} bytes)", name, data.len());
     }
+    Ok(())
 }
 
 // ============================================================================
@@ -292,16 +294,10 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
 // IR seeds
 // ============================================================================
 
-fn generate_ir_seeds() {
-    let minimal = cadmpeg_ir::CadIr::empty().to_canonical_json().unwrap();
-    let cube = cadmpeg_ir::examples::unit_cube()
-        .expect("unit cube fixture is admitted")
-        .to_canonical_json()
-        .unwrap();
-    let directed_subd_sum = cadmpeg_ir::examples::directed_subd_sum()
-        .unwrap()
-        .to_canonical_json()
-        .unwrap();
+fn generate_ir_seeds() -> Result<(), SeedError> {
+    let minimal = cadmpeg_ir::CadIr::empty().to_canonical_json()?;
+    let cube = cadmpeg_ir::examples::unit_cube()?.to_canonical_json()?;
+    let directed_subd_sum = cadmpeg_ir::examples::directed_subd_sum()?.to_canonical_json()?;
     let canonical = [
         ("minimal.json", minimal.as_bytes()),
         ("unit_cube.json", cube.as_bytes()),
@@ -309,42 +305,46 @@ fn generate_ir_seeds() {
     ];
     let current_version_field = format!(r#""ir_version": "{}""#, cadmpeg_ir::IR_VERSION);
     let valid_v0 = minimal.replacen(&current_version_field, r#""ir_version": "0""#, 1);
-    assert_ne!(valid_v0, minimal, "current ir_version field must match");
+    if valid_v0 == minimal {
+        return Err(
+            format!("no {current_version_field} field to rewrite in the minimal seed").into(),
+        );
+    }
 
     let from_json = seed_dir("seeds/ir_from_json");
-    replace_seed_directory(&from_json);
+    replace_seed_directory(&from_json)?;
     for (name, data) in &canonical {
-        fs::write(from_json.join(name), data).unwrap();
+        fs::write(from_json.join(name), data)?;
         println!("  ir/{name} ({} bytes)", data.len());
     }
-    fs::write(from_json.join("valid_v0_rejected.json"), valid_v0).unwrap();
+    fs::write(from_json.join("valid_v0_rejected.json"), valid_v0)?;
 
     for target in ["ir_validate", "ir_canonical_roundtrip", "step_writer"] {
         let dir = seed_dir(target);
-        replace_seed_directory(&dir);
+        replace_seed_directory(&dir)?;
         for (name, data) in &canonical {
-            fs::write(dir.join(name), data).unwrap();
+            fs::write(dir.join(name), data)?;
         }
     }
 
     let mutated = seed_dir("seeds/ir_validate_mutated");
-    replace_seed_directory(&mutated);
+    replace_seed_directory(&mutated)?;
     for (index, (name, data)) in canonical.iter().enumerate() {
         let mut input = vec![index as u8];
         input.extend_from_slice(data);
-        fs::write(mutated.join(name), input).unwrap();
+        fs::write(mutated.join(name), input)?;
     }
 
     let custom = seed_dir("seeds/step_writer_custom");
-    replace_seed_directory(&custom);
+    replace_seed_directory(&custom)?;
     for (index, (name, data)) in canonical.iter().enumerate() {
         let mut input = vec![index as u8; 8];
         input.extend_from_slice(data);
-        fs::write(custom.join(name), input).unwrap();
+        fs::write(custom.join(name), input)?;
     }
 
     let iges_writer = seed_dir("seeds/iges_writer");
-    replace_seed_directory(&iges_writer);
+    replace_seed_directory(&iges_writer)?;
     for (name, control, data) in [
         ("minimal_v5_1.json", 0_u8, minimal.as_bytes()),
         ("unit_cube_v5_2.json", 1_u8, cube.as_bytes()),
@@ -357,11 +357,11 @@ fn generate_ir_seeds() {
     ] {
         let mut input = vec![control];
         input.extend_from_slice(data);
-        fs::write(iges_writer.join(name), input).unwrap();
+        fs::write(iges_writer.join(name), input)?;
     }
 
     let diff = seed_dir("seeds/ir_diff");
-    replace_seed_directory(&diff);
+    replace_seed_directory(&diff)?;
     for (name, selector, left, right) in [
         (
             "minimal_vs_minimal",
@@ -376,20 +376,22 @@ fn generate_ir_seeds() {
         input.extend_from_slice(left);
         input.push(0);
         input.extend_from_slice(right);
-        fs::write(diff.join(name), input).unwrap();
+        fs::write(diff.join(name), input)?;
     }
+    Ok(())
 }
 
-fn replace_seed_directory(directory: &Path) {
-    fs::create_dir_all(directory).unwrap();
-    for entry in fs::read_dir(directory).unwrap() {
-        let path = entry.unwrap().path();
+fn replace_seed_directory(directory: &Path) -> Result<(), SeedError> {
+    fs::create_dir_all(directory)?;
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
         if path.is_dir() {
-            fs::remove_dir_all(path).unwrap();
+            fs::remove_dir_all(path)?;
         } else {
-            fs::remove_file(path).unwrap();
+            fs::remove_file(path)?;
         }
     }
+    Ok(())
 }
 
 // ============================================================================
@@ -405,7 +407,7 @@ const MUTANT_SUFFIXES: [&str; 3] = [".mut_trunc", ".mut_flip", ".mut_lenmax"];
 ///
 /// Mutants are derived only from files this run just wrote, never from other
 /// mutants, so regeneration is idempotent.
-fn generate_mutated_seeds() {
+fn generate_mutated_seeds() -> Result<(), SeedError> {
     let container_dirs = [
         "seeds/f3d_container",
         "seeds/sldprt_container",
@@ -414,41 +416,28 @@ fn generate_mutated_seeds() {
         "seeds/nx_container",
     ];
     for dir in container_dirs {
-        for entry in fs::read_dir(seed_dir(dir)).unwrap() {
-            let path = entry.unwrap().path();
-            let name = path.file_name().unwrap().to_str().unwrap();
-            if MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
-                fs::remove_file(path).unwrap();
-            }
-        }
+        remove_mutants(&seed_dir(dir))?;
     }
 
     for dir in ["seeds/ir_from_json"] {
         let dir = seed_dir(dir);
-        for entry in fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            let name = path.file_name().unwrap().to_str().unwrap();
-            if MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
-                fs::remove_file(path).unwrap();
+        remove_mutants(&dir)?;
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(&dir)? {
+            let path = entry?.path();
+            if path.is_file() && !is_mutant(&path)? {
+                entries.push(path);
             }
         }
-        let mut entries: Vec<_> = fs::read_dir(&dir)
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .filter(|p| {
-                let name = p.file_name().unwrap().to_str().unwrap();
-                p.is_file() && !MUTANT_SUFFIXES.iter().any(|s| name.ends_with(s))
-            })
-            .collect();
         entries.sort();
         for path in entries {
-            let data = fs::read(&path).unwrap();
+            let data = fs::read(&path)?;
             // Too small to have structure past the magic; corruptions would
             // duplicate the existing bad-magic/truncation seeds.
             if data.len() < 32 {
                 continue;
             }
-            let name = path.file_name().unwrap().to_str().unwrap().to_string();
+            let name = seed_name(&path)?.to_string();
 
             let mut trunc = data.clone();
             trunc.truncate(data.len() / 2);
@@ -465,9 +454,34 @@ fn generate_mutated_seeds() {
 
             for (suffix, mutant) in MUTANT_SUFFIXES.iter().zip([trunc, flip, lenmax]) {
                 let out = path.with_file_name(format!("{name}{suffix}"));
-                fs::write(&out, &mutant).unwrap();
+                fs::write(&out, &mutant)?;
                 println!("  {} ({} bytes)", out.display(), mutant.len());
             }
         }
     }
+    Ok(())
+}
+
+/// The UTF-8 file name of a seed path.
+fn seed_name(path: &Path) -> Result<&str, SeedError> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("seed path has no UTF-8 file name: {}", path.display()).into())
+}
+
+/// Whether a seed path carries one of the generated mutant suffixes.
+fn is_mutant(path: &Path) -> Result<bool, SeedError> {
+    let name = seed_name(path)?;
+    Ok(MUTANT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)))
+}
+
+/// Delete every generated mutant in one seed directory.
+fn remove_mutants(directory: &Path) -> Result<(), SeedError> {
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        if is_mutant(&path)? {
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
 }
