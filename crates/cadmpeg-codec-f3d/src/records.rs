@@ -23,8 +23,6 @@ pub(crate) mod sketch_links;
 pub(crate) mod sketch_placement;
 pub(crate) mod sketch_relations;
 #[cfg(test)]
-mod test_support;
-#[cfg(test)]
 mod tests;
 pub(crate) mod topology;
 pub(crate) mod xref;
