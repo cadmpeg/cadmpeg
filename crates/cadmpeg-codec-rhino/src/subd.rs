@@ -93,6 +93,9 @@ pub(crate) enum SubdError {
     UnsupportedVersion { offset: usize, message: String },
     /// The bounded payload is malformed.
     Malformed { offset: usize, message: String },
+    /// The bounded payload is malformed by a derived or already-decoded value
+    /// that has no byte position of its own.
+    Unpositioned { message: String },
 }
 
 impl fmt::Display for SubdError {
@@ -102,6 +105,7 @@ impl fmt::Display for SubdError {
                 write!(formatter, "{message} at byte {offset}")
             }
             Self::Malformed { offset, message } => write!(formatter, "{message} at byte {offset}"),
+            Self::Unpositioned { message } => formatter.write_str(message),
         }
     }
 }
@@ -110,17 +114,16 @@ impl std::error::Error for SubdError {}
 
 impl From<FramingError> for SubdError {
     fn from(value: FramingError) -> Self {
-        let offset = match &value {
+        let message = value.to_string();
+        match value {
             FramingError::Truncated { offset, .. }
             | FramingError::InvalidLength { offset, .. }
             | FramingError::Structural { offset, .. }
             | FramingError::Overflow { offset }
-            | FramingError::OutOfBounds { offset, .. } => *offset,
-            _ => 0,
-        };
-        Self::Malformed {
-            offset,
-            message: value.to_string(),
+            | FramingError::OutOfBounds { offset, .. } => Self::Malformed { offset, message },
+            FramingError::InvalidHeader
+            | FramingError::Unpositioned { .. }
+            | FramingError::MissingEof => Self::Unpositioned { message },
         }
     }
 }

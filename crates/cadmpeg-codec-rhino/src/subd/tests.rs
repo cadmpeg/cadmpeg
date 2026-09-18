@@ -943,3 +943,21 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
         && loss.message.contains("decoded 1/2 Rhino object records")));
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
+
+#[test]
+fn an_offset_free_framing_refusal_names_no_byte() {
+    for framing in [
+        FramingError::InvalidHeader,
+        FramingError::MissingEof,
+        FramingError::unpositioned("derived value is invalid"),
+    ] {
+        let expected = framing.to_string();
+        let error = SubdError::from(framing);
+        assert!(
+            matches!(error, SubdError::Unpositioned { ref message } if *message == expected),
+            "{error}"
+        );
+        assert_eq!(error.to_string(), expected);
+        assert!(!error.to_string().contains("at byte"));
+    }
+}
