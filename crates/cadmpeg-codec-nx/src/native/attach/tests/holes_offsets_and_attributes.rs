@@ -20,13 +20,12 @@ use crate::native::attach::CounterboreDimensions;
 use crate::native::attach::EdgeSelection;
 use crate::native::attach::HoleProjection;
 use crate::native::attach::NxBlendFamily;
+use crate::test_support::test_bytes::attach_test_body_surface;
 use cadmpeg_ir::geometry::{
     ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use std::collections::BTreeMap;
-
-use crate::test_support::*;
 
 fn insert_test_procedural_surface(
     ir: &mut cadmpeg_ir::document::CadIr,

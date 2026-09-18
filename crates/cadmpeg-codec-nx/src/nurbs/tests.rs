@@ -2,12 +2,15 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::test_support::test_bytes::put_f64;
+use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::record;
+use crate::test_support::test_deltas::bspline_partition_stream;
+use crate::test_support::test_deltas::extended_bspline_surface_stream;
 use cadmpeg_ir::geometry::{
     CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
-
-use crate::test_support::*;
 
 use super::*;
 

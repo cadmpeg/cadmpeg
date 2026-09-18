@@ -5,7 +5,18 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::test_bytes::put_f64;
+use super::test_bytes::put_ref;
+use super::test_bytes::put_vec3;
+use super::test_bytes::record;
+use super::test_bytes::zlib_compress;
+use super::test_bytes::MAGIC;
+use super::test_om::composed_feature_history_inputs;
+use super::test_om::composed_feature_history_payload;
+use super::test_om::indexed_om_section;
+use super::test_om::size_framed_om_section;
+use super::test_streams::partition_stream;
+use super::test_streams::topology_partition_stream;
 
 /// A `.prt` image whose single feature-history section and companion offset
 /// store drive the feature-history arena families that no other golden reaches:

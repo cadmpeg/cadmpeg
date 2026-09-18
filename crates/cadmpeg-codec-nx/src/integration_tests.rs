@@ -1,6 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use crate::test_support::test_bytes::zlib_compress;
+use crate::test_support::test_bytes::MAGIC;
+use crate::test_support::test_cfb::legacy_cfb_with_partial_ug_part;
+use crate::test_support::test_cfb::legacy_cfb_with_two_streams;
+use crate::test_support::test_cfb::legacy_cfb_with_ug_part;
+use crate::test_support::test_cfb::put_u16;
+use crate::test_support::test_deltas::bspline_partition_stream;
+use crate::test_support::test_deltas::circle_topology_partition_stream;
+use crate::test_support::test_deltas::cone_topology_partition_stream;
+use crate::test_support::test_deltas::cylinder_topology_partition_stream;
+use crate::test_support::test_deltas::deltas_edge_partition_stream;
+use crate::test_support::test_deltas::deltas_face_vertex_partition_stream;
+use crate::test_support::test_deltas::deltas_fin_partition_stream;
+use crate::test_support::test_deltas::deltas_line_partition_stream;
+use crate::test_support::test_deltas::deltas_loop_partition_stream;
+use crate::test_support::test_deltas::deltas_plane_partition_stream;
+use crate::test_support::test_deltas::deltas_point_partition_stream;
+use crate::test_support::test_deltas::deltas_shell_partition_stream;
+use crate::test_support::test_deltas::ellipse_topology_partition_stream;
+use crate::test_support::test_deltas::sphere_topology_partition_stream;
+use crate::test_support::test_deltas::torus_topology_partition_stream;
+use crate::test_support::test_prt::boolean_target_body_lineage_prt;
+use crate::test_support::test_prt::composed_feature_history_prt;
+use crate::test_support::test_prt::extract_body_feature_history_prt;
+use crate::test_support::test_prt::offset_store_primary_body_lineage_prt;
+use crate::test_support::test_prt::prt_with_arrangements;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_prt::prt_with_streams;
+use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_streams::blend_surface_topology_partition_stream;
+use crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream;
+use crate::test_support::test_streams::display_jt_basic_stream;
+use crate::test_support::test_streams::display_jt_scene_graph_stream;
+use crate::test_support::test_streams::display_jt_shape_lod_stream;
+use crate::test_support::test_streams::display_jt_string_property_stream;
+use crate::test_support::test_streams::external_reference_stream;
+use crate::test_support::test_streams::offset_surface_topology_partition_stream;
+use crate::test_support::test_streams::partition_stream;
+use crate::test_support::test_streams::pcurve_topology_partition_stream;
+use crate::test_support::test_streams::topology_partition_stream;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -10,7 +52,6 @@ use cadmpeg_ir::geometry::{
 };
 
 use super::*;
-use crate::test_support::*;
 
 mod dialect;
 

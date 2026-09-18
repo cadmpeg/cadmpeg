@@ -12,7 +12,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
+use crate::test_support::test_om::composed_feature_history_payload;
+use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::NxCodec;
 
 #[test]

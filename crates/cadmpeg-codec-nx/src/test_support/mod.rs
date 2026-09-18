@@ -6,19 +6,12 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod native_references;
-mod test_bytes;
-mod test_cfb;
-mod test_deltas;
-mod test_om;
-mod test_prt;
-mod test_streams;
-
-pub(crate) use test_bytes::*;
-pub(crate) use test_cfb::*;
-pub(crate) use test_deltas::*;
-pub(crate) use test_om::*;
-pub(crate) use test_prt::*;
-pub(crate) use test_streams::*;
+pub(crate) mod test_bytes;
+pub(crate) mod test_cfb;
+pub(crate) mod test_deltas;
+pub(crate) mod test_om;
+pub(crate) mod test_prt;
+pub(crate) mod test_streams;
 
 pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
     let arena = cadmpeg_core::decode::DecodeArena::new();

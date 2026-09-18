@@ -18,13 +18,12 @@ use crate::native::om::{
     operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
     operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter, OmOperationStateMessage,
 };
-use crate::test_support::{
-    composed_feature_history_payload_with_operation_state_statuses,
-    composed_feature_history_payload_with_state_journal, prt_with_named_payloads,
-    segment_om_record_area_with_state_counter_map,
-    segment_om_record_area_with_state_groups_and_counter_map,
-    size_framed_audit_trail_section_with_record_area,
-};
+use crate::test_support::test_om::composed_feature_history_payload_with_operation_state_statuses;
+use crate::test_support::test_om::composed_feature_history_payload_with_state_journal;
+use crate::test_support::test_om::segment_om_record_area_with_state_counter_map;
+use crate::test_support::test_om::segment_om_record_area_with_state_groups_and_counter_map;
+use crate::test_support::test_om::size_framed_audit_trail_section_with_record_area;
+use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::NxCodec;
 
 #[test]

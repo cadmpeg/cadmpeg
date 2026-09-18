@@ -1,8 +1,9 @@
-use super::super::*;
 use crate::native::attach::hole_axis_placements_for_operations;
 use crate::native::attach::hole_body_projection;
 use crate::native::attach::simple_hole_chamfers;
 use crate::native::attach::simple_hole_native_properties;
+use crate::native::attach::tests::hole_diameters_for_operations;
+use crate::native::attach::tests::simple_hole_diameters;
 use crate::native::attach::SolvedSurfaceGeometry;
 use crate::native::attach::SurfaceGeometry;
 

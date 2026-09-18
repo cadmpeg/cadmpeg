@@ -5,12 +5,11 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
+use super::test_bytes::shifted_f64_bytes;
 use std::io::Write;
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-
-use super::*;
 
 pub(crate) fn segment_index_payload() -> Vec<u8> {
     let mut payload = Vec::new();

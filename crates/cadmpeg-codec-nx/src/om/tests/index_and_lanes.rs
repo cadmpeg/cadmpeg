@@ -31,7 +31,9 @@ use crate::om::OperationBodyReference;
 use crate::om::OperationPayloadTextFrame;
 use crate::om::OperationTerminalFrame;
 use crate::om::OperationTextMarker;
-use crate::test_support::*;
+use crate::test_support::test_om::indexed_om_section;
+use crate::test_support::test_om::size_framed_om_section;
+use crate::test_support::test_om::size_framed_om_section_with_record_area;
 
 const EPS_NAMED_POINT_ROUNDING: f64 = 1.0e-12;
 const EPS_SHIFTED_SCALAR_ROUNDING: f64 = 2.0e-12;

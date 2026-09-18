@@ -4254,6 +4254,15 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::test_om::offset_only_indexed_om_section;
+    use crate::test_support::test_om::offset_only_indexed_om_section_with_control;
+    use crate::test_support::test_om::offset_only_indexed_om_section_with_index_values;
+    use crate::test_support::test_om::size_framed_om_section;
+    use crate::test_support::test_prt::prt_with_arrangement_attribute;
+    use crate::test_support::test_prt::prt_with_arrangements;
+    use crate::test_support::test_prt::prt_with_indexed_om_section;
+    use crate::test_support::test_prt::prt_with_named_payloads;
+    use crate::test_support::test_prt::prt_with_size_framed_om_section;
     #[test]
     fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         for (value, raw) in [
@@ -4293,7 +4302,6 @@ mod tests {
     use super::*;
     use crate::container;
 
-    use crate::test_support::*;
     use crate::NxCodec;
 
     #[test]
@@ -6053,7 +6061,7 @@ mod rmfastload;
 #[cfg(test)]
 mod object_record_identity_tests {
 
-    use crate::test_support::prt_with_indexed_om_section;
+    use crate::test_support::test_prt::prt_with_indexed_om_section;
 
     #[test]
     fn stable_object_record_identity_excludes_position_and_scopes_entry() {

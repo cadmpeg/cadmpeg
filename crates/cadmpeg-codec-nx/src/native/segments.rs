@@ -661,11 +661,18 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::test_om::segment_body_binding_payload;
+    use crate::test_support::test_om::segment_body_binding_repeated_link_payload;
+    use crate::test_support::test_om::segment_extended_wrapper_payload;
+    use crate::test_support::test_om::segment_index_payload;
+    use crate::test_support::test_om::segment_om_payload;
+    use crate::test_support::test_om::segment_stream_payload;
+    use crate::test_support::test_om::size_framed_om_section;
+    use crate::test_support::test_prt::prt_with_named_payloads;
     use std::io::Cursor;
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-    use crate::test_support::*;
     use crate::NxCodec;
 
     use super::*;

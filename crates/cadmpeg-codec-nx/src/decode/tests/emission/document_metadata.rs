@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::jpeg::jpeg_dimensions;
-use crate::test_support::partition_stream;
-use crate::test_support::prt_with_indexed_om_section;
-use crate::test_support::prt_with_named_payloads;
-use crate::test_support::topology_partition_stream;
-use crate::test_support::zlib_compress;
+use crate::test_support::test_bytes::zlib_compress;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_streams::partition_stream;
+use crate::test_support::test_streams::topology_partition_stream;
 use crate::NxCodec;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::Codec;

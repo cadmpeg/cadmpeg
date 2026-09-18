@@ -5,7 +5,14 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::test_bytes::put_f64;
+use super::test_bytes::put_ref;
+use super::test_bytes::put_vec3;
+use super::test_bytes::record;
+use super::test_bytes::zlib_compress_at_level;
+use super::test_deltas::link_partition_face;
+use super::test_deltas::DELTAS_PREAMBLE;
+use super::test_prt::prt_with_streams;
 
 /// A synthetic Parasolid partition stream: the `PS 00 00` header, a prologue with
 /// a `(partition)` subtype and a schema token, then one POINT, one PLANE, one

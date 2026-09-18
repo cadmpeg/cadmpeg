@@ -125,7 +125,8 @@ pub(crate) fn data_block_abr_reference_lanes(
 #[cfg(test)]
 mod tests {
     use crate::container;
-    use crate::test_support::{offset_only_indexed_om_section, prt_with_named_payloads};
+    use crate::test_support::test_om::offset_only_indexed_om_section;
+    use crate::test_support::test_prt::prt_with_named_payloads;
 
     #[test]
     fn native_abr_lane_resolves_nullable_slots_within_its_offset_store() {

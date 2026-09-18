@@ -3,11 +3,19 @@
 #![allow(clippy::default_trait_access)]
 
 use crate::framing::node_kind::NodeKind;
+use crate::test_support::test_bytes::put_f64;
+use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::put_vec3;
+use crate::test_support::test_bytes::record;
+use crate::test_support::test_deltas::variable_status_framed_deltas_stream;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_streams::deltas_intersection_curve_stream;
+use crate::test_support::test_streams::offset_surface_topology_partition_stream;
+use crate::test_support::test_streams::topology_partition_stream;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
 use crate::topology::{
     intersection_data_curves, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
 };

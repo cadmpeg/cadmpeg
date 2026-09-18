@@ -136,19 +136,19 @@ mod tests {
 
     #[test]
     fn deltas_wrapper_accepts_fixture() {
-        let stream = crate::test_support::status_framed_deltas_stream();
+        let stream = crate::test_support::test_deltas::status_framed_deltas_stream();
         super::deltas(&stream);
     }
 
     #[test]
     fn om_wrapper_accepts_fixture() {
-        super::om(&crate::test_support::indexed_om_section());
-        super::om(&crate::test_support::size_framed_om_section());
+        super::om(&crate::test_support::test_om::indexed_om_section());
+        super::om(&crate::test_support::test_om::size_framed_om_section());
     }
 
     #[test]
     fn geometry_wrappers_accept_fixture() {
-        let stream = crate::test_support::partition_stream();
+        let stream = crate::test_support::test_streams::partition_stream();
         super::geometry_points(&stream);
         super::geometry_curves(&stream);
         super::geometry_surfaces(&stream);
@@ -156,26 +156,28 @@ mod tests {
 
     #[test]
     fn intersection_wrapper_accepts_fixture() {
-        let stream = crate::test_support::charted_intersection_curve_topology_partition_stream();
+        let stream =
+            crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream(
+            );
         super::intersection(&stream);
     }
 
     #[test]
     fn nurbs_wrappers_accept_fixture() {
-        let stream = crate::test_support::bspline_partition_stream();
+        let stream = crate::test_support::test_deltas::bspline_partition_stream();
         super::nurbs_curves(&stream);
         super::nurbs_surfaces(&stream);
     }
 
     #[test]
     fn topology_wrapper_accepts_fixture() {
-        let stream = crate::test_support::topology_partition_stream();
+        let stream = crate::test_support::test_streams::topology_partition_stream();
         super::topology(&stream);
     }
 
     #[test]
     fn parasolid_wrapper_accepts_fixture() {
-        let bytes = crate::test_support::single_part_prt();
+        let bytes = crate::test_support::test_prt::single_part_prt();
         super::parasolid(&bytes);
     }
 

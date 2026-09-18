@@ -3478,6 +3478,9 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::test_bytes::put_ref;
+    use crate::test_support::test_prt::prt_with_partition;
+    use crate::test_support::test_streams::topology_partition_stream;
     #[test]
     fn unicode_record_wire_derives_exact_utf16_and_rejects_disagreement() {
         let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
@@ -3492,7 +3495,7 @@ mod tests {
     use std::io::Cursor;
 
     use crate::parasolid::Stream;
-    use crate::test_support::many_face_partition_stream;
+    use crate::test_support::test_prt::many_face_partition_stream;
     use crate::topology::Graph;
 
     #[test]
@@ -4280,7 +4283,6 @@ mod tests {
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-    use crate::test_support::*;
     use crate::NxCodec;
 
     use super::*;

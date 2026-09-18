@@ -3,6 +3,9 @@
 
 use crate::decode::offset::point_distance;
 use crate::decode::support_uv::SerializedSupportUv;
+use crate::test_support::test_streams::prt_with_ext11_intersection;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream_with_second_plane_axis;
+use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -14,7 +17,6 @@ use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::ProceduralCurveId;
 use cadmpeg_ir::math::Point3;
 
-use crate::test_support::*;
 use crate::NxCodec;
 
 #[test]
