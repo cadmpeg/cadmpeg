@@ -11,7 +11,8 @@ use cadmpeg_ir::semantic_annotations::{
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::native::{
-    AnnotationRuntimeType, DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord,
+    sole_named_property, AnnotationRuntimeType, DrawingRecord, ObjectRecord, PropertyRecord,
+    SemanticAnnotationRecord,
 };
 
 pub(crate) fn transfer(
@@ -432,7 +433,7 @@ fn typed_property<'a>(
     name: &str,
     type_names: &[&str],
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("annotation", properties, name)? else {
         return Ok(None);
     };
     if !type_names.contains(&property.type_name.as_str()) {
@@ -456,18 +457,6 @@ fn validate_text_carriers(
         strict_text_values(property, carrier.type_name)?;
     }
     Ok(())
-}
-
-fn unique_property<'a>(
-    properties: &[&'a PropertyRecord],
-    name: &str,
-) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
-        .map_err(|_| {
-            CodecError::malformed(format_args!(
-                "annotation property {name} occurs more than once"
-            ))
-        })
 }
 
 fn direct_value_attributes(

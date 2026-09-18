@@ -8,7 +8,9 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord};
+use crate::native::{
+    sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
+};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -307,7 +309,7 @@ fn registered_drawing_kind(runtime_type: &str) -> Option<DrawingKind> {
 }
 
 fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<f64>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("drawing", properties, name)? else {
         return Ok(None);
     };
     let Some(value) = root_value(property, name)? else {
@@ -328,7 +330,7 @@ fn vector_property(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("drawing", properties, name)? else {
         return Ok(None);
     };
     let Some(value) = root_value(property, name)? else {
@@ -347,7 +349,7 @@ fn source_links(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Vec<Option<crate::native::LinkTarget>>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("drawing", properties, name)? else {
         return Ok(Vec::new());
     };
     let valid_type = match name {
@@ -490,7 +492,7 @@ fn drawing_parameters(
     ];
     let mut parameters = BTreeMap::new();
     for name in NAMES {
-        let Some(property) = unique_property(properties, name)? else {
+        let Some(property) = sole_named_property("drawing", properties, name)? else {
             continue;
         };
         validate_drawing_property(name, property)?;
@@ -500,7 +502,7 @@ fn drawing_parameters(
         parameters.insert((*name).to_owned(), value.raw_xml.clone());
     }
     for name in VALIDATED_ONLY_NAMES {
-        if let Some(property) = unique_property(properties, name)? {
+        if let Some(property) = sole_named_property("drawing", properties, name)? {
             validate_drawing_property(name, property)?;
         }
     }
@@ -634,18 +636,6 @@ fn root_value<'a>(
             "drawing property {name} has multiple root values"
         ))),
     }
-}
-
-fn unique_property<'a>(
-    properties: &[&'a PropertyRecord],
-    name: &str,
-) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
-        .map_err(|_| {
-            CodecError::malformed(format_args!(
-                "drawing property {name} occurs more than once"
-            ))
-        })
 }
 
 fn scalar_value(name: &str, type_name: &str, value: &ValueRecord) -> Option<f64> {

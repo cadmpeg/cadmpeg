@@ -60,7 +60,7 @@ pub(crate) fn parse(
     let mut tables = Vec::new();
     for node in string_hasher_nodes {
         let index = tables.len();
-        let save_all = parse_bool(node.attribute("saveall").unwrap_or("0"))?;
+        let save_all = require_bool(node.attribute("saveall").unwrap_or("0"))?;
         let threshold = parse_decimal(node.attribute("threshold").unwrap_or("0"), "threshold")?;
         let owner_property = owning_property(node, properties)?;
         let new_layout = node.attribute("new").is_some_and(|value| value != "0");
@@ -393,7 +393,7 @@ fn direct_element_map<'a, 'input>(
     let marker = children[marker_index];
     let is_new = marker
         .attribute("new")
-        .map(parse_bool)
+        .map(require_bool)
         .transpose()?
         .unwrap_or(false);
     let Some(map_index) = map_indices.first().copied() else {
@@ -738,7 +738,10 @@ fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, Codec
     Ok(count)
 }
 
-fn parse_bool(value: &str) -> Result<bool, CodecError> {
+/// Reads an element-map boolean attribute, which is `0`, `1`, `false` or `true`.
+///
+/// Any other text is malformed.
+fn require_bool(value: &str) -> Result<bool, CodecError> {
     match value {
         "0" | "false" => Ok(false),
         "1" | "true" => Ok(true),
