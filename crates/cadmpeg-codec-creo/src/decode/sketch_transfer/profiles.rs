@@ -597,22 +597,7 @@ pub(in super::super) fn solver_only_section_entity_family(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn opaque(external_id: u32) -> crate::feature::FeatureOpaqueSegment {
-        crate::feature::FeatureOpaqueSegment {
-            kind: 25,
-            directions: [None; 3],
-            point_ids: [None; 2],
-            center_id: None,
-            arc_orientation: None,
-            vertical_horizontal: None,
-            radius_ref: None,
-            radius2_ref: None,
-            external_id,
-            body: Vec::new(),
-            offset: external_id as usize,
-        }
-    }
+    use crate::decode::tests::opaque;
 
     fn midpoint(target: u32, point: u32) -> crate::feature::FeatureSkamp {
         crate::feature::FeatureSkamp {

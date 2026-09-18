@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::sketch_profiles_cover_generated_extrusion_sides;
+use crate::decode::tests::surface_row;
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, SketchPlacement};
 
 fn definition() -> crate::feature::FeatureDefinition {
@@ -21,22 +22,6 @@ fn definition() -> crate::feature::FeatureDefinition {
         dimensions: None,
         relations: None,
         saved_section: None,
-        offset: 0,
-    }
-}
-
-fn surface_row(
-    id: u32,
-    feature_id: u32,
-    kind: crate::surface::SurfaceKind,
-) -> crate::surface::SurfaceRow {
-    crate::surface::SurfaceRow {
-        id,
-        kind,
-        feature_id,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
         offset: 0,
     }
 }

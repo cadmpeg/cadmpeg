@@ -28,8 +28,7 @@ use std::collections::BTreeMap;
 
 #[test]
 fn circular_sweep_projects_profile_direction_and_extent() {
-    let rows = [12, 13]
-        .map(|id| super::class_911_surface_row(6, id, crate::surface::SurfaceKind::Cylinder));
+    let rows = [12, 13].map(|id| super::surface_row(id, 6, crate::surface::SurfaceKind::Cylinder));
     let sweep = CircularSweepGeometry {
         cylinder_rows: rows.iter().collect(),
         section_definition_id: None,

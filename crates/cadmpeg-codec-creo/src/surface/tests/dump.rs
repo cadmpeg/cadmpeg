@@ -6,6 +6,7 @@ use crate::test_support::build_prt;
 use crate::test_support::push_generated_scalar;
 use crate::test_support::push_named_analytic_prototype;
 use crate::test_support::visibgeom_payload;
+use crate::test_support::world;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use std::io::Cursor;
@@ -1253,15 +1254,6 @@ fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
 
 #[test]
 fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
-    fn world(payload: &mut Vec<u8>, value: f64) {
-        let raw = value.to_be_bytes();
-        payload.push(match raw[0] {
-            0x40 => 0x46,
-            0xc0 => 0x2d,
-            _ => panic!("generated FC05 value must use a world-token exponent"),
-        });
-        payload.extend_from_slice(&raw[1..]);
-    }
     fn plane_row(payload: &mut Vec<u8>, id: u8, next: u8, x: f64) {
         payload.extend_from_slice(&[id, 0x22, 4, 0x01, 0, next]);
         for value in [0.0, 1.0, 0.0, 1.0, x, -1.0, -1.0, x, 1.0, 2.0] {
