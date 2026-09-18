@@ -82,6 +82,21 @@ pub(crate) fn take<'a>(
     Ok(view.req_take(len).map_err(|error| error.during(field))?)
 }
 
+/// Takes `len` bytes as a bounded window over the same space.
+///
+/// The take is the whole bounds proof: a `len` the window does not hold is the
+/// located truncation this states, and the window it returns is exactly the
+/// bytes it advanced over, so no caller recomputes the range.
+pub(crate) fn take_child<'a>(
+    view: &mut View<'a>,
+    len: usize,
+    field: &'static str,
+) -> Result<View<'a>, CodecError> {
+    Ok(view
+        .req_take_child(len)
+        .map_err(|error| error.during(field))?)
+}
+
 /// Returns a copy of `view` positioned at an absolute position in its space.
 ///
 /// A position the window does not hold is the truncation the caller was about
