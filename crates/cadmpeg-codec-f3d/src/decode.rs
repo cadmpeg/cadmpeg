@@ -378,14 +378,6 @@ fn base_feature_body_selection_is_resolved(
         )
 }
 
-fn point_is_finite(point: &cadmpeg_ir::math::Point3) -> bool {
-    point.is_finite()
-}
-
-fn vector_is_finite(vector: &cadmpeg_ir::math::Vector3) -> bool {
-    vector.is_finite()
-}
-
 fn datum_plane_frame_is_resolved(
     origin: &cadmpeg_ir::math::Point3,
     normal: &cadmpeg_ir::math::Vector3,
@@ -396,9 +388,9 @@ fn datum_plane_frame_is_resolved(
     let (Some(normal), Some(u_axis)) = (normal.unit(), u_axis.unit()) else {
         return false;
     };
-    point_is_finite(origin)
-        && vector_is_finite(&normal)
-        && vector_is_finite(&u_axis)
+    origin.is_finite()
+        && normal.is_finite()
+        && u_axis.is_finite()
         && normal.dot(u_axis).abs() <= EPS_DATUM_PLANE_ORTHOGONAL
 }
 
