@@ -3627,11 +3627,7 @@ fn vector_list_property(
     let values = view.read_counted(count as u64, 24, |view| {
         Some(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
     })?;
-    if !view.is_empty()
-        || values
-            .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-    {
+    if !view.is_empty() || values.iter().any(|point| !point.is_finite()) {
         return None;
     }
     Some(values)
