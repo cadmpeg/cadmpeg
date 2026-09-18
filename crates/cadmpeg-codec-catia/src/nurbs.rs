@@ -26,20 +26,14 @@ fn finite_point2(point: Point2) -> bool {
     [point.u, point.v].into_iter().all(f64::is_finite)
 }
 
-pub(crate) fn finite_point3(point: Point3) -> bool {
-    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-}
-
-fn finite_vector3(vector: Vector3) -> bool {
-    [vector.x, vector.y, vector.z]
-        .into_iter()
-        .all(f64::is_finite)
-}
-
 fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
     nurbs.knots().iter().copied().all(f64::is_finite)
         && knots_nondecreasing(nurbs.knots())
-        && nurbs.control_points().iter().copied().all(finite_point3)
+        && nurbs
+            .control_points()
+            .iter()
+            .copied()
+            .all(|point| point.is_finite())
         && nurbs.weights().is_none_or(|weights| {
             weights
                 .iter()
@@ -280,7 +274,7 @@ pub(crate) fn reverse_curve_geometry(
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
-            if !finite_point3(*origin)
+            if !origin.is_finite()
                 || ![direction.x, direction.y, direction.z]
                     .into_iter()
                     .all(f64::is_finite)
@@ -290,7 +284,7 @@ pub(crate) fn reverse_curve_geometry(
             let length = range[1] - range[0];
             let origin = (*origin).translated(*direction, range[1]);
             let direction = direction.scale(-1.0);
-            if !finite_point3(origin)
+            if !origin.is_finite()
                 || ![direction.x, direction.y, direction.z]
                     .into_iter()
                     .all(f64::is_finite)
@@ -309,7 +303,7 @@ pub(crate) fn reverse_curve_geometry(
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
-            if !finite_point3(*center)
+            if !center.is_finite()
                 || ![
                     axis.x,
                     axis.y,
@@ -565,11 +559,11 @@ pub(crate) fn circular_helix_cache(
     let radius = major.x.hypot(major.y).hypot(major.z);
     let minor_radius = minor.x.hypot(minor.y).hypot(minor.z);
     let pitch_norm = pitch.x.hypot(pitch.y).hypot(pitch.z);
-    let frame_finite = finite_point3(*center)
-        && finite_vector3(*major)
-        && finite_vector3(*minor)
-        && finite_vector3(*pitch)
-        && finite_vector3(*axis);
+    let frame_finite = center.is_finite()
+        && major.is_finite()
+        && minor.is_finite()
+        && pitch.is_finite()
+        && axis.is_finite();
     let normalized_dot = |left: &Vector3, right: &Vector3| {
         (left.x / left.x.hypot(left.y).hypot(left.z))
             * (right.x / right.x.hypot(right.y).hypot(right.z))
@@ -715,7 +709,7 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
         center.y + major.y * angle.cos() + minor.y * angle.sin() + pitch.y * revolution_fraction,
         center.z + major.z * angle.cos() + minor.z * angle.sin() + pitch.z * revolution_fraction,
     );
-    finite_point3(point).then_some(point)
+    point.is_finite().then_some(point)
 }
 
 /// Convert degree-5 position/first/second-derivative knot jets into an exact
@@ -813,7 +807,7 @@ pub(crate) fn nurbs_surface_isocurve(
     if !parameter.is_finite()
         || !surface.u_knots().iter().copied().all(f64::is_finite)
         || !surface.v_knots().iter().copied().all(f64::is_finite)
-        || !surface.poles().into_iter().all(finite_point3)
+        || !surface.poles().into_iter().all(|point| point.is_finite())
         || surface.pole_weights().is_some_and(|weights| {
             weights
                 .into_iter()
@@ -874,14 +868,17 @@ pub(crate) fn nurbs_surface_isocurve(
             numerator[1] / denominator,
             numerator[2] / denominator,
         );
-        if !finite_point3(point) {
+        if !point.is_finite() {
             return None;
         }
         control_points.push(point);
         weights.push(denominator);
     }
     if !knots.iter().copied().all(f64::is_finite)
-        || !control_points.iter().copied().all(finite_point3)
+        || !control_points
+            .iter()
+            .copied()
+            .all(|point| point.is_finite())
         || !weights.iter().copied().all(f64::is_finite)
     {
         return None;
@@ -1262,7 +1259,7 @@ mod tests {
             .control_points()
             .iter()
             .copied()
-            .all(super::finite_point3));
+            .all(|point| point.is_finite()));
     }
 
     /// A tolerance at or past the diameter bounds every chord, so the step it
