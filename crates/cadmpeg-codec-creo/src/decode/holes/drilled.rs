@@ -12,7 +12,7 @@ use crate::container::ContainerScan;
 
 use super::super::feature_history::dimensions::feature_dimension_table_complete;
 use super::super::feature_history::round::unique_surface_parameter_record;
-use super::super::sketch::approximately_equal;
+use super::super::sketch::equations_coordinate::approximately_equal;
 use super::super::sweep::unique_available_positional_cylinder_frame_records;
 
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;

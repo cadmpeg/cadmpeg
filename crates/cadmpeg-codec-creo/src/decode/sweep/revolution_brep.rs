@@ -2,7 +2,7 @@
 //! Resolved revolution B-rep transfer.
 
 use super::super::feature_history::axes::revolution_axis_for_transfer;
-use super::super::sketch::section_point_in_model;
+use super::super::sketch::intersect::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,

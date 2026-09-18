@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolution axes, section profile refs, and geometry-generator features.
 
-use super::super::sketch::{resolved_section_points, section_point_in_model};
+use super::super::sketch::coordinates::resolved_section_points;
+use super::super::sketch::intersect::section_point_in_model;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
 use crate::vecmath::normalize;

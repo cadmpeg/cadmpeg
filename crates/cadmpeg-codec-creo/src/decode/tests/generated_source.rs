@@ -24,7 +24,7 @@ use crate::decode::holes::drilled::{
     simple_drilled_hole_recipe, stepped_hole_form, SimpleDrilledDimensionFamily,
 };
 use crate::decode::holes::placement::ExtrusionSpan;
-use crate::decode::sketch::approximately_equal;
+use crate::decode::sketch::equations_coordinate::approximately_equal;
 use crate::decode::surfaces::rowless_round_cylinder_pairs;
 use crate::decode::sweep::profiles::ProfileEntity;
 use crate::decode::sweep::{

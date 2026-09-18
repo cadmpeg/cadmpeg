@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner resolved-sketch and related unit tests.
 
-use crate::decode::sketch::{
-    saved_section_missing_line_geometry, section_axis_line_carrier_with_points,
-    section_segment_geometry, section_segment_intersection_carrier_with_missing_line,
+use crate::decode::sketch::geometry::{
+    saved_section_missing_line_geometry, section_segment_geometry,
+};
+use crate::decode::sketch::radii::{
+    section_axis_line_carrier_with_points, section_segment_intersection_carrier_with_missing_line,
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
 use crate::decode::sweep::{extruded_geometry_surface, placed_section_geometry_curve};

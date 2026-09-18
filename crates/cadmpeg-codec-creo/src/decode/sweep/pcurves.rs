@@ -2,7 +2,7 @@
 //! Extrusion and revolution pcurves.
 
 use super::super::native::annotate;
-use super::super::sketch::section_point_in_model;
+use super::super::sketch::intersect::section_point_in_model;
 use super::nurbs::{oriented_sketch_nurbs_curve, placed_section_nurbs};
 use super::profiles::{circular_pcurve, line_pcurve, profile_arc};
 use super::surfaces::{revolved_nurbs_surface, revolved_section_surface};

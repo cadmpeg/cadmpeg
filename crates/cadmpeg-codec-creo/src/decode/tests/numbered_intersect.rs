@@ -25,9 +25,10 @@ use crate::decode::feature_history::selections::{
 };
 use crate::decode::holes::placement::{cylinder_from_complementary_outline_bounds, hole_placement};
 use crate::decode::holes::sweep::extrusion_extent_and_direction;
-use crate::decode::sketch::{
-    section_linear_distance_coordinate, solve_section_coordinate_equations,
-    solve_unsigned_dimension_coordinates, SectionCoordinateEquation,
+use crate::decode::sketch::coordinates::section_linear_distance_coordinate;
+use crate::decode::sketch::equations_coordinate::{
+    solve_section_coordinate_equations, solve_unsigned_dimension_coordinates,
+    SectionCoordinateEquation,
 };
 use crate::decode::surfaces::fc05_model_frame;
 use crate::decode::sweep::{

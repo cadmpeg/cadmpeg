@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! External ids and saved-section entity identity.
 
-use super::super::sketch::saved_section_entity_geometry;
+use super::super::sketch::geometry::saved_section_entity_geometry;
 use super::super::sketch_ids::{sketch_entity_id, sketch_identity_scope, sketch_native_ref};
 use super::super::sweep::saved_spline_sketch_geometry;
 use crate::feature::segment_rows::SegmentRow;

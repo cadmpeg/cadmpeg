@@ -42,9 +42,9 @@ use super::native_records::{
     CreoSketchVariable, CreoTabulatedCylinderFrame, CreoTorusOutlineFrame,
     CreoTorusRadiusOverrides, CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
 };
-use super::sketch::{
-    resolved_section_coordinates, resolved_section_radii, resolved_section_scalar_values,
-};
+use super::sketch::coordinates::resolved_section_coordinates;
+use super::sketch::equations_scalar::resolved_section_scalar_values;
+use super::sketch::radii::resolved_section_radii;
 use super::sketch_ids::{
     binary_flag_value, feature_definition_has_sketch_design, feature_definition_record_id,
     feature_sketch_record_id_in_scan, sketch_table_headers,

@@ -232,7 +232,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         }
     );
     assert_eq!(
-        crate::decode::sketch::resolved_section_coordinates(&definition)
+        crate::decode::sketch::coordinates::resolved_section_coordinates(&definition)
             .get(&3)
             .copied(),
         Some([Some(1.0), Some(2.0)])
@@ -284,7 +284,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         }
     );
     assert_eq!(
-        crate::decode::sketch::resolved_section_coordinates(&definition)
+        crate::decode::sketch::coordinates::resolved_section_coordinates(&definition)
             .get(&3)
             .copied(),
         Some([Some(2.0), Some(1.0)])

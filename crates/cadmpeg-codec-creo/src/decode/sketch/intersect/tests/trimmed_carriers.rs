@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::trimmed_section_segment_geometry_with_missing_line;
-use crate::decode::sketch::{resolved_section_points, saved_section_missing_line_geometry};
+use crate::decode::sketch::coordinates::resolved_section_points;
+use crate::decode::sketch::geometry::saved_section_missing_line_geometry;
 use crate::decode::tests::declared_solver_rows;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
