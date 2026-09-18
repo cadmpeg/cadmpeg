@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests for scalar equality propagation into equation consumers.
 
-use crate::decode::sketch::{
+use crate::decode::sketch::coordinates::resolved_section_coordinates;
+use crate::decode::sketch::equations_coordinate::{
+    section_equation_equal_length_constraint_rows, section_equation_point_on_line_constraint_rows,
+    section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
+};
+use crate::decode::sketch::equations_scalar::{
     merge_scalar_value_candidate, propagate_section_equation_scalar_equality_values,
-    resolved_section_coordinates, resolved_section_scalar_values,
-    section_equation_coordinate_equality_rows, section_equation_equal_length_constraint_rows,
+    resolved_section_scalar_values, section_equation_coordinate_equality_rows,
     section_equation_function_forty_three_axis_distance_values,
-    section_equation_function_sixteen_angle_difference_values,
-    section_equation_point_on_line_constraint_rows, section_equation_radius_dimensions,
-    section_equation_scalar_equalities, section_equation_scalar_equality_components,
-    section_equation_scalar_seed_values, section_equation_scalar_values_from_coordinates,
-    section_equation_unsigned_coordinate_distance_rows,
+    section_equation_function_sixteen_angle_difference_values, section_equation_scalar_equalities,
+    section_equation_scalar_equality_components, section_equation_scalar_seed_values,
+    section_equation_scalar_values_from_coordinates,
 };
 use crate::feature::definitions::ScalarLane;
 use std::collections::{BTreeMap, BTreeSet};

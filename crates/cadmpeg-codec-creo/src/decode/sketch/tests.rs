@@ -2,7 +2,7 @@
 
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-use super::*;
+use super::geometry::saved_section_entity_geometry;
 
 #[test]
 fn coincident_endpoint_conic_materializes_as_a_full_ellipse() {

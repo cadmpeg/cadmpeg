@@ -14,7 +14,7 @@ use super::super::holes::sweep::{
     circular_sweep_feature_definition, circular_sweep_geometry, compact_simple_hole_cylinder_id,
     compact_simple_hole_geometry, extrusion_extent_and_direction, simple_hole_geometry,
 };
-use super::super::sketch::approximately_equal;
+use super::super::sketch::equations_coordinate::approximately_equal;
 use super::super::sketch_ids::{feature_sketch_record_id_in_scan, model_sketch_id};
 use super::super::sweep::{
     feature_outline_planes, feature_plane_equations, generated_arc_cylinder_extent,

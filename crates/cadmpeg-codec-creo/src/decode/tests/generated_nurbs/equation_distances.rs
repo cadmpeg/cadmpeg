@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::decode::sketch::resolved_section_coordinates;
-use crate::decode::sketch::resolved_section_radii;
-use crate::decode::sketch::resolved_section_scalar_values;
+use crate::decode::sketch::coordinates::resolved_section_coordinates;
+use crate::decode::sketch::equations_scalar::resolved_section_scalar_values;
+use crate::decode::sketch::radii::resolved_section_radii;
 use crate::feature::definitions::ScalarLane;
 
 #[test]

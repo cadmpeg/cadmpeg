@@ -8,14 +8,19 @@ use super::super::feature_history::link::{
 };
 use super::super::feature_history::outputs::owned_section_feature_id;
 use super::super::native::annotate;
-use super::super::sketch::{
-    resolved_section_coordinates, resolved_section_radii, resolved_section_reference_line_geometry,
-    resolved_section_segment_geometry_with_missing_line, resolved_trim_vertex_coordinates,
-    saved_profile_chains, saved_section_missing_line_geometry,
-    section_axis_reference_line_geometry, section_centered_line_geometry, section_circle_geometry,
-    section_point_row_geometry, section_segment_rows, trim_segment_id,
-    trimmed_section_segment_geometry_with_missing_line,
+use super::super::sketch::coordinates::resolved_section_coordinates;
+use super::super::sketch::geometry::{
+    resolved_section_reference_line_geometry, resolved_section_segment_geometry_with_missing_line,
+    saved_profile_chains, saved_section_missing_line_geometry, section_centered_line_geometry,
+    section_circle_geometry, section_point_row_geometry,
 };
+use super::super::sketch::intersect::{
+    resolved_trim_vertex_coordinates, trimmed_section_segment_geometry_with_missing_line,
+};
+use super::super::sketch::radii::{
+    resolved_section_radii, section_axis_reference_line_geometry, trim_segment_id,
+};
+use super::super::sketch::skamp::section_segment_rows;
 use super::super::sketch_ids::{
     feature_definition_has_sketch_design, model_sketch_id, sketch_constraint_id, sketch_entity_id,
     sketch_feature_id, sketch_native_ref,

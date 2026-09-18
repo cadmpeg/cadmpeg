@@ -9,19 +9,25 @@ use crate::feature::definitions::SolverSubtable;
 use super::super::feature_history::dimensions::{
     feature_relation_table_complete, resolved_feature_dimension_parameter,
 };
-use super::super::sketch::{
-    approximately_equal, resolved_section_coordinates, saved_section_coordinate_witnesses,
+use super::super::sketch::coordinates::{
+    resolved_section_coordinates, saved_section_coordinate_witnesses,
+    section_linear_distance_coordinate,
+};
+use super::super::sketch::equations_coordinate::{
+    approximately_equal, section_equation_function_six_distance_rows,
+    section_equation_point_on_line_constraint_rows, section_equation_radius_dimensions,
+    section_equation_unsigned_coordinate_distance_rows,
+};
+use super::super::sketch::equations_scalar::{
     section_equation_function_five_scalar_equality_rows,
     section_equation_function_forty_three_axis_distance_rows,
     section_equation_function_forty_two_midpoint_coordinate_rows,
-    section_equation_function_six_distance_rows,
     section_equation_function_sixteen_angle_difference_rows,
     section_equation_function_thirty_one_point_coordinate_rows,
-    section_equation_point_on_line_constraint_rows, section_equation_radial_constraint_rows,
-    section_equation_radius_dimensions, section_equation_unsigned_coordinate_distance_rows,
-    section_linear_distance_coordinate, section_radius_relation_arc, section_segment_rows,
-    unique_decoded_section_segment,
+    section_equation_radial_constraint_rows,
 };
+use super::super::sketch::radii::section_radius_relation_arc;
+use super::super::sketch::skamp::{section_segment_rows, unique_decoded_section_segment};
 use super::super::sketch_ids::{sketch_constraint_id, sketch_entity_id, sketch_native_ref};
 use crate::decode::sketch_transfer::identity::{
     opaque_section_segment_identity_suffix, section_entity_external_ids,
@@ -849,7 +855,7 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    super::super::sketch::section_equation_equal_length_constraint_rows(
+    super::super::sketch::equations_coordinate::section_equation_equal_length_constraint_rows(
         definition,
         &ambiguous_point_ids,
     )
@@ -1399,7 +1405,7 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    let rows = super::super::sketch::section_equation_coordinate_equality_rows(
+    let rows = super::super::sketch::equations_scalar::section_equation_coordinate_equality_rows(
         definition,
         &ambiguous_point_ids,
     );

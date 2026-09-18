@@ -9,7 +9,8 @@ use crate::decode::feature_history::dimensions::{
 use crate::decode::feature_history::outputs::{
     evaluated_sweep_body_kind, evaluated_sweep_output_bodies,
 };
-use crate::decode::sketch::{resolved_section_radii, section_circle_geometry};
+use crate::decode::sketch::geometry::section_circle_geometry;
+use crate::decode::sketch::radii::resolved_section_radii;
 use crate::decode::sketch_transfer::constraints::{
     section_segment_radius_constraints, section_segment_radius_constraints_for_emitted,
     section_segment_verhor_definition,

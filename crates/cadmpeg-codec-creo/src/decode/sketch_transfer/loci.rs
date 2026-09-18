@@ -4,10 +4,10 @@
 use crate::decode::sketch::axis::SectionAxis;
 
 use super::super::feature_history::dimensions::feature_skamp_table_complete;
-use super::super::sketch::{
-    resolved_section_points, section_skamp_incidence_point,
-    section_skamp_selected_point_id_with_ordinary_segment, unique_decoded_section_segment,
-    SectionPointSource,
+use super::super::sketch::coordinates::resolved_section_points;
+use super::super::sketch::skamp::{
+    section_skamp_incidence_point, section_skamp_selected_point_id_with_ordinary_segment,
+    unique_decoded_section_segment, SectionPointSource,
 };
 use super::super::sketch_ids::sketch_entity_id;
 use crate::decode::sketch_transfer::identity::{

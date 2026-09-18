@@ -17,9 +17,9 @@ use crate::decode::feature_history::draft::schema_feature_definition;
 use crate::decode::feature_history::named::{
     named_feature_definition, named_or_referenced_feature_definition,
 };
-use crate::decode::sketch::{
-    intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
-};
+use crate::decode::sketch::geometry::section_arc_geometry;
+use crate::decode::sketch::intersect::intersect_incident_section_carriers;
+use crate::decode::sketch::radii::trim_segment_id;
 use crate::decode::sketch_transfer::identity::materialized_saved_section_external_ids;
 use crate::decode::sketch_transfer::profiles::resolved_profile_chains;
 use crate::decode::surfaces::intersection_candidates::{

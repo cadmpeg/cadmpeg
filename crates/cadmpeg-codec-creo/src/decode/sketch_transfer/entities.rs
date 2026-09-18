@@ -5,7 +5,7 @@ use super::super::feature_history::link::{
     section_entity_is_generated_profile, section_generated_profile_surface_kinds,
 };
 use super::super::native::annotate;
-use super::super::sketch::{saved_profile_chains, saved_section_entity_geometry};
+use super::super::sketch::geometry::{saved_profile_chains, saved_section_entity_geometry};
 use super::super::sketch_ids::{
     sketch_entity_id, sketch_identity_scope, sketch_native_ref, sketch_point_ref,
     typed_sketch_section_curve_id,

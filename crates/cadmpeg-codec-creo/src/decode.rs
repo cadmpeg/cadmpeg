@@ -38,11 +38,6 @@ use crate::decode::build::ir::{build_container_ir, build_ir, BuiltIr};
 use crate::decode::build::report::build_report;
 
 #[cfg(test)]
-pub(crate) use sketch::{
-    resolved_section_coordinates, resolved_section_points, resolved_section_radii,
-};
-
-#[cfg(test)]
 mod tests;
 
 #[cfg(test)]

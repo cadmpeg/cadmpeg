@@ -2,7 +2,8 @@
 //! Resolved profile chains and solver-only section entities.
 
 use super::super::feature_history::dimensions::feature_skamp_table_complete;
-use super::super::sketch::{trim_segment_id, unique_decoded_section_segment};
+use super::super::sketch::radii::trim_segment_id;
+use super::super::sketch::skamp::unique_decoded_section_segment;
 use super::super::sketch_ids::sketch_entity_id;
 use super::super::uniqueness::exactly_one;
 use crate::decode::sketch_transfer::identity::saved_section_entity_fallback_allowed;

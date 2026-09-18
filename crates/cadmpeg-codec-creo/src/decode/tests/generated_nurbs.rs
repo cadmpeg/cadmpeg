@@ -6,12 +6,13 @@ use crate::decode::feature_history::dependencies::{
     agreed_feature_affected_ids, agreed_feature_replay_edge_ids, agreed_feature_replay_geometry_ids,
 };
 use crate::decode::feature_history::selections::agreed_feature_geometry_ids;
-use crate::decode::sketch::{
+use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points};
+use crate::decode::sketch::equations_scalar::resolved_section_scalar_values;
+use crate::decode::sketch::geometry::{section_line_geometry, section_point_geometry};
+use crate::decode::sketch::intersect::{
     intersect_section_line_arc, intersect_section_lines, intersect_tangent_section_arcs,
-    resolved_section_coordinates, resolved_section_points, resolved_section_radii,
-    resolved_section_scalar_values, section_axis_reference_line_geometry, section_line_geometry,
-    section_point_geometry,
 };
+use crate::decode::sketch::radii::{resolved_section_radii, section_axis_reference_line_geometry};
 use crate::decode::sketch_transfer::constraints::{
     reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
     section_equation_same_coordinate_constraints,

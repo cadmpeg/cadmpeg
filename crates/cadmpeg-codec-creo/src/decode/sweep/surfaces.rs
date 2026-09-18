@@ -6,10 +6,13 @@ use super::super::feature_history::link::{
     analytic_surface_id_for_feature, generated_surface_id_for_feature, surface_kind_for_geometry,
 };
 use super::super::native::annotate;
-use super::super::sketch::{
-    complete_section_segment_rows, resolved_section_points, resolved_section_segment_geometry,
-    saved_section_entity_geometry, section_point_in_model, trim_segment_id,
+use super::super::sketch::coordinates::resolved_section_points;
+use super::super::sketch::geometry::{
+    resolved_section_segment_geometry, saved_section_entity_geometry,
 };
+use super::super::sketch::intersect::section_point_in_model;
+use super::super::sketch::radii::trim_segment_id;
+use super::super::sketch::skamp::complete_section_segment_rows;
 use super::super::sketch_ids::sketch_section_curve_id;
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,

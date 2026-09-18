@@ -2,10 +2,12 @@
 //! Resolved revolution and extrusion surface and vertex-orbit transfer.
 
 use super::super::native::annotate;
-use super::super::sketch::{
-    complete_section_segment_rows, resolved_section_points, resolved_section_segment_geometry,
-    saved_section_entity_geometry, trim_segment_id,
+use super::super::sketch::coordinates::resolved_section_points;
+use super::super::sketch::geometry::{
+    resolved_section_segment_geometry, saved_section_entity_geometry,
 };
+use super::super::sketch::radii::trim_segment_id;
+use super::super::sketch::skamp::complete_section_segment_rows;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::sweep::{
     connected_sketch_profile_vertices, extruded_section_line, revolved_nurbs_surface,

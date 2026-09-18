@@ -7,9 +7,9 @@ use crate::container::ContainerScan;
 use crate::feature::definitions::{ScalarLane, VariableType};
 
 use super::super::expanded::feature_surface_replay_associations;
-use super::super::sketch::{
-    resolved_section_coordinates, resolved_section_radii, resolved_section_scalar_values,
-};
+use super::super::sketch::coordinates::resolved_section_coordinates;
+use super::super::sketch::equations_scalar::resolved_section_scalar_values;
+use super::super::sketch::radii::resolved_section_radii;
 use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage, LegacyNumericCoverage};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::document::SourceMeta;

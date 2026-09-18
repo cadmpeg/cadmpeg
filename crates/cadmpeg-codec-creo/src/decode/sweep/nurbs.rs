@@ -2,7 +2,7 @@
 //! B-spline basis, interpolation, extruded NURBS helpers, and tabulated-cylinder directrices.
 
 use super::super::holes::placement::ExtrusionSpan;
-use super::super::sketch::{section_point_in_model, section_xyz_in_model};
+use super::super::sketch::intersect::{section_point_in_model, section_xyz_in_model};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use crate::decode::analytic::planes::valid_positive_nurbs_curve;
 use crate::vecmath::cross;

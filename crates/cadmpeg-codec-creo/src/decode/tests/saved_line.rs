@@ -5,13 +5,15 @@ use super::{
     declared_solver_rows, extruded_segment_surface, placed_section_curve_geometry,
     section_segment_intersection_carrier, section_skamp_constraints,
 };
-use crate::decode::sketch::{
-    is_full_circle_geometry, resolved_section_coordinates, resolved_section_points,
-    resolved_section_radii, resolved_section_segment_geometry, resolved_trim_vertex_coordinates,
-    saved_profile_chains, saved_section_arc, saved_section_arc_carrier,
-    saved_section_circle_values, saved_section_entity_geometry, saved_section_line_geometry,
-    saved_section_missing_line_geometry, saved_section_segment_point_coordinates, trim_segment_id,
+use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points};
+use crate::decode::sketch::geometry::{
+    is_full_circle_geometry, resolved_section_segment_geometry, saved_profile_chains,
+    saved_section_arc, saved_section_arc_carrier, saved_section_circle_values,
+    saved_section_entity_geometry, saved_section_line_geometry,
+    saved_section_missing_line_geometry, saved_section_segment_point_coordinates,
 };
+use crate::decode::sketch::intersect::resolved_trim_vertex_coordinates;
+use crate::decode::sketch::radii::{resolved_section_radii, trim_segment_id};
 use crate::decode::sketch_transfer::constraints::{
     joined_relation_incidence_entities, relation_incidence_entities, section_dimension_constraints,
 };
@@ -1457,7 +1459,7 @@ fn saved_arc_joins_through_order_table() {
 
     assert_eq!(
         saved_section_arc(&definition, &segment),
-        Some(crate::decode::sketch::SavedSectionArc {
+        Some(crate::decode::sketch::geometry::SavedSectionArc {
             center: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0))
                 .expect("finite center fixture"),
             radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive length fixture"),

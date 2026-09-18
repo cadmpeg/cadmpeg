@@ -3,7 +3,7 @@
 
 use super::super::feature_history::draft::feature_allows_additive_linear_extrusion;
 use super::super::holes::sweep::circular_sweep_geometry;
-use super::super::sketch::section_point_in_model;
+use super::super::sketch::intersect::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
