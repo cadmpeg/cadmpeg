@@ -3,15 +3,35 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+use crate::design::decode::operands::construction_operand_group_is_retained;
+use crate::design::decode::operands::parse_construction_operand_group;
+use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
+use crate::design::feature_project::project_parameter_design;
+use crate::design::feature_project::project_parameter_design_with_edge_identities;
+use crate::design::feature_project::project_split;
 use crate::design::test_support::indexed_header;
 use crate::design::test_support::push_marked_reference;
+use crate::records::decal::DesignRecordHeader;
+use crate::records::dimensions::DesignRecipeReference;
+use crate::records::entity_header::DesignFeatureTimeline;
+use crate::records::feature::extrude::DesignExtrudeExtent;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::extrude::DesignExtrudePrologue;
+use crate::records::feature::extrude::DesignExtrudeStart;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
+use crate::records::recipes::ConstructionRecipeKind;
+use crate::records::topology::extrude_selection::DesignExtrudeFaceRole;
+use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::records::topology::face::DesignFaceOperand;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::ids::FaceId;
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
