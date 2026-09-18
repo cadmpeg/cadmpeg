@@ -7,7 +7,7 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 
-pub(crate) fn hole_diameters_for_operations(
+fn hole_diameters_for_operations(
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
@@ -17,7 +17,7 @@ pub(crate) fn hole_diameters_for_operations(
         .unwrap_or_default()
 }
 
-pub(crate) fn simple_hole_diameters(
+fn simple_hole_diameters(
     ir: &CadIr,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
