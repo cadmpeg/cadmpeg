@@ -508,8 +508,13 @@ impl Transform {
     }
 
     /// Applies this affine transform to a point.
-    pub fn apply_point(self, point: Point3) -> Point3 {
-        Point3::new(
+    ///
+    /// Finite coefficients and a finite operand still overflow: a translation
+    /// near the finite range added to a coordinate near it sums to an infinity.
+    /// The result is absent when any coordinate is not finite.
+    #[must_use]
+    pub fn apply_point(self, point: Point3) -> Option<Point3> {
+        let result = Point3::new(
             self.rows[0][0] * point.x
                 + self.rows[0][1] * point.y
                 + self.rows[0][2] * point.z
@@ -522,16 +527,22 @@ impl Transform {
                 + self.rows[2][1] * point.y
                 + self.rows[2][2] * point.z
                 + self.rows[2][3],
-        )
+        );
+        result.is_finite().then_some(result)
     }
 
     /// Applies this transform's linear component to a vector.
-    pub fn apply_vector(self, vector: Vector3) -> Vector3 {
-        Vector3::new(
+    ///
+    /// The result is absent when any component is not finite, which finite
+    /// coefficients and a finite operand still produce by overflow.
+    #[must_use]
+    pub fn apply_vector(self, vector: Vector3) -> Option<Vector3> {
+        let result = Vector3::new(
             self.rows[0][0] * vector.x + self.rows[0][1] * vector.y + self.rows[0][2] * vector.z,
             self.rows[1][0] * vector.x + self.rows[1][1] * vector.y + self.rows[1][2] * vector.z,
             self.rows[2][0] * vector.x + self.rows[2][1] * vector.y + self.rows[2][2] * vector.z,
-        )
+        );
+        result.is_finite().then_some(result)
     }
 
     /// Applies the inverse-transpose linear transform and normalizes the result.
@@ -672,9 +683,33 @@ mod tests {
         let inverse = transform
             .try_inverse_affine()
             .expect("invertible affine transform");
-        assert_eq!(inverse.apply_point(transform.apply_point(point)), point);
+        assert_eq!(
+            transform
+                .apply_point(point)
+                .and_then(|placed| inverse.apply_point(placed)),
+            Some(point)
+        );
         assert_eq!(Transform::identity().compose(transform), Ok(transform));
-        assert_eq!(transform.apply_vector(vector), Vector3::new(3.0, 6.0, 12.0));
+        assert_eq!(
+            transform.apply_vector(vector),
+            Some(Vector3::new(3.0, 6.0, 12.0))
+        );
+    }
+
+    #[test]
+    fn finite_transform_application_rejects_overflow() {
+        let transform = Transform::affine([
+            [1.0, 0.0, 0.0, f64::MAX],
+            [0.0, 1e200, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("affine transform");
+        assert_eq!(transform.apply_point(Point3::new(f64::MAX, 0.0, 0.0)), None);
+        assert_eq!(transform.apply_vector(Vector3::new(0.0, 1e200, 0.0)), None);
+        assert_eq!(
+            transform.apply_point(Point3::new(0.0, 0.0, 1.0)),
+            Some(Point3::new(f64::MAX, 0.0, 1.0))
+        );
     }
 
     #[test]

@@ -724,7 +724,7 @@ fn mirror_plane_from_surface(geometry: &SolvedSurfaceGeometry) -> Option<(Point3
         SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             let (origin, normal) = mirror_plane_from_surface(basis)?;
             Some((
-                transform.apply_point(origin),
+                transform.apply_point(origin)?,
                 transform.apply_normal(normal)?,
             ))
         }

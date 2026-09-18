@@ -6149,15 +6149,24 @@ fn apply_rigid_transform(
     geometry: CurveGeometry,
     transform: cadmpeg_ir::transform::Transform,
 ) -> Result<CurveGeometry, CodecError> {
-    let point = |value: Point3| transform.apply_point(value);
-    let vector = |value: Vector3, label: &str| unit(transform.apply_vector(value), label);
+    let point = |value: Point3| -> Result<Point3, CodecError> {
+        transform.apply_point(value).ok_or_else(|| {
+            CodecError::malformed("transformed curve point has a non-finite coordinate")
+        })
+    };
+    let vector = |value: Vector3, label: &str| -> Result<Vector3, CodecError> {
+        let placed = transform.apply_vector(value).ok_or_else(|| {
+            CodecError::malformed(format_args!("IGES {label} has a non-finite component"))
+        })?;
+        unit(placed, label)
+    };
     Ok(match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = *line_curve.origin();
             let direction = *line_curve.direction();
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
-                    point(origin),
+                    point(origin)?,
                     vector(direction, "transformed line direction")?,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -6170,7 +6179,7 @@ fn apply_rigid_transform(
             let radius = circle_curve.radius();
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
-                    point(center),
+                    point(center)?,
                     vector(axis, "transformed circle axis")?,
                     vector(ref_direction, "transformed circle reference")?,
                     radius,
@@ -6186,7 +6195,7 @@ fn apply_rigid_transform(
             let minor_radius = ellipse_curve.minor_radius();
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::EllipseCurve::try_new(
-                    point(center),
+                    point(center)?,
                     vector(axis, "transformed ellipse axis")?,
                     vector(major_direction, "transformed ellipse major")?,
                     major_radius,
@@ -6202,7 +6211,7 @@ fn apply_rigid_transform(
             let focal_distance = parabola_curve.focal_distance();
             CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
                 cadmpeg_ir::geometry::ParabolaCurve::try_new(
-                    point(vertex),
+                    point(vertex)?,
                     vector(axis, "transformed parabola axis")?,
                     vector(major_direction, "transformed parabola major")?,
                     focal_distance,
@@ -6218,7 +6227,7 @@ fn apply_rigid_transform(
             let minor_radius = hyperbola_curve.minor_radius();
             CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::HyperbolaCurve::try_new(
-                    point(center),
+                    point(center)?,
                     vector(axis, "transformed hyperbola axis")?,
                     vector(major_direction, "transformed hyperbola major")?,
                     major_radius,
@@ -6230,24 +6239,42 @@ fn apply_rigid_transform(
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let value = *degenerate_curve.point();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(point(value))
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(point(value)?)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
+            let mut placed = true;
             nurbs
-                .edit_control_points(|control_point| {
-                    *control_point = point(*control_point);
-                })
+                .edit_control_points(
+                    |control_point| match transform.apply_point(*control_point) {
+                        Some(moved) => *control_point = moved,
+                        None => placed = false,
+                    },
+                )
                 .map_err(|error| {
                     CodecError::malformed(format_args!("transformed NURBS curve: {error}"))
                 })?;
+            if !placed {
+                return Err(CodecError::malformed(
+                    "transformed NURBS curve control point has a non-finite coordinate",
+                ));
+            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
             CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 let mut samples = polyline.samples().clone();
-                samples.edit_points(|sample| *sample = point(*sample));
+                let mut placed = true;
+                samples.edit_points(|sample| match transform.apply_point(*sample) {
+                    Some(moved) => *sample = moved,
+                    None => placed = false,
+                });
+                if !placed {
+                    return Err(CodecError::malformed(
+                        "transformed polyline sample has a non-finite coordinate",
+                    ));
+                }
                 cadmpeg_ir::geometry::PolylineCurve::new(samples, polyline.chordal_deflection())
                     .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?
             }))

@@ -374,7 +374,12 @@ pub(super) fn decode(
                 local_vertices = local_vertices
                     .into_iter()
                     .map(|vertex| placement.apply_point(vertex))
-                    .collect();
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        CodecError::malformed(format!(
+                            "{kind} #{id} placed tessellation vertex contains a non-finite coordinate"
+                        ))
+                    })?;
                 if let Some(source_normals) = normals.take() {
                     match source_normals
                         .into_iter()

@@ -886,12 +886,11 @@ pub(crate) fn assign_unique_surface_owners(
                     return false;
                 };
                 mesh.vertices().iter().all(|point| {
-                    surface_measure(
-                        surface,
-                        candidate.inverse.apply_point(*point),
-                        Some(tolerance),
-                    )
-                    .is_some_and(|measure| measure.residual <= tolerance)
+                    candidate
+                        .inverse
+                        .apply_point(*point)
+                        .and_then(|point| surface_measure(surface, point, Some(tolerance)))
+                        .is_some_and(|measure| measure.residual <= tolerance)
                 })
             })
             .collect::<Vec<_>>();
@@ -955,11 +954,11 @@ fn approximate_surface_owner(
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
-                let local_point = candidate.inverse.apply_point(point);
+                let local_point = candidate.inverse.apply_point(point)?;
                 let measure = surface_measure(candidate.surface.solved()?, local_point, None)?;
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
-                let mesh_normal = candidate.inverse.apply_vector(normal).unit()?;
+                let mesh_normal = candidate.inverse.apply_vector(normal)?.unit()?;
                 if surface_normal.dot(mesh_normal).abs() < MIN_TESSELLATION_NORMAL_ALIGNMENT {
                     return None;
                 }
@@ -1014,7 +1013,7 @@ fn approximate_trimmed_surface_owner(
             for point in mesh.vertices() {
                 let measure = surface_measure(
                     candidate.surface.solved()?,
-                    candidate.inverse.apply_point(point),
+                    candidate.inverse.apply_point(point)?,
                     None,
                 )?;
                 max_residual = max_residual.max(measure.residual);
@@ -1270,7 +1269,9 @@ impl CylindricalTrim {
         tolerance: f64,
     ) -> bool {
         mesh.vertices().iter().all(|point| {
-            let point = inverse_body.apply_point(*point);
+            let Some(point) = inverse_body.apply_point(*point) else {
+                return false;
+            };
             let axial = point.vector_from(self.origin).dot(self.axis);
             let angular = cylinder_angle(point, self.origin, self.axis, self.ref_direction);
             axial.is_finite()
@@ -1297,7 +1298,9 @@ impl ConicalTrim {
         tolerance: f64,
     ) -> bool {
         mesh.vertices().iter().all(|point| {
-            let point = inverse_body.apply_point(*point);
+            let Some(point) = inverse_body.apply_point(*point) else {
+                return false;
+            };
             let axial = point.vector_from(self.origin).dot(self.axis);
             let local_radius = self.radius + axial * self.slope;
             let angular = cone_angle(
@@ -1334,11 +1337,18 @@ impl PlanarTrim {
         tolerance: f64,
     ) -> bool {
         let tolerance = tolerance + self.boundary_tolerance;
-        let projected = mesh
+        let Some(projected) = mesh
             .vertices()
             .iter()
-            .map(|point| self.frame.project(inverse_body.apply_point(*point)))
-            .collect::<Vec<_>>();
+            .map(|point| {
+                inverse_body
+                    .apply_point(*point)
+                    .map(|point| self.frame.project(point))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
         let holes = self
             .holes
             .iter()
@@ -2242,9 +2252,9 @@ fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
         SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             let basis = plane_frame(basis)?;
             (
-                transform.apply_point(basis.origin),
-                transform.apply_vector(basis.normal),
-                transform.apply_vector(basis.u_axis),
+                transform.apply_point(basis.origin)?,
+                transform.apply_vector(basis.normal)?,
+                transform.apply_vector(basis.u_axis)?,
             )
         }
         _ => return None,
@@ -2755,8 +2765,8 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
             transform
                 .apply_vector(analytic_surface_normal(
                     basis,
-                    transform.try_inverse_affine().ok()?.apply_point(point),
-                )?)
+                    transform.try_inverse_affine().ok()?.apply_point(point)?,
+                )?)?
                 .unit()
         }
         SolvedSurfaceGeometry::Nurbs(_)
@@ -2842,7 +2852,7 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             analytic_surface_residual(
                 basis,
-                transform.try_inverse_affine().ok()?.apply_point(point),
+                transform.try_inverse_affine().ok()?.apply_point(point)?,
             )
         }
         SolvedSurfaceGeometry::Nurbs(_)
@@ -2882,12 +2892,12 @@ fn surface_measure(
         if transform.is_proper_rigid() {
             let mut measure = surface_measure(
                 basis,
-                transform.try_inverse_affine().ok()?.apply_point(point),
+                transform.try_inverse_affine().ok()?.apply_point(point)?,
                 fit_tolerance,
             )?;
             measure.normal = measure
                 .normal
-                .and_then(|normal| transform.apply_vector(normal).unit());
+                .and_then(|normal| transform.apply_vector(normal)?.unit());
             return Some(measure);
         }
     }

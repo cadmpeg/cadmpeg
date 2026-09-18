@@ -878,8 +878,15 @@ impl<'a> Builder<'a> {
                 let vertices = triangulation
                     .nodes()
                     .iter()
-                    .map(|point| face_transform.apply_point(*point))
-                    .collect::<Vec<_>>();
+                    .map(|point| {
+                        face_transform.apply_point(*point).ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "placed triangulation node for face {} contains a non-finite coordinate",
+                                face_use.shape
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CodecError>>()?;
                 let triangles = triangulation.triangles().to_vec();
                 let scale = uniform_scale(face_transform)?;
                 Ok::<_, CodecError>((index, triangulation, vertices, triangles, scale))
@@ -922,12 +929,21 @@ impl<'a> Builder<'a> {
         {
             self.emitted_triangulations.insert(index);
             // An unshaded mesh is stated by absence, not by an empty lane.
-            let normals = triangulation.normals().map(|normals| {
-                normals
-                    .iter()
-                    .map(|normal| transform_normalized_vector(face_transform, *normal))
-                    .collect()
-            });
+            let normals = triangulation
+                .normals()
+                .map(|normals| {
+                    normals
+                        .iter()
+                        .map(|normal| {
+                            transform_normalized_vector(face_transform, *normal).ok_or_else(|| {
+                                CodecError::malformed(format_args!(
+                                    "placed triangulation normal for face {face_key} contains a non-finite component"
+                                ))
+                            })
+                        })
+                        .collect::<Result<Vec<_>, CodecError>>()
+                })
+                .transpose()?;
             ir.model.tessellations.push(
                 Tessellation::new(
                     crate::native::model_id(
@@ -1222,7 +1238,7 @@ impl<'a> Builder<'a> {
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
-                samples.edit_points(|point| *point = carrier_transform.apply_point(*point));
+                place_polyline_samples(&mut samples, carrier_transform)?;
                 PolylineCurve::new(samples, deflection * scale)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
@@ -1247,7 +1263,7 @@ impl<'a> Builder<'a> {
                         .colon(cadmpeg_ir::identity_key!("secondary")),
                 ),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
-                    samples.edit_points(|point| *point = carrier_transform.apply_point(*point));
+                    place_polyline_samples(&mut samples, carrier_transform)?;
                     PolylineCurve::new(samples, deflection * scale)
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
@@ -1346,13 +1362,12 @@ impl<'a> Builder<'a> {
         );
         // A finite point and a finite location still multiply and add to a
         // non-finite coordinate, which states no position.
-        let position = transform.apply_point(point);
-        if !position.is_finite() {
+        let Some(position) = transform.apply_point(point) else {
             return Err(CodecError::malformed(format_args!(
                 "placed vertex {} position contains a non-finite coordinate",
                 vertex_use.shape
             )));
-        }
+        };
         ir.model.points.push(Point {
             id: point_id.clone(),
             position,
@@ -1871,20 +1886,40 @@ fn transform_surface(
     ))
 }
 
-fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Vector3 {
-    let transformed = transform.apply_vector(vector);
+/// Places every polyline sample, refusing a sample the transform sends out of
+/// the finite range.
+fn place_polyline_samples(
+    samples: &mut PolylineSamples,
+    transform: Transform,
+) -> Result<(), CodecError> {
+    let mut placed = true;
+    samples.edit_points(|point| match transform.apply_point(*point) {
+        Some(moved) => *point = moved,
+        None => placed = false,
+    });
+    if placed {
+        Ok(())
+    } else {
+        Err(CodecError::malformed(
+            "placed polyline sample contains a non-finite coordinate",
+        ))
+    }
+}
+
+fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<Vector3> {
+    let transformed = transform.apply_vector(vector)?;
     let magnitude = (transformed.x * transformed.x
         + transformed.y * transformed.y
         + transformed.z * transformed.z)
         .sqrt();
     if magnitude > 0.0 && magnitude.is_finite() {
-        Vector3::new(
+        Some(Vector3::new(
             transformed.x / magnitude,
             transformed.y / magnitude,
             transformed.z / magnitude,
-        )
+        ))
     } else {
-        transformed
+        Some(transformed)
     }
 }
 

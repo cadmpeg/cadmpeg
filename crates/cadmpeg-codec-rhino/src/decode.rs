@@ -1881,7 +1881,7 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Point>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing points".to_string())?
         {
-            point.position = transform.apply_point(point.position);
+            point.position = placed_point(transform, point.position)?;
             derived_ids.push(point.id.to_string());
         }
         for curve in before
@@ -1910,8 +1910,17 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Tessellation>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
         {
-            mesh.edit_vertices(|vertex| *vertex = transform.apply_point(*vertex))
-                .map_err(|error| error.to_string())?;
+            let mut placed = true;
+            mesh.edit_vertices(|vertex| match transform.apply_point(*vertex) {
+                Some(moved) => *vertex = moved,
+                None => placed = false,
+            })
+            .map_err(|error| error.to_string())?;
+            if !placed {
+                return Err(
+                    "instance mesh vertex transform produced a non-finite coordinate".to_string(),
+                );
+            }
             if !mesh.vertex_normals().is_empty() {
                 let mut singular = false;
                 mesh.edit_normals(|value| match transform.apply_normal(*value) {
@@ -1932,14 +1941,23 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<cadmpeg_ir::SubdSurface>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
         {
+            let mut placed = true;
             subd.cage
                 .edit_vertices(|vertices| {
                     for vertex in vertices {
-                        vertex.set_point(transform.apply_point(vertex.point()))?;
+                        match transform.apply_point(vertex.point()) {
+                            Some(moved) => vertex.set_point(moved)?,
+                            None => placed = false,
+                        }
                     }
                     Ok(())
                 })
                 .map_err(|error| error.to_string())?;
+            if !placed {
+                return Err(
+                    "instance cage vertex transform produced a non-finite coordinate".to_string(),
+                );
+            }
             links.push(subd.id.to_string());
             derived_ids.push(subd.id.to_string());
         }
@@ -5314,6 +5332,14 @@ fn transform_decoded_curve(
     }
 }
 
+/// Places a point, refusing a placement the transform sends out of the finite
+/// range.
+fn placed_point(transform: Transform, point: Point3) -> Result<Point3, String> {
+    transform
+        .apply_point(point)
+        .ok_or_else(|| "instance transform produced a non-finite coordinate".to_string())
+}
+
 fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String> {
     let geometry = std::mem::replace(
         &mut curve.geometry,
@@ -5321,11 +5347,18 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
     );
     curve.geometry = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
+            let mut placed = true;
             nurbs
-                .edit_control_points(|pole| {
-                    *pole = transform.apply_point(*pole);
+                .edit_control_points(|pole| match transform.apply_point(*pole) {
+                    Some(moved) => *pole = moved,
+                    None => placed = false,
                 })
                 .map_err(|error| error.to_string())?;
+            if !placed {
+                return Err(
+                    "instance control point transform produced a non-finite coordinate".to_string(),
+                );
+            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -5335,22 +5368,32 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             );
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
+            let mut placed = true;
             nurbs
-                .edit_control_points(|pole| {
-                    *pole = transform.apply_point(*pole);
+                .edit_control_points(|pole| match transform.apply_point(*pole) {
+                    Some(moved) => *pole = moved,
+                    None => placed = false,
                 })
                 .map_err(|error| error.to_string())?;
+            if !placed {
+                return Err(
+                    "instance control point transform produced a non-finite coordinate".to_string(),
+                );
+            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = *line_curve.origin();
             let direction = *line_curve.direction();
-            let transformed_origin = transform.apply_point(origin);
-            let endpoint = transform.apply_point(Point3::new(
-                origin.x + direction.x,
-                origin.y + direction.y,
-                origin.z + direction.z,
-            ));
+            let transformed_origin = placed_point(transform, origin)?;
+            let endpoint = placed_point(
+                transform,
+                Point3::new(
+                    origin.x + direction.x,
+                    origin.y + direction.y,
+                    origin.z + direction.z,
+                ),
+            )?;
             let value = cadmpeg_ir::math::Vector3::new(
                 endpoint.x - transformed_origin.x,
                 endpoint.y - transformed_origin.y,
@@ -5370,7 +5413,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = *degenerate_curve.point();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(transform.apply_point(point))?,
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(placed_point(transform, point)?)?,
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record }) => {
@@ -5394,26 +5437,36 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     );
     surface.geometry = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
+            let mut placed = true;
             nurbs
-                .edit_control_points(|pole| {
-                    *pole = transform.apply_point(*pole);
+                .edit_control_points(|pole| match transform.apply_point(*pole) {
+                    Some(moved) => *pole = moved,
+                    None => placed = false,
                 })
                 .map_err(|error| error.to_string())?;
+            if !placed {
+                return Err(
+                    "instance control point transform produced a non-finite coordinate".to_string(),
+                );
+            }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let source_origin = *plane_surface.origin();
             let normal = *plane_surface.normal();
             let u_axis = *plane_surface.u_axis();
-            let origin = transform.apply_point(source_origin);
+            let origin = placed_point(transform, source_origin)?;
             let normal = transform.apply_normal(normal).ok_or_else(|| {
                 "instance plane normal transform could not produce a finite unit normal".to_string()
             })?;
-            let endpoint = transform.apply_point(Point3::new(
-                source_origin.x + u_axis.x,
-                source_origin.y + u_axis.y,
-                source_origin.z + u_axis.z,
-            ));
+            let endpoint = placed_point(
+                transform,
+                Point3::new(
+                    source_origin.x + u_axis.x,
+                    source_origin.y + u_axis.y,
+                    source_origin.z + u_axis.z,
+                ),
+            )?;
             let projected = cadmpeg_ir::math::Vector3::new(
                 endpoint.x - origin.x,
                 endpoint.y - origin.y,

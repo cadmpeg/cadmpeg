@@ -2249,9 +2249,9 @@ fn sketch_block_assembly_frame(
     if !first.is_proper_rigid() {
         return None;
     }
-    let origin = first.apply_point(Point3::new(0.0, 0.0, 0.0));
-    let u_axis = first.apply_vector(Vector3::new(1.0, 0.0, 0.0)).unit()?;
-    let first_v = first.apply_vector(Vector3::new(0.0, 1.0, 0.0)).unit()?;
+    let origin = first.apply_point(Point3::new(0.0, 0.0, 0.0))?;
+    let u_axis = first.apply_vector(Vector3::new(1.0, 0.0, 0.0))?.unit()?;
+    let first_v = first.apply_vector(Vector3::new(0.0, 1.0, 0.0))?.unit()?;
     let normal = u_axis.cross(first_v).unit()?;
     let v_axis = normal.cross(u_axis).unit()?;
     let frame = SketchBlockAssemblyFrame {
@@ -2264,15 +2264,19 @@ fn sketch_block_assembly_frame(
         if !placement.is_proper_rigid() {
             return None;
         }
-        let instance_origin = placement.apply_point(Point3::new(0.0, 0.0, 0.0));
+        let instance_origin = placement.apply_point(Point3::new(0.0, 0.0, 0.0))?;
         let origin_delta = instance_origin.vector_from(origin);
         if origin_delta.dot(normal).abs()
             > TOLERANCE * (1.0 + origin.distance(Point3::new(0.0, 0.0, 0.0)))
         {
             return None;
         }
-        let instance_u = placement.apply_vector(Vector3::new(1.0, 0.0, 0.0)).unit()?;
-        let instance_v = placement.apply_vector(Vector3::new(0.0, 1.0, 0.0)).unit()?;
+        let instance_u = placement
+            .apply_vector(Vector3::new(1.0, 0.0, 0.0))?
+            .unit()?;
+        let instance_v = placement
+            .apply_vector(Vector3::new(0.0, 1.0, 0.0))?
+            .unit()?;
         if instance_u.cross(instance_v).dot(normal) < 1.0 - TOLERANCE {
             return None;
         }
@@ -2438,11 +2442,10 @@ fn transform_sketch_block_point(
     frame: SketchBlockAssemblyFrame,
 ) -> Option<Point2> {
     const TOLERANCE: f64 = 1.0e-8;
-    let transformed = transform.apply_point(Point3::new(point.u, point.v, 0.0));
+    let transformed = transform.apply_point(Point3::new(point.u, point.v, 0.0))?;
     let delta = transformed.vector_from(frame.origin);
     (delta.dot(frame.normal).abs()
-        <= TOLERANCE * (1.0 + frame.origin.distance(Point3::new(0.0, 0.0, 0.0)))
-        && transformed.is_finite())
+        <= TOLERANCE * (1.0 + frame.origin.distance(Point3::new(0.0, 0.0, 0.0))))
     .then(|| {
         Point2::new(
             delta.dot(frame.u_axis),
@@ -2456,7 +2459,7 @@ fn transform_sketch_block_direction(
     transform: Transform,
     frame: SketchBlockAssemblyFrame,
 ) -> Option<Point2> {
-    let transformed = transform.apply_vector(Vector3::new(direction.u, direction.v, 0.0));
+    let transformed = transform.apply_vector(Vector3::new(direction.u, direction.v, 0.0))?;
     let v_axis = frame.normal.cross(frame.u_axis);
     let result = Point2::new(transformed.dot(frame.u_axis), transformed.dot(v_axis));
     (result.u.is_finite() && result.v.is_finite()).then_some(result)

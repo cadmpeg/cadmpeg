@@ -55,11 +55,11 @@ fn sectioned_area_pattern_plane(
     if !z.is_finite() || !length_factor.is_finite() {
         return None;
     }
-    let point = transform.apply_point(Point3::new(0.0, 0.0, z));
+    let point = transform.apply_point(Point3::new(0.0, 0.0, z))?;
     let normal = transform
         .apply_normal(Vector3::new(0.0, 0.0, 1.0))
         .and_then(normalized)?;
-    point.is_finite().then_some((point, normal))
+    Some((point, normal))
 }
 
 fn sectioned_area_curves_coplanar(

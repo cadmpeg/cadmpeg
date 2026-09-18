@@ -23,9 +23,9 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_OFFSET_FRAME: f64 = 1.0e-10;
 
 fn transform_orientation(transform: cadmpeg_ir::transform::Transform) -> Option<f64> {
-    let x = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0));
-    let y = transform.apply_vector(Vector3::new(0.0, 1.0, 0.0));
-    let z = transform.apply_vector(Vector3::new(0.0, 0.0, 1.0));
+    let x = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0))?;
+    let y = transform.apply_vector(Vector3::new(0.0, 1.0, 0.0))?;
+    let z = transform.apply_vector(Vector3::new(0.0, 0.0, 1.0))?;
     let determinant = x.cross(y).dot(z);
     (determinant.is_finite() && determinant != 0.0).then_some(determinant.signum())
 }
@@ -35,7 +35,7 @@ fn placed_offset_normal(
     transform: cadmpeg_ir::transform::Transform,
 ) -> Option<Vector3> {
     let orientation = transform_orientation(transform)?;
-    unit_vector(transform.apply_vector(normal).scale(orientation))
+    unit_vector(transform.apply_vector(normal)?.scale(orientation))
 }
 
 fn placed_offset_source(
@@ -49,8 +49,8 @@ fn placed_offset_source(
             let direction = line_curve.direction();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::LineCurve::try_new(
-                    transform.apply_point(*origin),
-                    unit_vector(transform.apply_vector(*direction))?,
+                    transform.apply_point(*origin)?,
+                    unit_vector(transform.apply_vector(*direction)?)?,
                 )
                 .ok()?,
             )))
@@ -62,9 +62,9 @@ fn placed_offset_source(
             let radius = circle_curve.radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::CircleCurve::try_new(
-                    transform.apply_point(*center),
-                    unit_vector(transform.apply_vector(*axis))?.scale(orientation),
-                    unit_vector(transform.apply_vector(*ref_direction))?,
+                    transform.apply_point(*center)?,
+                    unit_vector(transform.apply_vector(*axis)?)?.scale(orientation),
+                    unit_vector(transform.apply_vector(*ref_direction)?)?,
                     radius,
                 )
                 .ok()?,
