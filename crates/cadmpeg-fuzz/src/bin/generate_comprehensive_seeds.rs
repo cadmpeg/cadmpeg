@@ -7,6 +7,7 @@ use std::io::Write;
 
 include!("../seed_paths.rs");
 
+use cadmpeg_fuzz::seeds;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
 
@@ -40,11 +41,11 @@ fn generate_sldprt_seeds() -> Result<(), SeedError> {
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
-        ("just_header", sldprt::outer_header()),
+        ("just_header", seeds::sldprt::outer_header()),
         ("synthetic_sldprt", sldprt::synthetic_sldprt()?),
         (
             "triangle_body",
-            sldprt::sldprt_with_body(&sldprt::triangle_body())?,
+            sldprt::sldprt_with_body(&seeds::sldprt::triangle_body())?,
         ),
         (
             "triangle_overlapping_point",
@@ -52,19 +53,23 @@ fn generate_sldprt_seeds() -> Result<(), SeedError> {
         ),
         (
             "closed_cylinder",
-            sldprt::sldprt_with_body(&sldprt::closed_cylinder_body())?,
+            sldprt::sldprt_with_body(&seeds::sldprt::closed_cylinder_body())?,
         ),
         (
             "with_material",
-            sldprt::sldprt_with_body_and_material(&sldprt::triangle_body(), "Steel", [32, 64, 128])?,
+            sldprt::sldprt_with_body_and_material(
+                &seeds::sldprt::triangle_body(),
+                "Steel",
+                [32, 64, 128],
+            )?,
         ),
         (
             "with_display_list",
-            sldprt::sldprt_with_body_and_display_list(&sldprt::triangle_body())?,
+            sldprt::sldprt_with_body_and_display_list(&seeds::sldprt::triangle_body())?,
         ),
         (
             "partition_and_deltas",
-            sldprt::sldprt_with_partition_and_deltas(&sldprt::triangle_body())?,
+            sldprt::sldprt_with_partition_and_deltas(&seeds::sldprt::triangle_body())?,
         ),
         (
             "sheet_body",
@@ -101,24 +106,17 @@ fn generate_sldprt_seeds() -> Result<(), SeedError> {
 
 mod sldprt {
     use super::*;
+    use cadmpeg_fuzz::seeds::sldprt::{
+        be16, be32, bef64, bridge, coedge, crc32, edge_use, loop_head, make_cache_cell,
+        make_directory_entry, outer_header, parasolid_payload, plane_carrier, swap_name,
+        triangle_body, vertex_use, world_point, MARKER,
+    };
 
-    pub const MARKER: [u8; 4] = [0x9e, 0x14, 0x01, 0x00];
-    const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
-
-    fn swap_name(name: &str) -> Vec<u8> {
-        name.bytes().map(|b| b.rotate_left(4)).collect()
-    }
     fn raw_deflate(data: &[u8]) -> std::io::Result<Vec<u8>> {
         let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
         enc.write_all(data)?;
         enc.finish()
     }
-    fn crc32(data: &[u8]) -> u32 {
-        let mut h = crc32fast::Hasher::new();
-        h.update(data);
-        h.finalize()
-    }
-
     fn make_block(type_id: u32, section: &str, payload: &[u8]) -> std::io::Result<Vec<u8>> {
         let comp = raw_deflate(payload)?;
         let preamble = swap_name(section);
@@ -134,55 +132,9 @@ mod sldprt {
         Ok(b)
     }
 
-    fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
-        let swapped = swap_name(name);
-        let mut b = Vec::new();
-        b.extend_from_slice(&MARKER);
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.extend_from_slice(&(logical_len * 2).to_le_bytes());
-        b.extend_from_slice(&(logical_len / 2).to_le_bytes());
-        b.extend_from_slice(&logical_len.to_le_bytes());
-        b.extend_from_slice(&(swapped.len() as u32).to_le_bytes());
-        b.extend_from_slice(&swapped);
-        b
-    }
-
-    fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
-        let swapped = swap_name(name);
-        let mut b = Vec::new();
-        b.extend_from_slice(&MARKER);
-        b.extend_from_slice(&type_id.to_le_bytes());
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.extend_from_slice(&size.to_le_bytes());
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.extend_from_slice(&(swapped.len() as u32).to_le_bytes());
-        b.extend_from_slice(&[0u8; 14]);
-        b.extend_from_slice(&swapped);
-        b.extend_from_slice(&[0xe5, 0x4b, 0x57, 0x5b, 0x00, 0x00]);
-        b
-    }
-
-    fn parasolid_payload(description: &str, schema: &str) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(&[b'P', b'S', 0x00, 0x00]);
-        b.extend_from_slice(&(description.len() as u16).to_be_bytes());
-        b.extend_from_slice(description.as_bytes());
-        b.extend_from_slice(&[0x00, 0x00]);
-        b.push(schema.len() as u8);
-        b.extend_from_slice(schema.as_bytes());
-        b
-    }
-
     fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> {
         let mut b = parasolid_payload(description, schema);
         b.extend_from_slice(body);
-        b
-    }
-
-    pub fn outer_header() -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(&0x0000_0001u32.to_le_bytes());
-        b.extend_from_slice(&0x0000_0004u32.to_be_bytes());
         b
     }
 
@@ -284,30 +236,6 @@ mod sldprt {
         Ok(f)
     }
 
-    fn be16(b: &mut Vec<u8>, v: u16) {
-        b.extend_from_slice(&v.to_be_bytes());
-    }
-    fn be32(b: &mut Vec<u8>, v: u32) {
-        b.extend_from_slice(&v.to_be_bytes());
-    }
-    fn bef64(b: &mut Vec<u8>, v: f64) {
-        b.extend_from_slice(&v.to_be_bytes());
-    }
-
-    fn plane_carrier(attr: u16, origin: [f64; 3], normal: [f64; 3], refdir: [f64; 3]) -> Vec<u8> {
-        let mut b = vec![0x00, 0x32];
-        be16(&mut b, attr);
-        be32(&mut b, 0);
-        for _ in 0..5 {
-            be16(&mut b, 0);
-        }
-        b.push(0x2b);
-        for v in origin.into_iter().chain(normal).chain(refdir) {
-            bef64(&mut b, v);
-        }
-        b
-    }
-
     fn line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
         let mut b = vec![0x00, 0x1e];
         be16(&mut b, attr);
@@ -322,123 +250,9 @@ mod sldprt {
         b
     }
 
-    fn cylinder_carrier(attr: u16, origin: [f64; 3], axis: [f64; 3], radius: f64) -> Vec<u8> {
-        let mut b = vec![0x00, 0x33];
-        be16(&mut b, attr);
-        be32(&mut b, 0);
-        for _ in 0..5 {
-            be16(&mut b, 0);
-        }
-        b.push(0x2b);
-        for value in origin
-            .into_iter()
-            .chain(axis)
-            .chain([radius, 1.0, 0.0, 0.0])
-        {
-            bef64(&mut b, value);
-        }
-        b
-    }
-
-    fn circle_carrier(attr: u16, center: [f64; 3], axis: [f64; 3], radius: f64) -> Vec<u8> {
-        let mut b = vec![0x00, 0x1f];
-        be16(&mut b, attr);
-        be32(&mut b, 0);
-        for _ in 0..5 {
-            be16(&mut b, 0);
-        }
-        b.push(0x2b);
-        for value in center
-            .into_iter()
-            .chain(axis)
-            .chain([1.0, 0.0, 0.0, radius])
-        {
-            bef64(&mut b, value);
-        }
-        b
-    }
-
-    fn bridge(attr: u16, loop_attr: u16, surface_attr: u16) -> Vec<u8> {
-        let mut b = vec![0x00, 0x0e];
-        be16(&mut b, attr);
-        be32(&mut b, 0);
-        be16(&mut b, 0);
-        b.extend_from_slice(&MAGIC);
-        for r in [0u16, 0, loop_attr, 0, surface_attr] {
-            be16(&mut b, r);
-        }
-        b.push(0x2b);
-        b.extend_from_slice(&[0u8; 10]);
-        b
-    }
-
     fn bridge_owned(attr: u16, loop_attr: u16, surface_attr: u16, owner: u16) -> Vec<u8> {
         let mut b = bridge(attr, loop_attr, surface_attr);
         b[8..10].copy_from_slice(&owner.to_be_bytes());
-        b
-    }
-
-    fn loop_head(attr: u16, first_coedge: u16, bridge_attr: u16) -> Vec<u8> {
-        let mut b = vec![0x00, 0x0f];
-        be16(&mut b, attr);
-        be32(&mut b, 0);
-        for r in [0u16, first_coedge, bridge_attr, 0] {
-            be16(&mut b, r);
-        }
-        b
-    }
-
-    fn coedge(
-        attr: u16,
-        owner_loop: u16,
-        next: u16,
-        start_vuse: u16,
-        twin: u16,
-        edge_use: u16,
-        reversed: bool,
-    ) -> Vec<u8> {
-        let mut b = vec![0x00, 0x11];
-        be16(&mut b, attr);
-        for r in [0u16, owner_loop, 0, next, start_vuse, twin, edge_use, 0, 0] {
-            be16(&mut b, r);
-        }
-        b.push(if reversed { 0x2d } else { 0x2b });
-        b
-    }
-
-    fn edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
-        let mut b = vec![0x00, 0x10];
-        be16(&mut b, attr);
-        be32(&mut b, 0);
-        be16(&mut b, 0);
-        b.extend_from_slice(&MAGIC);
-        for r in [0u16, 0, 0, curve_attr, 0, 0] {
-            be16(&mut b, r);
-        }
-        b
-    }
-
-    fn vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
-        let mut b = vec![0x00, 0x12];
-        be16(&mut b, attr);
-        be32(&mut b, 0);
-        for r in [0u16, 0, 0, 0, point_attr] {
-            be16(&mut b, r);
-        }
-        b.extend_from_slice(&MAGIC);
-        b
-    }
-
-    fn world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
-        let mut b = vec![0x00, 0x1d];
-        be16(&mut b, attr);
-        be32(&mut b, 0);
-        for _ in 0..4 {
-            be16(&mut b, 0);
-        }
-        for v in xyz {
-            bef64(&mut b, v);
-        }
         b
     }
 
@@ -451,31 +265,6 @@ mod sldprt {
         for slot in slots {
             be16(&mut b, *slot);
         }
-        b
-    }
-
-    pub fn triangle_body() -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend(plane_carrier(
-            100,
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0],
-        ));
-        b.extend(bridge(10, 20, 100));
-        b.extend(loop_head(20, 30, 10));
-        b.extend(coedge(30, 20, 31, 50, 0, 40, false));
-        b.extend(coedge(31, 20, 32, 51, 0, 41, false));
-        b.extend(coedge(32, 20, 30, 52, 0, 42, false));
-        b.extend(edge_use(40, 0));
-        b.extend(edge_use(41, 0));
-        b.extend(edge_use(42, 0));
-        b.extend(vertex_use(50, 60));
-        b.extend(vertex_use(51, 61));
-        b.extend(vertex_use(52, 62));
-        b.extend(world_point(60, [0.0, 0.0, 0.0]));
-        b.extend(world_point(61, [1.0, 0.0, 0.0]));
-        b.extend(world_point(62, [0.0, 1.0, 0.0]));
         b
     }
 
@@ -502,27 +291,6 @@ mod sldprt {
         b.extend(vertex_use(52, 62));
         b.extend(world_point(61, [1.0, 0.0, 0.0]));
         b.extend(world_point(62, [0.0, 1.0, 0.0]));
-        b
-    }
-
-    pub fn closed_cylinder_body() -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend(cylinder_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
-        b.extend(circle_carrier(70, [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
-        b.extend(circle_carrier(71, [-1.0, 0.0, 1.0], [0.0, 0.0, 1.0], 1.0));
-        b.extend(bridge(10, 20, 100));
-        let mut first = loop_head(20, 30, 10);
-        first[14..16].copy_from_slice(&21u16.to_be_bytes());
-        b.extend(first);
-        b.extend(loop_head(21, 31, 10));
-        b.extend(coedge(30, 20, 30, 50, 0, 40, false));
-        b.extend(coedge(31, 21, 31, 51, 0, 41, true));
-        b.extend(edge_use(40, 70));
-        b.extend(edge_use(41, 71));
-        b.extend(vertex_use(50, 60));
-        b.extend(vertex_use(51, 61));
-        b.extend(world_point(60, [-1.0, 0.0, 0.0]));
-        b.extend(world_point(61, [-1.0, 0.0, 1.0]));
         b
     }
 
@@ -792,14 +560,14 @@ fn generate_catia_seeds() -> Result<(), SeedError> {
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
-        ("just_magic", catia::outer_magic()),
-        ("zero_entity", catia::zero_entity_catpart()),
+        ("just_magic", seeds::catia::outer_magic()),
+        ("zero_entity", seeds::catia::zero_entity_catpart()),
         (
             "zero_entity_cylinder",
             catia::zero_entity_cylinder_catpart(),
         ),
         ("zero_entity_nurbs", catia::zero_entity_nurbs_catpart()),
-        ("standard_nested", catia::standard_catpart()),
+        ("standard_nested", seeds::catia::standard_catpart()),
         ("e5_circle", catia::e5_catpart()),
     ];
 
@@ -811,113 +579,10 @@ fn generate_catia_seeds() -> Result<(), SeedError> {
 }
 
 mod catia {
-    const OUTER_MAGIC: &[u8; 8] = b"V5_CFV2\0";
-    const DIR_MAGIC: &[u8; 16] = b"CATIA_V5 CB0001\0";
-
-    pub fn outer_magic() -> Vec<u8> {
-        OUTER_MAGIC.to_vec()
-    }
-
-    fn be32(v: u32) -> [u8; 4] {
-        v.to_be_bytes()
-    }
-    fn le_f32(v: f32) -> [u8; 4] {
-        v.to_le_bytes()
-    }
+    use cadmpeg_fuzz::seeds::catia::{be32, descriptor, DIR_MAGIC, OUTER_MAGIC};
     fn le_f64(v: f64) -> [u8; 8] {
         v.to_le_bytes()
     }
-    fn be_f32(v: f32) -> [u8; 4] {
-        v.to_be_bytes()
-    }
-
-    fn main_stream() -> Vec<u8> {
-        let mut b = Vec::new();
-        for _ in 0..2 {
-            b.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
-        }
-        b.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-        for xyz in [[0.0f32, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]] {
-            b.extend_from_slice(&[0x05, 0x08, 0x01]);
-            for v in xyz {
-                b.extend_from_slice(&le_f32(v));
-            }
-        }
-        b
-    }
-
-    fn surf_stream() -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
-        b.push(0x00);
-        b.push(0x1a);
-        b.extend_from_slice(&[0x00, 0x33, 0x33]);
-        for v in [0.0f32, 0.0, 0.0, 0.0, 0.0, 5.0] {
-            b.extend_from_slice(&be_f32(v));
-        }
-        b
-    }
-
-    fn descriptor(name: &str, phys_off: u32, phys_len: u32) -> Vec<u8> {
-        let mut b = vec![0u8; 0x54];
-        b[0x0c..0x10].copy_from_slice(&be32(phys_len));
-        let mut np = 0x10;
-        for ch in name.chars() {
-            b[np] = ch as u8;
-            b[np + 1] = 0x00;
-            np += 2;
-        }
-        b[0x50..0x54].copy_from_slice(&be32(1));
-        b.extend_from_slice(&be32(phys_off));
-        b.extend_from_slice(&be32(phys_len));
-        b.extend_from_slice(&be32(phys_len));
-        b.extend_from_slice(&be32(0));
-        b.extend_from_slice(&be32(0));
-        b
-    }
-
-    pub fn standard_catpart() -> Vec<u8> {
-        let main = main_stream();
-        let surf = surf_stream();
-        let main_off = 16u32;
-        let surf_off = main_off + main.len() as u32;
-        let dir_rel = surf_off + surf.len() as u32;
-
-        let mut dir = Vec::new();
-        dir.extend_from_slice(DIR_MAGIC);
-        dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32));
-        dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32));
-        dir.extend_from_slice(b"CB__END");
-        let b_len = dir.len() as u32;
-
-        let mut inner = Vec::new();
-        inner.extend_from_slice(OUTER_MAGIC);
-        inner.extend_from_slice(&be32(dir_rel));
-        inner.extend_from_slice(&be32(b_len));
-        inner.extend_from_slice(&main);
-        inner.extend_from_slice(&surf);
-        inner.extend_from_slice(&dir);
-
-        let mut f = Vec::new();
-        f.extend_from_slice(OUTER_MAGIC);
-        let outer_dir_off = 16u32 + inner.len() as u32;
-        f.extend_from_slice(&be32(outer_dir_off));
-        f.extend_from_slice(&be32(0));
-        f.extend_from_slice(&inner);
-        f
-    }
-
-    pub fn zero_entity_catpart() -> Vec<u8> {
-        let mut f = Vec::new();
-        f.extend_from_slice(OUTER_MAGIC);
-        f.extend_from_slice(&be32(0));
-        f.extend_from_slice(&be32(0));
-        for _ in 0..5 {
-            f.extend_from_slice(&[0xa9, 0x03, 0x10, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]);
-        }
-        f
-    }
-
     pub fn zero_entity_cylinder_catpart() -> Vec<u8> {
         let mut f = Vec::new();
         f.extend_from_slice(OUTER_MAGIC);
@@ -1030,9 +695,9 @@ fn generate_creo_seeds() -> Result<(), SeedError> {
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
-        ("just_magic", creo::just_magic()),
-        ("minimal_prt", creo::minimal_prt()),
-        ("with_visibgeom", creo::with_visibgeom()),
+        ("just_magic", seeds::creo::just_magic()),
+        ("minimal_prt", seeds::creo::minimal_prt()),
+        ("with_visibgeom", seeds::creo::with_visibgeom()),
         ("nd_layout", creo::nd_layout()),
         ("depdb_layout", creo::depdb_layout()),
         ("with_surface_rows", creo::with_surface_rows()),
@@ -1047,44 +712,7 @@ fn generate_creo_seeds() -> Result<(), SeedError> {
 }
 
 mod creo {
-    pub fn just_magic() -> Vec<u8> {
-        b"#UGC:2 P test\n".to_vec()
-    }
-
-    fn build_prt(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(format!("#UGC:2 P {version}\n").as_bytes());
-        out.extend_from_slice(b"#-END_OF_UGC_HEADER\n");
-        out.extend_from_slice(b"#UGC_TOC\n");
-        out.extend_from_slice(b"toc entry line\n");
-        out.extend_from_slice(b"#END_OF_TOC_HEADER\n");
-        for (name, payload) in sections {
-            out.push(b'#');
-            out.push(b'\n');
-            out.push(b'#');
-            out.extend_from_slice(name.as_bytes());
-            out.push(b'\n');
-            out.extend_from_slice(payload);
-        }
-        out
-    }
-
-    fn visibgeom_payload(srf: u8, crv: u8) -> Vec<u8> {
-        let mut p = Vec::new();
-        p.extend_from_slice(b"srf_array\0");
-        p.extend_from_slice(&[0xf8, srf]);
-        p.extend_from_slice(&[0xe0, 0x22, b'p', 0]);
-        p.extend_from_slice(b"crv_array\0");
-        p.extend_from_slice(&[0xf3, 0xf8, crv]);
-        p
-    }
-
-    pub fn minimal_prt() -> Vec<u8> {
-        build_prt("c", &[("VisibGeom", vec![0x00])])
-    }
-    pub fn with_visibgeom() -> Vec<u8> {
-        build_prt("c", &[("VisibGeom", visibgeom_payload(5, 12))])
-    }
+    use cadmpeg_fuzz::seeds::creo::{build_prt, visibgeom_payload};
     pub fn nd_layout() -> Vec<u8> {
         build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))])
     }
@@ -1119,9 +747,9 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
-        ("just_magic", nx::just_magic()),
+        ("just_magic", seeds::nx::just_magic()),
         ("single_part", nx::single_part_prt()?),
-        ("assembly", nx::assembly_prt()),
+        ("assembly", seeds::nx::assembly_prt()),
         ("topology_part", nx::topology_part_prt()?),
         ("bspline_part", nx::bspline_part_prt()?),
     ];
@@ -1136,25 +764,10 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
 mod nx {
     use cadmpeg_core::decode::alloc_filled;
     use cadmpeg_core::CodecError;
+    use cadmpeg_fuzz::seeds::nx::{put_f64, put_vec3, MAGIC};
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
     use std::io::Write;
-
-    const MAGIC: &[u8; 8] = b"SPLMSSTR";
-
-    fn be_f64(v: f64) -> [u8; 8] {
-        v.to_be_bytes()
-    }
-
-    fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
-        for (i, v) in xyz.iter().enumerate() {
-            rec[at + 8 * i..at + 8 * i + 8].copy_from_slice(&be_f64(*v));
-        }
-    }
-
-    fn put_f64(rec: &mut [u8], at: usize, v: f64) {
-        rec[at..at + 8].copy_from_slice(&be_f64(v));
-    }
 
     fn put_ref(rec: &mut [u8], at: usize, value: u16) {
         rec[at..at + 2].copy_from_slice(&value.to_be_bytes());
@@ -1376,10 +989,6 @@ mod nx {
         e.finish()
     }
 
-    pub fn just_magic() -> Vec<u8> {
-        MAGIC.to_vec()
-    }
-
     pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
         let mut f = Vec::new();
         f.extend_from_slice(MAGIC);
@@ -1423,22 +1032,5 @@ mod nx {
         f[size_idx..].copy_from_slice(&(compressed.len() as u64).to_le_bytes());
         f.extend_from_slice(&compressed);
         Ok(f)
-    }
-
-    pub fn assembly_prt() -> Vec<u8> {
-        let mut f = Vec::new();
-        f.extend_from_slice(MAGIC);
-        f.push(0x06);
-        f.extend_from_slice(&[0, 0, 0]);
-        f.extend_from_slice(&[0, 0, 0, 0]);
-        f.push(0x00);
-        f.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-        f.extend_from_slice(&[0, 0]);
-        f.extend_from_slice(b"HEADER");
-        let name = b"/Root/UG_PART/ExternalReferences";
-        f.extend_from_slice(&(name.len() as u32).to_le_bytes());
-        f.extend_from_slice(name);
-        f.extend_from_slice(&[0u8; 16]);
-        f
     }
 }
