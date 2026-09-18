@@ -632,7 +632,7 @@ impl TessellationMesh {
             }
             Self::CornerShadedList { triangles, .. } => {
                 for triangle in triangles.iter_mut() {
-                    for normal in triangle.normals.iter_mut() {
+                    for normal in &mut triangle.normals {
                         edit(normal)?;
                     }
                 }
