@@ -1,4 +1,21 @@
-use super::*;
+use super::entity;
+use super::neutral_feature;
+use super::reference;
+use super::simple_hole_definition;
+use crate::swift::enrich_implicit_nominals_with_context;
+use crate::swift::length;
+use crate::swift::pattern_hole_nominal_context;
+use crate::swift::project;
+use crate::swift::project_with_topology;
+use crate::swift::Entity;
+use crate::swift::ObjectSection;
+use crate::swift::RelatedObject;
+use crate::swift::TopologyIdentityIndex;
+use crate::swift::ROOT_CLASS;
+use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::pmi::PmiDefinition;
+use cadmpeg_ir::pmi::PmiTarget;
+use std::collections::BTreeMap;
 
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {

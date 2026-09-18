@@ -1,4 +1,26 @@
-use super::*;
+use super::dimension_nominal;
+use super::entity;
+use super::reference;
+use super::semantic_root;
+use crate::swift::approximately_equal;
+use crate::swift::enrich_implicit_nominals;
+use crate::swift::length;
+use crate::swift::pmi_id;
+use crate::swift::pmi_value;
+use crate::swift::project;
+use crate::swift::rendered_dimensions;
+use crate::swift::rendered_nominal;
+use crate::swift::unique_diameter;
+use crate::swift::Entity;
+use crate::swift::Reference;
+use crate::swift::RelatedObject;
+use crate::swift::RenderedDimension;
+use crate::swift::RenderedDimensionKind;
+use crate::swift::ROOT_CLASS;
+use cadmpeg_ir::pmi::DimensionKind;
+use cadmpeg_ir::pmi::DimensionTolerance;
+use cadmpeg_ir::pmi::PmiDefinition;
+use cadmpeg_ir::pmi::PmiQuantity;
 
 fn cylinder_with_radius(radius: f64) -> Entity {
     let mut cylinder = entity("GdtCylinder");

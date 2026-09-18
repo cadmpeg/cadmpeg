@@ -2,24 +2,14 @@
 //! Feature-history reference, projection, and write-prepare tests.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use crate::records::Configuration;
+use crate::records::Feature;
+use crate::records::FeatureHistory;
 use crate::records::FeatureSource;
 use crate::test_support::*;
-use cadmpeg_ir::attributes::AttributeValue;
-use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::Face;
-use cadmpeg_ir::{
-    features::{
-        AngularTermination, BooleanOp, ChamferSpec, ConfigurationId, CosmeticThreadExtent,
-        DatumPlaneReference, DesignConfiguration, DesignParameter, EdgeSelection, ExtrudeExtent,
-        ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-        FeatureTreeNodeRole, HoleBottom, HoleKind, LinearTermination, ParameterId, ParameterValue,
-        PathRef, ProfileRef, RevolveExtent, RibConstruction, SplitFaceTool,
-    },
-    scalar::Length,
-};
-use std::collections::HashSet;
+use cadmpeg_ir::features::ConfigurationId;
+use cadmpeg_ir::features::DesignConfiguration;
+use std::collections::BTreeMap;
 
 #[test]
 fn history_from_nameless_block_keeps_annotation_owner() {

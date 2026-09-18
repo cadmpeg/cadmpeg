@@ -1,7 +1,14 @@
 //! Tests for the `transforms` module.
 
-use super::*;
+use super::sketch_entity_loci;
+use super::sketch_entity_marker_loci;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::relation_loci::marker_accepts_locus;
+use crate::resolved_features::relation_loci::qualified_point_marker_key;
+use crate::resolved_features::LEGACY_SKETCH_MARKER;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 fn marker(id: &str, coordinates_m: Option<[f64; 2]>) -> SketchInputEntity {
     {

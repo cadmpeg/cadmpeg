@@ -1,6 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::analytic_surface_normal;
+use super::analytic_surface_residual;
+use super::assign_persistent_owners;
+use super::assign_unique_surface_owners;
+use super::chordal_hole_constraint;
+use super::circle_overlaps_polygon;
+use super::circular_interval;
+use super::circular_interval_contains;
+use super::circular_outer_and_holes;
+use super::is_simple_polygon;
+use super::parse_table;
+use super::persistent_surface_references;
+use super::planar_boundary_samples;
+use super::plane_frame;
+use super::polygon_contains;
+use super::shortest_arc_span;
+use super::ByteRange;
+use super::CircularHole;
+use super::ConicalTrim;
+use super::DisplayFace;
+use super::Mesh;
+use super::PersistentFaceBinding;
+use super::PersistentSurfaceReference;
+use super::PlanarHole;
+use super::PlanarOuter;
+use super::PlanarTrim;
+use super::PlaneFrame;
+use super::CLASS_MARKER;
+use super::EPS_DISPLAY_QUANTIZATION;
+use super::SCENE_SOURCE_MARKER;
+use crate::brep::feature_source::FeatureSourceId;
+use crate::brep::PersistentFaceIdentity;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::Sense;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -9,7 +49,6 @@ use cadmpeg_ir::LossTaxonomy;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
-use super::*;
 use cadmpeg_ir::geometry::{Curve, NurbsSurface, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,

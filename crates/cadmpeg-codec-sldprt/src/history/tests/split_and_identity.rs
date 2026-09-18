@@ -3,8 +3,17 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use super::*;
+use super::feature;
+use cadmpeg_ir::features::BooleanOp;
+use cadmpeg_ir::features::DatumPlaneReference;
+use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::PathRef;
+use cadmpeg_ir::features::RibConstruction;
+use cadmpeg_ir::features::SplitFaceTool;
 
 #[test]
 fn split_face_path_uses_the_prebound_source_sketch() {

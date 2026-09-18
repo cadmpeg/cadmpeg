@@ -3,8 +3,19 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use super::*;
+use super::feature;
+use cadmpeg_ir::features::DatumPlaneReference;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::topology::Face;
 
 #[test]
 fn offset_plane_frame_resolves_one_preceding_parallel_plane() {

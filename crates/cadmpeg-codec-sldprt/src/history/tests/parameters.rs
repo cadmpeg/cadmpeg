@@ -3,8 +3,19 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use super::*;
+use super::design_configuration;
+use super::feature;
+use super::feature_input_lane;
+use super::native_configuration;
+use super::native_with_configuration_lanes;
+use super::with_configuration_id;
 use crate::records::FeatureSource;
+use cadmpeg_ir::features::DesignParameter;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::scalar::Length;
+use std::collections::HashSet;
 
 #[test]
 fn repeated_aliases_from_one_parameter_remain_unambiguous() {

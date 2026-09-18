@@ -1,6 +1,5 @@
 //! Indexed and linked profile-point marker tests.
 
-use super::super::super::selections::coordinate_marker_local_links;
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::super::*;
 use crate::layout::legacy_140_single_incidence_profile_point as point_140;

@@ -1,4 +1,16 @@
-use super::*;
+use super::dimension_nominal;
+use super::semantic_root;
+use crate::swift::length;
+use crate::swift::parse_unique_root;
+use crate::swift::pmi_id;
+use crate::swift::project;
+use crate::swift::Entity;
+use crate::swift::ObjectSection;
+use cadmpeg_ir::pmi::PmiDefinition;
+use cadmpeg_ir::pmi::PmiQuantity;
+use cadmpeg_ir::pmi::PmiTarget;
+use cadmpeg_ir::pmi::PmiValue;
+use std::collections::BTreeSet;
 
 fn put_pstr(bytes: &mut Vec<u8>, value: &str) {
     bytes.push(u8::try_from(value.len()).expect("fixture Pascal string"));

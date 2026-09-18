@@ -3,10 +3,32 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use super::*;
+use super::feature;
+use super::feature_input_lane;
 use crate::records::ObjectId;
+use cadmpeg_ir::attributes::AttributeValue;
+use cadmpeg_ir::features::AngularTermination;
+use cadmpeg_ir::features::BooleanOp;
+use cadmpeg_ir::features::ChamferSpec;
+use cadmpeg_ir::features::CosmeticThreadExtent;
+use cadmpeg_ir::features::ExtrudeExtent;
+use cadmpeg_ir::features::ExtrudeSide;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::FeatureSourceContent;
+use cadmpeg_ir::features::FeatureTreeNodeRole;
+use cadmpeg_ir::features::HoleBottom;
+use cadmpeg_ir::features::HoleKind;
+use cadmpeg_ir::features::LinearTermination;
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::features::ProfileRef;
+use cadmpeg_ir::features::RevolveExtent;
 use cadmpeg_ir::features::UnresolvedFamily;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Length;
 
 const EPS_PROJECTED_REVOLUTION_ANGLE: f64 = 1.0e-12;
 const EPS_BOUND_REVOLUTION_ANGLE: f64 = 1.0e-12;
