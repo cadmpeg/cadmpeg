@@ -775,6 +775,24 @@ mod variable_blend_secondary_curve;
 mod variable_blend_value;
 
 #[test]
+fn bspline_surface_edit_refusal_keeps_control_points() {
+    use crate::geometry::{BsplineSurface, NurbsError};
+    let points = vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2];
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
+    let original = surface.clone();
+    let refusal = surface.edit_control_points(|point| {
+        point.z = 3.0;
+        Err(NurbsError::EditRefused("caller refused this pole".into()))
+    });
+    assert_eq!(
+        refusal,
+        Err(NurbsError::EditRefused("caller refused this pole".into()))
+    );
+    assert_eq!(surface, original);
+}
+
+#[test]
 fn bspline_surface_numeric_admission_and_transactional_edit() {
     use crate::geometry::BsplineSurface;
     use crate::math::Point3;
@@ -791,13 +809,21 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
     let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
     let original = surface.clone();
     assert!(surface
-        .edit_control_points(|point| point.x = f64::NAN)
+        .edit_control_points(|point| {
+            point.x = f64::NAN;
+            Ok(())
+        })
         .is_err());
     assert_eq!(surface, original);
     let mut wire = serde_json::to_value(&surface).unwrap();
     wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
     assert!(serde_json::from_value::<BsplineSurface>(wire).is_err());
-    surface.edit_control_points(|point| point.z = 2.0).unwrap();
+    surface
+        .edit_control_points(|point| {
+            point.z = 2.0;
+            Ok(())
+        })
+        .unwrap();
     assert!(surface
         .control_points()
         .iter()
