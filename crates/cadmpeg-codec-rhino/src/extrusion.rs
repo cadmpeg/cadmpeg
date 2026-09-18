@@ -920,9 +920,15 @@ pub(crate) mod tests {
     use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
     use crate::objects::ClassUserdata;
-    use crate::test_support::test_dump::{push_f64, push_i32};
+    use crate::test_support::test_dump::{
+        crc_chunk, crc_chunk_excluding, long_chunk, push_f64, push_i32,
+    };
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
+
+    /// Every fixture this module builds is decoded at an archive word of 50,
+    /// so its chunks use the eight-byte value grammar.
+    const CHUNKS: ArchiveVersion = ArchiveVersion::V5;
 
     fn decode(
         data: &[u8],
@@ -944,35 +950,6 @@ pub(crate) mod tests {
                 mesh_budget,
             )
         })
-    }
-
-    fn long(typecode: u32, body: &[u8]) -> Vec<u8> {
-        let mut result = typecode.to_le_bytes().to_vec();
-        result.extend((body.len() as i64).to_le_bytes());
-        result.extend(body);
-        result
-    }
-
-    fn crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
-        let mut payload = body.to_vec();
-        payload.extend(crc32fast::hash(body).to_le_bytes());
-        long(typecode, &payload)
-    }
-
-    fn crc_chunk_excluding(
-        typecode: u32,
-        body: &[u8],
-        children: &[std::ops::Range<usize>],
-    ) -> Vec<u8> {
-        let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), children)
-            .expect("valid test child ranges");
-        let mut hasher = crc32fast::Hasher::new();
-        for range in direct {
-            hasher.update(&body[range]);
-        }
-        let mut payload = body.to_vec();
-        payload.extend(hasher.finalize().to_le_bytes());
-        long(typecode, &payload)
     }
 
     fn polyline_wrapper(clockwise: bool, closed: bool) -> Vec<u8> {
@@ -1008,11 +985,11 @@ pub(crate) mod tests {
             0xe6, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
             0x22, 0xf0,
         ];
-        let mut class_body = crc_chunk(0x0002_fffb, &wire_uuid);
-        class_body.extend(crc_chunk(0x0002_fffc, &payload));
+        let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &wire_uuid);
+        class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &payload));
         class_body.extend(0x8002_7fff_u32.to_le_bytes());
         class_body.extend(0_i64.to_le_bytes());
-        long(0x0002_7ffa, &class_body)
+        long_chunk(CHUNKS, 0x0002_7ffa, &class_body)
     }
 
     fn polycurve_wrapper() -> Vec<u8> {
@@ -1031,11 +1008,11 @@ pub(crate) mod tests {
             0xe0, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
             0x22, 0xf0,
         ];
-        let mut class_body = crc_chunk(0x0002_fffb, &wire_uuid);
-        class_body.extend(crc_chunk(0x0002_fffc, &payload));
+        let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &wire_uuid);
+        class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &payload));
         class_body.extend(0x8002_7fff_u32.to_le_bytes());
         class_body.extend(0_i64.to_le_bytes());
-        long(0x0002_7ffa, &class_body)
+        long_chunk(CHUNKS, 0x0002_7ffa, &class_body)
     }
 
     fn payload(minor: i32, caps: [bool; 2], cache: Option<Vec<u8>>) -> Vec<u8> {
@@ -1083,7 +1060,7 @@ pub(crate) mod tests {
             children.push(body.len()..body.len() + cache.len());
             body.extend(cache);
         }
-        crc_chunk_excluding(ANONYMOUS, &body, &children)
+        crc_chunk_excluding(CHUNKS, ANONYMOUS, &body, &children)
     }
 
     pub(crate) fn archive_payload(
@@ -1143,7 +1120,7 @@ pub(crate) mod tests {
         push_i32(&mut body, 1);
         push_i32(&mut body, 0);
         body.push(0);
-        crc_chunk(ANONYMOUS, &body)
+        crc_chunk(CHUNKS, ANONYMOUS, &body)
     }
 
     fn one_mesh_wrapper() -> Vec<u8> {
@@ -1174,11 +1151,11 @@ pub(crate) mod tests {
             0xe4, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01,
             0x22, 0xf0,
         ];
-        let mut class_body = crc_chunk(0x0002_fffb, &mesh_uuid);
-        class_body.extend(crc_chunk(0x0002_fffc, &mesh));
+        let mut class_body = crc_chunk(CHUNKS, 0x0002_fffb, &mesh_uuid);
+        class_body.extend(crc_chunk(CHUNKS, 0x0002_fffc, &mesh));
         class_body.extend(0x8002_7fff_u32.to_le_bytes());
         class_body.extend(0_i64.to_le_bytes());
-        long(0x0002_7ffa, &class_body)
+        long_chunk(CHUNKS, 0x0002_7ffa, &class_body)
     }
 
     fn one_mesh_cache() -> Vec<u8> {
@@ -1191,7 +1168,7 @@ pub(crate) mod tests {
         item.extend(wrapper);
         let wrapper_range =
             anon_ver::LEN + uuid_wire::LEN..anon_ver::LEN + uuid_wire::LEN + wrapper_len;
-        let item = crc_chunk_excluding(ANONYMOUS, &item, &[wrapper_range]);
+        let item = crc_chunk_excluding(CHUNKS, ANONYMOUS, &item, &[wrapper_range]);
         let item_len = item.len();
         let mut cache = Vec::new();
         push_i32(&mut cache, 1);
@@ -1200,13 +1177,13 @@ pub(crate) mod tests {
         cache.extend(item);
         cache.push(0);
         #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
-        let wrapped = crc_chunk_excluding(ANONYMOUS, &cache, &[9..9 + item_len]);
+        let wrapped = crc_chunk_excluding(CHUNKS, ANONYMOUS, &cache, &[9..9 + item_len]);
         wrapped
     }
 
     fn null_object_wrapper() -> Vec<u8> {
-        let uuid = crc_chunk(0x0002_fffb, &[0; 16]);
-        long(0x0002_7ffa, &uuid)
+        let uuid = crc_chunk(CHUNKS, 0x0002_fffb, &[0; 16]);
+        long_chunk(CHUNKS, 0x0002_7ffa, &uuid)
     }
 
     fn decoded_polygon(clockwise: bool, closed: bool) -> DecodedCurve {
@@ -1539,7 +1516,7 @@ pub(crate) mod tests {
 
     #[test]
     fn malformed_mesh_cache_is_dropped_without_losing_analytic_geometry() {
-        let malformed = crc_chunk(ANONYMOUS, &[1, 0, 0, 0, 0, 0, 0, 0, 2]);
+        let malformed = crc_chunk(CHUNKS, ANONYMOUS, &[1, 0, 0, 0, 0, 0, 0, 0, 2]);
         let bytes = payload(3, [false, false], Some(malformed));
         let decoded = decode(
             &bytes,
