@@ -17,18 +17,25 @@ crate::ids::id_type!(
 
 /// Admission error in a tessellation mesh or channel carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TessellationError(String);
+pub enum TessellationError {
+    /// A mesh or channel value the carrier cannot admit.
+    Admission(String),
+    /// An edit closure refused the value it was given, stating its own reason.
+    EditRefused(String),
+}
 
 impl std::fmt::Display for TessellationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
+        match self {
+            Self::Admission(message) | Self::EditRefused(message) => formatter.write_str(message),
+        }
     }
 }
 
 impl std::error::Error for TessellationError {}
 
 fn tessellation_error(message: impl Into<String>) -> TessellationError {
-    TessellationError(message.into())
+    TessellationError::Admission(message.into())
 }
 
 /// One mesh vertex carrying its shading normal.

@@ -30,11 +30,18 @@ pub struct SubdSurface {
 
 /// Admission error in a subdivision control cage.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SubdError(String);
+pub enum SubdError {
+    /// A cage value the carrier cannot admit.
+    Admission(String),
+    /// An edit closure refused the value it was given, stating its own reason.
+    EditRefused(String),
+}
 
 impl std::fmt::Display for SubdError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
+        match self {
+            Self::Admission(message) | Self::EditRefused(message) => formatter.write_str(message),
+        }
     }
 }
 
@@ -44,7 +51,7 @@ const EPS_SUBD_SYMMETRY_FRAME: f64 = 1.0e-9;
 
 fn require_finite_point(field: &str, point: Point3) -> Result<(), SubdError> {
     if !point.is_finite() {
-        return Err(SubdError(format!("{field} must be finite")));
+        return Err(SubdError::Admission(format!("{field} must be finite")));
     }
     Ok(())
 }
@@ -137,7 +144,7 @@ impl SubdCage {
                 .iter()
                 .any(|vertex| *vertex as usize >= self.vertices.len())
             {
-                return Err(SubdError(format!(
+                return Err(SubdError::Admission(format!(
                     "edges[{index}].vertices contains an out-of-range index"
                 )));
             }
@@ -148,7 +155,9 @@ impl SubdCage {
                 .iter()
                 .map(|use_| {
                     let edge = self.edges.get(use_.edge as usize).ok_or_else(|| {
-                        SubdError(format!("faces[{index}].edges references a missing edge"))
+                        SubdError::Admission(format!(
+                            "faces[{index}].edges references a missing edge"
+                        ))
                     })?;
                     Ok(if use_.reversed {
                         [edge.vertices[1], edge.vertices[0]]
@@ -162,7 +171,7 @@ impl SubdCage {
                 .zip(endpoints.iter().cycle().skip(1))
                 .any(|(first, next)| first[1] != next[0])
             {
-                return Err(SubdError(format!(
+                return Err(SubdError::Admission(format!(
                     "faces[{index}].edges is not a directed closed ring"
                 )));
             }
@@ -175,7 +184,7 @@ impl SubdCage {
                 ("vertex_pairs", &symmetry.vertex_pairs, self.vertices.len()),
             ] {
                 if pairs.iter().flatten().any(|index| *index as usize >= count) {
-                    return Err(SubdError(format!(
+                    return Err(SubdError::Admission(format!(
                         "symmetries.{field} contains an out-of-range index"
                     )));
                 }
@@ -202,19 +211,19 @@ impl SubdCage {
                 };
                 if let Some(edge) = edge {
                     let edge = self.edges.get(*edge as usize).ok_or_else(|| {
-                        SubdError(format!(
+                        SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips edge is out of range"
                         ))
                     })?;
                     if !edge.vertices.iter().any(|owner| *owner as usize == index) {
-                        return Err(SubdError(format!(
+                        return Err(SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips edge is not incident to its owner"
                         )));
                     }
                 }
                 if let Some(face) = sector_face {
                     let face = self.faces.get(*face as usize).ok_or_else(|| {
-                        SubdError(format!(
+                        SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips sector_face is out of range"
                         ))
                     })?;
@@ -224,12 +233,12 @@ impl SubdCage {
                             .iter()
                             .any(|owner| *owner as usize == index)
                     }) {
-                        return Err(SubdError(format!("vertices[{index}].secondary_grips sector_face is not incident to its owner")));
+                        return Err(SubdError::Admission(format!("vertices[{index}].secondary_grips sector_face is not incident to its owner")));
                     }
                 }
                 for grip in spokes.iter().chain(sectors).flatten() {
                     if !grip_indices.insert(grip.source_index) {
-                        return Err(SubdError(format!(
+                        return Err(SubdError::Admission(format!(
                             "vertices[{index}].secondary_grips repeats a source_index"
                         )));
                     }
@@ -279,17 +288,17 @@ impl SubdPlaneFrame {
     ) -> Result<Self, SubdError> {
         require_finite_point("origin", origin)?;
         if !first_axis.is_finite() || (first_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
-            return Err(SubdError(
+            return Err(SubdError::Admission(
                 "first_axis must be finite and unit length".into(),
             ));
         }
         if !second_axis.is_finite() || (second_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
-            return Err(SubdError(
+            return Err(SubdError::Admission(
                 "second_axis must be finite and unit length".into(),
             ));
         }
         if first_axis.dot(second_axis).abs() > EPS_SUBD_SYMMETRY_FRAME {
-            return Err(SubdError(
+            return Err(SubdError::Admission(
                 "first_axis and second_axis must be orthogonal".into(),
             ));
         }
@@ -363,15 +372,19 @@ impl SubdRadialSymmetry {
         radial_maps: Vec<SubdRadialSymmetryMap>,
     ) -> Result<Self, SubdError> {
         let sweep = crate::scalar::FiniteReal::new(sweep)
-            .ok_or_else(|| SubdError("kind.radial.sweep must be finite".into()))?;
+            .ok_or_else(|| SubdError::Admission("kind.radial.sweep must be finite".into()))?;
         let mut selectors = std::collections::BTreeSet::new();
         for map in &radial_maps {
             if !selectors.insert(map.selector) {
-                return Err(SubdError("radial_maps repeats a selector".into()));
+                return Err(SubdError::Admission(
+                    "radial_maps repeats a selector".into(),
+                ));
             }
             let mut sources = std::collections::BTreeSet::new();
             if map.pairs.iter().any(|[source, _]| !sources.insert(*source)) {
-                return Err(SubdError("radial_maps.pairs repeats a source".into()));
+                return Err(SubdError::Admission(
+                    "radial_maps.pairs repeats a source".into(),
+                ));
             }
         }
         Ok(Self {
@@ -491,7 +504,9 @@ impl SubdSymmetry {
                 .iter()
                 .any(|[source, target]| !sources.insert(*source) || !targets.insert(*target))
             {
-                return Err(SubdError(format!("{field} repeats a source or target")));
+                return Err(SubdError::Admission(format!(
+                    "{field} repeats a source or target"
+                )));
             }
         }
         Ok(Self {
@@ -679,7 +694,9 @@ impl SubdVertexGripLayout {
         wedges: Vec<SubdGripWedge>,
     ) -> Result<Self, SubdError> {
         if wedges.is_empty() {
-            return Err(SubdError("secondary_grips.wedges is empty".into()));
+            return Err(SubdError::Admission(
+                "secondary_grips.wedges is empty".into(),
+            ));
         }
         let spoke_count = |wedge: &SubdGripWedge| match wedge {
             SubdGripWedge::Phantom {} => 0,
@@ -691,7 +708,7 @@ impl SubdVertexGripLayout {
                 SubdGripWedge::Slot { sectors, .. } => sectors.len(),
             };
             if spoke_count(wedge).checked_mul(spoke_count(next)) != Some(sector_count) {
-                return Err(SubdError(format!(
+                return Err(SubdError::Admission(format!(
                     "secondary_grips.wedges[{index}].sectors has invalid arity"
                 )));
             }
@@ -768,7 +785,9 @@ impl SubdSecondaryGrip {
     pub fn new(source_index: u32, point: Point3, weight: f64) -> Result<Self, SubdError> {
         require_finite_point("point", point)?;
         if !weight.is_finite() || weight <= 0.0 {
-            return Err(SubdError("weight must be finite and positive".into()));
+            return Err(SubdError::Admission(
+                "weight must be finite and positive".into(),
+            ));
         }
         Ok(Self {
             source_index,
@@ -867,23 +886,27 @@ impl SubdEdge {
         sector_coefficients: [f64; 2],
     ) -> Result<Self, SubdError> {
         if vertices[0] == vertices[1] {
-            return Err(SubdError("vertices must name distinct endpoints".into()));
+            return Err(SubdError::Admission(
+                "vertices must name distinct endpoints".into(),
+            ));
         }
         if sharpness
             .iter()
             .any(|value| !value.is_finite() || *value < 0.0)
         {
-            return Err(SubdError(
+            return Err(SubdError::Admission(
                 "sharpness must be finite and non-negative".into(),
             ));
         }
         if knot_interval.is_some_and(|value| !value.is_finite() || value <= 0.0) {
-            return Err(SubdError(
+            return Err(SubdError::Admission(
                 "knot_interval must be finite and positive".into(),
             ));
         }
         if sector_coefficients.iter().any(|value| !value.is_finite()) {
-            return Err(SubdError("sector_coefficients must be finite".into()));
+            return Err(SubdError::Admission(
+                "sector_coefficients must be finite".into(),
+            ));
         }
         Ok(Self {
             vertices,
@@ -956,7 +979,9 @@ impl SubdFace {
     /// Construct a face with at least three directed edge uses.
     pub fn new(edges: Vec<SubdEdgeUse>) -> Result<Self, SubdError> {
         if edges.len() < 3 {
-            return Err(SubdError("edges must contain at least three uses".into()));
+            return Err(SubdError::Admission(
+                "edges must contain at least three uses".into(),
+            ));
         }
         Ok(Self { edges })
     }
