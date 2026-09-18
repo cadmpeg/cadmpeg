@@ -2470,6 +2470,11 @@ pub(crate) fn sole_named_property<'a>(
     })
 }
 
+/// Wraps a decode message in the malformed-source error variant.
+pub(crate) fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
+}
+
 /// Reads a `FreeCAD` boolean property text, which is `true`, `false`, `1` or `0`.
 pub(crate) fn parse_bool(value: &str) -> Option<bool> {
     match value.to_ascii_lowercase().as_str() {

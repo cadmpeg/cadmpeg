@@ -38,7 +38,7 @@ use cadmpeg_ir::{
 };
 
 use crate::brep::ShapePayloadRecord;
-use crate::native::{EntryRecord, ObjectRecord, PropertyRecord};
+use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
@@ -4689,10 +4689,6 @@ fn property<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a Pro
         .iter()
         .copied()
         .find(|property| property.name == name)
-}
-
-fn malformed(message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(message.into())
 }
 
 fn nonempty_link(link: Option<&crate::native::LinkTarget>) -> bool {
