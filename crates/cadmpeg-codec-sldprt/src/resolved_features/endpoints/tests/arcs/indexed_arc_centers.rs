@@ -1,5 +1,13 @@
-use super::super::*;
-use super::*;
+use crate::records::SketchInputKind;
+use crate::resolved_features::endpoints::coordinate_roster_arc_center;
+use crate::resolved_features::endpoints::current_indexed_arc_reverses_center_sweep;
+use crate::resolved_features::endpoints::indexed_arc_uses_coordinate_center;
+use crate::resolved_features::endpoints::legacy_compact_diameter_arc_center;
+use crate::resolved_features::endpoints::unique_arc_center_marker;
+use crate::resolved_features::typed_relations::current_undetailed_bounded_curve_is_line;
+use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
+use crate::resolved_features::LEGACY_SKETCH_MARKER;
+use crate::resolved_features::SKETCH_MARKER;
 use cadmpeg_ir::math::Point2;
 
 #[test]

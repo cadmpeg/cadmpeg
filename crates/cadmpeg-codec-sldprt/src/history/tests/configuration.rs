@@ -3,7 +3,18 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use super::*;
+use super::design_configuration;
+use super::feature;
+use super::feature_input_lane;
+use super::native_configuration;
+use super::native_with_configuration_id;
+use super::native_with_configuration_lanes;
+use super::with_configuration_id;
+use cadmpeg_ir::features::DesignConfiguration;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Length;
 
 #[test]
 fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {

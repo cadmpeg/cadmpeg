@@ -1,4 +1,12 @@
-use super::*;
+use super::pmi_id;
+use super::Entity;
+use super::Reference;
+use super::RelatedObject;
+use super::ROOT_CLASS;
+use cadmpeg_ir::pmi::PmiAnnotation;
+use cadmpeg_ir::pmi::PmiDefinition;
+use cadmpeg_ir::pmi::PmiValue;
+use std::collections::BTreeMap;
 
 mod identity;
 mod nominals;

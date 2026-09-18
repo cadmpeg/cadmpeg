@@ -37,19 +37,53 @@ use super::relation_geometry::{
     project_relation_solved_point_geometry, relation_parameter_by_display_name,
 };
 #[cfg(test)]
-use super::relation_loci::{
-    doubled_profile_distance_loci, marker_accepts_locus, marker_point_locus,
-    profile_loci_by_marker, qualified_point_marker_key, relation_constraint_is_inactive,
-    relation_operand_loci, relation_operand_marker, resolved_marker_locus,
-    single_marker_line_entity, typed_relation_definition, unique_linked_endpoint_locus,
-    unique_profile_axis_distance_locus, unique_profile_axis_distance_pair,
-    unique_profile_distance_loci_pair, unique_profile_distance_locus,
-    unique_profile_line_angle_entity, unique_profile_line_angle_pair,
-    unique_profile_line_distance_entity, unique_profile_line_distance_pair,
-    unique_profile_line_point_locus, unique_profile_point_line_entity,
-    unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
-    unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
-};
+use super::relation_loci::doubled_profile_distance_loci;
+#[cfg(test)]
+use super::relation_loci::marker_point_locus;
+#[cfg(test)]
+use super::relation_loci::profile_loci_by_marker;
+#[cfg(test)]
+use super::relation_loci::relation_constraint_is_inactive;
+#[cfg(test)]
+use super::relation_loci::relation_operand_loci;
+#[cfg(test)]
+use super::relation_loci::relation_operand_marker;
+#[cfg(test)]
+use super::relation_loci::resolved_marker_locus;
+#[cfg(test)]
+use super::relation_loci::single_marker_line_entity;
+#[cfg(test)]
+use super::relation_loci::typed_relation_definition;
+#[cfg(test)]
+use super::relation_loci::unique_linked_endpoint_locus;
+#[cfg(test)]
+use super::relation_loci::unique_profile_axis_distance_locus;
+#[cfg(test)]
+use super::relation_loci::unique_profile_axis_distance_pair;
+#[cfg(test)]
+use super::relation_loci::unique_profile_distance_loci_pair;
+#[cfg(test)]
+use super::relation_loci::unique_profile_distance_locus;
+#[cfg(test)]
+use super::relation_loci::unique_profile_line_angle_entity;
+#[cfg(test)]
+use super::relation_loci::unique_profile_line_angle_pair;
+#[cfg(test)]
+use super::relation_loci::unique_profile_line_distance_entity;
+#[cfg(test)]
+use super::relation_loci::unique_profile_line_distance_pair;
+#[cfg(test)]
+use super::relation_loci::unique_profile_line_point_locus;
+#[cfg(test)]
+use super::relation_loci::unique_profile_point_line_entity;
+#[cfg(test)]
+use super::relation_loci::unique_profile_point_line_pair;
+#[cfg(test)]
+use super::relation_loci::unique_repaired_profile_line_angle_pair;
+#[cfg(test)]
+use super::relation_loci::unique_repaired_profile_line_distance_pair;
+#[cfg(test)]
+use super::relation_loci::unique_repaired_profile_point_line_pair;
 #[cfg(test)]
 use super::relation_records::{bind_circle_dimension_centers, bind_detached_relation_drivers};
 #[cfg(test)]

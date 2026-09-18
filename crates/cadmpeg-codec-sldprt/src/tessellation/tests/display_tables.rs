@@ -2,7 +2,21 @@
 //! Display-list descriptor probing: where a face header places its table,
 //! what ends a table sequence, and what a recognised table refuses.
 
-use super::*;
+use super::class;
+use super::descriptor;
+use super::table;
+use crate::tessellation::descriptor_table_offset;
+use crate::tessellation::parse_table;
+use crate::tessellation::parse_table_sequence;
+use crate::tessellation::scene_classes;
+use crate::tessellation::CLASS_MARKER;
+use crate::test_support::make_block;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::triangle_body;
+use crate::SldprtCodec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
 
 #[test]
 fn scene_objects_carry_history_source_identity() {

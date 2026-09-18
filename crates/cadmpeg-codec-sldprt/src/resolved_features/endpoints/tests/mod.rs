@@ -1,6 +1,35 @@
 //! Tests for the `endpoints` module.
 
-use super::*;
+use super::compact_complete_marker_roster_endpoints;
+use super::compact_legacy_profile_full_circle;
+use super::compact_legacy_terminal_diameter_circle;
+use super::compact_profile_full_circle;
+use super::coordinate_ellipse_axes;
+use super::coordinate_roster_endpoint_offset;
+use super::current_compact_roster_selected_axis;
+use super::current_profile_circle_dimension;
+use super::curve_endpoint_index_candidates;
+use super::equal_index_coordinate_roster_full_circle;
+use super::extended_compact_84_profile_line_uses_point_roster;
+use super::extended_compact_indexed_curve_endpoint_indices;
+use super::extended_marker84_line_uses_point_roster;
+use super::implicit_profile_chain_closure_endpoints;
+use super::indexed_arc_uses_coordinate_center;
+use super::legacy_code_five_or_six_selected_axis_endpoint_indices;
+use super::legacy_compact_84_profile_line_uses_point_roster;
+use super::legacy_compact_roster_selected_axis_endpoint_indices;
+use super::legacy_marker104_arc_center;
+use super::legacy_profile_radial_circle;
+use super::legacy_profile_roster_selected_axis_endpoint_indices;
+use super::legacy_undetailed_profile_line;
+use super::linked_profile_curve_endpoint_indices;
+use super::marker_is_selected_construction_line;
+use super::packed_compact_legacy_curve_endpoint_indices;
+use super::resolve_indexed_marker_candidates;
+use super::roster_curve_endpoint_markers;
+use super::standard_legacy_compact_selected_axis_endpoint_indices;
+use super::wide_coordinate_roster_full_circle;
+use super::wide_indexed_curve_endpoint_indices;
 
 mod arcs;
 mod circles;

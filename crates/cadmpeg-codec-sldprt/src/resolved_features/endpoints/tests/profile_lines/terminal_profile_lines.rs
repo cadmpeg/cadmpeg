@@ -1,5 +1,12 @@
-use super::super::*;
-use super::*;
+use crate::records::SketchInputKind;
+use crate::records::SketchRelationKind;
+use crate::resolved_features::endpoints::coordinate_roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::current_referenced_compact_curve_uses_marker_roster;
+use crate::resolved_features::endpoints::extended_selector44_indexed_line;
+use crate::resolved_features::endpoints::extended_terminal_profile_line;
+use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
+use crate::resolved_features::SKETCH_MARKER;
 
 #[test]
 fn current_referenced_compact_line_uses_complete_one_based_marker_roster() {
