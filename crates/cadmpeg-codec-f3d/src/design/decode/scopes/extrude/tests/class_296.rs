@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::test_support::dump::{
-    lp_utf16, parse_parameter_scope, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudeStart, DesignRecordHeader, IndexedRecordOffsets,
-};
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::records::decal::DesignRecordHeader;
+use crate::records::feature::extrude::DesignExtrudeExtent;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::extrude::DesignExtrudePrologue;
+use crate::records::feature::extrude::DesignExtrudeStart;
+use crate::test_support::lp_utf16;
 
 #[test]
 fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {

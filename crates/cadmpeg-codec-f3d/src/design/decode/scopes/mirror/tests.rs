@@ -3,14 +3,14 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
 use super::compact_feature_reference;
 use super::exact_legacy_mirror_scope_count;
 use super::exact_legacy_mirror_scope_tolerance;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::dump::{DesignParameterScope, DesignRecordHeader};
+use crate::records::decal::DesignRecordHeader;
+use crate::records::feature::scope::DesignParameterScope;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> usize {
     let start = bytes.len();

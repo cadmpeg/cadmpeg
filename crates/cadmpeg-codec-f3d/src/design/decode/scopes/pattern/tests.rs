@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::exact_pattern_identity_wrapper;
+use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
+use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from_assemblies;
+use crate::design::decode::scopes::pattern::exact_circular_pattern_construction_with_owners;
+use crate::design::decode::scopes::pattern::exact_rectangular_pattern_construction;
+use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
 use crate::design::decode::scopes::tests::assembly::assembly_operand_frame_fixture;
-use crate::design::test_support::dump::{
-    bind_joint_origin_frames_from_assemblies, exact_assembly_alignment,
-    exact_circular_pattern_construction_with_owners, exact_rectangular_pattern_construction,
-    select_circular_pattern_axis, DesignCircularPatternConstruction, DesignParameterScope,
-    IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::indexed_header;
 use crate::design::test_support::push_marked_reference;
+use crate::records::feature::patterns::DesignCircularPatternConstruction;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
 #[test]
