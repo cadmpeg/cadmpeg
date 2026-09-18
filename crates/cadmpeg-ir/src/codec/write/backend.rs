@@ -434,3 +434,29 @@ impl EncoderBackend for CadirEncoder {
         Ok(ExportBody::synthesized(bytes, input.ir))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{CadirEncoder, EncodeInput, EncoderBackend};
+
+    /// The CADIR encoder writes through the finite adapter: a document
+    /// holding a non-finite float is refused, not written with `null` in its
+    /// place.
+    #[test]
+    fn the_cadir_encoder_refuses_a_non_finite_document() {
+        let mut ir = crate::document::CadIr::empty();
+        crate::test_support::push_texture_offset(&mut ir, f64::NAN);
+        let Err(error) = CadirEncoder.plan_resolved(EncodeInput::new(&ir, None), ()) else {
+            panic!("a non-finite float has no canonical JSON");
+        };
+        let error = error.to_string();
+        assert!(error.contains("non-finite"), "{error}");
+
+        ir.model.appearances[0].textures[0].mapping.u_offset = 1.0;
+        let body = CadirEncoder
+            .plan_resolved(EncodeInput::new(&ir, None), ())
+            .expect("a finite document writes");
+        let text = String::from_utf8(body.bytes).expect("CADIR is UTF-8");
+        assert!(!text.contains("null"), "{text}");
+    }
+}
