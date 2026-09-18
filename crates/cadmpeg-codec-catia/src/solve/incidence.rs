@@ -22,7 +22,7 @@ use crate::solve::missing_edge::{
     MeshDeferredBoundaryCycle, MeshDeferredFaceBoundary, MeshFaceBoundaryAssignment,
     MeshFaceBoundaryDomain,
 };
-use crate::solve::UnionFind;
+use crate::solve::union_find::UnionFind;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;

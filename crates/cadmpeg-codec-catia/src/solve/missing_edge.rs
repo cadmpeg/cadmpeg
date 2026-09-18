@@ -11,7 +11,7 @@ use crate::families::standard::fbb::{
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
-use crate::solve::UnionFind;
+use crate::solve::union_find::UnionFind;
 use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;

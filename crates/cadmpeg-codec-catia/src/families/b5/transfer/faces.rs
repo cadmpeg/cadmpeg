@@ -19,7 +19,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use super::super::graph::B5Graph;
 use super::pcurves::PcurveUses;
 use super::{annotate, OrientedLoop, OrientedLoopMember, OwnershipPlan, TransferPlan};
-use crate::solve::UnionFind;
+use crate::solve::union_find::UnionFind;
 
 const EPS_PLANE_AXES_ORTHO: f64 = 1.0e-8;
 

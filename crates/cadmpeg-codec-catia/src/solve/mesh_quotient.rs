@@ -66,7 +66,7 @@ use crate::solve::missing_edge::{
     MeshDeferredFaceBoundary, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
     StandardMeshBoundaryContext,
 };
-use crate::solve::UnionFind;
+use crate::solve::union_find::UnionFind;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;
