@@ -29,3 +29,16 @@ pub(crate) fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode inline STEP")
 }
+
+pub(crate) fn equivalent_seam_source() -> String {
+    String::from_utf8(include_bytes!("../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+            "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
+        )
+}
