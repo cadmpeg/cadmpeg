@@ -284,11 +284,39 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     let original = polar.clone();
     assert!(polar.edit_knots(<[f64]>::reverse).is_err());
     assert!(polar
-        .edit_poles(|radial, _| radial.v = f64::INFINITY)
+        .edit_poles(|radial, _| {
+            radial.v = f64::INFINITY;
+            Ok(())
+        })
         .is_err());
-    assert!(polar.edit_poles(|_, axial| *axial = f64::NAN).is_err());
+    assert!(polar
+        .edit_poles(|_, axial| {
+            *axial = f64::NAN;
+            Ok(())
+        })
+        .is_err());
     assert!(polar_weights(&polar, vec![1.0, -1.0]).is_err());
     assert!(polar_weights(&polar, vec![1.0]).is_err());
+    assert_eq!(polar, original);
+}
+
+#[test]
+fn a_refused_polar_pole_edit_keeps_the_prior_poles() {
+    let mut polar = polar();
+    let original = polar.clone();
+    let refusal = polar.edit_poles(|radial, axial| {
+        radial.u = 9.0;
+        *axial = 9.0;
+        Err(crate::geometry::NurbsError::EditRefused(
+            "caller refused this pole".into(),
+        ))
+    });
+    assert_eq!(
+        refusal,
+        Err(crate::geometry::NurbsError::EditRefused(
+            "caller refused this pole".into()
+        ))
+    );
     assert_eq!(polar, original);
 }
 
