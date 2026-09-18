@@ -10,9 +10,12 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::tempdir;
+
+mod support;
+
+use crate::support::cadmpeg;
 
 /// Writes `bytes` to `name` inside `dir` and returns the path.
 fn write(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
@@ -34,10 +37,6 @@ fn record_fixture() -> Vec<u8> {
     bytes.extend_from_slice(b"widget00");
     assert_eq!(bytes.len(), 4 + 4 + 4 + 8 + 8 + 8);
     bytes
-}
-
-fn cadmpeg() -> Command {
-    Command::cargo_bin("cadmpeg").unwrap()
 }
 
 #[test]

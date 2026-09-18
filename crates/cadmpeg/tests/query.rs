@@ -5,20 +5,15 @@
 
 use std::fs;
 
-use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::*;
 use tempfile::tempdir;
 
-fn cadmpeg() -> Command {
-    Command::cargo_bin("cadmpeg").unwrap()
-}
+mod query_support;
+mod support;
 
-fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf {
-    let path = dir.join(name);
-    fs::write(&path, content).unwrap();
-    path
-}
+use crate::query_support::write;
+use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
   "ir_version": "6",
