@@ -1723,7 +1723,7 @@ fn exact_legacy_shifted_extrude_prologue(
     })
 }
 
-pub(super) fn exact_class_338_two_sided_distance_extrude_prologue(
+fn exact_class_338_two_sided_distance_extrude_prologue(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -1857,3 +1857,6 @@ pub(super) fn exact_class_338_two_sided_distance_extrude_prologue(
         start_offset: u64::try_from(start_offset).ok()?,
     })
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::default_trait_access, clippy::wildcard_imports)]
-
-use super::prelude::*;
+use crate::design::test_support::dump::{
+    lp_utf16, parse_parameter_scope, DesignExtrudeExtent, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudeStart, DesignRecordHeader, IndexedRecordOffsets,
+};
 
 #[test]
 fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
