@@ -597,7 +597,7 @@ pub fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
             continue;
         }
         let Some((references, next)) =
-            crate::wire::counted_refs(&data[record.pos + 13..record.end()], false)
+            crate::wire::tokens::counted_refs(&data[record.pos + 13..record.end()], false)
         else {
             continue;
         };

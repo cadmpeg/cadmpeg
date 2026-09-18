@@ -705,7 +705,7 @@ fn bound_representation_parameter(
 }
 
 fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
-    let (pcurves, mut position) = wire::counted_refs(record.payload, false)?;
+    let (pcurves, mut position) = wire::tokens::counted_refs(record.payload, false)?;
     let expected = if record.class == 0xc0 { 1 } else { 2 };
     if pcurves.len() != expected || record.payload.get(position) != Some(&0x81) {
         return None;
@@ -733,7 +733,7 @@ fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
 }
 
 fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
-    let (representations, mut position) = wire::counted_refs(record.payload, false)?;
+    let (representations, mut position) = wire::tokens::counted_refs(record.payload, false)?;
     if record.payload.get(position)
         != Some(&(0x80u8.checked_add(u8::try_from(representations.len()).ok()?)?))
     {
@@ -763,7 +763,7 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
         return None;
     }
     let mut position = 1;
-    let surface = wire::object_ref(record.payload, &mut position, false)?;
+    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
     let mut view = View::over_retained(record.payload);
     view.seek(position)?;
     match record.class {
@@ -1336,7 +1336,7 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
         .iter()
         .filter(|record| record.class == 0x01)
         .map(|record| {
-            let (roots, end) = wire::counted_refs(record.payload, false)?;
+            let (roots, end) = wire::tokens::counted_refs(record.payload, false)?;
             if roots.len() != 1 || end != record.payload.len() {
                 return None;
             }
@@ -1365,7 +1365,7 @@ fn parse_body_root(payload: &[u8]) -> Option<Vec<u32>> {
         let mut position = 2;
         let mut faces = Vec::with_capacity(count);
         for _ in 0..count {
-            let face = wire::object_ref(payload, &mut position, false)?;
+            let face = wire::tokens::object_ref(payload, &mut position, false)?;
             if face > u32::from(u16::MAX) {
                 return None;
             }
@@ -1373,7 +1373,7 @@ fn parse_body_root(payload: &[u8]) -> Option<Vec<u32>> {
         }
         (faces, position)
     } else {
-        wire::counted_refs(payload, false)?
+        wire::tokens::counted_refs(payload, false)?
     };
     let count = u8::try_from(faces.len()).ok()?;
     if payload.get(position..position + 2) == Some(&[0x08, count]) {
@@ -1433,10 +1433,14 @@ fn parse_face(record: &Record<'_>) -> Option<RawFace> {
         return None;
     }
     let mut position = 1;
-    let surface = wire::object_ref(record.payload, &mut position, false)?;
+    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
     let mut loops = Vec::with_capacity(count);
     for _ in 0..count {
-        loops.push(wire::object_ref(record.payload, &mut position, false)?);
+        loops.push(wire::tokens::object_ref(
+            record.payload,
+            &mut position,
+            false,
+        )?);
     }
     let trailer_sign = Sign::from_i16(View::i16_le_at(record.payload, position)?)?;
     if position + 2 != record.payload.len() {
@@ -1459,10 +1463,18 @@ fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
     let mut pcurves = Vec::with_capacity(member_count / 2);
     let mut edges = Vec::with_capacity(member_count / 2);
     for _ in 0..member_count / 2 {
-        pcurves.push(wire::object_ref(record.payload, &mut position, false)?);
-        edges.push(wire::object_ref(record.payload, &mut position, false)?);
+        pcurves.push(wire::tokens::object_ref(
+            record.payload,
+            &mut position,
+            false,
+        )?);
+        edges.push(wire::tokens::object_ref(
+            record.payload,
+            &mut position,
+            false,
+        )?);
     }
-    let surface = wire::object_ref(record.payload, &mut position, false)?;
+    let surface = wire::tokens::object_ref(record.payload, &mut position, false)?;
     let outer = parse_loop_signs(record.payload.get(position..)?, member_count / 2).ok()?;
     Some(RawLoop {
         id: record.id,
@@ -1507,11 +1519,11 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
         return None;
     }
     let mut position = 1;
-    let support = wire::object_ref(record.payload, &mut position, false)?;
-    let start_vertex = wire::object_ref(record.payload, &mut position, false)?;
-    let end_vertex = wire::object_ref(record.payload, &mut position, false)?;
-    let parameter_start = wire::object_ref(record.payload, &mut position, false)?;
-    let parameter_end = wire::object_ref(record.payload, &mut position, false)?;
+    let support = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let start_vertex = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let end_vertex = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let parameter_start = wire::tokens::object_ref(record.payload, &mut position, false)?;
+    let parameter_end = wire::tokens::object_ref(record.payload, &mut position, false)?;
     let tail = record.payload[position..].to_vec();
     Some(E5Edge {
         support,

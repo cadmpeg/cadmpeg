@@ -33,18 +33,21 @@ fn circle_pcurve_rejects_unbounded_subdivision_counts() {
 fn sparse_reference_tokens_fill_selected_id_bytes() {
     let mut position = 0;
     assert_eq!(
-        wire::object_ref(&[0x28, 0x34, 0x02], &mut position, true),
+        wire::tokens::object_ref(&[0x28, 0x34, 0x02], &mut position, true),
         Some(0x02_0034)
     );
     assert_eq!(position, 3);
     position = 0;
     assert_eq!(
-        wire::object_ref(&[0x20, 0x07], &mut position, true),
+        wire::tokens::object_ref(&[0x20, 0x07], &mut position, true),
         Some(0x07_0000)
     );
     assert_eq!(position, 2);
     position = 0;
-    assert_eq!(wire::object_ref(&[0x8b], &mut position, true), Some(11));
+    assert_eq!(
+        wire::tokens::object_ref(&[0x8b], &mut position, true),
+        Some(11)
+    );
     assert_eq!(position, 1);
 }
 

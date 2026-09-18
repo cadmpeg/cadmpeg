@@ -117,7 +117,7 @@ pub(crate) fn b5_plane_payload(origin: [f64; 3]) -> Vec<u8> {
 }
 
 /// Encode one `0x18` object reference: the lead byte, then the id as a
-/// little-endian `u16`. See `wire::object_ref`.
+/// little-endian `u16`. See `wire::tokens::object_ref`.
 pub(crate) fn b5_object_ref(id: u32) -> [u8; 3] {
     let [low, high] = u16::try_from(id)
         .expect("object id fits a `0x18` reference")
