@@ -5,17 +5,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 
-pub(super) fn states_the_key(key: &str, message: &str) {
-    assert!(
-        message.starts_with(&format!("{key}: ")),
-        "the refusal of a null {key} states {message}"
-    );
-    assert!(
-        message.contains("it does not state null"),
-        "the refusal of a null {key} states {message}"
-    );
-}
-
 pub(super) fn rejects_changed_fields<T: DeserializeOwned + Serialize>(
     wire: Value,
     fields: &[&str],

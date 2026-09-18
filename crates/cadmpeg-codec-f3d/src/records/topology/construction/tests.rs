@@ -7,8 +7,8 @@ use super::{
     DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
 };
 use crate::records::identity::Located;
-use crate::records::test_support::refusal;
-use crate::records::topology::test_support::{rejects_changed_fields, states_the_key};
+use crate::records::topology::test_support::rejects_changed_fields;
+use cadmpeg_test_support::refusal::{refusal, states_the_key};
 use serde_json::json;
 fn frame_wire() -> DesignConstructionOperandGroupFrameWire {
     let matrix = [

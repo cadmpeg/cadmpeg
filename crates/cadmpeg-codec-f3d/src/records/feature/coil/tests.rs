@@ -49,7 +49,7 @@ fn coil_recipe_design_wire_refuses_a_null_design_key() {
 /// one. The key reaches the refusal because the reading declaration states it.
 #[test]
 fn a_flattened_coil_reader_names_the_null_key_it_refuses() {
-    use crate::records::test_support::refusal;
+    use cadmpeg_test_support::refusal::refusal;
 
     #[derive(serde::Deserialize)]
     struct Secondary {
