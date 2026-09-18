@@ -7,7 +7,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::global::GlobalTable;
-use crate::test_support::*;
+use crate::test_support::test_owned::{
+    owned_test_file_with_global_and_directory_fields, OwnedTestEntity,
+};
 use crate::IgesCodec;
 
 use super::super::{

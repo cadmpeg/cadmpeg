@@ -4,32 +4,21 @@ use crate::entities::structure::network_connectivity_valid;
 use crate::entities::structure::subfigure_definition_directory_fields_valid;
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use crate::test_support::admitted_containing_network_file;
-use crate::test_support::admitted_containing_subfigure_file;
-use crate::test_support::connected_network_subfigure_file;
-use crate::test_support::invalid_subfigure_depth_file;
-use crate::test_support::invalid_top_level_occurrence_structure_file;
-use crate::test_support::legacy_text_node_font_pointer_file;
-use crate::test_support::malformed_network_occurrence_definition_file;
-use crate::test_support::malformed_occurrence_definition_file;
-use crate::test_support::malformed_occurrence_placement_file;
-use crate::test_support::nested_subfigure_file;
-use crate::test_support::network_subfigure_file;
-use crate::test_support::occurrence_depth_limit_file;
-use crate::test_support::occurrence_limit_file;
-use crate::test_support::owned_test_file;
-use crate::test_support::owned_test_file_with_global;
-use crate::test_support::recalculable_dimension_associativity_file;
-use crate::test_support::recalculable_dimension_associativity_file_with_orientation;
-use crate::test_support::rejected_containing_network_file;
-use crate::test_support::rejected_containing_subfigure_file;
-use crate::test_support::solid_assembly_file;
-use crate::test_support::transformed_subfigure_definition_file;
-use crate::test_support::units_data_file;
-use crate::test_support::units_data_scope_file;
-use crate::test_support::wrong_typed_network_definition_file;
-use crate::test_support::wrong_typed_network_instance_file;
-use crate::test_support::OwnedTestEntity;
+use crate::test_support::test_drawing_and_trimming::{
+    admitted_containing_network_file, admitted_containing_subfigure_file,
+    connected_network_subfigure_file, invalid_subfigure_depth_file,
+    invalid_top_level_occurrence_structure_file, legacy_text_node_font_pointer_file,
+    malformed_network_occurrence_definition_file, malformed_occurrence_definition_file,
+    malformed_occurrence_placement_file, nested_subfigure_file, network_subfigure_file,
+    occurrence_depth_limit_file, occurrence_limit_file, recalculable_dimension_associativity_file,
+    recalculable_dimension_associativity_file_with_orientation, rejected_containing_network_file,
+    rejected_containing_subfigure_file, transformed_subfigure_definition_file, units_data_file,
+    units_data_scope_file, wrong_typed_network_definition_file, wrong_typed_network_instance_file,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::solid_assembly_file;
 use crate::IgesCodec;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_ir::codec::DecodeOptions;

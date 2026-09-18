@@ -2,7 +2,10 @@
 //! Owned-entity fixture assembler for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::test_cards::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_cards,
+    parameter_fragment_count, raw_parameter_cards, raw_parameter_fragment_count,
+};
 
 pub(crate) struct OwnedTestEntity {
     pub(crate) entity_type: i64,

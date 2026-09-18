@@ -10,7 +10,8 @@ use super::{
     valid_global_fields,
 };
 use crate::loss::IgesLossCode;
-use crate::test_support::{fixed_ascii_with_global, point_file_with_global};
+use crate::test_support::test_cards::fixed_ascii_with_global;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 
 const DELEGATED_LENGTH_SYMBOLS: [(&str, f64); 25] = [

@@ -10,7 +10,7 @@ use super::{
     valid_global_fields,
 };
 use crate::loss::IgesLossCode;
-use crate::test_support::fixed_ascii_with_global;
+use crate::test_support::test_cards::fixed_ascii_with_global;
 use crate::IgesCodec;
 
 #[test]

@@ -6,7 +6,44 @@ use super::*;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{
+    circular_arc_file, conic_arc_file, copious_data_file, direction_file,
+    function_offset_line_file, line_file, linear_offset_line_file,
+    mixed_analytic_composite_curve_file, nurbs_curve_file, parametric_spline_curve_file,
+    parametric_spline_surface_file, point_file, rational_nurbs_curve_file,
+    uniform_offset_circle_file,
+};
+use crate::test_support::test_drawing_and_trimming::test_surface_domains::nested_transformed_point_file;
+use crate::test_support::test_drawing_and_trimming::{
+    associativity_definition_file, bounded_associativity_forms_file,
+    connected_network_subfigure_file, dimension_forms_file, explicit_cylinder_seam_file,
+    explicit_multi_pcurve_loop_file, flow_associativity_forms_file,
+    legacy_dimension_and_label_forms_file, multi_pcurve_boundary_file, nested_subfigure_file,
+    network_subfigure_file, recalculable_dimension_associativity_file,
+    symbol_and_sectioned_area_file, text_display_template_forms_file, text_font_definition_file,
+    trimmed_plane_with_inner_loop_file, units_data_file, view_list_associativity_file,
+};
+use crate::test_support::test_owned::{
+    explicit_void_solid_file, owned_test_file_with_global, OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::test_annotation_variants::leader_forms_file;
+use crate::test_support::test_solids_and_structure::{
+    attribute_definition_forms_file, attribute_instance_forms_file,
+    colored_explicit_vertex_loop_file, dimension_property_forms_file,
+    drawing_metadata_property_forms_file, drawing_with_properties_file,
+    explicit_non_manifold_open_shell_file, explicit_open_shell_file,
+    explicit_tetrahedron_solid_file, explicit_tetrahedron_solid_with_boolean_file,
+    explicit_vertex_loop_file, external_reference_forms_file, grid_property_file, group_forms_file,
+    parametrically_bounded_plane_file, patterned_instance_file, primitive_solids_file,
+    procedural_and_boolean_solids_file, product_property_file, scalar_property_forms_file,
+    segmented_view_visibility_file, solid_assembly_file, solid_instance_file, text_annotation_file,
+    variable_schema_property_forms_file, view_forms_file, view_visibility_forms_file,
+};
+use crate::test_support::test_surface_fixtures::{
+    bounded_plane_with_significance_gap_file, nurbs_surface_file, offset_plane_file,
+    placed_surface_of_revolution_file, ruled_surface_file, surface_of_revolution_file,
+    tabulated_cylinder_file,
+};
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     assert_eq!(IgesCodec.detect(&bytes), Confidence::High);

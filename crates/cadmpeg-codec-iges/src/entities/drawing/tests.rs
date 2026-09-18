@@ -9,7 +9,21 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_drawing_and_trimming::{
+    view_list_associativity_file, view_list_associativity_file_with_global,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, owned_test_file_with_global_and_directory_fields,
+    OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::{
+    defaulted_text_and_view_fields_file, distinct_drawing_sheet_ids_file,
+    drawing_with_conflicting_size_properties_file, drawing_with_properties_file,
+    duplicate_drawing_sheet_ids_file, malformed_view_parameter_type_file,
+    out_of_table_depth_clipping_view_file, out_of_table_segmented_display_file,
+    segmented_view_visibility_file, shared_drawing_sheet_id_file, view_forms_file,
+    view_visibility_forms_file,
+};
 use crate::IgesCodec;
 
 use super::{

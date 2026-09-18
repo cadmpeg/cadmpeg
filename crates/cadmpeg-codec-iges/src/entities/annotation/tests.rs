@@ -14,7 +14,24 @@ use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
-use crate::test_support::*;
+use crate::test_support::test_drawing_and_trimming::{
+    dimension_forms_file, general_symbol_form_file, inverted_sectioned_area_file,
+    inverted_sectioned_area_file_with_global, legacy_dimension_and_label_forms_file,
+    out_of_table_sectioned_area_pattern_file, symbol_and_sectioned_area_file,
+};
+use crate::test_support::test_owned::{owned_test_file_with_global, OwnedTestEntity};
+use crate::test_support::test_solids_and_structure::test_annotation_variants::{
+    leader_forms_file, out_of_table_annotation_font_values_file,
+};
+use crate::test_support::test_solids_and_structure::{
+    defaulted_new_general_note_file, malformed_general_note_parameter_types_file,
+    negative_text_box_dimensions_file, new_general_note_character_set_file,
+    new_general_note_even_character_set_pointer_file, new_general_note_type_310_character_set_file,
+    new_general_note_wrong_type_character_set_pointer_file,
+    omitted_character_count_new_general_note_file, omitted_character_metrics_new_general_note_file,
+    omitted_font_style_new_general_note_file, text_annotation_file,
+    variable_spacing_default_new_general_note_file, zero_character_metrics_new_general_note_file,
+};
 use crate::IgesCodec;
 
 use crate::entities::presentation::general_note_font_valid_for_global_table;

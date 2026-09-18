@@ -5,7 +5,8 @@ use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::DecodeOptions;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{fixed_ascii_with_global, point_file_with_global};
+use crate::test_support::test_cards::fixed_ascii_with_global;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 
 mod dialect;
 mod inspection;

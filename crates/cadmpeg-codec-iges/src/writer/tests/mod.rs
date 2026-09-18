@@ -43,10 +43,11 @@ use std::io::Cursor;
 use std::time::UNIX_EPOCH;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{
-    fixed_ascii_with_global, parametrically_bounded_plane_file, point_file_with_global,
-    trimmed_plane_file, trimmed_plane_with_inner_loop_file,
-};
+use crate::test_support::test_cards::fixed_ascii_with_global;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
+use crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file;
+use crate::test_support::test_solids_and_structure::parametrically_bounded_plane_file;
+use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 

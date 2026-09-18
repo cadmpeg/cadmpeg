@@ -2,9 +2,11 @@
 //! Curve and surface byte fixtures for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::test_cards::*;
-use super::test_owned::*;
-pub(crate) use super::test_surface_fixtures::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
+    parameter_cards, parameter_fragment_count,
+};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 pub(crate) fn point_file() -> Vec<u8> {
     point_file_with_global(

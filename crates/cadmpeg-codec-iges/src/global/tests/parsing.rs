@@ -8,10 +8,11 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{point_file_with_field, report_code_count, strict_options, valid_global_fields};
 use crate::loss::IgesLossCode;
-use crate::test_support::{
+use crate::test_support::test_cards::{
     card, directory_card, fixed_ascii_with_global, fixed_ascii_with_global_cards, parameter_card,
-    point_file, point_file_with_global, CARD_DATA_COLUMNS, CARD_LINE_BYTES,
+    CARD_DATA_COLUMNS, CARD_LINE_BYTES,
 };
+use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
 use crate::IgesCodec;
 
 fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {

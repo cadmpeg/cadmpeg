@@ -10,7 +10,14 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::CadIr;
 
-use crate::test_support::*;
+use crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file_with_first_edge;
+use crate::test_support::test_owned::explicit_void_solid_file;
+use crate::test_support::test_solids_and_structure::{
+    explicit_non_manifold_open_shell_file, explicit_open_shell_file,
+    explicit_tetrahedron_solid_file, explicit_tetrahedron_solid_file_with_options,
+    explicit_tetrahedron_solid_file_with_transform, explicit_vertex_loop_file,
+    explicit_vertex_loop_file_with_outer_flag,
+};
 use crate::IgesCodec;
 
 const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;

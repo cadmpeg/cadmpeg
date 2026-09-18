@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::code_count;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
 #[test]

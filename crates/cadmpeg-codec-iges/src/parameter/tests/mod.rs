@@ -7,7 +7,7 @@ use super::ParameterRecord;
 use super::Token;
 use super::TokenValue;
 use crate::card::{scan, Section};
-use crate::test_support::*;
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 mod advanced_entity_boundaries;
 mod curve_surface_boundaries;
@@ -15,6 +15,8 @@ mod drawing_associativity;
 mod entity_table_boundaries;
 mod entity_table_forms;
 mod envelope_boundaries;
+mod envelope_counted_entity_boundaries;
+mod envelope_fixed_field_boundaries;
 mod fixed_entity_boundaries;
 mod implementor_defined;
 mod later_entity_boundaries;

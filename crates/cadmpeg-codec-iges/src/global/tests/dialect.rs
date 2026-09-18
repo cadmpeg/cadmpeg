@@ -10,7 +10,7 @@ use super::{
     strict_options, valid_global_fields,
 };
 use crate::loss::IgesLossCode;
-use crate::test_support::point_file_with_global;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 
 fn dialect_losses(report: &cadmpeg_ir::report::DecodeReport) -> usize {

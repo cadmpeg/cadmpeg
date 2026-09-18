@@ -10,7 +10,12 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{
+    nonlinear_parametric_spline_curve_file, nonlinear_parametric_spline_surface_file,
+    parametric_spline_curve_file, parametric_spline_curve_file_with_parameters,
+    parametric_spline_curve_file_with_parameters_and_resolution, parametric_spline_surface_file,
+};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
 fn type_112_parameters(

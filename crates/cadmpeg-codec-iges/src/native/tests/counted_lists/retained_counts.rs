@@ -1,11 +1,10 @@
 use crate::loss::IgesLossCode;
 use crate::native::tests::assert_overdeclared_contract;
 use crate::native::tests::code_count;
-use crate::test_support::append_tetrahedral_shell;
-use crate::test_support::explicit_void_solid_file;
-use crate::test_support::owned_test_file;
-use crate::test_support::owned_test_file_with_structures;
-use crate::test_support::OwnedTestEntity;
+use crate::test_support::test_owned::{
+    append_tetrahedral_shell, explicit_void_solid_file, owned_test_file,
+    owned_test_file_with_structures, OwnedTestEntity,
+};
 use crate::IgesCodec;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::Codec;

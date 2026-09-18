@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::Codec;
 
 use super::{point_file_with_version_flag, valid_global_fields};
-use crate::test_support::point_file_with_global;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 
 #[test]

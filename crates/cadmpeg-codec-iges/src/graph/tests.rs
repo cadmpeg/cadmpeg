@@ -14,7 +14,10 @@ use super::{
     MAX_POINTER_SEQUENCE,
 };
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
+};
+use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
 fn directory_entry(sequence: u32, entity_type: i64) -> DirectoryEntry {

@@ -13,7 +13,30 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::Point3;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_drawing_and_trimming::test_surface_domains::{
+    alternate_asymmetric_parameter_domain_surface_file, asymmetric_parameter_domain_surface_file,
+    subrange_nurbs_surface_file,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
+};
+use crate::test_support::test_procedural_surfaces::interval_certified_linear_bezier_ruled_surface_file;
+use crate::test_support::test_surface_fixtures::{
+    circular_ruled_surface_file, composite_ruled_surface_file, composite_tabulated_cylinder_file,
+    degree_zero_nurbs_surface_file, ellipse_surface_of_revolution_file,
+    hyperbola_surface_of_revolution_file, hyperbola_surface_of_revolution_file_with_global,
+    line_surface_of_revolution_file, line_surface_of_revolution_file_with_global,
+    multispan_degree_zero_nurbs_surface_file, nurbs_surface_file, offset_cylinder_file,
+    offset_nurbs_surface_file, offset_plane_file, offset_plane_file_with_indicator,
+    placed_surface_of_revolution_file, plane_file, rational_ruled_surface_file, ruled_surface_file,
+    ruled_surface_file_with_developable_flag, surface_of_revolution_file, tabulated_cylinder_file,
+    tabulated_hyperbola_file, tabulated_hyperbola_file_with_global,
+    trimmed_surface_of_revolution_file,
+};
+use crate::test_support::test_tabulated_surfaces::{
+    placed_tabulated_hyperbola_file, placed_tabulated_hyperbola_file_with_global,
+    placed_tabulated_line_file, placed_tabulated_line_file_with_global,
+};
 use crate::IgesCodec;
 
 use crate::global::GlobalTable;

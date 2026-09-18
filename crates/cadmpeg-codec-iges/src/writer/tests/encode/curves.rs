@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::conic_arc_file;
+use crate::test_support::test_curves_and_surfaces::conic_arc_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
 use cadmpeg_ir::codec::write::EncodeInput;

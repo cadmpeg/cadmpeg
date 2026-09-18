@@ -2,10 +2,14 @@
 //! Drawing, annotation, and trimming byte fixtures for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::test_cards::*;
-use super::test_owned::*;
-mod test_surface_domains;
-pub(crate) use test_surface_domains::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_display, owned_test_file_with_global,
+    owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
+};
+pub(crate) mod test_surface_domains;
 
 pub(crate) fn dimension_forms_file() -> Vec<u8> {
     owned_test_file(&[

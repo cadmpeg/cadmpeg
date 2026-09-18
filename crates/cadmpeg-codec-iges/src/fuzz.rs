@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn wrappers_accept_fixture() {
-        let data = crate::test_support::point_file();
+        let data = crate::test_support::test_curves_and_surfaces::point_file();
         super::cards(&data);
         super::global(&data);
         super::directory(&data);

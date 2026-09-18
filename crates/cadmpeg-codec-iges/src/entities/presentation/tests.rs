@@ -8,7 +8,19 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_drawing_and_trimming::{
+    out_of_table_text_template_font_file, text_display_template_forms_file,
+    text_font_definition_file,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_colors, owned_test_file_with_directory_fields,
+    owned_test_file_with_global, owned_test_file_with_global_and_directory_fields,
+    owned_test_file_with_global_and_line_weights, OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::{
+    colored_explicit_vertex_loop_file, definition_levels_file, line_font_definitions_file,
+    weighted_line_file,
+};
 use crate::IgesCodec;
 
 use super::{

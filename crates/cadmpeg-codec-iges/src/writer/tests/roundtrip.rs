@@ -16,12 +16,15 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;
 
-use crate::test_support::{
-    cacheless_line_tabulated_surface_file, degree_zero_nurbs_surface_file,
-    hyperbola_surface_of_revolution_file, line_surface_of_revolution_file,
-    multispan_degree_zero_nurbs_surface_file, placed_tabulated_hyperbola_file,
-    placed_tabulated_line_file, polynomial_nurbs_curve_file, tabulated_hyperbola_file,
-    trimmed_surface_of_revolution_file,
+use crate::test_support::test_curves_and_surfaces::polynomial_nurbs_curve_file;
+use crate::test_support::test_procedural_surfaces::cacheless_line_tabulated_surface_file;
+use crate::test_support::test_surface_fixtures::{
+    degree_zero_nurbs_surface_file, hyperbola_surface_of_revolution_file,
+    line_surface_of_revolution_file, multispan_degree_zero_nurbs_surface_file,
+    tabulated_hyperbola_file, trimmed_surface_of_revolution_file,
+};
+use crate::test_support::test_tabulated_surfaces::{
+    placed_tabulated_hyperbola_file, placed_tabulated_line_file,
 };
 use crate::{IgesCodec, IgesVersion};
 

@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::{DecodeReport, TransferDisposition};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{owned_test_file, OwnedTestEntity};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
 /// Zero-based index of the Parameter Data count field in the second card.

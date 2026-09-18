@@ -5,7 +5,8 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_cards::{card, CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES};
+use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
 #[derive(Debug)]

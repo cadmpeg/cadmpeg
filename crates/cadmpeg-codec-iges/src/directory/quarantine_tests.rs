@@ -9,7 +9,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::{DecodeReport, TransferDisposition};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{card, owned_test_file, owned_test_file_with_global, OwnedTestEntity};
+use crate::test_support::test_cards::card;
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, OwnedTestEntity,
+};
 use crate::IgesCodec;
 
 /// Zero-based index of the level field inside the first Directory card.

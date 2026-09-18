@@ -12,7 +12,11 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::copious_data_file;
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, owned_test_file_with_global_and_line_fonts,
+    OwnedTestEntity,
+};
 use crate::IgesCodec;
 
 use super::presentation_use_flag_valid;
