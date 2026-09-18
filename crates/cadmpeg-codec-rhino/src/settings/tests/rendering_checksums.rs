@@ -1,5 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+
+use crate::chunks::ArchiveVersion;
+use crate::chunks::BoundedReader;
+use crate::loss::Diagnostics;
+use crate::settings;
+use crate::test_support::test_dump::class_wrapper;
+use crate::test_support::test_dump::crc_chunk_excluding;
+use crate::test_support::test_dump::minimal_document;
+use crate::test_support::test_dump::nested_crc_chunk;
+use crate::test_support::test_dump::point_payload;
+use crate::test_support::test_dump::short_chunk;
+use crate::test_support::test_dump::table;
+use crate::test_support::test_dump::tagged_attributes;
+use crate::test_support::test_dump::units_record;
+use crate::test_support::test_dump::POINT_CLASS;
+
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use std::io::Cursor;

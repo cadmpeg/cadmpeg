@@ -1,5 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+
+use crate::chunks::ArchiveVersion;
+use crate::loss::RhinoLossCode;
+use crate::presentation::install;
+use crate::presentation::parse_hatch_pattern;
+use crate::presentation::parse_linetype;
+use crate::presentation::tests::anonymous;
+use crate::presentation::tests::anonymous_body;
+use crate::presentation::tests::utf16;
+use crate::presentation::LinetypeRecord;
+use crate::presentation::PatternTransferError;
+use crate::presentation::ANONYMOUS;
+use crate::presentation::HATCH_PATTERN;
+use crate::presentation::HATCH_PATTERN_TABLE;
+use crate::presentation::LINETYPE;
+use crate::presentation::LINETYPE_TABLE;
+use crate::presentation::MODEL_ATTRIBUTES;
+use crate::settings::StandardUnit;
+use crate::settings::UnitBinding;
+use crate::wire::Uuid;
+use cadmpeg_ir::document::CadIr;
 
 fn modern_linetype_record(archive: ArchiveVersion, always_model_distance: bool) -> Vec<u8> {
     let mut component = 1_i32.to_le_bytes().to_vec();
