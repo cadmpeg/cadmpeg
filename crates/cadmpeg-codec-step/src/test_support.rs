@@ -3,6 +3,4 @@
 
 #![allow(clippy::unwrap_used)]
 
-mod exchange;
-
-pub(crate) use exchange::*;
+pub(crate) mod exchange;

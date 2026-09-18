@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::loss::StepLossCode;
-use crate::test_support::decode_inline;
+use crate::test_support::exchange::decode_inline;
 
 #[test]
 fn invalid_surface_side_is_opaque_and_does_not_transfer_color() {

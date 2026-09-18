@@ -10,7 +10,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use cadmpeg_core::decode::{InspectOptions, View};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::decode_inline;
+use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
 #[test]

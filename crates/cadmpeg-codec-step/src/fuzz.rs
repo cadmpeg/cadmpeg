@@ -35,7 +35,7 @@ mod tests {
 
     #[test]
     fn wrappers_accept_exported_document() {
-        let source = crate::test_support::export(&CadIr::empty());
+        let source = crate::test_support::exchange::export(&CadIr::empty());
         super::lex(source.as_bytes());
         super::parse(source.as_bytes());
         assert!(super::parse_entity_count(source.as_bytes()).is_some());

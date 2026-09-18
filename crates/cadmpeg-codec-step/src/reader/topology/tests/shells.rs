@@ -13,7 +13,7 @@ use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
 use crate::loss::StepLossCode;
-use crate::test_support::export;
+use crate::test_support::exchange::export;
 use crate::{StepCodec, StepSchema};
 
 #[test]

@@ -78,7 +78,7 @@ use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::CurveId;
 
-use crate::test_support::decode_inline;
+use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
 #[test]
