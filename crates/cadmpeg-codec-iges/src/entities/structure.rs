@@ -1454,16 +1454,15 @@ fn linear_nurbs_is_simple_closed(
     resolution: f64,
     transform: Transform,
 ) -> bool {
-    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range).map(|points| {
+    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range).and_then(|points| {
         points
             .into_iter()
             .map(|point| transform.apply_point(point))
-            .collect::<Vec<_>>()
+            .collect::<Option<Vec<_>>>()
     }) else {
         return false;
     };
     if points.len() < 3
-        || points.iter().any(|point| !point.is_finite())
         || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
         || polyline_has_forbidden_duplicate(&points, resolution)
     {
@@ -1581,17 +1580,20 @@ fn bounded_plane_curve_is_simple(
             let points = polyline
                 .points()
                 .map(|point| context.transform.apply_point(point))
-                .collect::<Vec<_>>();
+                .collect::<Option<Vec<_>>>();
             active_range_matches
-                && points.len() >= 3
-                && points_coincident(
-                    points[0],
-                    *points.last().unwrap_or(&points[0]),
-                    context.resolution,
-                )
-                && !polyline_has_forbidden_duplicate(&points, context.resolution)
-                && plane_coordinates(&points, context.plane)
-                    .is_some_and(|projected| !planar_polyline_has_self_intersection(&projected))
+                && points.is_some_and(|points| {
+                    points.len() >= 3
+                        && points_coincident(
+                            points[0],
+                            *points.last().unwrap_or(&points[0]),
+                            context.resolution,
+                        )
+                        && !polyline_has_forbidden_duplicate(&points, context.resolution)
+                        && plane_coordinates(&points, context.plane).is_some_and(|projected| {
+                            !planar_polyline_has_self_intersection(&projected)
+                        })
+                })
         }
     }
 }

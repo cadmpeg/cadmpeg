@@ -140,12 +140,17 @@ fn curve_geometry_for_sheet_pcurve(
                 [0.0, 0.0, 1.0, 0.0],
             ])
             .expect("affine transform");
-            let direction = transform.apply_vector(*direction);
+            let (Some(direction), Some(placed_origin)) = (
+                transform.apply_vector(*direction),
+                transform.apply_point(*origin),
+            ) else {
+                return Ok(None);
+            };
             let length = direction.norm();
             (length.is_finite() && length > 0.0).then(|| {
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::LineCurve::try_new(
-                        transform.apply_point(*origin),
+                        placed_origin,
                         direction.scale(1.0 / length),
                     )
                     .unwrap(),

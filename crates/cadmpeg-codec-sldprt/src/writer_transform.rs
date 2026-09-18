@@ -7,6 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -109,7 +110,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
 
     for point in &mut ir.model.points {
         if let Some(transform) = point_transforms.get(point.id.as_str()) {
-            point.position = transform.apply_point(point.position);
+            point.position = placed_point(*transform, point.position)?;
         }
     }
     for surface in &mut ir.model.surfaces {
@@ -147,17 +148,29 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     )
                 })?,
             };
-            mesh.edit_vertices(|point| *point = transform.apply_point(*point))
+            let mut placed = true;
+            mesh.edit_vertices(|point| match transform.apply_point(*point) {
+                Some(moved) => *point = moved,
+                None => placed = false,
+            })
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
+            })?;
+            if !placed {
+                return Err(non_finite_point());
+            }
+            if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
+                let mut placed = true;
+                mesh.edit_normals(|normal| match transform.apply_vector(*normal) {
+                    Some(moved) => *normal = moved,
+                    None => placed = false,
+                })
                 .map_err(|error| {
                     CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
                 })?;
-            if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
-                mesh.edit_normals(|normal| *normal = transform.apply_vector(*normal))
-                    .map_err(|error| {
-                        CodecError::malformed(format_args!(
-                            "invalid transformed tessellation: {error}"
-                        ))
-                    })?;
+                if !placed {
+                    return Err(non_finite_vector());
+                }
             }
         }
     }
@@ -184,6 +197,24 @@ fn assign(
     Ok(())
 }
 
+fn non_finite_point() -> CodecError {
+    CodecError::malformed("baked body placement produced a non-finite point")
+}
+
+fn non_finite_vector() -> CodecError {
+    CodecError::malformed("baked body placement produced a non-finite direction")
+}
+
+/// Places a point, refusing a placement that leaves the finite range.
+fn placed_point(transform: Transform, point: Point3) -> Result<Point3, CodecError> {
+    transform.apply_point(point).ok_or_else(non_finite_point)
+}
+
+/// Places a direction, refusing a placement that leaves the finite range.
+fn placed_vector(transform: Transform, vector: Vector3) -> Result<Vector3, CodecError> {
+    transform.apply_vector(vector).ok_or_else(non_finite_vector)
+}
+
 fn check_rigid(transform: Transform) -> Result<(), CodecError> {
     if !transform.is_proper_rigid() {
         return Err(CodecError::NotImplemented(
@@ -203,9 +234,9 @@ fn transform_surface(
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(
-                transform.apply_point(*origin),
-                transform.apply_vector(*normal),
-                transform.apply_vector(*u_axis),
+                placed_point(transform, *origin)?,
+                placed_vector(transform, *normal)?,
+                placed_vector(transform, *u_axis)?,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -215,9 +246,9 @@ fn transform_surface(
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius();
             *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
-                transform.apply_point(*origin),
-                transform.apply_vector(*axis),
-                transform.apply_vector(*ref_direction),
+                placed_point(transform, *origin)?,
+                placed_vector(transform, *axis)?,
+                placed_vector(transform, *ref_direction)?,
                 radius,
             )
             .map_err(CodecError::malformed)?;
@@ -230,9 +261,9 @@ fn transform_surface(
             let ratio = cone_surface.ratio();
             let half_angle = cone_surface.half_angle();
             *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
-                transform.apply_point(*origin),
-                transform.apply_vector(*axis),
-                transform.apply_vector(*ref_direction),
+                placed_point(transform, *origin)?,
+                placed_vector(transform, *axis)?,
+                placed_vector(transform, *ref_direction)?,
                 radius,
                 ratio,
                 half_angle,
@@ -245,9 +276,9 @@ fn transform_surface(
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius();
             *sphere_surface = cadmpeg_ir::geometry::SphereSurface::try_new(
-                transform.apply_point(*center),
-                transform.apply_vector(*axis),
-                transform.apply_vector(*ref_direction),
+                placed_point(transform, *center)?,
+                placed_vector(transform, *axis)?,
+                placed_vector(transform, *ref_direction)?,
                 radius,
             )
             .map_err(CodecError::malformed)?;
@@ -259,28 +290,44 @@ fn transform_surface(
             let major_radius = torus_surface.major_radius();
             let minor_radius = torus_surface.minor_radius();
             *torus_surface = cadmpeg_ir::geometry::TorusSurface::try_new(
-                transform.apply_point(*center),
-                transform.apply_vector(*axis),
-                transform.apply_vector(*ref_direction),
+                placed_point(transform, *center)?,
+                placed_vector(transform, *axis)?,
+                placed_vector(transform, *ref_direction)?,
                 major_radius,
                 minor_radius,
             )
             .map_err(CodecError::malformed)?;
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => nurbs
-            .edit_control_points(|point| {
-                *point = transform.apply_point(*point);
-            })
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
-            })?,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => surface
-            .edit_vertices(|points| {
-                for point in points {
-                    *point = transform.apply_point(*point);
-                }
-            })
-            .map_err(|error| CodecError::malformed(error.to_string()))?,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+            let mut placed = true;
+            nurbs
+                .edit_control_points(|point| match transform.apply_point(*point) {
+                    Some(moved) => *point = moved,
+                    None => placed = false,
+                })
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+                })?;
+            if !placed {
+                return Err(non_finite_point());
+            }
+        }
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {
+            let mut placed = true;
+            surface
+                .edit_vertices(|points| {
+                    for point in points {
+                        match transform.apply_point(*point) {
+                            Some(moved) => *point = moved,
+                            None => placed = false,
+                        }
+                    }
+                })
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            if !placed {
+                return Err(non_finite_point());
+            }
+        }
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
             return Err(CodecError::NotImplemented(
@@ -304,8 +351,8 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
-                transform.apply_point(*origin),
-                transform.apply_vector(*direction),
+                placed_point(transform, *origin)?,
+                placed_vector(transform, *direction)?,
             )
             .map_err(CodecError::malformed)?;
         }
@@ -315,9 +362,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
             *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
-                transform.apply_point(*center),
-                transform.apply_vector(*axis),
-                transform.apply_vector(*ref_direction),
+                placed_point(transform, *center)?,
+                placed_vector(transform, *axis)?,
+                placed_vector(transform, *ref_direction)?,
                 radius,
             )
             .map_err(CodecError::malformed)?;
@@ -329,35 +376,51 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
             *ellipse_curve = cadmpeg_ir::geometry::EllipseCurve::try_new(
-                transform.apply_point(*center),
-                transform.apply_vector(*axis),
-                transform.apply_vector(*major_direction),
+                placed_point(transform, *center)?,
+                placed_vector(transform, *axis)?,
+                placed_vector(transform, *major_direction)?,
                 major_radius,
                 minor_radius,
             )
             .map_err(CodecError::malformed)?;
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => nurbs
-            .edit_control_points(|point| {
-                *point = transform.apply_point(*point);
-            })
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
-            })?,
-        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => polyline
-            .edit_samples(|samples| {
-                samples.edit_points(|point| *point = transform.apply_point(*point));
-            })
-            .map_err(|error| CodecError::malformed(error.to_string()))?,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            let mut placed = true;
+            nurbs
+                .edit_control_points(|point| match transform.apply_point(*point) {
+                    Some(moved) => *point = moved,
+                    None => placed = false,
+                })
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+                })?;
+            if !placed {
+                return Err(non_finite_point());
+            }
+        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
+            let mut placed = true;
+            polyline
+                .edit_samples(|samples| {
+                    samples.edit_points(|point| match transform.apply_point(*point) {
+                        Some(moved) => *point = moved,
+                        None => placed = false,
+                    });
+                })
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            if !placed {
+                return Err(non_finite_point());
+            }
+        }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
             *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(
-                transform.apply_point(*vertex),
-                transform.apply_vector(*axis),
-                transform.apply_vector(*major_direction),
+                placed_point(transform, *vertex)?,
+                placed_vector(transform, *axis)?,
+                placed_vector(transform, *major_direction)?,
                 focal_distance,
             )
             .map_err(CodecError::malformed)?;
@@ -369,9 +432,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let major_radius = hyperbola_curve.major_radius();
             let minor_radius = hyperbola_curve.minor_radius();
             *hyperbola_curve = cadmpeg_ir::geometry::HyperbolaCurve::try_new(
-                transform.apply_point(*center),
-                transform.apply_vector(*axis),
-                transform.apply_vector(*major_direction),
+                placed_point(transform, *center)?,
+                placed_vector(transform, *axis)?,
+                placed_vector(transform, *major_direction)?,
                 major_radius,
                 minor_radius,
             )
@@ -380,7 +443,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = degenerate_curve.point();
             *degenerate_curve =
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(transform.apply_point(*point))
+                cadmpeg_ir::geometry::DegenerateCurve::try_new(placed_point(transform, *point)?)
                     .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}

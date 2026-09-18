@@ -1103,15 +1103,21 @@ pub(super) fn curve_geometry_coplanar(
     resolution: f64,
     active: &mut BTreeSet<CurveId>,
 ) -> bool {
-    let point_valid =
-        |point: Point3| point_on_plane(transform.apply_point(point), plane, resolution);
+    let point_valid = |point: Point3| {
+        transform
+            .apply_point(point)
+            .is_some_and(|point| point_on_plane(point, plane, resolution))
+    };
     let normal_valid = |normal: Vector3| {
         transform
             .apply_normal(normal)
             .is_some_and(|normal| normal_matches_plane(normal, plane.1))
     };
-    let direction_valid =
-        |direction: Vector3| direction_in_plane(transform.apply_vector(direction), plane.1);
+    let direction_valid = |direction: Vector3| {
+        transform
+            .apply_vector(direction)
+            .is_some_and(|direction| direction_in_plane(direction, plane.1))
+    };
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();

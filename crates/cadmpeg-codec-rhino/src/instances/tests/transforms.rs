@@ -188,7 +188,7 @@ fn source_instance_world_placement_is_applied_once() {
             let point = ir.model.points[0].position;
             let body = ir.model.bodies.first().unwrap();
             let world = body.transform.unwrap_or_default().apply_point(point);
-            assert_eq!(world, expected);
+            assert_eq!(world, Some(expected));
         }
     }
 }
