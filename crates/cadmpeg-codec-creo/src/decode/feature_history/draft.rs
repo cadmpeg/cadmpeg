@@ -16,10 +16,13 @@ use super::super::holes::sweep::{
 };
 use super::super::sketch::equations_coordinate::approximately_equal;
 use super::super::sketch_ids::{feature_sketch_record_id_in_scan, model_sketch_id};
-use super::super::sweep::{
+use super::super::sweep::extent::{
+    generated_bounded_cylinder_extent, generated_nurbs_translation_extent,
+    generated_rectilinear_plane_extent,
+};
+use super::super::sweep::planes::{
     feature_outline_planes, feature_plane_equations, generated_arc_cylinder_extent,
-    generated_bounded_cylinder_extent, generated_cap_plane_extent,
-    generated_nurbs_translation_extent, generated_rectilinear_plane_extent,
+    generated_cap_plane_extent,
 };
 use super::super::uniqueness::{
     unique_feature_datum_plane, unique_feature_definition_for_transform,

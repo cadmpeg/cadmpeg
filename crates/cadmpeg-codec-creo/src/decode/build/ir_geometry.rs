@@ -41,10 +41,11 @@ use super::super::surfaces::transfer_curves::{
     transfer_carrier_intersection_curves, transfer_nurbs_boundary_curves,
 };
 use super::super::surfaces::{transfer_fc05_cap_circles, transfer_part_product};
-use super::super::sweep::{
-    transfer_feature_extrusion_surfaces, transfer_resolved_circular_extrusion_breps,
-    transfer_resolved_extrusion_breps, transfer_resolved_revolution_breps,
-    transfer_saved_spline_curves,
+use super::super::sweep::circular::transfer_resolved_circular_extrusion_breps;
+use super::super::sweep::extrusion_brep::transfer_resolved_extrusion_breps;
+use super::super::sweep::revolution_brep::transfer_resolved_revolution_breps;
+use super::super::sweep::surfaces::{
+    transfer_feature_extrusion_surfaces, transfer_saved_spline_curves,
 };
 use crate::decode::analytic::carriers::{
     retain_unresolved_surface_carriers, transfer_topology_bound_planes,

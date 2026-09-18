@@ -25,7 +25,7 @@ use crate::topology::HalfEdgeId;
 use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
 use super::super::records::CreoFaceAdmissionRejectionRecord;
-use super::super::sweep::line_pcurve;
+use super::super::sweep::profiles::line_pcurve;
 use super::super::uniqueness::exactly_one;
 use crate::decode::analytic::carriers::{
     geometry_section_record, native_face_orientations, ordered_face_loops,

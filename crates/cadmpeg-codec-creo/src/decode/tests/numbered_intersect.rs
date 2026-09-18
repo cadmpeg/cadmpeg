@@ -31,10 +31,10 @@ use crate::decode::sketch::equations_coordinate::{
     SectionCoordinateEquation,
 };
 use crate::decode::surfaces::fc05_model_frame;
-use crate::decode::sweep::{
-    extruded_section_line, feature_outline_planes, feature_plane_equations,
-    placed_tabulated_cylinder_directrix, revolved_section_circle, revolved_section_surface,
-    signed_unit_chart,
+use crate::decode::sweep::nurbs::{placed_tabulated_cylinder_directrix, signed_unit_chart};
+use crate::decode::sweep::planes::{feature_outline_planes, feature_plane_equations};
+use crate::decode::sweep::surfaces::{
+    extruded_section_line, revolved_section_circle, revolved_section_surface,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{

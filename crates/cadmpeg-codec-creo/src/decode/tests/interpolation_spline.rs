@@ -21,11 +21,12 @@ use crate::decode::holes::sweep::extrusion_extent_and_direction;
 use crate::decode::sketch_transfer::recipe::{
     current_additive_feature_recipe, current_feature_recipe, current_feature_recipe_parent,
 };
+use crate::decode::sweep::nurbs::extrusion_brep_side_surface;
 use crate::decode::sweep::profiles::ProfileEntity;
-use crate::decode::sweep::{
-    arcs_intersect, extrusion_brep_side_surface, extrusion_cap_pcurve, extrusion_side_uvs,
-    line_arc_intersect, ordered_extrusion_profiles, profile_segments_intersect,
-    profile_strictly_contains, resolved_sketch_profiles, ExtrusionProfile,
+use crate::decode::sweep::profiles::{
+    arcs_intersect, extrusion_cap_pcurve, extrusion_side_uvs, line_arc_intersect,
+    ordered_extrusion_profiles, profile_segments_intersect, profile_strictly_contains,
+    resolved_sketch_profiles, ExtrusionProfile,
 };
 use crate::decode::uniqueness::unique_feature_profile_definition;
 use crate::feature::schema::SchemaClass;

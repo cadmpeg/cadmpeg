@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: rectilinear sweep extent carrier reconciliation.
 
-use crate::decode::sweep::{
+use crate::decode::sweep::extent::{
     generated_rectilinear_plane_extent, rectilinear_extent_from_section_plane,
     RectilinearPlaneFamily, RectilinearPlaneStation,
 };

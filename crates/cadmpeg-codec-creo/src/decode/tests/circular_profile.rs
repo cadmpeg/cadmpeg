@@ -11,9 +11,8 @@ use crate::decode::holes::sweep::{
     CircularSweepGeometry,
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
-use crate::decode::sweep::{
-    circular_section_profile_from_cylinder, connected_sketch_profile_vertices,
-};
+use crate::decode::sweep::circular::circular_section_profile_from_cylinder;
+use crate::decode::sweep::profiles::connected_sketch_profile_vertices;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,

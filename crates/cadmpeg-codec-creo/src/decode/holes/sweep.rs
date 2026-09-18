@@ -12,7 +12,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::sweep::{feature_outline_plane, feature_outline_planes, FeatureOutlinePlane};
+use super::super::sweep::planes::{
+    feature_outline_plane, feature_outline_planes, FeatureOutlinePlane,
+};
 use super::placement::{
     cap_square_center_radius, cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines,
     hole_placement, plane_envelope_corners, CapOutline, ExtrusionSpan, HoleCylinder,

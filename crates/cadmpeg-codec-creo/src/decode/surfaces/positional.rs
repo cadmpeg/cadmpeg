@@ -20,7 +20,7 @@ use super::super::feature_history::round::{
     paired_five_coordinate_sphere_center, round_constant_radius, unique_surface_parameter_record,
 };
 use super::super::native::annotate;
-use super::super::sweep::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
+use super::super::sweep::nurbs::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
 use super::super::uniqueness::exactly_one;
 use crate::decode::sketch_transfer::recipe::feature_schema_class;
 use crate::vecmath::cross;

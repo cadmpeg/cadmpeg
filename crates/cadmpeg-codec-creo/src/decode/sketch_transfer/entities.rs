@@ -10,9 +10,8 @@ use super::super::sketch_ids::{
     sketch_entity_id, sketch_identity_scope, sketch_native_ref, sketch_point_ref,
     typed_sketch_section_curve_id,
 };
-use super::super::sweep::{
-    placed_section_geometry_curve, placed_sketch_curve_ref, saved_spline_sketch_geometry,
-};
+use super::super::sweep::nurbs::saved_spline_sketch_geometry;
+use super::super::sweep::surfaces::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::{
     opaque_section_segment_identity_suffix, saved_section_external_id,

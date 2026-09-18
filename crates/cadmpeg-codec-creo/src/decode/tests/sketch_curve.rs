@@ -16,7 +16,7 @@ use crate::decode::sketch_transfer::constraints::{
     section_segment_verhor_definition,
 };
 use crate::decode::sketch_transfer::loci::section_skamp_active;
-use crate::decode::sweep::{placed_section_geometry_curve, placed_sketch_curve_ref};
+use crate::decode::sweep::surfaces::{placed_section_geometry_curve, placed_sketch_curve_ref};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
