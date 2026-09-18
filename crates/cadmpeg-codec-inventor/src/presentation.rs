@@ -847,10 +847,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
-        Ok(self
-            .source
-            .req_take(len)
-            .map_err(|error| error.during(field))?)
+        crate::reader::take(&mut self.source, len, field)
     }
 
     fn skip(&mut self, len: usize, field: &'static str) -> Result<(), CodecError> {
@@ -867,21 +864,15 @@ impl<'a> Cursor<'a> {
     }
 
     fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
-        Ok(self.source.req_u8().map_err(|error| error.during(field))?)
+        crate::reader::u8(&mut self.source, field)
     }
 
     fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
-        Ok(self
-            .source
-            .req_u16_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u16(&mut self.source, field)
     }
 
     fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
-        Ok(self
-            .source
-            .req_u32_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u32(&mut self.source, field)
     }
 
     fn f64(&mut self, field: &'static str) -> Result<f64, CodecError> {

@@ -776,7 +776,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn position(&self) -> usize {
-        self.view.position().saturating_sub(self.view.start())
+        crate::reader::position(&self.view)
     }
 
     /// Refuses a range whose end no `usize` can state.
@@ -805,31 +805,19 @@ impl<'a> Cursor<'a> {
     }
 
     fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
-        Ok(self
-            .view
-            .req_u16_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u16(&mut self.view, field)
     }
 
     fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
-        Ok(self
-            .view
-            .req_u32_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u32(&mut self.view, field)
     }
 
     fn i32(&mut self, field: &'static str) -> Result<i32, CodecError> {
-        Ok(self
-            .view
-            .req_i32_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::i32(&mut self.view, field)
     }
 
     fn u64(&mut self, field: &'static str) -> Result<u64, CodecError> {
-        Ok(self
-            .view
-            .req_u64_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u64(&mut self.view, field)
     }
 
     fn array<const N: usize>(&mut self, field: &'static str) -> Result<[u8; N], CodecError> {

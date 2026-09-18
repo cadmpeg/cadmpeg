@@ -776,7 +776,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn position(&self) -> usize {
-        self.view.position().saturating_sub(self.view.start())
+        crate::reader::position(&self.view)
     }
 
     fn skip_to_end(&mut self) {

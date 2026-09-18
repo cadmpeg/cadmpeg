@@ -267,7 +267,7 @@ impl<'a> Cursor<'a> {
 
     pub(crate) fn peek_u32(&self, field: &'static str) -> Result<u32, CodecError> {
         let mut view = self.source;
-        Ok(view.req_u32_le().map_err(|error| error.during(field))?)
+        crate::reader::u32(&mut view, field)
     }
 
     /// Reads a fixed-width byte array.
@@ -281,35 +281,23 @@ impl<'a> Cursor<'a> {
     }
 
     pub(crate) fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
-        Ok(self.source.req_u8().map_err(|error| error.during(field))?)
+        crate::reader::u8(&mut self.source, field)
     }
 
     pub(crate) fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
-        Ok(self
-            .source
-            .req_u16_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u16(&mut self.source, field)
     }
 
     pub(crate) fn i16(&mut self, field: &'static str) -> Result<i16, CodecError> {
-        Ok(self
-            .source
-            .req_i16_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::i16(&mut self.source, field)
     }
 
     pub(crate) fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
-        Ok(self
-            .source
-            .req_u32_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u32(&mut self.source, field)
     }
 
     pub(crate) fn i32(&mut self, field: &'static str) -> Result<i32, CodecError> {
-        Ok(self
-            .source
-            .req_i32_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::i32(&mut self.source, field)
     }
 
     pub(crate) fn f64(&mut self, field: &str) -> Result<f64, CodecError> {

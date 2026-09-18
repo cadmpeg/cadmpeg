@@ -772,28 +772,19 @@ impl<'a> MetaCursor<'a> {
     }
 
     fn take(&mut self, len: usize, what: &'static str) -> Result<&'a [u8], CodecError> {
-        Ok(self
-            .source
-            .req_take(len)
-            .map_err(|error| error.during(what))?)
+        crate::reader::take(&mut self.source, len, what)
     }
 
     fn u8(&mut self, what: &'static str) -> Result<u8, CodecError> {
-        Ok(self.source.req_u8().map_err(|error| error.during(what))?)
+        crate::reader::u8(&mut self.source, what)
     }
 
     fn u16(&mut self, what: &'static str) -> Result<u16, CodecError> {
-        Ok(self
-            .source
-            .req_u16_le()
-            .map_err(|error| error.during(what))?)
+        crate::reader::u16(&mut self.source, what)
     }
 
     fn u32(&mut self, what: &'static str) -> Result<u32, CodecError> {
-        Ok(self
-            .source
-            .req_u32_le()
-            .map_err(|error| error.during(what))?)
+        crate::reader::u32(&mut self.source, what)
     }
 
     fn u32_array<const N: usize>(&mut self, what: &'static str) -> Result<[u32; N], CodecError> {

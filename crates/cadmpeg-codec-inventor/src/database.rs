@@ -328,35 +328,23 @@ impl<'a> Cursor<'a> {
     }
 
     fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
-        Ok(self.source.req_u8().map_err(|error| error.during(field))?)
+        crate::reader::u8(&mut self.source, field)
     }
 
     fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
-        Ok(self
-            .source
-            .req_u16_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u16(&mut self.source, field)
     }
 
     fn i16(&mut self, field: &'static str) -> Result<i16, CodecError> {
-        Ok(self
-            .source
-            .req_i16_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::i16(&mut self.source, field)
     }
 
     fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
-        Ok(self
-            .source
-            .req_u32_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u32(&mut self.source, field)
     }
 
     fn u64(&mut self, field: &'static str) -> Result<u64, CodecError> {
-        Ok(self
-            .source
-            .req_u64_le()
-            .map_err(|error| error.during(field))?)
+        crate::reader::u64(&mut self.source, field)
     }
 
     fn array<const N: usize>(&mut self, field: &'static str) -> Result<[u8; N], CodecError> {
