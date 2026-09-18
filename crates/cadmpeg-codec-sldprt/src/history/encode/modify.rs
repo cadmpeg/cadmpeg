@@ -661,10 +661,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ))
             })?;
             require_same_family(existing, &feature.id, &["MoveBody", "MoveCopyBody"])?;
-            if ![translation.x, translation.y, translation.z]
-                .into_iter()
-                .all(f64::is_finite)
-            {
+            if !translation.is_finite() {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite body translation",
                     feature.id
@@ -685,11 +682,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             match rotation {
                 Some(rotation) => {
-                    if !rotation.angle.get().is_finite()
-                        || ![rotation.origin.x, rotation.origin.y, rotation.origin.z]
-                            .into_iter()
-                            .all(f64::is_finite)
-                    {
+                    if !rotation.angle.get().is_finite() || !rotation.origin.is_finite() {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has invalid body rotation",
                             feature.id
@@ -903,9 +896,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let center_valid = center.as_ref().is_none_or(|center| match center {
-                ScaleCenter::Point(point) => {
-                    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-                }
+                ScaleCenter::Point(point) => point.is_finite(),
                 ScaleCenter::Native(reference) => !reference.is_empty(),
                 ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
             });

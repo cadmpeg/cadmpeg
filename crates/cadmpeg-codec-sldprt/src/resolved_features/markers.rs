@@ -716,10 +716,7 @@ pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
                 View::f64_le_at(payload, offset + 53)?,
                 View::f64_le_at(payload, offset + 61)?,
             );
-            [point.x, point.y, point.z]
-                .into_iter()
-                .all(f64::is_finite)
-                .then_some(point)
+            point.is_finite().then_some(point)
         })
         .collect()
 }
