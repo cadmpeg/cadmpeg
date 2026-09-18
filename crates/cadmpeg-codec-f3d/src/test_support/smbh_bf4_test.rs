@@ -3,7 +3,9 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::*;
+use crate::test_support::{
+    bf4_header_prefix, push_u8_string, t_dbl, t_end, t_ident, t_pos, t_subident, t_vec,
+};
 
 /// The minimal `BinaryFile4` active model slice: the planar-face graph of
 /// `synthetic_geometry_smbh` with 4-byte integer/ref fields, the ASM-227

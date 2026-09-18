@@ -3,7 +3,11 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::*;
+use crate::test_support::{
+    generated_curve_block, generated_pcurve_block, generated_planar_pcurve_block,
+    generated_planar_rational_pcurve_block, generated_surface_block, synthetic_geometry_smbh,
+    t_dbl, t_end, t_ident, t_long, t_ref, t_subident,
+};
 
 /// Add a generated inline 2D `nubs` pcurve to the first coedge of the base
 /// topology fixture. The new record is appended at `RecordTable` index 19.

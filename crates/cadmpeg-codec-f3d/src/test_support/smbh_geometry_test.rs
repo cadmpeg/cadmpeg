@@ -3,7 +3,10 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::*;
+use crate::test_support::{
+    push_u8_string, smbh_header_prefix, t_attribute_base, t_dbl, t_end, t_ident, t_long, t_pos,
+    t_ref, t_subident, t_vec,
+};
 
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.
 /// `RecordTable` indices are the order below, starting at 0 (`asmheader`).

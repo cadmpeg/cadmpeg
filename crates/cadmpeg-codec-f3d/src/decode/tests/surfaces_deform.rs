@@ -17,7 +17,22 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::{
+    expected_revision_surface_tail_parameterization, f3d_with_smbh, renamed_generated_subtype,
+    synthetic_cacheless_revision_text_law_sweep_smbh, synthetic_comp_spl_sur_smbh,
+    synthetic_cyl_spl_sur_smbh, synthetic_explicit_formula_sweep_smbh,
+    synthetic_explicit_guide_sweep_smbh, synthetic_explicit_surface_sweep_smbh,
+    synthetic_framed_deformable_surface_smbh, synthetic_full_deformable_surface_smbh,
+    synthetic_g2_blend_spl_sur_smbh, synthetic_geometry_with_helix_curve_smbh,
+    synthetic_helix_surface_smbh, synthetic_law_driven_sweep_smbh, synthetic_loft_spl_sur_smbh,
+    synthetic_minimal_deformable_surface_smbh, synthetic_net_spl_sur_smbh,
+    synthetic_off_spl_sur_smbh, synthetic_profile_first_sweep_smbh,
+    synthetic_referenced_t_spl_sur_smbh, synthetic_revision_deformable_surface_smbh,
+    synthetic_revision_text_law_sweep_smbh, synthetic_rot_spl_sur_smbh,
+    synthetic_ruled_spl_sur_smbh, synthetic_scaled_compound_loft_smbh, synthetic_skin_spl_sur_smbh,
+    synthetic_sum_spl_sur_smbh, synthetic_surface_curve_deformable_smbh,
+    synthetic_taper_spl_sur_smbh, synthetic_text_law_driven_sweep_smbh,
+};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

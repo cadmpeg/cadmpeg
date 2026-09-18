@@ -18,7 +18,22 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::{
+    f3d_with_smbh, generated_curve_block, generated_pcurve_block, renamed_generated_subtype,
+    synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh,
+    synthetic_geometry_with_deformable_curve_smbh, synthetic_geometry_with_helix_curve_smbh,
+    synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh,
+    synthetic_geometry_with_null_support_spring_smbh,
+    synthetic_geometry_with_out_of_scope_pcurve_cache_smbh, synthetic_geometry_with_pcurve_smbh,
+    synthetic_geometry_with_procedural_curve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
+    synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh,
+    synthetic_geometry_with_ref_pcurve_smbh, synthetic_geometry_with_short_pcurve_tail_smbh,
+    synthetic_geometry_with_spring_smbh, synthetic_geometry_with_surface_offset_smbh,
+    synthetic_geometry_with_wrapped_ref_pcurve_smbh,
+    synthetic_inline_pcurve_with_referenced_support_smbh, with_inline_pcurve_non_boolean_wrapper,
+    with_pcurve_discriminator, with_ref_pcurve_companion_name, with_ref_pcurve_companion_reversed,
+    TestEncode,
+};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

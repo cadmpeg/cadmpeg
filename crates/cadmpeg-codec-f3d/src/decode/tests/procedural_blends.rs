@@ -19,7 +19,17 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::Severity;
 
-use crate::test_support::*;
+use crate::test_support::{
+    assert_revision_surface_round_trip, expected_revision_surface_tail_discontinuities,
+    expected_revision_surface_tail_parameterization, f3d_with_smbh,
+    synthetic_full_rolling_ball_smbh, synthetic_full_rolling_ball_with_tail_smbh,
+    synthetic_g2_blend_spl_sur_smbh, synthetic_variable_blend_smbh,
+    synthetic_variable_blend_smbh_with_branch, synthetic_variable_blend_smbh_with_cache_state,
+    synthetic_variable_blend_smbh_with_edge_offset_radius,
+    synthetic_variable_blend_smbh_with_interp_radius, synthetic_variable_blend_smbh_with_selector,
+    synthetic_variable_blend_smbh_with_tail_form, synthetic_versioned_cyl_spl_sur_with_tail_smbh,
+    TestEncode,
+};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

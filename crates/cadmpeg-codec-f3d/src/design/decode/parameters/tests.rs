@@ -21,7 +21,7 @@ use crate::records::{
     recipes::{ConstructionRecipe, ConstructionRecipeKind},
 };
 use crate::test_support::lp_utf16;
-use crate::test_support::*;
+use crate::test_support::{with_scan, write_synthetic_manifests};
 
 fn compact_owned_parameter_record(
     owner_record_index: u32,
