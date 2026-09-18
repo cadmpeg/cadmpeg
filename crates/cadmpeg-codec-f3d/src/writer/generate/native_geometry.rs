@@ -1273,17 +1273,6 @@ fn native_bridge_token(
     Ok(())
 }
 
-fn native_g2_pcurve(
-    bytes: &mut Vec<u8>,
-    pcurve: Option<&PcurveGeometry>,
-) -> Result<(), CodecError> {
-    if let Some(pcurve) = pcurve {
-        native_nurbs_pcurve_block(bytes, pcurve)
-    } else {
-        native_ident(bytes, "nullbs")
-    }
-}
-
 fn native_g2_side(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -1319,12 +1308,12 @@ fn native_g2_side(
         native_pcurve_knot_domain(pcurve)?,
     )?;
     native_nurbs_curve(bytes, &curve)?;
-    native_g2_pcurve(bytes, side.pcurves[0].as_ref())?;
+    native_optional_pcurve(bytes, side.pcurves[0].as_ref())?;
     native_vector(
         bytes,
         [side.direction.x, side.direction.y, side.direction.z],
     );
-    native_g2_pcurve(bytes, side.pcurves[1].as_ref())?;
+    native_optional_pcurve(bytes, side.pcurves[1].as_ref())?;
     Ok(())
 }
 
@@ -1374,7 +1363,7 @@ fn encode_native_g2_blend(
             if let Some(extension) = extension {
                 native_bridge_token(bytes, extension)?;
             }
-            native_g2_pcurve(bytes, pcurve.as_ref())?;
+            native_optional_pcurve(bytes, pcurve.as_ref())?;
         }
     }
     native_g2_side(bytes, target, &construction.second)?;
