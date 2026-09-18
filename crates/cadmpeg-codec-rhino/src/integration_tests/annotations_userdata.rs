@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! V5 text-extra class-userdata admission and retention contracts.
 
+use super::fixtures::plane;
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
 use crate::test_support::test_archive as support;
+use crate::test_support::test_dump::utf16_bytes;
 use crate::wire::Uuid;
 
 const LEGACY_TEXT: [u8; 16] = [
@@ -16,41 +18,18 @@ const OPENNURBS5_APPLICATION: [u8; 16] = [
     0xc8, 0xcd, 0xa5, 0x97, 0xd9, 0x57, 0x46, 0x25, 0xa4, 0xb3, 0xa0, 0xb5, 0x10, 0xfc, 0x30, 0xd4,
 ];
 
-fn utf16(value: &str) -> Vec<u8> {
-    let mut units = value.encode_utf16().collect::<Vec<_>>();
-    units.push(0);
-    let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
-    for unit in units {
-        bytes.extend(unit.to_le_bytes());
-    }
-    bytes
-}
-
-fn plane() -> Vec<u8> {
-    [
-        0.0, 0.0, 0.0, // origin
-        1.0, 0.0, 0.0, // x axis
-        0.0, 1.0, 0.0, // y axis
-        0.0, 0.0, 1.0, // z axis
-        0.0, 0.0, 1.0, 0.0, // equation
-    ]
-    .into_iter()
-    .flat_map(f64::to_le_bytes)
-    .collect()
-}
-
 fn legacy_text_payload(archive: ArchiveVersion) -> Vec<u8> {
     let mut fields = 7_i32.to_le_bytes().to_vec();
     fields.extend(0_i32.to_le_bytes());
     fields.extend(plane());
     fields.extend(0_i32.to_le_bytes());
-    fields.extend(utf16("legacy text"));
+    fields.extend(utf16_bytes("legacy text"));
     fields.extend(0_i32.to_le_bytes());
     fields.extend(0_i32.to_le_bytes());
     fields.extend(1.5_f64.to_le_bytes());
     fields.extend(0_i32.to_le_bytes());
     fields.push(0);
-    fields.extend(utf16(""));
+    fields.extend(utf16_bytes(""));
     fields.extend(0_i32.to_le_bytes());
     fields.extend((-1_i32).to_le_bytes());
 

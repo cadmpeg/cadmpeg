@@ -12,8 +12,8 @@ const OPENNURBS5_APPLICATION: [u8; 16] = [
 
 fn mesh_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
     let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 0x20);
-    let mut uuid_body = support::MESH_CLASS.to_vec();
-    uuid_body.extend(crc32fast::hash(&support::MESH_CLASS).to_le_bytes());
+    let mut uuid_body = crate::test_support::test_dump::MESH_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&crate::test_support::test_dump::MESH_CLASS).to_le_bytes());
     let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
     let class_data = crate::test_support::test_dump::crc_chunk(
         archive,

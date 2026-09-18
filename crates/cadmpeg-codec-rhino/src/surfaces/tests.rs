@@ -3,18 +3,11 @@
 
 use super::*;
 use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::test_support::test_dump::{crc_chunk, long_chunk, push_f64, push_i32};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 const EPS_EXACT_GEOMETRY: f64 = 1.0e-12;
-
-fn push_i32(bytes: &mut Vec<u8>, value: i32) {
-    bytes.extend(value.to_le_bytes());
-}
-
-fn push_f64(bytes: &mut Vec<u8>, value: f64) {
-    bytes.extend(value.to_le_bytes());
-}
 
 fn curve_payload(version: u8, rational: bool, knots: &[f64]) -> Vec<u8> {
     let mut bytes = vec![version];
@@ -213,28 +206,19 @@ fn revolution_prefix(version: u8) -> Vec<u8> {
     bytes
 }
 
-fn long_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
-    let mut bytes = typecode.to_le_bytes().to_vec();
-    bytes.extend((body.len() as i64).to_le_bytes());
-    bytes.extend(body);
-    bytes
-}
-
-fn crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
-    let mut payload = body.to_vec();
-    payload.extend(crc32fast::hash(body).to_le_bytes());
-    long_chunk(typecode, &payload)
-}
-
 fn anonymous(minor: i32, body: &[u8]) -> Vec<u8> {
     let mut payload = 1_i32.to_le_bytes().to_vec();
     payload.extend(minor.to_le_bytes());
     payload.extend(body);
-    crc_chunk(0x4000_8000, &payload)
+    crc_chunk(ArchiveVersion::V5, 0x4000_8000, &payload)
 }
 
 fn clipping_plane_payload(item_order_valid: bool) -> Vec<u8> {
-    let carrier = crc_chunk(0x4000_8000, &plane_payload(0x11, false, false));
+    let carrier = crc_chunk(
+        ArchiveVersion::V5,
+        0x4000_8000,
+        &plane_payload(0x11, false, false),
+    );
     let mut clipping = [0x11; 16].to_vec();
     clipping.extend([0x22; 16]);
     clipping.extend(&plane_payload(0x11, false, false)[1..129]);
@@ -268,7 +252,7 @@ fn clipping_plane_payload(item_order_valid: bool) -> Vec<u8> {
     outer.extend(carrier);
     outer.extend(clipping);
     outer.extend([0xcc, 0xdd]);
-    crc_chunk(0x4000_8000, &outer)
+    crc_chunk(ArchiveVersion::V5, 0x4000_8000, &outer)
 }
 
 #[test]
@@ -331,15 +315,19 @@ fn line_wrapper(scale_source: f64) -> Vec<u8> {
     ];
     let mut uuid_body = wire_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&wire_uuid).to_le_bytes());
-    let mut class_body = long_chunk(0x0002_fffb, &uuid_body);
-    class_body.extend(crc_chunk(0x0002_fffc, &line));
+    let mut class_body = long_chunk(ArchiveVersion::V5, 0x0002_fffb, &uuid_body);
+    class_body.extend(crc_chunk(ArchiveVersion::V5, 0x0002_fffc, &line));
     class_body.extend(0x8002_7fff_u32.to_le_bytes());
     class_body.extend(0_i64.to_le_bytes());
-    long_chunk(0x0002_7ffa, &class_body)
+    long_chunk(ArchiveVersion::V5, 0x0002_7ffa, &class_body)
 }
 
 fn nil_object_wrapper() -> Vec<u8> {
-    long_chunk(0x0002_7ffa, &long_chunk(0x0002_fffb, &[0; 16]))
+    long_chunk(
+        ArchiveVersion::V5,
+        0x0002_7ffa,
+        &long_chunk(ArchiveVersion::V5, 0x0002_fffb, &[0; 16]),
+    )
 }
 
 pub(crate) fn valid_revolution_payload(version: u8) -> Vec<u8> {

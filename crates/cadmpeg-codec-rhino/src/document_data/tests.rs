@@ -5,17 +5,10 @@ use super::{
 use crate::chunks::ArchiveVersion;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::test_support::test_dump::{
-    anonymous_chunk, crc_chunk, long_chunk, metadata_record, short_chunk, utf16_bytes,
+    anonymous_chunk, crc_chunk, long_chunk, metadata_record, push_f64, push_i32, short_chunk,
+    utf16_bytes,
 };
 use crate::wire::Uuid;
-
-fn push_i32(bytes: &mut Vec<u8>, value: i32) {
-    bytes.extend(value.to_le_bytes());
-}
-
-fn push_f64(bytes: &mut Vec<u8>, value: f64) {
-    bytes.extend(value.to_le_bytes());
-}
 
 fn push_color(bytes: &mut Vec<u8>, value: [u8; 4]) {
     bytes.extend(value);

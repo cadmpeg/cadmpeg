@@ -49,22 +49,13 @@ use crate::presentation::TEXTURE;
 use crate::presentation::WINDOWS_BITMAP;
 use crate::presentation::WINDOWS_BITMAP_EX;
 use crate::settings;
+use crate::test_support::test_dump::utf16_bytes;
 use crate::wire::Uuid;
 use std::ops::Range;
 
 use crate::chunks::ArchiveVersion;
 use crate::objects::AttributeUserdata;
 use std::io::Write;
-
-fn utf16(value: &str) -> Vec<u8> {
-    let mut units = value.encode_utf16().collect::<Vec<_>>();
-    units.push(0);
-    let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
-    for unit in units {
-        bytes.extend(unit.to_le_bytes());
-    }
-    bytes
-}
 
 fn anonymous(minor: i32, body: &[u8]) -> Vec<u8> {
     let mut payload = 1_i32.to_le_bytes().to_vec();
@@ -138,17 +129,17 @@ fn panose_chunk() -> Vec<u8> {
 fn modern_font_chunk(minor: i32, suffix: &[u8]) -> Vec<u8> {
     let mut body = 0x1234_5678_u32.to_le_bytes().to_vec();
     body.extend(wide_string_chunk("Arial"));
-    body.extend(utf16("ArialMT"));
-    body.extend(utf16("Arial Regular"));
+    body.extend(utf16_bytes("ArialMT"));
+    body.extend(utf16_bytes("Arial Regular"));
     body.extend(400_i32.to_le_bytes());
     body.extend(0.5_f64.to_le_bytes());
     body.extend(12.0_f64.to_le_bytes());
     body.push(0);
-    body.extend(utf16("Arial"));
+    body.extend(utf16_bytes("Arial"));
     for value in [
         "en-US", "ArialMT", "ArialMT", "Arial", "Arial", "Arial", "Arial", "Regular", "Regular",
     ] {
-        body.extend(utf16(value));
+        body.extend(utf16_bytes(value));
     }
     body.extend(panose_chunk());
     body.push(2);
@@ -162,7 +153,7 @@ fn model_attributes_chunk(index: i32, name: &str) -> Vec<u8> {
     payload.extend([0, 2, 0, 1]);
     payload.extend(index.to_le_bytes());
     payload.push(1);
-    payload.extend(utf16(name));
+    payload.extend(utf16_bytes(name));
     payload.extend(crc32fast::hash(&payload).to_le_bytes());
     let mut bytes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
     bytes.extend((payload.len() as i64).to_le_bytes());
@@ -187,7 +178,7 @@ fn model_attributes_status_chunk(statuses: [u8; 5], name: &str, suffix: &[u8]) -
         payload.extend(5_i32.to_le_bytes());
     }
     if statuses[4] == 1 {
-        payload.extend(utf16(name));
+        payload.extend(utf16_bytes(name));
     }
     payload.extend(suffix);
     payload.extend(crc32fast::hash(&payload).to_le_bytes());
@@ -214,7 +205,7 @@ fn dimension_style_chunk(minor: i32) -> Vec<u8> {
     body.extend(6_u32.to_le_bytes());
     body.extend(7_i32.to_le_bytes());
     for value in ["<", ">", "[", "]"] {
-        body.extend(utf16(value));
+        body.extend(utf16_bytes(value));
     }
     body.extend(8.0_f64.to_le_bytes());
     body.extend([0, 1]);
@@ -323,7 +314,7 @@ fn current_dimension_style_chunk() -> Vec<u8> {
 fn v5_dimension_style_chunk() -> Vec<u8> {
     let mut bytes = vec![0x15];
     bytes.extend(7_i32.to_le_bytes());
-    bytes.extend(utf16("legacy dimension style"));
+    bytes.extend(utf16_bytes("legacy dimension style"));
     for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0] {
         bytes.extend(value.to_le_bytes());
     }
@@ -337,16 +328,16 @@ fn v5_dimension_style_chunk() -> Vec<u8> {
     bytes.extend(13_i32.to_le_bytes());
     bytes.extend(14.0_f64.to_le_bytes());
     bytes.extend(15.0_f64.to_le_bytes());
-    bytes.extend(utf16("<"));
-    bytes.extend(utf16(">"));
+    bytes.extend(utf16_bytes("<"));
+    bytes.extend(utf16_bytes(">"));
     bytes.push(1);
     bytes.extend(16.0_f64.to_le_bytes());
     bytes.extend(17_u32.to_le_bytes());
     bytes.extend(18_i32.to_le_bytes());
     bytes.extend(19_u32.to_le_bytes());
     bytes.extend(20_i32.to_le_bytes());
-    bytes.extend(utf16("["));
-    bytes.extend(utf16("]"));
+    bytes.extend(utf16_bytes("["));
+    bytes.extend(utf16_bytes("]"));
     bytes.extend(21_u32.to_le_bytes());
     bytes.extend([0x33; 16]);
     bytes.extend(22.0_f64.to_le_bytes());
@@ -380,7 +371,7 @@ fn v5_dimension_style_extra_chunk() -> Vec<u8> {
 
 fn embedded_bitmap_payload(minor: u8, id: Uuid, compression_method: i32) -> Vec<u8> {
     let mut bytes = vec![0x10 | minor];
-    bytes.extend(utf16("image.png"));
+    bytes.extend(utf16_bytes("image.png"));
     bytes.extend(0x1122_3344_u32.to_le_bytes());
     bytes.extend(compression_method.to_le_bytes());
     if compression_method == 0 {
@@ -391,7 +382,7 @@ fn embedded_bitmap_payload(minor: u8, id: Uuid, compression_method: i32) -> Vec<
     }
     if minor >= 1 {
         bytes.extend(id.to_wire());
-        bytes.extend(utf16("preview"));
+        bytes.extend(utf16_bytes("preview"));
     }
     bytes.extend([0xaa, 0xbb]);
     bytes
@@ -454,7 +445,7 @@ fn windows_bitmap_payload(
     let mut bytes = Vec::new();
     if class_uuid == WINDOWS_BITMAP_EX {
         bytes.push(0x10 | minor);
-        bytes.extend(utf16(path));
+        bytes.extend(utf16_bytes(path));
     }
     bytes.extend(header);
     for buffer in buffers {
@@ -493,7 +484,7 @@ fn light_record_attributes_use_the_object_attribute_projection() {
     attributes.extend([0; 16]);
     attributes.extend(7_i32.to_le_bytes());
     attributes.push(1);
-    attributes.extend(utf16("table light"));
+    attributes.extend(utf16_bytes("table light"));
     attributes.push(11);
     attributes.push(0);
     attributes.push(0);
@@ -509,7 +500,7 @@ fn light_record_attributes_use_the_object_attribute_projection() {
         crate::test_support::test_dump::anonymous_chunk(
             archive,
             0,
-            &[utf16("attribute key"), utf16("attribute value")].concat(),
+            &[utf16_bytes("attribute key"), utf16_bytes("attribute value")].concat(),
         )
         .as_slice(),
     ]
@@ -760,7 +751,7 @@ fn unstamped_legacy_text_style_charges_the_font_name_stamp_loss() {
 fn legacy_text_style_bytes() -> Vec<u8> {
     let mut bytes = vec![0x12];
     bytes.extend(7_i32.to_le_bytes());
-    bytes.extend(utf16("Helvetica Neue"));
+    bytes.extend(utf16_bytes("Helvetica Neue"));
     let mut face = [0_u16; 64];
     for (target, source) in face.iter_mut().zip("Helvetica Neue".encode_utf16()) {
         *target = source;
@@ -828,11 +819,11 @@ fn modern_text_style_preserves_identity_after_future_font_and_outer_suffix() {
     ]);
     let mut body = model_attributes_chunk(7, "Arial style");
     body.push(1);
-    body.extend(utf16("ArialMT"));
+    body.extend(utf16_bytes("ArialMT"));
     body.push(1);
     body.extend(modern_font_chunk(7, &[0xcc, 0xdd]));
     body.extend(id.to_wire());
-    body.extend(utf16("Arial style"));
+    body.extend(utf16_bytes("Arial style"));
     body.extend([0xee, 0xff]);
     let bytes = anonymous(2, &body);
     let value = parse_text_style(
@@ -986,7 +977,11 @@ fn user_string_owner_mapping_preserves_order_and_source_cleanup() {
         0,
         &[
             1_i32.to_le_bytes().as_slice(),
-            anonymous(0, &[utf16("GeometryKey"), utf16("geometry value")].concat()).as_slice(),
+            anonymous(
+                0,
+                &[utf16_bytes("GeometryKey"), utf16_bytes("geometry value")].concat(),
+            )
+            .as_slice(),
         ]
         .concat(),
     );
@@ -994,13 +989,21 @@ fn user_string_owner_mapping_preserves_order_and_source_cleanup() {
         0,
         &[
             3_i32.to_le_bytes().as_slice(),
-            anonymous(0, &[utf16("$TEMP_OBJECT$"), utf16("temporary")].concat()).as_slice(),
             anonymous(
                 0,
-                &[utf16("AttributeKey"), utf16("attribute value")].concat(),
+                &[utf16_bytes("$TEMP_OBJECT$"), utf16_bytes("temporary")].concat(),
             )
             .as_slice(),
-            anonymous(0, &[utf16("MixedCase"), utf16("mixed value")].concat()).as_slice(),
+            anonymous(
+                0,
+                &[utf16_bytes("AttributeKey"), utf16_bytes("attribute value")].concat(),
+            )
+            .as_slice(),
+            anonymous(
+                0,
+                &[utf16_bytes("MixedCase"), utf16_bytes("mixed value")].concat(),
+            )
+            .as_slice(),
         ]
         .concat(),
     );
@@ -1058,7 +1061,7 @@ fn user_string_owner_mapping_preserves_order_and_source_cleanup() {
 #[test]
 fn model_component_readers_follow_source_unknown_mask_and_status_rules() {
     let mut legacy_body = 0x28_u32.to_le_bytes().to_vec();
-    legacy_body.extend(utf16("mask-compatible"));
+    legacy_body.extend(utf16_bytes("mask-compatible"));
     legacy_body.extend([0xaa, 0xbb]);
     let legacy = anonymous(0, &legacy_body);
     let mut legacy_reader = BoundedReader::new(&legacy, 0, legacy.len()).unwrap();
@@ -1083,7 +1086,7 @@ fn model_component_readers_follow_source_unknown_mask_and_status_rules() {
 fn group_preserves_component_identity() {
     let mut bytes = vec![0x1f];
     bytes.extend(7_i32.to_le_bytes());
-    bytes.extend(utf16("fixtures"));
+    bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     bytes.extend([0xaa, 0xbb]);
     let group = parse_group(&bytes, 0..bytes.len(), 120).expect("required invariant");
@@ -1100,7 +1103,7 @@ fn group_preserves_component_identity() {
 fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields() {
     let mut bytes = vec![0x1f];
     bytes.extend(7_i32.to_le_bytes());
-    bytes.extend(utf16("fixtures"));
+    bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     let first = parse_group(&bytes, 0..bytes.len(), 120).expect("first group");
     let second = parse_group(&bytes, 0..bytes.len(), 240).expect("second group");
@@ -1134,7 +1137,7 @@ fn light_payload(packed: u8, hotspot: f64) -> Vec<u8> {
     bytes.extend(0.75_f64.to_le_bytes());
     bytes.extend(3_i32.to_le_bytes());
     bytes.extend([0x55; 16]);
-    bytes.extend(utf16("key"));
+    bytes.extend(utf16_bytes("key"));
     for value in [4.0_f64, 0.0, 0.0, 0.0, 5.0, 0.0] {
         bytes.extend(value.to_le_bytes());
     }
@@ -1146,7 +1149,7 @@ fn light_payload(packed: u8, hotspot: f64) -> Vec<u8> {
 fn texture_payload(minor: i32, suffix: &[u8]) -> Vec<u8> {
     let mut body = vec![0x11; 16];
     body.extend(7_u32.to_le_bytes());
-    body.extend(utf16("texture.png"));
+    body.extend(utf16_bytes("texture.png"));
     body.push(1);
     for value in 1..=7_u32 {
         body.extend(value.to_le_bytes());
@@ -1207,7 +1210,7 @@ fn light_preserves_unset_hotspot_for_exponent_interface() {
 /// bogus [128, 128, 128] that the pre-2009 rule replaces with `diffuse`.
 fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
     let mut body = [[0x11; 16].as_slice(), 2_i32.to_le_bytes().as_slice()].concat();
-    body.extend(utf16("steel"));
+    body.extend(utf16_bytes("steel"));
     body.extend([0x22; 16]);
     for color in [
         [1, 2, 3, 4],
@@ -1223,7 +1226,7 @@ fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
         body.extend(value.to_le_bytes());
     }
     body.extend(anonymous(0, &0_i32.to_le_bytes()));
-    body.extend(utf16(""));
+    body.extend(utf16_bytes(""));
     body.extend(0_i32.to_le_bytes());
     body.extend([1, 0]);
     body.push(1);
@@ -1338,21 +1341,21 @@ fn v2_v3_material_payload(minor: u8) -> Vec<u8> {
     bytes.extend(0.5_f64.to_le_bytes());
     bytes.extend(1.5_f64.to_le_bytes());
 
-    bytes.extend(utf16("bitmap.png"));
+    bytes.extend(utf16_bytes("bitmap.png"));
     bytes.extend(2_i32.to_le_bytes());
     bytes.extend(31_i32.to_le_bytes());
-    bytes.extend(utf16("bump.png"));
+    bytes.extend(utf16_bytes("bump.png"));
     bytes.extend(1_i32.to_le_bytes());
     bytes.extend(32_i32.to_le_bytes());
     bytes.extend(2.5_f64.to_le_bytes());
-    bytes.extend(utf16("environment.png"));
+    bytes.extend(utf16_bytes("environment.png"));
     bytes.extend(9_i32.to_le_bytes());
     bytes.extend(33_i32.to_le_bytes());
 
     bytes.extend(7_i32.to_le_bytes());
     bytes.extend([0x44; 16]);
-    bytes.extend(utf16("obsolete library"));
-    bytes.extend(utf16("old steel"));
+    bytes.extend(utf16_bytes("obsolete library"));
+    bytes.extend(utf16_bytes("old steel"));
     if minor >= 1 {
         bytes.extend([0x55; 16]);
         bytes.extend([41, 42, 43, 44]);
@@ -1769,7 +1772,7 @@ fn texture_array_closes_after_class_items_and_future_suffix() {
 
 #[test]
 fn texture_mapping_reads_nested_primitive_class_wrapper() {
-    let mut body = crate::test_support::test_archive::MESH_CLASS.to_vec();
+    let mut body = crate::test_support::test_dump::MESH_CLASS.to_vec();
     body.extend(6_u32.to_le_bytes());
     body.extend(1_u32.to_le_bytes());
     for index in 0..16 {
@@ -1778,10 +1781,10 @@ fn texture_mapping_reads_nested_primitive_class_wrapper() {
     for index in 0..16 {
         body.extend((if index % 5 == 0 { 1.0_f64 } else { 0.0 }).to_le_bytes());
     }
-    body.extend(utf16("custom mesh mapping"));
+    body.extend(utf16_bytes("custom mesh mapping"));
     body.extend(crate::test_support::test_dump::class_wrapper(
         ArchiveVersion::V8,
-        crate::test_support::test_archive::MESH_CLASS,
+        crate::test_support::test_dump::MESH_CLASS,
         &[],
     ));
     body.extend(0_u32.to_le_bytes());
@@ -1795,7 +1798,7 @@ fn texture_mapping_reads_nested_primitive_class_wrapper() {
     assert_eq!(mapping.mapping_type, 6);
     assert_eq!(
         mapping.primitive_class_uuid,
-        Some(Uuid::from_wire(crate::test_support::test_archive::MESH_CLASS).to_string())
+        Some(Uuid::from_wire(crate::test_support::test_dump::MESH_CLASS).to_string())
     );
 }
 

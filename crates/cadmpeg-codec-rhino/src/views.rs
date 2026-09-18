@@ -1560,14 +1560,8 @@ mod tests {
     use crate::container::Record;
     use crate::test_support::test_dump::{
         anonymous_chunk, class_userdata_v2_with_direct_payload, crc_chunk, crc_chunk_excluding,
-        file_reference, long_chunk, short_chunk, utf16_bytes,
+        file_reference, long_chunk, point, short_chunk, utf16_bytes,
     };
-
-    fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
-        for coordinate in value {
-            bytes.extend(coordinate.to_le_bytes());
-        }
-    }
 
     fn serialized_plane(bytes: &mut Vec<u8>) {
         point(bytes, [0.0, 0.0, 0.0]);

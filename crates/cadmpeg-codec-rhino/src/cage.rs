@@ -292,7 +292,7 @@ pub(crate) fn decode_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::test_archive::crc_chunk;
+    use crate::test_support::test_dump::crc_chunk;
 
     fn rational_cage_body() -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn decodes_rational_cage_order_knots_and_u_v_w_control_order() {
-        let bytes = crc_chunk(ANONYMOUS, &rational_cage_body());
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &rational_cage_body());
         let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
             decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
         })
@@ -337,7 +337,7 @@ mod tests {
         let mut body = rational_cage_body();
         body[4..8].copy_from_slice(&2_i32.to_le_bytes());
         body.extend(0x1357_9bdf_i32.to_le_bytes());
-        let bytes = crc_chunk(ANONYMOUS, &body);
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
         let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
             decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
         })
@@ -349,7 +349,7 @@ mod tests {
     fn rejects_a_non_one_major() {
         let mut body = rational_cage_body();
         body[..4].copy_from_slice(&2_i32.to_le_bytes());
-        let bytes = crc_chunk(ANONYMOUS, &body);
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
             decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
         });
@@ -365,7 +365,7 @@ mod tests {
         // runs past the record body's proven window.
         let mut body = rational_cage_body();
         body.truncate(body.len() - 32);
-        let bytes = crc_chunk(ANONYMOUS, &body);
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
         assert!(crate::decode::with_expand_bytes(&bytes, |expand| decode(
             expand,
             0..bytes.len(),

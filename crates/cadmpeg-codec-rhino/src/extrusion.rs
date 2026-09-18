@@ -920,6 +920,7 @@ pub(crate) mod tests {
     use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
     use crate::objects::ClassUserdata;
+    use crate::test_support::test_dump::{push_f64, push_i32};
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -943,14 +944,6 @@ pub(crate) mod tests {
                 mesh_budget,
             )
         })
-    }
-
-    fn push_i32(bytes: &mut Vec<u8>, value: i32) {
-        bytes.extend(value.to_le_bytes());
-    }
-
-    fn push_f64(bytes: &mut Vec<u8>, value: f64) {
-        bytes.extend(value.to_le_bytes());
     }
 
     fn long(typecode: u32, body: &[u8]) -> Vec<u8> {

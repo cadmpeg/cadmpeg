@@ -916,27 +916,22 @@ mod tests {
     };
     use crate::chunks::ArchiveVersion;
     use crate::objects::ClassUserdata;
+    use crate::test_support::test_dump::utf16_bytes;
     use crate::test_support::test_dump::{
         object_record_with_payload, scan_with_objects, set_identity,
     };
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
 
-    fn utf16(value: &str) -> Vec<u8> {
-        let mut units = value.encode_utf16().collect::<Vec<_>>();
-        units.push(0);
-        let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
-        for unit in units {
-            bytes.extend(unit.to_le_bytes());
-        }
-        bytes
-    }
-
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(minor.to_le_bytes());
         body.extend(suffix);
-        crate::test_support::test_archive::crc_chunk(ANONYMOUS, &body)
+        crate::test_support::test_dump::crc_chunk(
+            crate::chunks::ArchiveVersion::V5,
+            ANONYMOUS,
+            &body,
+        )
     }
 
     fn plane() -> Vec<u8> {
@@ -953,7 +948,7 @@ mod tests {
     }
 
     fn modern_annotation(leader: bool) -> Vec<u8> {
-        let mut text = utf16("rich");
+        let mut text = utf16_bytes("rich");
         text.extend(plane());
         text.extend(1.0_f64.to_le_bytes());
         text.extend(0.25_f64.to_le_bytes());
@@ -999,8 +994,8 @@ mod tests {
             bytes.extend(point[0].to_le_bytes());
             bytes.extend(point[1].to_le_bytes());
         }
-        bytes.extend(utf16(user_text));
-        bytes.extend(utf16(default_text));
+        bytes.extend(utf16_bytes(user_text));
+        bytes.extend(utf16_bytes(default_text));
         bytes.extend(i32::from(user_positioned).to_le_bytes());
         bytes
     }
@@ -1010,13 +1005,13 @@ mod tests {
         fields.extend(0_i32.to_le_bytes());
         fields.extend(plane());
         fields.extend(0_i32.to_le_bytes());
-        fields.extend(utf16("legacy text"));
+        fields.extend(utf16_bytes("legacy text"));
         fields.extend(0_i32.to_le_bytes());
         fields.extend(0_i32.to_le_bytes());
         fields.extend(1.5_f64.to_le_bytes());
         fields.extend(0_i32.to_le_bytes());
         fields.push(0);
-        fields.extend(utf16("legacy text"));
+        fields.extend(utf16_bytes("legacy text"));
         fields.extend((-1_i32).to_le_bytes());
         fields.extend(12_i32.to_le_bytes());
         let base = anonymous(3, &fields);
@@ -1029,7 +1024,7 @@ mod tests {
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
         let mut v2_text = v2_annotation_payload(7, &[], "text", "default", false);
-        v2_text.extend(utf16("Witness Sans"));
+        v2_text.extend(utf16_bytes("Witness Sans"));
         v2_text.extend(700_i32.to_le_bytes());
         v2_text.extend(12.5_f64.to_le_bytes());
         let mut dot = vec![0x10];
@@ -1037,14 +1032,14 @@ mod tests {
             dot.extend(coordinate.to_le_bytes());
         }
         dot.extend(12_i32.to_le_bytes());
-        dot.extend(utf16("dot"));
-        dot.extend(utf16("Witness Sans"));
+        dot.extend(utf16_bytes("dot"));
+        dot.extend(utf16_bytes("Witness Sans"));
         dot.extend(0_i32.to_le_bytes());
         let mut v2_dot = vec![0x10];
         for coordinate in [1.0_f64, 2.0, 3.0] {
             v2_dot.extend(coordinate.to_le_bytes());
         }
-        v2_dot.extend(utf16("V2 dot"));
+        v2_dot.extend(utf16_bytes("V2 dot"));
         let mut arrow = vec![0x10];
         for coordinate in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0] {
             arrow.extend(coordinate.to_le_bytes());
@@ -1205,7 +1200,7 @@ mod tests {
     #[test]
     fn v2_text_and_leader_readers_preserve_subclass_fields_and_suffixes() {
         let mut text = v2_annotation_payload(7, &[], "  text  ", "default", false);
-        text.extend(utf16("Witness Sans"));
+        text.extend(utf16_bytes("Witness Sans"));
         text.extend(700_i32.to_le_bytes());
         text.extend(12.5_f64.to_le_bytes());
         text.extend([0xd1, 0xce]);
@@ -1246,7 +1241,7 @@ mod tests {
     #[test]
     fn install_transfers_v2_text_leader_and_base_annotations() {
         let mut text = v2_annotation_payload(7, &[], "  text  ", "default", false);
-        text.extend(utf16("Witness Sans"));
+        text.extend(utf16_bytes("Witness Sans"));
         text.extend(700_i32.to_le_bytes());
         text.extend(12.5_f64.to_le_bytes());
         text.extend([0xd1, 0xce]);
@@ -1421,10 +1416,10 @@ mod tests {
             bytes.extend(value.to_le_bytes());
         }
         bytes.extend(14_i32.to_le_bytes());
-        bytes.extend(utf16("primary"));
-        bytes.extend(utf16("Arial"));
+        bytes.extend(utf16_bytes("primary"));
+        bytes.extend(utf16_bytes("Arial"));
         bytes.extend(15_i32.to_le_bytes());
-        bytes.extend(utf16("secondary"));
+        bytes.extend(utf16_bytes("secondary"));
         let dot = decode_dot(&bytes, 0..bytes.len(), 10.0).expect("valid text dot");
         assert_eq!(dot.center, [10.0, 20.0, 30.0]);
         assert_eq!(dot.primary_text, "primary");
@@ -1444,8 +1439,8 @@ mod tests {
             bytes.extend(value.to_le_bytes());
         }
         bytes.extend(23_i32.to_le_bytes());
-        bytes.extend(utf16("primary"));
-        bytes.extend(utf16("Courier New"));
+        bytes.extend(utf16_bytes("primary"));
+        bytes.extend(utf16_bytes("Courier New"));
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend([0xde, 0xad]);
         let dot = decode_dot(&bytes, 0..bytes.len(), 1.0).expect("valid V1.0 text dot");
@@ -1468,7 +1463,7 @@ mod tests {
         for value in [1.25_f64, -2.5, 4.75] {
             bytes.extend(value.to_le_bytes());
         }
-        bytes.extend(utf16("V2 dot"));
+        bytes.extend(utf16_bytes("V2 dot"));
         bytes.extend([0xd1, 0xce]);
         let dot = decode_v2_text_dot(&bytes, 0..bytes.len(), 2.0).expect("valid V2 text dot");
         assert_eq!(dot.center, [2.5, -5.0, 9.5]);
@@ -1504,7 +1499,7 @@ mod tests {
         for value in [1.25_f64, -2.5, 4.75] {
             dot.extend(value.to_le_bytes());
         }
-        dot.extend(utf16("V2 dot"));
+        dot.extend(utf16_bytes("V2 dot"));
         dot.extend([0xd1, 0xce]);
 
         let mut arrow = vec![0x10];
@@ -1565,13 +1560,13 @@ mod tests {
         for value in [1.0_f64, 2.0, 4.0, 8.0] {
             common.extend(value.to_le_bytes());
         }
-        common.extend(utf16("leader"));
+        common.extend(utf16_bytes("leader"));
         common.extend(0_i32.to_le_bytes());
         common.extend(12_i32.to_le_bytes());
         common.extend(1.5_f64.to_le_bytes());
         common.extend(0_i32.to_le_bytes());
         common.push(1);
-        common.extend(utf16("formula"));
+        common.extend(utf16_bytes("formula"));
         common.extend((-1_i32).to_le_bytes());
         common.extend(12_i32.to_le_bytes());
         let inner = anonymous(3, &common);
@@ -1597,7 +1592,7 @@ mod tests {
         for value in [1.0_f64, 2.0, 4.0, 8.0] {
             bytes.extend(value.to_le_bytes());
         }
-        bytes.extend(utf16("legacy"));
+        bytes.extend(utf16_bytes("legacy"));
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend((-1_i32).to_le_bytes());
         bytes.extend(1.5_f64.to_le_bytes());

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::chunks::TCODE_ENDOFFILE;
+use crate::chunks::{ArchiveVersion, TCODE_ENDOFFILE};
 use crate::layout::compressed_buffer_prologue as compressed;
+use crate::test_support::test_dump;
 use crate::MAGIC;
 
-pub(crate) const POINT_CLASS: [u8; 16] = [
-    0x1d, 0x1a, 0x10, 0xc3, 0x57, 0xf1, 0xd3, 0x11, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
-];
+/// Every archive this module builds carries an archive word of 50 or above, so
+/// its chunks use the eight-byte value grammar. The header word varies per
+/// fixture; the chunk shape does not.
+const CHUNKS: ArchiveVersion = ArchiveVersion::V5;
+
 pub(crate) const LINE_CLASS: [u8; 16] = [
     0xdb, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
-];
-pub(crate) const SUBD_CLASS: [u8; 16] = [
-    0xd9, 0xa4, 0x9b, 0xf0, 0x5b, 0x45, 0xc3, 0x42, 0xba, 0x3b, 0xe6, 0xcc, 0xac, 0xef, 0x85, 0x3b,
 ];
 pub(crate) const ARC_CLASS: [u8; 16] = [
     0x2a, 0xbe, 0x33, 0xcf, 0xb4, 0x09, 0xd4, 0x11, 0xbf, 0xfb, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -25,9 +25,6 @@ pub(crate) const POLYCURVE_CLASS: [u8; 16] = [
 pub(crate) const POINT_CLOUD_CLASS: [u8; 16] = [
     0x47, 0xf3, 0x88, 0x24, 0xfa, 0xf8, 0xd3, 0x11, 0xbf, 0xec, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
-pub(crate) const MESH_CLASS: [u8; 16] = [
-    0xe4, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
-];
 pub(crate) const EXTRUSION_CLASS: [u8; 16] = [
     0x75, 0x31, 0xf5, 0x36, 0xb8, 0x72, 0x47, 0x4d, 0xbf, 0x1f, 0xb4, 0xe6, 0xfc, 0x24, 0xf4, 0xb9,
 ];
@@ -38,46 +35,21 @@ const PLANE_SURFACE_CLASS: [u8; 16] = [
     0xdf, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
 
-pub(crate) fn long_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
-    let mut bytes = typecode.to_le_bytes().to_vec();
-    bytes.extend((body.len() as i64).to_le_bytes());
-    bytes.extend(body);
-    bytes
-}
-
-pub(crate) fn crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
-    let mut payload = body.to_vec();
-    payload.extend(crc32fast::hash(body).to_le_bytes());
-    long_chunk(typecode, &payload)
-}
-
 fn nested_crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut payload = body.to_vec();
     payload.extend(0_u32.to_le_bytes());
-    long_chunk(typecode, &payload)
-}
-
-pub(crate) fn short_chunk(typecode: u32, value: i64) -> Vec<u8> {
-    let mut bytes = (typecode | 0x8000_0000).to_le_bytes().to_vec();
-    bytes.extend(value.to_le_bytes());
-    bytes
-}
-
-pub(crate) fn table(typecode: u32, records: &[Vec<u8>]) -> Vec<u8> {
-    let mut body = records.concat();
-    body.extend(short_chunk(0x7fff_ffff, 0));
-    long_chunk(typecode, &body)
+    test_dump::long_chunk(CHUNKS, typecode, &payload)
 }
 
 pub(crate) fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
-    let object_type = short_chunk(0x0200_0071, object_type);
+    let object_type = test_dump::short_chunk(CHUNKS, 0x0200_0071, object_type);
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
-    let uuid = long_chunk(0x0002_fffb, &uuid_body);
-    let class_data = crc_chunk(0x0002_fffc, payload);
-    let class_end = short_chunk(0x0002_7fff, 0);
-    let class = long_chunk(0x0002_7ffa, &[uuid, class_data, class_end].concat());
-    let object_end = short_chunk(0x0200_007f, 0);
+    let uuid = test_dump::long_chunk(CHUNKS, 0x0002_fffb, &uuid_body);
+    let class_data = test_dump::crc_chunk(CHUNKS, 0x0002_fffc, payload);
+    let class_end = test_dump::short_chunk(CHUNKS, 0x0002_7fff, 0);
+    let class = test_dump::long_chunk(CHUNKS, 0x0002_7ffa, &[uuid, class_data, class_end].concat());
+    let object_end = test_dump::short_chunk(CHUNKS, 0x0200_007f, 0);
     nested_crc_chunk(
         0x2000_8070 | 0x0000_8000,
         &[object_type, class, object_end].concat(),
@@ -87,10 +59,10 @@ pub(crate) fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u
 pub(crate) fn class_wrapper(class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
-    let uuid = long_chunk(0x0002_fffb, &uuid_body);
-    let class_data = crc_chunk(0x0002_fffc, payload);
-    let class_end = short_chunk(0x0002_7fff, 0);
-    long_chunk(0x0002_7ffa, &[uuid, class_data, class_end].concat())
+    let uuid = test_dump::long_chunk(CHUNKS, 0x0002_fffb, &uuid_body);
+    let class_data = test_dump::crc_chunk(CHUNKS, 0x0002_fffc, payload);
+    let class_end = test_dump::short_chunk(CHUNKS, 0x0002_7fff, 0);
+    test_dump::long_chunk(CHUNKS, 0x0002_7ffa, &[uuid, class_data, class_end].concat())
 }
 
 pub(crate) fn point_payload(point: [f64; 3]) -> Vec<u8> {
@@ -279,7 +251,7 @@ pub(crate) fn mesh_payload(major: u8, minor: u8, bad_vertex_crc: bool, mapping: 
             body.extend(f64::from((index % 5 == 0) as u8).to_le_bytes());
         }
         body.extend(3_u32.to_le_bytes());
-        payload.extend(crc_chunk(0x4000_8000, &body));
+        payload.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &body));
     }
     if major == 3 && minor >= 5 && mapping {
         payload.extend([0_u8; 3]);
@@ -293,7 +265,7 @@ pub(crate) fn mesh_payload(major: u8, minor: u8, bad_vertex_crc: bool, mapping: 
         body.extend(2_u32.to_le_bytes());
         body.extend([0_u32, 1, 2, 3].into_iter().flat_map(u32::to_le_bytes));
         body.extend([0_u32, 1].into_iter().flat_map(u32::to_le_bytes));
-        payload.extend(crc_chunk(0x4000_8000, &body));
+        payload.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &body));
     }
     if major == 3 && minor >= 7 && mapping {
         payload.push(1);
@@ -306,7 +278,7 @@ pub(crate) fn mesh_payload(major: u8, minor: u8, bad_vertex_crc: bool, mapping: 
         body.extend(0_i32.to_le_bytes());
         body.extend(4_u32.to_le_bytes());
         body.extend(mesh_buffer(&doubles));
-        payload.extend(crc_chunk(0x4000_8000, &body));
+        payload.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &body));
     }
     if major == 3 && minor >= 8 && mapping {
         payload.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
@@ -318,7 +290,7 @@ fn packed_array(records: &[Vec<u8>]) -> Vec<u8> {
     let mut body = vec![0x10];
     body.extend((records.len() as i32).to_le_bytes());
     body.extend(records.concat());
-    crc_chunk(0x4000_8000, &body)
+    test_dump::crc_chunk(CHUNKS, 0x4000_8000, &body)
 }
 
 fn indexes(values: &[i32]) -> Vec<u8> {
@@ -360,7 +332,7 @@ fn brep_children_many(children: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
     }
     let mut payload = body;
     payload.extend(crc32fast::hash(&direct).to_le_bytes());
-    long_chunk(0x4000_8000, &payload)
+    test_dump::long_chunk(CHUNKS, 0x4000_8000, &payload)
 }
 
 fn region_array(records: &[Vec<u8>]) -> Vec<u8> {
@@ -371,9 +343,9 @@ fn region_array(records: &[Vec<u8>]) -> Vec<u8> {
         let mut element = 1_i32.to_le_bytes().to_vec();
         element.extend(0_i32.to_le_bytes());
         element.extend(record);
-        body.extend(crc_chunk(0x4000_8000, &element));
+        body.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &element));
     }
-    crc_chunk(0x4000_8000, &body)
+    test_dump::crc_chunk(CHUNKS, 0x4000_8000, &body)
 }
 
 pub(crate) fn brep_payload(semantic_invalid: bool) -> Vec<u8> {
@@ -555,14 +527,14 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool, is_solid: i3
     face_body.extend(0_i32.to_le_bytes());
     face_body.extend(0_i32.to_le_bytes());
     face_body.extend(0_i32.to_le_bytes());
-    payload.extend(crc_chunk(0x4000_8000, &face_body));
+    payload.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &face_body));
     payload.extend(
         [0.0_f64, 0.0, 0.0, 1.0, 1.0, 0.0]
             .into_iter()
             .flat_map(f64::to_le_bytes),
     );
-    payload.extend(crc_chunk(0x4000_8000, &[0]));
-    payload.extend(crc_chunk(0x4000_8000, &[0]));
+    payload.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &[0]));
+    payload.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &[0]));
     payload.extend(is_solid.to_le_bytes());
 
     let sides = [[0_i32, 1, 0, 1], [1_i32, 0, 0, -1]]
@@ -595,8 +567,8 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool, is_solid: i3
     let mut outer = 1_i32.to_le_bytes().to_vec();
     outer.extend(0_i32.to_le_bytes());
     outer.push(1);
-    outer.extend(crc_chunk(0x4000_8000, &topology));
-    payload.extend(crc_chunk(0x4000_8000, &outer));
+    outer.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &topology));
+    payload.extend(test_dump::crc_chunk(CHUNKS, 0x4000_8000, &outer));
     payload
 }
 
@@ -606,7 +578,7 @@ fn units_record(unit: i32) -> Vec<u8> {
     body.extend(0.01_f64.to_le_bytes());
     body.extend(0.1_f64.to_le_bytes());
     body.extend(0.001_f64.to_le_bytes());
-    crc_chunk(0x2000_8031, &body)
+    test_dump::crc_chunk(CHUNKS, 0x2000_8031, &body)
 }
 
 pub(crate) fn archive(objects: &[Vec<u8>]) -> Vec<u8> {
@@ -650,19 +622,23 @@ fn archive_version_unit_with_user(
     let start = version_field.len() - version.len();
     version_field[start..].copy_from_slice(version.as_bytes());
     bytes.extend(version_field);
-    bytes.extend(long_chunk(1, b"cadmpeg synthetic archive"));
+    bytes.extend(test_dump::long_chunk(
+        CHUNKS,
+        1,
+        b"cadmpeg synthetic archive",
+    ));
     let properties = writer_version
-        .map(|value| vec![short_chunk(0x2000_0026, value)])
+        .map(|value| vec![test_dump::short_chunk(CHUNKS, 0x2000_0026, value)])
         .unwrap_or_default();
-    bytes.extend(table(0x1000_0014, &properties));
-    bytes.extend(table(0x1000_0015, &[units_record(unit)]));
-    bytes.extend(table(0x1000_0013, objects));
+    bytes.extend(test_dump::table(CHUNKS, 0x1000_0014, &properties));
+    bytes.extend(test_dump::table(CHUNKS, 0x1000_0015, &[units_record(unit)]));
+    bytes.extend(test_dump::table(CHUNKS, 0x1000_0013, objects));
     if !user_records.is_empty() {
-        bytes.extend(table(0x1000_0017, user_records));
+        bytes.extend(test_dump::table(CHUNKS, 0x1000_0017, user_records));
     }
     let eof_offset = bytes.len();
-    bytes.extend(long_chunk(TCODE_ENDOFFILE, &[0; 8]));
-    let eof = long_chunk(TCODE_ENDOFFILE, &(bytes.len() as u64).to_le_bytes());
+    bytes.extend(test_dump::long_chunk(CHUNKS, TCODE_ENDOFFILE, &[0; 8]));
+    let eof = test_dump::long_chunk(CHUNKS, TCODE_ENDOFFILE, &(bytes.len() as u64).to_le_bytes());
     bytes[eof_offset..].copy_from_slice(&eof);
     bytes
 }

@@ -17,9 +17,9 @@ use crate::test_support::test_archive::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
     line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
     polycurve_payload, polyline_payload, singular_seam_brep_payload, ARC_CLASS, BREP_CLASS,
-    EXTRUSION_CLASS, LINE_CLASS, MESH_CLASS, POINT_CLASS, POINT_CLOUD_CLASS, POLYCURVE_CLASS,
-    POLYLINE_CLASS, SUBD_CLASS,
+    EXTRUSION_CLASS, LINE_CLASS, POINT_CLOUD_CLASS, POLYCURVE_CLASS, POLYLINE_CLASS,
 };
+use crate::test_support::test_dump::{MESH_CLASS, POINT_CLASS, SUBD_CLASS};
 use crate::RhinoCodec;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 

@@ -12,7 +12,7 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
     // substituted, and the dialect-unverified loss is charged.
     let object = support::object_record(
         1,
-        support::POINT_CLASS,
+        crate::test_support::test_dump::POINT_CLASS,
         &support::point_payload([1.0, 2.0, 3.0]),
     );
     let bytes = support::archive_version("100", &[object]);

@@ -93,7 +93,7 @@ fn source_band_history_record_with_major(
 fn history_record_with_point_geometry(archive: ArchiveVersion) -> Vec<u8> {
     let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
     geometry_payload.extend(crate::test_support::test_archive::class_wrapper(
-        crate::test_support::test_archive::POINT_CLASS,
+        crate::test_support::test_dump::POINT_CLASS,
         &crate::test_support::test_archive::point_payload([1.0, 2.0, 3.0]),
     ));
     let geometry_value = value(10, &anonymous_chunk(archive, 0, &geometry_payload));
@@ -362,7 +362,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
             ),
         ),
         (
-            crate::test_support::test_archive::POINT_CLASS,
+            crate::test_support::test_dump::POINT_CLASS,
             crate::test_support::test_archive::point_payload([1.0, 2.0, 3.0]),
         ),
     ] {
@@ -398,7 +398,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
 fn history_geometry_without_unit_binding_is_counted_and_source_located() {
     let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
     geometry_payload.extend(crate::test_support::test_archive::class_wrapper(
-        crate::test_support::test_archive::POINT_CLASS,
+        crate::test_support::test_dump::POINT_CLASS,
         &crate::test_support::test_archive::point_payload([1.0, 2.0, 3.0]),
     ));
     let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
@@ -440,7 +440,7 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
 #[test]
 fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let geometry = crate::test_support::test_archive::class_wrapper(
-        crate::test_support::test_archive::POINT_CLASS,
+        crate::test_support::test_dump::POINT_CLASS,
         &crate::test_support::test_archive::point_payload([1.0, 2.0, 3.0]),
     );
     let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
@@ -451,7 +451,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     assert_eq!(next, geometry_value.len());
     assert!(matches!(&parsed.value, Value::Geometries(values)
         if values.len() == 1
-            && values[0].class_id == Uuid::from_wire(crate::test_support::test_archive::POINT_CLASS)));
+            && values[0].class_id == Uuid::from_wire(crate::test_support::test_dump::POINT_CLASS)));
     let mut properties = BTreeMap::new();
     let mut sink = GeometrySink {
         warnings: &mut Diagnostics::new(),
@@ -559,7 +559,11 @@ fn embedded_cage_projects_exact_construction_semantics() {
             body.extend(coordinate.to_le_bytes());
         }
     }
-    let bytes = crate::test_support::test_archive::crc_chunk(ANONYMOUS, &body);
+    let bytes = crate::test_support::test_dump::crc_chunk(
+        crate::chunks::ArchiveVersion::V5,
+        ANONYMOUS,
+        &body,
+    );
     let geometry = EmbeddedGeometry {
         class_id: crate::cage::CLASS,
         class_data_range: 0..bytes.len(),
