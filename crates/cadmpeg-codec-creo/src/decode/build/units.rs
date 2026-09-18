@@ -1879,7 +1879,10 @@ fn scale_spatial_sketch_geometry(
         }
         SpatialSketchGeometryDefinition::NurbsSurface { surface } => {
             surface
-                .edit_control_points(|point| scale_point3(point, scale))
+                .edit_control_points(|point| {
+                    scale_point3(point, scale);
+                    Ok(())
+                })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(
                         "Creo spatial sketch unit normalization produced invalid B-spline control points: {error}"

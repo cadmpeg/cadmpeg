@@ -547,14 +547,16 @@ impl BsplineSurface {
     }
 
     /// Atomically edit pole coordinates while preserving the grid and finite values.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_control_points(
         &mut self,
-        mut edit: impl FnMut(&mut Point3),
+        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
         let mut points = self.control_points.clone();
         for row in &mut points {
             for point in row.iter_mut() {
-                edit(point);
+                edit(point)?;
             }
             require_finite_points_3("control_points", row.iter())?;
         }
