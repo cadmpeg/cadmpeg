@@ -1015,10 +1015,6 @@ const fn native_bool(value: bool) -> u8 {
     }
 }
 
-fn finite_vector(vector: Vector3) -> bool {
-    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-}
-
 fn patch_helix_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
@@ -1524,7 +1520,7 @@ fn patch_silhouette_definition(
     silhouette: &SilhouetteKind,
     light_direction: Vector3,
 ) -> Result<(), CodecError> {
-    if !finite_vector(light_direction) {
+    if !light_direction.is_finite() {
         return Err(CodecError::Malformed(
             "silhouette light direction must be finite".into(),
         ));
