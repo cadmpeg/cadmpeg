@@ -506,9 +506,7 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
         || !ref_length.is_finite()
         || (ref_length - 1.0).abs() > EPS_ORTHO
         || dot(axis_values, ref_values).abs() > EPS_ORTHO
-        || !origin.x.is_finite()
-        || !origin.y.is_finite()
-        || !origin.z.is_finite()
+        || !origin.is_finite()
     {
         return None;
     }

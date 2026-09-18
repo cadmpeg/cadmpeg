@@ -36,9 +36,7 @@ pub(in super::super) fn nurbs_surface_boundaries(
     let v_count = nurbs.v_count();
     let poles = nurbs.poles();
     let pole_weights = nurbs.pole_weights();
-    (poles
-        .iter()
-        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    (poles.iter().all(Point3::is_finite)
         && pole_weights.as_ref().is_none_or(|weights| {
             weights
                 .iter()
