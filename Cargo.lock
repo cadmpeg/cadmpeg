@@ -171,6 +171,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-registry",
+ "cadmpeg-test-support",
  "clap",
  "crc32fast",
  "memchr",
