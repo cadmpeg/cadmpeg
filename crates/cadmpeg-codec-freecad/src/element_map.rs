@@ -1148,7 +1148,9 @@ fn next_u64<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::*;
+    use crate::test_support::test_archive::{
+        archive, archive_entries, assert_valid_document, GEOMETRY,
+    };
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::{Cursor, Read};

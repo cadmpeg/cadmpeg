@@ -3,7 +3,7 @@
 
 #![allow(clippy::doc_markdown)]
 
-use crate::test_support::*;
+use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;

@@ -1,6 +1,6 @@
 //! Carrier admission tests for shape binders.
 
-use crate::test_support::*;
+use crate::test_support::test_archive::archive;
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};

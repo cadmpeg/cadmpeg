@@ -3,7 +3,7 @@
 
 const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
-use crate::test_support::*;
+use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{
     AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, RevolveExtent,

@@ -6,7 +6,7 @@ use crate::product::{
     list_layout, product_cycle_nodes, product_kind, product_record_index, read_real, ProductKind,
     RealWidth,
 };
-use crate::test_support::*;
+use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::{Codec, DecodeOptions};
