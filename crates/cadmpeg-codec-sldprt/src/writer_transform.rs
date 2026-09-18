@@ -164,17 +164,20 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 }
             })?;
             if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
-                let mut placed = true;
-                mesh.edit_normals(|normal| match transform.apply_vector(*normal) {
-                    Some(moved) => *normal = moved,
-                    None => placed = false,
+                mesh.edit_normals(|normal| {
+                    *normal = transform.apply_vector(*normal).ok_or_else(|| {
+                        TessellationError::EditRefused(
+                            "baked body placement produced a non-finite direction".to_string(),
+                        )
+                    })?;
+                    Ok(())
                 })
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
+                .map_err(|error| match error {
+                    TessellationError::EditRefused(_) => non_finite_vector(),
+                    error => CodecError::malformed(format_args!(
+                        "invalid transformed tessellation: {error}"
+                    )),
                 })?;
-                if !placed {
-                    return Err(non_finite_vector());
-                }
             }
         }
     }
