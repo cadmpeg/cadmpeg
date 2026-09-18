@@ -602,11 +602,7 @@ fn prepare_write(
         )));
     }
     if i32::try_from(model.points.len()).is_err()
-        || model.points.iter().any(|point| {
-            !point.position.x.is_finite()
-                || !point.position.y.is_finite()
-                || !point.position.z.is_finite()
-        })
+        || model.points.iter().any(|point| !point.position.is_finite())
     {
         return Err(CodecError::Malformed(
             "point arena exceeds native counts or contains non-finite coordinates".into(),
@@ -1542,16 +1538,12 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
         )));
     }
     if mesh.vertices().iter().any(|p| {
-        !p.x.is_finite()
-            || !p.y.is_finite()
-            || !p.z.is_finite()
+        !p.is_finite()
             || !(p.x as f32).is_finite()
             || !(p.y as f32).is_finite()
             || !(p.z as f32).is_finite()
     }) || mesh.vertex_normals().iter().any(|n| {
-        !n.x.is_finite()
-            || !n.y.is_finite()
-            || !n.z.is_finite()
+        !n.is_finite()
             || !(n.x as f32).is_finite()
             || !(n.y as f32).is_finite()
             || !(n.z as f32).is_finite()

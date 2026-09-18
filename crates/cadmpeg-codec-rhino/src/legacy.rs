@@ -1359,7 +1359,7 @@ fn legacy_surface(
             coordinate(1) * scale.value(),
             coordinate(2) * scale.value(),
         );
-        if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+        if !point.is_finite() {
             return Err(CodecError::Malformed("invalid V1 surface pole".to_string()));
         }
         control_points.push(point);
@@ -2347,7 +2347,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 reader.f64().map_err(malformed)? * scale.value(),
                 reader.f64().map_err(malformed)? * scale.value(),
             );
-            if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+            if !position.is_finite() {
                 return Err(CodecError::malformed(format_args!(
                     "V1 point at offset {offset} is not finite"
                 )));
