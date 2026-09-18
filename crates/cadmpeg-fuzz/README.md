@@ -152,23 +152,34 @@ Generators resolve that tree (and the FCStd donated fixture) from
 `CARGO_MANIFEST_DIR`, so the current working directory does not change the
 output path.
 
-All files in the tree are synthesized by the generators under `src/bin/`.
-They contain no bytes carved from CAD application output, vendor samples,
+Every file in the tree outside the seven `fcstd_*` directories is synthesized
+by the generators under `src/bin/` from literals in their own source. Those
+files contain no bytes carved from CAD application output, vendor samples,
 customer files, or other third-party CAD files. They are parser inputs, not
 public CAD corpus files. JSON seeds, malformed inputs, empty inputs, and
-truncated inputs are not CAD container files. Public CAD fixtures enter the
-repository only through the [corpus donation process](../../corpus/README.md).
+truncated inputs are not CAD container files. `generate_fcstd_seeds` fills the
+`fcstd_*` directories from the donated CC0 fixture and from entries it reads
+out of that fixture. Public CAD fixtures enter the repository only through the
+[corpus donation process](../../corpus/README.md).
 
-Run any generator from the repository root:
+The checked-in tree is the output of six generators, run from the repository
+root in this order:
 
 ```sh
-cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_submodule_seeds
-cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_all_seeds
-cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_seeds
-cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_comprehensive_seeds
-cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_fcstd_seeds
-cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_rhino_seeds
-cargo +nightly run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_iges_seeds
+cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_seeds
+cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_comprehensive_seeds
+cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_all_seeds
+cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_submodule_seeds
+cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_rhino_seeds
+cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_iges_seeds
+```
+
+The order fixes the container targets that more than one generator writes.
+Running the sequence again writes the same bytes. `generate_fcstd_seeds` is
+outside it, and rewrites the `fcstd_*` seeds from the current donated fixture:
+
+```sh
+cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_fcstd_seeds
 ```
 
 `generate_all_seeds` writes container and IR seeds, then derives deterministic
