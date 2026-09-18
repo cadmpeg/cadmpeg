@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::Point2;
 
 use crate::loss::StepLossCode;
-use crate::test_support::exchange::decode_inline;
+use crate::test_support::exchange::{decode_inline, equivalent_seam_source};
 use crate::StepCodec;
 
 const EPS_PCURVE_PARAMETERS: f64 = 1.0e-12;
@@ -607,19 +607,6 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-fn equivalent_seam_source() -> String {
-    String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
-        .expect("fixture is UTF-8")
-        .replace(
-            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
-            "#57=SEAM_CURVE('',#16,(#56,#69),.PCURVE_S1.);",
-        )
-        .replace(
-            "ENDSEC;\nEND-ISO-10303-21;",
-            "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
-        )
 }
 
 fn distinct_seam_source() -> String {
