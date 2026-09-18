@@ -834,7 +834,7 @@ fn patch_direct_stream_point(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let xyz_m = [point_mm.x * 0.001, point_mm.y * 0.001, point_mm.z * 0.001];
     edit_stream(payload, stream_ordinal, |body| {
-        if !crate::brep::patch_point(body, attr, xyz_m) {
+        if !crate::brep::topology::patch_point(body, attr, xyz_m) {
             return Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "SLDPRT sketch point {attr} is missing"
             )));
@@ -909,7 +909,7 @@ fn patch_direct_curve_body(
         .zip(endpoints)
     {
         let point = lift_point(endpoint, request.origin, request.u_axis, request.v_axis);
-        if !crate::brep::patch_point(
+        if !crate::brep::topology::patch_point(
             body,
             attr,
             [point.x * 0.001, point.y * 0.001, point.z * 0.001],
@@ -1066,7 +1066,7 @@ fn patch_direct_ellipse(
                 + major_angle.cos() * minor_radius * parameter.sin(),
         );
         let point = lift_point(local, request.origin, request.u_axis, request.v_axis);
-        if !crate::brep::patch_point(
+        if !crate::brep::topology::patch_point(
             body,
             attr,
             [point.x * 0.001, point.y * 0.001, point.z * 0.001],

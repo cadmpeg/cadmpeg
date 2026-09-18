@@ -17,6 +17,7 @@
 //! remains available.
 
 use self::index::scan_carriers;
+use self::spline::patch_nurbs_curve;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
@@ -45,12 +46,8 @@ pub(crate) mod typed;
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;
 
-pub(crate) use self::graph::{decode, decode_bodies, Brep};
-pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
-pub(crate) use self::topology::patch_point;
-
 pub(crate) mod feature_source;
-mod graph;
+pub(crate) mod graph;
 
 /// The native persistent identity shared by B-rep face attributes and display
 /// tessellation references.

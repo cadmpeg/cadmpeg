@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Trim, extend, ruled, offset, knit, filled, draft, thicken, and shell write encoders.
 
-use super::super::{format_angle_rad, format_length_mm};
+use super::super::literals::{format_angle_rad, format_length_mm};
 use super::format::{format_length_like, format_vector3};
 use super::support::{
     edge_selection_value, face_selection_value, path_source, require_same_family,

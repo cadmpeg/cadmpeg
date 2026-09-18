@@ -177,10 +177,12 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         .parameters
                         .get(name.value.as_str())
                         .is_some_and(|value| {
-                            crate::history::parse_dimension_length_mm(value).is_some_and(|value| {
-                                (value - scalar.value * 1000.0).abs()
-                                    <= EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9
-                            })
+                            crate::history::literals::parse_dimension_length_mm(value).is_some_and(
+                                |value| {
+                                    (value - scalar.value * 1000.0).abs()
+                                        <= EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9
+                                },
+                            )
                         })
                 })
                 .collect::<Vec<_>>();
@@ -416,7 +418,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             {
                 feature.parameters.insert(
                     cadmpeg_core::nonblank_literal!("D1"),
-                    crate::history::format_length_mm(depth_m * 1000.0),
+                    crate::history::literals::format_length_mm(depth_m * 1000.0),
                 );
             }
             _ => {}

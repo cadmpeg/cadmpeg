@@ -407,7 +407,7 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
     let partition_header = crate::parasolid::stream_header(&partition_payload).unwrap();
     let deltas_header = crate::parasolid::stream_header(&deltas_payload).unwrap();
 
-    let decoded = crate::brep::decode_bodies(
+    let decoded = crate::brep::graph::decode_bodies(
         &[
             (&deltas_payload, &deltas_header),
             (&partition_payload, &partition_header),

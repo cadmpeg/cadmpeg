@@ -27,7 +27,9 @@ use super::selections::{
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
+use crate::history::classify::is_history_metadata_record;
+use crate::history::literals::parse_positive_angle_rad;
+use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -401,14 +403,14 @@ pub(crate) fn bind_pattern_inputs(
                             .parameters
                             .get("D3")
                             .and_then(|value| {
-                                crate::history::parse_positive_dimension_length_mm(value)
+                                crate::history::literals::parse_positive_dimension_length_mm(value)
                             })
                             .map(|value| value / 1000.0);
                         let second_spacing_m = feature
                             .parameters
                             .get("D4")
                             .and_then(|value| {
-                                crate::history::parse_positive_dimension_length_mm(value)
+                                crate::history::literals::parse_positive_dimension_length_mm(value)
                             })
                             .map(|value| value / 1000.0);
                         directions.extend(linear_pattern_display_directions(
@@ -575,7 +577,11 @@ pub(crate) fn bind_pattern_inputs(
                         Some(cadmpeg_ir::features::LinearPatternDirection {
                             direction: *second_direction,
                             spacing: Length::new(feature.parameters.get("D4").and_then(
-                                |value| crate::history::parse_positive_dimension_length_mm(value),
+                                |value| {
+                                    crate::history::literals::parse_positive_dimension_length_mm(
+                                        value,
+                                    )
+                                },
                             )?)?,
                             count: feature.parameters.get("D2")?.parse::<u32>().ok()?,
                         })
@@ -1354,7 +1360,7 @@ fn bind_detached_spatial_relation_objects(
                 .map(|(name, value)| {
                     Some((
                         name.as_str(),
-                        crate::history::parse_dimension_length_mm(value)?,
+                        crate::history::literals::parse_dimension_length_mm(value)?,
                     ))
                 })
                 .collect::<Option<Vec<_>>>()?;

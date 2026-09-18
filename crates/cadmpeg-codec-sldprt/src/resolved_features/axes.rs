@@ -259,7 +259,7 @@ pub(super) fn typed_linear_pattern_dimensions(
         .parse::<u32>()
         .ok()
         .filter(|count| *count > 0)?;
-    let spacing = crate::history::parse_positive_dimension_length_mm(parameter(
+    let spacing = crate::history::literals::parse_positive_dimension_length_mm(parameter(
         "ParallelPlaneDistanceDim_c",
     )?)?;
     Some((Length::new(spacing)?, count))

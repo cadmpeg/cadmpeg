@@ -21,15 +21,16 @@ use crate::history::literals::{
     format_parameter_value, parse_angle_rad, parse_dimension_display_length,
     parse_parameter_literal, parse_positive_dimension_length_mm,
 };
+use crate::history::project::pattern::{pattern_form, NativePatternClass};
 use crate::history::project::{
-    neutral_feature_id, neutral_parameter_id, pattern_form, projected_parameter_names,
-    NativePatternClass,
+    neutral_feature_id, neutral_parameter_id, projected_parameter_names,
 };
 
 const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
 
 pub(crate) mod eval;
-pub(crate) use eval::*;
+
+use self::eval::{exact_integer_f64, ParameterExpressionParser};
 
 pub(crate) fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
     let feature_names = histories

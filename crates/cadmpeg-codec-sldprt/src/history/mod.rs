@@ -1,26 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` Keywords XML feature history.
 
-mod bind;
-mod classify;
-mod configuration;
+pub(crate) mod bind;
+pub(crate) mod classify;
+pub(crate) mod configuration;
 mod encode;
-mod hash;
-mod literals;
-mod parameters;
-mod project;
-mod selections;
+pub(crate) mod hash;
+pub(crate) mod literals;
+pub(crate) mod parameters;
+pub(crate) mod project;
+pub(crate) mod selections;
 pub(crate) mod write;
 
-pub(crate) use bind::*;
-pub(crate) use classify::*;
-pub(crate) use configuration::*;
-pub(crate) use hash::*;
-pub(crate) use literals::*;
-pub(crate) use parameters::*;
-pub(crate) use project::*;
-pub(crate) use selections::*;
-pub(crate) use write::*;
+use self::classify::classless_builtin_node;
 
 use crate::container::ContainerScan;
 use crate::records::FeatureSource;
@@ -343,6 +335,15 @@ pub(crate) fn enrich_scene_classes(
 
 #[cfg(test)]
 mod literal_tests {
+    use super::literals::{
+        dimension_display, format_f64_literal, parse_length_mm, parse_parameter_literal,
+    };
+    use super::parameters::eval::{
+        compare_parameter_values, exact_integer_f64, exponentiate_parameter_value,
+        ParameterExpressionParser,
+    };
+    use super::parameters::{bare_text_parameter_literal, formatted_text_dimension_literal};
+    use super::write::parameters::rewrite_parameter_expression;
     use super::*;
     use cadmpeg_ir::features::{DimensionDisplay, ParameterValue};
 

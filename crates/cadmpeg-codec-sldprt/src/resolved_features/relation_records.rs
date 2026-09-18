@@ -3,7 +3,7 @@
 use super::scalars::feature_object_name;
 use super::SKETCH_POINT_TOLERANCE;
 use crate::classification::{native_object_class, NativeClassKind};
-use crate::history::is_history_metadata_record;
+use crate::history::classify::is_history_metadata_record;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
 use crate::records::operand_tag::NativeOperandTag;
 #[cfg(test)]

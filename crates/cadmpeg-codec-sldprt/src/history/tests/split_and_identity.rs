@@ -3,12 +3,12 @@
 #![allow(clippy::unwrap_used)]
 
 use super::feature;
-use crate::history::bind_definition_sketch;
-use crate::history::derive_feature_outputs;
-use crate::history::neutral_feature_id;
-use crate::history::project_features;
-use crate::history::project_fillet;
-use crate::history::project_semantic_notes;
+use crate::history::bind::bind_definition_sketch;
+use crate::history::bind::derive_feature_outputs;
+use crate::history::project::modify::project_fillet;
+use crate::history::project::neutral_feature_id;
+use crate::history::project::project_features;
+use crate::history::project::project_semantic_notes;
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::BooleanOp;
 use cadmpeg_ir::features::DatumPlaneReference;

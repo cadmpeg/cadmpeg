@@ -220,7 +220,7 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
             Some(&"125mm,-250mm,0mm".to_string())
         );
         assert!(matches!(
-           crate::history::project_features(&histories).unwrap()[0].evaluation.definition(),
+           crate::history::project::project_features(&histories).unwrap()[0].evaluation.definition(),
            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                position: geometry_1,
                ..
@@ -306,7 +306,7 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
         Some(&"125mm,-250mm,500mm".to_string())
     );
     assert!(matches!(
-        crate::history::project_features(&histories).unwrap()[0].evaluation.definition(),
+        crate::history::project::project_features(&histories).unwrap()[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin(), Point3 {
                 x: 125.0,
                 y: -250.0,

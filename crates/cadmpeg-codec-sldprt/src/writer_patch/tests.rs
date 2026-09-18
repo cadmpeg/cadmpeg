@@ -57,7 +57,8 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
     ];
 
-    crate::brep::patch_nurbs_surface(&mut bytes, 0, old, &new, 0.001).expect("compact NURBS patch");
+    crate::brep::spline::patch_nurbs_surface(&mut bytes, 0, old, &new, 0.001)
+        .expect("compact NURBS patch");
 
     let patched = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
         .remove(&180)
@@ -649,7 +650,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
 /// A Parasolid stream whose header states a body offset past the bytes the
 /// extractor gives it: a second `PS\0\0` signature stands inside this stream's
 /// own description, so the extracted payload ends before the header does.
-/// `crate::brep::decode_bodies` refuses it by name.
+/// `crate::brep::graph::decode_bodies` refuses it by name.
 fn deltas_stream_whose_header_overruns_its_payload() -> Vec<u8> {
     const SCHEMA: &[u8] = b"SCH_SW_33103_11000";
     let mut nested = Vec::new();

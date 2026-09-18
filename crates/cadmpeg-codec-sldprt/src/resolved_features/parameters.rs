@@ -171,7 +171,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             continue;
         }
         let expression = match unit {
-            ScalarUnit::Native => crate::history::format_native_scalar(
+            ScalarUnit::Native => crate::history::parameters::format_native_scalar(
                 feature,
                 &name,
                 first,
@@ -182,18 +182,18 @@ pub(crate) fn enrich_history_parameters<'a>(
                     .parameters
                     .get(name.as_str())
                     .is_some_and(|expression| {
-                        crate::history::strip_diameter_modifier(expression).is_some()
+                        crate::history::literals::strip_diameter_modifier(expression).is_some()
                     }) =>
             {
-                crate::history::format_native_scalar(
+                crate::history::parameters::format_native_scalar(
                     feature,
                     &name,
                     first,
                     feature.parameters.get(name.as_str()).map(String::as_str),
                 )
             }
-            ScalarUnit::Length => crate::history::format_length_mm(first * 1000.0),
-            ScalarUnit::Angle => crate::history::format_angle_rad(first),
+            ScalarUnit::Length => crate::history::literals::format_length_mm(first * 1000.0),
+            ScalarUnit::Angle => crate::history::literals::format_angle_rad(first),
         };
         let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
             continue;
@@ -238,13 +238,16 @@ fn scalar_unit_from_feature_parameter(
             matches!(content, crate::records::FeatureContent::Dimension(dimension) if dimension == name)
         });
     if source_sketch_dimension {
-        return if crate::history::parse_angle_rad(expression).is_some() {
+        return if crate::history::literals::parse_angle_rad(expression).is_some() {
             Some(ScalarUnit::Angle)
         } else {
-            crate::history::parse_dimension_display_length(expression).map(|_| ScalarUnit::Length)
+            crate::history::literals::parse_dimension_display_length(expression)
+                .map(|_| ScalarUnit::Length)
         };
     }
-    if crate::history::fillet_radius_parameter_has_native_display(feature, name, expression) {
+    if crate::history::project::modify::fillet_radius_parameter_has_native_display(
+        feature, name, expression,
+    ) {
         return Some(ScalarUnit::Length);
     }
     None
@@ -266,9 +269,9 @@ pub(super) fn native_scalar_matches_discrete_parameter(
     expression: &str,
     value: f64,
 ) -> bool {
-    match crate::history::parse_native_parameter_literal(feature, name, expression) {
+    match crate::history::parameters::parse_native_parameter_literal(feature, name, expression) {
         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
-            crate::history::exact_integer_f64(expected) == Some(value)
+            crate::history::parameters::eval::exact_integer_f64(expected) == Some(value)
         }
         Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
             value == if expected { 1.0 } else { 0.0 }
@@ -332,7 +335,7 @@ pub(crate) fn sync_changed_feature_scalars(
                 let [(scalar_index, _)] = candidates.as_slice() else {
                     continue;
                 };
-                let value = match crate::history::parse_native_parameter_literal(
+                let value = match crate::history::parameters::parse_native_parameter_literal(
                     feature,
                     name.as_str(),
                     expression,

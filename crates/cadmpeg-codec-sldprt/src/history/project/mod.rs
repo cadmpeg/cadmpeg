@@ -23,21 +23,33 @@ use crate::history::classify::{
 use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame};
 use crate::records::FeatureSource;
 
-mod datum;
-mod modify;
-mod pattern;
-mod sketch;
-mod solid;
+pub(super) mod datum;
+pub(crate) mod modify;
+pub(crate) mod pattern;
+pub(super) mod sketch;
+pub(crate) mod solid;
 mod spin;
 mod surface;
 
-pub(crate) use datum::*;
-pub(crate) use modify::*;
-pub(crate) use pattern::*;
-pub(crate) use sketch::*;
-pub(crate) use solid::*;
-pub(crate) use spin::*;
-pub(crate) use surface::*;
+use self::datum::{
+    project_composite_curve, project_datum_axis, project_datum_coordinate_system,
+    project_datum_plane, project_datum_point, project_equation_curve, project_helix,
+    project_native_axis_helix, project_offset_plane, project_projected_curve, project_wrap,
+};
+use self::modify::{
+    project_chamfer, project_combine, project_cut_with_surface, project_delete_body,
+    project_delete_face, project_dome, project_draft, project_fillet, project_flex,
+    project_move_body, project_move_face, project_replace_face, project_scale, project_shell,
+    project_thicken,
+};
+use self::pattern::project_pattern;
+use self::sketch::{project_cosmetic_thread, project_split_face, sketch_block_placement};
+use self::solid::{project_extrude, project_hole};
+use self::spin::{project_loft, project_revolve, project_rib, project_sweep};
+use self::surface::{
+    project_extend_surface, project_filled_surface, project_knit_surface, project_offset_surface,
+    project_ruled_surface, project_trim_surface,
+};
 
 const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
     "Profile",

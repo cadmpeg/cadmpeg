@@ -14,9 +14,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::history::bind::bind_unique_sketch_feature;
 use crate::history::literals::valid_plane_frame;
-use crate::history::parameters::{
-    apply_evaluated_parameters, exact_integer_f64, project_parameters,
-};
+use crate::history::parameters::eval::exact_integer_f64;
+use crate::history::parameters::{apply_evaluated_parameters, project_parameters};
 use crate::history::project::project_features;
 
 const EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9: f64 = 1.0e-9;
@@ -389,7 +388,7 @@ pub(crate) fn bind_configuration_topology_selections(
                 .collect::<Vec<_>>()
         };
         if body_membership_resolved {
-            let topology_selection_inputs = crate::history::TopologySelectionInputs {
+            let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
                 bodies: &ir.model.bodies,
                 faces: &ir.model.faces,
                 surfaces: &ir.model.surfaces,
@@ -398,7 +397,7 @@ pub(crate) fn bind_configuration_topology_selections(
                 lanes: scoped_lanes,
                 face_identities,
             };
-            crate::history::bind_topology_selections(
+            crate::history::selections::bind_topology_selections(
                 &mut features,
                 histories,
                 &topology_selection_inputs,

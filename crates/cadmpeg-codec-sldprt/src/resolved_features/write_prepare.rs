@@ -292,7 +292,7 @@ fn patch_spatial_sketches(
         }
     }
 
-    let mut features = crate::history::project_features(&native.feature_histories)?;
+    let mut features = crate::history::project::project_features(&native.feature_histories)?;
     let (projected_sketches, mut projected_entities) = spatial_sketches(
         &mut features,
         &native.feature_histories,

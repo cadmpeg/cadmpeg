@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Numeric and vector formatters for native Keywords property values.
 
-use super::super::{format_angle_rad, format_f64_literal, format_length_mm};
+use super::super::literals::{format_angle_rad, format_f64_literal, format_length_mm};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_DEGREE_ROUND: f64 = 1.0e-12;

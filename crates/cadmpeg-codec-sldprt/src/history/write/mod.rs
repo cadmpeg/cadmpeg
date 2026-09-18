@@ -16,14 +16,13 @@ use crate::history::hash::{feature_hash, history_hash, native_parameter_hash};
 use crate::history::parameters::expression_identifier_tokens;
 use crate::history::project::{project_feature_model, project_features, FeatureProjection};
 
-mod configurations;
+pub(crate) mod configurations;
 pub(crate) mod features;
-mod parameters;
+pub(crate) mod parameters;
 mod xml;
 
-pub(crate) use configurations::*;
-pub(crate) use features::*;
-pub(crate) use parameters::*;
+use self::features::sync_neutral_features;
+use self::parameters::rewrite_parameter_expression;
 
 /// Collect retained feature names changed by the neutral model.
 pub(crate) fn feature_name_changes(

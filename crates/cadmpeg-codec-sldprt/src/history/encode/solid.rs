@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude and hole write encoders.
 
-use super::super::{format_angle_rad, format_length_mm};
+use super::super::literals::{format_angle_rad, format_length_mm};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::{
     face_selection_value, profile_source, resolved_boolean_op, vertex_selection_value,

@@ -1,6 +1,6 @@
 //! Stable digests over projected sketches, constraints and lanes.
 
-use crate::history::hash_records;
+use crate::history::hash::hash_records;
 use cadmpeg_core::CodecError;
 
 /// Stable hash of neutral sketch records.
