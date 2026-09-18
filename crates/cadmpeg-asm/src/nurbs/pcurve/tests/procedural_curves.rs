@@ -1,7 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::kernel_header::RefWidth;
+use crate::nurbs::pcurve::tests::curve_block;
+use crate::nurbs::pcurve::tests::push_f64;
+use crate::nurbs::pcurve::tests::push_ident;
+use crate::nurbs::pcurve::tests::push_int;
+use crate::nurbs::pcurve::tests::push_position;
+use crate::nurbs::pcurve::tests::push_string;
+use crate::nurbs::pcurve::tests::push_vector;
+use crate::nurbs::pcurve::tests::surface_block;
+use crate::nurbs::proc_curve::compound_patch_layout;
+use crate::nurbs::proc_curve::extrusion_patch_layout;
+use crate::nurbs::proc_curve::helix_patch_layout;
+use crate::nurbs::proc_curve::subset_patch_layout;
+use crate::nurbs::proc_curve::vector_offset_patch_layout;
+use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
+use crate::nurbs::toks::lex_test_span;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn extrusion_layout_walks_modern_and_legacy_names_at_both_widths() {

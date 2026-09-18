@@ -1,7 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::kernel_header::RefWidth;
+use crate::nurbs::core::curve_cache;
+use crate::nurbs::core::decode_curve_cache;
+use crate::nurbs::core::decode_surface_cache;
+use crate::nurbs::core::final_curve_patch_layout;
+use crate::nurbs::core::final_surface_patch_layout;
+use crate::nurbs::core::first_curve_patch_layout;
+use crate::nurbs::core::surface_cache;
+use crate::nurbs::core::surface_patch_layout_at;
+use crate::nurbs::pcurve::tests::curve_block;
+use crate::nurbs::pcurve::tests::curve_block_with_endpoint;
+use crate::nurbs::pcurve::tests::pcurve_block;
+use crate::nurbs::pcurve::tests::push_f64;
+use crate::nurbs::pcurve::tests::push_ident;
+use crate::nurbs::pcurve::tests::push_int;
+use crate::nurbs::pcurve::tests::push_string;
+use crate::nurbs::pcurve::tests::push_vector;
+use crate::nurbs::pcurve::tests::surface_block;
+use crate::nurbs::pcurve::tests::surface_block_with_x_offset;
+use crate::nurbs::proc_curve::procedural_curve_resolving_refs;
+use crate::nurbs::toks::lex_test_span;
+use crate::nurbs::toks::test_table;
 
 #[test]
 fn curve_cache_decodes_in_both_integer_widths() {
