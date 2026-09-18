@@ -128,4 +128,28 @@ mod tests {
         }
         assert!(OperationStateIndex::read_at(&[0, 0], 1, usize::MAX).is_none());
     }
+
+    #[test]
+    fn operation_state_indices_retain_each_admitted_form() {
+        let bytes = [
+            0x7f, 0x83, 0xf9, 0x90, 0x12, 0x34, 0xa3, 0x1f, 0x85, 0xf1, 0x04, 0x2d, 0xff,
+        ];
+        let expected = [
+            (Some(0x7f), 1),
+            (Some(0x3f9), 2),
+            (Some(0x1234), 3),
+            (Some(0x31f85), 3),
+            (Some(0x42d), 3),
+            (None, 1),
+        ];
+
+        let mut at = 0;
+        for (value, width) in expected {
+            let token = OperationStateIndex::read_at(&bytes, at, 0).expect("complete state index");
+            assert_eq!(token.token().map(StateIndexToken::value), value);
+            assert_eq!(token.raw(), &bytes[at..at + width]);
+            at += width;
+        }
+        assert_eq!(at, bytes.len());
+    }
 }

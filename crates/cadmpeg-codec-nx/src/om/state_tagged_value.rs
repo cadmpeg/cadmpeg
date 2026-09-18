@@ -144,4 +144,21 @@ mod tests {
                 .contains(field));
         }
     }
+
+    #[test]
+    fn operation_state_tagged_values_retain_width_and_value() {
+        let cases = [
+            ([0xaa, 0x60, 0x6b, 0, 0], 0x000a_606b, 3),
+            ([0xc0, 0x1a, 0x3f, 0x40, 0], 0x001a_3f40, 4),
+            ([0xe0, 0x01, 0x02, 0x03, 0x04], 0x0102_0304, 5),
+            ([0xff, 0x80, 0x00, 0x00, 0x01], 0x8000_0001, 5),
+        ];
+
+        for (raw, value, width) in cases {
+            let token = StateTaggedValue::read_at(&raw, 0).expect("complete tagged value");
+            assert_eq!(token.value(), value);
+            assert_eq!(token.marker(), raw[0]);
+            assert_eq!(token.raw(), &raw[..width]);
+        }
+    }
 }
