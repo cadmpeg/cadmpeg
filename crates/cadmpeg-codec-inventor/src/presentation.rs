@@ -538,8 +538,8 @@ fn parse_graphics_primary_color_style(
         "graphics primary-color legacy header padding",
     )?;
     let mut controls = [0; 7];
-    for (index, value) in controls.iter_mut().enumerate() {
-        *value = cursor.u16(&format!("graphics primary-color control {index}"))?;
+    for value in &mut controls {
+        *value = cursor.u16("graphics primary-color control")?;
     }
     cursor.skip(
         legacy_block_len(version),
@@ -550,11 +550,9 @@ fn parse_graphics_primary_color_style(
         cursor.u8("graphics primary-color header 1")?,
     ];
     let mut colors = [[0.0; 4]; 4];
-    for (color_index, color) in colors.iter_mut().enumerate() {
-        for (component_index, component) in color.iter_mut().enumerate() {
-            *component = cursor.f32(&format!(
-                "graphics primary-color {color_index} component {component_index}"
-            ))?;
+    for color in &mut colors {
+        for component in color {
+            *component = cursor.f32("graphics primary-color component")?;
         }
         cursor.skip(
             legacy_block_len(version),
@@ -651,8 +649,8 @@ fn parse_graphics_face(
         "graphics-face legacy visibility padding",
     )?;
     let mut bounds = [0.0; 6];
-    for (index, value) in bounds.iter_mut().enumerate() {
-        *value = cursor.f64(&format!("graphics-face bound {index}"))?;
+    for value in &mut bounds {
+        *value = cursor.f64("graphics-face bound")?;
     }
     cursor.skip(
         legacy_block_len(version),
@@ -687,6 +685,18 @@ fn parse_graphics_face(
     })
 }
 
+/// Field names of the seven related references a default style states, in
+/// wire order.
+const RELATED_REFERENCE_FIELDS: [&str; 7] = [
+    "default-style related reference 0",
+    "default-style related reference 1",
+    "default-style related reference 2",
+    "default-style related reference 3",
+    "default-style related reference 4",
+    "default-style related reference 5",
+    "default-style related reference 6",
+];
+
 fn parse_default_style<'a>(
     _ctx: &DecodeContext<'a>,
     source: View<'a>,
@@ -701,9 +711,12 @@ fn parse_default_style<'a>(
     )?;
     let material_reference = cursor.reference("default-style material reference")?;
     let rendering_style_reference = cursor.reference("default-style rendering reference")?;
-    let mut related_references = [0; 7];
-    for (index, reference) in related_references.iter_mut().enumerate() {
-        *reference = cursor.reference(&format!("default-style related reference {index}"))?;
+    let mut related_references = [0; RELATED_REFERENCE_FIELDS.len()];
+    for (field, reference) in RELATED_REFERENCE_FIELDS
+        .into_iter()
+        .zip(related_references.iter_mut())
+    {
+        *reference = cursor.reference(field)?;
     }
     let state = cursor.u8("default-style state")?;
     cursor.skip(
@@ -833,15 +846,18 @@ impl<'a> Cursor<'a> {
         Self { source }
     }
 
-    fn take(&mut self, len: usize, _field: &str) -> Result<&'a [u8], CodecError> {
-        Ok(self.source.req_take(len)?)
+    fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
+        Ok(self
+            .source
+            .req_take(len)
+            .map_err(|error| error.during(field))?)
     }
 
-    fn skip(&mut self, len: usize, field: &str) -> Result<(), CodecError> {
+    fn skip(&mut self, len: usize, field: &'static str) -> Result<(), CodecError> {
         self.take(len, field).map(|_| ())
     }
 
-    fn zeroes(&mut self, len: usize, field: &str) -> Result<(), CodecError> {
+    fn zeroes(&mut self, len: usize, field: &'static str) -> Result<(), CodecError> {
         if self.take(len, field)?.iter().any(|byte| *byte != 0) {
             return Err(CodecError::malformed(format_args!(
                 "Inventor presentation {field} is not zero-filled"
@@ -850,27 +866,39 @@ impl<'a> Cursor<'a> {
         Ok(())
     }
 
-    fn u8(&mut self, _field: &str) -> Result<u8, CodecError> {
-        Ok(self.source.req_u8()?)
+    fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
+        Ok(self.source.req_u8().map_err(|error| error.during(field))?)
     }
 
-    fn u16(&mut self, _field: &str) -> Result<u16, CodecError> {
-        Ok(self.source.req_u16_le()?)
+    fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
+        Ok(self
+            .source
+            .req_u16_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    fn u32(&mut self, _field: &str) -> Result<u32, CodecError> {
-        Ok(self.source.req_u32_le()?)
+    fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
+        Ok(self
+            .source
+            .req_u32_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    fn f64(&mut self, _field: &str) -> Result<f64, CodecError> {
-        Ok(self.source.req_f64_le()?)
+    fn f64(&mut self, field: &'static str) -> Result<f64, CodecError> {
+        Ok(self
+            .source
+            .req_f64_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    fn f32(&mut self, _field: &str) -> Result<f32, CodecError> {
-        Ok(self.source.req_f32_le()?)
+    fn f32(&mut self, field: &'static str) -> Result<f32, CodecError> {
+        Ok(self
+            .source
+            .req_f32_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    fn reference(&mut self, field: &str) -> Result<u32, CodecError> {
+    fn reference(&mut self, field: &'static str) -> Result<u32, CodecError> {
         let value = self.u32(field)?;
         if value != 0 && value & 0x8000_0000 == 0 {
             return Err(CodecError::malformed(format_args!(
@@ -880,7 +908,7 @@ impl<'a> Cursor<'a> {
         Ok(value & 0x7fff_ffff)
     }
 
-    fn node_reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {
+    fn node_reference(&mut self, field: &'static str) -> Result<PmDcReference, CodecError> {
         let value = self.u32(field)?;
         Ok(PmDcReference {
             index: value & 0x7fff_ffff,
@@ -891,29 +919,29 @@ impl<'a> Cursor<'a> {
     fn reference_list(
         &mut self,
         ctx: &DecodeContext<'_>,
-        field: &str,
+        field: &'static str,
     ) -> Result<PmDcPairedReferenceList<[u32; 2]>, CodecError> {
         let marker = [
-            self.u16(&format!("{field} marker 0"))?,
-            self.u16(&format!("{field} marker 1"))?,
+            self.u16("graphics reference-list marker 0")?,
+            self.u16("graphics reference-list marker 1")?,
         ];
         if marker != [2, 0x3000] {
             return Err(CodecError::malformed(format_args!(
                 "PmGraphics {field} has marker {marker:?}, expected [2, 12288]"
             )));
         }
-        let count = self.u32(&format!("{field} count"))? as usize;
+        let count = self.u32("graphics reference-list count")? as usize;
         ctx.charge_collection_items(count as u64, "admit Inventor PmGraphics references")?;
         if count == 0 {
             return Ok(PmDcPairedReferenceList::default());
         }
         let metadata = [
-            self.u32(&format!("{field} metadata 0"))?,
-            self.u32(&format!("{field} metadata 1"))?,
+            self.u32("graphics reference-list metadata 0")?,
+            self.u32("graphics reference-list metadata 1")?,
         ];
         let mut references = Vec::with_capacity(count);
-        for index in 0..count {
-            references.push(self.node_reference(&format!("{field} reference {index}"))?);
+        for _ in 0..count {
+            references.push(self.node_reference("graphics reference-list entry")?);
         }
         PmDcPairedReferenceList::new(Some(metadata), references).ok_or_else(|| {
             CodecError::Malformed(
@@ -922,8 +950,12 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    fn utf16(&mut self, ctx: &DecodeContext<'_>, field: &str) -> Result<String, CodecError> {
-        let units = self.u32(&format!("{field} length"))? as usize;
+    fn utf16(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        field: &'static str,
+    ) -> Result<String, CodecError> {
+        let units = self.u32(field)? as usize;
         if units > 1_048_576 {
             return Err(CodecError::malformed(format_args!(
                 "Inventor presentation {field} exceeds 1048576 UTF-16 code units"
@@ -945,7 +977,7 @@ impl<'a> Cursor<'a> {
             })
     }
 
-    fn guid(&mut self, field: &str) -> Result<String, CodecError> {
+    fn guid(&mut self, field: &'static str) -> Result<String, CodecError> {
         let first = self.u32(field)?;
         let second = self.u16(field)?;
         let third = self.u16(field)?;
@@ -1394,5 +1426,95 @@ mod tests {
         for unit in units {
             bytes.extend(unit.to_le_bytes());
         }
+    }
+
+    /// The diagnostic a truncated read produces, without an unwrap on the route.
+    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
+        match result {
+            Ok(value) => format!("the read succeeded with {value:?}"),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    #[test]
+    fn truncated_presentation_reads_name_the_field() {
+        let empty = &[];
+        for (field, text) in [
+            (
+                "graphics primary-color state",
+                truncation(
+                    Cursor::new(View::over_retained(empty)).u8("graphics primary-color state"),
+                ),
+            ),
+            (
+                "graphics-face header id",
+                truncation(Cursor::new(View::over_retained(empty)).u16("graphics-face header id")),
+            ),
+            (
+                "graphics-face key",
+                truncation(Cursor::new(View::over_retained(empty)).u32("graphics-face key")),
+            ),
+            (
+                "graphics-face bound",
+                truncation(Cursor::new(View::over_retained(empty)).f64("graphics-face bound")),
+            ),
+            (
+                "graphics primary-color component",
+                truncation(
+                    Cursor::new(View::over_retained(empty)).f32("graphics primary-color component"),
+                ),
+            ),
+            (
+                "graphics-face legacy object padding",
+                truncation(
+                    Cursor::new(View::over_retained(empty))
+                        .take(4, "graphics-face legacy object padding"),
+                ),
+            ),
+            (
+                "default-style suffix padding",
+                truncation(
+                    Cursor::new(View::over_retained(empty))
+                        .zeroes(8, "default-style suffix padding"),
+                ),
+            ),
+            (
+                "default-style material reference",
+                truncation(
+                    Cursor::new(View::over_retained(empty))
+                        .reference("default-style material reference"),
+                ),
+            ),
+            (
+                "graphics-face styles reference",
+                truncation(
+                    Cursor::new(View::over_retained(empty))
+                        .node_reference("graphics-face styles reference"),
+                ),
+            ),
+            (
+                "rendering-style guid",
+                truncation(Cursor::new(View::over_retained(empty)).guid("rendering-style guid")),
+            ),
+        ] {
+            assert_eq!(
+                text,
+                format!("truncated input during {field} at space 0 offset 0")
+            );
+        }
+    }
+
+    #[test]
+    fn a_truncated_graphics_record_names_the_field_it_stopped_in() {
+        let mut bytes = Vec::new();
+        bytes.extend(31_u32.to_le_bytes());
+        bytes.extend(32_u16.to_le_bytes());
+        assert_eq!(
+            truncation(parse_graphics_primary_color_style(
+                View::over_retained(&bytes),
+                26
+            )),
+            "truncated input during graphics primary-color control at space 0 offset 6"
+        );
     }
 }
