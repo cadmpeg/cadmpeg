@@ -1,10 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args
-)]
 use crate::design::decode::operands::bind_edge_operand_candidates;
 use crate::design::decode::operands::bind_face_operand_candidates;
 use crate::design::decode::operands::face_recipe_program_kind;
