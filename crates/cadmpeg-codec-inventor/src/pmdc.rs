@@ -16,6 +16,15 @@ pub(crate) fn push_hex(text: &mut String, bytes: &[u8]) {
     }
 }
 
+/// Builds an Inventor type identifier from the `time_low` field of its GUID.
+pub(crate) const fn inventor_id(time_low: u32) -> [u8; 16] {
+    let first = time_low.to_le_bytes();
+    [
+        first[0], first[1], first[2], first[3], 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc,
+        0x06, 0x63, 0xdc, 0x09,
+    ]
+}
+
 pub(crate) fn type_id_string(value: [u8; 16]) -> String {
     let mut result = String::with_capacity(32);
     push_hex(&mut result, &value);
