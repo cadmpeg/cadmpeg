@@ -459,7 +459,7 @@ fn parse_extended_record_trailer(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
 ) -> Result<(), CodecError> {
-    if cursor.u8("record trailer presence")? == 0 {
+    if !cursor.record_trailer_presence()? {
         return Ok(());
     }
     let property_count = cursor.u32("record trailer property count")?;
@@ -602,19 +602,21 @@ impl<'a> Cursor<'a> {
         self.source.window().len().saturating_sub(self.position)
     }
 
-    fn u8(&mut self, name: &str) -> Result<u8, CodecError> {
-        let value = *self
-            .source
-            .window()
-            .get(self.position)
-            .ok_or_else(|| CodecError::malformed(format_args!("truncated RSe {name}")))?;
+    /// Reads the extended record trailer presence flag, which states only
+    /// whether a trailer follows.
+    fn record_trailer_presence(&mut self) -> Result<bool, CodecError> {
+        let value =
+            *self.source.window().get(self.position).ok_or_else(|| {
+                CodecError::Malformed("truncated RSe record trailer presence".into())
+            })?;
         self.position += 1;
-        if name == "record trailer presence" && value > 1 {
-            return Err(CodecError::malformed(format_args!(
+        match value {
+            0 => Ok(false),
+            1 => Ok(true),
+            value => Err(CodecError::malformed(format_args!(
                 "RSe record trailer presence is {value}"
-            )));
+            ))),
         }
-        Ok(value)
     }
 
     fn u16(&mut self, name: &str) -> Result<u16, CodecError> {
@@ -720,6 +722,53 @@ mod tests {
             with_view(&bulk, |ctx, bulk_view| {
                 assert!(frame_bulk_records(ctx, bulk_view, &tables, 18).is_err());
             });
+        });
+    }
+
+    #[test]
+    fn only_zero_and_one_state_extended_record_trailer_presence() {
+        for byte in 0..=u8::MAX {
+            let bytes = [byte];
+            with_view(&bytes, |ctx, view| {
+                let mut cursor = Cursor::new(view);
+                let observed = match cursor.record_trailer_presence() {
+                    Ok(true) => "present".to_owned(),
+                    Ok(false) => "absent".to_owned(),
+                    Err(error) => error.to_string(),
+                };
+                let expected = match byte {
+                    0 => "absent".to_owned(),
+                    1 => "present".to_owned(),
+                    value => format!("malformed container: RSe record trailer presence is {value}"),
+                };
+                assert_eq!(observed, expected);
+
+                let mut record = Cursor::new(view);
+                let through_record = match parse_extended_record_trailer(ctx, &mut record) {
+                    Ok(()) => "accepted".to_owned(),
+                    Err(error) => error.to_string(),
+                };
+                if byte > 1 {
+                    assert_eq!(through_record, expected);
+                } else {
+                    assert_ne!(through_record, expected);
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn an_absent_record_trailer_presence_byte_is_truncation() {
+        with_view(&[], |_ctx, view| {
+            let mut cursor = Cursor::new(view);
+            let observed = match cursor.record_trailer_presence() {
+                Ok(present) => format!("read {present}"),
+                Err(error) => error.to_string(),
+            };
+            assert_eq!(
+                observed,
+                "malformed container: truncated RSe record trailer presence"
+            );
         });
     }
 
