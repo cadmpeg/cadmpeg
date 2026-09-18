@@ -47,11 +47,9 @@ pub enum Check {
     PayloadIntegrity,
     /// A tessellation payload is malformed.
     Tessellation,
-    /// Geometry disagrees with what it supports, or carries a coordinate no
-    /// geometry can have: an edge's curve endpoints or a pcurve's surface
-    /// image miss the edge's vertex positions, a sketch profile or a sketch
-    /// constraint has no consistent solution, or a point position is not a
-    /// finite coordinate triple.
+    /// Geometry disagrees with what it supports: an edge's curve endpoints or
+    /// a pcurve's surface image miss the edge's vertex positions, or a sketch
+    /// profile or a sketch constraint has no consistent solution.
     GeometricConsistency,
     /// Arena counts / cross-references are internally inconsistent.
     Counts,

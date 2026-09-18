@@ -571,6 +571,28 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     assert!(error.contains("states no regeneration parent"), "{error}");
 }
 
+#[test]
+fn a_document_holding_a_non_finite_coordinate_has_no_canonical_json() {
+    let finite = unit_cube().expect("valid unit cube fixture");
+    let text = finite
+        .to_canonical_json()
+        .expect("a finite document writes");
+    assert!(text.contains("\"x\": 0.0") || text.contains("\"x\": 1.0"));
+
+    let mut non_finite = unit_cube().expect("valid unit cube fixture");
+    crate::test_support::push_texture_offset(&mut non_finite, f64::NAN);
+    assert!(matches!(
+        non_finite.to_canonical_json(),
+        Err(crate::hash::finite_json::CanonicalJsonError::NonFinite { .. })
+    ));
+
+    non_finite.model.appearances[0].textures[0].mapping.u_offset = 1.0;
+    let text = non_finite
+        .to_canonical_json()
+        .expect("a finite document writes");
+    assert!(!text.contains("\"u_offset\": null"));
+}
+
 /// The live document route reads `feature.name` through
 /// [`crate::features::FeatureRowWire`], and absence is the one spelling that
 /// route produces: `FeatureWriteWire` omits the key for `None`. A stated
