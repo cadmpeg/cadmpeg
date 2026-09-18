@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: generated source.
 
-use super::{
-    class_911_surface_row, simple_drilled_recipe_surface_rows, simple_drilled_recipe_table,
-};
+use super::{simple_drilled_recipe_surface_rows, simple_drilled_recipe_table, surface_row};
 use crate::decode::analytic::carriers::rowless_round_face_orientations;
 use crate::decode::feature_history::draft::schema_feature_definition;
 use crate::decode::feature_history::link::{
@@ -832,11 +830,9 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         )
         .with_surface_ids([24]),
     );
-    scan.surfaces.rows.push(class_911_surface_row(
-        9,
-        24,
-        crate::surface::SurfaceKind::Cylinder,
-    ));
+    scan.surfaces
+        .rows
+        .push(surface_row(24, 9, crate::surface::SurfaceKind::Cylinder));
     assert!(matches!(
         schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole").expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
             shape,
@@ -1183,9 +1179,9 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
     )
     .with_surface_ids([11, 13, 15]);
     let rows = [
-        class_911_surface_row(9, 11, crate::surface::SurfaceKind::Cylinder),
-        class_911_surface_row(9, 13, crate::surface::SurfaceKind::Plane),
-        class_911_surface_row(9, 15, crate::surface::SurfaceKind::Cylinder),
+        surface_row(11, 9, crate::surface::SurfaceKind::Cylinder),
+        surface_row(13, 9, crate::surface::SurfaceKind::Plane),
+        surface_row(15, 9, crate::surface::SurfaceKind::Cylinder),
     ];
     let frame = crate::surface::PlaneLocalSystem {
         surface_id: 13,

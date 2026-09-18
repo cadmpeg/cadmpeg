@@ -335,6 +335,7 @@ mod tests {
         saved_section_entity_fallback_allowed, saved_section_line_witness_allowed,
         saved_section_ordinary_geometry_allowed,
     };
+    use crate::decode::tests::opaque;
 
     fn definition(
         segments: Option<crate::feature::FeatureSegmentTable>,
@@ -390,22 +391,6 @@ mod tests {
             center_id: 1,
             radius_ref: 2,
             external_id,
-            offset: external_id as usize,
-        }
-    }
-
-    fn opaque(external_id: u32) -> crate::feature::FeatureOpaqueSegment {
-        crate::feature::FeatureOpaqueSegment {
-            kind: 25,
-            directions: [None; 3],
-            point_ids: [None; 2],
-            center_id: None,
-            arc_orientation: None,
-            vertical_horizontal: None,
-            radius_ref: None,
-            radius2_ref: None,
-            external_id,
-            body: Vec::new(),
             offset: external_id as usize,
         }
     }

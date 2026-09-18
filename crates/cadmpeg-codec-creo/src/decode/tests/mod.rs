@@ -81,9 +81,9 @@ pub(super) fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScal
     }
 }
 
-pub(super) fn class_911_surface_row(
-    feature_id: u32,
+pub(super) fn surface_row(
     id: u32,
+    feature_id: u32,
     kind: crate::surface::SurfaceKind,
 ) -> crate::surface::SurfaceRow {
     crate::surface::SurfaceRow {
@@ -141,10 +141,10 @@ pub(super) fn simple_drilled_recipe_surface_rows(
     feature_id: u32,
 ) -> Vec<crate::surface::SurfaceRow> {
     vec![
-        class_911_surface_row(feature_id, 11, crate::surface::SurfaceKind::Cone),
-        class_911_surface_row(feature_id, 12, crate::surface::SurfaceKind::Cone),
-        class_911_surface_row(feature_id, 13, crate::surface::SurfaceKind::Cylinder),
-        class_911_surface_row(feature_id, 14, crate::surface::SurfaceKind::Cylinder),
+        surface_row(11, feature_id, crate::surface::SurfaceKind::Cone),
+        surface_row(12, feature_id, crate::surface::SurfaceKind::Cone),
+        surface_row(13, feature_id, crate::surface::SurfaceKind::Cylinder),
+        surface_row(14, feature_id, crate::surface::SurfaceKind::Cylinder),
     ]
 }
 
@@ -204,4 +204,20 @@ pub(super) fn section_skamp_constraints(
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
     section_skamp_constraints_for_geometry(definition, sketch, None)
+}
+
+pub(super) fn opaque(external_id: u32) -> crate::feature::FeatureOpaqueSegment {
+    crate::feature::FeatureOpaqueSegment {
+        kind: 25,
+        directions: [None; 3],
+        point_ids: [None; 2],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: external_id as usize,
+    }
 }

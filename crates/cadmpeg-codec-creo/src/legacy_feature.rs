@@ -290,36 +290,9 @@ mod tests {
     use super::{scan, LegacyRoundRadius};
     use crate::curve::CurveTopologyRow;
     use crate::legacy::{
-        IntegerPayload, ObjectPayload, ObjectRecord, Persistence, Real, RealPayload, ValueRecord,
+        IntegerPayload, ObjectPayload, Persistence, Real, RealPayload, ValueRecord,
     };
-
-    fn fixture_offset(id: &str) -> usize {
-        use std::hash::{Hash, Hasher};
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        id.hash(&mut hash);
-        hash.finish() as usize
-    }
-    fn object(
-        id: &str,
-        name: &str,
-        parent: Option<&str>,
-        mut payload: ObjectPayload,
-    ) -> ObjectRecord {
-        if let ObjectPayload::Array { elements, .. } = &mut payload {
-            for element in elements {
-                *element = crate::legacy::object_node_id(fixture_offset(element));
-            }
-        }
-        ObjectRecord {
-            name: name.to_string(),
-            attribute_id: 0,
-            scope_offset: 0,
-            parent: parent.map(fixture_offset),
-            depth: 0,
-            payload,
-            offset: fixture_offset(id),
-        }
-    }
+    use crate::test_support::{fixture_offset, object};
 
     fn integer(
         parent: &str,

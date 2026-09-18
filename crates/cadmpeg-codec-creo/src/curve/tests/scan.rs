@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 use crate::test_support::build_prt;
 use crate::test_support::visibgeom_payload;
+use crate::test_support::world;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
@@ -448,16 +449,6 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
 
 #[test]
 fn scan_validates_fc05_circle_from_record_points() {
-    fn world(payload: &mut Vec<u8>, value: f64) {
-        let raw = value.to_be_bytes();
-        payload.push(match raw[0] {
-            0x40 => 0x46,
-            0xc0 => 0x2d,
-            _ => panic!("generated FC05 value must use a world-token exponent"),
-        });
-        payload.extend_from_slice(&raw[1..]);
-    }
-
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
     for [x, z, t, y] in [

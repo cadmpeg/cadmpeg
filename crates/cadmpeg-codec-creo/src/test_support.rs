@@ -259,3 +259,45 @@ pub(crate) fn legacy_layout() -> crate::container::Layout {
     .framing
     .layout
 }
+
+/// Stable synthetic byte offset for a legacy object identifier.
+pub(crate) fn fixture_offset(id: &str) -> usize {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    id.hash(&mut hash);
+    hash.finish() as usize
+}
+
+/// Legacy object record placed at [`fixture_offset`] of `id`.
+pub(crate) fn object(
+    id: &str,
+    name: &str,
+    parent: Option<&str>,
+    mut payload: crate::legacy::ObjectPayload,
+) -> crate::legacy::ObjectRecord {
+    if let crate::legacy::ObjectPayload::Array { elements, .. } = &mut payload {
+        for element in elements {
+            *element = crate::legacy::object_node_id(fixture_offset(element));
+        }
+    }
+    crate::legacy::ObjectRecord {
+        name: name.to_string(),
+        attribute_id: 0,
+        scope_offset: 0,
+        parent: parent.map(fixture_offset),
+        depth: 0,
+        payload,
+        offset: fixture_offset(id),
+    }
+}
+
+/// Append an `FC05` world-token scalar to a generated payload.
+pub(crate) fn world(payload: &mut Vec<u8>, value: f64) {
+    let raw = value.to_be_bytes();
+    payload.push(match raw[0] {
+        0x40 => 0x46,
+        0xc0 => 0x2d,
+        _ => panic!("generated FC05 value must use a world-token exponent"),
+    });
+    payload.extend_from_slice(&raw[1..]);
+}

@@ -167,6 +167,18 @@ impl<'a> CodeReader<'a> {
 
 #[cfg(test)]
 mod tests {
+    fn codes(values: &[u16]) -> Vec<u8> {
+        let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
+        for (index, value) in values.iter().copied().enumerate() {
+            for bit in 0..9 {
+                bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
+                    .expect("required invariant")
+                    << ((index * 9 + bit) % 8);
+            }
+        }
+        bytes
+    }
+
     use super::*;
 
     #[test]
@@ -190,18 +202,6 @@ mod tests {
 
     #[test]
     fn non_block_mode_starts_with_literal_dictionary_slot_256() {
-        fn codes(values: &[u16]) -> Vec<u8> {
-            let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
-            for (index, value) in values.iter().copied().enumerate() {
-                for bit in 0..9 {
-                    bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
-                        .expect("required invariant")
-                        << ((index * 9 + bit) % 8);
-                }
-            }
-            bytes
-        }
-
         let mut stream = vec![0x1f, 0x9d, 0x10];
         stream.extend(codes(&[u16::from(b'A'), u16::from(b'A'), 256]));
         assert_eq!(decode(&stream, 4), Some(b"AAAA".to_vec()));
@@ -249,18 +249,6 @@ mod tests {
 
     #[test]
     fn block_mode_clear_reserves_the_clear_code() {
-        fn codes(values: &[u16]) -> Vec<u8> {
-            let mut bytes = vec![0; values.len().saturating_mul(9).div_ceil(8)];
-            for (index, value) in values.iter().copied().enumerate() {
-                for bit in 0..9 {
-                    bytes[(index * 9 + bit) / 8] |= u8::try_from((value >> bit) & 1)
-                        .expect("required invariant")
-                        << ((index * 9 + bit) % 8);
-                }
-            }
-            bytes
-        }
-
         let mut stream = vec![0x1f, 0x9d, 0x90];
         let mut first_block = codes(&[u16::from(b'A'), CLEAR]);
         first_block.resize(9, 0);

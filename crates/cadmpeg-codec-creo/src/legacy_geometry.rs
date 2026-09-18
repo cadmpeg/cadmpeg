@@ -751,16 +751,11 @@ mod tests {
         LegacySurfaceGeometry, LegacySurfaceNamespace,
     };
     use crate::legacy::{
-        IntegerPayload, IntegerRun, ObjectPayload, ObjectRecord, Persistence, Real, RealPayload,
-        RealRecord, RealRun, ValueRecord,
+        IntegerPayload, IntegerRun, ObjectPayload, Persistence, Real, RealPayload, RealRecord,
+        RealRun, ValueRecord,
     };
+    use crate::test_support::{fixture_offset, object};
 
-    fn fixture_offset(id: &str) -> usize {
-        use std::hash::{Hash, Hasher};
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        id.hash(&mut hash);
-        hash.finish() as usize
-    }
     fn real(value: f64) -> String {
         format!("{:016X}", value.to_bits())
     }
@@ -1290,28 +1285,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             ),
             [[0.0, -2.0], [std::f64::consts::PI, 3.0]],
         );
-    }
-
-    fn object(
-        id: &str,
-        name: &str,
-        parent: Option<&str>,
-        mut payload: ObjectPayload,
-    ) -> ObjectRecord {
-        if let ObjectPayload::Array { elements, .. } = &mut payload {
-            for element in elements {
-                *element = crate::legacy::object_node_id(fixture_offset(element));
-            }
-        }
-        ObjectRecord {
-            name: name.to_string(),
-            attribute_id: 0,
-            scope_offset: 0,
-            parent: parent.map(fixture_offset),
-            depth: 0,
-            payload,
-            offset: fixture_offset(id),
-        }
     }
 
     fn integer(
