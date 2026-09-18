@@ -130,6 +130,9 @@ pub(crate) enum FramingError {
     InvalidLength { offset: usize, value: i128 },
     /// A structural framing rule was violated.
     Structural { offset: usize, message: String },
+    /// A structural rule was violated by a derived or already-decoded value
+    /// that has no byte position of its own.
+    Unpositioned { message: String },
     /// Arithmetic overflow occurred while deriving a boundary.
     Overflow { offset: usize },
     /// A derived boundary exceeded its containing bound.
@@ -149,6 +152,12 @@ impl FramingError {
             message: message.into(),
         }
     }
+
+    pub(crate) fn unpositioned(message: impl Into<String>) -> Self {
+        Self::Unpositioned {
+            message: message.into(),
+        }
+    }
 }
 
 impl fmt::Display for FramingError {
@@ -164,6 +173,7 @@ impl fmt::Display for FramingError {
             Self::Structural { offset, message } => {
                 write!(f, "framing error at {offset}: {message}")
             }
+            Self::Unpositioned { message } => write!(f, "framing error: {message}"),
             Self::Overflow { offset } => write!(f, "offset arithmetic overflow at {offset}"),
             Self::OutOfBounds { offset, end, bound } => {
                 write!(f, "range {offset}..{end} exceeds bound {bound}")

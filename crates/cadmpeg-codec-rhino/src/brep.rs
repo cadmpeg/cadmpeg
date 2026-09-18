@@ -2613,7 +2613,7 @@ fn position(value: Option<i32>) -> Option<usize> {
 fn slot(value: i32, len: usize, label: &str) -> Result<usize, GeometryError> {
     position(Some(value))
         .filter(|slot| *slot < len)
-        .ok_or_else(|| error(0, format!("{label} reference is out of range")))
+        .ok_or_else(|| GeometryError::unpositioned(format!("{label} reference is out of range")))
 }
 
 /// Resolves a list of stored references against an array of `len` records.
@@ -2693,20 +2693,27 @@ fn unique(values: &[i32], label: &str) -> Result<(), GeometryError> {
     let mut seen = BTreeSet::new();
     for value in values {
         if !seen.insert(*value) {
-            return Err(error(0, format!("{label} reference is duplicated")));
+            return Err(GeometryError::unpositioned(format!(
+                "{label} reference is duplicated"
+            )));
         }
     }
     Ok(())
 }
 
+/// Refuses a decoded interval that is neither an `ON_UNSET` pair nor ordered.
+/// Every interval that reaches here is finite: the wire routes read it through
+/// `settings::interval`, and the legacy route builds it from polycurve
+/// parameters that `curves::checked_polycurve_parameter` already refused when
+/// non-finite.
 fn finite_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
     let [low, high] = value.0;
     let unset = (low == ON_UNSET_VALUE && high == ON_UNSET_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_POSITIVE_VALUE);
     let empty = (low == ON_UNSET_VALUE && high == ON_UNSET_POSITIVE_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_VALUE);
-    if !(unset || empty || low.is_finite() && high.is_finite() && low < high) {
-        return Err(error(0, format!("{label} is invalid")));
+    if !(unset || empty || low < high) {
+        return Err(GeometryError::unpositioned(format!("{label} is invalid")));
     }
     Ok(())
 }
@@ -2716,7 +2723,7 @@ fn finite_tolerance(value: f64, label: &str) -> Result<(), GeometryError> {
         || value == ON_UNSET_POSITIVE_VALUE
         || value.is_finite() && value >= 0.0)
     {
-        return Err(error(0, format!("{label} is invalid")));
+        return Err(GeometryError::unpositioned(format!("{label} is invalid")));
     }
     Ok(())
 }
@@ -3530,6 +3537,25 @@ mod tests {
         assert!(finite_tolerance(ON_UNSET_VALUE, "tolerance").is_ok());
         assert!(finite_tolerance(ON_UNSET_POSITIVE_VALUE, "tolerance").is_ok());
         assert!(finite_tolerance(-1.0, "tolerance").is_err());
+    }
+
+    /// Both validators judge an already-decoded record field, which no byte of
+    /// the file locates, so their refusals name no offset instead of byte 0.
+    #[test]
+    fn an_interval_or_tolerance_refusal_names_no_byte() {
+        let error = finite_interval(Interval([0.0, 0.0]), "interval").expect_err("ordering");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(crate::chunks::FramingError::Unpositioned { ref message })
+                if message == "interval is invalid"
+        ));
+        assert_eq!(error.to_string(), "framing error: interval is invalid");
+        let error = finite_tolerance(-1.0, "tolerance").expect_err("sign");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(crate::chunks::FramingError::Unpositioned { ref message })
+                if message == "tolerance is invalid"
+        ));
     }
 
     #[test]

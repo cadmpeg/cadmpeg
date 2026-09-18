@@ -4018,7 +4018,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         mesh_budget,
     } = input;
     let key = IdentityKey::try_new(key.to_owned())
-        .map_err(|error| crate::curves::error(0, error.to_string()))?;
+        .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     let raw = brep.raw();
     let resolved = brep.resolved();
     let BrepCarrierDraft {
@@ -4067,13 +4067,19 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             id: point_id.clone(),
             position: Point3::new(
                 crate::wire::scaled_coordinate(vertex.point.0[0], scale).ok_or_else(|| {
-                    crate::curves::error(0, "scaled Brep vertex coordinate is invalid")
+                    crate::curves::GeometryError::unpositioned(
+                        "scaled Brep vertex coordinate is invalid",
+                    )
                 })?,
                 crate::wire::scaled_coordinate(vertex.point.0[1], scale).ok_or_else(|| {
-                    crate::curves::error(0, "scaled Brep vertex coordinate is invalid")
+                    crate::curves::GeometryError::unpositioned(
+                        "scaled Brep vertex coordinate is invalid",
+                    )
                 })?,
                 crate::wire::scaled_coordinate(vertex.point.0[2], scale).ok_or_else(|| {
-                    crate::curves::error(0, "scaled Brep vertex coordinate is invalid")
+                    crate::curves::GeometryError::unpositioned(
+                        "scaled Brep vertex coordinate is invalid",
+                    )
                 })?,
             ),
             source_object: Some(association.clone()),
@@ -4098,7 +4104,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model_mut().edges.push(Edge {
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, Some(edge_param_range(edge)))
-                .map_err(|message| crate::curves::GeometryError::malformed(0, message))?,
+                .map_err(crate::curves::GeometryError::unpositioned)?,
             start: vertex_ids[vertices[0]].clone(),
             end: vertex_ids[vertices[1]].clone(),
             tolerance: scaled_tolerance(edge.tolerance, scale)?,
@@ -4239,7 +4245,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()).map_err(|error| {
-                    crate::curves::GeometryError::malformed(0, error.to_string())
+                    crate::curves::GeometryError::unpositioned(error.to_string())
                 })?,
             ),
         });
@@ -4286,8 +4292,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         for (offset, id) in uses.iter().enumerate() {
             let next = uses[(offset + 1) % uses.len()].clone();
             let Some(&position) = coedge_positions.get(id) else {
-                return Err(crate::curves::GeometryError::malformed(
-                    0,
+                return Err(crate::curves::GeometryError::unpositioned(
                     "Brep coedge position is missing",
                 ));
             };
@@ -4330,7 +4335,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                     Vec::new()
                 },
             )
-            .map_err(|message| crate::curves::GeometryError::malformed(0, message.to_string()))?,
+            .map_err(|message| crate::curves::GeometryError::unpositioned(message.to_string()))?,
         );
         if !regions.iter().any(|region: &Region| region.id == region_id) {
             regions.push(Region {
@@ -4573,7 +4578,7 @@ fn scale_plane_pcurves(
                     pole.u *= scale;
                     pole.v *= scale;
                 })
-                .map_err(|error| crate::curves::error(0, error.to_string()))?;
+                .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
         }
     }
     Ok(())
@@ -4618,7 +4623,7 @@ fn stage_brep_procedural_surface(
     context: &BrepStageContext<'_>,
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
     let key = IdentityKey::try_new(context.key.to_owned())
-        .map_err(|error| crate::curves::error(0, error.to_string()))?;
+        .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     let definition = definition.into_definition(
         |child_index, _, child| {
             stage_curve_tree(
@@ -4630,7 +4635,7 @@ fn stage_brep_procedural_surface(
                 context.unknown,
             )
         },
-        |error| crate::curves::error(0, error.to_string()),
+        |error| crate::curves::GeometryError::unpositioned(error.to_string()),
     )?;
     let surface_id = cadmpeg_ir::ids::SurfaceId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
@@ -4654,7 +4659,7 @@ fn stage_brep_procedural_surface(
             surface_id.clone(),
             ProceduralSurface::new(procedural_id.clone(), definition, None),
         )
-        .map_err(|error| crate::curves::error(0, error.to_string()))?;
+        .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     staged
         .draft
         .exactness(surface_id.to_string(), Exactness::Derived);
@@ -4706,21 +4711,22 @@ fn stage_curve_tree(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         parameters, components, None,
                     )
-                    .map_err(|message| crate::curves::error(0, message))?,
+                    .map_err(crate::curves::GeometryError::unpositioned)?,
                 )),
             )
         }
     };
     let key = IdentityKey::try_new(key.to_owned())
-        .map_err(|error| crate::curves::error(0, error.to_string()))?;
+        .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     let id = cadmpeg_ir::ids::CurveId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
         if path == "root" {
             key.clone()
         } else {
             key.clone().then(cadmpeg_ir::identity_key!(".")).then(
-                IdentityKey::try_new(path.to_owned())
-                    .map_err(|error| crate::curves::error(0, error.to_string()))?,
+                IdentityKey::try_new(path.to_owned()).map_err(|error| {
+                    crate::curves::GeometryError::unpositioned(error.to_string())
+                })?,
             )
         },
     );
@@ -4736,8 +4742,9 @@ fn stage_curve_tree(
             key.clone()
         } else {
             key.clone().then(cadmpeg_ir::identity_key!(".")).then(
-                IdentityKey::try_new(path.to_owned())
-                    .map_err(|error| crate::curves::error(0, error.to_string()))?,
+                IdentityKey::try_new(path.to_owned()).map_err(|error| {
+                    crate::curves::GeometryError::unpositioned(error.to_string())
+                })?,
             )
         };
         let procedure_id = cadmpeg_ir::ids::ProceduralCurveId::compose(
@@ -4752,7 +4759,7 @@ fn stage_curve_tree(
             .draft
             .model_mut()
             .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition))
-            .map_err(|error| crate::curves::error(0, error.to_string()))?;
+            .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     }
     Ok(id)
 }
@@ -4952,10 +4959,12 @@ fn scaled_tolerance(
         return Ok(None);
     }
     let scaled = crate::wire::scaled_coordinate(value, scale)
-        .ok_or_else(|| crate::curves::error(0, "scaled tolerance is invalid"))?;
+        .ok_or_else(|| crate::curves::GeometryError::unpositioned("scaled tolerance is invalid"))?;
     Ok(Some(
         cadmpeg_ir::scalar::PositiveReal::new(scaled).ok_or_else(|| {
-            crate::curves::error(0, "scaled tolerance must be positive and finite")
+            crate::curves::GeometryError::unpositioned(
+                "scaled tolerance must be positive and finite",
+            )
         })?,
     ))
 }
@@ -4996,10 +5005,9 @@ fn brep_free_vertex_indices(
         "Rhino Brep free-vertex attachment flags",
     )
     .map_err(|error| {
-        crate::curves::GeometryError::malformed(
-            0,
-            format!("Brep free-vertex allocation refused: {error}"),
-        )
+        crate::curves::GeometryError::unpositioned(format!(
+            "Brep free-vertex allocation refused: {error}"
+        ))
     })?;
     for (index, vertex) in resolved.vertices.iter().enumerate() {
         if !vertex.edges.is_empty() {
@@ -5043,10 +5051,9 @@ fn region_shell_groups(
         let mut face_groups =
             alloc_filled(components.len(), 0usize, "Rhino Brep fallback face groups").map_err(
                 |error| {
-                    crate::curves::GeometryError::malformed(
-                        0,
-                        format!("Brep face-group allocation refused: {error}"),
-                    )
+                    crate::curves::GeometryError::unpositioned(format!(
+                        "Brep face-group allocation refused: {error}"
+                    ))
                 },
             )?;
         for (group, (_component, faces)) in groups.into_iter().enumerate() {
@@ -5089,10 +5096,9 @@ fn region_shell_groups(
     }
     let mut face_groups = alloc_filled(components.len(), 0usize, "Rhino Brep region face groups")
         .map_err(|error| {
-        crate::curves::GeometryError::malformed(
-            0,
-            format!("Brep face-group allocation refused: {error}"),
-        )
+        crate::curves::GeometryError::unpositioned(format!(
+            "Brep face-group allocation refused: {error}"
+        ))
     })?;
     let mut shells = Vec::new();
     for (group, ((region, _component), faces)) in grouped.into_iter().enumerate() {
@@ -5118,10 +5124,9 @@ fn region_shell_groups_without_records(
     let mut face_groups =
         alloc_filled(components.len(), 0usize, "Rhino Brep incidence face groups").map_err(
             |error| {
-                crate::curves::GeometryError::malformed(
-                    0,
-                    format!("Brep face-group allocation refused: {error}"),
-                )
+                crate::curves::GeometryError::unpositioned(format!(
+                    "Brep face-group allocation refused: {error}"
+                ))
             },
         )?;
     let mut shells = Vec::new();

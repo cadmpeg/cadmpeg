@@ -1075,9 +1075,11 @@ pub(crate) fn reconstruct_knots(
     let m = order
         .checked_add(cv_count)
         .and_then(|value| value.checked_sub(2))
-        .ok_or_else(|| error(0, "NURBS knot arithmetic overflow"))?;
+        .ok_or_else(|| GeometryError::unpositioned("NURBS knot arithmetic overflow"))?;
     if knots.len() != m || order < 2 || cv_count < order {
-        return Err(error(0, "NURBS knot reconstruction input is invalid"));
+        return Err(GeometryError::unpositioned(
+            "NURBS knot reconstruction input is invalid",
+        ));
     }
     let mut start = knots[0];
     if order > 2 && cv_count >= 2 * order - 2 && cv_count >= 6 && knots[0] < knots[order - 2] {
@@ -1089,7 +1091,9 @@ pub(crate) fn reconstruct_knots(
         end = knots[m - 1] + (knots[order + 1] - knots[order]);
     }
     if !start.is_finite() || !end.is_finite() || start > knots[0] || end < knots[m - 1] {
-        return Err(error(0, "NURBS reconstructed knots are invalid"));
+        return Err(GeometryError::unpositioned(
+            "NURBS reconstructed knots are invalid",
+        ));
     }
     let mut result = Vec::with_capacity(order + cv_count);
     result.push(start);

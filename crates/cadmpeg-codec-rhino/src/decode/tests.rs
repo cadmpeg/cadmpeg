@@ -28,6 +28,23 @@ fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
     )
 }
 
+/// Brep staging judges values the model already holds, so a refusal there names
+/// no offset instead of naming byte 0.
+#[test]
+fn a_brep_staging_refusal_names_no_byte() {
+    let error = scaled_tolerance(1.0, 0.0).expect_err("non-positive scale");
+    assert!(matches!(
+        error,
+        crate::curves::GeometryError::Malformed(
+            crate::chunks::FramingError::Unpositioned { ref message }
+        ) if message == "scaled tolerance is invalid"
+    ));
+    assert_eq!(
+        error.to_string(),
+        "framing error: scaled tolerance is invalid"
+    );
+}
+
 #[test]
 fn rejected_expansion_discards_every_report_bucket() {
     let mut report = ReportBuckets::default();

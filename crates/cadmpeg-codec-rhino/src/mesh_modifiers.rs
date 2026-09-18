@@ -475,23 +475,19 @@ fn parse_xml(
     archive: ArchiveVersion,
 ) -> Result<DisplacementModifier, FramingError> {
     let document = roxmltree::Document::parse(xml).map_err(|error| {
-        FramingError::structural(0, format!("invalid displacement XML: {error}"))
+        FramingError::unpositioned(format!("invalid displacement XML: {error}"))
     })?;
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "displacement XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "displacement XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let displacement = direct_child(root, DISPLACEMENT_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("displacement XML has no `{DISPLACEMENT_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!(
+            "displacement XML has no `{DISPLACEMENT_ROOT}` child"
+        ))
     })?;
     let sweep_resolution_formula = field_i32_optional(displacement, "sweep-res-formula")
         .unwrap_or_else(|| i32::from(archive.value() < 60));
@@ -527,23 +523,19 @@ fn parse_edge_softening_xml(
     xml_version: i32,
 ) -> Result<EdgeSofteningModifier, FramingError> {
     let document = roxmltree::Document::parse(xml).map_err(|error| {
-        FramingError::structural(0, format!("invalid edge-softening XML: {error}"))
+        FramingError::unpositioned(format!("invalid edge-softening XML: {error}"))
     })?;
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "edge-softening XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "edge-softening XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let edge_softening = direct_child(root, EDGE_SOFTENING_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("edge-softening XML has no `{EDGE_SOFTENING_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!(
+            "edge-softening XML has no `{EDGE_SOFTENING_ROOT}` child"
+        ))
     })?;
     Ok(EdgeSofteningModifier {
         xml_version,
@@ -558,22 +550,16 @@ fn parse_edge_softening_xml(
 
 fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifier, FramingError> {
     let document = roxmltree::Document::parse(xml)
-        .map_err(|error| FramingError::structural(0, format!("invalid thickening XML: {error}")))?;
+        .map_err(|error| FramingError::unpositioned(format!("invalid thickening XML: {error}")))?;
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "thickening XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "thickening XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let thickening = direct_child(root, THICKENING_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("thickening XML has no `{THICKENING_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!("thickening XML has no `{THICKENING_ROOT}` child"))
     })?;
     Ok(ThickeningModifier {
         xml_version,
@@ -590,23 +576,19 @@ fn parse_curve_piping_xml(
     xml_version: i32,
 ) -> Result<CurvePipingModifier, FramingError> {
     let document = roxmltree::Document::parse(xml).map_err(|error| {
-        FramingError::structural(0, format!("invalid curve-piping XML: {error}"))
+        FramingError::unpositioned(format!("invalid curve-piping XML: {error}"))
     })?;
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "curve-piping XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "curve-piping XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let curve_piping = direct_child(root, CURVE_PIPING_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("curve-piping XML has no `{CURVE_PIPING_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!(
+            "curve-piping XML has no `{CURVE_PIPING_ROOT}` child"
+        ))
     })?;
     Ok(CurvePipingModifier {
         xml_version,
@@ -620,24 +602,17 @@ fn parse_curve_piping_xml(
 }
 
 fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifier, FramingError> {
-    let document = roxmltree::Document::parse(xml).map_err(|error| {
-        FramingError::structural(0, format!("invalid shut-lining XML: {error}"))
-    })?;
+    let document = roxmltree::Document::parse(xml)
+        .map_err(|error| FramingError::unpositioned(format!("invalid shut-lining XML: {error}")))?;
     let root = document.root_element();
     if !same_name(root, "xml") {
-        return Err(FramingError::structural(
-            0,
-            format!(
-                "shut-lining XML root is `{}`, expected `xml`",
-                root.tag_name().name()
-            ),
-        ));
+        return Err(FramingError::unpositioned(format!(
+            "shut-lining XML root is `{}`, expected `xml`",
+            root.tag_name().name()
+        )));
     }
     let shut_lining = direct_child(root, SHUT_LINING_ROOT).ok_or_else(|| {
-        FramingError::structural(
-            0,
-            format!("shut-lining XML has no `{SHUT_LINING_ROOT}` child"),
-        )
+        FramingError::unpositioned(format!("shut-lining XML has no `{SHUT_LINING_ROOT}` child"))
     })?;
     let curves = shut_lining
         .children()
@@ -1067,6 +1042,21 @@ mod tests {
         assert_eq!(displacement.sub_items[0].black_point, -0.1);
         assert_eq!(displacement.sub_items[0].white_point, 0.6);
         assert!(warnings.is_empty());
+    }
+
+    /// The XML text is already decoded, so a refusal about the document as a
+    /// whole names no offset instead of naming byte 0.
+    #[test]
+    fn an_xml_refusal_names_no_byte() {
+        let error = parse_xml("<unterminated", 2, ArchiveVersion::V6).expect_err("invalid XML");
+        assert!(matches!(
+            error,
+            FramingError::Unpositioned { ref message }
+                if message.starts_with("invalid displacement XML: ")
+        ));
+        assert!(error
+            .to_string()
+            .starts_with("framing error: invalid displacement XML: "));
     }
 
     #[test]

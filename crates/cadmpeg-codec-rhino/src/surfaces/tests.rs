@@ -369,6 +369,22 @@ fn reconstructs_spec_examples_and_one_sided_vectors() {
     );
 }
 
+/// `reconstruct_knots` refuses a derived knot vector that no byte of the file
+/// locates, so the refusal names no offset instead of naming byte 0.
+#[test]
+fn a_knot_reconstruction_refusal_names_no_byte() {
+    let error = reconstruct_knots(&[0.0, 1.0], 3, 6).expect_err("knot count mismatch");
+    assert!(matches!(
+        error,
+        GeometryError::Malformed(FramingError::Unpositioned { ref message })
+            if message == "NURBS knot reconstruction input is invalid"
+    ));
+    assert_eq!(
+        error.to_string(),
+        "framing error: NURBS knot reconstruction input is invalid"
+    );
+}
+
 #[test]
 fn curve_versions_cross_archive_bands_and_consume_tag_gate() {
     for (archive, version) in [(ArchiveVersion::V5, 0x10), (ArchiveVersion::V8, 0x11)] {
