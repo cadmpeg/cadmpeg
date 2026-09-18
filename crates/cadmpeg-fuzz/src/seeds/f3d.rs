@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Autodesk ASM binary (SMBH) seed builders.
 
+use std::io::{Cursor, Write};
+
+use zip::result::ZipError;
+use zip::write::SimpleFileOptions;
+use zip::CompressionMethod;
+
 pub const SEED_LINEAR_TOLERANCE: f64 = 1.0e-6;
 pub const SEED_ANGULAR_TOLERANCE: f64 = 1.0e-10;
 
@@ -234,4 +240,82 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     let mut out = smbh_header_prefix();
     out.extend_from_slice(&r);
     out
+}
+
+pub fn synthetic_smbh() -> Vec<u8> {
+    let mut b = smbh_header_prefix();
+    b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
+    let active_len = b.len();
+    b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
+    b.extend_from_slice(b"delta_state");
+    b.extend_from_slice(&[0u8; 16]);
+    assert_eq!(&b[active_len + 3..active_len + 3 + 11], b"delta_state");
+    b
+}
+
+pub fn empty_zip() -> Result<Vec<u8>, ZipError> {
+    let zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    Ok(zip.finish()?.into_inner())
+}
+
+pub fn bare_zip_with_txt() -> Result<Vec<u8>, ZipError> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("readme.txt", stored)?;
+    zip.write_all(b"hello")?;
+    Ok(zip.finish()?.into_inner())
+}
+
+pub fn corrupt_zip_magic() -> Result<Vec<u8>, ZipError> {
+    let mut data = empty_zip()?;
+    data[0] = 0xFF;
+    data[1] = 0xFF;
+    Ok(data)
+}
+
+pub fn truncated_smbh() -> Result<Vec<u8>, ZipError> {
+    let mut smbh = synthetic_smbh();
+    smbh.truncate(60);
+    f3d_with_smbh(&smbh)
+}
+
+pub fn f3d_with_smbh(smbh: &[u8]) -> Result<Vec<u8>, ZipError> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored)?;
+    zip.write_all(b"synthetic-manifest")?;
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)?;
+    zip.write_all(smbh)?;
+    Ok(zip.finish()?.into_inner())
+}
+
+pub fn synthetic_f3d(include_smbh: bool) -> Result<Vec<u8>, ZipError> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+    let folder = "FusionAssetName[Active]";
+    zip.start_file("Manifest.dat", stored)?;
+    zip.write_all(b"synthetic-manifest")?;
+
+    if include_smbh {
+        zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)?;
+        zip.write_all(&synthetic_smbh())?;
+    }
+
+    let mut smb = synthetic_smbh();
+    smb.truncate(60);
+    zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)?;
+    zip.write_all(&smb)?;
+
+    zip.start_file(
+        format!("{folder}/FusionDesignSegmentType1/BulkStream.dat"),
+        stored,
+    )?;
+    zip.write_all(b"design-bulk")?;
+
+    zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored)?;
+    zip.write_all(b"\x89PNG")?;
+
+    Ok(zip.finish()?.into_inner())
 }

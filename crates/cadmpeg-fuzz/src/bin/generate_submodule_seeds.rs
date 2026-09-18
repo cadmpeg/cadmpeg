@@ -36,7 +36,11 @@ fn generate_acis_header_seed() -> Result<(), SeedError> {
         header.push(u8::try_from(value.len())?);
         header.extend_from_slice(value.as_bytes());
     }
-    for value in [1.0_f64, EPS_SEED_GEOMETRY_COARSE_GEOMETRY, EPS_SEED_GEOMETRY_DEGENERATE] {
+    for value in [
+        1.0_f64,
+        EPS_SEED_GEOMETRY_COARSE_GEOMETRY,
+        EPS_SEED_GEOMETRY_DEGENERATE,
+    ] {
         header.push(0x06);
         header.extend_from_slice(&value.to_le_bytes());
     }

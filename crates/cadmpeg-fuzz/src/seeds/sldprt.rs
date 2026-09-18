@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SolidWorks SLDPRT container and Parasolid body seed builders.
 
+use std::io::Write;
+
+use flate2::write::DeflateEncoder;
+use flate2::Compression;
+
 pub const MARKER: [u8; 4] = [0x9e, 0x14, 0x01, 0x00];
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
@@ -244,4 +249,58 @@ pub fn closed_cylinder_body() -> Vec<u8> {
     b.extend(world_point(60, [-1.0, 0.0, 0.0]));
     b.extend(world_point(61, [-1.0, 0.0, 1.0]));
     b
+}
+
+fn raw_deflate(data: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
+    enc.write_all(data)?;
+    enc.finish()
+}
+
+pub fn make_block(type_id: u32, section: &str, payload: &[u8]) -> std::io::Result<Vec<u8>> {
+    let comp = raw_deflate(payload)?;
+    let preamble = swap_name(section);
+    let mut b = Vec::new();
+    b.extend_from_slice(&MARKER);
+    b.extend_from_slice(&type_id.to_le_bytes());
+    b.extend_from_slice(&crc32(payload).to_le_bytes());
+    b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
+    b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
+    b.extend_from_slice(&preamble);
+    b.extend_from_slice(&comp);
+    Ok(b)
+}
+
+pub fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> {
+    let mut b = parasolid_payload(description, schema);
+    b.extend_from_slice(body);
+    b
+}
+
+pub fn synthetic_sldprt() -> std::io::Result<Vec<u8>> {
+    let mut f = outer_header();
+    f.extend_from_slice(&make_block(
+        0x10,
+        "PreviewPNG",
+        &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
+    )?);
+    f.extend_from_slice(&make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_payload("partition body", "SCH_SW_33103_11000"),
+    )?);
+    f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
+    f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
+    Ok(f)
+}
+
+pub fn sldprt_with_body(body: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut f = outer_header();
+    f.extend_from_slice(&make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", body),
+    )?);
+    Ok(f)
 }

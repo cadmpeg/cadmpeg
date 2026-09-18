@@ -3,20 +3,16 @@
 //! truncation, byte-flip, and oversized-length mutants.
 
 use std::fs;
-use std::io::{Cursor, Write};
 use std::path::Path;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_fuzz::seed_paths::seed_dir;
 use cadmpeg_fuzz::seeds;
-use flate2::write::DeflateEncoder;
-use flate2::Compression;
-use zip::write::SimpleFileOptions;
-use zip::CompressionMethod;
 
-fn main() -> Result<(), CodecError> {
-    generate_f3d_seeds();
-    generate_sldprt_seeds();
+type SeedError = Box<dyn std::error::Error>;
+
+fn main() -> Result<(), SeedError> {
+    generate_f3d_seeds()?;
+    generate_sldprt_seeds()?;
     generate_catia_seeds();
     generate_creo_seeds();
     generate_nx_seeds()?;
@@ -30,82 +26,43 @@ fn main() -> Result<(), CodecError> {
 // F3D seeds
 // ============================================================================
 
-fn generate_f3d_seeds() {
+fn generate_f3d_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/f3d_container");
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
-        ("empty_zip", f3d::empty_zip()),
-        ("bare_zip_with_txt", f3d::bare_zip_with_txt()),
+        ("empty_zip", seeds::f3d::empty_zip()?),
+        ("bare_zip_with_txt", seeds::f3d::bare_zip_with_txt()?),
         (
             "synthetic_smbh_header_only",
-            f3d::f3d_with_smbh(&f3d::synthetic_smbh()),
+            seeds::f3d::f3d_with_smbh(&seeds::f3d::synthetic_smbh())?,
         ),
         (
             "synthetic_geometry",
-            f3d::f3d_with_smbh(&f3d::synthetic_geometry_smbh()),
+            seeds::f3d::f3d_with_smbh(&f3d::synthetic_geometry_smbh())?,
         ),
         (
             "synthetic_mixed",
-            f3d::f3d_with_smbh(&seeds::f3d::synthetic_mixed_smbh()),
+            seeds::f3d::f3d_with_smbh(&seeds::f3d::synthetic_mixed_smbh())?,
         ),
-        ("full_f3d_with_smbh", f3d::synthetic_f3d(true)),
-        ("full_f3d_smb_only", f3d::synthetic_f3d(false)),
-        ("corrupt_zip_magic", f3d::corrupt_zip_magic()),
-        ("truncated_smbh", f3d::truncated_smbh()),
+        ("full_f3d_with_smbh", seeds::f3d::synthetic_f3d(true)?),
+        ("full_f3d_smb_only", seeds::f3d::synthetic_f3d(false)?),
+        ("corrupt_zip_magic", seeds::f3d::corrupt_zip_magic()?),
+        ("truncated_smbh", seeds::f3d::truncated_smbh()?),
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).unwrap();
+        fs::write(dir.join(name), &data)?;
         println!("  f3d/{} ({} bytes)", name, data.len());
     }
+    Ok(())
 }
 
 mod f3d {
-    use super::*;
     use cadmpeg_fuzz::seeds::f3d::{
         push_tagged_f64, push_u8_string, smbh_header_prefix, t_end, t_ident, t_long, t_pos, t_ref,
         t_subident, t_vec,
     };
-
-    pub fn empty_zip() -> Vec<u8> {
-        zip::ZipWriter::new(Cursor::new(Vec::new()))
-            .finish()
-            .unwrap()
-            .into_inner()
-    }
-
-    pub fn bare_zip_with_txt() -> Vec<u8> {
-        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        zip.start_file("readme.txt", stored).unwrap();
-        zip.write_all(b"hello").unwrap();
-        zip.finish().unwrap().into_inner()
-    }
-
-    pub fn corrupt_zip_magic() -> Vec<u8> {
-        let mut data = empty_zip();
-        data[0] = 0xFF;
-        data[1] = 0xFF;
-        data
-    }
-
-    pub fn truncated_smbh() -> Vec<u8> {
-        let mut smbh = synthetic_smbh();
-        smbh.truncate(60);
-        f3d_with_smbh(&smbh)
-    }
-
-    pub fn synthetic_smbh() -> Vec<u8> {
-        let mut b = smbh_header_prefix();
-        b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
-        let active_len = b.len();
-        b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
-        b.extend_from_slice(b"delta_state");
-        b.extend_from_slice(&[0u8; 16]);
-        assert_eq!(&b[active_len + 3..active_len + 3 + 11], b"delta_state");
-        b
-    }
 
     pub fn synthetic_geometry_smbh() -> Vec<u8> {
         let mut r = Vec::new();
@@ -236,136 +193,35 @@ mod f3d {
         out.extend_from_slice(&r);
         out
     }
-
-    pub fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
-        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        zip.start_file("Manifest.dat", stored).unwrap();
-        zip.write_all(b"synthetic-manifest").unwrap();
-        zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
-            .unwrap();
-        zip.write_all(smbh).unwrap();
-        zip.finish().unwrap().into_inner()
-    }
-
-    pub fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
-        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-
-        let folder = "FusionAssetName[Active]";
-        zip.start_file("Manifest.dat", stored).unwrap();
-        zip.write_all(b"synthetic-manifest").unwrap();
-
-        if include_smbh {
-            zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)
-                .unwrap();
-            zip.write_all(&synthetic_smbh()).unwrap();
-        }
-
-        let mut smb = synthetic_smbh();
-        smb.truncate(60);
-        zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)
-            .unwrap();
-        zip.write_all(&smb).unwrap();
-
-        zip.start_file(
-            format!("{folder}/FusionDesignSegmentType1/BulkStream.dat"),
-            stored,
-        )
-        .unwrap();
-        zip.write_all(b"design-bulk").unwrap();
-
-        zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored)
-            .unwrap();
-        zip.write_all(b"\x89PNG").unwrap();
-
-        zip.finish().unwrap().into_inner()
-    }
 }
 
 // ============================================================================
 // SLDPRT seeds
 // ============================================================================
 
-fn generate_sldprt_seeds() {
+fn generate_sldprt_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/sldprt_container");
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
         ("just_header", seeds::sldprt::outer_header()),
-        ("synthetic_sldprt", sldprt::synthetic_sldprt()),
+        ("synthetic_sldprt", seeds::sldprt::synthetic_sldprt()?),
         (
             "with_triangle_body",
-            sldprt::sldprt_with_body(&seeds::sldprt::triangle_body()),
+            seeds::sldprt::sldprt_with_body(&seeds::sldprt::triangle_body())?,
         ),
         (
             "with_cylinder",
-            sldprt::sldprt_with_body(&seeds::sldprt::closed_cylinder_body()),
+            seeds::sldprt::sldprt_with_body(&seeds::sldprt::closed_cylinder_body())?,
         ),
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).unwrap();
+        fs::write(dir.join(name), &data)?;
         println!("  sldprt/{} ({} bytes)", name, data.len());
     }
-}
-
-mod sldprt {
-    use super::*;
-    use cadmpeg_fuzz::seeds::sldprt::{
-        crc32, make_cache_cell, make_directory_entry, outer_header, parasolid_payload, swap_name,
-        MARKER,
-    };
-
-    fn raw_deflate(data: &[u8]) -> Vec<u8> {
-        let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
-        enc.write_all(data).unwrap();
-        enc.finish().unwrap()
-    }
-
-    fn make_block(type_id: u32, section: &str, payload: &[u8]) -> Vec<u8> {
-        let comp = raw_deflate(payload);
-        let preamble = swap_name(section);
-        let mut b = Vec::new();
-        b.extend_from_slice(&MARKER);
-        b.extend_from_slice(&type_id.to_le_bytes());
-        b.extend_from_slice(&crc32(payload).to_le_bytes());
-        b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
-        b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-        b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
-        b.extend_from_slice(&preamble);
-        b.extend_from_slice(&comp);
-        b
-    }
-
-    pub fn synthetic_sldprt() -> Vec<u8> {
-        let mut f = outer_header();
-        f.extend_from_slice(&make_block(
-            0x10,
-            "PreviewPNG",
-            &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
-        ));
-        f.extend_from_slice(&make_block(
-            0x20,
-            "Contents/Config-0-Partition",
-            &parasolid_payload("partition body", "SCH_SW_33103_11000"),
-        ));
-        f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
-        f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
-        f
-    }
-
-    pub fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
-        let mut f = outer_header();
-        f.extend_from_slice(&make_block(0x20, "Contents/Config-0-Partition", &{
-            let mut p = parasolid_payload("partition body", "SCH_SW_33103_11000");
-            p.extend_from_slice(body);
-            p
-        }));
-        f
-    }
+    Ok(())
 }
 
 // ============================================================================
@@ -414,60 +270,22 @@ fn generate_creo_seeds() {
 // NX seeds
 // ============================================================================
 
-fn generate_nx_seeds() -> Result<(), CodecError> {
+fn generate_nx_seeds() -> Result<(), SeedError> {
     let dir = seed_dir("seeds/nx_container");
-    fs::create_dir_all(&dir).unwrap();
+    fs::create_dir_all(&dir)?;
 
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
         ("just_magic", seeds::nx::just_magic()),
-        ("single_part", nx::single_part_prt()?),
+        ("single_part", seeds::nx::single_part_prt()?),
         ("assembly", seeds::nx::assembly_prt()),
     ];
 
     for (name, data) in seeds {
-        fs::write(dir.join(name), &data).unwrap();
+        fs::write(dir.join(name), &data)?;
         println!("  nx/{} ({} bytes)", name, data.len());
     }
     Ok(())
-}
-
-mod nx {
-    use cadmpeg_core::CodecError;
-    use cadmpeg_fuzz::seeds::nx::{partition_stream, MAGIC};
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
-    use std::io::Write;
-
-    fn zlib_compress(raw: &[u8]) -> Vec<u8> {
-        let mut e = ZlibEncoder::new(Vec::new(), Compression::new(1));
-        e.write_all(raw).unwrap();
-        e.finish().unwrap()
-    }
-
-    pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
-        let mut f = Vec::new();
-        f.extend_from_slice(MAGIC);
-        f.push(0x06);
-        f.extend_from_slice(&[0x11, 0x22, 0x33]);
-        f.extend_from_slice(&[0, 0, 0, 0]);
-        f.push(0x00);
-        f.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-        f.extend_from_slice(&[0, 0]);
-
-        f.extend_from_slice(b"HEADER");
-        let name = b"/Root/UG_PART/UG_PART";
-        f.extend_from_slice(&(name.len() as u32).to_le_bytes());
-        f.extend_from_slice(name);
-
-        let blob = zlib_compress(&partition_stream()?);
-        let dir_end = f.len() + 16;
-        let blob_off = dir_end as u64;
-        f.extend_from_slice(&blob_off.to_le_bytes());
-        f.extend_from_slice(&(blob.len() as u64).to_le_bytes());
-        f.extend_from_slice(&blob);
-        Ok(f)
-    }
 }
 
 // ============================================================================

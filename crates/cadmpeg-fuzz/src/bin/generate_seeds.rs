@@ -2,15 +2,14 @@
 //! Writes structural seeds for the F3D container and replay fuzz targets.
 
 use std::fs;
-use std::io::{Cursor, Write};
 
 use cadmpeg_fuzz::seed_paths::seed_dir;
 use cadmpeg_fuzz::seeds::f3d::{
-    push_tagged_f64, push_u8_string, smbh_header_prefix, synthetic_mixed_smbh, t_end, t_ident,
-    t_long, t_pos, t_ref, t_subident, t_vec, SEED_ANGULAR_TOLERANCE, SEED_LINEAR_TOLERANCE,
+    bare_zip_with_txt, corrupt_zip_magic, empty_zip, f3d_with_smbh, push_tagged_f64,
+    push_u8_string, smbh_header_prefix, synthetic_f3d, synthetic_mixed_smbh, synthetic_smbh, t_end,
+    t_ident, t_long, t_pos, t_ref, t_subident, t_vec, truncated_smbh, SEED_ANGULAR_TOLERANCE,
+    SEED_LINEAR_TOLERANCE,
 };
-use zip::write::SimpleFileOptions;
-use zip::CompressionMethod;
 
 type SeedError = Box<dyn std::error::Error>;
 
@@ -53,60 +52,9 @@ fn main() -> Result<(), SeedError> {
     Ok(())
 }
 
-fn empty_zip() -> Result<Vec<u8>, SeedError> {
-    let zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    Ok(zip.finish()?.into_inner())
-}
-
-fn bare_zip_with_txt() -> Result<Vec<u8>, SeedError> {
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("readme.txt", stored)?;
-    zip.write_all(b"hello")?;
-    Ok(zip.finish()?.into_inner())
-}
-
-fn corrupt_zip_magic() -> Result<Vec<u8>, SeedError> {
-    let mut data = empty_zip()?;
-    data[0] = 0xFF;
-    data[1] = 0xFF;
-    Ok(data)
-}
-
-fn truncated_smbh() -> Result<Vec<u8>, SeedError> {
-    let mut smbh = synthetic_smbh();
-    smbh.truncate(60);
-    f3d_with_smbh(&smbh)
-}
-
 fn push_tagged_i64(b: &mut Vec<u8>, tag: u8, v: i64) {
     b.push(tag);
     b.extend_from_slice(&v.to_le_bytes());
-}
-
-fn synthetic_smbh() -> Vec<u8> {
-    let mut b = Vec::new();
-    b.extend_from_slice(b"ASM BinaryFile8<");
-    b.extend_from_slice(&[0u8; 8]);
-    b.extend_from_slice(&7u64.to_be_bytes());
-    b.extend_from_slice(&3u64.to_be_bytes());
-    b.extend_from_slice(&[0u8; 7]);
-    push_u8_string(&mut b, "Autodesk Neutron");
-    push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
-    push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
-    push_tagged_f64(&mut b, 60.0);
-    push_tagged_f64(&mut b, SEED_LINEAR_TOLERANCE);
-    push_tagged_f64(&mut b, SEED_ANGULAR_TOLERANCE);
-
-    b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
-    let active_len = b.len();
-
-    b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
-    b.extend_from_slice(b"delta_state");
-    b.extend_from_slice(&[0u8; 16]);
-
-    assert_eq!(&b[active_len + 3..active_len + 3 + 11], b"delta_state");
-    b
 }
 
 fn synthetic_binary_file4() -> Vec<u8> {
@@ -307,48 +255,6 @@ fn generated_pcurve_block() -> Vec<u8> {
         push_tagged_f64(&mut b, v);
     }
     b
-}
-
-fn f3d_with_smbh(smbh: &[u8]) -> Result<Vec<u8>, SeedError> {
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored)?;
-    zip.write_all(b"synthetic-manifest")?;
-    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)?;
-    zip.write_all(smbh)?;
-    Ok(zip.finish()?.into_inner())
-}
-
-fn synthetic_f3d(include_smbh: bool) -> Result<Vec<u8>, SeedError> {
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-    let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-
-    let folder = "FusionAssetName[Active]";
-    zip.start_file("Manifest.dat", stored)?;
-    zip.write_all(b"synthetic-manifest")?;
-
-    if include_smbh {
-        zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)?;
-        zip.write_all(&synthetic_smbh())?;
-    }
-
-    let mut smb = synthetic_smbh();
-    smb.truncate(60);
-    zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smb"), stored)?;
-    zip.write_all(&smb)?;
-
-    zip.start_file(
-        format!("{folder}/FusionDesignSegmentType1/BulkStream.dat"),
-        stored,
-    )?;
-    zip.write_all(b"design-bulk")?;
-
-    zip.start_file(format!("{folder}/Previews/thumbnail.png"), stored)?;
-    zip.write_all(b"\x89PNG")?;
-
-    let cursor = zip.finish()?;
-    Ok(cursor.into_inner())
 }
 
 fn find_record_stream_start(bytes: &[u8]) -> Option<usize> {
