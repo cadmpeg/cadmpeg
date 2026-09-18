@@ -298,6 +298,7 @@ pub(crate) fn neutral_transform(
 
 #[cfg(test)]
 mod tests {
+    use crate::design::test_support::identity_matrix;
     use crate::records::feature::{
         assembly_features::{
             DesignComponentOccurrence, DesignCopyPasteComponentOperation,
@@ -458,14 +459,5 @@ mod tests {
                 ),
             })
         );
-    }
-
-    fn identity_matrix() -> [[f64; 4]; 4] {
-        [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
     }
 }

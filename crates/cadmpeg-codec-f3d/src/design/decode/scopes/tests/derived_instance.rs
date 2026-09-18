@@ -9,6 +9,7 @@
 
 use super::prelude::*;
 use crate::design::decode::scopes::component_constructions::exact_derived_instance_construction;
+use crate::design::test_support::identity_matrix;
 use crate::layout::{
     derived_instance_relation_310_57 as relation_310, derived_instance_scope_279_261 as scope_279,
 };
@@ -164,13 +165,4 @@ fn header(bytes: &mut [u8], at: usize, class_tag: &[u8; 3], record_index: u32) {
     bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
     bytes[at + 4..at + 7].copy_from_slice(class_tag);
     bytes[at + 7..at + 11].copy_from_slice(&record_index.to_le_bytes());
-}
-
-fn identity_matrix() -> [[f64; 4]; 4] {
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
 }

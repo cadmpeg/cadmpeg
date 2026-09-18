@@ -7,6 +7,8 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::test_support::indexed_header;
+use crate::design::test_support::{put_u32, put_u64};
 
 #[test]
 fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
@@ -63,14 +65,8 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
 
 #[test]
 fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
-    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     let mut bytes = Vec::new();
-    header(&mut bytes, *b"308", 300);
+    indexed_header(&mut bytes, *b"308", 300);
     bytes.extend_from_slice(&[0; 8]);
     bytes.extend_from_slice(&[1, 1, 0, 0, 0]);
     bytes.push(1);
@@ -78,11 +74,11 @@ fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
     bytes.extend_from_slice(&[0; 11]);
     bytes.extend_from_slice(&0.01f64.to_le_bytes());
     bytes.resize(104, 0);
-    header(&mut bytes, *b"258", 300);
+    indexed_header(&mut bytes, *b"258", 300);
     bytes.extend_from_slice(&[0; 20]);
-    header(&mut bytes, *b"331", 301);
+    indexed_header(&mut bytes, *b"331", 301);
     bytes.extend_from_slice(&[0; 20]);
-    header(&mut bytes, *b"258", 301);
+    indexed_header(&mut bytes, *b"258", 301);
 
     assert_eq!(
         exact_surface_stitch_operation(
@@ -1202,14 +1198,6 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     use crate::layout::base_feature_class_452_262_compact as compact;
     use crate::layout::base_feature_class_452_262_expanded as expanded;
     use crate::records::feature::base_feature::DesignBaseFeatureBodyReferenceForm;
-
-    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-    }
-
-    fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
 
     fn put_u64_reference(bytes: &mut [u8], marker: usize, value: u64) {
         bytes[marker] = compact::BODY_ENTITY_REFERENCE_MARKER_VALUE;

@@ -7,6 +7,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::test_support::indexed_header;
 use crate::records::{
     feature::{
         assembly::DesignAssemblyAlignmentForm,
@@ -1191,14 +1192,14 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             bytes[318 + ordinal * 2..320 + ordinal * 2].copy_from_slice(&value.to_le_bytes());
         }
         bytes[334..338].copy_from_slice(&2_u32.to_le_bytes());
-        append_axial_test_header(
+        indexed_header(
             &mut bytes,
             paired_class_tag.as_bytes().try_into().unwrap(),
             scope_record_index,
         );
         let frame_start = bytes.len();
         let frame_class_tag = generation.frame_class_tag();
-        append_axial_test_header(
+        indexed_header(
             &mut bytes,
             frame_class_tag.as_bytes().try_into().unwrap(),
             200,
@@ -1217,7 +1218,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             let at = frame_start + transform_offset + ordinal * 8;
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
-        append_axial_test_header(
+        indexed_header(
             &mut bytes,
             paired_class_tag.as_bytes().try_into().unwrap(),
             200,
@@ -1809,12 +1810,6 @@ fn append_as_built_path_envelope(
     bytes.extend(wrapper);
 }
 
-fn append_axial_test_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-    bytes.extend_from_slice(&3_u32.to_le_bytes());
-    bytes.extend_from_slice(class_tag);
-    bytes.extend_from_slice(&record_index.to_le_bytes());
-}
-
 fn append_axial_test_utf16(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
     bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
@@ -1844,10 +1839,10 @@ fn append_axial_test_selector(
     const CONTEXT: &str = "22222222-2222-2222-2222-222222222222";
     const PROPERTY: &str = "33333333-3333-3333-3333-333333333333";
 
-    append_axial_test_header(bytes, b"316", axis_record_index);
-    append_axial_test_header(bytes, b"261", axis_record_index);
+    indexed_header(bytes, *b"316", axis_record_index);
+    indexed_header(bytes, *b"261", axis_record_index);
     let selector_record_index = axis_record_index + 3;
-    append_axial_test_header(bytes, b"277", selector_record_index);
+    indexed_header(bytes, *b"277", selector_record_index);
     bytes.extend_from_slice(&[0; 11]);
     append_axial_test_reference(bytes, u64::from(selector_record_index + 3));
     bytes.extend_from_slice(&1_u32.to_le_bytes());
@@ -1870,8 +1865,8 @@ fn append_axial_test_selector(
         append_axial_test_utf16(bytes, PROPERTY);
         append_axial_test_utf16(bytes, "urn:test:version:2");
     }
-    append_axial_test_header(bytes, b"261", selector_record_index);
-    append_axial_test_header(bytes, b"298", selector_record_index + 5);
+    indexed_header(bytes, *b"261", selector_record_index);
+    indexed_header(bytes, *b"298", selector_record_index + 5);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     append_axial_test_utf16(bytes, role);
@@ -1904,7 +1899,7 @@ fn append_axial_test_component_operand(
         versioned,
     );
     let construction_at = bytes.len();
-    append_axial_test_header(bytes, b"305", construction_record_index);
+    indexed_header(bytes, *b"305", construction_record_index);
     bytes.resize(construction_at + 380, 0);
     for (ordinal, value) in transform.into_iter().flatten().enumerate() {
         let at = construction_at + 48 + ordinal * 8;
@@ -1920,7 +1915,7 @@ fn append_axial_test_component_operand(
         construction_at + 208,
         u64::from(axis_record_indices[1]),
     );
-    append_axial_test_header(bytes, b"261", construction_record_index);
+    indexed_header(bytes, *b"261", construction_record_index);
     vec![
         axis_record_indices[0],
         first_selector,

@@ -126,15 +126,10 @@ mod tests {
     #![allow(clippy::trivially_copy_pass_by_ref)]
 
     use super::exact_component_occurrence;
+    use crate::design::test_support::indexed_header;
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
     const OCCURRENCE: &str = "f2371d14-7339-4f5c-82a1-50ec8fca5597";
-
-    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
 
     fn guid(bytes: &mut [u8], at: usize, value: &str) {
         bytes[at..at + 4].copy_from_slice(&36_u32.to_le_bytes());
@@ -145,7 +140,7 @@ mod tests {
 
     fn common(frame_length: usize, ordinal: u32) -> Vec<u8> {
         let mut bytes = Vec::new();
-        header(&mut bytes, b"256", 20);
+        indexed_header(&mut bytes, *b"256", 20);
         bytes.resize(frame_length, 0);
         bytes[19] = 1;
         bytes[20..24].copy_from_slice(&1_u32.to_le_bytes());
@@ -164,7 +159,7 @@ mod tests {
         let mut seed = common(229, 1);
         seed[208] = 1;
         seed[218] = 1;
-        header(&mut seed, b"333", 21);
+        indexed_header(&mut seed, *b"333", 21);
         let seed = exact_component_occurrence(&seed, 0, "f3d:Design/BulkStream.dat")
             .expect("seed occurrence");
         assert_eq!(seed.component_guid.as_str(), COMPONENT);
@@ -183,7 +178,7 @@ mod tests {
             generated[209 + ordinal * 8..217 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
         }
         generated[346] = 1;
-        header(&mut generated, b"325", 21);
+        indexed_header(&mut generated, *b"325", 21);
         let generated = exact_component_occurrence(&generated, 0, "f3d:Design/BulkStream.dat")
             .expect("generated occurrence");
         assert_eq!(generated.occurrence_ordinal(), 2);
@@ -197,7 +192,7 @@ mod tests {
         legacy[4..7].copy_from_slice(b"327");
         legacy[208] = 1;
         legacy[218] = 1;
-        header(&mut legacy, b"333", 21);
+        indexed_header(&mut legacy, *b"333", 21);
         let legacy = exact_component_occurrence(&legacy, 0, "f3d:Design/BulkStream.dat")
             .expect("legacy occurrence");
         assert_eq!(legacy.component_guid.as_str(), COMPONENT);
@@ -210,7 +205,7 @@ mod tests {
                 .copy_from_slice(&value.to_le_bytes());
         }
         legacy_placed[346] = 1;
-        header(&mut legacy_placed, b"325", 21);
+        indexed_header(&mut legacy_placed, *b"325", 21);
         let legacy_placed =
             exact_component_occurrence(&legacy_placed, 0, "f3d:Design/BulkStream.dat")
                 .expect("legacy placed occurrence");
@@ -228,7 +223,7 @@ mod tests {
             dynamic_tag[209 + ordinal * 8..217 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
         }
         dynamic_tag[346] = 1;
-        header(&mut dynamic_tag, b"325", 21);
+        indexed_header(&mut dynamic_tag, *b"325", 21);
         let dynamic_tag = exact_component_occurrence(&dynamic_tag, 0, "f3d:Design/BulkStream.dat")
             .expect("dynamic-tag placed occurrence");
         assert_eq!(dynamic_tag.class_tag.as_str(), "336");
@@ -244,7 +239,7 @@ mod tests {
             placed_seed[209 + ordinal * 8..217 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
         }
         placed_seed[346] = 1;
-        header(&mut placed_seed, b"325", 21);
+        indexed_header(&mut placed_seed, *b"325", 21);
         assert!(exact_component_occurrence(&placed_seed, 0, "f3d:Design/BulkStream.dat").is_none());
     }
 }

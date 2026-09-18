@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::prelude::*;
 use crate::design::decode::operands::parse_loft_legacy_body_carrier;
+use crate::design::test_support::indexed_header;
+use crate::design::test_support::push_marked_reference;
 
 #[test]
 fn construction_operand_trailing_transform_has_exact_affine_frame() {
@@ -94,18 +96,6 @@ fn construction_operand_trailing_flag_has_exact_compact_frame() {
 
 #[test]
 fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
-    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn reference(bytes: &mut Vec<u8>, record_index: u32) {
-        bytes.push(1);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-    }
-
     let scope_record_index = 40u32;
     let record_index = 100u32;
     let transform = [
@@ -115,7 +105,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let mut expanded = Vec::new();
-    header(&mut expanded, b"304", record_index);
+    indexed_header(&mut expanded, *b"304", record_index);
     expanded.extend_from_slice(&[0; 10]);
     expanded.push(1);
     expanded.extend_from_slice(&174u64.to_le_bytes());
@@ -124,11 +114,11 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
         expanded.extend_from_slice(&value.to_le_bytes());
     }
     expanded.push(0);
-    reference(&mut expanded, scope_record_index);
-    reference(&mut expanded, record_index + 2);
+    push_marked_reference(&mut expanded, scope_record_index);
+    push_marked_reference(&mut expanded, record_index + 2);
     expanded.extend_from_slice(&[0; 6]);
     let expanded_following_at = expanded.len();
-    header(&mut expanded, b"390", record_index + 1);
+    indexed_header(&mut expanded, *b"390", record_index + 1);
     let expanded_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
@@ -154,16 +144,16 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     );
 
     let mut compact = Vec::new();
-    header(&mut compact, b"304", record_index);
+    indexed_header(&mut compact, *b"304", record_index);
     compact.extend_from_slice(&[0; 10]);
     compact.push(1);
     compact.extend_from_slice(&18_064u64.to_le_bytes());
     compact.extend_from_slice(&[0, 0, 1, 0]);
-    reference(&mut compact, scope_record_index);
-    reference(&mut compact, record_index + 2);
+    push_marked_reference(&mut compact, scope_record_index);
+    push_marked_reference(&mut compact, record_index + 2);
     compact.extend_from_slice(&[0; 6]);
     let compact_following_at = compact.len();
-    header(&mut compact, b"390", record_index + 1);
+    indexed_header(&mut compact, *b"390", record_index + 1);
     let compact = parse_construction_operand_path(&compact, scope_record_index, &expanded_header)
         .expect("compact selection path");
     assert_eq!(compact.entity_ref, 18_064);
@@ -178,21 +168,15 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
 
 #[test]
 fn construction_tracking_path_decodes_absent_and_present_related_identities() {
-    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     fn tracking_path(first: Option<u64>, second: Option<u64>) -> Vec<u8> {
         let wrapper_record_index = 300u32;
         let mut bytes = Vec::new();
-        header(&mut bytes, b"361", wrapper_record_index);
+        indexed_header(&mut bytes, *b"361", wrapper_record_index);
         bytes.extend_from_slice(&[0; 10]);
         bytes.push(1);
         bytes.extend_from_slice(&u64::from(wrapper_record_index + 1).to_le_bytes());
         bytes.extend_from_slice(&[0; 3]);
-        header(&mut bytes, b"363", wrapper_record_index + 1);
+        indexed_header(&mut bytes, *b"363", wrapper_record_index + 1);
         bytes.extend_from_slice(&[0; 10]);
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
@@ -210,7 +194,7 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
                 bytes.extend_from_slice(&identity.to_le_bytes());
             }
         }
-        header(&mut bytes, b"301", wrapper_record_index + 2);
+        indexed_header(&mut bytes, *b"301", wrapper_record_index + 2);
         bytes
     }
 
@@ -270,12 +254,6 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
 
 #[test]
 fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
-    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     fn reference(bytes: &mut Vec<u8>, record_index: u32) {
         bytes.push(1);
         bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
@@ -290,7 +268,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         with_scope_tail: bool,
     ) -> Vec<u8> {
         let mut bytes = Vec::new();
-        header(&mut bytes, primary_class, record_index);
+        indexed_header(&mut bytes, *primary_class, record_index);
         bytes.extend_from_slice(&[0; 10]);
         bytes.push(1);
         bytes.extend_from_slice(&scope_record_index.to_le_bytes());
@@ -307,7 +285,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
             bytes.push(0);
             reference(&mut bytes, scope_record_index);
         }
-        header(&mut bytes, paired_class, record_index);
+        indexed_header(&mut bytes, *paired_class, record_index);
         bytes
     }
 

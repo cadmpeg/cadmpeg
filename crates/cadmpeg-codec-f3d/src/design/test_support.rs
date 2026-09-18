@@ -83,6 +83,70 @@ pub(crate) fn parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+pub(crate) fn write_marked_reference(bytes: &mut [u8], at: usize, record_index: u32) {
+    bytes[at] = 1;
+    bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+}
+
+pub(crate) fn push_marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
+    bytes.push(1);
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+}
+
+pub(crate) fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+pub(crate) fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+pub(crate) fn identity_matrix() -> [[f64; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
+pub(crate) fn design_type(
+    type_guid: &str,
+    base_type_guid: Option<&str>,
+    version: u32,
+    module: &str,
+    entity_ids: Vec<u64>,
+) -> crate::records::entity_header::SegmentType {
+    crate::records::entity_header::SegmentType {
+        id: String::new(),
+        byte_offset: 0,
+        type_guid: type_guid.to_owned().try_into().expect("type GUID"),
+        type_guid_offset: 0,
+        base_type_guid: base_type_guid.map_or(
+            crate::records::entity_header::BaseTypeGuid::Absent,
+            |value| crate::records::entity_header::BaseTypeGuid::Guid {
+                value: value.to_owned().try_into().expect("base GUID"),
+                offset: 0,
+            },
+        ),
+        version,
+        version_offset: 0,
+        module: module.into(),
+        entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
+    }
+}
+
+pub(crate) fn primary_record(
+    entity_id: u64,
+    bulk_offset: usize,
+) -> crate::metastream::RecordIndexEntry {
+    crate::metastream::RecordIndexEntry {
+        entity_id,
+        bulk_offset: bulk_offset as u64,
+    }
+}
+
 pub(crate) fn push_reference(out: &mut Vec<u8>, reference: u32) {
     out.push(1);
     out.extend_from_slice(&reference.to_le_bytes());

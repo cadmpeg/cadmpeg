@@ -604,6 +604,7 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::design::test_support::{design_type, primary_record};
 
     fn push_ascii(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -618,39 +619,6 @@ mod tests {
         out.push(1);
         out.extend_from_slice(&target.to_le_bytes());
         out.extend_from_slice(&[0, 0]);
-    }
-
-    fn design_type(
-        type_guid: &str,
-        base_type_guid: Option<&str>,
-        version: u32,
-        module: &str,
-        entity_ids: Vec<u64>,
-    ) -> crate::records::entity_header::SegmentType {
-        crate::records::entity_header::SegmentType {
-            id: String::new(),
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: base_type_guid.map_or(
-                crate::records::entity_header::BaseTypeGuid::Absent,
-                |value| crate::records::entity_header::BaseTypeGuid::Guid {
-                    value: value.to_owned().try_into().expect("base GUID"),
-                    offset: 0,
-                },
-            ),
-            version,
-            version_offset: 0,
-            module: module.into(),
-            entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
-        }
-    }
-
-    fn primary_record(entity_id: u64, bulk_offset: usize) -> crate::metastream::RecordIndexEntry {
-        crate::metastream::RecordIndexEntry {
-            entity_id,
-            bulk_offset: bulk_offset as u64,
-        }
     }
 
     #[test]

@@ -6,10 +6,17 @@ use crate::design::test_support::dump::{
     DesignRecordHeader, IndexedRecordOffsets,
 };
 use crate::design::test_support::indexed_header;
+use crate::design::test_support::{put_u32, put_u64};
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_selection;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
 use crate::records::feature::coil::DesignCoilSelection;
+
+fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
+    bytes[offset] = 1;
+    bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
+    bytes[offset + 5..offset + 11].fill(0);
+}
 
 fn compact_coil_placement_fixture(
     matrix: Option<[[f64; 4]; 4]>,
@@ -79,16 +86,6 @@ fn compact_coil_placement_fixture(
 }
 
 fn modern_coil_matrix_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
-    fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
-        bytes[offset] = 1;
-        bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
-        bytes[offset + 5..offset + 11].fill(0);
-    }
-
-    fn u64_at(bytes: &mut [u8], offset: usize, value: u64) {
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
-
     let (mut bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
     bytes.insert(coil_persist_selection::NESTED_SELECTION_MARKER, 0);
     let transform_start = transform_start + 1;
@@ -125,17 +122,17 @@ fn modern_coil_matrix_placement_fixture() -> (Vec<u8>, DesignParameterScope, usi
         transform_start + coil_modern_matrix::AUXILIARY_REFERENCE,
         225,
     );
-    u64_at(
+    put_u64(
         &mut bytes,
         transform_start + coil_modern_matrix::CONSTANT_1024,
         1024,
     );
-    u64_at(
+    put_u64(
         &mut bytes,
         transform_start + coil_modern_matrix::IDENTITY_LANE_PREFIX,
         0x7000_0000_0000_0000,
     );
-    u64_at(
+    put_u64(
         &mut bytes,
         transform_start + coil_modern_matrix::IDENTITY_LANE,
         0x703e_0000_0000_0001,
@@ -183,16 +180,6 @@ fn compact_coil_owner_identity_fixture() -> (Vec<u8>, DesignParameterScope, usiz
 }
 
 fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
-    fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
-        bytes[offset] = 1;
-        bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
-        bytes[offset + 5..offset + 11].fill(0);
-    }
-
-    fn u32_at(bytes: &mut [u8], offset: usize, value: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-    }
-
     let (mut bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
     bytes.truncate(transform_start);
     indexed_header(&mut bytes, *b"395", 200);
@@ -202,12 +189,12 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
         transform_start + coil_legacy_identity::LEADING_REFERENCE_MARKER,
         0,
     );
-    u32_at(
+    put_u32(
         &mut bytes,
         transform_start + coil_legacy_identity::PROLOGUE_VALUE,
         2,
     );
-    u32_at(
+    put_u32(
         &mut bytes,
         transform_start + coil_legacy_identity::PROLOGUE_FLAG,
         1,
@@ -217,7 +204,7 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
         transform_start + coil_legacy_identity::SELECTION_REFERENCE_MARKER,
         100,
     );
-    u32_at(
+    put_u32(
         &mut bytes,
         transform_start + coil_legacy_identity::SELECTION_FLAG,
         1,
@@ -227,12 +214,12 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
         transform_start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER,
         350,
     );
-    u32_at(
+    put_u32(
         &mut bytes,
         transform_start + coil_legacy_identity::TAIL_VALUE,
         4,
     );
-    u32_at(
+    put_u32(
         &mut bytes,
         transform_start + coil_legacy_identity::INTERMEDIATE_SELECTOR,
         109,
@@ -240,7 +227,7 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
     bytes[transform_start + coil_legacy_identity::CARRIER_SCALAR
         ..transform_start + coil_legacy_identity::CARRIER_SCALAR + 8]
         .copy_from_slice(&6.64e-5f64.to_le_bytes());
-    u32_at(
+    put_u32(
         &mut bytes,
         transform_start + coil_legacy_identity::TAIL_SELECTOR,
         109,

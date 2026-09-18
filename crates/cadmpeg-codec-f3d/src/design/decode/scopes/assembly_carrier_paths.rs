@@ -408,16 +408,12 @@ fn exact_class_363_identity_guids(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::design::test_support::write_marked_reference;
 
     fn write_header(bytes: &mut [u8], at: usize, class_tag: [u8; 3], record_index: u32) {
         bytes[at..at + 4].copy_from_slice(&3_u32.to_le_bytes());
         bytes[at + 4..at + 7].copy_from_slice(&class_tag);
         bytes[at + 7..at + 11].copy_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn write_reference(bytes: &mut [u8], at: usize, record_index: u32) {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
     }
 
     fn write_lp_utf16(bytes: &mut [u8], at: usize, value: &str) {
@@ -446,8 +442,8 @@ mod tests {
             *b"399",
             record_index + 1,
         );
-        write_reference(&mut bytes, class_307_joint_origin::FIRST_REFERENCE, 31);
-        write_reference(&mut bytes, class_307_joint_origin::SECOND_REFERENCE, 32);
+        write_marked_reference(&mut bytes, class_307_joint_origin::FIRST_REFERENCE, 31);
+        write_marked_reference(&mut bytes, class_307_joint_origin::SECOND_REFERENCE, 32);
         write_lp_utf16(
             &mut bytes,
             class_307_joint_origin::IDENTITY_GUID,
@@ -456,7 +452,7 @@ mod tests {
         bytes[class_307_joint_origin::REFERENCE_COUNT..class_307_joint_origin::REFERENCE_COUNT + 4]
             .copy_from_slice(&class_307_joint_origin::REFERENCE_COUNT_VALUE.to_le_bytes());
         for ordinal in 0..class_307_joint_origin::REFERENCE_COUNT_VALUE as usize {
-            write_reference(
+            write_marked_reference(
                 &mut bytes,
                 class_307_joint_origin::REFERENCE_ENTRIES + ordinal * ASSEMBLY_MARKED_REFERENCE_LEN,
                 40 + ordinal as u32,

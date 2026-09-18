@@ -884,30 +884,6 @@ fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
 
 #[test]
 fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
-    fn owner_frame() -> Vec<u8> {
-        let mut frame = vec![0; 104];
-        frame[0..4].copy_from_slice(&3u32.to_le_bytes());
-        frame[4..7].copy_from_slice(b"292");
-        frame[7..11].copy_from_slice(&44u32.to_le_bytes());
-        frame[19] = 1;
-        frame[20..24].copy_from_slice(&1u32.to_le_bytes());
-        frame[24] = 1;
-        frame[25..29].copy_from_slice(&12u32.to_le_bytes());
-        frame[35..39].copy_from_slice(&2u32.to_le_bytes());
-        frame[40..48].copy_from_slice(&6.0f64.to_le_bytes());
-        frame[48] = 1;
-        frame[49..53].copy_from_slice(&45u32.to_le_bytes());
-        frame[59..63].copy_from_slice(&9u32.to_le_bytes());
-        frame[67] = 1;
-        frame[68..72].copy_from_slice(&12u32.to_le_bytes());
-        frame[78] = 1;
-        frame[79] = 1;
-        frame[81] = 1;
-        frame[82..86].copy_from_slice(&46u32.to_le_bytes());
-        frame[93] = 1;
-        frame[94..98].copy_from_slice(&12u32.to_le_bytes());
-        frame
-    }
     fn paired_header() -> [u8; 11] {
         let mut header = [0; 11];
         header[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -964,7 +940,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         byte_offset: 0,
     };
 
-    let mut exact = owner_frame();
+    let mut exact = parameter_owner_frame();
     exact.extend_from_slice(&paired_header());
     let owners = with_scan(&archive(stream, &exact), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
@@ -990,7 +966,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     .expect("missing owner frame is retained as an unresolved binding");
     assert!(unresolved.is_empty());
 
-    let mut extended = owner_frame();
+    let mut extended = parameter_owner_frame();
     extended.push(0);
     extended.extend_from_slice(&paired_header());
     let error = with_scan(&archive(stream, &extended), |scan| {
