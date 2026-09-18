@@ -274,21 +274,13 @@ pub(crate) fn reverse_curve_geometry(
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
-            if !origin.is_finite()
-                || ![direction.x, direction.y, direction.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-            {
+            if !origin.is_finite() || !direction.is_finite() {
                 return None;
             }
             let length = range[1] - range[0];
             let origin = (*origin).translated(*direction, range[1]);
             let direction = direction.scale(-1.0);
-            if !origin.is_finite()
-                || ![direction.x, direction.y, direction.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-            {
+            if !origin.is_finite() || !direction.is_finite() {
                 return None;
             }
             Some((
@@ -322,10 +314,7 @@ pub(crate) fn reverse_curve_geometry(
             let tangent = (*axis).cross(*ref_direction);
             let end = range[1];
             let ref_direction = (*ref_direction).scale(end.cos()) + tangent.scale(end.sin());
-            if ![ref_direction.x, ref_direction.y, ref_direction.z]
-                .into_iter()
-                .all(f64::is_finite)
-            {
+            if !ref_direction.is_finite() {
                 return None;
             }
             Some((

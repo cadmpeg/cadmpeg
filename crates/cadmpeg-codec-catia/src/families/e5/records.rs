@@ -633,9 +633,7 @@ fn e5_nurbs_surface(
     } else {
         None
     };
-    if control_points
-        .iter()
-        .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
+    if control_points.iter().any(|point| !point.is_finite())
         || weights.as_ref().is_some_and(|weights| {
             weights
                 .iter()

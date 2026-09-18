@@ -1854,10 +1854,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
         }
         _ => return None,
     };
-    [point.x, point.y, point.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(point)
+    point.is_finite().then_some(point)
 }
 
 /// Decode complete `5e1a` allocation tuples.

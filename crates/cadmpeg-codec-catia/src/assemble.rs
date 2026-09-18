@@ -279,12 +279,8 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     pcurve_origin: Point2,
     pcurve_direction: Point2,
 ) -> Option<[f64; 2]> {
-    let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
-    let finite_vector = |vector: Vector3| {
-        [vector.x, vector.y, vector.z]
-            .into_iter()
-            .all(f64::is_finite)
-    };
+    let finite_point = |point: Point3| point.is_finite();
+    let finite_vector = |vector: Vector3| vector.is_finite();
     if !finite_point(center)
         || !finite_point(start)
         || !finite_point(end)
@@ -374,10 +370,7 @@ pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
         return None;
     }
     let unit = vector.scale(1.0 / norm);
-    [unit.x, unit.y, unit.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(unit)
+    unit.is_finite().then_some(unit)
 }
 
 /// Counts of each typed analytic surface kind decoded.
