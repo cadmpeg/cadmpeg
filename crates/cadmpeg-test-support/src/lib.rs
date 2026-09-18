@@ -10,6 +10,7 @@ use cadmpeg_core::dialect::DialectId;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
 
+pub mod compound;
 pub mod golden;
 pub mod refusal;
 pub mod roundtrip;

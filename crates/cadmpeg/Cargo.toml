@@ -73,6 +73,9 @@ thiserror.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
+# The package has no library target, so its unit tests and its integration
+# tests share byte fixtures through this crate.
+cadmpeg-test-support = { workspace = true }
 crc32fast.workspace = true
 predicates.workspace = true
 zip.workspace = true
