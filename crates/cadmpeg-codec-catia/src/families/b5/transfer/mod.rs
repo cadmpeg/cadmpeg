@@ -1174,10 +1174,6 @@ fn annotate(
     annotations.exactness(id, exactness);
 }
 
-fn point(value: [f64; 3]) -> Point3 {
-    Point3::new(value[0], value[1], value[2])
-}
-
 fn vector(value: [f64; 3]) -> Vector3 {
     Vector3::new(value[0], value[1], value[2])
 }

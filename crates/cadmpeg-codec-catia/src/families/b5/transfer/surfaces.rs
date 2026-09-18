@@ -18,7 +18,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use super::super::graph::{B5Graph, B5Profile, B5Surface};
 use super::super::vecmath::{add, cross, scale};
 use super::{
-    annotate, dot, length, point, point3, subtract, unit, vector, RevolutionPlan, SurfacePlan,
+    annotate, dot, length, point3, subtract, unit, vector, RevolutionPlan, SurfacePlan,
     SurfaceProcedure, TransferPlan,
 };
 use crate::assemble::cgm_source;
@@ -66,7 +66,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             radius,
             ..
         } => cadmpeg_ir::geometry::CylinderSurface::try_new(
-            point(*origin),
+            point3(*origin),
             vector(*axis),
             vector(*reference_x),
             *radius,
@@ -87,7 +87,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
         } => {
             let slant = slant_range[0];
             cadmpeg_ir::geometry::ConeSurface::try_new(
-                point(add(*apex, scale(*axis, slant * half_angle.cos()))),
+                point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
                 vector(*axis),
                 vector(*direction_x),
                 slant * half_angle.sin(),
@@ -108,7 +108,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             radius,
             ..
         } => cadmpeg_ir::geometry::SphereSurface::try_new(
-            point(*center),
+            point3(*center),
             vector(*axis),
             vector(*direction_x),
             *radius,
@@ -127,7 +127,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             minor_radius,
             ..
         } => cadmpeg_ir::geometry::TorusSurface::try_new(
-            point(*center),
+            point3(*center),
             vector(*axis),
             vector(*direction_x),
             *major_radius,
@@ -279,7 +279,7 @@ pub(super) fn revolution_surface(
         surface,
         RevolutionPlan {
             directrix,
-            axis_origin: point(axis_origin),
+            axis_origin: point3(axis_origin),
             axis_direction: vector(axis_direction),
             angular_interval,
             angular_parameter_interval: native_angular_interval,
@@ -557,7 +557,7 @@ pub(super) fn orthonormal_plane(
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
-            point(origin),
+            point3(origin),
             vector(unit(cross(u, v))?),
             vector(u),
         )

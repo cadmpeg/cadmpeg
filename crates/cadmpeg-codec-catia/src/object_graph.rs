@@ -708,7 +708,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
     tags
 }
 
-fn extent_contains(
+pub(crate) fn extent_contains(
     owner_start: usize,
     owner_len: usize,
     candidate_start: usize,
