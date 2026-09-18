@@ -62,29 +62,6 @@ impl From<f64> for TokenValue {
     }
 }
 
-fn directory_target(sequence: u32, entity_type: i64) -> DirectoryEntry {
-    DirectoryEntry {
-        source_offset: 0,
-        sequence,
-        entity_type,
-        parameter_start: 1,
-        structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
-        transform: 0,
-        label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
-        parameter_line_count: 1,
-        form: 0,
-        reserved: [[b' '; 8]; 2],
-        label: [b' '; 8],
-        subscript: 0,
-    }
-}
-
 #[test]
 fn parameter_owner_field_uses_blank_column_65_and_right_aligned_seven_digits() {
     for (field, expected) in [
@@ -101,7 +78,7 @@ fn parameter_owner_field_uses_blank_column_65_and_right_aligned_seven_digits() {
     }
 }
 
-fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
+pub(super) fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
     ParameterRecord {
         directory_sequence: sequence,
         line_range: 1..2,
@@ -131,5 +108,32 @@ fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRe
             .collect(),
         parameter_end,
         comment: Vec::new(),
+    }
+}
+
+pub(super) fn directory_target_with_form(
+    sequence: u32,
+    entity_type: i64,
+    form: i64,
+) -> DirectoryEntry {
+    DirectoryEntry {
+        source_offset: 0,
+        sequence,
+        entity_type,
+        parameter_start: 1,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: SourceStatus::from_codes([0, 0, 0, 0]),
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 1,
+        form,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
     }
 }

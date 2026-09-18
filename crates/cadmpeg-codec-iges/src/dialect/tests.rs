@@ -8,9 +8,10 @@ use super::*;
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::fixed_ascii_with_global;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
+use crate::test_support::{detect_and_decode, global_with_version_flag, only_match};
 use crate::IgesCodec;
 use cadmpeg_core::dialect::Admission;
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::Codec;
 use std::io::Cursor;
 
 #[test]
@@ -75,25 +76,13 @@ fn every_write_target_names_a_fixed_ascii_row() {
     }
 }
 
-/// A 26-field Global record with `version_flag` substituted for field 23.
-///
-/// Field 23 is the version flag of IGES 5.3 Table 1. An empty string omits the
-/// field, which is the specification's own default case.
-fn global_record(version_flag: &str) -> Vec<u8> {
-    format!(
-        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,\
-         2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{version_flag},0,0H,0H;"
-    )
-    .into_bytes()
-}
-
 /// Resolves the Global section of a Fixed ASCII file carrying `version_flag`.
 ///
 /// The physical representation does not reach the Global resolver: Compressed
 /// ASCII and Binary are normalized to fixed cards before this point, so one
 /// resolved Global serves every representation in the matrix below.
 fn resolved_global(version_flag: &str) -> crate::global::ResolvedGlobal {
-    let bytes = fixed_ascii_with_global(&global_record(version_flag));
+    let bytes = fixed_ascii_with_global(&global_with_version_flag(version_flag));
     let scan = crate::card::scan(&bytes).unwrap();
     crate::global::parse(&scan).unwrap().0
 }
@@ -276,33 +265,6 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
     }
 }
 
-/// The one dialect match of a report. The primary-layer invariant makes it the
-/// primary layer, so no consumer here indexes by position for any other reason.
-fn only_match(
-    dialects: Option<&cadmpeg_core::dialect::DialectLayers>,
-) -> &cadmpeg_core::dialect::DialectMatch {
-    let layers = dialects.expect("IGES reports dialect layers");
-    assert_eq!(layers.iter().count(), 1, "{dialects:#?}");
-    assert_eq!(layers.primary().format(), "iges");
-    layers.primary()
-}
-
-/// A 26-field Global record carrying `version_flag` in field 23.
-fn global_with_version_flag(version_flag: &str) -> Vec<u8> {
-    format!(
-        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,\
-         2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{version_flag},0,0H,0H;"
-    )
-    .into_bytes()
-}
-
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized IGES stream should decode")
-}
-
 /// Whether `result` charges the dialect-unverified loss.
 fn charges_dialect_unverified(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
     result
@@ -319,7 +281,7 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
     // company: the row is named, and the admission says the grammar that read
     // the file was a substitute.
     let bytes = point_file_with_global(&global_with_version_flag("2"));
-    let decoded = decode(bytes.clone());
+    let decoded = detect_and_decode(bytes.clone());
 
     let matched = only_match(decoded.report().dialects());
     assert_eq!(
@@ -360,7 +322,7 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     // declaration survives in `declared` while the id states only that nothing
     // matched.
     let bytes = point_file_with_global(&global_with_version_flag("99"));
-    let decoded = decode(bytes.clone());
+    let decoded = detect_and_decode(bytes.clone());
 
     let matched = only_match(decoded.report().dialects());
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
@@ -387,7 +349,7 @@ fn a_verified_fixed_ascii_declaration_is_admitted_with_no_dialect_loss() {
     // IGES 4.0, whose Global table this codec verified, so the row is named,
     // the admission is plain, and no dialect loss is charged.
     let bytes = point_file_with_global(&global_with_version_flag("6"));
-    let decoded = decode(bytes);
+    let decoded = detect_and_decode(bytes);
 
     let matched = only_match(decoded.report().dialects());
     assert_eq!(matched.dialect().as_str(), "iges:4.0-fixed-ascii");

@@ -2,40 +2,17 @@
 //! Type 230 parameter-table boundary tests.
 #![allow(clippy::unwrap_used)]
 
-use crate::directory::{DirectoryEntry, SourceStatus};
+use crate::parameter::tests::directory_target_with_form;
 use std::collections::BTreeMap;
 
 use super::{
     analyze_trailing_pointer_groups, entity_primary_end, ParameterRecord, Token, TokenValue,
 };
 
-fn directory_target(sequence: u32, entity_type: i64, form: i64) -> DirectoryEntry {
-    DirectoryEntry {
-        source_offset: 0,
-        sequence,
-        entity_type,
-        parameter_start: 1,
-        structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
-        transform: 0,
-        label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
-        parameter_line_count: 1,
-        form,
-        reserved: [[b' '; 8]; 2],
-        label: [b' '; 8],
-        subscript: 0,
-    }
-}
-
 #[test]
 fn type230_form1_entity_table_boundary_follows_island_count() {
-    let association = directory_target(1, 212, 0);
-    let source = directory_target(3, 230, 1);
+    let association = directory_target_with_form(1, 212, 0);
+    let source = directory_target_with_form(3, 230, 1);
     let directory = BTreeMap::from([(1, &association), (3, &source)]);
     let values = [230, 0, 2, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0];
     let record = ParameterRecord {

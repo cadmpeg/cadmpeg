@@ -8,6 +8,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::IgesLossCode;
+use crate::test_support::code_count;
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
@@ -17,14 +18,6 @@ mod counted_lists;
 mod fem;
 mod macros;
 mod occurrences;
-
-fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
-    report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == code.kind())
-        .count()
-}
 
 fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
     let tag = format!("directory_entry:D{sequence}");

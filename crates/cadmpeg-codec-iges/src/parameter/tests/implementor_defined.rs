@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use super::super::{analyze_trailing_pointer_groups, entity_primary_end, TokenValue};
-use super::{directory_target, integer_parameter_record, token_parameter_record};
+use super::{integer_parameter_record, token_parameter_record};
+use crate::test_support::directory_target;
 
 #[test]
 fn type406_implementor_defined_forms_use_common_count_boundary() {

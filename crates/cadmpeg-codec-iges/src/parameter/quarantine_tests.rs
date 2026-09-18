@@ -4,30 +4,16 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
-use cadmpeg_ir::report::{DecodeReport, TransferDisposition};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::TransferDisposition;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
 
 /// Zero-based index of the Parameter Data count field in the second card.
 const PARAMETER_COUNT_FIELD: usize = 3;
-
-fn strict_options() -> DecodeOptions {
-    let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    options
-}
-
-fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
-    report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == code.kind())
-        .count()
-}
 
 fn point_file(parameters: &str) -> Vec<u8> {
     owned_test_file(&[OwnedTestEntity {
@@ -37,12 +23,6 @@ fn point_file(parameters: &str) -> Vec<u8> {
         status: "00000000",
         parameters: parameters.into(),
     }])
-}
-
-fn decode(bytes: Vec<u8>) -> DecodeResult {
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap()
 }
 
 fn parameter_card_offset(bytes: &[u8]) -> usize {
