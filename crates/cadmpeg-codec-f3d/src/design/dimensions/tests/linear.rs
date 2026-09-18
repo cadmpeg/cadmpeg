@@ -1,13 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use super::project_dimension_constraints;
+use super::project_spatial_dimension_constraints;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::dimensions::directional_point_dimension;
+use crate::design::dimensions::exact_counted_dimension_relation;
+use crate::design::dimensions::repeated_linear_dimension;
+use crate::design::dimensions::two_locus_distance_dimension;
+use crate::design::test_support::parameter_record;
+use crate::ids::neutral_parameter_id_parts;
+use crate::ids::neutral_sketch_id;
+use crate::ids::neutral_spatial_sketch_id;
+use crate::records::dimensions::DesignDimensionLocus;
+use crate::records::dimensions::DesignDimensionLocusGroup;
+use crate::records::dimensions::DesignDimensionLocusPair;
+use crate::records::parameters::DesignParameterCompanion;
+use crate::records::sketch_geometry::SketchCurveIdentity;
+use crate::records::sketch_geometry::SketchPoint;
+use crate::records::sketch_placement::DesignSketchPlacement;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
+use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::sketches::SpatialSketch;
+use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput;
 
 #[test]
 fn dimension_proofs_require_the_evaluated_measurement() {

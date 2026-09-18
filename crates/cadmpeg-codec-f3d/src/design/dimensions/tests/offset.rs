@@ -1,14 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use crate::design::dimensions::bind_dimension_loci;
+use crate::design::dimensions::counted_role_relation;
+use crate::design::dimensions::exact_counted_offset;
+use crate::design::dimensions::offset_parameter_factor;
+use crate::design::dimensions::spatial_counted_offset_dimension_definition;
+use crate::records::dimensions::DesignDimensionLocusPair;
+use crate::records::sketch_geometry::SketchPoint;
+use crate::records::sketch_placement::DesignSketchPlacement;
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::sketches::SketchNativeOperand;
 use cadmpeg_ir::sketches::SketchOffsetPair;
+use cadmpeg_ir::sketches::SpatialSketch;
+use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput;
+use cadmpeg_ir::sketches::SpatialSketchEntity;
+use cadmpeg_ir::sketches::SpatialSketchEntityId;
+use cadmpeg_ir::sketches::SpatialSketchEntityUse;
+use cadmpeg_ir::sketches::SpatialSketchGeometry;
+use cadmpeg_ir::sketches::SpatialSketchId;
+use cadmpeg_ir::sketches::SpatialSketchProfile;
 use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
+use std::collections::HashMap;
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 const TEST_DISTANCE_EPSILON: f64 = 1.0e-9;

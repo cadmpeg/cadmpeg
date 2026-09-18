@@ -1,13 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::dimensions::owner_scoped_angular_dimension_definition;
+use crate::design::dimensions::owner_scoped_line_length_dimension_definition;
+use crate::design::dimensions::owner_scoped_radial_dimension_definition;
+use crate::design::dimensions::preceding_incident_angular_dimension_definition;
+use crate::design::dimensions::radial_dimension_definition;
+use crate::design::dimensions::radial_extension_annotation_group;
+use crate::design::dimensions::radial_locus_dimension_definition;
+use crate::design::dimensions::spatial_parallel_line_distance_matches;
+use crate::design::dimensions::spatial_point_distance_matches;
+use crate::design::dimensions::unique_point_class_dimension_definition;
+use crate::design::test_support::parameter_record;
+use crate::records::sketch_geometry::SketchCurveGeometry;
+use crate::records::sketch_geometry::SketchCurveIdentity;
+use crate::records::sketch_geometry::SketchPoint;
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
+use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::sketches::SketchLocus;
+use std::collections::HashMap;
 
 #[test]
 fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
