@@ -1007,7 +1007,10 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     .unwrap();
     let original = surface.clone();
     assert!(surface
-        .edit_vertices(|vertices| vertices[0].z = f64::INFINITY)
+        .edit_vertices(|vertices| {
+            vertices[0].z = f64::INFINITY;
+            Ok(())
+        })
         .is_err());
     assert_eq!(surface, original);
     assert!(surface.set_chordal_deflection(-1.0).is_err());
@@ -1015,6 +1018,31 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     let mut wire = serde_json::to_value(&surface).unwrap();
     wire["chordal_deflection"] = serde_json::json!(-1.0);
     assert!(serde_json::from_value::<PolygonalSurface>(wire).is_err());
+}
+#[test]
+fn a_refused_polygonal_vertex_edit_keeps_the_prior_vertices() {
+    use super::{GeometryLayoutError, PolygonalSurface};
+
+    let mut surface = PolygonalSurface::new(
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+        0.0,
+    )
+    .unwrap();
+    let original = surface.clone();
+    assert!(surface
+        .edit_vertices(|vertices| {
+            vertices[0].z = 5.0;
+            Err(GeometryLayoutError::EditRefused(
+                "the caller refused this vertex".to_string(),
+            ))
+        })
+        .is_err());
+    assert_eq!(surface, original);
 }
 
 #[test]

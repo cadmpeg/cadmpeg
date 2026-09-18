@@ -1344,12 +1344,14 @@ impl PolygonalSurface {
     }
 
     /// Edit finite vertices transactionally.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_vertices(
         &mut self,
-        edit: impl FnOnce(&mut [Point3]),
+        edit: impl FnOnce(&mut [Point3]) -> Result<(), GeometryLayoutError>,
     ) -> Result<(), GeometryLayoutError> {
         let mut candidate = self.vertices.clone();
-        edit(&mut candidate);
+        edit(&mut candidate)?;
         *self = Self::new(candidate, self.triangles.clone(), self.chordal_deflection)?;
         Ok(())
     }
