@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
+use crate::scalar;
+use crate::surface::decode_positional_cone_frame;
+use crate::surface::prototype_cone_frame;
+use crate::surface::terminal_cone_half_angle_layout;
+use crate::surface::PositionalConeFrame;
+use crate::surface::SurfaceNamedParameter;
+use crate::surface::SurfaceNamedValue;
+use crate::surface::SurfacePrototypeFamily;
+use crate::surface::SurfacePrototypeRecord;
 
-use super::*;
+const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
 
 #[test]
 fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
