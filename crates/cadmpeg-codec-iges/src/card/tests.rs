@@ -6,7 +6,10 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_cards::{
+    card, card_with_ending, CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES,
+};
+use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
 #[test]

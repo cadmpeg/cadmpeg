@@ -17,7 +17,17 @@ use super::{
 };
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{
+    circular_arc_file, direction_file, equal_weight_rational_nurbs_curve_file, line_file,
+    nurbs_curve_file, polynomial_nurbs_curve_file, rational_nurbs_curve_file,
+    transformed_circular_arc_file, transformed_circular_arc_file_with_form,
+    transformed_circular_arc_file_with_global,
+};
+use crate::test_support::test_drawing_and_trimming::test_surface_domains::nested_transformed_point_file;
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, owned_test_file_with_global_and_line_fonts,
+    OwnedTestEntity,
+};
 use crate::IgesCodec;
 
 const EPS_RADIUS_COMPARISON: f64 = 1.0e-12;

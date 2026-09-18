@@ -1,5 +1,11 @@
-use super::test_cards::*;
-use super::test_owned::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
+    parameter_cards, parameter_fragment_count,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, owned_test_file_with_global_and_line_fonts,
+    OwnedTestEntity,
+};
 
 pub(crate) fn nurbs_surface_file() -> Vec<u8> {
     nurbs_surface_file_with_parameters(

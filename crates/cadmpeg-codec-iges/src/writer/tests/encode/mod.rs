@@ -28,7 +28,22 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::plan_at;
+use crate::test_support::test_curves_and_surfaces::{
+    circular_arc_file, composite_curve_with_join_gap, conic_arc_file, copious_data_file, line_file,
+    nurbs_curve_file, point_file,
+};
+use crate::test_support::test_drawing_and_trimming::{
+    explicit_cylinder_seam_file, multi_pcurve_boundary_file, trimmed_plane_with_inner_loop_file,
+};
+use crate::test_support::test_solids_and_structure::{
+    explicit_non_manifold_open_shell_file, explicit_tetrahedron_solid_file,
+    explicit_vertex_loop_file, parametrically_bounded_plane_file,
+};
+use crate::test_support::test_surface_fixtures::{
+    bounded_plane_file, bounded_plane_with_resolution_gap_file, composite_ruled_surface_file,
+    plane_file, trimmed_plane_file,
+};
 use crate::writer::same_float;
 use crate::{IgesCodec, IgesVersion};
 

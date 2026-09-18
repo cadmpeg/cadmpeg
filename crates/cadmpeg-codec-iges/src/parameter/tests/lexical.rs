@@ -8,7 +8,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use super::super::{tokenize, ParameterDefect, Token, TokenValue, TokenizeFailure};
 use crate::global::{GlobalTable, NumericLimits};
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::point_file_with_global;
+use crate::test_support::test_owned::{owned_test_file_with_raw_parameters, OwnedTestEntity};
 use crate::IgesCodec;
 
 #[test]

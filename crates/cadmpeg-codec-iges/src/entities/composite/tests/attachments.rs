@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::loss::IgesLossCode;
-use crate::test_support::owned_test_file_with_global;
-use crate::test_support::owned_test_file_with_global_and_directory_fields;
-use crate::test_support::OwnedTestEntity;
+use crate::test_support::test_owned::{
+    owned_test_file_with_global, owned_test_file_with_global_and_directory_fields, OwnedTestEntity,
+};
 use crate::IgesCodec;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::Codec;

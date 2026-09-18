@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::loss::IgesLossCode;
-use crate::test_support::{point_file, point_file_with_global};
+use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
 use crate::IgesCodec;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{Admission, DialectLayers, DialectMatch};

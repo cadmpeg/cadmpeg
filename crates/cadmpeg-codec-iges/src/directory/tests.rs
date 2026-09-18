@@ -9,7 +9,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{direction_file, point_file};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
 use super::{status, SourceStatus};

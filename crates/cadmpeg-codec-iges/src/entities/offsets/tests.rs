@@ -11,7 +11,12 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 
 use crate::parameter::{Token, TokenValue};
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{
+    function_offset_line_file, linear_offset_line_file,
+    offset_quarter_circle_with_absolute_native_parameters, placed_uniform_offset_circle_file,
+    placed_uniform_offset_line_file, uniform_offset_circle_file,
+    uniform_offset_circle_file_with_parameters,
+};
 use crate::IgesCodec;
 use crate::{directory::DirectoryEntry, directory::SourceStatus, parameter::ParameterRecord};
 

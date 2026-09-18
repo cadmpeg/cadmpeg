@@ -2,12 +2,22 @@
 //! Solid, B-rep, and structure byte fixtures for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::test_cards::*;
-use super::test_owned::*;
-mod test_annotation_variants;
-pub(crate) use test_annotation_variants::*;
-mod test_general_note_variants;
-pub(crate) use test_general_note_variants::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
+    parameter_cards, parameter_fragment_count,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_colors, owned_test_file_with_display,
+    owned_test_file_with_levels, owned_test_file_with_line_weights,
+    owned_test_file_with_structures, OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::test_general_note_variants::{
+    new_general_note_file_with_character_metrics, new_general_note_file_with_fields,
+    new_general_note_file_with_font, new_general_note_file_with_font_and_character_set,
+    new_general_note_parameters,
+};
+pub(crate) mod test_annotation_variants;
+pub(crate) mod test_general_note_variants;
 
 pub(crate) fn parametrically_bounded_plane_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";

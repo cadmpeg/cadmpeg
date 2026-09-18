@@ -12,7 +12,10 @@ use cadmpeg_ir::topology::Vertex;
 use cadmpeg_ir::{CadIr, SourceProvenance};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{
+    direction_file, point_file, point_file_with_global,
+};
+use crate::test_support::test_drawing_and_trimming::test_surface_domains::transform_chain_overflow_file;
 use crate::IgesCodec;
 
 #[test]

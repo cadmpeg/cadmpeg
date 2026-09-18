@@ -21,7 +21,15 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_curves_and_surfaces::{
+    composite_curve_file, composite_curve_with_join_gap, heterogeneous_composite_curve_file,
+    mixed_analytic_composite_curve_file, mixed_degree_composite_pcurve_file,
+    parametric_spline_composite_curve_file,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, owned_test_file_with_global_and_directory_fields,
+    OwnedTestEntity,
+};
 use crate::IgesCodec;
 
 use super::*;

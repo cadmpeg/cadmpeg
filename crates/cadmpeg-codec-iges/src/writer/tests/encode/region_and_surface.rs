@@ -1,4 +1,4 @@
-use crate::test_support::explicit_void_solid_file;
+use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
 use cadmpeg_ir::codec::write::EncodeInput;

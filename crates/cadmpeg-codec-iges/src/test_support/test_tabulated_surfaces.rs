@@ -2,7 +2,10 @@
 //! Tabulated-surface byte fixtures for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::test_cards::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_cards,
+    parameter_fragment_count,
+};
 
 pub(crate) fn placed_tabulated_hyperbola_file() -> Vec<u8> {
     placed_tabulated_hyperbola_file_with_global(

@@ -2,7 +2,9 @@
 //! Procedural-surface byte fixtures for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::test_owned::*;
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, OwnedTestEntity,
+};
 
 pub(crate) fn cacheless_line_tabulated_surface_file() -> Vec<u8> {
     owned_test_file(&[

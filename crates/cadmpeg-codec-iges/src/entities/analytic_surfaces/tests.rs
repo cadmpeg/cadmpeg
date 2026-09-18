@@ -6,7 +6,10 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::test_surface_fixtures::{
+    pointer_defined_surface_file, pointer_defined_surface_with_reference,
+};
 use crate::IgesCodec;
 
 #[test]

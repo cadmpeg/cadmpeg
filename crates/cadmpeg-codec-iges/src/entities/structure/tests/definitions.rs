@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_owned::{owned_test_file_with_directory_fields, OwnedTestEntity};
 use crate::IgesCodec;
 
 #[test]

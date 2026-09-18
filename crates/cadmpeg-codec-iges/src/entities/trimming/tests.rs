@@ -22,7 +22,27 @@ use super::{
     SimpleRing,
 };
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_cards::fixed_ascii_with_global;
+use crate::test_support::test_drawing_and_trimming::{
+    explicit_cylinder_seam_file, explicit_multi_pcurve_loop_file,
+    explicit_multi_pcurve_loop_file_with_first_pcurve, independent_boundary_entities_file,
+    multi_pcurve_boundary_file, multi_pcurve_boundary_file_with_first_pcurve,
+    parameter_domain_trimmed_surface_file, subrange_nurbs_surface_boundary_file,
+    subrange_nurbs_surface_boundary_file_with_source_precision, trimmed_plane_with_boundaries,
+    trimmed_plane_with_boundaries_and_inner, trimmed_plane_with_inner_loop_and_outer_pcurve,
+    trimmed_plane_with_inner_loop_file,
+};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::test_procedural_surfaces::{
+    trimmed_procedural_line_surface_of_revolution_file,
+    trimmed_procedural_line_surface_of_revolution_file_with_global,
+};
+use crate::test_support::test_solids_and_structure::parametrically_bounded_plane_file;
+use crate::test_support::test_surface_fixtures::{
+    bounded_plane_file, bounded_plane_with_resolution_gap_file,
+    bounded_plane_with_significance_gap_file, centimetre_bounded_plane_with_resolution_gap_file,
+    model_curve_only_trimmed_plane_file, trimmed_circle_pcurve_file, trimmed_plane_file,
+};
 use crate::IgesCodec;
 
 const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;

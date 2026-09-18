@@ -9,9 +9,8 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{
-    owned_test_file, OwnedTestEntity, CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES,
-};
+use crate::test_support::test_cards::{CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
 /// Authored coordinates of the single Type 116 point in every fixture here.

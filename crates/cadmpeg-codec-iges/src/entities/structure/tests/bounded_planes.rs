@@ -6,9 +6,10 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{
-    bounded_plane_entity_file, owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
+use crate::test_support::test_owned::{
+    owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
 };
+use crate::test_support::test_surface_fixtures::bounded_plane_entity_file;
 use crate::IgesCodec;
 
 const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
@@ -226,7 +227,7 @@ fn bounded_plane_accepts_a_simple_composite_line_boundary() {
 #[test]
 fn bounded_plane_requires_a_resolvable_boundary_pointer() {
     let result = decode(
-        crate::test_support::owned_test_file_with_global_and_line_fonts(
+        crate::test_support::test_owned::owned_test_file_with_global_and_line_fonts(
             &[OwnedTestEntity {
                 entity_type: 108,
                 form: 1,
@@ -247,7 +248,7 @@ fn bounded_plane_requires_a_resolvable_boundary_pointer() {
 #[test]
 fn negative_bounded_plane_without_an_owner_is_not_invented_as_a_face() {
     let result = decode(
-        crate::test_support::owned_test_file_with_global_and_line_fonts(
+        crate::test_support::test_owned::owned_test_file_with_global_and_line_fonts(
             &[
                 OwnedTestEntity {
                     entity_type: 108,

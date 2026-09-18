@@ -2,7 +2,7 @@
 //! Reporting of a declined verbatim replay.
 
 use crate::loss::IgesLossCode;
-use crate::test_support::point_file;
+use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::DialectId;

@@ -12,7 +12,11 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::test_solids_and_structure::{
+    explicit_tetrahedron_solid_with_boolean_file, nested_brep_boolean_file, primitive_solids_file,
+    procedural_and_boolean_solids_file,
+};
 use crate::IgesCodec;
 
 const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;

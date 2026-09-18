@@ -13,7 +13,26 @@ use super::functional_level_identifier_valid;
 use super::line_font_property_code_valid;
 use super::signal_string_geometry_target;
 use crate::loss::IgesLossCode;
-use crate::test_support::*;
+use crate::test_support::test_drawing_and_trimming::{
+    associativity_definition_file, bounded_associativity_forms_file,
+    bounded_associativity_forms_file_with_global, flow_associativity_forms_file,
+    label_display_without_leader_file, legacy_associativity_forms_file,
+    legacy_associativity_forms_file_with_global, legacy_generic_single_parent_file,
+    legacy_perforated_plane_file,
+};
+use crate::test_support::test_owned::{
+    owned_test_file, owned_test_file_with_global, OwnedTestEntity,
+};
+use crate::test_support::test_solids_and_structure::{
+    attribute_definition_forms_file, attribute_instance_forms_file,
+    attribute_instance_ignored_structures_file, closure_property_file,
+    dimension_property_forms_file, drawing_metadata_property_forms_file,
+    equal_drilled_hole_layer_range_file, external_reference_forms_file, grid_property_file,
+    group_forms_file, group_type_property_file, invalid_drilled_hole_layer_order_file,
+    lep_property_forms_file, patterned_instance_file, product_property_file,
+    scalar_property_forms_file, solid_instance_file, structure_target_rules_file,
+    text_score_property_forms_file, variable_schema_property_forms_file,
+};
 use crate::IgesCodec;
 mod bounded_planes;
 mod definitions;
