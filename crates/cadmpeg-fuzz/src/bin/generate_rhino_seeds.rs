@@ -5,8 +5,7 @@ use std::fs;
 use std::io;
 use std::io::Write;
 
-include!("../seed_paths.rs");
-
+use cadmpeg_fuzz::seed_paths::seed_dir;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 

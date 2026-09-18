@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// Resolve the fuzz seed tree from CARGO_MANIFEST_DIR.
-// Included by the seed generator binaries. Fully qualified std::path types
-// so include sites do not need extra imports.
+//! Resolves the fuzz seed tree from `CARGO_MANIFEST_DIR`, so the current
+//! working directory does not change where a generator writes.
 
-fn crate_root() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+use std::path::PathBuf;
+
+pub fn crate_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn seed_dir(target_or_relative: &str) -> std::path::PathBuf {
+pub fn seed_dir(target_or_relative: &str) -> PathBuf {
     let root = crate_root();
     if target_or_relative == "seeds" || target_or_relative.starts_with("seeds/") {
         root.join(target_or_relative)

@@ -6,9 +6,8 @@ use std::fs;
 use std::io::{Cursor, Write};
 use std::path::Path;
 
-include!("../seed_paths.rs");
-
 use cadmpeg_core::CodecError;
+use cadmpeg_fuzz::seed_paths::seed_dir;
 use cadmpeg_fuzz::seeds;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
@@ -434,51 +433,11 @@ fn generate_nx_seeds() -> Result<(), CodecError> {
 }
 
 mod nx {
-    use cadmpeg_core::decode::alloc_filled;
     use cadmpeg_core::CodecError;
-    use cadmpeg_fuzz::seeds::nx::{put_f64, put_vec3, MAGIC};
+    use cadmpeg_fuzz::seeds::nx::{partition_stream, MAGIC};
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
     use std::io::Write;
-
-    fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
-        let mut r = alloc_filled(len, 0_u8, "NX seed record")?;
-        r[0] = 0x00;
-        r[1] = tag;
-        Ok(r)
-    }
-
-    fn partition_stream() -> Result<Vec<u8>, CodecError> {
-        let mut s = Vec::new();
-        s.extend_from_slice(b"PS\x00\x00");
-        s.extend_from_slice(
-            b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00",
-        );
-        s.extend_from_slice(b"SCH_TEST_1_9999\x00");
-
-        let mut pt = record(0x1d, 40)?;
-        put_vec3(&mut pt, 16, [0.0625, 0.0, 0.0127]);
-        s.extend_from_slice(&pt);
-
-        let mut pl = record(0x32, 91)?;
-        put_vec3(&mut pl, 19, [0.0762, 0.0, 0.0]);
-        put_vec3(&mut pl, 43, [0.0, 0.0, 1.0]);
-        put_vec3(&mut pl, 67, [1.0, 0.0, 0.0]);
-        s.extend_from_slice(&pl);
-
-        let mut cy = record(0x33, 99)?;
-        put_vec3(&mut cy, 19, [0.0, 0.0, 0.0]);
-        put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
-        put_f64(&mut cy, 67, 0.004_05);
-        s.extend_from_slice(&cy);
-
-        let mut ln = record(0x1e, 67)?;
-        put_vec3(&mut ln, 19, [0.01, 0.02, 0.03]);
-        put_vec3(&mut ln, 43, [1.0, 0.0, 0.0]);
-        s.extend_from_slice(&ln);
-
-        Ok(s)
-    }
 
     fn zlib_compress(raw: &[u8]) -> Vec<u8> {
         let mut e = ZlibEncoder::new(Vec::new(), Compression::new(1));
