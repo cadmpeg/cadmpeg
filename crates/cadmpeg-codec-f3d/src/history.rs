@@ -3155,11 +3155,7 @@ fn unique_historical_vertex_position(
         .iter()
         .filter(|position| position.point == point);
     let position = positions.next()?.position;
-    (positions.next().is_none()
-        && position.x.is_finite()
-        && position.y.is_finite()
-        && position.z.is_finite())
-    .then_some(position)
+    (positions.next().is_none() && position.is_finite()).then_some(position)
 }
 
 fn point_matches(left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3) -> bool {
@@ -7495,13 +7491,7 @@ fn historical_pattern_identity_axes_for_selection(
                 .into_iter()
                 .filter_map(|(origin, direction)| {
                     let direction = direction.unit()?;
-                    (origin.x.is_finite()
-                        && origin.y.is_finite()
-                        && origin.z.is_finite()
-                        && direction.x.is_finite()
-                        && direction.y.is_finite()
-                        && direction.z.is_finite())
-                    .then_some((origin, direction))
+                    (origin.is_finite() && direction.is_finite()).then_some((origin, direction))
                 })
                 .collect::<Vec<_>>();
         if state_axes.is_empty() {

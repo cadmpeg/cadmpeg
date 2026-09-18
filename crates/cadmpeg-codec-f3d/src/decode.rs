@@ -379,13 +379,11 @@ fn base_feature_body_selection_is_resolved(
 }
 
 fn point_is_finite(point: &cadmpeg_ir::math::Point3) -> bool {
-    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+    point.is_finite()
 }
 
 fn vector_is_finite(vector: &cadmpeg_ir::math::Vector3) -> bool {
-    [vector.x, vector.y, vector.z]
-        .into_iter()
-        .all(f64::is_finite)
+    vector.is_finite()
 }
 
 fn datum_plane_frame_is_resolved(
