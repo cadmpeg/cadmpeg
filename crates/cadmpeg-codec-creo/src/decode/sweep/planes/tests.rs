@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent};
-use crate::decode::holes::extrusion_extent_and_direction;
+use crate::decode::holes::sweep::extrusion_extent_and_direction;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};

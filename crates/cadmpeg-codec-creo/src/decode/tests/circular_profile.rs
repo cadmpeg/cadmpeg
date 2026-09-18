@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::feature_history::section_profile_ref;
-use crate::decode::holes::placement::{CapOutline, HoleCylinder};
-use crate::decode::holes::{
-    circular_sweep_cylinder_from_cap_outlines, circular_sweep_feature_definition,
+use crate::decode::holes::placement::{
     cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines, hole_extent_and_direction,
-    hole_placement, CircularSweepGeometry,
+    hole_placement,
+};
+use crate::decode::holes::placement::{CapOutline, HoleCylinder};
+use crate::decode::holes::sweep::{
+    circular_sweep_cylinder_from_cap_outlines, circular_sweep_feature_definition,
+    CircularSweepGeometry,
 };
 use crate::decode::sketch_transfer::skamp_constraints::sketch_constraint_loci_compatible;
 use crate::decode::sweep::{

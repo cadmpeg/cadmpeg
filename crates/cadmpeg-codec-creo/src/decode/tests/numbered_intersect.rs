@@ -15,9 +15,8 @@ use crate::decode::feature_history::{
     model_feature_ids, native_feature_dependency_ids, profile_segment_ids, reconciled_dependencies,
     surface_merge_entity_dependencies, surface_merge_quilt_ids, GeometryGeneratorFeature,
 };
-use crate::decode::holes::{
-    cylinder_from_complementary_outline_bounds, extrusion_extent_and_direction, hole_placement,
-};
+use crate::decode::holes::placement::{cylinder_from_complementary_outline_bounds, hole_placement};
+use crate::decode::holes::sweep::extrusion_extent_and_direction;
 use crate::decode::sketch::{
     section_linear_distance_coordinate, solve_section_coordinate_equations,
     solve_unsigned_dimension_coordinates, SectionCoordinateEquation,

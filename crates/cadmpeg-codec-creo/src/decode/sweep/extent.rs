@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion span resolution from carriers, cylinders, NURBS translation, and rectilinear planes.
 
-use super::super::holes::{extrusion_extent_and_direction, extrusion_span, ExtrusionSpan};
+use super::super::holes::placement::ExtrusionSpan;
+use super::super::holes::sweep::{extrusion_extent_and_direction, extrusion_span};
 use super::planes::{
     feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
 };

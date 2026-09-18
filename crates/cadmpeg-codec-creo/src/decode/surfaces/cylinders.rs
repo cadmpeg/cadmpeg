@@ -18,10 +18,12 @@ use super::super::feature_history::{
     round_constant_radius, round_support_envelope_cylinder, section_sweep_allows_linear_extrusion,
     slot_fillet_cylinder,
 };
-use super::super::holes::{
-    circular_sweep_geometry, counterbore_dimension_tuple_matches_radius, counterbore_dimensions,
-    counterbore_patch_geometries, cylinder_from_complementary_outline_bounds, simple_hole_geometry,
+use super::super::holes::counterbore::{
+    counterbore_dimension_tuple_matches_radius, counterbore_dimensions,
+    counterbore_patch_geometries,
 };
+use super::super::holes::placement::cylinder_from_complementary_outline_bounds;
+use super::super::holes::sweep::{circular_sweep_geometry, simple_hole_geometry};
 use super::super::native::annotate;
 use super::super::uniqueness::exactly_one;
 use crate::decode::analytic::equations::{plane_intersection_line, PlaneEquation};
