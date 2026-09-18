@@ -161,20 +161,24 @@ pub(crate) fn parse_meta_tables<'a>(
     ctx: &DecodeContext<'a>,
     body: View<'a>,
 ) -> Result<MetaTables<'a>, CodecError> {
-    let bytes = body.window();
-    if bytes.len() < meta_prefix::LEN + TERMINAL_ID_LEN {
-        return Err(CodecError::Malformed(
-            "truncated RSe metadata table body".into(),
-        ));
-    }
-    let mut prefix = [0; 7];
-    for (index, value) in prefix.iter_mut().enumerate() {
-        *value = read_u16(bytes, index * 2, "metadata prefix")?;
-    }
+    let mut view = body;
+    let prefix =
+        crate::reader::u16_array::<{ meta_prefix::LEN / 2 }>(&mut view, "metadata prefix")?;
 
-    let mut offset = meta_prefix::LEN;
-    let (block_count, section_1_payload, section_1_footer, next) =
-        counted_section(body, offset, 4, "block-size table")?;
+    // The terminal id is the last 16 bytes of the body and bounds the reverse
+    // section walk, so it is read before the forward sections claim the span
+    // between them.
+    let terminal_position = body
+        .end()
+        .checked_sub(TERMINAL_ID_LEN)
+        .ok_or_else(|| CodecError::truncated(body.location(), "metadata terminal id"))?;
+    let mut terminal = crate::reader::at(body, terminal_position, "metadata terminal id")?;
+    let terminal_start = terminal.read_len();
+    let terminal_id =
+        crate::reader::array::<TERMINAL_ID_LEN>(&mut terminal, "metadata terminal id")?;
+
+    let (block_count, section_1_payload, section_1_footer) =
+        counted_section(&mut view, 4, "block-size table")?;
     if block_count > 1_000_000 {
         return Err(CodecError::Malformed(
             "RSe block-size count exceeds 1000000".into(),
@@ -182,8 +186,9 @@ pub(crate) fn parse_meta_tables<'a>(
     }
     ctx.charge_collection_items(block_count as u64, "admit Inventor RSe block descriptors")?;
     let mut blocks = Vec::with_capacity(block_count);
+    let mut sizes = section_1_payload;
     for ordinal in 0..block_count {
-        let encoded = read_u32(section_1_payload.window(), ordinal * 4, "block-size entry")?;
+        let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
         blocks.push(BlockDescriptor {
             ordinal: ordinal as u32,
             stored: encoded & 0x8000_0000 != 0,
@@ -195,26 +200,21 @@ pub(crate) fn parse_meta_tables<'a>(
         discriminator: block_count as u32,
         payload: section_1_payload,
     };
-    offset = next;
 
-    let (section_2_count, section_2_payload, _, next) =
-        counted_section(body, offset, 10, "section 2")?;
+    let (section_2_count, section_2_payload, _) = counted_section(&mut view, 10, "section 2")?;
     let section_2 = MetaSection {
         number: MetaSectionNumber::Two,
         discriminator: section_2_count as u32,
         payload: section_2_payload,
     };
-    offset = next;
-    let (section_3_count, section_3_payload, _, next) =
-        counted_section(body, offset, 28, "section 3")?;
+    let (section_3_count, section_3_payload, _) = counted_section(&mut view, 28, "section 3")?;
     let section_3 = MetaSection {
         number: MetaSectionNumber::Three,
         discriminator: section_3_count as u32,
         payload: section_3_payload,
     };
-    offset = next;
-    let (type_count, section_4_payload, section_4_footer, _) =
-        counted_section(body, offset, type_desc::LEN, "type table")?;
+    let (type_count, section_4_payload, section_4_footer) =
+        counted_section(&mut view, type_desc::LEN, "type table")?;
     if type_count > 256 {
         return Err(CodecError::Malformed(
             "RSe type table has more than 256 entries".into(),
@@ -255,12 +255,9 @@ pub(crate) fn parse_meta_tables<'a>(
         payload: section_4_payload,
     };
 
-    let terminal_start = bytes.len() - TERMINAL_ID_LEN;
-    let mut terminal_id = [0; 16];
-    terminal_id.copy_from_slice(&bytes[terminal_start..]);
     let mut end = terminal_start;
     let mut payload_len = SECTION_11_PAYLOAD_LEN;
-    let mut reverse = |number| reverse_section(bytes, body, number, &mut end, &mut payload_len);
+    let mut reverse = |number| reverse_section(body, number, &mut end, &mut payload_len);
     let section_11 = reverse(ReverseSectionNumber::Eleven)?;
     let section_10 = reverse(ReverseSectionNumber::Ten)?;
     let section_9 = reverse(ReverseSectionNumber::Nine)?;
@@ -343,9 +340,6 @@ pub(crate) fn frame_bulk_records<'a>(
         )));
     }
     let stream_trailer = child(bulk, trailer_start, bulk.window().len(), "stream trailer")?;
-    let trailing = cursor.remaining();
-    cursor.skip(trailing, "stream trailer")?;
-    cursor.finish()?;
     Ok(RseRecordTable {
         records,
         stream_trailer,
@@ -353,7 +347,6 @@ pub(crate) fn frame_bulk_records<'a>(
 }
 
 fn reverse_section<'a>(
-    bytes: &[u8],
     body: View<'a>,
     number: ReverseSectionNumber,
     end: &mut usize,
@@ -362,8 +355,9 @@ fn reverse_section<'a>(
     let header = end
         .checked_sub(payload_len.saturating_add(8))
         .ok_or_else(|| CodecError::Malformed("RSe metadata section chain underflows".into()))?;
-    let previous_span = read_u32(bytes, header, "metadata section back span")? as usize;
-    let discriminator = read_u32(bytes, header + 4, "metadata section discriminator")?;
+    let mut view = crate::reader::at(body, body.start() + header, "metadata section back span")?;
+    let previous_span = crate::reader::u32(&mut view, "metadata section back span")? as usize;
+    let discriminator = crate::reader::u32(&mut view, "metadata section discriminator")?;
     if previous_span < 4 {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata section {number} has invalid back span {previous_span}"
@@ -380,14 +374,14 @@ fn reverse_section<'a>(
     })
 }
 
+/// Reads one counted metadata section from the live forward cursor, leaving it
+/// on the byte after the section's footer span.
 fn counted_section<'a>(
-    body: View<'a>,
-    offset: usize,
+    view: &mut View<'a>,
     item_size: usize,
-    name: &str,
-) -> Result<(usize, View<'a>, usize, usize), CodecError> {
-    let bytes = body.window();
-    let count = read_u32(bytes, offset, name)? as usize;
+    name: &'static str,
+) -> Result<(usize, View<'a>, usize), CodecError> {
+    let count = crate::reader::u32(view, name)? as usize;
     if count > 1_000_000 {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata {name} count exceeds 1000000"
@@ -396,23 +390,19 @@ fn counted_section<'a>(
     let payload_len = count.checked_mul(item_size).ok_or_else(|| {
         CodecError::malformed(format_args!("RSe metadata {name} length overflows"))
     })?;
-    let payload_start = offset + 4;
+    let payload_start = view.read_len();
     let footer = payload_start.checked_add(payload_len).ok_or_else(|| {
         CodecError::malformed(format_args!("RSe metadata {name} range overflows"))
     })?;
-    let span = read_u32(bytes, footer, name)? as usize;
+    crate::reader::take(view, payload_len, name)?;
+    let span = crate::reader::u32(view, name)? as usize;
     let expected_span = 4 + payload_len;
     if span != expected_span {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata {name} spans {span} bytes, expected {expected_span}"
         )));
     }
-    Ok((
-        count,
-        child(body, payload_start, footer, name)?,
-        footer,
-        footer + 4,
-    ))
+    Ok((count, child(*view, payload_start, footer, name)?, footer))
 }
 
 fn validate_reverse_section(
@@ -533,16 +523,6 @@ fn child<'a>(
         .ok_or_else(|| CodecError::malformed(format_args!("RSe {name} range is invalid")))
 }
 
-fn read_u16(bytes: &[u8], offset: usize, name: &str) -> Result<u16, CodecError> {
-    View::u16_le_at(bytes, offset)
-        .ok_or_else(|| CodecError::malformed(format_args!("truncated RSe {name}")))
-}
-
-fn read_u32(bytes: &[u8], offset: usize, name: &str) -> Result<u32, CodecError> {
-    View::u32_le_at(bytes, offset)
-        .ok_or_else(|| CodecError::malformed(format_args!("truncated RSe {name}")))
-}
-
 struct Cursor<'a> {
     source: View<'a>,
 }
@@ -600,10 +580,6 @@ impl<'a> Cursor<'a> {
         self.source.read_len()
     }
 
-    fn remaining(&self) -> usize {
-        self.source.remaining()
-    }
-
     /// Reads the extended record trailer presence flag, which states only
     /// whether a trailer follows.
     fn record_trailer_presence(&mut self) -> Result<bool, CodecError> {
@@ -646,17 +622,6 @@ impl<'a> Cursor<'a> {
             )));
         }
         self.skip(len, name)
-    }
-
-    fn finish(self) -> Result<(), CodecError> {
-        if self.remaining() == 0 {
-            Ok(())
-        } else {
-            Err(CodecError::malformed(format_args!(
-                "RSe record stream has {} trailing bytes",
-                self.remaining()
-            )))
-        }
     }
 }
 
@@ -803,6 +768,31 @@ mod tests {
         ] {
             assert_eq!(text, format!("Truncated {field} at offset 0"));
         }
+    }
+
+    #[test]
+    fn a_truncated_metadata_table_body_is_located_and_names_its_field() {
+        for (bytes, expected) in [
+            (Vec::new(), "Truncated metadata prefix at offset 0"),
+            (vec![0; 14], "Truncated metadata terminal id at offset 0"),
+            (vec![0; 16], "Truncated block-size table at offset 14"),
+        ] {
+            with_view(&bytes, |ctx, view| {
+                assert_eq!(truncation(parse_meta_tables(ctx, view)), expected);
+            });
+        }
+    }
+
+    #[test]
+    fn a_metadata_terminal_id_under_the_window_start_is_located() {
+        let bytes = [0_u8; 30];
+        with_view(&bytes, |ctx, view| {
+            let body = view.child(10, 24).expect("a 14-byte child of 30 bytes");
+            assert_eq!(
+                truncation(parse_meta_tables(ctx, body)),
+                "Truncated metadata terminal id at offset 8"
+            );
+        });
     }
 
     fn meta_fixture() -> Vec<u8> {

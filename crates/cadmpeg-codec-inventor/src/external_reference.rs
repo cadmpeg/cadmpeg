@@ -779,22 +779,7 @@ impl<'a> Cursor<'a> {
         self.view.read_len()
     }
 
-    /// Refuses a range whose end no `usize` can state.
-    ///
-    /// The test is the whole effect. The sum is the end the caller is about
-    /// to reach, and every caller reaches it through the view instead, so
-    /// this answers whether the range is statable and nothing else.
-    fn require_statable_range(&self, len: usize, field: &'static str) -> Result<(), CodecError> {
-        if self.position().checked_add(len).is_none() {
-            return Err(CodecError::malformed(format_args!(
-                "UFRxDoc {field} range overflows"
-            )));
-        }
-        Ok(())
-    }
-
     fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
-        self.require_statable_range(len, field)?;
         crate::reader::take(&mut self.view, len, field)
     }
 
@@ -832,7 +817,6 @@ impl<'a> Cursor<'a> {
     }
 
     fn peek_u32_at(&self, relative: usize, field: &'static str) -> Result<u32, CodecError> {
-        self.require_statable_range(relative, field)?;
         let mut view = self.view;
         crate::reader::take(&mut view, relative, field)?;
         crate::reader::u32(&mut view, field)
@@ -880,7 +864,6 @@ impl<'a> Cursor<'a> {
             CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
         })?;
         ctx.charge_retained(len as u64, "retain UFRxDoc string")?;
-        self.require_statable_range(len, field)?;
         // `utf16_le` proves the byte count before it reads a code unit, so a
         // short window is refused with the view still at the read's start.
         self.view.utf16_le(count).ok_or_else(|| {
