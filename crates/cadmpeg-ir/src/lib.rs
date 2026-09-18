@@ -174,3 +174,6 @@ pub fn decode_sidecar_json_schema() -> schemars::Schema {
 
 #[cfg(test)]
 mod integration_tests;
+
+#[cfg(test)]
+pub(crate) mod test_support;

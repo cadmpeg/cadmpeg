@@ -3,10 +3,11 @@
 
 use super::parameter_in_domain;
 use crate::examples::unit_cube;
-use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
 use crate::ids::{CurveId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::report::Check;
+use crate::test_support::make_first_face_surface_unknown;
 use crate::unknown::NativeUnknownRecord;
 use crate::validate::validate_neutral;
 
@@ -21,21 +22,6 @@ fn parameter_domain_accepts_serialization_rounding_at_a_boundary() {
     assert!(parameter_in_domain(one_ulp_above_upper, [lower, upper]));
     assert!(!parameter_in_domain(lower - 1.0e-8, [lower, upper]));
     assert!(!parameter_in_domain(upper + 1.0e-8, [lower, upper]));
-}
-
-/// Replace the surface of the cube's first face with an unknown surface,
-/// optionally linking a preserved record, and return the face id and its
-/// surface id. Leaves every loop/coedge/edge of the face intact.
-fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<UnknownId>) -> String {
-    let face = &ir.model.faces[0];
-    let surface_id = face.surface.as_str().to_owned();
-    for s in &mut ir.model.surfaces {
-        if s.id.as_str() == surface_id {
-            s.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record });
-            break;
-        }
-    }
-    surface_id
 }
 
 #[test]
