@@ -9,6 +9,7 @@
 
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod node_kind;
 pub(crate) mod xmt_reference;
@@ -163,6 +164,22 @@ pub(crate) fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
 pub(crate) fn read_xmt_width(stream: &[u8], at: usize) -> Option<(u32, usize)> {
     let (value, extra) = read_xmt(stream, at)?;
     Some((value, 2 + extra))
+}
+
+/// Record an XMT-keyed entry, dropping every entry of an XMT that repeats.
+pub(crate) fn insert_unique<T>(
+    records: &mut BTreeMap<u32, T>,
+    duplicates: &mut BTreeSet<u32>,
+    xmt: u32,
+    record: T,
+) {
+    if duplicates.contains(&xmt) {
+        return;
+    }
+    if records.insert(xmt, record).is_some() {
+        records.remove(&xmt);
+        duplicates.insert(xmt);
+    }
 }
 
 fn payload_shift(stream: &[u8], pos: usize, kind: NodeKind, header_shift: usize) -> Option<usize> {
