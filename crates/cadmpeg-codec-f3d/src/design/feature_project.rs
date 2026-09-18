@@ -6091,16 +6091,13 @@ fn analytic_surface_axis(
         _ => return None,
     };
     let length = direction.norm();
-    (origin.x.is_finite()
-        && origin.y.is_finite()
-        && origin.z.is_finite()
-        && length.is_finite()
-        && length > 0.0)
-        .then_some(cadmpeg_ir::features::RevolutionAxis {
+    (origin.is_finite() && length.is_finite() && length > 0.0).then_some(
+        cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
             direction: cadmpeg_ir::features::FeatureDirection3::new(direction.scale(1.0 / length))?,
             reference: None,
-        })
+        },
+    )
 }
 
 fn resolve_sketch_axis_selection(
@@ -6180,16 +6177,13 @@ fn resolve_sketch_axis_selection(
             + placement.transform()[2][2] * direction.z,
     );
     let length = direction.norm();
-    (origin.x.is_finite()
-        && origin.y.is_finite()
-        && origin.z.is_finite()
-        && length.is_finite()
-        && length > 0.0)
-        .then_some(cadmpeg_ir::features::RevolutionAxis {
+    (origin.is_finite() && length.is_finite() && length > 0.0).then_some(
+        cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
             direction: cadmpeg_ir::features::FeatureDirection3::new(direction.scale(1.0 / length))?,
             reference: None,
-        })
+        },
+    )
 }
 
 pub(crate) fn project_fixed_loft(

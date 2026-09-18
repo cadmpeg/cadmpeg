@@ -3455,10 +3455,7 @@ pub(crate) fn validate_procedural_surface_edits(
                             "F3D extrusion direction must be finite and nonzero: {id}"
                         )));
                     }
-                    if ![position.x, position.y, position.z]
-                        .into_iter()
-                        .all(f64::is_finite)
-                    {
+                    if !position.is_finite() {
                         return Err(CodecError::malformed(format_args!(
                             "F3D extrusion native position must be finite: {id}"
                         )));

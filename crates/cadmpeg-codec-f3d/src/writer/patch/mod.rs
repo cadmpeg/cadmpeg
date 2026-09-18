@@ -101,11 +101,11 @@ pub fn write_semantic(
         .map(|point| point.id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
     if baseline_point_ids != target_point_ids
-        || target.model.points.iter().any(|point| {
-            !point.position.x.is_finite()
-                || !point.position.y.is_finite()
-                || !point.position.z.is_finite()
-        })
+        || target
+            .model
+            .points
+            .iter()
+            .any(|point| !point.position.is_finite())
     {
         return Err(CodecError::NotImplemented(
             "F3D point regeneration requires the unchanged point-id set and finite coordinates"

@@ -6139,10 +6139,7 @@ pub(crate) fn relation_kind_name(relation: &SketchRelation) -> String {
 }
 
 pub(crate) fn planar_point(point: &Point3) -> bool {
-    point.x.is_finite()
-        && point.y.is_finite()
-        && point.z.is_finite()
-        && point.z.abs() <= EPS_DIMENSIONS_PLANAR_POINT_E9
+    point.is_finite() && point.z.abs() <= EPS_DIMENSIONS_PLANAR_POINT_E9
 }
 
 pub(crate) fn sketch_normal_sign(normal: &Vector3) -> Option<f64> {

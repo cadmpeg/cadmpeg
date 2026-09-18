@@ -139,7 +139,7 @@ impl MeshAffineTransform {
             (cells[8] * x + cells[9] * y + cells[10] * z + cells[11])
                 * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
         );
-        if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+        if !point.is_finite() {
             return Err(CodecError::Malformed(
                 "F3D mesh placement produces a non-finite vertex".into(),
             ));
