@@ -118,53 +118,36 @@ pub(crate) fn push_marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
     bytes.extend_from_slice(&[0; 6]);
 }
 
-mod tokens_test;
-pub(crate) use tokens_test::*;
+pub(crate) mod tokens_test;
 
-mod smbh_header_test;
-pub(crate) use smbh_header_test::*;
+pub(crate) mod smbh_header_test;
 
-mod smbh_blocks_test;
-pub(crate) use smbh_blocks_test::*;
+pub(crate) mod smbh_blocks_test;
 
-mod smbh_geometry_test;
-pub(crate) use smbh_geometry_test::*;
+pub(crate) mod smbh_geometry_test;
 
-mod smbh_pcurves_test;
-pub(crate) use smbh_pcurves_test::*;
+pub(crate) mod smbh_pcurves_test;
 
-mod smbh_curves_test;
-pub(crate) use smbh_curves_test::*;
+pub(crate) mod smbh_curves_test;
 
-mod smbh_surfaces_test;
-pub(crate) use smbh_surfaces_test::*;
+pub(crate) mod smbh_surfaces_test;
 
-mod smbh_revision_test;
-pub(crate) use smbh_revision_test::*;
+pub(crate) mod smbh_revision_test;
 
-mod smbh_blends_test;
-pub(crate) use smbh_blends_test::*;
+pub(crate) mod smbh_blends_test;
 
-mod smbh_bf4_test;
-pub(crate) use smbh_bf4_test::*;
+pub(crate) mod smbh_bf4_test;
 
 pub(crate) mod native_test;
-pub(crate) use native_test::*;
 
-mod manifest_test;
-pub(crate) use manifest_test::*;
+pub(crate) mod manifest_test;
 
-mod protein_test;
-pub(crate) use protein_test::*;
+pub(crate) mod protein_test;
 
-mod streams_test;
-pub(crate) use streams_test::*;
+pub(crate) mod streams_test;
 
-mod zip_test;
-pub(crate) use zip_test::*;
+pub(crate) mod zip_test;
 
-mod assembly_test;
-pub(crate) use assembly_test::*;
+pub(crate) mod assembly_test;
 
-mod procedural_test;
-pub(crate) use procedural_test::*;
+pub(crate) mod procedural_test;

@@ -10,6 +10,7 @@ mod edge_operands;
 mod face_boundaries;
 mod hole;
 mod mirror;
+mod planes;
 mod recipe_projection;
 mod recipes;
 mod selections;

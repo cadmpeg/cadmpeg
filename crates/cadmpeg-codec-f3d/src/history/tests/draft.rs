@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::history::resolve_draft_face_by_surface_transition;
+use crate::history_records::AsmHistoricalTopology;
 
 #[test]
 fn face_transition_requires_one_changed_surface_geometry() {

@@ -19,14 +19,19 @@ use std::io::{Cursor, Read};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::{
-    expected_revision_surface_tail_discontinuities,
-    expected_revision_surface_tail_parameterization, f3d_native, f3d_native_mut, f3d_with_smbh,
-    synthetic_cacheless_cyl_spl_sur_smbh, synthetic_cyl_spl_sur_smbh, synthetic_geometry_smbh,
+use crate::test_support::native_test::{f3d_native, f3d_native_mut, TestEncode};
+use crate::test_support::smbh_blends_test::synthetic_rb_blend_spl_sur_smbh;
+use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic_mixed_smbh};
+use crate::test_support::smbh_pcurves_test::{
     synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
-    synthetic_mixed_smbh, synthetic_rb_blend_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
-    synthetic_versioned_cyl_spl_sur_with_tail_smbh, TestEncode,
 };
+use crate::test_support::smbh_surfaces_test::{
+    expected_revision_surface_tail_discontinuities,
+    expected_revision_surface_tail_parameterization, synthetic_cacheless_cyl_spl_sur_smbh,
+    synthetic_cyl_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
+    synthetic_versioned_cyl_spl_sur_with_tail_smbh,
+};
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::{push_tagged_i64, t_dbl};
+use crate::test_support::tokens_test::{push_tagged_i64, t_dbl};
 
 pub(crate) fn generated_pcurve_block() -> Vec<u8> {
     generated_pcurve_block_with_points([[0.25, 0.5], [0.75, 1.5]])

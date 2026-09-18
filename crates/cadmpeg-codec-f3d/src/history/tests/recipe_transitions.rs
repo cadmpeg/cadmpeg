@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! History-module unit tests.
 
-use super::super::*;
+use crate::history::{
+    bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
+    complete_table_binding_budget_exceeded, historical_brep_source,
+    select_legacy_extrude_face_candidate, LegacyFaceResolution,
+};
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use std::collections::HashMap;
 
 #[test]
 fn split_face_targets_bind_from_a_transition_predecessor() {

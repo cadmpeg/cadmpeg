@@ -11,7 +11,29 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use super::super::*;
+use crate::history::{
+    bind_scope_histories, bodies_intersecting, bound_history_state_pair, bound_scope_history,
+    boundary_edges_in_changes, edge_changes_across_state_chain, edge_recipe_reference_context,
+    effective_scope_previous_history_state_id, entity_selection_edge_candidates,
+    face_changes_across_state_chain, faces_in_topology, historical_edge_axis,
+    historical_edge_context, historical_face_support_contexts, historical_identity_edge,
+    historical_identity_kind, historical_loop_boundary, historical_pattern_identity_axes,
+    historical_pattern_identity_axes_for_selection, historical_selection_identity_kind,
+    historical_topology, incident_loop_counts_satisfy_sides, preceding_support_face_slots,
+    recipe_selector_candidates, resolve_pattern_face_by_surface_radius,
+    snapshot_edge_identity_revision, terminal_edge_recipe_faces,
+    terminal_edge_recipe_reference_faces, treatment_radius_candidates,
+    treatment_transition_edge_candidates, unique_entity_selection_edge, unique_history_state,
+    unique_history_state_pair, HistoricalIdentityIndex,
+};
+use crate::history_records::{
+    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
+    AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalEntityDelta, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
+    AsmHistoryRecord,
+};
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[test]
 fn state_pairs_are_resolved_within_one_reachable_history() {

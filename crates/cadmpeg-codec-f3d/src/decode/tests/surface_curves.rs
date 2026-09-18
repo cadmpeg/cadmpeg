@@ -17,12 +17,12 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::{
-    f3d_with_smbh, synthetic_geometry_with_early_close_projection_smbh,
-    synthetic_geometry_with_projection_smbh, synthetic_geometry_with_silhouette_smbh,
-    synthetic_geometry_with_surface_curve_smbh,
+use crate::test_support::smbh_curves_test::{
+    synthetic_geometry_with_early_close_projection_smbh, synthetic_geometry_with_projection_smbh,
+    synthetic_geometry_with_silhouette_smbh, synthetic_geometry_with_surface_curve_smbh,
     synthetic_geometry_with_three_surface_intersection_smbh,
 };
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]

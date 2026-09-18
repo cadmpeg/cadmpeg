@@ -466,7 +466,8 @@ pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError
 #[cfg(test)]
 mod tests {
     use super::{parse, primary_record_frames, MetaStream, RecordIndexEntry};
-    use crate::test_support::{design_metastream, lp_ascii, lp_utf16};
+    use crate::test_support::streams_test::design_metastream;
+    use crate::test_support::{lp_ascii, lp_utf16};
 
     fn stream_prefix() -> Vec<u8> {
         let mut bytes = Vec::new();

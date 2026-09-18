@@ -17,8 +17,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::{
-    f3d_with_smbh, synthetic_compound_loft_smbh, synthetic_geometry_with_compound_curve_smbh,
+use crate::test_support::smbh_curves_test::{
+    synthetic_geometry_with_compound_curve_smbh,
     synthetic_geometry_with_early_close_projection_smbh, synthetic_geometry_with_exact_curve_smbh,
     synthetic_geometry_with_helix_curve_smbh, synthetic_geometry_with_law_curve_smbh,
     synthetic_geometry_with_projection_smbh, synthetic_geometry_with_silhouette_smbh,
@@ -26,9 +26,13 @@ use crate::test_support::{
     synthetic_geometry_with_surface_curve_smbh, synthetic_geometry_with_surface_offset_smbh,
     synthetic_geometry_with_three_surface_intersection_smbh,
     synthetic_geometry_with_two_sided_offset_curve_smbh,
-    synthetic_geometry_with_vector_offset_curve_smbh, synthetic_law_spl_sur_smbh,
-    synthetic_scaled_compound_loft_smbh, synthetic_skin_spl_sur_smbh, synthetic_sub_spl_sur_smbh,
+    synthetic_geometry_with_vector_offset_curve_smbh,
 };
+use crate::test_support::smbh_surfaces_test::{
+    synthetic_compound_loft_smbh, synthetic_law_spl_sur_smbh, synthetic_scaled_compound_loft_smbh,
+    synthetic_skin_spl_sur_smbh, synthetic_sub_spl_sur_smbh,
+};
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

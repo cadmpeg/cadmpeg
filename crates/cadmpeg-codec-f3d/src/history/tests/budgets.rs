@@ -2,7 +2,9 @@
 //! History resource-budget unit tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::history::{
+    history_topology_work_budget_exceeded, HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY,
+};
 
 #[test]
 fn history_binding_work_budget_charges_state_record_cross_product() {

@@ -973,7 +973,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
 
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
     archive.start_file(stream, stored).unwrap();
     archive.write_all(&bulk).unwrap();
     let archive = archive.finish().unwrap().into_inner();
@@ -1021,7 +1021,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         cage: cadmpeg_ir::subd::SubdCage::default(),
     }];
 
-    crate::test_support::with_scan(&archive, |scan| {
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::feature_project::bind_form_cages(
             scan,
             std::slice::from_ref(&scope),
@@ -1064,7 +1064,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
 
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
     archive.start_file(stream, stored).unwrap();
     archive.write_all(&bulk).unwrap();
     let archive = archive.finish().unwrap().into_inner();
@@ -1112,7 +1112,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         cage: cadmpeg_ir::subd::SubdCage::default(),
     }];
 
-    crate::test_support::with_scan(&archive, |scan| {
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::feature_project::bind_form_cages(
             scan,
             std::slice::from_ref(&scope),

@@ -21,14 +21,19 @@ use zip::CompressionMethod;
 
 use crate::bytes::lp_utf16_bytes;
 use crate::loss::F3dLossCode;
-use crate::test_support::{
-    design_metastream_with_records, f3d_native, f3d_native_mut, f3d_with_smbh,
-    f3d_with_smbh_and_instance_properties, f3d_with_smbh_and_protein,
-    f3d_with_smbh_and_protein_guids, generated_instance_properties_for, lp_ascii, lp_utf16,
+use crate::test_support::manifest_test::write_synthetic_manifests;
+use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native, TestEncode};
+use crate::test_support::protein_test::generated_instance_properties_for;
+use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_attribute_smbh,
-    synthetic_geometry_with_sketch_link_smbh, synthetic_mixed_smbh, update_f3d_native, with_scan,
-    write_synthetic_manifests, SketchLinkForm, TestEncode,
+    synthetic_geometry_with_sketch_link_smbh, synthetic_mixed_smbh, SketchLinkForm,
 };
+use crate::test_support::streams_test::design_metastream_with_records;
+use crate::test_support::zip_test::{
+    f3d_with_smbh, f3d_with_smbh_and_instance_properties, f3d_with_smbh_and_protein,
+    f3d_with_smbh_and_protein_guids, with_scan,
+};
+use crate::test_support::{lp_ascii, lp_utf16};
 use crate::F3dCodec;
 
 use super::{merge_definition_catalog_record, DefinitionCatalog, RECORD_MARKER, STREAM_HEADER_LEN};

@@ -4,7 +4,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use std::io::{Cursor, Write};
 
 use crate::loss::F3dLossCode;
-use crate::test_support::{lp_utf16, write_synthetic_manifests};
+use crate::test_support::lp_utf16;
+use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::F3dCodec;
 
 fn decode_parameters(records: &[(u32, &str, &str)]) -> DecodeResult {

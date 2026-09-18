@@ -3,7 +3,7 @@
 
 #![allow(clippy::default_trait_access)]
 
-use super::super::*;
+use crate::history::{bind_feature_body_selections, FeatureBodySelectionInputs};
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup,
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,

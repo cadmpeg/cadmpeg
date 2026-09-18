@@ -6,7 +6,15 @@
     clippy::needless_pass_by_value
 )]
 
-use super::super::*;
+use crate::history::{
+    bind_extrude_selection_history, bind_historical_recipe_reference_candidates,
+    direct_face_recipe_candidates, recipe_reference_common_vertex,
+};
+use crate::history_records::{
+    AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistory,
+};
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
 #[test]
 fn extrude_history_identity_resolves_only_in_context_component_breps() {

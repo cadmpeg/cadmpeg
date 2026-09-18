@@ -11,9 +11,10 @@ use cadmpeg_ir::geometry::{
 };
 
 use super::*;
-use crate::test_support::{
-    f3d_with_smbh, synthetic_law_driven_sweep_smbh, synthetic_revision_text_law_sweep_smbh,
+use crate::test_support::smbh_surfaces_test::{
+    synthetic_law_driven_sweep_smbh, synthetic_revision_text_law_sweep_smbh,
 };
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 
 fn document(revision: bool) -> CadIr {

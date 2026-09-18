@@ -11,7 +11,11 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use super::super::*;
+use crate::history::{bind_body_recipe_operand_history_candidates, complete_body_face_slots};
+use crate::history_records::{
+    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
+};
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup,
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,

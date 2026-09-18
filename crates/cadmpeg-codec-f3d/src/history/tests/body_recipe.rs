@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::history::{
+    bind_direct_body_recipe_body_selection, unique_external_body_candidate,
+    FeatureBodySelectionInputs,
+};
 
 #[test]
 fn form33_without_unique_body_proof_remains_unresolved() {

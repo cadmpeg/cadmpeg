@@ -3,8 +3,9 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::{
-    bf4_header_prefix, push_u8_string, t_dbl, t_end, t_ident, t_pos, t_subident, t_vec,
+use crate::test_support::smbh_header_test::bf4_header_prefix;
+use crate::test_support::tokens_test::{
+    push_u8_string, t_dbl, t_end, t_ident, t_pos, t_subident, t_vec,
 };
 
 /// The minimal `BinaryFile4` active model slice: the planar-face graph of

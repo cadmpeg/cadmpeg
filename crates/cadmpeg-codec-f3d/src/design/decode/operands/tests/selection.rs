@@ -163,7 +163,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
 
 #[test]
 fn generated_base_flange_profile_frame_resolves() {
-    let (bytes, _) = crate::test_support::generated_design_base_flange_bulkstream();
+    let (bytes, _) = crate::test_support::streams_test::generated_design_base_flange_bulkstream();
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
     let profile_offset = records
         .offsets(1501)
