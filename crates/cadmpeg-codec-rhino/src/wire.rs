@@ -6,6 +6,7 @@ use std::fmt;
 
 use cadmpeg_core::decode::BoundedCount;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::math::Vector3;
 
 use crate::chunks::{BoundedReader, FramingError};
 use crate::layout::uuid_wire_form as uuid_wire;
@@ -146,6 +147,11 @@ impl fmt::Display for Uuid {
 /// Reads one mixed-endian UUID from the bounded reader.
 pub(crate) fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
+}
+
+/// Converts an archive vector to the model vector type.
+pub(crate) fn vector(value: crate::settings::Vector3) -> Vector3 {
+    Vector3::new(value.0[0], value.0[1], value.0[2])
 }
 
 /// Multiplies an archive coordinate by a positive finite unit scale.

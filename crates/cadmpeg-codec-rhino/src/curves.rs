@@ -12,7 +12,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
 use crate::settings::{bbox, interval, plane, Point3 as NativePoint3};
-use crate::wire::Uuid;
+use crate::wire::{vector, Uuid};
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
@@ -1677,10 +1677,6 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
         circle.center.y + radial.y * circle.radius * radial_scale,
         circle.center.z + radial.z * circle.radius * radial_scale,
     )
-}
-
-fn vector(value: crate::settings::Vector3) -> Vector3 {
-    Vector3::new(value.0[0], value.0[1], value.0[2])
 }
 
 fn native_point(reader: &mut BoundedReader<'_>) -> Result<NativePoint3, FramingError> {
