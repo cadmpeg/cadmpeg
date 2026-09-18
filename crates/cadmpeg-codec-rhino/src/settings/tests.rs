@@ -371,6 +371,87 @@ fn top_level_mesh_settings_use_outer_boundary_for_future_minor_suffix() {
     .expect("analysis mesh settings");
 }
 
+/// Each refused tolerance names the first byte of the value it refuses, which
+/// is the field's own offset and not the one that follows it.
+#[test]
+fn nonfinite_unit_tolerances_are_refused_at_the_value_first_byte() {
+    for (index, label) in [
+        (0, "absolute tolerance"),
+        (1, "angular tolerance"),
+        (2, "relative tolerance"),
+    ] {
+        let mut values = [0.5_f64, 0.01, 0.001];
+        values[index] = f64::NAN;
+        let mut body = Vec::new();
+        body.extend(100_i32.to_le_bytes());
+        body.extend(8_i32.to_le_bytes());
+        for value in values {
+            body.extend(value.to_le_bytes());
+        }
+        let (data, record) = metadata_record(0x2000_8031, body);
+        let error = settings::parse_units(&data, &record).expect_err("nonfinite tolerance");
+        assert_eq!(
+            error,
+            crate::chunks::FramingError::structural(
+                8 + index * 8,
+                format!("{label} is not finite")
+            )
+        );
+    }
+}
+
+/// A group refusal names the first byte of the group, not the byte after it.
+#[test]
+fn a_nonfinite_point_component_is_refused_at_the_point_first_byte() {
+    let mut bytes = vec![0xa5, 0xa5, 0xa5];
+    let point_offset = bytes.len();
+    for value in [1.0_f64, f64::NAN, 3.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let mut reader = BoundedReader::new(&bytes, point_offset, bytes.len()).expect("point reader");
+    let error = settings::point(&mut reader).expect_err("nonfinite point");
+    assert_eq!(
+        error,
+        crate::chunks::FramingError::structural(point_offset, "point contains a nonfinite value")
+    );
+}
+
+/// The mesh-parameters route reads each value through the shared reader, so its
+/// refusal names the value's first byte.
+#[test]
+fn nonfinite_mesh_tolerance_is_refused_at_the_value_first_byte() {
+    let archive = ArchiveVersion::V8;
+    let mut body = vec![0x1f];
+    for value in [1_i32, 0, 1, 0, 0] {
+        body.extend(value.to_le_bytes());
+    }
+    let tolerance_offset = body.len();
+    for value in [f64::NAN, 0.1, 10.0, 6.0] {
+        body.extend(value.to_le_bytes());
+    }
+    body.extend(2_i32.to_le_bytes());
+    body.extend(8_i32.to_le_bytes());
+    for value in [0.3_f64, 1.2, 0.4, 0.5] {
+        body.extend(value.to_le_bytes());
+    }
+    body.extend(2_i32.to_le_bytes());
+    body.extend(2_i32.to_le_bytes());
+    body.push(1);
+    body.extend(0.25_f64.to_le_bytes());
+    body.push(1);
+    body.push(1);
+    body.extend(anonymous_chunk(archive, 3, &[4, 0, 0, 0, 2, 0, 0, 0, 1, 0]));
+
+    let (data, record) = metadata_record(0x2000_8032, body);
+    let mut settings_value = settings::DocumentSettings::default();
+    let error = settings::parse_setting(&data, &record, &mut settings_value, archive)
+        .expect_err("nonfinite mesh tolerance");
+    assert_eq!(
+        error,
+        crate::chunks::FramingError::structural(tolerance_offset, "mesh tolerance is not finite")
+    );
+}
+
 #[test]
 fn rejects_invalid_unit_tolerances_and_trailing_bytes() {
     let mut body = Vec::new();

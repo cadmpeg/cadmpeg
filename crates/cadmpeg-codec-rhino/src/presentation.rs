@@ -24,7 +24,7 @@ use crate::objects::{
     ClassUserdata, ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
 };
 use crate::settings::{self, utf16, MillimeterScale, StandardUnit, UnitBinding};
-use crate::wire::{scaled_coordinate, uuid, Uuid};
+use crate::wire::{read_finite, scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
@@ -1271,17 +1271,6 @@ fn object_attributes_presentation(
     }
 }
 
-fn finite(reader: &BoundedReader<'_>, value: f64, label: &str) -> Result<f64, FramingError> {
-    value.is_finite().then_some(value).ok_or_else(|| {
-        FramingError::structural(reader.position() - 8, format!("{label} is not finite"))
-    })
-}
-
-fn read_finite(reader: &mut BoundedReader<'_>, label: &str) -> Result<f64, FramingError> {
-    let value = reader.f64()?;
-    finite(reader, value, label)
-}
-
 fn read_color_f32(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f32; 4], FramingError> {
     let offset = reader.position();
     let color = [reader.f32()?, reader.f32()?, reader.f32()?, reader.f32()?];
@@ -1295,14 +1284,13 @@ fn read_color_f32(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f32; 4
 }
 
 fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f64; 3], FramingError> {
+    let offset = reader.position();
     let value = [reader.f64()?, reader.f64()?, reader.f64()?];
     value
         .iter()
         .all(|value| value.is_finite())
         .then_some(value)
-        .ok_or_else(|| {
-            FramingError::structural(reader.position() - 24, format!("{label} is not finite"))
-        })
+        .ok_or_else(|| FramingError::structural(offset, format!("{label} is not finite")))
 }
 
 fn anonymous(
@@ -3446,6 +3434,7 @@ fn parse_dimension_style(
 }
 
 fn xform(reader: &mut BoundedReader<'_>) -> Result<[[f64; 4]; 4], FramingError> {
+    let offset = reader.position();
     let mut rows = [[0.0; 4]; 4];
     for value in rows.iter_mut().flatten() {
         *value = reader.f64()?;
@@ -3454,9 +3443,7 @@ fn xform(reader: &mut BoundedReader<'_>) -> Result<[[f64; 4]; 4], FramingError> 
         .flatten()
         .all(|value| value.is_finite())
         .then_some(rows)
-        .ok_or_else(|| {
-            FramingError::structural(reader.position() - 128, "texture transform is not finite")
-        })
+        .ok_or_else(|| FramingError::structural(offset, "texture transform is not finite"))
 }
 
 fn parse_embedded_image(

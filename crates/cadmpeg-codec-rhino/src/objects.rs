@@ -12,7 +12,7 @@ use crate::chunks::{
 use crate::container::Record;
 use crate::layout::class_uuid_chunk_body as class_uuid_body;
 use crate::settings::{self, DocumentMetadata, SourceRange, Xform};
-use crate::wire::{uuid, Uuid};
+use crate::wire::{finite, read_finite, uuid, Uuid};
 
 const OBJECT_RECORD_TYPE: u32 = 0x8200_0071;
 const OBJECT_RECORD_ATTRIBUTES: u32 = 0x0200_8072;
@@ -777,17 +777,6 @@ fn bounded_count(
     crate::chunks::checked_count_bytes(count, width, reader.remaining(), 1 << 16, reader.position())
 }
 
-fn finite_attribute(value: f64, offset: usize, label: &str) -> Result<f64, FramingError> {
-    if value.is_finite() {
-        Ok(value)
-    } else {
-        Err(FramingError::structural(
-            offset,
-            format!("{label} is not finite"),
-        ))
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum AttributeItem {
     Name,
@@ -957,7 +946,9 @@ pub(crate) fn parse_attributes(
         let color = reader.array::<4>()?;
         let obsolete_line_style = reader.i16()?;
         let obsolete_line_style_index = reader.i16()?;
+        let obsolete_thickness_offset = reader.position();
         let obsolete_thickness = reader.f64()?;
+        let obsolete_scale_offset = reader.position();
         let obsolete_scale = reader.f64()?;
         let wire_density = reader.i32()?;
         let object_mode = reader.u8()?;
@@ -1000,7 +991,7 @@ pub(crate) fn parse_attributes(
                     reader.u8()?,
                     reader.array::<4>()?,
                     reader.u8()?,
-                    finite_attribute(reader.f64()?, reader.position(), "plot weight")?,
+                    read_finite(&mut reader, "plot weight")?,
                 )
             } else {
                 (0, 0, [0; 4], 0, 0.0)
@@ -1029,9 +1020,12 @@ pub(crate) fn parse_attributes(
         } else {
             None
         };
-        let obsolete_thickness =
-            finite_attribute(obsolete_thickness, body_range.start, "obsolete thickness")?;
-        let obsolete_scale = finite_attribute(obsolete_scale, body_range.start, "obsolete scale")?;
+        let obsolete_thickness = finite(
+            obsolete_thickness_offset,
+            obsolete_thickness,
+            "obsolete thickness",
+        )?;
+        let obsolete_scale = finite(obsolete_scale_offset, obsolete_scale, "obsolete scale")?;
         reader.skip_remaining()?;
         return Ok(ObjectAttributes {
             source: SourceRange {
@@ -1205,8 +1199,7 @@ pub(crate) fn parse_attributes(
                 attributes.plot_color = reader.array::<4>()?;
             }
             AttributeItem::PlotWeight => {
-                attributes.plot_weight =
-                    finite_attribute(reader.f64()?, reader.position(), "plot weight")?;
+                attributes.plot_weight = read_finite(&mut reader, "plot weight")?;
             }
             AttributeItem::Decoration => attributes.decoration = i32::from(reader.u8()?),
             AttributeItem::WireDensity => attributes.wire_density = reader.i32()?,
@@ -1258,16 +1251,14 @@ pub(crate) fn parse_attributes(
             }
             AttributeItem::HatchPatternIndex => attributes.hatch_pattern_index = reader.i32()?,
             AttributeItem::SectionHatchScale => {
-                attributes.section_hatch_scale =
-                    finite_attribute(reader.f64()?, reader.position(), "section hatch scale")?;
+                attributes.section_hatch_scale = read_finite(&mut reader, "section hatch scale")?;
             }
             AttributeItem::SectionHatchRotation => {
                 attributes.section_hatch_rotation =
-                    finite_attribute(reader.f64()?, reader.position(), "section hatch rotation")?;
+                    read_finite(&mut reader, "section hatch rotation")?;
             }
             AttributeItem::LinetypePatternScale => {
-                attributes.linetype_pattern_scale =
-                    finite_attribute(reader.f64()?, reader.position(), "linetype scale")?;
+                attributes.linetype_pattern_scale = read_finite(&mut reader, "linetype scale")?;
             }
             AttributeItem::HatchBackground => {
                 attributes.hatch_background = reader.array::<4>()?;

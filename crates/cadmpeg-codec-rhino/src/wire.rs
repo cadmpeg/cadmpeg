@@ -154,6 +154,24 @@ pub(crate) fn flag_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingEr
     Ok(reader.i32()? != 0)
 }
 
+/// Refuses a non-finite `f64` at `offset`, the first byte of the value.
+pub(crate) fn finite(offset: usize, value: f64, label: &str) -> Result<f64, FramingError> {
+    value
+        .is_finite()
+        .then_some(value)
+        .ok_or_else(|| FramingError::structural(offset, format!("{label} is not finite")))
+}
+
+/// Reads one `f64` and refuses a non-finite value at the value's first byte.
+pub(crate) fn read_finite(
+    reader: &mut BoundedReader<'_>,
+    label: &str,
+) -> Result<f64, FramingError> {
+    let offset = reader.position();
+    let value = reader.f64()?;
+    finite(offset, value, label)
+}
+
 /// Converts an archive vector to the model vector type.
 pub(crate) fn vector(value: crate::settings::Vector3) -> Vector3 {
     Vector3::new(value.0[0], value.0[1], value.0[2])

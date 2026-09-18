@@ -758,6 +758,7 @@ fn parse_attributes(
             ));
         }
         let page_number = page.i32()?;
+        let page_settings_offset = page.position();
         let width_mm = page.f64()?;
         let height_mm = page.f64()?;
         let margins_mm = [page.f64()?, page.f64()?, page.f64()?, page.f64()?];
@@ -767,7 +768,7 @@ fn parse_attributes(
             .all(f64::is_finite)
         {
             return Err(FramingError::structural(
-                page.position(),
+                page_settings_offset,
                 "page setting is not finite",
             ));
         }
@@ -1539,7 +1540,7 @@ mod tests {
         parse_viewport, parse_wallpaper, parse_window_position, ViewAttributes, ViewListKind,
         Viewport, NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
-    use crate::chunks::ArchiveVersion;
+    use crate::chunks::{ArchiveVersion, FramingError};
     use crate::container::Record;
     use crate::test_support::test_dump::{
         anonymous_chunk, class_userdata_v2_with_direct_payload, crc_chunk, crc_chunk_excluding,
@@ -1885,6 +1886,42 @@ mod tests {
         assert_eq!(value.clipping_planes.len(), 1);
         assert_eq!(value.clipping_planes[0].depth_mm, Some(3.0));
         assert!(value.clipping_planes[0].depth_enabled);
+    }
+
+    /// The page-settings group is refused at the group's first byte, which is
+    /// the page number's successor and not the byte after the last margin.
+    #[test]
+    fn nonfinite_page_setting_is_refused_at_the_group_first_byte() {
+        let archive = ArchiveVersion::V5;
+        let mut page = Vec::new();
+        page.extend(7_i32.to_le_bytes());
+        for value in [210.0_f64, 297.0, 10.0, f64::NAN, 12.0, 13.0] {
+            page.extend(value.to_le_bytes());
+        }
+        page.extend(utf16_bytes("witness-printer"));
+
+        let mut body = vec![0x13];
+        body.extend(1_i32.to_le_bytes());
+        body.extend(210.0_f64.to_le_bytes());
+        body.extend(297.0_f64.to_le_bytes());
+        body.extend([0; 16]);
+        for _ in 0..6 {
+            body.extend(0.0_f64.to_le_bytes());
+        }
+        body.extend([0; 16]);
+        body.extend(anonymous_chunk(archive, 7, &page));
+        body.push(1);
+
+        let nonfinite = body
+            .windows(8)
+            .position(|window| window == f64::NAN.to_le_bytes())
+            .expect("the nonfinite margin is in the payload");
+        let error = parse_attributes(&body, 0..body.len(), archive, 1.0)
+            .expect_err("nonfinite page setting");
+        assert_eq!(
+            error,
+            FramingError::structural(nonfinite - 24, "page setting is not finite")
+        );
     }
 
     #[test]
