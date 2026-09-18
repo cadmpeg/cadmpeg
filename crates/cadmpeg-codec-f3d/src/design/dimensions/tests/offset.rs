@@ -217,6 +217,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
                         point.u += 0.01;
                     }
                     pole_index += 1;
+                    Ok(())
                 })
                 .unwrap();
         })

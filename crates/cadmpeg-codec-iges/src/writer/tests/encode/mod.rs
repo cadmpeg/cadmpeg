@@ -1299,6 +1299,7 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
                     point.u += 0.25;
                 }
                 pole_index += 1;
+                Ok(())
             })
             .unwrap();
     }

@@ -3463,6 +3463,7 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
         .edit_control_points(|point| {
             point.u = point.u.mul_add(u_factor, u_offset);
             point.v = point.v.mul_add(v_factor, v_offset);
+            Ok(())
         })
         .map_err(|error| {
             CodecError::malformed(format_args!(

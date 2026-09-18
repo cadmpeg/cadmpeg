@@ -1599,6 +1599,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                                 );
                             }
                             pole_index += 1;
+                            Ok(())
                         })
                         .unwrap();
                 })
@@ -1665,6 +1666,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                     nurbs
                         .edit_control_points(|point| {
                             point.u += 100.0;
+                            Ok(())
                         })
                         .unwrap();
                 })

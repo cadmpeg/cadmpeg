@@ -212,6 +212,7 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs)
                 .edit_control_points(|point| {
                     point.u *= LEN_TO_MM;
                     point.v *= -LEN_TO_MM;
+                    Ok(())
                 })
                 .ok()?;
         }
@@ -221,6 +222,7 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs)
                     let native = *point;
                     point.u = native.v;
                     point.v = native.u * axial_scale;
+                    Ok(())
                 })
                 .ok()?;
         }

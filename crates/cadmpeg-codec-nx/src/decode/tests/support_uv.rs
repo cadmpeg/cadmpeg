@@ -75,6 +75,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                         nurbs
                             .edit_control_points(|point| {
                                 point.u += 100.0;
+                                Ok(())
                             })
                             .unwrap();
                     })

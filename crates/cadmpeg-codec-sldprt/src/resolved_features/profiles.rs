@@ -2401,6 +2401,7 @@ fn transform_sketch_block_geometry(
                     if let Some(next) = transformed.next() {
                         *point = next;
                     }
+                    Ok(())
                 })
                 .ok()?;
             SketchGeometry::nurbs(curve)

@@ -2296,6 +2296,7 @@ pub(crate) fn normalize_pcurve_parameters(
                     if let Some(next) = converted.next() {
                         *point = next;
                     }
+                    Ok(())
                 })
                 .ok()?;
         }

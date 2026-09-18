@@ -1828,6 +1828,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
             curve
                 .edit_control_points(|point| {
                     scale_point2(point, scale);
+                    Ok(())
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(

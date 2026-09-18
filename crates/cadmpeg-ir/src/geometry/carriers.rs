@@ -440,16 +440,28 @@ impl PcurveNurbsPoles {
         }
     }
 
-    /// Edit every pole position in place.
-    pub fn edit_points(&mut self, mut edit: impl FnMut(&mut Point2)) {
-        match self {
-            Self::Polynomial { points } => points.iter_mut().for_each(&mut edit),
+    /// Edit every pole position, keeping the prior positions on a refusal.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
+    pub fn edit_points(
+        &mut self,
+        mut edit: impl FnMut(&mut Point2) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
+        let mut candidate = self.clone();
+        match &mut candidate {
+            Self::Polynomial { points } => {
+                for point in points.iter_mut() {
+                    edit(point)?;
+                }
+            }
             Self::Rational { points } => {
-                for pole in points {
-                    edit(&mut pole.point);
+                for pole in points.iter_mut() {
+                    edit(&mut pole.point)?;
                 }
             }
         }
+        *self = candidate;
+        Ok(())
     }
 }
 
@@ -3816,9 +3828,14 @@ impl PcurveNurbs {
     }
 
     /// Atomically edit pole positions and preserve finite coordinates.
-    pub fn edit_control_points(&mut self, edit: impl FnMut(&mut Point2)) -> Result<(), NurbsError> {
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
+    pub fn edit_control_points(
+        &mut self,
+        edit: impl FnMut(&mut Point2) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
-        poles.edit_points(edit);
+        poles.edit_points(edit)?;
         require_finite_points_2("control_points", &poles.points())?;
         self.poles = poles;
         Ok(())
@@ -3959,7 +3976,10 @@ impl PcurveGeometry {
             Self::Nurbs { nurbs } => {
                 let mut nurbs = nurbs.clone();
                 nurbs
-                    .edit_control_points(|point| *point = scale(*point))
+                    .edit_control_points(|point| {
+                        *point = scale(*point);
+                        Ok(())
+                    })
                     .map_err(|error| error.to_string())?;
                 Self::Nurbs { nurbs }
             }

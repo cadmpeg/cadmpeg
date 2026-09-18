@@ -1104,6 +1104,7 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
                 point.u = -0.75;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     let cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } = &mut pcurve.metadata
@@ -1141,6 +1142,7 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
                 point.u = -0.25;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     let mut weights = nurbs.weights();
@@ -1184,6 +1186,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
                 point.v = 3.5;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     nurbs

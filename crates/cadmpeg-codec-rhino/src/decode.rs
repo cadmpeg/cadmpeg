@@ -4601,6 +4601,7 @@ fn scale_plane_pcurves(
                 .edit_control_points(|pole| {
                     pole.u *= scale.value();
                     pole.v *= scale.value();
+                    Ok(())
                 })
                 .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
         }

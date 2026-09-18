@@ -2213,6 +2213,7 @@ pub(crate) fn e5_pcurve_on_surface(
             nurbs
                 .edit_control_points(|point| {
                     *point = Point2::new(point.u * scale[0], point.v * scale[1]);
+                    Ok(())
                 })
                 .ok()?;
             if !nurbs.control_points().iter().copied().all(finite_point2)

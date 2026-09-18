@@ -2979,6 +2979,7 @@ fn rechart_equivalent_surface_pcurve(
             shifted
                 .edit_control_points(|point| {
                     point.v += v_shift;
+                    Ok(())
                 })
                 .map_err(|_| RechartFailure::NonFinite)?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: shifted }))

@@ -5854,7 +5854,8 @@ fn native_support_pcurve_for_range(
             poles.edit_points(|point| {
                 point.u /= LEN_TO_MM;
                 point.v /= -LEN_TO_MM;
-            });
+                Ok(())
+            })?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let radius = cylinder_surface.radius();
@@ -5867,7 +5868,8 @@ fn native_support_pcurve_for_range(
                 let neutral = *point;
                 point.u = neutral.v / radius;
                 point.v = neutral.u;
-            });
+                Ok(())
+            })?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let radius = cone_surface.radius();
@@ -5885,7 +5887,8 @@ fn native_support_pcurve_for_range(
                 let neutral = *point;
                 point.u = neutral.v / axial_scale;
                 point.v = neutral.u;
-            });
+                Ok(())
+            })?;
         }
         _ => {}
     }
