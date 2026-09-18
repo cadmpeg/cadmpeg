@@ -21,4 +21,3 @@ mod operation_records;
 mod pattern_lanes;
 mod registry;
 mod sketch_payload;
-mod state_block;
