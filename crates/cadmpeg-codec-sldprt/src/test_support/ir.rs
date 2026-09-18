@@ -106,7 +106,10 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
                 polyline
                     .edit_samples(|samples| {
-                        samples.edit_points(|point| point.x += dx);
+                        samples.edit_points(|point| {
+                            point.x += dx;
+                            Ok(())
+                        })
                     })
                     .unwrap();
             }
