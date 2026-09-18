@@ -2,7 +2,7 @@
 //! Loss notes derived from coverage counters and undecoded PSB layers.
 
 use crate::container::ContainerScan;
-use crate::decode::surfaces::{BrepTransferDiagnostics, FaceAdmissionRejection};
+use crate::decode::surfaces::brep::{BrepTransferDiagnostics, FaceAdmissionRejection};
 use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;

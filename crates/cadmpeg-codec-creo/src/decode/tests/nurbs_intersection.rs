@@ -1,7 +1,7 @@
 //! Tests: NURBS endpoint witnesses in carrier-intersection selection.
 
 use crate::curve::CurveTopologyRow;
-use crate::decode::surfaces::transfer_carrier_intersection_curves;
+use crate::decode::surfaces::transfer_curves::transfer_carrier_intersection_curves;
 use crate::topology::{HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, TopologicalVertex};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{

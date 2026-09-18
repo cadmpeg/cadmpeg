@@ -34,7 +34,7 @@ use super::super::records::{
     surface_merge_replay_affected_id_records, surface_parameter_records, surface_prototype_records,
     surface_row_records, tabulated_cylinder_curve_replay_records, topological_vertex_records,
 };
-use super::super::surfaces::BrepTransferDiagnostics;
+use super::super::surfaces::brep::BrepTransferDiagnostics;
 
 /// Emit the `MdlRefInfo` reference-geometry arenas.
 ///

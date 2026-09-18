@@ -19,18 +19,28 @@ use super::super::feature_history::revolution::{
     transfer_resolved_extrusion_vertex_orbit_curves, transfer_resolved_revolution_surfaces,
     transfer_resolved_revolution_vertex_orbit_curves,
 };
-use super::super::surfaces::{
-    transfer_active_datum_cylinders, transfer_cap_pair_cylinders,
-    transfer_carrier_intersection_curves, transfer_circular_sweep_cylinders,
-    transfer_constrained_slot_fillet_cylinders, transfer_cross_section_planes,
-    transfer_fc05_cap_circles, transfer_first_instance_prototype_surfaces, transfer_hole_cylinders,
-    transfer_legacy_ascii_surface_carriers, transfer_native_brep, transfer_nurbs_boundary_curves,
-    transfer_paired_envelope_spheres, transfer_part_product, transfer_positional_cones,
-    transfer_positional_cylinders, transfer_positional_line_extrusion_planes,
-    transfer_positional_spline_replays, transfer_positional_tori, transfer_rowless_round_cylinders,
-    transfer_split_outline_cylinders, transfer_tabulated_cylinder_spline_extrusions,
-    BrepTransferDiagnostics, NativeBrepTransferSummary,
+use super::super::surfaces::brep::{
+    transfer_cap_pair_cylinders, transfer_native_brep, BrepTransferDiagnostics,
+    NativeBrepTransferSummary,
 };
+use super::super::surfaces::cylinders::{
+    transfer_active_datum_cylinders, transfer_circular_sweep_cylinders,
+    transfer_constrained_slot_fillet_cylinders, transfer_cross_section_planes,
+    transfer_hole_cylinders, transfer_positional_cones, transfer_positional_cylinders,
+    transfer_rowless_round_cylinders, transfer_split_outline_cylinders,
+};
+use super::super::surfaces::positional::{
+    transfer_paired_envelope_spheres, transfer_positional_line_extrusion_planes,
+    transfer_positional_tori, transfer_tabulated_cylinder_spline_extrusions,
+};
+use super::super::surfaces::prototypes::{
+    transfer_first_instance_prototype_surfaces, transfer_legacy_ascii_surface_carriers,
+    transfer_positional_spline_replays,
+};
+use super::super::surfaces::transfer_curves::{
+    transfer_carrier_intersection_curves, transfer_nurbs_boundary_curves,
+};
+use super::super::surfaces::{transfer_fc05_cap_circles, transfer_part_product};
 use super::super::sweep::{
     transfer_feature_extrusion_surfaces, transfer_resolved_circular_extrusion_breps,
     transfer_resolved_extrusion_breps, transfer_resolved_revolution_breps,
@@ -688,7 +698,7 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::AnnotationBuilder;
 
-    use crate::decode::surfaces::BrepTransferDiagnostics;
+    use crate::decode::surfaces::brep::BrepTransferDiagnostics;
 
     use super::transfer_and_record_scanned_geometry;
 

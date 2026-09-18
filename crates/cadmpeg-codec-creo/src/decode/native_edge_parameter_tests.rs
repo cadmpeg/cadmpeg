@@ -7,9 +7,10 @@ use crate::decode::analytic::edges::{
 use crate::decode::analytic::pcurves::{
     native_pcurve_midpoint, pcurve_backed_periodic_conic_parameter_range, NativePcurveCandidates,
 };
-use crate::decode::surfaces::{
-    analytic_curve_branches, curve_contains_points, select_unique_curve_candidate,
+use crate::decode::surfaces::intersection_resolve::{
+    curve_contains_points, select_unique_curve_candidate,
 };
+use crate::decode::surfaces::transfer_curves::analytic_curve_branches;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };

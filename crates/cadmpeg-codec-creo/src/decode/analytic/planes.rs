@@ -17,9 +17,8 @@ use crate::container::ContainerScan;
 use crate::curve::CurveTopologyRow;
 
 use super::super::holes::placement::plane_envelope_corners;
-use super::super::surfaces::{
-    fc05_cap_pair_model_frame, fc05_model_frame, intersect_plane_with_carrier_components,
-};
+use super::super::surfaces::intersection_resolve::intersect_plane_with_carrier_components;
+use super::super::surfaces::{fc05_cap_pair_model_frame, fc05_model_frame};
 
 use super::edges::nurbs_intrinsic_parameter_range;
 use super::equations::{
@@ -931,7 +930,9 @@ pub(crate) fn fc05_cylinder_model_witness(
 fn fc05_reference_circle_frame(
     circles: &[&crate::reference::ReferenceCircle],
 ) -> Option<crate::surface::PositionalCylinderFrame> {
-    if let Some(frame) = super::super::surfaces::reference_circle_pair_cylinder_frame(circles) {
+    if let Some(frame) =
+        super::super::surfaces::cylinders::reference_circle_pair_cylinder_frame(circles)
+    {
         return Some(frame);
     }
     let [circle] = circles else {

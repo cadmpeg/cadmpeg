@@ -25,11 +25,13 @@ use crate::decode::sketch_transfer::profiles::resolved_profile_chains;
 use crate::decode::surfaces::intersection_candidates::{
     axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
 };
+use crate::decode::surfaces::intersection_resolve::{
+    resolve_curve_candidates, select_unique_curve_candidate,
+};
 use crate::decode::surfaces::nurbs_boundaries::{
     cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots, nurbs_plane_boundary_curve,
     shared_extrusion_generator_curve,
 };
-use crate::decode::surfaces::{resolve_curve_candidates, select_unique_curve_candidate};
 use crate::decode::sweep::pcurves::{
     revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface,
 };

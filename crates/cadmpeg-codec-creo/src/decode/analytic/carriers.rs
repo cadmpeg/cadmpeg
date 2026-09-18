@@ -19,7 +19,8 @@ use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::topology::HalfEdgeId;
 
 use super::super::native::annotate;
-use super::super::surfaces::{native_surface_id, rowless_round_cylinder_pairs};
+use super::super::surfaces::cylinders::rowless_round_cylinder_pairs;
+use super::super::surfaces::native_surface_id;
 
 use super::super::uniqueness::exactly_one;
 use super::equations::{

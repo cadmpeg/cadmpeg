@@ -11,7 +11,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::surfaces::curve_contains_points;
+use super::super::surfaces::intersection_resolve::curve_contains_points;
 
 use super::super::uniqueness::exactly_one;
 use super::edges::{nonperiodic_nurbs_endpoint_points, planar_conic_equation, PlanarConicEquation};

@@ -17,7 +17,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 
 use super::super::native::annotate;
-use super::super::surfaces::curve_contains_points;
+use super::super::surfaces::intersection_resolve::curve_contains_points;
 
 use super::carriers::placed_carriers;
 use super::edges::{

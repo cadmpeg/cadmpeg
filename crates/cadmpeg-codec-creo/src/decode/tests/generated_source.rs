@@ -25,7 +25,7 @@ use crate::decode::holes::drilled::{
 };
 use crate::decode::holes::placement::ExtrusionSpan;
 use crate::decode::sketch::equations_coordinate::approximately_equal;
-use crate::decode::surfaces::rowless_round_cylinder_pairs;
+use crate::decode::surfaces::cylinders::rowless_round_cylinder_pairs;
 use crate::decode::sweep::profiles::ProfileEntity;
 use crate::decode::sweep::{
     circular_pcurve, extruded_nurbs_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,

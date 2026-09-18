@@ -1,29 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native B-rep, prototype surfaces, positional solids, and carrier intersections.
 
-mod brep;
-mod cylinders;
+pub(super) mod brep;
+pub(super) mod cylinders;
 pub(super) mod intersection_candidates;
-mod intersection_resolve;
+pub(super) mod intersection_resolve;
 pub(super) mod intersections;
 pub(super) mod nurbs_boundaries;
-mod positional;
-mod prototypes;
-mod transfer_curves;
+pub(super) mod positional;
+pub(super) mod prototypes;
+pub(super) mod transfer_curves;
 
 use crate::decode::axis::{Axis, Sign};
-#[allow(clippy::wildcard_imports)]
-pub(super) use brep::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use cylinders::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use intersection_resolve::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use positional::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use prototypes::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use transfer_curves::*;
 
 use std::collections::BTreeMap;
 

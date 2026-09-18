@@ -26,7 +26,7 @@ use crate::container::ContainerScan;
 
 use super::super::expanded::attach_expanded_sections;
 use super::super::native::annotate;
-use super::super::surfaces::BrepTransferDiagnostics;
+use super::super::surfaces::brep::BrepTransferDiagnostics;
 use super::arenas::{emit_geometry_arenas, emit_reference_arenas};
 use super::coverage::collect_feature_coverage;
 use super::ir_features::{emit_model_features, finish_feature_transfers};
