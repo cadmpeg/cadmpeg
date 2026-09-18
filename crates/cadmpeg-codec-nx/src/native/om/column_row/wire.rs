@@ -6,16 +6,7 @@ use super::{
     LinkedRow, Serialize, TargetRow,
 };
 use crate::om::compact::CompactIndexTarget;
-use crate::om::compact::{atom, CompactIndexAtom};
-
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
-fn indices<const N: usize>(
-    values: [u32; N],
-    raw: [Vec<u8>; N],
-) -> [Result<CompactIndexAtom, String>; N] {
-    std::array::from_fn(|i| atom(values[i], &raw[i], "indices/raw_indices"))
-}
+use crate::om::compact::{atom, row_indices};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct DataBlockIndexRowWire {
@@ -54,7 +45,7 @@ pub(super) struct DataBlockIndexRowWire {
 impl TryFrom<DataBlockIndexRowWire> for DataBlockIndexRow {
     type Error = String;
     fn try_from(wire: DataBlockIndexRowWire) -> Result<Self, Self::Error> {
-        let [a, b, c, d] = indices(wire.indices, wire.raw_indices);
+        let [a, b, c, d] = row_indices(wire.indices, wire.raw_indices);
         let [a_block, b_block, c_block, d_block] = wire.data_blocks;
         let indices = [
             CompactIndexTarget {
@@ -169,7 +160,7 @@ pub(super) struct DataBlockLinkedIndexRowWire {
 impl TryFrom<DataBlockLinkedIndexRowWire> for DataBlockLinkedIndexRow {
     type Error = String;
     fn try_from(wire: DataBlockLinkedIndexRowWire) -> Result<Self, Self::Error> {
-        let [a, b, c] = indices(wire.indices, wire.raw_indices);
+        let [a, b, c] = row_indices(wire.indices, wire.raw_indices);
         let [target_block, a_block, b_block, c_block] = wire.data_blocks;
         let indices = [
             CompactIndexTarget {
@@ -297,7 +288,7 @@ pub(super) struct DataBlockTargetIndexRowWire {
 impl TryFrom<DataBlockTargetIndexRowWire> for DataBlockTargetIndexRow {
     type Error = String;
     fn try_from(wire: DataBlockTargetIndexRowWire) -> Result<Self, Self::Error> {
-        let [a, b, c] = indices(wire.indices, wire.raw_indices);
+        let [a, b, c] = row_indices(wire.indices, wire.raw_indices);
         let [target_block, a_block, b_block, c_block] = wire.data_blocks;
         let indices = [
             CompactIndexTarget {
