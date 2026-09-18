@@ -7,6 +7,8 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::decode::operands::parse_sketch_profile_region_selection;
+use crate::design::test_support::indexed_header;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
@@ -1024,4 +1026,94 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             ref profiles,
         }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
     ));
+}
+
+fn region_member(bytes: &mut Vec<u8>, curve_primary_id: u32, incidence: [u32; 3]) {
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(&curve_primary_id.to_le_bytes());
+    bytes.extend_from_slice(&[0; 12]);
+    for word in incidence {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0; 8]);
+}
+
+fn region_selection_frame() -> (Vec<u8>, usize, usize, usize) {
+    let profile_record_index = 100;
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"266", profile_record_index);
+    indexed_header(&mut bytes, *b"263", profile_record_index + 1);
+    indexed_header(&mut bytes, *b"259", profile_record_index + 2);
+    let selection_at = bytes.len();
+    indexed_header(&mut bytes, *b"327", profile_record_index + 3);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&profile_record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_member(&mut bytes, 70, [1, 1, 1]);
+    let second_region_marker = bytes.len();
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    region_member(&mut bytes, 80, [0, 1, 2]);
+    region_member(&mut bytes, 81, [0, 2, 2]);
+    let terminator = bytes.len();
+    bytes.extend_from_slice(&[0; 5]);
+    indexed_header(&mut bytes, *b"261", profile_record_index + 3);
+    (bytes, selection_at, second_region_marker, terminator)
+}
+
+#[test]
+fn sketch_profile_region_selection_preserves_region_and_curve_order() {
+    let (bytes, selection_at, _, _) = region_selection_frame();
+    let selection =
+        parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
+    assert_eq!(selection.record_index, 103);
+    assert_eq!(selection.byte_offset, selection_at as u64);
+    assert_eq!(selection.class_tag.as_str(), "327");
+    assert_eq!(selection.companion_class_tag.as_str(), "261");
+    assert_eq!(
+        selection
+            .regions
+            .iter()
+            .map(|region| {
+                region
+                    .members
+                    .iter()
+                    .map(|member| member.curve_primary_id.get())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(),
+        [vec![70], vec![80, 81]]
+    );
+}
+
+#[test]
+fn sketch_profile_region_selection_requires_every_delimiter() {
+    let (bytes, _, second_region_marker, terminator) = region_selection_frame();
+    for offset in [second_region_marker, terminator] {
+        let mut changed = bytes.clone();
+        changed[offset] = 2;
+        assert_eq!(
+            parse_sketch_profile_region_selection(&changed, 100, 0),
+            None
+        );
+    }
+}
+
+#[test]
+fn sketch_profile_region_selection_derives_companion_after_header_shaped_member() {
+    let (mut bytes, selection_at, _, _) = region_selection_frame();
+    let curve_primary_id_offset = selection_at + 48;
+    bytes[curve_primary_id_offset..curve_primary_id_offset + 4].copy_from_slice(b"123X");
+
+    let selection =
+        parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
+
+    assert_eq!(
+        u64::from(selection.regions[0].members[0].curve_primary_id.get()),
+        u64::from(u32::from_le_bytes(*b"123X"))
+    );
 }
