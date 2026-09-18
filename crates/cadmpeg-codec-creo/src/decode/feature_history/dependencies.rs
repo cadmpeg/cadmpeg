@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature dependency graphs, affected ids, and link reconciliation.
 
-use super::super::surfaces::unique_surface_prototype_associations;
+use super::super::surfaces::prototypes::unique_surface_prototype_associations;
 use super::knit::surface_transition_dependencies;
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::current_feature_recipe_parent;

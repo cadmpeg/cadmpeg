@@ -2,7 +2,7 @@ use crate::decode::analytic::vertices::{
     conic_conic_intersections, incident_analytic_vertex_domain, line_conic_intersections,
     line_line_intersection, model_points_agree,
 };
-use crate::decode::surfaces::curve_contains_points;
+use crate::decode::surfaces::intersection_resolve::curve_contains_points;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 

@@ -29,7 +29,7 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         panic!("complete cone prototype");
     };
     assert_eq!(
-        crate::decode::surfaces::unique_surface_prototype_associations(&scan)
+        crate::decode::surfaces::prototypes::unique_surface_prototype_associations(&scan)
             .expect("prototype associations")
             .len(),
         1

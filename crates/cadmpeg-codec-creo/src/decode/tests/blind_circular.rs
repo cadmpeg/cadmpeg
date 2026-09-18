@@ -17,7 +17,7 @@ use crate::decode::holes::sweep::{
     compact_simple_hole_cylinder_id, extrusion_extent_and_direction,
     single_cap_circular_sweep_geometry, two_cap_circular_sweep_geometry,
 };
-use crate::decode::surfaces::{
+use crate::decode::surfaces::cylinders::{
     reference_cap_bound_round_frame, reference_circle_pair_cylinder_frame,
 };
 use crate::decode::sweep::{

@@ -4,7 +4,7 @@
 use crate::decode::analytic::equations::{CarrierEquation, ConeEquation, PlaneEquation};
 use crate::decode::analytic::planes::{point_on_carrier, solve_carriers};
 use crate::decode::surfaces::intersection_candidates::coaxial_cones_section_candidates;
-use crate::decode::surfaces::select_unique_curve_candidate;
+use crate::decode::surfaces::intersection_resolve::select_unique_curve_candidate;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
 const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;

@@ -15,7 +15,7 @@ use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use crate::container::{self, ContainerScan};
 use crate::loss::CreoLossCode;
 
-use super::super::surfaces::BrepTransferDiagnostics;
+use super::super::surfaces::brep::BrepTransferDiagnostics;
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
     push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,

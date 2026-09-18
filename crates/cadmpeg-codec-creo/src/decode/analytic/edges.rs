@@ -5,7 +5,7 @@ use crate::vecmath::normalize;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use super::super::surfaces::curve_contains_points;
+use super::super::surfaces::intersection_resolve::curve_contains_points;
 
 use super::planes::valid_positive_nurbs_curve;
 use crate::vecmath::{cross, dot};

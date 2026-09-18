@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Round and chamfer radius reconstruction from support geometry.
 
-use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associations};
+use super::super::surfaces::prototypes::{prototype_scalar, unique_surface_prototype_associations};
 use super::super::uniqueness::exactly_one;
 use super::selections::agreed_feature_geometry_ids;
 use crate::container::ContainerScan;

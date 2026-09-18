@@ -13,10 +13,10 @@ use crate::decode::surfaces::intersection_candidates::{
     coaxial_sphere_torus_circle_candidates, coaxial_tori_circle_candidates,
     parallel_cylinder_generator_candidates, parallel_plane_cylinder_generator_candidates,
 };
-use crate::decode::surfaces::intersections::carrier_intersection_curve;
-use crate::decode::surfaces::{
+use crate::decode::surfaces::intersection_resolve::{
     fc14_held_coordinate, select_fc14_axis_coordinate_candidate, select_unique_curve_candidate,
 };
+use crate::decode::surfaces::intersections::carrier_intersection_curve;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
 

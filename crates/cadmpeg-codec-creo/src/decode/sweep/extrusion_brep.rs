@@ -94,7 +94,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    diagnostics: &mut crate::decode::surfaces::BrepTransferDiagnostics,
+    diagnostics: &mut crate::decode::surfaces::brep::BrepTransferDiagnostics,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
