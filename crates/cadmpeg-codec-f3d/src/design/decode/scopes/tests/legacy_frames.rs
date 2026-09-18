@@ -3,14 +3,33 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_parameter_owner;
+use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
+use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
+use crate::design::decode::scopes::work_geometry::{
+    exact_work_axis_construction, exact_work_plane_frame,
+};
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::feature_project::project_parameter_design;
+use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
 use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
+use crate::records::feature::direct_face::DesignDirectFaceOperation;
+use crate::records::feature::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
+use crate::records::feature::fixed_parameters::{
+    DesignFixedExtrudeDistance, DesignFixedExtrudeScalar,
+};
+use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::lp_utf16;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::{Feature, FeatureDefinition};
 
 #[test]
 fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {

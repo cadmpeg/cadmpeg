@@ -3,11 +3,17 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::indexed_header;
+use crate::records::feature::assembly::{
+    DesignAssemblyAlignment, DesignAssemblyLimitKind, DesignAssemblyOperandFrame,
+};
+use crate::records::feature::assembly_features::DesignComponentInsertConstruction;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::{
     feature::{
         assembly::DesignAssemblyAlignmentForm,

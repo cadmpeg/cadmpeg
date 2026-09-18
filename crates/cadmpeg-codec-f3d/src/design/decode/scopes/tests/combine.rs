@@ -3,11 +3,20 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::scopes::combine::exact_combine_operation;
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::feature_project::project_combine;
 use crate::design::test_support::indexed_header;
+use crate::records::decal::DesignRecordHeader;
+use crate::records::feature::combine::{
+    DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
+};
+use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::lp_utf16;
 use crate::test_support::push_reference_u64;
 
 #[test]

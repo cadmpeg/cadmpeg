@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{
+    append_axial_test_component_operand, axial_test_alignment, axial_test_component_scope,
+};
+use crate::design::decode::scopes::axial_assembly::bind_axial_assembly_operand_targets;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::records::feature::assembly::DesignAssemblyAxialOperandTarget;
+use crate::records::feature::scope::DesignParameterScope;
 
 #[test]
 fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {

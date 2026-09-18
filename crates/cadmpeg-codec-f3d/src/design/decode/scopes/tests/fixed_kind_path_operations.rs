@@ -1,10 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::prelude::*;
+
+use crate::design::decode::dimension_frames::companion_owned_interval;
+use crate::design::decode::parameters::bind_parameter_companion_payloads;
+use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::test_support::parameter_record;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
+use crate::records::decal::DesignRecordHeader;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::path_features::DesignPathFeatureConstruction;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::parameters::DesignParameterCompanion;
+use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
     entity_selection::DesignLoftLegacyBodyCarrier, extrude_selection::DesignOperandRole,
 };
+use std::collections::HashMap;
 
 pub(super) fn fixed_kind_path_operations(
     mut bytes: Vec<u8>,

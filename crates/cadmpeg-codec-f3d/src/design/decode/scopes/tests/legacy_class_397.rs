@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::prelude::*;
+use crate::records::feature::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
+use crate::test_support::lp_utf16;
 
 #[test]
 fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {

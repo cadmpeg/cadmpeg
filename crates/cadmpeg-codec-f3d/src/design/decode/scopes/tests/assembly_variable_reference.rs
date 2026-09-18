@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::prelude::*;
+
+use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
+use crate::records::feature::scope::DesignParameterScope;
 
 #[test]
 fn variable_reference_assembly_uses_fixed_alignment_lanes() {

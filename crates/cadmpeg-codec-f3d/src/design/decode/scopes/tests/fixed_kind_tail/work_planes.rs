@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
+use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
+use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
+use crate::records::feature::scope::DesignParameterScope;
 
 #[test]
 fn legacy_work_plane_class_380_frame_decodes_its_matrix() {

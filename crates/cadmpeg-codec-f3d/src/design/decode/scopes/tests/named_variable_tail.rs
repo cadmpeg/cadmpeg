@@ -3,10 +3,14 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::records::decal::DesignRecordHeader;
+use crate::test_support::lp_utf16;
 
 #[test]
 fn parameter_scope_parses_named_variable_tail() {

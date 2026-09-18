@@ -3,8 +3,7 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
 
 pub(in crate::design::decode::scopes) mod assembly;
@@ -22,7 +21,6 @@ mod legacy_frames;
 mod legacy_work_planes;
 mod named_empty_label;
 mod named_variable_tail;
-mod prelude;
 mod scale;
 mod surfaces;
 mod thicken;
