@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Path resolution from a reader's own module context.
 
+use super::scan::path_matches;
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -393,33 +394,26 @@ pub(super) fn resolve_receiver_path(
 }
 
 pub(super) fn external_is_keyless(path: &[String]) -> bool {
-    fn matches(path: &[String], expected: &[&str]) -> bool {
-        path.len() == expected.len()
-            && path
-                .iter()
-                .zip(expected)
-                .all(|(actual, wanted)| actual == wanted)
-    }
     (path.len() == 2
         && path.first().is_some_and(|segment| segment == "primitive")
         && path.get(1).is_some_and(|segment| primitive_name(segment)))
-        || matches(path, &["std", "string", "String"])
-        || matches(path, &["std", "vec", "Vec"])
-        || matches(path, &["std", "collections", "VecDeque"])
-        || matches(path, &["std", "collections", "LinkedList"])
-        || matches(path, &["std", "collections", "BinaryHeap"])
-        || matches(path, &["std", "collections", "HashSet"])
-        || matches(path, &["std", "collections", "BTreeSet"])
-        || matches(path, &["std", "boxed", "Box"])
-        || matches(path, &["core", "option", "Option"])
-        || matches(path, &["std", "rc", "Rc"])
-        || matches(path, &["std", "sync", "Arc"])
-        || matches(path, &["core", "pin", "Pin"])
-        || matches(path, &["std", "cell", "RefCell"])
-        || matches(path, &["std", "cell", "Cell"])
-        || matches(path, &["std", "sync", "Mutex"])
-        || matches(path, &["std", "sync", "RwLock"])
-        || matches(path, &["serde_bytes", "ByteBuf"])
+        || path_matches(path, &["std", "string", "String"])
+        || path_matches(path, &["std", "vec", "Vec"])
+        || path_matches(path, &["std", "collections", "VecDeque"])
+        || path_matches(path, &["std", "collections", "LinkedList"])
+        || path_matches(path, &["std", "collections", "BinaryHeap"])
+        || path_matches(path, &["std", "collections", "HashSet"])
+        || path_matches(path, &["std", "collections", "BTreeSet"])
+        || path_matches(path, &["std", "boxed", "Box"])
+        || path_matches(path, &["core", "option", "Option"])
+        || path_matches(path, &["std", "rc", "Rc"])
+        || path_matches(path, &["std", "sync", "Arc"])
+        || path_matches(path, &["core", "pin", "Pin"])
+        || path_matches(path, &["std", "cell", "RefCell"])
+        || path_matches(path, &["std", "cell", "Cell"])
+        || path_matches(path, &["std", "sync", "Mutex"])
+        || path_matches(path, &["std", "sync", "RwLock"])
+        || path_matches(path, &["serde_bytes", "ByteBuf"])
 }
 
 pub(super) fn external_is_value(path: &[String]) -> bool {
