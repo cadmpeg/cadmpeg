@@ -936,12 +936,12 @@ fn parse_constraint(
         SketchConstraintTag::Radius => PmDcSketchConstraintKind::Radius {
             state: cursor.u32("radius constraint state")?,
             entity: cursor.reference("radius constraint entity reference")?,
-            values: u32_array::<4>(&mut cursor, "radius constraint values")?,
+            values: cursor.u32_array::<4>("radius constraint values")?,
         },
         SketchConstraintTag::Diameter => PmDcSketchConstraintKind::Diameter {
             reference: cursor.reference("diameter constraint reference")?,
             entity: cursor.reference("diameter constraint entity reference")?,
-            values: u32_array::<4>(&mut cursor, "diameter constraint values")?,
+            values: cursor.u32_array::<4>("diameter constraint values")?,
         },
         SketchConstraintTag::CircleCenter => PmDcSketchConstraintKind::CircleCenter {
             entity: cursor.reference("circle-center constraint entity reference")?,
@@ -966,19 +966,8 @@ fn distance_constraint_fields(
     let first = cursor.reference("distance constraint first reference")?;
     let second = cursor.reference("distance constraint second reference")?;
     let parameter = cursor.reference("distance constraint parameter reference")?;
-    let values = u32_array::<4>(cursor, "distance constraint values")?;
+    let values = cursor.u32_array::<4>("distance constraint values")?;
     Ok((first, second, parameter, values))
-}
-
-fn u32_array<const N: usize>(
-    cursor: &mut Cursor<'_>,
-    field: &'static str,
-) -> Result<[u32; N], CodecError> {
-    let mut values = [0; N];
-    for value in &mut values {
-        *value = cursor.u32(field)?;
-    }
-    Ok(values)
 }
 
 pub(crate) fn project(

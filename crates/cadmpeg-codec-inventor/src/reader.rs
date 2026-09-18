@@ -33,15 +33,32 @@ pub(crate) fn u64(view: &mut View<'_>, field: &'static str) -> Result<u64, Codec
     Ok(view.req_u64_le().map_err(|error| error.during(field))?)
 }
 
+pub(crate) fn u16_array<const N: usize>(
+    view: &mut View<'_>,
+    field: &'static str,
+) -> Result<[u16; N], CodecError> {
+    let mut values = [0; N];
+    for value in &mut values {
+        *value = u16(view, field)?;
+    }
+    Ok(values)
+}
+
+pub(crate) fn u32_array<const N: usize>(
+    view: &mut View<'_>,
+    field: &'static str,
+) -> Result<[u32; N], CodecError> {
+    let mut values = [0; N];
+    for value in &mut values {
+        *value = u32(view, field)?;
+    }
+    Ok(values)
+}
+
 pub(crate) fn take<'a>(
     view: &mut View<'a>,
     len: usize,
     field: &'static str,
 ) -> Result<&'a [u8], CodecError> {
     Ok(view.req_take(len).map_err(|error| error.during(field))?)
-}
-
-/// The read position inside `view`, counted from the start of `view`.
-pub(crate) fn position(view: &View<'_>) -> usize {
-    view.position().saturating_sub(view.start())
 }
