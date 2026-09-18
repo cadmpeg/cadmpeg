@@ -28,7 +28,7 @@ impl<'a> DescendingU32Edges<'a> {
         }
     }
 
-    pub(super) fn is_nondecreasing(&self, start: usize, end: usize) -> bool {
+    fn is_nondecreasing(&self, start: usize, end: usize) -> bool {
         if end < start {
             return false;
         }
@@ -251,5 +251,20 @@ mod tests {
         assert!(OffsetIndex::new(&edges, 0, 4, 17).is_none());
         bytes[8..12].copy_from_slice(&21u32.to_le_bytes());
         assert!(OffsetIndex::new(&DescendingU32Edges::new(&bytes), 0, 4, 16).is_none());
+    }
+
+    #[test]
+    fn om_index_monotone_cache_rejects_a_decrease_inside_a_candidate() {
+        let words = [10_u32, 20, 30, 25, 40];
+        let bytes = words
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<_>>();
+        let edges = super::DescendingU32Edges::new(&bytes);
+
+        assert!(edges.is_nondecreasing(0, 12));
+        assert!(!edges.is_nondecreasing(0, 16));
+        assert!(edges.is_nondecreasing(4, 12));
+        assert!(edges.is_nondecreasing(12, 20));
     }
 }

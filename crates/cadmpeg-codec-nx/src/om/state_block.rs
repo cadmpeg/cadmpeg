@@ -47,7 +47,7 @@ impl<'a> OperationStateBlock<'a> {
             BlockBody::Messages(_) => None,
         }
     }
-    pub(super) fn status_end_offset(&self) -> usize {
+    fn status_end_offset(&self) -> usize {
         match &self.body {
             BlockBody::Statuses { entries, .. } => entries
                 .iter()
@@ -291,8 +291,21 @@ pub(super) fn operation_state_block_before_boundary(
 
 #[cfg(test)]
 mod tests {
-    use super::{OperationStateBlock, OperationStateMessage, StateSlotLane, StateTableEntry};
-    use crate::om::state_status::operation_state_status_row_at;
+    use super::{
+        operation_state_block_before_boundary, OperationStateBlock, OperationStateMessage,
+        StateSlotLane, StateTableEntry,
+    };
+    use crate::om::state_status::{operation_state_status_row_at, StateStatusPayload};
+
+    fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2]) -> Vec<u8> {
+        let declared_length = u8::try_from(text.len() + 2).expect("short synthesized message");
+        let mut bytes = vec![0x03, declared_length];
+        bytes.extend_from_slice(text);
+        bytes.extend([0, 0, 0, 0, 0]);
+        bytes.extend_from_slice(value);
+        bytes.extend(count_or_severity);
+        bytes
+    }
 
     #[test]
     fn table_entries_and_messages_follow_one_block_origin() {
@@ -343,5 +356,77 @@ mod tests {
         let block = OperationStateBlock::new(usize::MAX - 13, Vec::new(), vec![message]).unwrap();
         assert_eq!(block.into_messages().unwrap()[0].end_offset(), usize::MAX);
         assert!(OperationStateBlock::new(usize::MAX - 12, Vec::new(), vec![message]).is_none());
+    }
+
+    #[test]
+    fn operation_state_block_keeps_inline_diagnostics_out_of_standalone_messages() {
+        let mut bytes = vec![0x3c, 0x81, 0x23];
+        let diagnostic = message_bytes(b"inline", &[0xaa, 0x60, 0x6b], [0, 1]);
+        bytes.extend_from_slice(&diagnostic);
+        bytes.extend(message_bytes(b"standalone", &[0xaa, 0x39, 0x4e], [0, 2]));
+
+        let block = operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
+            .expect("complete operation-state block");
+        assert_eq!(block.rows().len(), 1);
+        assert!(matches!(
+            block.rows()[0].payload,
+            StateStatusPayload::Diagnostic(..)
+        ));
+        assert_eq!(block.messages().len(), 1);
+        assert_eq!(block.messages()[0].text.as_str(), "standalone");
+        assert_eq!(block.status_end_offset(), 500 + 3 + diagnostic.len());
+    }
+
+    #[test]
+    fn operation_state_status_table_ignores_incomplete_preceding_operation_lane() {
+        let mut bytes = vec![
+            0x41, 0x80, 0x01, 0x3f, 0x31, 0x80, 0x55, 0x87, 0xb3, 0xff, 0x81, 0x36, 0xff, 0x41,
+            0x80, 0x20, 0x3f, 0x44, 0x80, 0x21, 0x4b, 0xff, 0x80, 0x22, 0xff,
+        ];
+        let message = message_bytes(b"boundary", &[0xaa, 0x01, 0x02], [0, 1]);
+        let boundary = bytes.len();
+        bytes.extend(message);
+
+        let block = operation_state_block_before_boundary(&bytes, 0, boundary, 500)
+            .expect("complete status chain");
+        assert_eq!(block.offset(), 500 + 13);
+        assert_eq!(block.rows().len(), 2);
+        assert_eq!(Some(block.rows()[0].object_index.value()), Some(0x20));
+        assert_eq!(block.rows()[1].status_code.value(), 0x44);
+        assert_eq!(block.status_end_offset(), 500 + boundary);
+    }
+
+    #[test]
+    fn operation_state_block_stops_before_untyped_tail() {
+        let mut bytes = vec![
+            0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
+        ];
+        let status_end = bytes.len();
+        bytes.extend([0x31, 0x80, 0x01, 0x01, 0x02, 0x55, 0x99]);
+
+        let block = operation_state_block_before_boundary(&bytes, 0, bytes.len(), 500)
+            .expect("status chain before bounded tail");
+        assert_eq!(block.offset(), 500);
+        assert_eq!(block.rows().len(), 2);
+        assert!(block.messages().is_empty());
+        assert_eq!(block.status_end_offset(), 500 + status_end);
+    }
+
+    #[test]
+    fn operation_state_block_keeps_a_large_opaque_prefix_sparse() {
+        const OPAQUE_PREFIX_BYTES: usize = 128 * 1024;
+        let mut bytes = vec![0xf0; OPAQUE_PREFIX_BYTES];
+        let status_start = bytes.len();
+        bytes.extend([
+            0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
+        ]);
+        let boundary = bytes.len();
+
+        let block = operation_state_block_before_boundary(&bytes, 0, boundary, 500)
+            .expect("status chain after large opaque prefix");
+        assert_eq!(block.offset(), 500 + status_start);
+        assert_eq!(block.rows().len(), 2);
+        assert!(block.messages().is_empty());
+        assert_eq!(block.status_end_offset(), 500 + boundary);
     }
 }
