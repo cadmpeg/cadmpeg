@@ -3,10 +3,18 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+use crate::design::decode::sketch::decode_pattern_definition;
+use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::design::decode::sketch::next_indexed_record_offset_with_index;
+use crate::design::decode::sketch::parse_classed_sketch_relation;
+use crate::design::decode::sketch::parse_genesis_entity_header;
+use crate::design::decode::sketch::parse_settled_entity_header;
+use crate::design::decode::sketch::SketchRelationClass;
+use crate::design::test_support::push_genesis_block;
+use crate::design::test_support::push_reference;
+use crate::records::sketch_relations::SketchConstraintKind;
 
 #[test]
 fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
