@@ -863,11 +863,11 @@ fn read_curve_poles(
         };
         points.push(Point3::new(
             crate::wire::scaled_coordinate(point[0], scale)
-                .ok_or_else(|| error(reader.position(), "scaled NURBS pole is invalid"))?,
+                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
             crate::wire::scaled_coordinate(point[1], scale)
-                .ok_or_else(|| error(reader.position(), "scaled NURBS pole is invalid"))?,
+                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
             crate::wire::scaled_coordinate(point[2], scale)
-                .ok_or_else(|| error(reader.position(), "scaled NURBS pole is invalid"))?,
+                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
         ));
     }
     Ok((points, weights))
