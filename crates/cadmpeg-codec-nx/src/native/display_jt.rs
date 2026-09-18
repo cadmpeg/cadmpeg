@@ -4329,10 +4329,7 @@ fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<Point3> 
             * 1000.0
     };
     let point = Point3::new(coordinate(0), coordinate(1), coordinate(2));
-    [point.x, point.y, point.z]
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(point)
+    point.is_finite().then_some(point)
 }
 
 fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<Vector3> {

@@ -367,9 +367,7 @@ impl HomogeneousSurfaceNet {
             .any(|knot| !knot.is_finite())
             || !knots_nondecreasing(surface.u_knots())
             || !knots_nondecreasing(surface.v_knots())
-            || poles
-                .iter()
-                .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+            || poles.iter().any(|point| !point.is_finite())
             || !positive_weights(surface.pole_weights())
         {
             return None;
@@ -787,9 +785,7 @@ pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
     let normal = oriented_nurbs_normal(surface, cross_vector(u_direction, v_direction))?;
 
     let positive_collinear = |increment: Vector3, direction: Vector3| {
-        increment.x.is_finite()
-            && increment.y.is_finite()
-            && increment.z.is_finite()
+        increment.is_finite()
             && cross_vector(increment, direction) == Vector3::new(0.0, 0.0, 0.0)
             && dot_vector(increment, direction) > 0.0
     };
@@ -862,9 +858,7 @@ fn offset_support_control_hull_excludes_point(
             .is_some_and(|carrier| match &carrier.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
                     if positive_weights(nurbs.pole_weights())
-                        && nurbs.poles().iter().all(|control| {
-                            control.x.is_finite() && control.y.is_finite() && control.z.is_finite()
-                        }) =>
+                        && nurbs.poles().iter().all(Point3::is_finite) =>
                 {
                     let poles = nurbs.poles();
                     let (minimum, maximum) = poles.iter().fold(
@@ -1154,12 +1148,7 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
     fit_tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
-    if !point.x.is_finite()
-        || !point.y.is_finite()
-        || !point.z.is_finite()
-        || !fit_tolerance.is_finite()
-        || fit_tolerance < 0.0
-    {
+    if !point.is_finite() || !fit_tolerance.is_finite() || fit_tolerance < 0.0 {
         return None;
     }
     let carrier = index.surfaces(surface.as_str())?;

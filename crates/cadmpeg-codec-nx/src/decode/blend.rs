@@ -1752,9 +1752,7 @@ pub(crate) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     let source_uv = pcurve_uv(source_pcurve, curve_parameter)?;
     if !source_uv.u.is_finite()
         || !source_uv.v.is_finite()
-        || !target.point.x.is_finite()
-        || !target.point.y.is_finite()
-        || !target.point.z.is_finite()
+        || !target.point.is_finite()
         || !target.tolerance.is_finite()
         || target.tolerance < 0.0
     {
@@ -3757,12 +3755,11 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
     let count = curve.control_points().len();
     if curve.knots().iter().any(|knot| !knot.is_finite())
         || !knots_nondecreasing(curve.knots())
-        || curve.control_points().iter().any(|control| {
-            !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
-        })
-        || !point.x.is_finite()
-        || !point.y.is_finite()
-        || !point.z.is_finite()
+        || curve
+            .control_points()
+            .iter()
+            .any(|control| !control.is_finite())
+        || !point.is_finite()
     {
         return None;
     }

@@ -3328,12 +3328,7 @@ fn point_outside_nurbs_control_bounds(
     tolerance: f64,
     bounds: ([f64; 3], [f64; 3]),
 ) -> bool {
-    if !tolerance.is_finite()
-        || tolerance < 0.0
-        || !point.x.is_finite()
-        || !point.y.is_finite()
-        || !point.z.is_finite()
-    {
+    if !tolerance.is_finite() || tolerance < 0.0 || !point.is_finite() {
         return false;
     }
     let coordinates = [point.x, point.y, point.z];
@@ -3751,7 +3746,7 @@ pub(crate) fn linear_nurbs_curve_endpoint_witness_with_index(
     let last = *curve.control_points().last()?;
     [first, last]
         .into_iter()
-        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        .all(|point| point.is_finite())
         .then_some([first, last])
 }
 

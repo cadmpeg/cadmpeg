@@ -6066,12 +6066,11 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
     };
     let center = sphere_surface.center();
     let radius = sphere_surface.radius();
-    ((radius).is_finite()
-        && radius > 0.0
-        && [center.x, center.y, center.z]
-            .into_iter()
-            .all(f64::is_finite))
-    .then_some((body, *center, Length::new(radius)?))
+    ((radius).is_finite() && radius > 0.0 && center.is_finite()).then_some((
+        body,
+        *center,
+        Length::new(radius)?,
+    ))
 }
 
 struct NewBodyEvidence<'a> {
