@@ -1344,9 +1344,21 @@ impl<'a> Builder<'a> {
             &cadmpeg_ir::identity_namespace!("fcstd", "model", "vertex"),
             crate::native::model_key(&self.payload.id, &label).map_err(CodecError::malformed)?,
         );
+        // A finite point and a finite location still multiply and add to a
+        // non-finite coordinate, which states no position.
+        let position = transform.apply_point(point);
+        if ![position.x, position.y, position.z]
+            .into_iter()
+            .all(f64::is_finite)
+        {
+            return Err(CodecError::malformed(format_args!(
+                "placed vertex {} position contains a non-finite coordinate",
+                vertex_use.shape
+            )));
+        }
         ir.model.points.push(Point {
             id: point_id.clone(),
-            position: transform.apply_point(point),
+            position,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Fcstd,
                 object_id: self.source_object.clone(),

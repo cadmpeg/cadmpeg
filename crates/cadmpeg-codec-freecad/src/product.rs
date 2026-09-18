@@ -9,9 +9,9 @@ use std::num::NonZeroUsize;
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
-    malformed, parse_bool, ContainerNode, CopyOnChangePolicy as NativeCopyOnChangePolicy,
-    LinkArrayCardinality, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord,
-    PropertyRecord,
+    malformed, parse_bool, sole_named_property, ContainerNode,
+    CopyOnChangePolicy as NativeCopyOnChangePolicy, LinkArrayCardinality, LinkOccurrence,
+    ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -44,7 +44,7 @@ pub(crate) fn transfer(
             .get(object.id.as_str())
             .cloned()
             .unwrap_or_default();
-        let group = unique_property(&owned, "Group")?;
+        let group = sole_named_property("product", &owned, "Group")?;
         let members = group
             .map(|property| {
                 link_list(property, "App::PropertyLinkList", "Group").map(|links| {
@@ -56,7 +56,7 @@ pub(crate) fn transfer(
             })
             .transpose()?
             .unwrap_or_default();
-        let linked = unique_property(&owned, "LinkedObject")?;
+        let linked = sole_named_property("product", &owned, "LinkedObject")?;
         let prototype_link = linked
             .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
             .transpose()?
@@ -84,7 +84,7 @@ pub(crate) fn transfer(
             .transpose()
             .map_err(malformed)?;
         let element_visibility = bool_list(&owned, "VisibilityList")?;
-        let element_objects = unique_property(&owned, "ElementList")?
+        let element_objects = sole_named_property("product", &owned, "ElementList")?
             .map(|property| {
                 link_list(property, "App::PropertyLinkList", "ElementList").map(|links| {
                     links
@@ -629,7 +629,7 @@ fn parse_placement_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<FiniteFrame>, CodecError> {
-    let Some(property) = unique_property(properties, "PlacementList")? else {
+    let Some(property) = sole_named_property("product", properties, "PlacementList")? else {
         return Ok(Vec::new());
     };
     let Some(view) = side_bytes(
@@ -658,7 +658,7 @@ fn parse_vector_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<crate::native::frame::FiniteVec3>, CodecError> {
-    let Some(property) = unique_property(properties, "ScaleList")? else {
+    let Some(property) = sole_named_property("product", properties, "ScaleList")? else {
         return Ok(Vec::new());
     };
     let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
@@ -778,19 +778,11 @@ fn single_value<'a>(
     Ok(&property.values()[0])
 }
 
-fn unique_property<'a>(
-    properties: &[&'a PropertyRecord],
-    name: &str,
-) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
-        .map_err(|_| CodecError::malformed(format_args!("{name} has duplicate carriers")))
-}
-
 fn selected_placement<'a>(
     properties: &[&'a PropertyRecord],
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let link_placement = unique_property(properties, "LinkPlacement")?;
-    let placement = unique_property(properties, "Placement")?;
+    let link_placement = sole_named_property("product", properties, "LinkPlacement")?;
+    let placement = sole_named_property("product", properties, "Placement")?;
     for property in [link_placement, placement].into_iter().flatten() {
         placement_matrix(property)?;
     }
@@ -931,7 +923,7 @@ fn metadata_string(properties: &[&PropertyRecord], name: &str) -> Option<String>
 }
 
 fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bool>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("product", properties, name)? else {
         return Ok(None);
     };
     let value = single_value(property, "App::PropertyBool", name, "Bool")?;
@@ -950,7 +942,7 @@ fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bo
 }
 
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<i64>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("product", properties, name)? else {
         return Ok(None);
     };
     let value = single_value(property, "App::PropertyIntegerConstraint", name, "Integer")?;
@@ -971,7 +963,7 @@ fn integer_property(properties: &[&PropertyRecord], name: &str) -> Result<Option
 fn copy_on_change_property(
     properties: &[&PropertyRecord],
 ) -> Result<Option<NativeCopyOnChangePolicy>, CodecError> {
-    let Some(property) = unique_property(properties, "LinkCopyOnChange")? else {
+    let Some(property) = sole_named_property("product", properties, "LinkCopyOnChange")? else {
         return Ok(None);
     };
     let value = single_value(
@@ -1002,7 +994,7 @@ fn linked_target(
     expected_type: &str,
     root: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("product", properties, name)? else {
         return Ok(None);
     };
     let link = single_link(property, expected_type, root, name)?;
@@ -1043,10 +1035,10 @@ fn neutral_link_target(
 }
 
 fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[f64; 3]>, CodecError> {
-    if let Some(property) = unique_property(properties, "ScaleVector")? {
+    if let Some(property) = sole_named_property("product", properties, "ScaleVector")? {
         return vector_property(property).map(Some);
     }
-    let Some(property) = unique_property(properties, "Scale")? else {
+    let Some(property) = sole_named_property("product", properties, "Scale")? else {
         return Ok(None);
     };
     let value = single_value(property, "App::PropertyFloat", "Scale", "Float")?;
@@ -1097,7 +1089,7 @@ fn parse_finite(value: &str, property: &PropertyRecord, name: &str) -> Result<f6
 }
 
 fn bool_list(properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("product", properties, name)? else {
         return Ok(Vec::new());
     };
     let value = single_value(property, "App::PropertyBoolList", name, "BoolList")?;

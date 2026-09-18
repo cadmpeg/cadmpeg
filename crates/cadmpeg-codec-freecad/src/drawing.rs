@@ -451,11 +451,7 @@ fn typed_property<'a>(
     name: &str,
     type_name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let Some(property) = crate::native::unique_property(properties.iter().copied(), |property| {
-        property.name == name
-    })
-    .map_err(|_| CodecError::malformed(format_args!("{name} has duplicate carriers")))?
-    else {
+    let Some(property) = sole_named_property("drawing", properties, name)? else {
         return Ok(None);
     };
     if property.type_name != type_name {
