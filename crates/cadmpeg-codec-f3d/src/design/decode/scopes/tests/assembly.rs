@@ -1680,7 +1680,9 @@ fn legacy_class_383_transform(translation_x: f64) -> [[f64; 4]; 4] {
     ]
 }
 
-pub(super) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
+pub(in crate::design::decode::scopes) fn assembly_operand_frame_fixture(
+    scope_record_index: u32,
+) -> Vec<u8> {
     let mut bytes = vec![0_u8; 648];
     bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
     bytes[4..7].copy_from_slice(b"273");
