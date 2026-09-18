@@ -104,11 +104,11 @@ fn nurbs_surface_block_decodes_to_carrier() {
     push_tagged_i64(&mut b, 0x04, 2); // n_unique_knots_u
     push_tagged_i64(&mut b, 0x04, 2); // n_unique_knots_v
     for (k, m) in [(0.0, 1i64), (1.0, 1)] {
-        push_tagged_f64(&mut b, k);
+        t_dbl(&mut b, k);
         push_tagged_i64(&mut b, 0x04, m);
     }
     for (k, m) in [(0.0, 1i64), (1.0, 1)] {
-        push_tagged_f64(&mut b, k);
+        t_dbl(&mut b, k);
         push_tagged_i64(&mut b, 0x04, m);
     }
     // Control grid stored v-major (v outer, u inner); coordinates in cm.
@@ -120,7 +120,7 @@ fn nurbs_surface_block_decodes_to_carrier() {
     ];
     for p in grid {
         for c in p {
-            push_tagged_f64(&mut b, c);
+            t_dbl(&mut b, c);
         }
     }
 

@@ -18,12 +18,12 @@ pub(crate) fn generated_pcurve_block_with_points(points: [[f64; 2]; 2]) -> Vec<u
     push_tagged_i64(&mut b, 0x15, 0);
     push_tagged_i64(&mut b, 0x04, 2);
     for (k, m) in [(0.0, 1i64), (1.0, 1)] {
-        push_tagged_f64(&mut b, k);
+        t_dbl(&mut b, k);
         push_tagged_i64(&mut b, 0x04, m);
     }
     for [u, v] in points {
-        push_tagged_f64(&mut b, u);
-        push_tagged_f64(&mut b, v);
+        t_dbl(&mut b, u);
+        t_dbl(&mut b, v);
     }
     b
 }
@@ -43,13 +43,13 @@ pub(crate) fn generated_rational_pcurve_block_with_points(points: [[f64; 2]; 2])
     push_tagged_i64(&mut b, 0x15, 0);
     push_tagged_i64(&mut b, 0x04, 2);
     for (k, m) in [(0.0, 1i64), (1.0, 1)] {
-        push_tagged_f64(&mut b, k);
+        t_dbl(&mut b, k);
         push_tagged_i64(&mut b, 0x04, m);
     }
     for ([u, v], weight) in points.into_iter().zip([1.0, 0.5]) {
-        push_tagged_f64(&mut b, u);
-        push_tagged_f64(&mut b, v);
-        push_tagged_f64(&mut b, weight);
+        t_dbl(&mut b, u);
+        t_dbl(&mut b, v);
+        t_dbl(&mut b, weight);
     }
     b
 }
@@ -61,12 +61,12 @@ pub(crate) fn generated_curve_block() -> Vec<u8> {
     push_tagged_i64(&mut b, 0x15, 0);
     push_tagged_i64(&mut b, 0x04, 2);
     for (k, m) in [(0.0, 2i64), (1.0, 2)] {
-        push_tagged_f64(&mut b, k);
+        t_dbl(&mut b, k);
         push_tagged_i64(&mut b, 0x04, m);
     }
     for point in [[0.0, 0.0, 0.0], [1.0, 2.0, 0.0], [2.0, 0.0, 0.0]] {
         for coordinate in point {
-            push_tagged_f64(&mut b, coordinate);
+            t_dbl(&mut b, coordinate);
         }
     }
     b
@@ -84,7 +84,7 @@ pub(crate) fn generated_surface_block() -> Vec<u8> {
     push_tagged_i64(&mut b, 0x04, 2);
     for _ in 0..2 {
         for (k, m) in [(0.0, 1i64), (1.0, 1)] {
-            push_tagged_f64(&mut b, k);
+            t_dbl(&mut b, k);
             push_tagged_i64(&mut b, 0x04, m);
         }
     }
@@ -95,7 +95,7 @@ pub(crate) fn generated_surface_block() -> Vec<u8> {
         [1.0, 1.0, 0.0],
     ] {
         for c in p {
-            push_tagged_f64(&mut b, c);
+            t_dbl(&mut b, c);
         }
     }
     b
