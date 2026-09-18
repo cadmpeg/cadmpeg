@@ -42,7 +42,7 @@ enum IdentityEntry {
 
 type IdentityIndex = HashMap<u64, IdentityEntry>;
 
-fn identity_hash(identity: &str) -> u64 {
+pub(crate) fn identity_hash(identity: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     identity.hash(&mut hasher);
     hasher.finish()

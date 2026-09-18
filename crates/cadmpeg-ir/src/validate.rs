@@ -60,6 +60,16 @@ use topology::{
     check_topology_tolerances, check_wire_topology,
 };
 
+/// Record a referential-integrity error against one entity.
+fn referential_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
+    findings.push(Finding {
+        check: Check::ReferentialIntegrity,
+        severity: Severity::Error,
+        message: message.into(),
+        entity: Some(entity.into()),
+    });
+}
+
 /// Count the records represented by the IR arenas without running validation.
 ///
 /// Prefer [`CadIr::census`](crate::CadIr::census); this alias remains for

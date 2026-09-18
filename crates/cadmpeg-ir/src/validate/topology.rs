@@ -39,8 +39,9 @@ fn collect_stage_pattern_paths<'a>(
         paths.push(path);
     }
 }
+use super::sketches::locus_entity;
 use crate::index::ModelIndex;
-use crate::sketches::{SketchConstraintDefinitionInput as Definition, SketchLocus};
+use crate::sketches::SketchConstraintDefinitionInput as Definition;
 
 pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target: &str) {
     findings.push(Finding {
@@ -49,6 +50,27 @@ pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &
         message: format!("references missing {target_kind} `{target}`"),
         entity: Some(owner.to_string()),
     });
+}
+
+fn check_law_curves(
+    expression: &crate::geometry::LawExpression,
+    ids: &ModelIndex<'_>,
+    procedural: &crate::geometry::ProceduralSurface,
+    findings: &mut Vec<Finding>,
+) {
+    match expression {
+        crate::geometry::LawExpression::Edge { curve, .. } => {
+            if ids.curves(curve.id.as_str()).is_none() {
+                ref_error(findings, procedural.id.as_str(), "curve", curve.id.as_str());
+            }
+        }
+        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+            for operand in operands {
+                check_law_curves(operand, ids, procedural, findings);
+            }
+        }
+        _ => {}
+    }
 }
 
 pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -583,31 +605,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::Skin(definition_payload) => {
-                fn check_law_curves(
-                    expression: &crate::geometry::LawExpression,
-                    ids: &ModelIndex<'_>,
-                    procedural: &crate::geometry::ProceduralSurface,
-                    findings: &mut Vec<Finding>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(curve.id.as_str()).is_none() {
-                                ref_error(
-                                    findings,
-                                    procedural.id.as_str(),
-                                    "curve",
-                                    curve.id.as_str(),
-                                );
-                            }
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                check_law_curves(operand, ids, procedural, findings);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 let construction = definition_payload.construction();
                 let check_curve = |curve: &crate::ids::CurveId, findings: &mut Vec<Finding>| {
                     if ids.curves(curve.as_str()).is_none() {
@@ -645,31 +642,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::Law(definition_payload) => {
-                fn check_law_curves(
-                    expression: &crate::geometry::LawExpression,
-                    ids: &ModelIndex<'_>,
-                    procedural: &crate::geometry::ProceduralSurface,
-                    findings: &mut Vec<Finding>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(curve.id.as_str()).is_none() {
-                                ref_error(
-                                    findings,
-                                    procedural.id.as_str(),
-                                    "curve",
-                                    curve.id.as_str(),
-                                );
-                            }
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                check_law_curves(operand, ids, procedural, findings);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 let construction = definition_payload.construction();
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
@@ -680,31 +652,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
-                fn check_law_curves(
-                    expression: &crate::geometry::LawExpression,
-                    ids: &ModelIndex<'_>,
-                    procedural: &crate::geometry::ProceduralSurface,
-                    findings: &mut Vec<Finding>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(curve.id.as_str()).is_none() {
-                                ref_error(
-                                    findings,
-                                    procedural.id.as_str(),
-                                    "curve",
-                                    curve.id.as_str(),
-                                );
-                            }
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                check_law_curves(operand, ids, procedural, findings);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 let construction = definition_payload.construction();
                 for entry in construction
                     .sections
@@ -979,31 +926,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::Sweep(definition_payload) => {
-                fn check_law_curves(
-                    expression: &crate::geometry::LawExpression,
-                    ids: &ModelIndex<'_>,
-                    procedural: &crate::geometry::ProceduralSurface,
-                    findings: &mut Vec<Finding>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(curve.id.as_str()).is_none() {
-                                ref_error(
-                                    findings,
-                                    procedural.id.as_str(),
-                                    "curve",
-                                    curve.id.as_str(),
-                                );
-                            }
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                check_law_curves(operand, ids, procedural, findings);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 let profile = definition_payload.profile();
                 let spine = definition_payload.spine();
                 let native = definition_payload.native();
@@ -4396,15 +4318,6 @@ fn check_feature_sketch_references(
                 }
             }
         }
-    }
-}
-
-fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
-    match locus {
-        SketchLocus::Entity(entity)
-        | SketchLocus::Start(entity)
-        | SketchLocus::End(entity)
-        | SketchLocus::Center(entity) => entity,
     }
 }
 

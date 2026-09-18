@@ -1652,7 +1652,7 @@ fn ellipse_point(
     )
 }
 
-fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
+pub(super) fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
     match locus {
         SketchLocus::Entity(entity)
         | SketchLocus::Start(entity)
