@@ -783,6 +783,7 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use super::{e5_ref, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces};
+    use crate::test_support::test_e5::append_e5_record;
 
     const TEST_F64_TOLERANCE: f64 = 1e-12;
 
@@ -800,14 +801,6 @@ mod tests {
         assert_close(actual.x, expected.x);
         assert_close(actual.y, expected.y);
         assert_close(actual.z, expected.z);
-    }
-
-    fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
-        bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
-        bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
-        bytes.extend_from_slice(&[0, 0]);
-        bytes.extend_from_slice(&id.to_le_bytes());
-        bytes.extend_from_slice(payload);
     }
 
     fn append_nurbs_axis(payload: &mut Vec<u8>, degree: u32) {

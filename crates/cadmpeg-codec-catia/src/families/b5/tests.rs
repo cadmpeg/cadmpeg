@@ -275,3 +275,27 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
         Some([[0.0, 0.0, 0.0], [8.0, 2.0, 2.0]])
     );
 }
+
+pub(super) fn test_loop_metadata() -> crate::families::b5::graph::B5LoopMetadata {
+    crate::families::b5::graph::B5LoopMetadata {
+        framing_controls: [crate::families::b5::graph::controls::B5FramingControl::Control05; 2],
+        extension: None,
+    }
+}
+
+pub(super) fn test_loop_members(
+    pcurves: &[u32],
+    edges: &[u32],
+) -> Vec<crate::families::b5::graph::B5LoopMember> {
+    pcurves
+        .iter()
+        .zip(edges)
+        .map(
+            |(&pcurve, &edge)| crate::families::b5::graph::B5LoopMember {
+                pcurve,
+                edge,
+                controls: [1, 1, 1],
+            },
+        )
+        .collect()
+}
