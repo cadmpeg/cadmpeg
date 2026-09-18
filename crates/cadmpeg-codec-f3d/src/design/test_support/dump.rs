@@ -10,7 +10,6 @@
 pub(crate) use super::{
     parameter_owner_frame, parameter_record, push_genesis_block, push_reference,
 };
-pub(crate) use crate::design::decode::dimension_frames::companion_owned_interval;
 pub(crate) use crate::design::decode::operands::{
     assign_extrude_face_roles, bind_edge_operand_candidates, bind_extrude_selection_geometry,
     bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
@@ -24,34 +23,14 @@ pub(crate) use crate::design::decode::operands::{
     FaceRecipeProgramKind,
 };
 pub(crate) use crate::design::decode::parameters::{
-    bind_parameter_companion_payloads, parse_design_parameter_record as parse_design_parameter,
-    parse_parameter_owner,
+    parse_design_parameter_record as parse_design_parameter, parse_parameter_owner,
 };
 pub(crate) use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
-pub(crate) use crate::design::decode::scopes::axial_assembly::bind_axial_assembly_operand_targets;
 pub(crate) use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from_assemblies;
-pub(crate) use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
-pub(crate) use crate::design::decode::scopes::combine::exact_combine_operation;
-pub(crate) use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
-pub(crate) use crate::design::decode::scopes::direct_face::exact_scale_operation;
-pub(crate) use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
-pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_chamfer_parameters;
-pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
-pub(crate) use crate::design::decode::scopes::fixed_parameters::exact_fixed_fillet_parameters;
 pub(crate) use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-pub(crate) use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
 pub(crate) use crate::design::decode::scopes::pattern::exact_circular_pattern_construction_with_owners;
 pub(crate) use crate::design::decode::scopes::pattern::exact_rectangular_pattern_construction;
 pub(crate) use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
-pub(crate) use crate::design::decode::scopes::surfaces::exact_ruled_surface_operation;
-pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_extend_operation;
-pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_offset_operation;
-pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_stitch_operation;
-pub(crate) use crate::design::decode::scopes::thread::exact_thread_construction;
-pub(crate) use crate::design::decode::scopes::thread::parse_thread_payload;
-pub(crate) use crate::design::decode::scopes::work_geometry::exact_joint_origin_frame;
-pub(crate) use crate::design::decode::scopes::work_geometry::exact_work_axis_construction;
-pub(crate) use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
 pub(crate) use crate::design::decode::sketch::{
     bind_sketch_graph, decode_pattern_definition, next_indexed_record_offset,
     next_indexed_record_offset_with_index, parse_classed_sketch_relation,
@@ -76,8 +55,8 @@ pub(crate) use crate::design::face_resolve::{
     resolved_body_recipe_shape, resolved_face_group, resolved_historical_split_face_target_group,
 };
 pub(crate) use crate::design::feature_project::{
-    project_combine, project_extrude, project_parameter_design,
-    project_parameter_design_with_edge_identities, project_split, untyped_parameter_unit_count,
+    project_extrude, project_parameter_design, project_parameter_design_with_edge_identities,
+    project_split, untyped_parameter_unit_count,
 };
 pub(crate) use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
 pub(crate) use crate::design::profile_select::{
@@ -97,37 +76,26 @@ pub(crate) use crate::records::{
     },
     entity_header::{DesignEntityHeader, DesignFeatureTimeline, DESIGN_MODULE_SKETCH},
     feature::{
-        assembly::{
-            DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind,
-            DesignAssemblyOperandFrame,
-        },
-        assembly_features::DesignComponentInsertConstruction,
-        base_feature::DesignBaseFeatureConstruction,
+        assembly::DesignAssemblyAlignment,
         body_ops::DesignScaleOperation,
         coil::{DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement},
-        combine::{DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation},
-        direct_face::{DesignDirectFaceOperation, DesignDraftOperation},
         extrude::{
             DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
             DesignExtrudeTargetOrdinal,
         },
         fixed_parameters::{
-            DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters,
-            DesignFixedExtrudeScalar, DesignFixedFilletParameters,
+            DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
         },
         hole::DesignHoleConstruction,
         path_features::DesignPathFeatureConstruction,
         patterns::DesignCircularPatternConstruction,
-        primitives::DesignSolidPrimitive,
         scope::{DesignParameterScope, DesignScopePayload},
         surface_ops::{
-            DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignSurfaceExtendMethod,
-            DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
-            DesignSurfaceStitchOperation,
+            DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceStitchOperation,
         },
         thread::{DesignThreadConstruction, DesignThreadForm},
     },
-    parameters::{DesignParameterCompanion, DesignParameterOwner},
+    parameters::DesignParameterCompanion,
     recipes::{ConstructionRecipe, ConstructionRecipeKind},
     references::LostEdgeReference,
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
@@ -163,5 +131,3 @@ pub(crate) use cadmpeg_ir::sketches::{
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub(crate) use std::collections::{BTreeMap, HashMap};
-
-pub(crate) use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
