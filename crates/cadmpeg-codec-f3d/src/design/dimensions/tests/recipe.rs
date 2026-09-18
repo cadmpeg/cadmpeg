@@ -1,13 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use super::project_dimension_constraints;
+use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::dimensions::unresolved_parameter_expression_dependency_count;
+use crate::design::feature_project::project_parameter_design;
+use crate::design::test_support::parameter_record;
+use crate::ids::neutral_parameter_id_parts;
+use crate::ids::neutral_sketch_id;
+use crate::records::dimensions::DesignDimensionLocus;
+use crate::records::dimensions::DesignDimensionLocusGroup;
+use crate::records::dimensions::DesignDimensionRecipeRecord;
+use crate::records::parameters::DesignParameterCompanion;
+use crate::records::recipes::ConstructionRecipeKind;
+use crate::records::sketch_geometry::SketchCurveIdentity;
+use crate::records::sketch_geometry::SketchPoint;
+use crate::records::sketch_placement::DesignSketchPlacement;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
+use cadmpeg_ir::sketches::SketchId;
 
 #[test]
 fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
