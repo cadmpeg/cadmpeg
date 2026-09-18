@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+
 use crate::test_support::{
     f3d_with_smbh, f3d_without_brep, f3z_archive, synthetic_mixed_smbh, XREF_ROLE,
 };
+use crate::F3dCodec;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use std::io::Cursor;
 
 #[test]
 fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {

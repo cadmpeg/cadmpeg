@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::test_support::{f3d_native, f3d_with_smbh_and_protein, synthetic_geometry_smbh};
+use crate::F3dCodec;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use std::io::Cursor;
 
 #[test]
 fn decode_transfers_generated_protein_appearance() {

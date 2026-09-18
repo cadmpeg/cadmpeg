@@ -11,23 +11,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
-use std::io::Cursor;
-
-use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-
-use crate::{F3dCodec, F3dLossCode};
-
-use crate::records::sketch_placement::DesignSketchPlacement;
-use cadmpeg_ir::document::Model;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
-use cadmpeg_ir::ids::{BodyId, RegionId};
-use cadmpeg_ir::topology::{Body, BodyKind, Region};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::Native;
-
 mod archive;
 mod fidelity;
 mod layers;
