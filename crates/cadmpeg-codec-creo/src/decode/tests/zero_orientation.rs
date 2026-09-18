@@ -351,7 +351,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
-            crate::feature::FeatureVariableTable {
+            crate::feature::definitions::FeatureVariableTable {
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
@@ -615,7 +615,7 @@ fn named_revolve_transfers_profile_axis() {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 4,
             entity_ref: None,
             rows: [(1, 1, 0.0), (2, 1, 0.0), (1, 2, 0.0), (2, 2, 10.0)]

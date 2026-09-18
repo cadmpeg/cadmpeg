@@ -41,7 +41,7 @@ use std::collections::BTreeSet;
 #[test]
 fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
         prefixed: false,
@@ -244,7 +244,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
             offset: 0,
         });
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
         prefixed: false,
@@ -309,7 +309,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
 #[test]
 fn compact_hole_materialized_core_establishes_the_simple_form() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
         prefixed: false,
@@ -366,14 +366,14 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         ),
         Some(117)
     );
-    table.entries[2].payload = crate::feature::EntryPayload::Source { entity: None };
+    table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     assert!(compact_simple_hole_cylinder_id(
         107,
         std::slice::from_ref(&table),
         std::slice::from_ref(&row),
     )
     .is_none());
-    table.entries[2].payload = crate::feature::EntryPayload::Source { entity: Some(0) };
+    table.entries[2].payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.table_class_id = 28;
     assert!(compact_simple_hole_cylinder_id(
         107,
@@ -382,8 +382,8 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
     table.table_class_id = 29;
-    table.entries[3].payload = crate::feature::EntryPayload::Plain {
-        class: crate::feature::PlainClass::new(201).expect("201 is not the source class"),
+    table.entries[3].payload = crate::feature::entity::EntryPayload::Plain {
+        class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
     };
     assert!(compact_simple_hole_cylinder_id(
         107,
@@ -391,7 +391,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         std::slice::from_ref(&row),
     )
     .is_none());
-    table.entries[3].payload = crate::feature::EntryPayload::Source { entity: None };
+    table.entries[3].payload = crate::feature::entity::EntryPayload::Source { entity: None };
     table.mark_surface_ids([109, 117]);
     assert!(compact_simple_hole_cylinder_id(
         107,

@@ -803,11 +803,12 @@ mod tests {
     use super::super::equations_scalar::resolved_section_scalar_values;
     use super::resolved_section_points;
     use crate::feature::definitions::FeatureSolverTableHeader;
+    use crate::feature::definitions::FeatureVariableTable;
     use crate::feature::{
         FeatureCircleSegment, FeatureDefinition, FeatureDimension, FeatureDimensionTable,
         FeaturePointSegment, FeatureRelation, FeatureRelationTable, FeatureSectionPoint,
         FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
-        FeatureVariableRow, FeatureVariableTable,
+        FeatureVariableRow,
     };
 
     fn incomplete_segment_definition() -> FeatureDefinition {

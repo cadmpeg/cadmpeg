@@ -100,7 +100,7 @@ fn history_link_rejects_duplicate_sketch_feature_ids() {
 #[test]
 fn rowless_generated_profile_requires_a_framed_side_table() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
         prefixed: false,

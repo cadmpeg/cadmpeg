@@ -329,7 +329,7 @@
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(with_points(crate::feature::FeatureVariableTable {
+        variables: Some(with_points(crate::feature::definitions::FeatureVariableTable {
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
@@ -378,7 +378,7 @@ offset: 30,
         offset: 0,
     };
     let mut point_row_symmetry = definition.clone();
-    point_row_symmetry.variables = Some(with_points(crate::feature::FeatureVariableTable {
+    point_row_symmetry.variables = Some(with_points(crate::feature::definitions::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),
@@ -2078,7 +2078,7 @@ offset: 30,
         rows[1].radius_ref = Some(101);
         rows[4].radius_ref = Some(102);
     });
-    equal_radius_definition.variables = Some(with_points(crate::feature::FeatureVariableTable {
+    equal_radius_definition.variables = Some(with_points(crate::feature::definitions::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),
@@ -5056,7 +5056,7 @@ offset: 30,
             offset: 87,
         }));
     synchronize_segment_count(&mut coincident_definition);
-    coincident_definition.variables = Some(with_points(crate::feature::FeatureVariableTable {
+    coincident_definition.variables = Some(with_points(crate::feature::definitions::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),

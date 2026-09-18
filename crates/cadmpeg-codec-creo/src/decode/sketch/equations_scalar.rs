@@ -50,8 +50,8 @@ pub(crate) struct SectionEquationCoordinateEquality {
 
 fn section_equation_function_ten_axis_alignment(
     definition: &crate::feature::FeatureDefinition,
-    equation: &crate::feature::FeatureEquation,
-    variables: &crate::feature::FeatureVariableTable,
+    equation: &crate::feature::definitions::FeatureEquation,
+    variables: &crate::feature::definitions::FeatureVariableTable,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Option<(u32, u32, SectionAxis)> {
     if equation.function_id != 10 || equation.arguments.len() != 7 {

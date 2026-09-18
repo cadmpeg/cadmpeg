@@ -397,8 +397,8 @@ mod tests {
                 50,
                 29,
                 vec![
-                    crate::feature::dummy_table_entry(61),
-                    crate::feature::dummy_table_entry(75),
+                    crate::feature::entity::dummy_table_entry(61),
+                    crate::feature::entity::dummy_table_entry(75),
                 ],
                 &std::collections::BTreeSet::new(),
                 0,
@@ -466,7 +466,7 @@ mod tests {
         let mut duplicate_surface_id = valid_scan();
         duplicate_surface_id.features.entity_tables[0]
             .entries
-            .push(crate::feature::dummy_table_entry(61));
+            .push(crate::feature::entity::dummy_table_entry(61));
         assert_eq!(
             surface_intersect_feature_definition(&duplicate_surface_id, 50, "Intersect 1"),
             None

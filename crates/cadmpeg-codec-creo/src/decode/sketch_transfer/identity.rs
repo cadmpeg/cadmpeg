@@ -248,9 +248,9 @@ pub(in super::super) fn saved_section_entity_is_elided_prototype(
             .as_ref()
             .is_some_and(|order| order.has_prototype)
         && definition.saved_section.as_ref().is_some_and(|saved| {
-            crate::feature::saved_entity_offset(entity) == saved.offset
+            crate::feature::definitions::saved_entity_offset(entity) == saved.offset
                 && saved.entities.iter().any(|candidate| {
-                    crate::feature::saved_entity_offset(candidate) > saved.offset
+                    crate::feature::definitions::saved_entity_offset(candidate) > saved.offset
                         && saved_section_entity_identity(candidate).0 == Some(internal_id)
                 })
         })
