@@ -1237,13 +1237,8 @@ mod tests {
         BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
         BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, PHYSICAL_MATERIAL_LIBRARY_ID,
     };
+    use crate::design::test_support::{design_type, indexed_header, primary_record};
     use crate::records::entity_header::DESIGN_MODULE_FUSION;
-
-    fn push_indexed_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
-        out.extend_from_slice(&3u32.to_le_bytes());
-        out.extend_from_slice(class_tag.as_bytes());
-        out.extend_from_slice(&record_index.to_le_bytes());
-    }
 
     fn push_entity_header(out: &mut Vec<u8>, class_tag: &str, entity: u64) {
         out.extend_from_slice(&3u32.to_le_bytes());
@@ -1259,42 +1254,9 @@ mod tests {
         out.extend_from_slice(&[0, 0]);
     }
 
-    fn presentation_type(
-        type_guid: &str,
-        base_type_guid: Option<&str>,
-        version: u32,
-        module: &str,
-        entity_ids: Vec<u64>,
-    ) -> crate::records::entity_header::SegmentType {
-        crate::records::entity_header::SegmentType {
-            id: String::new(),
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: base_type_guid.map_or(
-                crate::records::entity_header::BaseTypeGuid::Absent,
-                |value| crate::records::entity_header::BaseTypeGuid::Guid {
-                    value: value.to_owned().try_into().expect("base GUID"),
-                    offset: 0,
-                },
-            ),
-            version,
-            version_offset: 0,
-            module: module.into(),
-            entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
-        }
-    }
-
-    fn primary_record(entity_id: u64, bulk_offset: usize) -> crate::metastream::RecordIndexEntry {
-        crate::metastream::RecordIndexEntry {
-            entity_id,
-            bulk_offset: bulk_offset as u64,
-        }
-    }
-
     fn body_map_bytes(prefix_len: usize, declared_count: u32, pairs: &[(u64, u64)]) -> Vec<u8> {
         let mut out = Vec::new();
-        push_indexed_header(&mut out, "256", 900);
+        indexed_header(&mut out, *b"256", 900);
         out.extend(std::iter::repeat_n(0, prefix_len));
         out.extend_from_slice(&declared_count.to_le_bytes());
         for (key, suffix) in pairs {
@@ -1313,7 +1275,7 @@ mod tests {
 
     fn body_map_bytes_with_typed_tail(prefix_len: usize, pairs: &[(u64, u64)]) -> Vec<u8> {
         let mut out = Vec::new();
-        push_indexed_header(&mut out, "256", 900);
+        indexed_header(&mut out, *b"256", 900);
         out.extend(std::iter::repeat_n(0, prefix_len));
         out.extend_from_slice(&(pairs.len() as u32).to_le_bytes());
         for (key, suffix) in pairs {
@@ -1359,7 +1321,7 @@ mod tests {
                         },
                     ]),
                 },
-                presentation_type(
+                design_type(
                     crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
                     None,
                     0,
@@ -1441,28 +1403,28 @@ mod tests {
     fn snapshot_body_map_metadata() -> crate::metastream::MetaStream {
         crate::metastream::MetaStream {
             types: vec![
-                presentation_type(
+                design_type(
                     crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID,
                     Some(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID),
                     1,
                     DESIGN_MODULE_BODY,
                     vec![900],
                 ),
-                presentation_type(
+                design_type(
                     crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
                     None,
                     0,
                     DESIGN_MODULE_BODY,
                     vec![901],
                 ),
-                presentation_type(
+                design_type(
                     crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
                     None,
                     0,
                     DESIGN_MODULE_BODY,
                     vec![500],
                 ),
-                presentation_type(
+                design_type(
                     crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
                     None,
                     0,
@@ -1634,7 +1596,7 @@ mod tests {
     #[test]
     fn body_map_parser_does_not_scan_an_unindexed_nested_header() {
         let mut bytes = Vec::new();
-        push_indexed_header(&mut bytes, "256", 900);
+        indexed_header(&mut bytes, *b"256", 900);
         bytes.extend_from_slice(&[0xff; 4]);
         bytes.extend(body_map_bytes(10, 1, &[(10, 20)]));
 
@@ -1650,7 +1612,7 @@ mod tests {
         hidden: bool,
         entity: u64,
     ) -> u64 {
-        push_indexed_header(out, "257", record_index);
+        indexed_header(out, *b"257", record_index);
         out.extend_from_slice(&[0; 10]);
         out.extend(lp_utf16_bytes(guid));
         let hidden_offset = out.len() as u64;
@@ -1687,28 +1649,28 @@ mod tests {
 
         let meta = crate::metastream::MetaStream {
             types: vec![
-                presentation_type(
+                design_type(
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
                     DESIGN_MODULE_BODY,
                     vec![entity],
                 ),
-                presentation_type(
+                design_type(
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,
                     DESIGN_MODULE_FUSION,
                     vec![100, 101],
                 ),
-                presentation_type(
+                design_type(
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
                     "",
                     vec![7],
                 ),
-                presentation_type(
+                design_type(
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -1736,14 +1698,14 @@ mod tests {
         push_browser_node(&mut nodes_only, 101, competing_guid, true, entity);
         let meta = crate::metastream::MetaStream {
             types: vec![
-                presentation_type(
+                design_type(
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
                     DESIGN_MODULE_BODY,
                     Vec::new(),
                 ),
-                presentation_type(
+                design_type(
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,

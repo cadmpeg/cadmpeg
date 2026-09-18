@@ -7,26 +7,27 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::test_support::push_marked_reference;
+
+fn candidates(
+    bytes: &[u8],
+    scope_record_index: u32,
+    entity_id: &str,
+    record_index: u32,
+) -> Vec<DesignSketchPlacement> {
+    let records = IndexedRecordOffsets::build(bytes);
+    parse_sketch_placement_candidates(
+        bytes,
+        scope_record_index,
+        &crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
+            .expect("valid entity ID"),
+        record_index,
+        &records,
+    )
+}
 
 #[test]
 fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
-    fn candidates(
-        bytes: &[u8],
-        scope_record_index: u32,
-        entity_id: &str,
-        record_index: u32,
-    ) -> Vec<DesignSketchPlacement> {
-        let records = IndexedRecordOffsets::build(bytes);
-        parse_sketch_placement_candidates(
-            bytes,
-            scope_record_index,
-            &crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
-                .expect("valid entity ID"),
-            record_index,
-            &records,
-        )
-    }
-
     fn placement_frame(
         record_index: u32,
         length: usize,
@@ -91,23 +92,6 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
 
 #[test]
 fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
-    fn candidates(
-        bytes: &[u8],
-        scope_record_index: u32,
-        entity_id: &str,
-        record_index: u32,
-    ) -> Vec<DesignSketchPlacement> {
-        let records = IndexedRecordOffsets::build(bytes);
-        parse_sketch_placement_candidates(
-            bytes,
-            scope_record_index,
-            &crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
-                .expect("valid entity ID"),
-            record_index,
-            &records,
-        )
-    }
-
     fn genesis_frame(
         record_index: u32,
         length: usize,
@@ -610,12 +594,6 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         bytes.extend_from_slice(value.as_bytes());
     }
 
-    fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
-        bytes.push(1);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-    }
-
     let mut bytes = Vec::new();
     ascii(&mut bytes, "256");
     bytes.extend_from_slice(&1200u32.to_le_bytes());
@@ -639,9 +617,9 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     bytes.extend_from_slice(&0.000_01f64.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.push(0);
-    marked_reference(&mut bytes, 1202);
-    marked_reference(&mut bytes, 1203);
-    marked_reference(&mut bytes, 1204);
+    push_marked_reference(&mut bytes, 1202);
+    push_marked_reference(&mut bytes, 1203);
+    push_marked_reference(&mut bytes, 1204);
     bytes.extend_from_slice(&[0; 2]);
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e]);
@@ -686,7 +664,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     );
     assert!((fit_tolerance - 0.000_1).abs() <= f64::EPSILON);
 
-    marked_reference(&mut bytes, 201);
+    push_marked_reference(&mut bytes, 201);
     let segment_type = |type_guid: &str, version, module: &str, entity_ids: Vec<u64>| {
         crate::records::entity_header::SegmentType {
             id: String::new(),

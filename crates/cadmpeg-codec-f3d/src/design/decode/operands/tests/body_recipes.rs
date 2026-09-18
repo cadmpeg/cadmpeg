@@ -10,12 +10,6 @@ use crate::records::topology::{
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
-    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
@@ -71,7 +65,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         record_index: 100,
     };
     let mut bytes = Vec::new();
-    header(&mut bytes, *b"365", 100);
+    indexed_header(&mut bytes, *b"365", 100);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&2265u64.to_le_bytes());
@@ -86,14 +80,14 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&[7, 0, 0, 0]);
-    header(&mut bytes, *b"259", 100);
-    header(&mut bytes, *b"283", 101);
-    header(&mut bytes, *b"463", 102);
-    header(&mut bytes, *b"452", 103);
+    indexed_header(&mut bytes, *b"259", 100);
+    indexed_header(&mut bytes, *b"283", 101);
+    indexed_header(&mut bytes, *b"463", 102);
+    indexed_header(&mut bytes, *b"452", 103);
     let recipe_at = bytes.len();
     bytes.extend_from_slice(b"body_recipe_data");
     let next_at = bytes.len();
-    header(&mut bytes, *b"311", 104);
+    indexed_header(&mut bytes, *b"311", 104);
     let recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
         byte_offset: recipe_at as u64,
@@ -282,8 +276,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
 
     let mut nested = Vec::new();
-    header(&mut nested, *b"302", 1);
-    header(&mut nested, *b"305", 11);
+    indexed_header(&mut nested, *b"302", 1);
+    indexed_header(&mut nested, *b"305", 11);
     bytes.splice(next_at..next_at, nested.iter().copied());
     let operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand with nested recipe records");
@@ -292,14 +286,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
 
 #[test]
 fn class_367_body_recipe_operand_decodes_scale_member_frame() {
-    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     let mut bytes = Vec::new();
-    header(&mut bytes, *b"367", 100);
+    indexed_header(&mut bytes, *b"367", 100);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&301u64.to_le_bytes());
@@ -312,14 +300,14 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&1u32.to_le_bytes());
-    header(&mut bytes, *b"264", 100);
-    header(&mut bytes, *b"404", 101);
-    header(&mut bytes, *b"416", 102);
-    header(&mut bytes, *b"424", 103);
+    indexed_header(&mut bytes, *b"264", 100);
+    indexed_header(&mut bytes, *b"404", 101);
+    indexed_header(&mut bytes, *b"416", 102);
+    indexed_header(&mut bytes, *b"424", 103);
     let recipe_at = bytes.len();
     bytes.extend_from_slice(b"body_recipe_data");
     let next_at = bytes.len();
-    header(&mut bytes, *b"280", 104);
+    indexed_header(&mut bytes, *b"280", 104);
 
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {

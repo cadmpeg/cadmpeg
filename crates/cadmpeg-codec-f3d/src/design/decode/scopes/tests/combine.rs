@@ -7,16 +7,12 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::test_support::indexed_header;
 
 #[test]
 fn combine_scope_projects_ordered_target_tools_and_retention() {
-    fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
     fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
-        indexed_header(bytes, b"283", record_index);
+        indexed_header(bytes, *b"283", record_index);
         bytes.extend_from_slice(&[0; 9]);
         bytes.push(1);
         bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -29,19 +25,19 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         bytes.push(1);
         bytes.extend_from_slice(&selection_record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        indexed_header(bytes, b"259", record_index);
+        indexed_header(bytes, *b"259", record_index);
     }
     fn target_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
-        indexed_header(bytes, b"283", record_index);
+        indexed_header(bytes, *b"283", record_index);
         bytes.extend_from_slice(&[0; 10]);
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.push(1);
         bytes.extend_from_slice(&selection_record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        indexed_header(bytes, b"259", record_index);
+        indexed_header(bytes, *b"259", record_index);
     }
     fn selection_record(bytes: &mut Vec<u8>, record_index: u32, suffix: u8) {
-        indexed_header(bytes, b"389", record_index);
+        indexed_header(bytes, *b"389", record_index);
         lp_utf16(
             bytes,
             &format!("00000000-0000-0000-0000-0000000000{suffix:02x}"),
@@ -50,13 +46,13 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             bytes,
             &format!("10000000-0000-0000-0000-0000000000{suffix:02x}"),
         );
-        indexed_header(bytes, b"306", record_index);
+        indexed_header(bytes, *b"306", record_index);
     }
 
     let scope_record_index = 90u32;
     let references = [91u32, 92, 93, 94, 95, 96];
     let mut bytes = Vec::new();
-    indexed_header(&mut bytes, b"382", scope_record_index);
+    indexed_header(&mut bytes, *b"382", scope_record_index);
     bytes.extend_from_slice(&[0; 9]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.push(0);
@@ -75,7 +71,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     tail[0..4].copy_from_slice(&2u32.to_le_bytes());
     tail[31..35].copy_from_slice(&16u32.to_le_bytes());
     bytes.extend_from_slice(&tail);
-    indexed_header(&mut bytes, b"259", scope_record_index);
+    indexed_header(&mut bytes, *b"259", scope_record_index);
     for (ordinal, pair) in references.chunks_exact(2).enumerate() {
         if ordinal == 2 {
             target_record(&mut bytes, pair[0], pair[1]);
@@ -207,18 +203,13 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
 
 #[test]
 fn combine_extended_reference_scope_retains_external_tool_identity() {
-    fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
     fn local_reference(bytes: &mut Vec<u8>, target: u64) {
         bytes.push(1);
         bytes.extend_from_slice(&target.to_le_bytes());
         bytes.extend_from_slice(&[0; 2]);
     }
     fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
-        indexed_header(bytes, b"304", record_index);
+        indexed_header(bytes, *b"304", record_index);
         bytes.extend_from_slice(&[0; 9]);
         bytes.push(1);
         bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -231,21 +222,21 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         bytes.push(1);
         bytes.extend_from_slice(&selection_record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        indexed_header(bytes, b"261", record_index);
+        indexed_header(bytes, *b"261", record_index);
     }
     fn target_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
-        indexed_header(bytes, b"304", record_index);
+        indexed_header(bytes, *b"304", record_index);
         bytes.extend_from_slice(&[0; 10]);
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.push(1);
         bytes.extend_from_slice(&selection_record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        indexed_header(bytes, b"261", record_index);
+        indexed_header(bytes, *b"261", record_index);
     }
     fn external_selection_record(bytes: &mut Vec<u8>, scope: u32, record_index: u32) {
         const ASSET: &str = "11111111-1111-4111-8111-111111111111";
         const CONTEXT: &str = "22222222-2222-4222-8222-222222222222";
-        indexed_header(bytes, b"312", record_index);
+        indexed_header(bytes, *b"312", record_index);
         bytes.extend_from_slice(&[0; 14]);
         local_reference(bytes, u64::from(record_index + 3));
         bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -276,13 +267,13 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         local_reference(bytes, u64::from(record_index + 1));
         bytes.push(0);
         local_reference(bytes, u64::from(scope));
-        indexed_header(bytes, b"261", record_index);
+        indexed_header(bytes, *b"261", record_index);
     }
     fn simple_selection_record(bytes: &mut Vec<u8>, record_index: u32) {
-        indexed_header(bytes, b"312", record_index);
+        indexed_header(bytes, *b"312", record_index);
         lp_utf16(bytes, "44444444-4444-4444-8444-444444444444");
         lp_utf16(bytes, "55555555-5555-4555-8555-555555555555");
-        indexed_header(bytes, b"261", record_index);
+        indexed_header(bytes, *b"261", record_index);
     }
 
     let scope_record_index = 90u32;
@@ -296,7 +287,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     bytes[35] = 1;
     bytes[36..44].copy_from_slice(&700u64.to_le_bytes());
     bytes[44..46].fill(0);
-    indexed_header(&mut bytes, b"261", scope_record_index);
+    indexed_header(&mut bytes, *b"261", scope_record_index);
     operation_record(&mut bytes, 91, 92);
     external_selection_record(&mut bytes, scope_record_index, 92);
     target_record(&mut bytes, 93, 94);

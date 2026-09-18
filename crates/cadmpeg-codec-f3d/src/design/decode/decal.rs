@@ -260,17 +260,13 @@ fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::parse_decal_image_frame;
+    use crate::design::test_support::write_marked_reference;
     use crate::records::decal::DesignDecalMappingMode;
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
         bytes[at + 4..at + 7].copy_from_slice(&tag);
         bytes[at + 7..at + 11].copy_from_slice(&index.to_le_bytes());
-    }
-
-    fn marked(bytes: &mut [u8], at: usize, value: u32) {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&value.to_le_bytes());
     }
 
     fn fixture() -> (Vec<u8>, usize) {
@@ -280,7 +276,7 @@ mod tests {
         let scope_at = 71;
         let end_at = 200;
         header(&mut bytes, asset_at, *b"258", 17);
-        marked(&mut bytes, asset_at + 19, 50);
+        write_marked_reference(&mut bytes, asset_at + 19, 50);
         header(&mut bytes, name_at, *b"279", 18);
         let name = "mark.png".encode_utf16().collect::<Vec<_>>();
         bytes[name_at + 21..name_at + 25]
@@ -290,9 +286,9 @@ mod tests {
             bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
         }
         header(&mut bytes, scope_at, *b"301", 23);
-        marked(&mut bytes, scope_at + 21, 17);
+        write_marked_reference(&mut bytes, scope_at + 21, 17);
         bytes[scope_at + 32] = DesignDecalMappingMode::FitToFaces.code();
-        marked(&mut bytes, scope_at + 33, 24);
+        write_marked_reference(&mut bytes, scope_at + 33, 24);
         header(&mut bytes, 150, *b"440", 17);
         header(&mut bytes, end_at, *b"302", 23);
         (bytes, scope_at)

@@ -1540,6 +1540,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::design::test_support::design_type;
 
     fn matrix(cells: [f64; 16]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(MATRIX_BYTES);
@@ -1674,32 +1675,6 @@ mod tests {
         let tail_at = bytes.len() - SAME_SEGMENT_REFERENCE_BYTES;
         put_reference(&mut bytes, tail_at, collection_record_index);
         bytes
-    }
-
-    fn design_type(
-        type_guid: &str,
-        base_type_guid: Option<&str>,
-        version: u32,
-        module: &str,
-        entity_ids: Vec<u64>,
-    ) -> crate::records::entity_header::SegmentType {
-        crate::records::entity_header::SegmentType {
-            id: String::new(),
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: base_type_guid.map_or(
-                crate::records::entity_header::BaseTypeGuid::Absent,
-                |value| crate::records::entity_header::BaseTypeGuid::Guid {
-                    value: value.to_owned().try_into().expect("base GUID"),
-                    offset: 0,
-                },
-            ),
-            version,
-            version_offset: 0,
-            module: module.into(),
-            entities: crate::records::identity::ReferenceRun::unlocated(entity_ids),
-        }
     }
 
     fn primary_record(entity_id: u64, bulk_offset: usize) -> crate::metastream::RecordIndexEntry {

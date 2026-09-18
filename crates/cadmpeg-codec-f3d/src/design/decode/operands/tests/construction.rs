@@ -8,6 +8,8 @@
 )]
 use super::prelude::*;
 use crate::design::decode::operands::RecordFrame;
+use crate::design::test_support::indexed_header;
+use crate::design::test_support::push_marked_reference;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_ir::features::FeatureOperation;
 
@@ -36,12 +38,6 @@ fn localized_edge_treatment_group_retention_is_language_independent() {
 
 #[test]
 fn construction_operand_groups_have_exact_counted_and_direct_frames() {
-    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     let scope = DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
@@ -84,7 +80,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         record_index: 100,
     };
     let mut bytes = Vec::new();
-    header(&mut bytes, *b"332", 100);
+    indexed_header(&mut bytes, *b"332", 100);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&2u32.to_le_bytes());
     for member in [200u32, 201] {
@@ -112,7 +108,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     bytes.extend_from_slice(&12u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     let paired_at = bytes.len();
-    header(&mut bytes, *b"259", 100);
+    indexed_header(&mut bytes, *b"259", 100);
 
     let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
         .complete()
@@ -307,7 +303,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     flagless.extend_from_slice(&12u32.to_le_bytes());
     flagless.extend_from_slice(&[0; 6]);
     let flagless_paired_at = flagless.len();
-    header(&mut flagless, *b"259", 100);
+    indexed_header(&mut flagless, *b"259", 100);
     let flagless =
         parse_construction_operand_group(&flagless, &scope, 0, &RecordFrame::from(&record))
             .complete()
@@ -347,7 +343,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     // Both optional references after the member run are present and the counted
     // identity run is empty: the shape a fixed-offset reader cannot reach.
     let mut auxiliary = Vec::new();
-    header(&mut auxiliary, *b"283", 100);
+    indexed_header(&mut auxiliary, *b"283", 100);
     auxiliary.extend_from_slice(&[0; 10]);
     auxiliary.extend_from_slice(&1u32.to_le_bytes());
     for record_index in [109u32, 103, 106] {
@@ -372,7 +368,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     auxiliary.extend_from_slice(&scope.record_index.to_le_bytes());
     auxiliary.extend_from_slice(&[0; 6]);
     let auxiliary_paired_at = auxiliary.len();
-    header(&mut auxiliary, *b"259", 100);
+    indexed_header(&mut auxiliary, *b"259", 100);
     let auxiliary_record = DesignRecordHeader {
         class_tag: crate::records::references::DesignClassTag::try_from("283".to_owned()).unwrap(),
         ..record.clone()
@@ -1420,18 +1416,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
 #[test]
 fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
-    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn reference(bytes: &mut Vec<u8>, record_index: u32) {
-        bytes.push(1);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-        bytes.extend_from_slice(&[0; 6]);
-    }
-
     for (ordinal, (class_tag, scope_kind)) in [
         (
             "323",
@@ -1465,17 +1449,17 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         let group_record_index = 100 + 4 * u32::try_from(ordinal).expect("small test ordinal");
         let frame_at = 0;
         let mut bytes = Vec::new();
-        header(
+        indexed_header(
             &mut bytes,
             class_tag.as_bytes().try_into().expect("three-digit class"),
             group_record_index,
         );
         bytes.extend_from_slice(&[0; 10]);
         bytes.extend_from_slice(&1u32.to_le_bytes());
-        reference(&mut bytes, group_record_index + 3);
+        push_marked_reference(&mut bytes, group_record_index + 3);
         if class_tag == "328" {
             bytes.push(0);
-            reference(&mut bytes, group_record_index + 13);
+            push_marked_reference(&mut bytes, group_record_index + 13);
         } else {
             bytes.extend_from_slice(&[0; 2]);
         }
@@ -1488,7 +1472,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         bytes.extend_from_slice(&180u32.to_le_bytes());
         bytes.extend_from_slice(&0.125f64.to_le_bytes());
         bytes.extend_from_slice(&180u32.to_le_bytes());
-        reference(&mut bytes, group_record_index + 2);
+        push_marked_reference(&mut bytes, group_record_index + 2);
         let flag_pair = matches!(class_tag, "282" | "302")
             .then_some([0, 1])
             .unwrap_or([1, 1]);
@@ -1500,12 +1484,12 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             bytes.extend_from_slice(&u64::from(group_record_index + 1).to_le_bytes());
             bytes.extend_from_slice(&[0; 3]);
         } else {
-            reference(&mut bytes, group_record_index + 1);
+            push_marked_reference(&mut bytes, group_record_index + 1);
             bytes.push(0);
         }
-        reference(&mut bytes, scope_record_index);
+        push_marked_reference(&mut bytes, scope_record_index);
         let paired_at = bytes.len();
-        header(
+        indexed_header(
             &mut bytes,
             if class_tag == "328" { *b"263" } else { *b"262" },
             group_record_index,

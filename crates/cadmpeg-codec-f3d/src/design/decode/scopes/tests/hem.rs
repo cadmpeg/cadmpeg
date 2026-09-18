@@ -7,6 +7,8 @@
     clippy::wildcard_imports
 )]
 
+use crate::design::test_support::write_marked_reference;
+
 /// Field values written into a synthetic gap-and-length `Hem` frame.
 struct HemFixture {
     header_shift: usize,
@@ -185,26 +187,21 @@ fn hem_scope_refuses_an_owner_layout_whose_parameter_kinds_name_another_form() {
 ///
 /// Every offset is computed from the layout rather than counted by hand.
 fn hem_frame(fixture: &HemFixture) -> HemFrame {
-    fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
-    }
-
     let common = 85 + fixture.header_shift;
     let paired_at = 494 + fixture.header_shift;
     let mut bytes = vec![0; paired_at];
     bytes[common..common + 4].copy_from_slice(&3u32.to_le_bytes());
     bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
-    reference(&mut bytes, common + 8, fixture.wrapper);
-    reference(&mut bytes, common + 19, fixture.settings);
+    write_marked_reference(&mut bytes, common + 8, fixture.wrapper);
+    write_marked_reference(&mut bytes, common + 19, fixture.settings);
     bytes[common + 30..common + 34].copy_from_slice(&1u32.to_le_bytes());
     bytes[common + 36..common + 40].copy_from_slice(&4u32.to_le_bytes());
-    reference(&mut bytes, common + 42, fixture.gap_owner);
-    reference(&mut bytes, common + 53, fixture.length_owner);
+    write_marked_reference(&mut bytes, common + 42, fixture.gap_owner);
+    write_marked_reference(&mut bytes, common + 53, fixture.length_owner);
     let radius_at = common + 71;
     bytes[radius_at..radius_at + 8].copy_from_slice(&fixture.bend_radius.to_le_bytes());
-    reference(&mut bytes, common + 108, fixture.aggregate_group);
-    reference(&mut bytes, common + 135, fixture.edge_group);
+    write_marked_reference(&mut bytes, common + 108, fixture.aggregate_group);
+    write_marked_reference(&mut bytes, common + 135, fixture.edge_group);
 
     HemFrame {
         bytes,
@@ -216,23 +213,18 @@ fn hem_frame(fixture: &HemFixture) -> HemFrame {
 /// Build the rolled `Hem` frame. Its header shift is four bytes and its owner
 /// slots are thirteen bytes apart.
 fn rolled_hem_frame() -> HemFrame {
-    fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
-    }
-
     let common = 89;
     let paired_at = 498;
     let mut bytes = vec![0; paired_at];
     bytes[common..common + 4].copy_from_slice(&3u32.to_le_bytes());
     bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
-    reference(&mut bytes, common + 8, 708);
-    reference(&mut bytes, common + 19, 724);
-    reference(&mut bytes, common + 41, 788);
-    reference(&mut bytes, common + 54, 775);
+    write_marked_reference(&mut bytes, common + 8, 708);
+    write_marked_reference(&mut bytes, common + 19, 724);
+    write_marked_reference(&mut bytes, common + 41, 788);
+    write_marked_reference(&mut bytes, common + 54, 775);
     bytes[common + 71..common + 79].copy_from_slice(&0.25f64.to_le_bytes());
-    reference(&mut bytes, common + 108, 717);
-    reference(&mut bytes, common + 135, 790);
+    write_marked_reference(&mut bytes, common + 108, 717);
+    write_marked_reference(&mut bytes, common + 135, 790);
     HemFrame {
         bytes,
         paired_at,
@@ -243,24 +235,19 @@ fn rolled_hem_frame() -> HemFrame {
 /// Build the teardrop `Hem` frame. The third parameter owner shifts the group
 /// slots by ten bytes and moves the fixed rule radius to offset eighty-one.
 fn teardrop_hem_frame() -> HemFrame {
-    fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
-    }
-
     let common = 89;
     let paired_at = 519;
     let mut bytes = vec![0; paired_at];
     bytes[common..common + 4].copy_from_slice(&3u32.to_le_bytes());
     bytes[common + 4..common + 8].copy_from_slice(&1u32.to_le_bytes());
-    reference(&mut bytes, common + 8, 708);
-    reference(&mut bytes, common + 19, 724);
-    reference(&mut bytes, common + 42, 703);
-    reference(&mut bytes, common + 53, 706);
-    reference(&mut bytes, common + 64, 775);
+    write_marked_reference(&mut bytes, common + 8, 708);
+    write_marked_reference(&mut bytes, common + 19, 724);
+    write_marked_reference(&mut bytes, common + 42, 703);
+    write_marked_reference(&mut bytes, common + 53, 706);
+    write_marked_reference(&mut bytes, common + 64, 775);
     bytes[common + 81..common + 89].copy_from_slice(&0.25f64.to_le_bytes());
-    reference(&mut bytes, common + 118, 717);
-    reference(&mut bytes, common + 145, 777);
+    write_marked_reference(&mut bytes, common + 118, 717);
+    write_marked_reference(&mut bytes, common + 145, 777);
     HemFrame {
         bytes,
         paired_at,

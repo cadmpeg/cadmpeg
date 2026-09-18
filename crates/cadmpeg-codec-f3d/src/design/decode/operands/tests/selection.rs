@@ -180,12 +180,6 @@ fn generated_base_flange_profile_frame_resolves() {
 
 #[test]
 fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
-    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
@@ -238,20 +232,20 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         record_index: 300,
     };
     let mut bytes = Vec::new();
-    header(&mut bytes, *b"326", 300);
+    indexed_header(&mut bytes, *b"326", 300);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&[1, 1, 0]);
-    header(&mut bytes, *b"326", 305);
+    indexed_header(&mut bytes, *b"326", 305);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&[1, 1, 0]);
-    header(&mut bytes, *b"324", 400);
+    indexed_header(&mut bytes, *b"324", 400);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&586u64.to_le_bytes());
     lp_utf16(&mut bytes, "df9087bd-02a6-4a3f-a132-7e69990f323c");
     lp_utf16(&mut bytes, "0b2382d1-caaf-4eb9-b40d-a6322a7ed829");
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 5]);
-    header(&mut bytes, *b"301", 900);
+    indexed_header(&mut bytes, *b"301", 900);
 
     let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
         .expect("identity chain");
@@ -285,7 +279,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     expanded_bytes.push(1);
     expanded_bytes.extend_from_slice(&900u32.to_le_bytes());
     expanded_bytes.extend_from_slice(&[0; 6]);
-    header(&mut expanded_bytes, *b"301", 900);
+    indexed_header(&mut expanded_bytes, *b"301", 900);
     let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header)
         .expect("identity chain with expanded tail reference");
     let persistent = expanded
@@ -341,12 +335,6 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
 
 #[test]
 fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
-    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
@@ -402,7 +390,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         record_index: 100,
     };
     let mut bytes = Vec::new();
-    header(&mut bytes, *b"333", 100);
+    indexed_header(&mut bytes, *b"333", 100);
     bytes.extend_from_slice(&[0; 10]);
     bytes.push(1);
     bytes.extend_from_slice(&103u32.to_le_bytes());
@@ -413,16 +401,16 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 4]);
     bytes.extend_from_slice(&[1, 0, 0]);
-    header(&mut bytes, *b"265", 100);
-    header(&mut bytes, *b"301", 101);
-    header(&mut bytes, *b"446", 102);
+    indexed_header(&mut bytes, *b"265", 100);
+    indexed_header(&mut bytes, *b"301", 101);
+    indexed_header(&mut bytes, *b"446", 102);
     let identity_at = bytes.len();
-    header(&mut bytes, *b"429", 103);
+    indexed_header(&mut bytes, *b"429", 103);
     bytes.extend_from_slice(&[0; 18]);
     bytes.extend_from_slice(&1331u64.to_le_bytes());
     bytes.extend_from_slice(&183u64.to_le_bytes());
     let next_at = bytes.len();
-    header(&mut bytes, *b"311", 104);
+    indexed_header(&mut bytes, *b"311", 104);
 
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame");
@@ -440,11 +428,11 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     assert_eq!(operand.next_byte_offset(), next_at as u64);
 
     let mut compact = bytes[..identity_at].to_vec();
-    header(&mut compact, *b"429", 103);
+    indexed_header(&mut compact, *b"429", 103);
     compact.extend_from_slice(&[0; 10]);
     compact.extend_from_slice(&1331u64.to_le_bytes());
     let compact_next_at = compact.len();
-    header(&mut compact, *b"311", 109);
+    indexed_header(&mut compact, *b"311", 109);
     let compact_operand = parse_entity_selection_operand(&compact, &group, 0, &record)
         .expect("compact nested entity-selection frame");
     assert_eq!(compact_operand.primary_identity, 1331);
@@ -462,13 +450,13 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     assert_eq!(compact_operand.next_byte_offset(), compact_next_at as u64);
 
     let mut curve_identity = bytes[..identity_at].to_vec();
-    header(&mut curve_identity, *b"429", 103);
+    indexed_header(&mut curve_identity, *b"429", 103);
     curve_identity.extend_from_slice(&[0; 10]);
     curve_identity.extend_from_slice(&77u64.to_le_bytes());
     curve_identity.extend_from_slice(&1331u64.to_le_bytes());
     curve_identity.extend_from_slice(&183u64.to_le_bytes());
     let curve_next_at = curve_identity.len();
-    header(&mut curve_identity, *b"311", 104);
+    indexed_header(&mut curve_identity, *b"311", 104);
     let curve_operand = parse_entity_selection_operand(&curve_identity, &group, 0, &record)
         .expect("expanded Sketch-curve entity-selection frame");
     assert_eq!(curve_operand.primary_identity, 1331);
@@ -496,7 +484,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 
     let mut class_338_curve_identity = bytes[..identity_at].to_vec();
     class_338_curve_identity[4..7].copy_from_slice(b"338");
-    header(&mut class_338_curve_identity, *b"361", 103);
+    indexed_header(&mut class_338_curve_identity, *b"361", 103);
     class_338_curve_identity.extend_from_slice(&[0; 9]);
     class_338_curve_identity.push(1);
     class_338_curve_identity.extend_from_slice(&[0; 12]);
@@ -505,7 +493,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     class_338_curve_identity.extend_from_slice(&249u32.to_le_bytes());
     class_338_curve_identity.extend_from_slice(&0u32.to_le_bytes());
     let class_338_next_at = class_338_curve_identity.len();
-    header(&mut class_338_curve_identity, *b"268", 104);
+    indexed_header(&mut class_338_curve_identity, *b"268", 104);
     let class_338_record = DesignRecordHeader {
         class_tag: crate::records::references::DesignClassTag::try_from("338".to_owned()).unwrap(),
         ..record
@@ -551,12 +539,6 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 
 #[test]
 fn extrude_selection_group_and_members_have_exact_counted_frames() {
-    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(&class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
     let scope = DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
@@ -599,7 +581,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         record_index: 100,
     };
     let mut group_bytes = Vec::new();
-    header(&mut group_bytes, *b"331", 100);
+    indexed_header(&mut group_bytes, *b"331", 100);
     group_bytes.extend_from_slice(&[0; 10]);
     group_bytes.push(1);
     group_bytes.extend_from_slice(&12u32.to_le_bytes());
@@ -623,7 +605,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     group_bytes.extend_from_slice(&12u32.to_le_bytes());
     group_bytes.extend_from_slice(&[0; 6]);
     let paired_at = group_bytes.len();
-    header(&mut group_bytes, *b"259", 100);
+    indexed_header(&mut group_bytes, *b"259", 100);
 
     let mut group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
         .expect("counted Extrude selection group");
@@ -647,14 +629,14 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         record_index: 200,
     };
     let mut member_bytes = Vec::new();
-    header(&mut member_bytes, *b"290", 200);
+    indexed_header(&mut member_bytes, *b"290", 200);
     member_bytes.extend_from_slice(&[0; 10]);
     member_bytes.extend_from_slice(&586u64.to_le_bytes());
     lp_utf16(&mut member_bytes, "df9087bd-02a6-4a3f-a132-7e69990f323c");
     lp_utf16(&mut member_bytes, "0b2382d1-caaf-4eb9-b40d-a6322a7ed829");
     member_bytes.extend_from_slice(&2u32.to_le_bytes());
     member_bytes.extend_from_slice(&[0; 5]);
-    header(&mut member_bytes, *b"290", 201);
+    indexed_header(&mut member_bytes, *b"290", 201);
 
     let mut member = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
         .expect("fixed Extrude selection member");
@@ -677,7 +659,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     assert_eq!(terminal_member.next_record_index, 0);
 
     let mut edge_identity_bytes = Vec::new();
-    header(&mut edge_identity_bytes, *b"278", 5887);
+    indexed_header(&mut edge_identity_bytes, *b"278", 5887);
     edge_identity_bytes.extend_from_slice(&[0; 12]);
     edge_identity_bytes.push(1);
     edge_identity_bytes.extend_from_slice(&5890u32.to_le_bytes());

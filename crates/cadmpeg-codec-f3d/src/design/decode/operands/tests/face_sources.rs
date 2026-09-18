@@ -4,17 +4,13 @@
 use crate::design::decode::operands::{
     face_source_carrier_layout, parse_face_source_carrier_prefix,
 };
+use crate::design::test_support::write_marked_reference;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(class_tag);
     bytes.extend_from_slice(&record_index.to_le_bytes());
     bytes.extend_from_slice(&[0; 10]);
-}
-
-fn marked_reference(bytes: &mut [u8], offset: usize, record_index: u32) {
-    bytes[offset] = 1;
-    bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
 }
 
 fn source_carrier(
@@ -28,11 +24,11 @@ fn source_carrier(
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, class_tag, record_index);
     bytes.resize(scalar_offset + 16, 0);
-    marked_reference(&mut bytes, 21, scope_record_index);
+    write_marked_reference(&mut bytes, 21, scope_record_index);
     bytes[32..36].copy_from_slice(&(source_count as u32).to_le_bytes());
     for ordinal in 0..source_count {
         let offset = 36 + ordinal * 11;
-        marked_reference(&mut bytes, offset, 200 + ordinal as u32);
+        write_marked_reference(&mut bytes, offset, 200 + ordinal as u32);
     }
     bytes[scalar_offset..scalar_offset + 4].copy_from_slice(&discriminator.to_le_bytes());
     bytes[scalar_offset + 4..scalar_offset + 12].copy_from_slice(&0.125f64.to_le_bytes());
