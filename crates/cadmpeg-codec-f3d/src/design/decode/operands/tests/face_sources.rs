@@ -3,7 +3,7 @@
 use crate::design::decode::operands::{
     face_source_carrier_layout, parse_face_source_carrier_prefix,
 };
-use crate::design::test_support::write_marked_reference;
+use crate::test_support::write_marked_reference;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3u32.to_le_bytes());

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::test_support::write_marked_reference;
+use crate::test_support::write_marked_reference;
 
 const EPS_BEND_RADIUS: f64 = 1.0e-12;
 

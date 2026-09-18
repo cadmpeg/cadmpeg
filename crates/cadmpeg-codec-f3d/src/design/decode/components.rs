@@ -126,7 +126,7 @@ mod tests {
     #![allow(clippy::trivially_copy_pass_by_ref)]
 
     use super::exact_component_occurrence;
-    use crate::design::test_support::indexed_header;
+    use crate::test_support::indexed_header;
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
     const OCCURRENCE: &str = "f2371d14-7339-4f5c-82a1-50ec8fca5597";

@@ -2,7 +2,7 @@
 
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::indexed_header;
+use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::assembly::{
     DesignAssemblyAlignment, DesignAssemblyLimitKind, DesignAssemblyOperandFrame,
 };
@@ -19,6 +19,7 @@ use crate::records::{
     references::DesignClassTag,
     sketch_placement::SketchPlacementMatrix,
 };
+use crate::test_support::indexed_header;
 use crate::test_support::push_reference_u64;
 
 const EPS_EXACT_FIXTURE: f64 = f64::EPSILON * 4.0;
@@ -1680,52 +1681,6 @@ fn legacy_class_383_transform(translation_x: f64) -> [[f64; 4]; 4] {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ]
-}
-
-pub(in crate::design::decode::scopes) fn assembly_operand_frame_fixture(
-    scope_record_index: u32,
-) -> Vec<u8> {
-    let mut bytes = vec![0_u8; 648];
-    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
-    bytes[4..7].copy_from_slice(b"273");
-    bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
-    bytes[20] = 1;
-    bytes[25] = 1;
-    for (reference_at, transform_at, reference, translation) in [
-        (28, 40, 70_u32, [1.0_f64, 2.0, 3.0]),
-        (168, 180, 80_u32, [4.0, 5.0, 6.0]),
-    ] {
-        bytes[reference_at] = 1;
-        bytes[reference_at + 1..reference_at + 5].copy_from_slice(&reference.to_le_bytes());
-        for (ordinal, value) in [
-            1.0,
-            0.0,
-            0.0,
-            translation[0],
-            0.0,
-            1.0,
-            0.0,
-            translation[1],
-            0.0,
-            0.0,
-            1.0,
-            translation[2],
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            bytes[transform_at + ordinal * 8..transform_at + ordinal * 8 + 8]
-                .copy_from_slice(&value.to_le_bytes());
-        }
-    }
-    bytes[637..641].copy_from_slice(&3_u32.to_le_bytes());
-    bytes[641..644].copy_from_slice(b"259");
-    bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
-    bytes
 }
 
 fn append_as_built_path_envelope(

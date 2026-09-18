@@ -6,7 +6,7 @@
     clippy::uninlined_format_args
 )]
 
-pub(in crate::design::decode::scopes) mod assembly;
+mod assembly;
 mod assembly_variable_reference;
 mod combine;
 mod copy_paste_bodies;

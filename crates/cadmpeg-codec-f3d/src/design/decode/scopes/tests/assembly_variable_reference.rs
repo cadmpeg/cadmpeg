@@ -2,6 +2,7 @@
 
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
 use crate::records::feature::scope::DesignParameterScope;
@@ -57,7 +58,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
             .unwrap()
         })
         .collect::<Vec<_>>();
-    let mut bytes = super::assembly::assembly_operand_frame_fixture(scope_record_index);
+    let mut bytes = assembly_operand_frame_fixture(scope_record_index);
     let alignment = exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),

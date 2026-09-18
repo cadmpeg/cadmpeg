@@ -8,7 +8,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
-use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::indexed_design_record_header;
 use crate::records::{
     bodies::{DesignBodyBinding, DesignBodyBounds, DesignBodyMember},
     entity_header::{DesignEntityHeader, DESIGN_MODULE_BODY},
@@ -751,10 +751,11 @@ fn body_map_records(
                 ))
             })?;
             if View::u32_le_at(bytes, start) != Some(3)
-                || bytes
-                    .get(start + indexed_header::CLASS_TAG..start + indexed_header::RECORD_INDEX)
-                    != Some(class_tag.as_bytes())
-                || View::u32_le_at(bytes, start + indexed_header::RECORD_INDEX)
+                || bytes.get(
+                    start + indexed_design_record_header::CLASS_TAG
+                        ..start + indexed_design_record_header::RECORD_INDEX,
+                ) != Some(class_tag.as_bytes())
+                || View::u32_le_at(bytes, start + indexed_design_record_header::RECORD_INDEX)
                     != Some(record_index)
             {
                 return Err(CodecError::malformed(format_args!(
@@ -873,13 +874,13 @@ fn parse_body_map_frame(
     prefix_len: usize,
 ) -> Result<Option<BodyMapRecord>, CodecError> {
     let Some(count_at) = start
-        .checked_add(indexed_header::LEN)
+        .checked_add(indexed_design_record_header::LEN)
         .and_then(|payload| payload.checked_add(prefix_len))
     else {
         return Ok(None);
     };
     if !bytes
-        .get(start + indexed_header::LEN..count_at)
+        .get(start + indexed_design_record_header::LEN..count_at)
         .is_some_and(|prefix| prefix.iter().all(|byte| *byte == 0))
     {
         return Ok(None);
@@ -1237,8 +1238,9 @@ mod tests {
         BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
         BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, PHYSICAL_MATERIAL_LIBRARY_ID,
     };
-    use crate::design::test_support::{design_type, indexed_header, primary_record};
+    use crate::design::test_support::{design_type, primary_record};
     use crate::records::entity_header::DESIGN_MODULE_FUSION;
+    use crate::test_support::indexed_header;
     use crate::test_support::push_reference_u64;
 
     fn push_entity_header(out: &mut Vec<u8>, class_tag: &str, entity: u64) {
