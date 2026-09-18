@@ -19,6 +19,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
+use super::{RecordExt, ValueExt};
 
 pub(super) fn decode(
     exchange: &Exchange,
@@ -921,50 +922,5 @@ fn normal_rows(value: Option<&Value>) -> Option<Vec<Vector3>> {
         })
         .collect()
 }
-trait RecordExt {
-    fn parameter(&self, index: usize) -> Option<&Value>;
-}
-impl RecordExt for RawRecord {
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first().parameters.get(index)
-    }
-}
-trait ValueExt {
-    fn reference(&self) -> Option<u64>;
-    fn list(&self) -> Option<&[Value]>;
-    fn number(&self) -> Option<f64>;
-    fn integer(&self) -> Option<i64>;
-}
-impl ValueExt for Value {
-    fn reference(&self) -> Option<u64> {
-        if let Value::Reference(id) = self {
-            Some(*id)
-        } else {
-            None
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        if let Value::List(values) = self {
-            Some(values)
-        } else {
-            None
-        }
-    }
-    fn number(&self) -> Option<f64> {
-        match self {
-            Value::Real(value) => Some(*value),
-            Value::Integer(value) => Some(*value as f64),
-            _ => None,
-        }
-    }
-    fn integer(&self) -> Option<i64> {
-        if let Value::Integer(value) = self {
-            Some(*value)
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod tests;

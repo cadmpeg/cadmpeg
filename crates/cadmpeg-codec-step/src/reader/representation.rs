@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared access to inherited `REPRESENTATION` attributes.
 
+use super::value_reference;
 use crate::parse::{RawRecord, Value};
 
 pub(super) fn parameters(record: &RawRecord) -> Option<&[Value]> {
@@ -33,13 +34,6 @@ pub(super) fn is_representation_name(name: &str) -> bool {
 fn value_list(value: &Value) -> Option<&[Value]> {
     match value {
         Value::List(values) => Some(values),
-        _ => None,
-    }
-}
-
-fn value_reference(value: &Value) -> Option<u64> {
-    match value {
-        Value::Reference(id) => Some(*id),
         _ => None,
     }
 }

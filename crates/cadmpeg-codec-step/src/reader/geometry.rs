@@ -4,6 +4,7 @@
 use crate::ids::{key_word, kind};
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
+use super::{named_parameter, record_values, step_instance_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -27,7 +28,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::index::{step_instance_id, CarrierIndex, CurveIndex, PointIndex, SurfaceIndex};
+use super::index::{CarrierIndex, CurveIndex, PointIndex, SurfaceIndex};
 use super::{opaque_record_id, StageOutcome};
 
 const EPS_GEOMETRY_READ_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -2424,10 +2425,6 @@ fn entity_parameters<'a>(record: &'a RawRecord, name: &str) -> Option<&'a [Value
         .map(|partial| partial.parameters.as_slice())
 }
 
-fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
-    record.partial(name)?.parameters.get(index)
-}
-
 fn transformation_parameter<'a>(
     record: &'a RawRecord,
     name: &str,
@@ -4013,13 +4010,6 @@ fn periodic_value(
     }
 }
 
-fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
-    record
-        .partials
-        .iter()
-        .flat_map(|partial| partial.parameters.iter())
-}
-
 pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Point3>> {
     record
         .partials
@@ -5363,74 +5353,6 @@ fn optional_direction(
         Value::Omitted => None,
         Value::Reference(id) => directions.get(id).copied(),
         _ => None,
-    }
-}
-
-trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
-    fn parameter(&self, index: usize) -> Option<&Value>;
-}
-
-impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
-        self.partials.iter().find(|partial| partial.name == name)
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first().parameters.get(index)
-    }
-}
-
-trait ValueExt {
-    fn number(&self) -> Option<f64>;
-    fn reference(&self) -> Option<u64>;
-    fn list(&self) -> Option<&[Value]>;
-    fn enumeration(&self) -> Option<&str>;
-    fn integer(&self) -> Option<i64>;
-    fn logical(&self) -> Option<bool>;
-}
-
-impl ValueExt for Value {
-    fn number(&self) -> Option<f64> {
-        match self {
-            Value::Real(v) => Some(*v),
-            Value::Integer(v) => Some(*v as f64),
-            _ => None,
-        }
-    }
-    fn reference(&self) -> Option<u64> {
-        match self {
-            Value::Reference(id) => Some(*id),
-            _ => None,
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        match self {
-            Value::List(values) => Some(values),
-            _ => None,
-        }
-    }
-    fn enumeration(&self) -> Option<&str> {
-        match self {
-            Value::Enumeration(value) => Some(value),
-            _ => None,
-        }
-    }
-    fn integer(&self) -> Option<i64> {
-        match self {
-            Value::Integer(value) => Some(*value),
-            _ => None,
-        }
-    }
-    fn logical(&self) -> Option<bool> {
-        match self {
-            Value::Enumeration(value) if value == "T" => Some(true),
-            Value::Enumeration(value) if value == "F" => Some(false),
-            _ => None,
-        }
     }
 }
 

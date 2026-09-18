@@ -4,6 +4,7 @@
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use super::{has_partial, named_parameter, references, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -106,7 +107,7 @@ pub(super) fn decode(
         if !has_partial(record, "INVISIBILITY") {
             continue;
         }
-        let Some(items) = partial_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
+        let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
             losses.push(
                 StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
@@ -176,7 +177,7 @@ pub(super) fn decode(
             continue;
         }
         let Some(assigned_items) =
-            partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
+            named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
@@ -190,7 +191,7 @@ pub(super) fn decode(
             continue;
         }
         let Some(name) =
-            partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
+            named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
                 decode_text(
                     exchange,
                     value,
@@ -206,7 +207,7 @@ pub(super) fn decode(
             )));
             continue;
         };
-        let description = partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
+        let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
             .and_then(|value| {
                 decode_text(
                     exchange,
@@ -664,7 +665,7 @@ fn expand_style_targets(
         return vec![id];
     };
     typed.insert(id);
-    let targets = partial_parameter(record, set_name, 1)
+    let targets = named_parameter(record, set_name, 1)
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
@@ -1392,7 +1393,7 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
         .then_some(partial.name.as_str())
     });
     if let Some(set_name) = set_name {
-        let member_domains = partial_parameter(record, set_name, 1)
+        let member_domains = named_parameter(record, set_name, 1)
             .and_then(ValueExt::list)
             .into_iter()
             .flatten()
@@ -1534,79 +1535,5 @@ fn predefined(name: &str) -> Option<Color> {
     };
     Color::new(r, g, b, 1.0)
 }
-fn references(value: &Value) -> Vec<u64> {
-    match value {
-        Value::Reference(id) => vec![*id],
-        Value::List(values) => values.iter().flat_map(references).collect(),
-        Value::Typed(_, value) => references(value),
-        _ => Vec::new(),
-    }
-}
-
-fn has_partial(record: &RawRecord, name: &str) -> bool {
-    record.partials.iter().any(|partial| partial.name == name)
-}
-
-fn partial_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == name)
-        .and_then(|partial| partial.parameters.get(index))
-}
-
-trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn parameters(&self) -> &[Value];
-    fn parameter(&self, index: usize) -> Option<&Value>;
-}
-impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn parameters(&self) -> &[Value] {
-        self.partials.first().parameters.as_slice()
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.parameters().get(index)
-    }
-}
-trait ValueExt {
-    fn reference(&self) -> Option<u64>;
-    fn number(&self) -> Option<f64>;
-    fn list(&self) -> Option<&[Value]>;
-    fn enumeration(&self) -> Option<&str>;
-}
-impl ValueExt for Value {
-    fn reference(&self) -> Option<u64> {
-        if let Value::Reference(id) = self {
-            Some(*id)
-        } else {
-            None
-        }
-    }
-    fn number(&self) -> Option<f64> {
-        match self {
-            Value::Real(value) => Some(*value),
-            Value::Integer(value) => Some(*value as f64),
-            _ => None,
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        if let Value::List(values) = self {
-            Some(values)
-        } else {
-            None
-        }
-    }
-    fn enumeration(&self) -> Option<&str> {
-        if let Value::Enumeration(value) = self {
-            Some(value)
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod tests;

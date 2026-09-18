@@ -18,6 +18,7 @@ use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 
 use super::representation;
+use super::value_reference;
 use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
 
 const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
@@ -915,13 +916,6 @@ fn collect_references(value: &Value, output: &mut Vec<u64>) {
             .for_each(|value| collect_references(value, output)),
         Value::Typed(_, value) => collect_references(value, output),
         _ => {}
-    }
-}
-
-fn value_reference(value: &Value) -> Option<u64> {
-    match value {
-        Value::Reference(id) => Some(*id),
-        _ => None,
     }
 }
 
