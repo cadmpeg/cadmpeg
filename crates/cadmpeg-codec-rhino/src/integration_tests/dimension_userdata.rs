@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! V5 dimension-extension class-userdata admission and retention contracts.
 
+use super::fixtures::{anonymous_major, plane};
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
 use crate::test_support::test_archive as support;
@@ -15,19 +16,6 @@ const DIMENSION_PARENT: Uuid = Uuid::from_canonical([
 const DETAIL_MEASURED: Uuid = Uuid::from_canonical([
     0xaa, 0xaa, 0xaa, 0xaa, 0xbb, 0xbb, 0xcc, 0xcc, 0xdd, 0xdd, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee,
 ]);
-
-fn plane() -> Vec<u8> {
-    [
-        0.0, 0.0, 0.0, // origin
-        1.0, 0.0, 0.0, // x axis
-        0.0, 1.0, 0.0, // y axis
-        0.0, 0.0, 1.0, // z axis
-        0.0, 0.0, 1.0, 0.0, // equation
-    ]
-    .into_iter()
-    .flat_map(f64::to_le_bytes)
-    .collect()
-}
 
 fn legacy_linear_payload(archive: ArchiveVersion) -> Vec<u8> {
     let mut annotation = 1_i32.to_le_bytes().to_vec();
@@ -50,13 +38,6 @@ fn legacy_linear_payload(archive: ArchiveVersion) -> Vec<u8> {
     annotation.extend(17_i32.to_le_bytes());
     let annotation = crate::test_support::test_dump::anonymous_chunk(archive, 3, &annotation);
     crate::test_support::test_dump::anonymous_chunk(archive, 0, &annotation)
-}
-
-fn anonymous_major(archive: ArchiveVersion, major: i32, minor: i32, body: &[u8]) -> Vec<u8> {
-    let mut payload = major.to_le_bytes().to_vec();
-    payload.extend(minor.to_le_bytes());
-    payload.extend(body);
-    crate::test_support::test_dump::crc_chunk(archive, 0x4000_8000, &payload)
 }
 
 fn dimension_extension_payload(archive: ArchiveVersion, major: i32, malformed: bool) -> Vec<u8> {

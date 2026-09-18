@@ -7,7 +7,6 @@ use crate::presentation::parse_hatch_pattern;
 use crate::presentation::parse_linetype;
 use crate::presentation::tests::anonymous;
 use crate::presentation::tests::anonymous_body;
-use crate::presentation::tests::utf16;
 use crate::presentation::LinetypeRecord;
 use crate::presentation::PatternTransferError;
 use crate::presentation::ANONYMOUS;
@@ -18,6 +17,7 @@ use crate::presentation::LINETYPE_TABLE;
 use crate::presentation::MODEL_ATTRIBUTES;
 use crate::settings::StandardUnit;
 use crate::settings::UnitBinding;
+use crate::test_support::test_dump::utf16_bytes;
 use crate::wire::Uuid;
 use cadmpeg_ir::document::CadIr;
 
@@ -31,7 +31,7 @@ fn modern_linetype_record(archive: ArchiveVersion, always_model_distance: bool) 
     component.push(1);
     component.extend(9_i32.to_le_bytes());
     component.push(1);
-    component.extend(utf16("modern dash"));
+    component.extend(utf16_bytes("modern dash"));
     component.extend(crc32fast::hash(&component).to_le_bytes());
     let mut attributes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
     attributes.extend((component.len() as i64).to_le_bytes());
@@ -98,7 +98,7 @@ fn modern_hatch_pattern_record(
     component.push(1);
     component.extend(5_i32.to_le_bytes());
     component.push(1);
-    component.extend(utf16("modern hatch"));
+    component.extend(utf16_bytes("modern hatch"));
     component.extend(crc32fast::hash(&component).to_le_bytes());
     let mut component_chunk = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
     component_chunk.extend((component.len() as i64).to_le_bytes());
@@ -106,7 +106,7 @@ fn modern_hatch_pattern_record(
 
     let mut body = component_chunk;
     body.extend(1_i32.to_le_bytes());
-    body.extend(utf16("modern description"));
+    body.extend(utf16_bytes("modern description"));
     body.extend(anonymous_body(&line_list));
     body.push(pattern_unit_system);
     body.push(u8::from(always_model_distances));
@@ -125,8 +125,8 @@ fn legacy_hatch_pattern_record(archive: ArchiveVersion) -> Vec<u8> {
     let mut payload = vec![0x12];
     payload.extend(3_i32.to_le_bytes());
     payload.extend(1_i32.to_le_bytes());
-    payload.extend(utf16("cross"));
-    payload.extend(utf16("cross hatch"));
+    payload.extend(utf16_bytes("cross"));
+    payload.extend(utf16_bytes("cross hatch"));
     payload.extend(1_i32.to_le_bytes());
     payload.push(0x11);
     payload.extend(0.5_f64.to_le_bytes());
@@ -176,7 +176,7 @@ fn absent_component_index_does_not_alias_system_index_minus_one() {
 #[test]
 fn legacy_linetype_preserves_print_lengths_and_wire_segment_tags() {
     let mut body = 4_i32.to_le_bytes().to_vec();
-    body.extend(utf16("dash"));
+    body.extend(utf16_bytes("dash"));
     body.extend(2_i32.to_le_bytes());
     body.extend(2.0_f64.to_le_bytes());
     body.extend(0_u32.to_le_bytes());
@@ -212,7 +212,7 @@ fn modern_linetype_scales_only_model_distance_segments() {
         component.push(1);
         component.extend(9_i32.to_le_bytes());
         component.push(1);
-        component.extend(utf16("modern dash"));
+        component.extend(utf16_bytes("modern dash"));
         component.extend(crc32fast::hash(&component).to_le_bytes());
         let mut attributes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
         attributes.extend((component.len() as i64).to_le_bytes());
@@ -510,8 +510,8 @@ fn solid_hatch_pattern_needs_no_length_binding() {
     let mut bytes = vec![0x12];
     bytes.extend(3_i32.to_le_bytes());
     bytes.extend(0_i32.to_le_bytes());
-    bytes.extend(utf16("solid"));
-    bytes.extend(utf16("solid fill"));
+    bytes.extend(utf16_bytes("solid"));
+    bytes.extend(utf16_bytes("solid fill"));
     bytes.extend([0x77; 16]);
     for binding in [UnitBinding::Native, UnitBinding::Unavailable] {
         let pattern = parse_hatch_pattern(&bytes, 0..bytes.len(), ArchiveVersion::V5, binding, 23)
@@ -536,8 +536,8 @@ fn legacy_hatch_pattern_scales_line_offsets_and_dashes() {
     let mut bytes = vec![0x12];
     bytes.extend(3_i32.to_le_bytes());
     bytes.extend(1_i32.to_le_bytes());
-    bytes.extend(utf16("cross"));
-    bytes.extend(utf16("cross hatch"));
+    bytes.extend(utf16_bytes("cross"));
+    bytes.extend(utf16_bytes("cross hatch"));
     bytes.extend(1_i32.to_le_bytes());
     bytes.push(0x11);
     bytes.extend(0.5_f64.to_le_bytes());
@@ -598,7 +598,7 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
     component.push(1);
     component.extend(5_i32.to_le_bytes());
     component.push(1);
-    component.extend(utf16("modern hatch"));
+    component.extend(utf16_bytes("modern hatch"));
     let mut component_payload = component.clone();
     component_payload.extend(crc32fast::hash(&component_payload).to_le_bytes());
     let mut component_chunk = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
@@ -607,7 +607,7 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
 
     let mut body = component_chunk;
     body.extend(1_i32.to_le_bytes());
-    body.extend(utf16("modern description"));
+    body.extend(utf16_bytes("modern description"));
     body.extend(anonymous_body(&line_list));
     let mut v8_body = body.clone();
     v8_body.extend([0xc7; 4]);

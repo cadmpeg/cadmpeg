@@ -1733,7 +1733,7 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_cor
 pub(crate) mod tests {
     use super::*;
     use crate::objects::ClassUserdata;
-    use crate::test_support::test_archive::crc_chunk;
+    use crate::test_support::test_dump::{crc_chunk, utf16_bytes};
 
     #[test]
     fn angular_measurement_uses_counterclockwise_extension_sweep() {
@@ -1757,21 +1757,11 @@ pub(crate) mod tests {
         assert_eq!(modern_annotation_type(8), 6);
     }
 
-    fn utf16(value: &str) -> Vec<u8> {
-        let mut units = value.encode_utf16().collect::<Vec<_>>();
-        units.push(0);
-        let mut bytes = (units.len() as u32).to_le_bytes().to_vec();
-        for unit in units {
-            bytes.extend(unit.to_le_bytes());
-        }
-        bytes
-    }
-
     fn anonymous(version: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(version.to_le_bytes());
         body.extend(suffix);
-        crc_chunk(ANONYMOUS, &body)
+        crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body)
     }
 
     fn anonymous_v4(version: i32, suffix: &[u8]) -> Vec<u8> {
@@ -1830,8 +1820,8 @@ pub(crate) mod tests {
             bytes.extend(point[0].to_le_bytes());
             bytes.extend(point[1].to_le_bytes());
         }
-        bytes.extend(utf16(user_text));
-        bytes.extend(utf16(default_text));
+        bytes.extend(utf16_bytes(user_text));
+        bytes.extend(utf16_bytes(default_text));
         bytes.extend(i32::from(user_positioned).to_le_bytes());
         if let Some((angle, radius)) = angular {
             bytes.extend(angle.to_le_bytes());
@@ -2018,7 +2008,7 @@ pub(crate) mod tests {
         text_point: Option<[f64; 2]>,
         arrow_fit: i32,
     ) -> Vec<u8> {
-        let mut text = utf16("<>\n");
+        let mut text = utf16_bytes("<>\n");
         text.extend(self::plane());
         text.extend(0.0_f64.to_le_bytes());
         text.extend(0.0_f64.to_le_bytes());
@@ -2037,7 +2027,7 @@ pub(crate) mod tests {
         annotation.push(1);
 
         let mut common = anonymous(4, &annotation);
-        common.extend(utf16(""));
+        common.extend(utf16_bytes(""));
         common.extend(0.0_f64.to_le_bytes());
         common.push(u8::from(text_point.is_none()));
         for value in text_point.unwrap_or([0.0, 0.0]) {
@@ -2063,13 +2053,13 @@ pub(crate) mod tests {
             annotation.extend(point[0].to_le_bytes());
             annotation.extend(point[1].to_le_bytes());
         }
-        annotation.extend(utf16("<>"));
+        annotation.extend(utf16_bytes("<>"));
         annotation.extend(1_i32.to_le_bytes());
         annotation.extend(4_i32.to_le_bytes());
         annotation.extend(1.5_f64.to_le_bytes());
         annotation.extend(0_i32.to_le_bytes());
         annotation.push(1);
-        annotation.extend(utf16("formula"));
+        annotation.extend(utf16_bytes("formula"));
         annotation.extend((-1_i32).to_le_bytes());
         annotation.extend(17_i32.to_le_bytes());
         anonymous(3, &annotation)
@@ -2093,7 +2083,7 @@ pub(crate) mod tests {
             bytes.extend(point[0].to_le_bytes());
             bytes.extend(point[1].to_le_bytes());
         }
-        bytes.extend(utf16("<>"));
+        bytes.extend(utf16_bytes("<>"));
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend(4_i32.to_le_bytes());
         bytes.extend(1.5_f64.to_le_bytes());

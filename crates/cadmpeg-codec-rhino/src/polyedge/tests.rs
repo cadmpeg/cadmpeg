@@ -2,7 +2,9 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::*;
-use crate::test_support::test_archive::{class_wrapper, crc_chunk};
+use crate::chunks::ArchiveVersion;
+use crate::test_support::test_archive::class_wrapper;
+use crate::test_support::test_dump::crc_chunk;
 use crate::test_support::test_dump::{
     object_record_with_payload, point_payload, polyedge_scan_objects, polyedge_segment_parameter,
     scan_with_objects, set_identity, POINT_CLASS, POLYEDGE_SEGMENT_TARGET,
@@ -29,7 +31,7 @@ fn polyedge_payload_with_domains(edge_domain: [f64; 2], trim_domain: [f64; 2]) -
     for value in [10.0_f64, 20.0, 2.0, 6.0] {
         segment.extend(value.to_le_bytes());
     }
-    let segment = crc_chunk(ANONYMOUS, &segment);
+    let segment = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &segment);
     let segment_class = [
         0x87, 0x7a, 0xf4, 0x42, 0x1b, 0x5b, 0x31, 0x4e, 0xab, 0x87, 0x46, 0x39, 0xd7, 0x83, 0x25,
         0xd6,

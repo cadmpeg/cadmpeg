@@ -1178,3 +1178,20 @@ pub(crate) fn polyedge_segment_parameter(
     };
     parameters.get("segment_0_object").cloned()
 }
+
+/// Append a little-endian `i32`.
+pub(crate) fn push_i32(bytes: &mut Vec<u8>, value: i32) {
+    bytes.extend(value.to_le_bytes());
+}
+
+/// Append a little-endian `f64`.
+pub(crate) fn push_f64(bytes: &mut Vec<u8>, value: f64) {
+    bytes.extend(value.to_le_bytes());
+}
+
+/// Append the three little-endian coordinates of a point.
+pub(crate) fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
+    for coordinate in value {
+        bytes.extend(coordinate.to_le_bytes());
+    }
+}

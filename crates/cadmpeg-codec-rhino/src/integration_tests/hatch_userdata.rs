@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hatch-owned class-userdata admission and retention contracts.
 
+use super::fixtures::hatch_parameters;
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
 use crate::test_support::test_archive as support;
@@ -99,25 +100,6 @@ fn gradient_userdata_with_payload(archive: ArchiveVersion, payload: &[u8]) -> Ve
         202_608_010,
         payload,
     )
-}
-
-fn hatch_parameters(
-    result: &cadmpeg_ir::codec::DecodeResult,
-) -> &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String> {
-    result
-        .ir()
-        .model
-        .features
-        .iter()
-        .find_map(|feature| match feature.evaluation.definition() {
-            cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Native {
-                    kind, parameters, ..
-                },
-            ) if kind.as_str() == "hatch" => Some(parameters),
-            _ => None,
-        })
-        .expect("typed hatch feature")
 }
 
 #[test]

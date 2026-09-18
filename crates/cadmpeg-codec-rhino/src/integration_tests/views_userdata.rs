@@ -3,12 +3,7 @@
 
 use super::{assert_valid, decode};
 use crate::chunks::ArchiveVersion;
-
-fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
-    for coordinate in value {
-        bytes.extend(coordinate.to_le_bytes());
-    }
-}
+use crate::test_support::test_dump::point;
 
 fn viewport_body() -> Vec<u8> {
     let mut bytes = vec![0x15];
