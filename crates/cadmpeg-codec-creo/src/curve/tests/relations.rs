@@ -1,9 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::curve::evaluate_affine_expression;
+use crate::curve::evaluate_creo_math_function;
+use crate::curve::evaluate_creo_relation_function;
+use crate::curve::evaluate_relation_expression;
+use crate::curve::expression_records;
+use crate::curve::reevaluate_expression_records;
+use crate::curve::relation_round;
+use crate::curve::tests::evaluate_expression_program;
+use crate::curve::CreoMathFunction;
+use crate::curve::CurveExpressionActivation;
+use crate::curve::CurveExpressionLine;
+use crate::curve::CurveExpressionQuantity;
+use crate::curve::CurveExpressionSystemSymbolFamily;
+use crate::curve::CurveExpressionTarget;
+use crate::curve::CurveExpressionValue;
+use crate::curve::ExpressionParser;
+use crate::curve::ExpressionValue;
+use crate::curve::ExternalRelationSymbols;
+use crate::curve::RelationEvaluationContext;
 use std::collections::BTreeMap;
-
-use super::*;
 
 fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
     let mut parser = ExpressionParser {

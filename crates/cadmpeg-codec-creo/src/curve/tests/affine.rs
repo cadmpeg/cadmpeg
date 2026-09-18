@@ -1,7 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use crate::curve::curve_expression_solve_program;
+use crate::curve::evaluate_expression_program_details;
+use crate::curve::expression_records;
+use crate::curve::infer_solve_variable_dimensions;
+use crate::curve::quantity_value;
+use crate::curve::solve_unique_affine_system;
+use crate::curve::tests::evaluate_expression_program;
+use crate::curve::AffineEquationRow;
+use crate::curve::CurveExpressionEquation;
+use crate::curve::CurveExpressionLine;
+use crate::curve::CurveExpressionSolveBlock;
+use crate::curve::CurveExpressionValue;
+use crate::curve::ExternalRelationSymbols;
+use crate::curve::RelationDimension;
+use crate::curve::RelationEvaluationContext;
+use crate::curve::SolveUnknown;
+use std::collections::BTreeMap;
 
 #[test]
 fn decodes_counted_curve_expression_source_lines() {

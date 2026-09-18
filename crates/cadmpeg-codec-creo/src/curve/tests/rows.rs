@@ -1,8 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use crate::curve::depdb_cross_section_rows;
+use crate::curve::expression_helix;
+use crate::curve::expression_records;
+use crate::curve::fc02_short_pcurve_endpoints;
+use crate::curve::fc05_cylinder_cap_pairs;
+use crate::curve::fc05_scalar;
+use crate::curve::parameter_records;
+use crate::curve::parameter_records_with_face_ids;
+use crate::curve::pcurve_endpoints;
+use crate::curve::prototype_topology_rows;
+use crate::curve::prototypes;
+use crate::curve::row_terminator;
+use crate::curve::topology_rows;
+use crate::curve::topology_rows_with_face_ids;
+use crate::curve::topology_suffix_candidates;
+use crate::curve::topology_suffix_with_face_ids;
+use crate::curve::two_chart_pcurve_samples;
+use crate::curve::uniquely_bounded_parameter_records;
+use crate::curve::CurveExpressionHelix;
+use crate::curve::CurveParameterOpaqueSpan;
+use crate::curve::CurveParameterRecord;
+use crate::curve::CurveParameterScalar;
+use crate::curve::CurvePrototype;
+use crate::curve::CurvePrototypeTopology;
+use crate::curve::CurveTopologyRow;
+use crate::curve::DepdbCurveSuffix;
+use crate::curve::Fc02ShortPcurveEndpoints;
+use crate::curve::Fc05Circle;
+use crate::curve::Fc05CylinderCapPair;
+use crate::curve::TopologySuffixCandidate;
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 
 fn parameter_record(curve_id: u32) -> CurveParameterRecord {
     CurveParameterRecord {
