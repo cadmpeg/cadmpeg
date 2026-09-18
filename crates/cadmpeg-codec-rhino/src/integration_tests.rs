@@ -14,7 +14,7 @@ use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
 
 use crate::chunks::ArchiveVersion;
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 mod angular_dimension_userdata;
 mod annotations_userdata;
@@ -1367,7 +1367,7 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
     );
     let primitive = crate::test_support::test_dump::class_wrapper_with_userdata(
         archive,
-        crate::test_support::MESH_CLASS,
+        crate::test_support::test_archive::MESH_CLASS,
         &support::mesh_payload(3, 5, false, true),
         &cache_userdata,
     );
@@ -1435,7 +1435,9 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
         texture_mappings[0]
             .field("primitive_class_uuid")
             .and_then(|value| value.as_str().map(str::to_owned)),
-        Some(crate::wire::Uuid::from_wire(crate::test_support::MESH_CLASS).to_string())
+        Some(
+            crate::wire::Uuid::from_wire(crate::test_support::test_archive::MESH_CLASS).to_string()
+        )
     );
     assert!(texture_mappings[0].field("mapping_crc").is_none());
     assert_eq!(result.ir().model.points.len(), 1);

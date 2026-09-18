@@ -3,7 +3,6 @@
 
 use super::{assert_valid, decode};
 use crate::chunks::ArchiveVersion;
-use crate::test_support as support;
 
 fn point(bytes: &mut Vec<u8>, value: [f64; 3]) {
     for coordinate in value {
@@ -58,7 +57,7 @@ fn viewport_userdata_with_options(
         [0xde, 0xad].as_slice(),
     ]
     .concat();
-    let mut userdata = support::test_dump::class_userdata_v2_with_direct_payload(
+    let mut userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         crate::objects::USER_STRING_LIST.to_wire(),
         application,
@@ -85,13 +84,14 @@ fn viewport_userdata_with_options(
             .expect("viewport userdata class header has a checksum");
         *crc ^= 1;
     }
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, class_end_value);
+    let class_end =
+        crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, class_end_value);
     let class_end_start = userdata.len();
     let mut body = userdata;
     body.extend(&class_end);
     body.extend([0xca, 0xfe]);
     let class_end_range = class_end_start..class_end_start + class_end.len();
-    support::test_dump::crc_chunk_excluding(
+    crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x2000_8d3b,
         &body,
@@ -108,8 +108,10 @@ fn named_views_record(archive: ArchiveVersion) -> Vec<u8> {
 }
 
 fn named_views_record_with_userdata(archive: ArchiveVersion, userdata: Vec<u8>) -> Vec<u8> {
-    let viewport = support::test_dump::crc_chunk(archive, 0x2000_823b, &viewport_body());
-    let end_marker = support::test_dump::short_chunk(archive, crate::chunks::TCODE_ENDOFTABLE, 0);
+    let viewport =
+        crate::test_support::test_dump::crc_chunk(archive, 0x2000_823b, &viewport_body());
+    let end_marker =
+        crate::test_support::test_dump::short_chunk(archive, crate::chunks::TCODE_ENDOFTABLE, 0);
     let mut view_body = viewport;
     let viewport_range = 0..view_body.len();
     let userdata_start = view_body.len();
@@ -118,7 +120,7 @@ fn named_views_record_with_userdata(archive: ArchiveVersion, userdata: Vec<u8>) 
     let end_start = view_body.len();
     view_body.extend(end_marker);
     let end_range = end_start..view_body.len();
-    let view = support::test_dump::crc_chunk_excluding(
+    let view = crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x2000_803b,
         &view_body,
@@ -127,7 +129,7 @@ fn named_views_record_with_userdata(archive: ArchiveVersion, userdata: Vec<u8>) 
     let mut list_body = 1_i32.to_le_bytes().to_vec();
     let view_range = list_body.len()..list_body.len() + view.len();
     list_body.extend(view);
-    support::test_dump::crc_chunk_excluding(
+    crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x2000_8036,
         &list_body,
@@ -153,20 +155,31 @@ fn view_with_children(
         view_body.extend(end_marker);
         excluded_ranges.push(start..view_body.len());
     }
-    support::test_dump::crc_chunk_excluding(archive, 0x2000_803b, &view_body, &excluded_ranges)
+    crate::test_support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_803b,
+        &view_body,
+        &excluded_ranges,
+    )
 }
 
 fn view_with_child(archive: ArchiveVersion, child: Vec<u8>) -> Vec<u8> {
     view_with_children(
         archive,
         &[child],
-        Some(support::test_dump::short_chunk(archive, 0xffff_ffff, 0)),
+        Some(crate::test_support::test_dump::short_chunk(
+            archive,
+            0xffff_ffff,
+            0,
+        )),
     )
 }
 
 fn trace_child(archive: ArchiveVersion, reference: &[u8]) -> Vec<u8> {
     let mut trace_body = vec![0x14];
-    trace_body.extend(support::test_dump::utf16_bytes("trace-witness.png"));
+    trace_body.extend(crate::test_support::test_dump::utf16_bytes(
+        "trace-witness.png",
+    ));
     trace_body.extend(42.0_f64.to_le_bytes());
     trace_body.extend(24.0_f64.to_le_bytes());
     for point in [
@@ -188,7 +201,7 @@ fn trace_child(archive: ArchiveVersion, reference: &[u8]) -> Vec<u8> {
     let reference_start = trace_body.len();
     trace_body.extend(reference);
     let trace_reference_range = reference_start..trace_body.len();
-    let trace = support::test_dump::crc_chunk_excluding(
+    let trace = crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x2000_863b,
         &trace_body,
@@ -203,12 +216,14 @@ fn trace_view(archive: ArchiveVersion, reference: &[u8]) -> Vec<u8> {
 
 fn wallpaper_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
     let mut wallpaper_body = vec![0x12];
-    wallpaper_body.extend(support::test_dump::utf16_bytes("wallpaper-witness.png"));
+    wallpaper_body.extend(crate::test_support::test_dump::utf16_bytes(
+        "wallpaper-witness.png",
+    ));
     wallpaper_body.extend([1, 0]);
     let reference_start = wallpaper_body.len();
     wallpaper_body.extend(reference);
     let reference_range = reference_start..wallpaper_body.len();
-    let wallpaper = support::test_dump::crc_chunk_excluding(
+    let wallpaper = crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x2000_874b,
         &wallpaper_body,
@@ -225,12 +240,12 @@ fn view_list_record(archive: ArchiveVersion, typecode: u32, views: &[Vec<u8>]) -
         list_body.extend(view);
         view_ranges.push(start..list_body.len());
     }
-    support::test_dump::crc_chunk_excluding(archive, typecode, &list_body, &view_ranges)
+    crate::test_support::test_dump::crc_chunk_excluding(archive, typecode, &list_body, &view_ranges)
 }
 
 fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: bool) -> Vec<u8> {
     let mut reference =
-        support::test_dump::file_reference(archive, "/trace/source.png", "source.png");
+        crate::test_support::test_dump::file_reference(archive, "/trace/source.png", "source.png");
     if corrupt_reference {
         let last = reference.len() - 1;
         reference[last] ^= 1;
@@ -239,16 +254,19 @@ fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: boo
 }
 
 fn document_with_views(archive: ArchiveVersion, views: Vec<u8>) -> Vec<u8> {
-    support::test_dump::minimal_document(
+    crate::test_support::test_dump::minimal_document(
         &archive.value().to_string(),
         &[
-            support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(
                 archive,
                 0x1000_0015,
-                &[support::test_dump::units_record(archive, 2), views],
+                &[
+                    crate::test_support::test_dump::units_record(archive, 2),
+                    views,
+                ],
             ),
-            support::test_dump::table(archive, 0x1000_0013, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     )
 }
@@ -278,19 +296,19 @@ fn ambiguous_fixture_source_offsets_are_rejected() {
 fn viewport_userdata_future_payload_retains_typed_view_list_record() {
     let archive = ArchiveVersion::V8;
     let named_views = named_views_record(archive);
-    let bytes = support::test_dump::minimal_document(
+    let bytes = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(
                 archive,
                 0x1000_0015,
                 &[
-                    support::test_dump::units_record(archive, 2),
+                    crate::test_support::test_dump::units_record(archive, 2),
                     named_views.clone(),
                 ],
             ),
-            support::test_dump::table(archive, 0x1000_0013, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
     let result = decode(bytes);
@@ -318,21 +336,22 @@ fn viewport_userdata_future_payload_retains_typed_view_list_record() {
 #[test]
 fn malformed_viewport_userdata_retains_typed_view_list_record() {
     let archive = ArchiveVersion::V8;
-    let malformed_userdata = support::test_dump::crc_chunk(archive, 0x2000_8d3b, &[0xde, 0xad]);
+    let malformed_userdata =
+        crate::test_support::test_dump::crc_chunk(archive, 0x2000_8d3b, &[0xde, 0xad]);
     let named_views = named_views_record_with_userdata(archive, malformed_userdata);
-    let bytes = support::test_dump::minimal_document(
+    let bytes = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(
                 archive,
                 0x1000_0015,
                 &[
-                    support::test_dump::units_record(archive, 2),
+                    crate::test_support::test_dump::units_record(archive, 2),
                     named_views.clone(),
                 ],
             ),
-            support::test_dump::table(archive, 0x1000_0013, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
     let result = decode(bytes);
@@ -363,18 +382,18 @@ fn view_list_with_native_or_unavailable_units_is_retained_without_scale_one() {
     for unit in [Some(0), Some(255), None] {
         let named_views = named_views_record(archive);
         let settings = unit
-            .map(|value| vec![support::test_dump::units_record(archive, value)])
+            .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
             .unwrap_or_default();
-        let bytes = support::test_dump::minimal_document(
+        let bytes = crate::test_support::test_dump::minimal_document(
             "80",
             &[
-                support::test_dump::table(archive, 0x1000_0014, &[]),
-                support::test_dump::table(
+                crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+                crate::test_support::test_dump::table(
                     archive,
                     0x1000_0015,
                     &[settings, vec![named_views.clone()]].concat(),
                 ),
-                support::test_dump::table(archive, 0x1000_0013, &[]),
+                crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
             ],
         );
         let result = decode(bytes);
@@ -414,16 +433,19 @@ fn complete_decode_propagates_nested_view_file_reference_crc_loss() {
     let valid = named_views_record_with_trace(archive, false);
     let invalid = named_views_record_with_trace(archive, true);
     let document = |named_views: Vec<u8>| {
-        support::test_dump::minimal_document(
+        crate::test_support::test_dump::minimal_document(
             "80",
             &[
-                support::test_dump::table(archive, 0x1000_0014, &[]),
-                support::test_dump::table(
+                crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+                crate::test_support::test_dump::table(
                     archive,
                     0x1000_0015,
-                    &[support::test_dump::units_record(archive, 2), named_views],
+                    &[
+                        crate::test_support::test_dump::units_record(archive, 2),
+                        named_views,
+                    ],
                 ),
-                support::test_dump::table(archive, 0x1000_0013, &[]),
+                crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
             ],
         )
     };
@@ -484,7 +506,7 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
     let archive = ArchiveVersion::V8;
     let malformed = trace_view(
         archive,
-        &support::test_dump::file_reference_with_digest_warning_and_missing_second_digest(
+        &crate::test_support::test_dump::file_reference_with_digest_warning_and_missing_second_digest(
             archive,
             "/trace/malformed.png",
             "malformed.png",
@@ -492,22 +514,22 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
     );
     let valid = trace_view(
         archive,
-        &support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
+        &crate::test_support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
     );
     let named_views = view_list_record(archive, 0x2000_8036, &[malformed, valid]);
-    let bytes = support::test_dump::minimal_document(
+    let bytes = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(
                 archive,
                 0x1000_0015,
                 &[
-                    support::test_dump::units_record(archive, 2),
+                    crate::test_support::test_dump::units_record(archive, 2),
                     named_views.clone(),
                 ],
             ),
-            support::test_dump::table(archive, 0x1000_0013, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
 
@@ -556,7 +578,7 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
     let archive = ArchiveVersion::V8;
     let malformed = wallpaper_view(
         archive,
-        support::test_dump::file_reference_with_digest_warning_and_missing_second_digest(
+        crate::test_support::test_dump::file_reference_with_digest_warning_and_missing_second_digest(
             archive,
             "/wallpaper/malformed.png",
             "malformed.png",
@@ -564,22 +586,22 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
     );
     let valid = trace_view(
         archive,
-        &support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
+        &crate::test_support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
     );
     let named_views = view_list_record(archive, 0x2000_8036, &[malformed, valid]);
-    let bytes = support::test_dump::minimal_document(
+    let bytes = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(
                 archive,
                 0x1000_0015,
                 &[
-                    support::test_dump::units_record(archive, 2),
+                    crate::test_support::test_dump::units_record(archive, 2),
                     named_views.clone(),
                 ],
             ),
-            support::test_dump::table(archive, 0x1000_0013, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
 
@@ -626,14 +648,18 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
 #[test]
 fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fails() {
     let archive = ArchiveVersion::V8;
-    let mut corrupt_reference =
-        support::test_dump::file_reference(archive, "/trace/prior-crc.png", "prior-crc.png");
+    let mut corrupt_reference = crate::test_support::test_dump::file_reference(
+        archive,
+        "/trace/prior-crc.png",
+        "prior-crc.png",
+    );
     let reference_crc = corrupt_reference
         .last_mut()
         .expect("file-reference fixture has an outer checksum");
     *reference_crc ^= 1;
     let trace = trace_child(archive, &corrupt_reference);
-    let mut malformed_target = support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
+    let mut malformed_target =
+        crate::test_support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
     let target_crc = malformed_target
         .last_mut()
         .expect("malformed target has an outer checksum");
@@ -641,7 +667,7 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
     let malformed_view = view_with_children(
         archive,
         &[trace, malformed_target.clone()],
-        Some(support::test_dump::short_chunk(
+        Some(crate::test_support::test_dump::short_chunk(
             archive,
             crate::chunks::TCODE_ENDOFTABLE,
             0,
@@ -649,7 +675,7 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
     );
     let valid_view = trace_view(
         archive,
-        &support::test_dump::file_reference(archive, "/trace/later.png", "later.png"),
+        &crate::test_support::test_dump::file_reference(archive, "/trace/later.png", "later.png"),
     );
     let named_views = view_list_record(archive, 0x2000_8036, &[malformed_view.clone(), valid_view]);
     let document = document_with_views(archive, named_views.clone());
@@ -755,17 +781,26 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
 fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
     let archive = ArchiveVersion::V8;
     for has_invalid_end_marker in [true, false] {
-        let malformed_viewport = support::test_dump::crc_chunk(archive, 0x2000_823b, &[0]);
+        let malformed_viewport =
+            crate::test_support::test_dump::crc_chunk(archive, 0x2000_823b, &[0]);
         let malformed_view = view_with_children(
             archive,
             std::slice::from_ref(&malformed_viewport),
             has_invalid_end_marker.then(|| {
-                support::test_dump::short_chunk(archive, crate::chunks::TCODE_ENDOFTABLE, 1)
+                crate::test_support::test_dump::short_chunk(
+                    archive,
+                    crate::chunks::TCODE_ENDOFTABLE,
+                    1,
+                )
             }),
         );
         let valid_view = trace_view(
             archive,
-            &support::test_dump::file_reference(archive, "/trace/recovered.png", "recovered.png"),
+            &crate::test_support::test_dump::file_reference(
+                archive,
+                "/trace/recovered.png",
+                "recovered.png",
+            ),
         );
         let named_views =
             view_list_record(archive, 0x2000_8036, &[malformed_view.clone(), valid_view]);
@@ -861,7 +896,7 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
     let malformed_view = view_with_child(archive, malformed_userdata.clone());
     let valid_view = trace_view(
         archive,
-        &support::test_dump::file_reference(
+        &crate::test_support::test_dump::file_reference(
             archive,
             "/trace/userdata-later.png",
             "userdata-later.png",
@@ -942,21 +977,25 @@ fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view
 #[test]
 fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
     for archive in [ArchiveVersion::V5, ArchiveVersion::V8] {
-        let mut reference = support::test_dump::file_reference(
+        let mut reference = crate::test_support::test_dump::file_reference(
             archive,
             "/trace/active-corrupt.png",
             "active-corrupt.png",
         );
         *reference.last_mut().expect("reference checksum") ^= 1;
-        let bad_target = support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
+        let bad_target = crate::test_support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
         let rejected = view_with_children(
             archive,
             &[trace_child(archive, &reference), bad_target],
-            Some(support::test_dump::short_chunk(archive, 0xffff_ffff, 0)),
+            Some(crate::test_support::test_dump::short_chunk(
+                archive,
+                0xffff_ffff,
+                0,
+            )),
         );
         let later = trace_view(
             archive,
-            &support::test_dump::file_reference(
+            &crate::test_support::test_dump::file_reference(
                 archive,
                 "/trace/active-later.png",
                 "active-later.png",

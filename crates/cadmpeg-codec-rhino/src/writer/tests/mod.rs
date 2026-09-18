@@ -70,9 +70,14 @@ pub(super) fn polygon_sheet(points: &[Point3]) -> CadIr {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::*;
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+        VertexId,
+    };
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::topology::*;
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    };
 
     let mut ir = CadIr::empty();
     let body: BodyId = "cadir:model:body#polygon"
@@ -218,9 +223,9 @@ pub(super) fn polygon_sheet(points: &[Point3]) -> CadIr {
 
 fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
-    use cadmpeg_ir::ids::*;
+    use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId, PointId, VertexId};
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::topology::*;
+    use cadmpeg_ir::topology::{Coedge, Edge, Loop, Point, Sense, Vertex};
 
     let base = ir.model.edges.len();
     let face = ir.model.faces[0].id.clone();
@@ -329,9 +334,14 @@ pub(super) fn adjacent_quad_sheet() -> CadIr {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::*;
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+        VertexId,
+    };
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::topology::*;
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    };
 
     let mut ir = CadIr::empty();
     let body: BodyId = "cadir:model:body#adjacent"
@@ -536,9 +546,14 @@ fn planar_tetrahedron() -> CadIr {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::*;
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+        VertexId,
+    };
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::topology::*;
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    };
 
     let mut ir = CadIr::empty();
     let body: BodyId = "cadir:model:body#tetrahedron"

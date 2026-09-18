@@ -2,7 +2,7 @@
 //! Recovery of an archive word no registry row declares.
 
 use super::{assert_valid, decode};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 
 #[test]
 fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission() {

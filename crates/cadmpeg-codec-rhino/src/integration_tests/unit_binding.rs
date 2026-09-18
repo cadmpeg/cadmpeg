@@ -3,21 +3,25 @@ use super::*;
 
 fn unit_binding_document(unit: Option<i32>) -> (Vec<u8>, Vec<u8>) {
     let archive = ArchiveVersion::V8;
-    let object = support::test_dump::object_record_with_payload(
+    let object = crate::test_support::test_dump::object_record_with_payload(
         archive,
         1,
-        support::test_dump::POINT_CLASS,
-        &support::test_dump::point_payload([1.0, 2.0, 3.0]),
+        crate::test_support::test_dump::POINT_CLASS,
+        &crate::test_support::test_dump::point_payload([1.0, 2.0, 3.0]),
     );
     let settings = unit
-        .map(|value| vec![support::test_dump::units_record(archive, value)])
+        .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
         .unwrap_or_default();
-    let bytes = support::test_dump::minimal_document(
+    let bytes = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(archive, 0x1000_0015, &settings),
-            support::test_dump::table(archive, 0x1000_0013, std::slice::from_ref(&object)),
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &settings),
+            crate::test_support::test_dump::table(
+                archive,
+                0x1000_0013,
+                std::slice::from_ref(&object),
+            ),
         ],
     );
     (bytes, object)
@@ -66,7 +70,7 @@ fn presentation_tables_retain_unit_dependent_records_without_binding() {
     let archive = ArchiveVersion::V8;
     for unit in [Some(0), Some(255), None] {
         let settings = unit
-            .map(|value| vec![support::test_dump::units_record(archive, value)])
+            .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
             .unwrap_or_default();
         let table_specs = [
             (0x1000_0023, 0x2000_8078),
@@ -76,34 +80,36 @@ fn presentation_tables_retain_unit_dependent_records_without_binding() {
         ];
         let records = table_specs
             .iter()
-            .map(|(_, typecode)| support::test_dump::crc_chunk(archive, *typecode, &[0xde, 0xad]))
+            .map(|(_, typecode)| {
+                crate::test_support::test_dump::crc_chunk(archive, *typecode, &[0xde, 0xad])
+            })
             .collect::<Vec<_>>();
-        let bytes = support::test_dump::minimal_document(
+        let bytes = crate::test_support::test_dump::minimal_document(
             "80",
             &[
-                support::test_dump::table(archive, 0x1000_0014, &[]),
-                support::test_dump::table(archive, 0x1000_0015, &settings),
-                support::test_dump::table(
+                crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+                crate::test_support::test_dump::table(archive, 0x1000_0015, &settings),
+                crate::test_support::test_dump::table(
                     archive,
                     table_specs[0].0,
                     std::slice::from_ref(&records[0]),
                 ),
-                support::test_dump::table(
+                crate::test_support::test_dump::table(
                     archive,
                     table_specs[1].0,
                     std::slice::from_ref(&records[1]),
                 ),
-                support::test_dump::table(
+                crate::test_support::test_dump::table(
                     archive,
                     table_specs[2].0,
                     std::slice::from_ref(&records[2]),
                 ),
-                support::test_dump::table(
+                crate::test_support::test_dump::table(
                     archive,
                     table_specs[3].0,
                     std::slice::from_ref(&records[3]),
                 ),
-                support::test_dump::table(archive, 0x1000_0013, &[]),
+                crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
             ],
         );
         let result = decode(bytes);

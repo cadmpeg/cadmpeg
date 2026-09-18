@@ -3,7 +3,7 @@
 
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 use crate::wire::Uuid;
 
 const POINT_OBJECT_TYPE: i64 = 1;
@@ -18,7 +18,7 @@ const UNKNOWN_APPLICATION: Uuid = Uuid::from_canonical([
 ]);
 
 fn unknown_userdata(archive: ArchiveVersion) -> Vec<u8> {
-    let payload = support::test_dump::crc_chunk(
+    let payload = crate::test_support::test_dump::crc_chunk(
         archive,
         0x4000_8000,
         &[
@@ -28,7 +28,7 @@ fn unknown_userdata(archive: ArchiveVersion) -> Vec<u8> {
         ]
         .concat(),
     );
-    support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
         archive,
         UNKNOWN_CLASS.to_wire(),
         UNKNOWN_ITEM.to_wire(),
@@ -40,33 +40,34 @@ fn unknown_userdata(archive: ArchiveVersion) -> Vec<u8> {
 }
 
 fn future_userdata(archive: ArchiveVersion) -> Vec<u8> {
-    support::test_dump::crc_chunk(archive, 0x0002_7ffd, &[0x30, 0, 0xde, 0xad])
+    crate::test_support::test_dump::crc_chunk(archive, 0x0002_7ffd, &[0x30, 0, 0xde, 0xad])
 }
 
 fn point_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
-    let object_type = support::test_dump::short_chunk(archive, 0x8200_0071, POINT_OBJECT_TYPE);
-    let class_uuid = support::test_dump::long_chunk(
+    let object_type =
+        crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, POINT_OBJECT_TYPE);
+    let class_uuid = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_fffb,
         &[
-            support::test_dump::POINT_CLASS.as_slice(),
-            &crc32fast::hash(&support::test_dump::POINT_CLASS).to_le_bytes(),
+            crate::test_support::test_dump::POINT_CLASS.as_slice(),
+            &crc32fast::hash(&crate::test_support::test_dump::POINT_CLASS).to_le_bytes(),
         ]
         .concat(),
     );
-    let class_data = support::test_dump::crc_chunk(
+    let class_data = crate::test_support::test_dump::crc_chunk(
         archive,
         0x0002_fffc,
         &support::point_payload([1.0, 2.0, 3.0]),
     );
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
-    let class = support::test_dump::long_chunk(
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_7ffa,
         &[class_uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
-    let object_end = support::test_dump::short_chunk(archive, 0x8200_007f, 0);
-    support::test_dump::nested_crc_chunk(
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    crate::test_support::test_dump::nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class, object_end].concat(),

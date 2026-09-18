@@ -3,7 +3,7 @@
 
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 
 const HATCH_OBJECT_TYPE: i64 = 0x0001_0000;
 const GRADIENT_APPLICATION: [u8; 16] = [
@@ -12,7 +12,7 @@ const GRADIENT_APPLICATION: [u8; 16] = [
 
 fn gradient_payload(archive: ArchiveVersion, major: i32) -> Vec<u8> {
     if major != 1 {
-        return support::test_dump::crc_chunk(
+        return crate::test_support::test_dump::crc_chunk(
             archive,
             0x4000_8000,
             &[
@@ -24,7 +24,7 @@ fn gradient_payload(archive: ArchiveVersion, major: i32) -> Vec<u8> {
         );
     }
 
-    let first_stop = support::test_dump::anonymous_chunk(
+    let first_stop = crate::test_support::test_dump::anonymous_chunk(
         archive,
         0,
         &[
@@ -33,7 +33,7 @@ fn gradient_payload(archive: ArchiveVersion, major: i32) -> Vec<u8> {
         ]
         .concat(),
     );
-    let second_stop = support::test_dump::anonymous_chunk(
+    let second_stop = crate::test_support::test_dump::anonymous_chunk(
         archive,
         0,
         &[
@@ -55,28 +55,29 @@ fn gradient_payload(archive: ArchiveVersion, major: i32) -> Vec<u8> {
     body.extend(2_i32.to_le_bytes());
     body.extend(first_stop);
     body.extend(second_stop);
-    support::test_dump::anonymous_chunk(archive, 0, &body)
+    crate::test_support::test_dump::anonymous_chunk(archive, 0, &body)
 }
 
 fn hatch_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
-    let object_type = support::test_dump::short_chunk(archive, 0x8200_0071, HATCH_OBJECT_TYPE);
+    let object_type =
+        crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, HATCH_OBJECT_TYPE);
     let class_uuid = crate::hatch::CLASS.to_wire();
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
-    let class_uuid = support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data = support::test_dump::crc_chunk(
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(
         archive,
         0x0002_fffc,
         &crate::hatch::tests::version_two_hatch_payload(),
     );
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
-    let class = support::test_dump::long_chunk(
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_7ffa,
         &[class_uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
-    let object_end = support::test_dump::short_chunk(archive, 0x8200_007f, 0);
-    support::test_dump::nested_crc_chunk(
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    crate::test_support::test_dump::nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class, object_end].concat(),
@@ -89,7 +90,7 @@ fn gradient_userdata(archive: ArchiveVersion, major: i32) -> Vec<u8> {
 }
 
 fn gradient_userdata_with_payload(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
-    support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
         archive,
         crate::hatch::GRADIENT_COLOR_DATA.to_wire(),
         crate::hatch::GRADIENT_COLOR_DATA.to_wire(),
@@ -163,7 +164,8 @@ fn future_gradient_userdata_retains_typed_hatch_and_complete_object_record() {
 #[test]
 fn malformed_gradient_userdata_retains_typed_hatch_and_complete_object_record() {
     let archive = ArchiveVersion::V8;
-    let malformed = support::test_dump::anonymous_chunk(archive, 0, &5_i32.to_le_bytes());
+    let malformed =
+        crate::test_support::test_dump::anonymous_chunk(archive, 0, &5_i32.to_le_bytes());
     let hatch = hatch_record(
         archive,
         &gradient_userdata_with_payload(archive, &malformed),

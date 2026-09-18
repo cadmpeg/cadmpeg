@@ -4,7 +4,7 @@
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
 use crate::mesh_modifiers;
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 use crate::wire::Uuid;
 
 const MODIFIER_XML: [(&str, &str); 5] = [
@@ -51,37 +51,37 @@ fn warning_label(label: &str) -> &str {
 }
 
 fn object_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
-    let object_type = support::test_dump::short_chunk(archive, 0x8200_0071, 1);
-    let mut uuid_body = support::test_dump::POINT_CLASS.to_vec();
-    uuid_body.extend(crc32fast::hash(&support::test_dump::POINT_CLASS).to_le_bytes());
-    let class_uuid = support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data = support::test_dump::crc_chunk(
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 1);
+    let mut uuid_body = crate::test_support::test_dump::POINT_CLASS.to_vec();
+    uuid_body.extend(crc32fast::hash(&crate::test_support::test_dump::POINT_CLASS).to_le_bytes());
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(
         archive,
         0x0002_fffc,
         &support::point_payload([1.25, -2.5, 3.75]),
     );
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
-    let class = support::test_dump::long_chunk(
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_7ffa,
         &[class_uuid, class_data, class_end].concat(),
     );
-    let attributes = support::test_dump::crc_chunk(
+    let attributes = crate::test_support::test_dump::crc_chunk(
         archive,
         0x0200_8072,
-        &support::test_dump::tagged_attributes(&[], 0),
+        &crate::test_support::test_dump::tagged_attributes(&[], 0),
     );
-    let attribute_userdata = support::test_dump::long_chunk(
+    let attribute_userdata = crate::test_support::test_dump::long_chunk(
         archive,
         0x0200_0073,
         &[
             userdata,
-            &support::test_dump::short_chunk(archive, 0x8002_7fff, 0),
+            &crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0),
         ]
         .concat(),
     );
-    let object_end = support::test_dump::short_chunk(archive, 0x8200_007f, 0);
-    support::test_dump::nested_crc_chunk(
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    crate::test_support::test_dump::nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[
@@ -107,7 +107,7 @@ fn xml_payload(version: i32, xml: &str) -> Vec<u8> {
 
 fn modifier_userdata(archive: ArchiveVersion, label: &str, version: i32, xml: &str) -> Vec<u8> {
     let (class, item) = modifier_ids(label);
-    support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
         archive,
         class.to_wire(),
         item.to_wire(),

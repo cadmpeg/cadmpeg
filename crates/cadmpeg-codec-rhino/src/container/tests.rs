@@ -9,7 +9,11 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::IR_VERSION;
 
 use crate::chunks::{parse_header, ArchiveVersion, FramingError, TCODE_ENDOFTABLE};
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{
+    anonymous_chunk, crc_chunk, crc_chunk_excluding, crc_table, header, long_chunk,
+    minimal_document, object_record, object_record_with_payload, point_payload, short_chunk, table,
+    POINT_CLASS,
+};
 use crate::RhinoCodec;
 
 #[test]

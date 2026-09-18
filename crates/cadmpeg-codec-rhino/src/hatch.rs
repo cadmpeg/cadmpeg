@@ -532,7 +532,7 @@ fn parse_userdata(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::test_support::{class_wrapper, polyline_payload, POLYLINE_CLASS};
+    use crate::test_support::test_archive::{class_wrapper, polyline_payload, POLYLINE_CLASS};
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
     fn plane_bytes() -> Vec<u8> {

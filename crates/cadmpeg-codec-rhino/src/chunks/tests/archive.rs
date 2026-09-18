@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 
 use crate::layout::compressed_buffer_prologue as compressed;
 use crate::layout::long_chunk_header_wide as long_wide;
-use crate::test_support::{
+use crate::test_support::test_archive::{
     arc_payload, archive, archive_unit, archive_version, archive_writer, brep_payload,
     line_payload, mesh_payload, object_record, point_cloud_payload, point_payload,
     polycurve_payload, polyline_payload, singular_seam_brep_payload, ARC_CLASS, BREP_CLASS,

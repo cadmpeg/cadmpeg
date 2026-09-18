@@ -4,7 +4,6 @@
 use super::{assert_valid, decode};
 use crate::chunks::ArchiveVersion;
 use crate::settings::LAYER_EXTENSIONS;
-use crate::test_support as support;
 use crate::wire::Uuid;
 
 const LAYER_CLASS: [u8; 16] = [
@@ -18,8 +17,11 @@ const OBSOLETE_LAYER_SETTINGS: Uuid = Uuid::from_canonical([
 ]);
 
 fn layer_payload(archive: ArchiveVersion) -> Vec<u8> {
-    let rendering =
-        support::test_dump::crc_chunk(archive, 0x4000_8000, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let rendering = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    );
     layer_payload_with(&rendering, &[0])
 }
 
@@ -39,7 +41,7 @@ fn layer_payload_with_id(rendering: &[u8], extension_items: &[u8], id: [u8; 16])
     payload.extend(0_i16.to_le_bytes());
     payload.extend(0.0_f64.to_le_bytes());
     payload.extend(1.0_f64.to_le_bytes());
-    payload.extend(support::test_dump::utf16_bytes("layer-witness"));
+    payload.extend(crate::test_support::test_dump::utf16_bytes("layer-witness"));
     payload.push(1);
     payload.extend((-1_i32).to_le_bytes());
     payload.extend([40, 50, 60, 255]);
@@ -60,7 +62,7 @@ fn layer_userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
         0xd4,
     ])
     .to_wire();
-    support::test_dump::class_userdata_v2_with_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         LAYER_EXTENSIONS.to_wire(),
         application,
@@ -71,7 +73,7 @@ fn layer_userdata(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
 }
 
 fn obsolete_layer_userdata(archive: ArchiveVersion, class_uuid: Uuid, major: i32) -> Vec<u8> {
-    let payload = support::test_dump::crc_chunk(
+    let payload = crate::test_support::test_dump::crc_chunk(
         archive,
         0x4000_8000,
         &[
@@ -81,7 +83,7 @@ fn obsolete_layer_userdata(archive: ArchiveVersion, class_uuid: Uuid, major: i32
         ]
         .concat(),
     );
-    support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
         archive,
         class_uuid.to_wire(),
         class_uuid.to_wire(),
@@ -93,7 +95,7 @@ fn obsolete_layer_userdata(archive: ArchiveVersion, class_uuid: Uuid, major: i32
 }
 
 fn malformed_obsolete_layer_userdata(archive: ArchiveVersion, class_uuid: Uuid) -> Vec<u8> {
-    support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
         archive,
         class_uuid.to_wire(),
         class_uuid.to_wire(),
@@ -109,27 +111,40 @@ fn layer_record(archive: ArchiveVersion, userdata_payload: &[u8]) -> Vec<u8> {
 }
 
 fn layer_record_with_userdata(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
-    let class = support::test_dump::class_wrapper_with_userdata(
+    let class = crate::test_support::test_dump::class_wrapper_with_userdata(
         archive,
         LAYER_CLASS,
         &layer_payload(archive),
         userdata,
     );
     #[allow(clippy::single_range_in_vec_init)] // The class wrapper is one checksum child.
-    support::test_dump::crc_chunk_excluding(archive, 0x2000_8050, &class, &[0..class.len()])
+    crate::test_support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_8050,
+        &class,
+        &[0..class.len()],
+    )
 }
 
 fn layer_record_with_id(archive: ArchiveVersion, id: [u8; 16]) -> Vec<u8> {
-    let rendering =
-        support::test_dump::crc_chunk(archive, 0x4000_8000, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let class = support::test_dump::class_wrapper_with_userdata(
+    let rendering = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    );
+    let class = crate::test_support::test_dump::class_wrapper_with_userdata(
         archive,
         LAYER_CLASS,
         &layer_payload_with_id(&rendering, &[0], id),
         &[],
     );
     #[allow(clippy::single_range_in_vec_init)] // The class wrapper is one checksum child.
-    support::test_dump::crc_chunk_excluding(archive, 0x2000_8050, &class, &[0..class.len()])
+    crate::test_support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_8050,
+        &class,
+        &[0..class.len()],
+    )
 }
 
 fn layer_record_with_rendering_and_extensions(
@@ -137,14 +152,19 @@ fn layer_record_with_rendering_and_extensions(
     rendering: &[u8],
     extension_items: &[u8],
 ) -> Vec<u8> {
-    let class = support::test_dump::class_wrapper_with_userdata(
+    let class = crate::test_support::test_dump::class_wrapper_with_userdata(
         archive,
         LAYER_CLASS,
         &layer_payload_with(rendering, extension_items),
         &[],
     );
     #[allow(clippy::single_range_in_vec_init)] // The class wrapper is one checksum child.
-    support::test_dump::crc_chunk_excluding(archive, 0x2000_8050, &class, &[0..class.len()])
+    crate::test_support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_8050,
+        &class,
+        &[0..class.len()],
+    )
 }
 
 fn obsolete_mapping_rendering(archive: ArchiveVersion, mapping_major: i32) -> Vec<u8> {
@@ -166,7 +186,7 @@ fn obsolete_mapping_rendering_with_version(
     let mut channel_payload = mapping_major.to_le_bytes().to_vec();
     channel_payload.extend(mapping_minor.to_le_bytes());
     channel_payload.extend(channel_body);
-    let channel = support::test_dump::crc_chunk(archive, 0x4000_8000, &channel_payload);
+    let channel = crate::test_support::test_dump::crc_chunk(archive, 0x4000_8000, &channel_payload);
 
     let mut material_body = vec![1, 0, 0, 0, 0, 0, 0, 0];
     material_body.extend([0x11; 16]);
@@ -175,7 +195,7 @@ fn obsolete_mapping_rendering_with_version(
     let channel_start = material_body.len();
     material_body.extend(channel);
     let channel_end = material_body.len();
-    let material = support::test_dump::crc_chunk_excluding(
+    let material = crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x4000_8000,
         &material_body,
@@ -187,7 +207,7 @@ fn obsolete_mapping_rendering_with_version(
     rendering_body.extend(material);
     let material_end = rendering_body.len();
     rendering_body.extend([0xaa, 0xbb]);
-    support::test_dump::crc_chunk_excluding(
+    crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x4000_8000,
         &rendering_body,
@@ -196,7 +216,7 @@ fn obsolete_mapping_rendering_with_version(
 }
 
 fn embedded_linetype(archive: ArchiveVersion, segment_tags: [u32; 2]) -> Vec<u8> {
-    let model_attributes = support::test_dump::crc_chunk(archive, 0x4000_8002, &[]);
+    let model_attributes = crate::test_support::test_dump::crc_chunk(archive, 0x4000_8002, &[]);
     let mut body = Vec::new();
     body.extend(2_i32.to_le_bytes());
     body.extend(4_i32.to_le_bytes());
@@ -207,7 +227,7 @@ fn embedded_linetype(archive: ArchiveVersion, segment_tags: [u32; 2]) -> Vec<u8>
         body.extend(tag.to_le_bytes());
     }
     body.push(0);
-    support::test_dump::crc_chunk_excluding(
+    crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x4000_8000,
         &body,
@@ -225,15 +245,21 @@ fn document_with_stamp(
     writer_version: Option<i64>,
 ) -> Vec<u8> {
     let properties: Vec<Vec<u8>> = writer_version
-        .map(|value| vec![support::test_dump::short_chunk(archive, 0xa000_0026, value)])
+        .map(|value| {
+            vec![crate::test_support::test_dump::short_chunk(
+                archive,
+                0xa000_0026,
+                value,
+            )]
+        })
         .unwrap_or_default();
-    support::test_dump::minimal_document(
+    crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(archive, 0x1000_0014, &properties),
-            support::test_dump::table(archive, 0x1000_0015, &[]),
-            support::test_dump::table(archive, 0x1000_0011, &[layer]),
-            support::test_dump::table(archive, 0x1000_0013, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &properties),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0011, &[layer]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     )
 }
@@ -281,7 +307,7 @@ fn assert_layer_record_retained(
 #[test]
 fn layer_userdata_future_payload_retains_complete_layer_record() {
     let archive = ArchiveVersion::V8;
-    let outer_payload = support::test_dump::crc_chunk(
+    let outer_payload = crate::test_support::test_dump::crc_chunk(
         archive,
         0x4000_8000,
         &[
@@ -435,8 +461,11 @@ fn complete_decode_keeps_nil_layer_uuid_absent_and_source_record() {
 #[test]
 fn complete_decode_admits_unset_and_future_embedded_linetype_tags() {
     let archive = ArchiveVersion::V8;
-    let rendering =
-        support::test_dump::crc_chunk(archive, 0x4000_8000, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let rendering = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x4000_8000,
+        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    );
     let linetype = embedded_linetype(archive, [u32::MAX, 7]);
     let extension = [vec![33], linetype, vec![0]].concat();
     let layer = layer_record_with_rendering_and_extensions(archive, &rendering, &extension);
@@ -512,18 +541,18 @@ fn duplicate_layer_indexes_keep_each_source_summary_entry() {
     let archive = ArchiveVersion::V8;
     let first = layer_record(archive, &[0xde, 0xad]);
     let second = layer_record(archive, &[0xde, 0xad]);
-    let properties = vec![support::test_dump::short_chunk(
+    let properties = vec![crate::test_support::test_dump::short_chunk(
         archive,
         0xa000_0026,
         202_608_010,
     )];
-    let bytes = support::test_dump::minimal_document(
+    let bytes = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(archive, 0x1000_0014, &properties),
-            support::test_dump::table(archive, 0x1000_0015, &[]),
-            support::test_dump::table(archive, 0x1000_0011, &[first, second]),
-            support::test_dump::table(archive, 0x1000_0013, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &properties),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0011, &[first, second]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
     let result = decode(bytes);

@@ -3,7 +3,7 @@
 
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 use crate::wire::Uuid;
 
 const HATCH_OBJECT_TYPE: i64 = 0x0001_0000;
@@ -25,7 +25,7 @@ fn anonymous_major(archive: ArchiveVersion, major: i32, body: &[u8]) -> Vec<u8> 
         body,
     ]
     .concat();
-    support::test_dump::crc_chunk(archive, 0x4000_8000, &payload)
+    crate::test_support::test_dump::crc_chunk(archive, 0x4000_8000, &payload)
 }
 
 fn hatch_extra_payload(archive: ArchiveVersion, major: i32, malformed: bool) -> Vec<u8> {
@@ -40,7 +40,7 @@ fn hatch_extra_payload(archive: ArchiveVersion, major: i32, malformed: bool) -> 
 }
 
 fn userdata(archive: ArchiveVersion, major: i32, malformed: bool) -> Vec<u8> {
-    support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
         archive,
         crate::hatch::V5_HATCH_EXTRA.to_wire(),
         crate::hatch::V5_HATCH_EXTRA.to_wire(),
@@ -52,21 +52,22 @@ fn userdata(archive: ArchiveVersion, major: i32, malformed: bool) -> Vec<u8> {
 }
 
 fn hatch_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
-    let object_type = support::test_dump::short_chunk(archive, 0x8200_0071, HATCH_OBJECT_TYPE);
+    let object_type =
+        crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, HATCH_OBJECT_TYPE);
     let class_uuid_wire = crate::hatch::CLASS.to_wire();
     let mut uuid_body = class_uuid_wire.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid_wire).to_le_bytes());
-    let class_uuid = support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
     let class_data =
-        support::test_dump::crc_chunk(archive, 0x0002_fffc, &legacy_v5_hatch_payload());
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
-    let class = support::test_dump::long_chunk(
+        crate::test_support::test_dump::crc_chunk(archive, 0x0002_fffc, &legacy_v5_hatch_payload());
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_7ffa,
         &[class_uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
-    let object_end = support::test_dump::short_chunk(archive, 0x8200_007f, 0);
-    support::test_dump::nested_crc_chunk(
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    crate::test_support::test_dump::nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class, object_end].concat(),
