@@ -5,6 +5,9 @@ use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
+use super::{
+    has_partial, named_parameter, record_values, references, source_numeric_id, RecordExt, ValueExt,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
@@ -594,7 +597,7 @@ pub(super) fn decode(
             &mut losses,
             0,
         );
-        let parameters = all_parameters(record).collect::<Vec<_>>();
+        let parameters = record_values(record).collect::<Vec<_>>();
         // Placement identity is the carrier key; the transform value cannot
         // make two source carriers one semantic carrier.
         let mut placement_candidates = BTreeMap::new();
@@ -826,7 +829,7 @@ fn resolve_geometric_item_usages(
                 .or_default()
                 .insert(annotation_index);
         }
-        for reference in all_parameters(record).flat_map(references) {
+        for reference in record_values(record).flat_map(references) {
             if shape_aspects.contains(&reference) {
                 aspect_annotations
                     .entry(reference)
@@ -999,12 +1002,6 @@ fn curve_sources(ir: &CadIr) -> BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>> {
     curves
 }
 
-fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
-    let suffix = identity.strip_prefix(&format!("step:data:{kind}#"))?;
-    let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
-    suffix.split('-').next()?.parse().ok()
-}
-
 fn datum_references(
     value: &Value,
     precedence: NonZeroU32,
@@ -1019,8 +1016,8 @@ fn datum_references(
     let Some(compartment) = exchange.records().get(&compartment_id) else {
         return Vec::new();
     };
-    if !is_datum_reference_partial(compartment, "DATUM_REFERENCE_COMPARTMENT")
-        && !is_datum_reference_partial(compartment, "DATUM_REFERENCE_ELEMENT")
+    if !has_partial(compartment, "DATUM_REFERENCE_COMPARTMENT")
+        && !has_partial(compartment, "DATUM_REFERENCE_ELEMENT")
     {
         return Vec::new();
     }
@@ -1047,7 +1044,7 @@ fn datum_references(
             .into_iter()
             .filter_map(|element_id| {
                 let element = exchange.records().get(&element_id)?;
-                if !is_datum_reference_partial(element, "DATUM_REFERENCE_ELEMENT") {
+                if !has_partial(element, "DATUM_REFERENCE_ELEMENT") {
                     return None;
                 }
                 let datum = datum_base(element).and_then(ValueExt::reference)?;
@@ -1085,10 +1082,6 @@ fn datum_references(
             }
         })
         .collect()
-}
-
-fn is_datum_reference_partial(record: &RawRecord, name: &str) -> bool {
-    record.partials.iter().any(|partial| partial.name == name)
 }
 
 fn datum_base(record: &RawRecord) -> Option<&Value> {
@@ -1200,13 +1193,6 @@ fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
     hidden
 }
 
-fn all_parameters(record: &RawRecord) -> impl Iterator<Item = &Value> {
-    record
-        .partials
-        .iter()
-        .flat_map(|partial| partial.parameters.iter())
-}
-
 fn collect_typed_placement_candidates(
     record: &RawRecord,
     geometry: &GeometryData,
@@ -1294,7 +1280,7 @@ fn collect_annotation_text(
             candidates.insert(id, text);
         }
     }
-    for reference in all_parameters(record).flat_map(references) {
+    for reference in record_values(record).flat_map(references) {
         collect_annotation_text(reference, exchange, visited, candidates, losses, depth + 1);
     }
 }
@@ -1323,7 +1309,7 @@ fn collect_placement_candidates(
     let Some(record) = exchange.records().get(&id) else {
         return;
     };
-    for reference in all_parameters(record).flat_map(references) {
+    for reference in record_values(record).flat_map(references) {
         collect_placement_candidates(
             reference,
             exchange,
@@ -1504,14 +1490,6 @@ fn is_shape_aspect_name(name: &str) -> bool {
     name == "SHAPE_ASPECT"
         || name.ends_with("_SHAPE_ASPECT")
         || SHAPE_ASPECT_SUBTYPE_NAMES.contains(&name)
-}
-
-fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
-    record
-        .partials
-        .iter()
-        .find(|partial| partial.name == name)
-        .and_then(|partial| partial.parameters.get(index))
 }
 
 fn shape_aspect_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
@@ -1965,79 +1943,6 @@ fn scalar_number(value: &Value) -> Option<f64> {
         Value::Real(value) => Some(*value),
         Value::Typed(_, value) => scalar_number(value),
         _ => None,
-    }
-}
-
-fn references(value: &Value) -> Vec<u64> {
-    match value {
-        Value::Reference(id) => vec![*id],
-        Value::List(values) => values.iter().flat_map(references).collect(),
-        Value::Typed(_, value) => references(value),
-        _ => Vec::new(),
-    }
-}
-
-trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn display_name(&self) -> String;
-    fn parameters(&self) -> &[Value];
-    fn parameter(&self, index: usize) -> Option<&Value>;
-}
-
-impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn display_name(&self) -> String {
-        self.partials
-            .iter()
-            .map(|partial| partial.name.as_str())
-            .collect::<Vec<_>>()
-            .join("+")
-    }
-    fn parameters(&self) -> &[Value] {
-        self.partials.first().parameters.as_slice()
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.parameters().get(index)
-    }
-}
-
-trait ValueExt {
-    fn number(&self) -> Option<f64>;
-    fn reference(&self) -> Option<u64>;
-    fn list(&self) -> Option<&[Value]>;
-    fn enumeration(&self) -> Option<&str>;
-}
-
-impl ValueExt for Value {
-    fn number(&self) -> Option<f64> {
-        match self {
-            Value::Integer(value) => Some(*value as f64),
-            Value::Real(value) => Some(*value),
-            _ => None,
-        }
-    }
-    fn reference(&self) -> Option<u64> {
-        if let Value::Reference(id) = self {
-            Some(*id)
-        } else {
-            None
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        if let Value::List(values) = self {
-            Some(values)
-        } else {
-            None
-        }
-    }
-    fn enumeration(&self) -> Option<&str> {
-        if let Value::Enumeration(value) = self {
-            Some(value)
-        } else {
-            None
-        }
     }
 }
 

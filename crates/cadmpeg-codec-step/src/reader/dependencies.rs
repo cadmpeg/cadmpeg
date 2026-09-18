@@ -10,6 +10,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 
 use super::decode_text;
 use super::StageOutcome;
+use super::{RecordExt, ValueExt};
 
 pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
     let mut losses = Vec::new();
@@ -165,30 +166,6 @@ fn document_note(identifier: &str, name: &str, source: &str) -> String {
         format!("external document {identity}")
     } else {
         format!("external document {identity} from {source}")
-    }
-}
-
-trait RecordExt {
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
-}
-
-impl RecordExt for RawRecord {
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
-        self.partials.iter().find(|partial| partial.name == name)
-    }
-}
-
-trait ValueExt {
-    fn reference(&self) -> Option<u64>;
-}
-
-impl ValueExt for Value {
-    fn reference(&self) -> Option<u64> {
-        if let Value::Reference(id) = self {
-            Some(*id)
-        } else {
-            None
-        }
     }
 }
 

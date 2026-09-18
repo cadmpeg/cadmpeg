@@ -13,6 +13,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::decode_text;
 use super::geometry::GeometryData;
 use super::StageOutcome;
+use super::{RecordExt, ValueExt};
 
 #[derive(Clone, Copy)]
 enum Expected {
@@ -441,43 +442,6 @@ fn collect_validation_references(
             collect_validation_references(value, validation_points, referenced);
         }
         _ => {}
-    }
-}
-
-trait RecordExt {
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
-}
-impl RecordExt for RawRecord {
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
-        self.partials.iter().find(|partial| partial.name == name)
-    }
-}
-trait ValueExt {
-    fn reference(&self) -> Option<u64>;
-    fn list(&self) -> Option<&[Value]>;
-    fn number(&self) -> Option<f64>;
-}
-impl ValueExt for Value {
-    fn reference(&self) -> Option<u64> {
-        if let Value::Reference(id) = self {
-            Some(*id)
-        } else {
-            None
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        if let Value::List(values) = self {
-            Some(values)
-        } else {
-            None
-        }
-    }
-    fn number(&self) -> Option<f64> {
-        match self {
-            Value::Integer(value) => Some(*value as f64),
-            Value::Real(value) => Some(*value),
-            _ => None,
-        }
     }
 }
 

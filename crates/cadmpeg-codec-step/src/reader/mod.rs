@@ -18,7 +18,7 @@ use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 use crate::dialect::StepDialect;
 use crate::ids;
 use crate::loss::StepLossCode;
-use crate::parse::{self, Exchange, ParseDiagnostic, Value};
+use crate::parse::{self, Exchange, ParseDiagnostic, RawRecord, Value};
 
 pub(crate) mod dependencies;
 mod drawing;
@@ -763,7 +763,7 @@ fn retain_unowned_carriers(
                 .filter(|surface| surface.source_object.is_none())
                 .map(|surface| surface.id.as_str()),
         )
-        .filter_map(step_id_from_ir)
+        .filter_map(step_instance_id)
         .filter(|id| exchange.records().contains_key(id) && !referenced.contains(id))
         .collect::<BTreeSet<_>>();
     associate_unowned_direct_carriers(ir, &unowned_direct_carriers);
@@ -829,7 +829,7 @@ fn retain_unowned_carriers(
                 .iter()
                 .map(|surface| surface.id.as_str()),
         )
-        .filter_map(step_id_from_ir)
+        .filter_map(step_instance_id)
     {
         roots.insert(identity);
     }
@@ -908,7 +908,7 @@ fn retain_unowned_carriers(
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
     for point in &mut ir.model.points {
-        let Some(id) = step_id_from_ir(point.id.as_str()) else {
+        let Some(id) = step_instance_id(point.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) && point.source_object.is_none() {
@@ -916,7 +916,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
         }
     }
     for curve in &mut ir.model.curves {
-        let Some(id) = step_id_from_ir(curve.id.as_str()) else {
+        let Some(id) = step_instance_id(curve.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) && curve.source_object.is_none() {
@@ -924,7 +924,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
         }
     }
     for surface in &mut ir.model.surfaces {
-        let Some(id) = step_id_from_ir(surface.id.as_str()) else {
+        let Some(id) = step_instance_id(surface.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) && surface.source_object.is_none() {
@@ -956,11 +956,12 @@ fn retains_carrier(
     removed_closure: &BTreeSet<u64>,
     protected: &BTreeSet<u64>,
 ) -> bool {
-    step_id_from_ir(identity)
+    step_instance_id(identity)
         .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
 }
 
-fn step_id_from_ir(identity: &str) -> Option<u64> {
+/// Extract the numeric STEP instance id from a canonical IR identity.
+fn step_instance_id(identity: &str) -> Option<u64> {
     identity.rsplit_once('#')?.1.parse().ok()
 }
 
@@ -1234,6 +1235,129 @@ fn collect_references(value: &Value, output: &mut BTreeSet<u64>) {
         Value::Typed(_, value) => collect_references(value, output),
         _ => {}
     }
+}
+
+/// Record accessors shared by the reader submodules.
+trait RecordExt {
+    fn simple_name(&self) -> Option<&str>;
+    fn display_name(&self) -> String;
+    fn parameters(&self) -> &[Value];
+    fn parameter(&self, index: usize) -> Option<&Value>;
+    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
+}
+
+impl RecordExt for RawRecord {
+    fn simple_name(&self) -> Option<&str> {
+        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
+    }
+    fn display_name(&self) -> String {
+        self.partials
+            .iter()
+            .map(|partial| partial.name.as_str())
+            .collect::<Vec<_>>()
+            .join("+")
+    }
+    fn parameters(&self) -> &[Value] {
+        self.partials.first().parameters.as_slice()
+    }
+    fn parameter(&self, index: usize) -> Option<&Value> {
+        self.partials.first().parameters.get(index)
+    }
+    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
+        self.partials.iter().find(|partial| partial.name == name)
+    }
+}
+
+/// Value accessors shared by the reader submodules.
+trait ValueExt {
+    fn number(&self) -> Option<f64>;
+    fn reference(&self) -> Option<u64>;
+    fn list(&self) -> Option<&[Value]>;
+    fn enumeration(&self) -> Option<&str>;
+    fn integer(&self) -> Option<i64>;
+    fn logical(&self) -> Option<bool>;
+}
+
+impl ValueExt for Value {
+    fn number(&self) -> Option<f64> {
+        match self {
+            Value::Real(value) => Some(*value),
+            Value::Integer(value) => Some(*value as f64),
+            _ => None,
+        }
+    }
+    fn reference(&self) -> Option<u64> {
+        if let Value::Reference(id) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+    fn list(&self) -> Option<&[Value]> {
+        if let Value::List(values) = self {
+            Some(values)
+        } else {
+            None
+        }
+    }
+    fn enumeration(&self) -> Option<&str> {
+        if let Value::Enumeration(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+    fn integer(&self) -> Option<i64> {
+        if let Value::Integer(value) = self {
+            Some(*value)
+        } else {
+            None
+        }
+    }
+    fn logical(&self) -> Option<bool> {
+        match self {
+            Value::Enumeration(value) if value == "T" => Some(true),
+            Value::Enumeration(value) if value == "F" => Some(false),
+            _ => None,
+        }
+    }
+}
+
+fn value_reference(value: &Value) -> Option<u64> {
+    match value {
+        Value::Reference(id) => Some(*id),
+        _ => None,
+    }
+}
+
+fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
+    record.partial(name)?.parameters.get(index)
+}
+
+fn has_partial(record: &RawRecord, name: &str) -> bool {
+    record.partials.iter().any(|partial| partial.name == name)
+}
+
+fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
+    record
+        .partials
+        .iter()
+        .flat_map(|partial| partial.parameters.iter())
+}
+
+fn references(value: &Value) -> Vec<u64> {
+    match value {
+        Value::Reference(id) => vec![*id],
+        Value::List(values) => values.iter().flat_map(references).collect(),
+        Value::Typed(_, value) => references(value),
+        _ => Vec::new(),
+    }
+}
+
+fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
+    let suffix = identity.strip_prefix(&format!("step:data:{kind}#"))?;
+    let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
+    suffix.split('-').next()?.parse().ok()
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use super::step_instance_id;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
 
@@ -75,9 +76,4 @@ impl CarrierIndex {
     pub(super) fn contains_key(&self, id: u64) -> bool {
         self.points.contains_key(&id)
     }
-}
-
-/// Extract the numeric STEP instance id from a canonical IR identity.
-pub(super) fn step_instance_id(identity: &str) -> Option<u64> {
-    identity.rsplit_once('#')?.1.parse().ok()
 }

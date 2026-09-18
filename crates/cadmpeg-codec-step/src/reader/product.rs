@@ -4,6 +4,7 @@
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
+use super::{named_parameter, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -1244,35 +1245,6 @@ fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
             Some(record.partials.first().parameters.as_slice())
         }
         _ => None,
-    }
-}
-
-fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
-    record.partial(name)?.parameters.get(index)
-}
-
-trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
-}
-impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
-        self.partials.iter().find(|partial| partial.name == name)
-    }
-}
-trait ValueExt {
-    fn reference(&self) -> Option<u64>;
-}
-impl ValueExt for Value {
-    fn reference(&self) -> Option<u64> {
-        if let Value::Reference(id) = self {
-            Some(*id)
-        } else {
-            None
-        }
     }
 }
 

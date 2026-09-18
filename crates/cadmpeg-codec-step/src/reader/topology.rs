@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
+use super::{has_partial, source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
@@ -109,7 +110,7 @@ pub(super) fn representation_bodies(
                 body_ids.extend(bodies.iter().cloned());
                 continue;
             }
-            if !has_type(record, "MAPPED_ITEM") {
+            if !has_partial(record, "MAPPED_ITEM") {
                 continue;
             }
             let Some(mapped_representation) = mapped_representation(record, exchange) else {
@@ -278,7 +279,7 @@ pub(super) fn decode(
                         exchange
                             .records()
                             .get(model)
-                            .is_some_and(|record| has_type(record, "EDGE_BASED_WIREFRAME_MODEL"))
+                            .is_some_and(|record| has_partial(record, "EDGE_BASED_WIREFRAME_MODEL"))
                     })
                     .map(move |model| (id, model))
                     .collect::<Vec<_>>()
@@ -642,12 +643,6 @@ pub(super) fn decode(
     }
     result.losses.append(&mut losses);
     result
-}
-
-fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
-    let suffix = identity.strip_prefix(&format!("step:data:{kind}#"))?;
-    let suffix = suffix.strip_prefix("poly-point-").unwrap_or(suffix);
-    suffix.split('-').next()?.parse().ok()
 }
 
 fn geometric_set_omissions(
@@ -1096,10 +1091,10 @@ fn build_shell_wire_set(
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
-    if has_type(shell_record, "WIRE_SHELL") {
+    if has_partial(shell_record, "WIRE_SHELL") {
         for loop_id in named_refs(shell_record, "WIRE_SHELL", 1)? {
             let loop_record = exchange.records().get(&loop_id)?;
-            if has_type(loop_record, "EDGE_LOOP") {
+            if has_partial(loop_record, "EDGE_LOOP") {
                 for oriented_id in named_refs(loop_record, "EDGE_LOOP", 1)? {
                     let oriented = exchange.records().get(&oriented_id)?;
                     let edge_id = oriented_edge_reference(oriented)?;
@@ -1112,7 +1107,7 @@ fn build_shell_wire_set(
                         typed.insert(parent);
                     }
                 }
-            } else if has_type(loop_record, "VERTEX_LOOP") {
+            } else if has_partial(loop_record, "VERTEX_LOOP") {
                 let vertex = named_reference(loop_record, "VERTEX_LOOP", 1, 0)?;
                 used_vertices.insert(vertex);
                 free_vertices.insert(vertex);
@@ -1121,10 +1116,10 @@ fn build_shell_wire_set(
                 return None;
             }
         }
-    } else if has_type(shell_record, "VERTEX_SHELL") {
+    } else if has_partial(shell_record, "VERTEX_SHELL") {
         let loop_id = named_reference(shell_record, "VERTEX_SHELL", 1, 0)?;
         let loop_record = exchange.records().get(&loop_id)?;
-        if !has_type(loop_record, "VERTEX_LOOP") {
+        if !has_partial(loop_record, "VERTEX_LOOP") {
             return None;
         }
         let vertex = named_reference(loop_record, "VERTEX_LOOP", 1, 0)?;
@@ -1915,10 +1910,10 @@ fn root_shell_steps(
     exchange: &Exchange,
     shell_definitions: &BTreeMap<u64, ShellDef>,
 ) -> Option<Vec<u64>> {
-    if has_type(root, "SHELL_BASED_SURFACE_MODEL") {
+    if has_partial(root, "SHELL_BASED_SURFACE_MODEL") {
         return named_refs(root, "SHELL_BASED_SURFACE_MODEL", 1);
     }
-    if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+    if has_partial(root, "FACE_BASED_SURFACE_MODEL") {
         let mut sets = Vec::new();
         for set_step in named_refs(root, "FACE_BASED_SURFACE_MODEL", 1)? {
             let set = exchange.records().get(&set_step)?;
@@ -1927,17 +1922,17 @@ fn root_shell_steps(
         }
         return Some(sets);
     }
-    if (has_type(root, "MANIFOLD_SOLID_BREP") || has_type(root, "FACETED_BREP"))
-        && !has_type(root, "BREP_WITH_VOIDS")
+    if (has_partial(root, "MANIFOLD_SOLID_BREP") || has_partial(root, "FACETED_BREP"))
+        && !has_partial(root, "BREP_WITH_VOIDS")
     {
-        let root_type = if has_type(root, "MANIFOLD_SOLID_BREP") {
+        let root_type = if has_partial(root, "MANIFOLD_SOLID_BREP") {
             "MANIFOLD_SOLID_BREP"
         } else {
             "FACETED_BREP"
         };
         return Some(vec![named_reference(root, root_type, 1, 0)?]);
     }
-    if has_type(root, "BREP_WITH_VOIDS") {
+    if has_partial(root, "BREP_WITH_VOIDS") {
         let mut ids = vec![named_reference(root, "MANIFOLD_SOLID_BREP", 1, 0)?];
         ids.extend(named_refs(root, "BREP_WITH_VOIDS", 2)?);
         // `voids` is a STEP SET. CADIR keeps the outer shell at index zero
@@ -1972,7 +1967,7 @@ fn root_key(
     let mut shell_keys = Vec::new();
     let mut resolved = 0;
     for shell in root_shell_steps(root, exchange, shell_definitions)? {
-        let key = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+        let key = if has_partial(root, "FACE_BASED_SURFACE_MODEL") {
             Some((shell, Some(true)))
         } else {
             shell_definitions
@@ -2022,9 +2017,9 @@ fn build(
             },
         };
     };
-    let solid = has_type(root, "MANIFOLD_SOLID_BREP")
-        || has_type(root, "BREP_WITH_VOIDS")
-        || has_type(root, "FACETED_BREP");
+    let solid = has_partial(root, "MANIFOLD_SOLID_BREP")
+        || has_partial(root, "BREP_WITH_VOIDS")
+        || has_partial(root, "FACETED_BREP");
     if solid {
         let body = BodyId::from(ids::data(kind!("body"), id));
         let region = RegionId::from(ids::data(kind!("region"), id));
@@ -2066,7 +2061,7 @@ fn build(
     let mut outcome = BuildOutcome::Built(Vec::new());
     for shell_reference in shell_steps {
         let mut failure = None;
-        let shell_step = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+        let shell_step = if has_partial(root, "FACE_BASED_SURFACE_MODEL") {
             shell_reference
         } else {
             match shell_definitions.get(&shell_reference) {
@@ -2144,9 +2139,9 @@ fn build_one(
     losses: &mut Vec<LossNote>,
     failure: &mut Option<BuildFailure>,
 ) -> Option<Built> {
-    let solid = has_type(root, "MANIFOLD_SOLID_BREP")
-        || has_type(root, "BREP_WITH_VOIDS")
-        || has_type(root, "FACETED_BREP");
+    let solid = has_partial(root, "MANIFOLD_SOLID_BREP")
+        || has_partial(root, "BREP_WITH_VOIDS")
+        || has_partial(root, "FACETED_BREP");
     let mut typed = HashSet::from([id]);
     let mut vertices = Vec::new();
     let mut edges = Vec::new();
@@ -2183,7 +2178,7 @@ fn build_one(
     let mut implicit_surface_ids = BTreeSet::new();
     let mut admissions = Vec::new();
     for &shell_reference in shell_steps {
-        let (shell_step, shell_forward) = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+        let (shell_step, shell_forward) = if has_partial(root, "FACE_BASED_SURFACE_MODEL") {
             typed.insert(shell_reference);
             (shell_reference, true)
         } else {
@@ -2203,7 +2198,7 @@ fn build_one(
             shell_step,
             CarrierKind::ShellRecord,
         )?;
-        let (shell_type, face_steps) = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+        let (shell_type, face_steps) = if has_partial(root, "FACE_BASED_SURFACE_MODEL") {
             let set_type = require_carrier(
                 connected_face_set_type(sr),
                 failure,
@@ -2270,7 +2265,7 @@ fn build_one(
                     exchange
                         .records()
                         .get(bound_step)
-                        .is_some_and(|bound| has_type(bound, "FACE_OUTER_BOUND"))
+                        .is_some_and(|bound| has_partial(bound, "FACE_OUTER_BOUND"))
                 })
                 .count();
             if outer_bound_count > 1 {
@@ -2358,11 +2353,11 @@ fn build_one(
                     bound_step,
                     CarrierKind::FaceBound,
                 )?;
-                if !has_type(br, "FACE_BOUND") && !has_type(br, "FACE_OUTER_BOUND") {
+                if !has_partial(br, "FACE_BOUND") && !has_partial(br, "FACE_OUTER_BOUND") {
                     note_failure(failure, bound_step, CarrierKind::FaceBoundCarrier);
                     return None;
                 }
-                let is_outer_bound = has_type(br, "FACE_OUTER_BOUND");
+                let is_outer_bound = has_partial(br, "FACE_OUTER_BOUND");
                 let Some(bound_type) = face_bound_attribute_type(br) else {
                     note_failure(failure, bound_step, CarrierKind::FaceBoundAttributes);
                     return None;
@@ -2386,7 +2381,7 @@ fn build_one(
                         .dash(face_step)
                         .with_tail(&face_suffix),
                 ));
-                if has_type(lr, "VERTEX_LOOP") {
+                if has_partial(lr, "VERTEX_LOOP") {
                     let vertex_step = require_carrier(
                         named_reference(lr, "VERTEX_LOOP", 1, 0),
                         failure,
@@ -2419,7 +2414,7 @@ fn build_one(
                     typed.extend([bound_step, loop_step]);
                     continue;
                 }
-                if has_type(lr, "POLY_LOOP") {
+                if has_partial(lr, "POLY_LOOP") {
                     let bound_forward = require_carrier(
                         named_logical(br, bound_type, 2, 0),
                         failure,
@@ -2510,7 +2505,7 @@ fn build_one(
                     typed.insert(bound_step);
                     continue;
                 }
-                if !has_type(lr, "EDGE_LOOP") {
+                if !has_partial(lr, "EDGE_LOOP") {
                     note_failure(failure, loop_step, CarrierKind::EdgeLoopCarrier);
                     return None;
                 }
@@ -2574,7 +2569,7 @@ fn build_one(
                                 exchange,
                                 decoded_pcurves,
                             );
-                            (has_type(pcurve, "PCURVE")
+                            (has_partial(pcurve, "PCURVE")
                                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()?
                                     == surface_step
                                 && associated.contains(&pcurve_id))
@@ -2784,7 +2779,7 @@ fn build_one(
             );
         }
         for (component_index, component) in components.into_iter().enumerate() {
-            if has_type(root, "BREP_WITH_VOIDS")
+            if has_partial(root, "BREP_WITH_VOIDS")
                 && shell_steps.first().copied() == Some(shell_reference)
                 && component_index > 0
             {
@@ -2970,7 +2965,7 @@ fn build_one(
     )?;
     built.pcurve_admissions = admissions;
     for &shell_reference in shell_steps {
-        let shell_step = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+        let shell_step = if has_partial(root, "FACE_BASED_SURFACE_MODEL") {
             shell_reference
         } else {
             require_carrier(
@@ -3241,7 +3236,7 @@ fn implicit_face_points(
         let bound_type = face_bound_attribute_type(bound)?;
         let loop_step = named_reference(bound, bound_type, 1, 0)?;
         let loop_record = exchange.records().get(&loop_step)?;
-        if !has_type(loop_record, "POLY_LOOP") {
+        if !has_partial(loop_record, "POLY_LOOP") {
             return None;
         }
         let bound_forward = named_logical(bound, bound_type, 2, 0)?;
@@ -3425,7 +3420,7 @@ fn associated_pcurves(
         .filter_map(|pcurve_step| {
             let pcurve = exchange.records().get(&pcurve_step)?;
             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
-            (has_type(pcurve, "PCURVE")
+            (has_partial(pcurve, "PCURVE")
                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()? == surface_step
                 && decoded_pcurves.contains(&pcurve_id))
             .then_some(pcurve_id)
@@ -4345,11 +4340,11 @@ struct FaceInfo {
 }
 
 fn is_face_record(record: &RawRecord) -> bool {
-    has_type(record, "FACE")
-        || has_type(record, "ADVANCED_FACE")
-        || has_type(record, "FACE_SURFACE")
-        || has_type(record, "ORIENTED_FACE")
-        || has_type(record, "SUBFACE")
+    has_partial(record, "FACE")
+        || has_partial(record, "ADVANCED_FACE")
+        || has_partial(record, "FACE_SURFACE")
+        || has_partial(record, "ORIENTED_FACE")
+        || has_partial(record, "SUBFACE")
 }
 
 fn face_attributes(
@@ -4481,7 +4476,7 @@ fn direct_face_bounds(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64
         !ids.is_empty()
             && ids.iter().all(|id| {
                 exchange.records().get(id).is_some_and(|bound| {
-                    has_type(bound, "FACE_BOUND") || has_type(bound, "FACE_OUTER_BOUND")
+                    has_partial(bound, "FACE_BOUND") || has_partial(bound, "FACE_OUTER_BOUND")
                 })
             })
     })
@@ -4568,10 +4563,6 @@ fn refs(value: &Value) -> Option<Vec<u64>> {
     value.list()?.iter().map(ValueExt::reference).collect()
 }
 
-fn has_type(record: &RawRecord, name: &str) -> bool {
-    record.partials.iter().any(|partial| partial.name == name)
-}
-
 /// Selects the partial that carries inherited `FACE_BOUND` attributes.
 /// `FACE_OUTER_BOUND` adds the outer role but may be empty in a complex
 /// instance, so subtype classification and attribute lookup are separate.
@@ -4602,7 +4593,7 @@ fn face_bound_attribute_type(record: &RawRecord) -> Option<&'static str> {
 /// Complex STEP instances carry every inherited partial, so the first hit is
 /// the governing subtype and its attributes must drive decoding.
 fn most_specific<'a>(record: &RawRecord, chain: &[&'a str]) -> Option<&'a str> {
-    chain.iter().copied().find(|name| has_type(record, name))
+    chain.iter().copied().find(|name| has_partial(record, name))
 }
 
 fn connected_face_set_type(record: &RawRecord) -> Option<&'static str> {
@@ -4665,49 +4656,4 @@ fn entity_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Opti
         .or_else(|| (record.partials.len() == 1).then(|| &record.partials[0]))?
         .parameters
         .get(index)
-}
-
-trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
-    fn parameter(&self, index: usize) -> Option<&Value>;
-}
-impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
-        self.partials.iter().find(|partial| partial.name == name)
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first().parameters.get(index)
-    }
-}
-trait ValueExt {
-    fn reference(&self) -> Option<u64>;
-    fn list(&self) -> Option<&[Value]>;
-    fn logical(&self) -> Option<bool>;
-}
-impl ValueExt for Value {
-    fn reference(&self) -> Option<u64> {
-        if let Value::Reference(id) = self {
-            Some(*id)
-        } else {
-            None
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        if let Value::List(values) = self {
-            Some(values)
-        } else {
-            None
-        }
-    }
-    fn logical(&self) -> Option<bool> {
-        match self {
-            Value::Enumeration(v) if v == "T" => Some(true),
-            Value::Enumeration(v) if v == "F" => Some(false),
-            _ => None,
-        }
-    }
 }
