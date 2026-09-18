@@ -125,6 +125,10 @@ mod tests {
     mod tagged_references;
     use super::*;
 
+    fn record(payload: &[u8], payload_offset: usize) -> OperationPayload<'_> {
+        OperationPayload::new(payload, payload_offset, "EXTRUDE").unwrap()
+    }
+
     #[test]
     fn direct_reference_positions_bound_each_field_kind() {
         let object = CanonicalFeatureReferenceToken::from_wire(1, &[1]).unwrap();

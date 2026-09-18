@@ -12,6 +12,7 @@ pub(crate) mod test_deltas;
 pub(crate) mod test_om;
 pub(crate) mod test_prt;
 pub(crate) mod test_streams;
+pub(crate) mod test_wire;
 
 pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
