@@ -8,7 +8,6 @@
 )]
 
 mod construction;
-mod existing;
 mod face_sources;
 mod prelude;
 mod recipes;

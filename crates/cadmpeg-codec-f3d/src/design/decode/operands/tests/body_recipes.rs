@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::prelude::*;
+use crate::design::decode::operands::{
+    body_recipe_operand_end, body_recipe_prologue_end, unique_body_recipe,
+};
+use crate::design::test_support::indexed_header;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
@@ -411,4 +415,65 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     );
     assert_eq!(operand.nested_record_index(), 103);
     assert_eq!(operand.next_byte_offset(), next_at as u64);
+}
+
+#[test]
+fn body_recipe_envelope_uses_its_structural_record_boundary() {
+    const RECORD_INDEX: u32 = 100;
+    const NEXT_AT: usize = 70_000;
+    const EARLY_RECIPE_AT: usize = 100;
+    const LATE_RECIPE_AT: usize = NEXT_AT - 32;
+
+    let mut bytes = Vec::new();
+    for record_index in [
+        RECORD_INDEX,
+        RECORD_INDEX,
+        RECORD_INDEX + 1,
+        RECORD_INDEX + 2,
+        RECORD_INDEX + 3,
+    ] {
+        indexed_header(&mut bytes, *b"365", record_index);
+    }
+    let prologue_end = bytes.len();
+    bytes.resize(NEXT_AT, 0xaa);
+    for recipe_at in [EARLY_RECIPE_AT, LATE_RECIPE_AT] {
+        bytes[recipe_at..recipe_at + b"body_recipe_data".len()]
+            .copy_from_slice(b"body_recipe_data");
+    }
+    indexed_header(&mut bytes, *b"311", RECORD_INDEX + 4);
+
+    let header = DesignRecordHeader {
+        id: "stream:record-100".into(),
+        record_index: RECORD_INDEX,
+        class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    let early = ConstructionRecipe {
+        id: "stream:recipe-early".into(),
+        byte_offset: EARLY_RECIPE_AT as u64,
+        kind: ConstructionRecipeKind::Body,
+        design: None,
+        recipe_index: 0,
+        record_index: Some(crate::records::identity::RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
+    };
+    let late = ConstructionRecipe {
+        id: "stream:recipe-late".into(),
+        byte_offset: LATE_RECIPE_AT as u64,
+        recipe_index: 1,
+        ..early.clone()
+    };
+
+    assert_eq!(
+        body_recipe_prologue_end(&bytes, 0, RECORD_INDEX),
+        Some(prologue_end)
+    );
+    assert_eq!(
+        body_recipe_operand_end(&bytes, prologue_end, RECORD_INDEX, EARLY_RECIPE_AT),
+        Some(NEXT_AT)
+    );
+    assert_eq!(unique_body_recipe(&bytes, &header, &[&early]), Some(&early));
+    assert_eq!(unique_body_recipe(&bytes, &header, &[&early, &late]), None);
 }
