@@ -369,7 +369,7 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::test_support::*;
+    use crate::test_support::test_archive::archive_entries;
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;

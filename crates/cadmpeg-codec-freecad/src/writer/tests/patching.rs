@@ -4,8 +4,9 @@
 //! retained span can carry.
 
 use super::super::target::retained_baseline;
-use super::super::*;
-use crate::test_support::*;
+use crate::native::{PropertyRecord, ValueRecord};
+use crate::test_support::test_archive::CORE_DESIGN_PRODUCT;
+use crate::writer::{serialize_property, serialize_value};
 use crate::FcstdCodec;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{EncodeInput, TargetRequest};
@@ -151,7 +152,7 @@ fn mutation_rejects_link_carrier_edits_without_changing_the_graph() {
 <ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
         .decode(
-            &mut Cursor::new(crate::test_support::archive(document)),
+            &mut Cursor::new(crate::test_support::test_archive::archive(document)),
             &DecodeOptions::default(),
         )
         .expect("decode link carrier");
@@ -201,7 +202,7 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
 <ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
         .decode(
-            &mut Cursor::new(crate::test_support::archive(document)),
+            &mut Cursor::new(crate::test_support::test_archive::archive(document)),
             &DecodeOptions::default(),
         )
         .expect("decode link carrier");

@@ -594,7 +594,7 @@ fn malformed(message: impl Into<String>) -> CodecError {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::joint_kind;
-    use crate::test_support::*;
+    use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;
     use cadmpeg_ir::products::PairedJointKind;
     use cadmpeg_ir::{Codec, DecodeOptions};

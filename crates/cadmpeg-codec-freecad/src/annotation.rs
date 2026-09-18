@@ -658,7 +658,7 @@ fn has_non_whitespace_text(value: roxmltree::Node<'_, '_>) -> bool {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::is_annotation_type;
-    use crate::test_support::*;
+    use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
     use crate::FcstdCodec;
     use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
     use cadmpeg_ir::{Codec, DecodeOptions};

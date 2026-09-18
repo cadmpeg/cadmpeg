@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Archive scan and physical-ledger unit tests.
 
-use crate::test_support::*;
+use crate::test_support::test_archive::{
+    archive, archive_entries, streaming_archive, streaming_archive_with_options,
+};
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::{Codec, Confidence, DecodeOptions};

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude draft-angle transfer unit tests.
 
-use crate::test_support::*;
+use crate::test_support::test_archive::archive;
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};

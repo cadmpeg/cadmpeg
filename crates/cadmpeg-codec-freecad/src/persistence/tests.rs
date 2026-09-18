@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Document.xml persistence-graph unit tests.
+use crate::test_support::test_archive::{archive, archive_entries};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;

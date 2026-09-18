@@ -3,12 +3,14 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 use super::*;
+use crate::test_support::test_archive::{
+    archive, assert_valid_document, rewrite_schema_version, streaming_archive,
+    streaming_archive_with_options, CORE_OPERATIONS,
+};
 use cadmpeg_ir::codec::write::{Encoder, TargetRequest};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
-
-use crate::test_support::*;
 
 use crate::annotation::tests::transfers_remaining_semantic_annotation_families_and_assets;
 use crate::application_geometry::tests::transfers_application_mesh_and_transformed_point_cloud_payloads;

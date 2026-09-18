@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design construction transfer unit tests.
 
-use crate::test_support::*;
+use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureOperation, ShellJoin, ShellMode, SweepOrientation,

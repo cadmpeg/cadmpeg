@@ -7,7 +7,7 @@ use cadmpeg_ir::Codec;
 fn child_map_reference_is_rejected_by_complete_cadir_admission() {
     let mut ir = crate::FcstdCodec
         .decode(
-            &mut std::io::Cursor::new(crate::test_support::GEOMETRY),
+            &mut std::io::Cursor::new(crate::test_support::test_archive::GEOMETRY),
             &cadmpeg_ir::DecodeOptions::default(),
         )
         .expect("geometry fixture decodes")

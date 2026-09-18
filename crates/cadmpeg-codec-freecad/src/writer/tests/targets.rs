@@ -2,11 +2,11 @@
 //! Resolution of a write request against the source: the synthesis catalog,
 //! preservation, and the refusals.
 
-use super::super::*;
 use crate::native::DocumentFacts;
-use crate::test_support::*;
+use crate::test_support::test_archive::{archive, rewrite_schema_version, CORE_DESIGN_PRODUCT};
 use crate::FcstdCodec;
 use cadmpeg_core::target::{DefaultSource, TargetRefusalKind};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{EncodeInput, TargetRequest};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
