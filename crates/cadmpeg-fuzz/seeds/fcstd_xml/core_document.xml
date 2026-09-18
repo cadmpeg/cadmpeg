@@ -855,7 +855,7 @@
                     <Link value=""/>
                 </Property>
                 <Property name="LinkCopyOnChangeSource" type="App::PropertyXLink" status="264">
-                    <XLink file="" stamp="" name=""/>
+                    <XLink file="" stamp="2026-01-01T00:00:00Z" name=""/>
                 </Property>
                 <Property name="LinkCopyOnChangeTouched" type="App::PropertyBool" status="264">
                     <Bool value="false"/>
@@ -870,7 +870,7 @@
                     <Bool value="true"/>
                 </Property>
                 <Property name="LinkedObject" type="App::PropertyXLink" status="256">
-                    <XLink file="" stamp="" name="DesignedFeature"/>
+                    <XLink file="" stamp="2026-01-01T00:00:00Z" name="DesignedFeature"/>
                 </Property>
                 <Property name="Placement" type="App::PropertyPlacement" status="264">
                     <PropertyPlacement Px="40.0000000000000000" Py="0.0000000000000000" Pz="0.0000000000000000" Q0="0.0000000000000000" Q1="0.0000000000000000" Q2="0.0000000000000000" Q3="1.0000000000000000" A="0.0000000000000000" Ox="0.0000000000000000" Oy="0.0000000000000000" Oz="1.0000000000000000"/>
@@ -897,7 +897,7 @@
                     <BoolList value=""/>
                 </Property>
                 <Property name="_LinkOwner" type="App::PropertyInteger" status="201326592">
-                    <Integer value="0"/>
+                    <Integer value="1"/>
                 </Property>
             </Properties>
         </Object>
