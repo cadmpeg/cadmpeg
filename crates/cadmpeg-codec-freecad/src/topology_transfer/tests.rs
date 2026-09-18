@@ -1400,3 +1400,40 @@ fn refuses_a_pcurve_weight_lane_shorter_than_its_pole_lane() {
         "refusal states both lane counts: {message}"
     );
 }
+
+#[test]
+fn refuses_a_placed_vertex_position_that_overflows_to_non_finite() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    // The location and both vertex points are finite; their sum is not.
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 1
+1 1 0 0 1.7e308 0 1 0 0 0 0 1 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 3
+Ve 0.001 1.7e308 0 0 0 0 1001000 *
+Ve 0.001 1.7e308 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 1 -2 1 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect_err("placed vertex position");
+
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
+                if message.contains("position contains a non-finite coordinate")
+        ),
+        "refusal names the placed vertex position: {error:?}"
+    );
+}

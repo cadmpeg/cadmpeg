@@ -191,7 +191,7 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
                     crate::native::model_key(&property.id, index.to_string())
                         .map_err(CodecError::malformed)?,
                 ),
-                position: transform_point(transform, position),
+                position: transform_point(transform, position)?,
                 source_object: Some(source_object.clone()),
             })
         })
@@ -234,21 +234,23 @@ fn identity() -> [[f64; 4]; 4] {
     std::array::from_fn(|row| std::array::from_fn(|column| f64::from(row == column)))
 }
 
-fn transform_point(transform: [[f64; 4]; 4], point: Point3) -> Point3 {
-    Point3::new(
-        transform[0][0] * point.x
-            + transform[0][1] * point.y
-            + transform[0][2] * point.z
-            + transform[0][3],
-        transform[1][0] * point.x
-            + transform[1][1] * point.y
-            + transform[1][2] * point.z
-            + transform[1][3],
-        transform[2][0] * point.x
-            + transform[2][1] * point.y
-            + transform[2][2] * point.z
-            + transform[2][3],
-    )
+/// Places a finite point with a finite transform.
+///
+/// Finite operands still multiply and add to a non-finite coordinate, which
+/// states no position, so the transformed position carries its own test.
+fn transform_point(transform: [[f64; 4]; 4], point: Point3) -> Result<Point3, CodecError> {
+    let values: [f64; 3] = std::array::from_fn(|row| {
+        transform[row][0] * point.x
+            + transform[row][1] * point.y
+            + transform[row][2] * point.z
+            + transform[row][3]
+    });
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(CodecError::Malformed(
+            "transformed point-cloud point contains a non-finite coordinate".into(),
+        ));
+    }
+    Ok(Point3::new(values[0], values[1], values[2]))
 }
 
 #[derive(Clone, Copy)]
@@ -454,6 +456,34 @@ pub(crate) mod tests {
         );
         assert!(result.report().geometry_transferred());
         assert!(result.report().losses.is_empty());
+    }
+
+    #[test]
+    fn refuses_a_transformed_point_cloud_position_that_overflows_to_non_finite() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Points::Feature" name="Cloud" id="1"/></Objects>
+<ObjectData Count="1">
+ <Object name="Cloud"><Properties Count="1"><Property name="Points" type="Points::PropertyPointKernel"><Points file="Cloud" mtrx="1e300 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+        let mut points = 1_u32.to_le_bytes().to_vec();
+        for value in [1e30_f32, 0.0, 0.0] {
+            points.extend_from_slice(&value.to_le_bytes());
+        }
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("Cloud", &points),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("transformed point-cloud position");
+
+        assert!(matches!(
+            error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
+                if message == "transformed point-cloud point contains a non-finite coordinate"
+        ));
     }
 
     #[test]
