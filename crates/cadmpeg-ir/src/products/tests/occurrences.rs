@@ -1,4 +1,5 @@
-use super::super::*;
+use crate::products::{deserialize_occurrence_scale, Occurrence, OccurrenceParent};
+use crate::scalar::FiniteReal;
 
 #[test]
 fn occurrence_scale_rejects_nonfinite_components_with_field_context() {

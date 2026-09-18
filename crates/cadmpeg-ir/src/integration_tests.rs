@@ -5,8 +5,9 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::ignored_unit_patterns)]
 
-use proptest::prelude::*;
+use proptest::prelude::{ProptestConfig, Strategy};
 use proptest::string::string_regex;
+use proptest::{prop_assert, prop_assert_eq, proptest};
 
 use crate::document::CadIr;
 use crate::draft::{DraftError, ModelDraft};

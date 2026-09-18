@@ -1,5 +1,14 @@
+use crate::features::edge_treatments::{FullRoundFilletGroup, FullRoundSideSelection};
+use crate::features::holes::{CounterdrillDiameters, HoleConstruction, HoleKind, HoleShape};
 use crate::features::FeatureOperation;
-use crate::features::*;
+use crate::features::{
+    BinderTarget, BodySelection, CombineOperands, FaceBlendOperands, FaceSelection, Feature,
+    FeatureDefinition, FeatureId, FuzzyTolerance, GeneratedSweepSection, GeometryImportPath,
+    LoftPointSection, NonEmptyMembers, PathRef, PlanarProfileRef, ProfileRef, ReplaceFaceOperands,
+    SectionOperands, SelectionMembers, SewBodySelection, SplitFacePlanes, SweepCircularRegion,
+    SweepMode, SweepSection, SweepShape, ThreePointSelection, TreeChildren, TrimBodyOperands,
+    VertexSelection,
+};
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 use crate::scalar::{InteriorAngle, PositiveLength};
 

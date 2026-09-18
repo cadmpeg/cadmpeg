@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::products::{AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind};
+use crate::transform::Transform;
 
 fn connector() -> JointConnector {
     JointConnector {
