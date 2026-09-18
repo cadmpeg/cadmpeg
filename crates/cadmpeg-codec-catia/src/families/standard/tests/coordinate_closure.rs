@@ -1,4 +1,44 @@
-use super::*;
+use crate::families::standard::fbb::parse_edge_tables_scoped_at;
+use crate::families::standard::fbb::parse_fbb_edge_tables;
+use crate::families::standard::fbb::parse_fbb_edge_tables_width;
+use crate::families::standard::fbb::parse_trim_record;
+use crate::families::standard::fbb::parse_vertex_table;
+use crate::families::standard::fbb::prune_edge_candidates_by_port_domains;
+use crate::families::standard::fbb::prune_edge_candidates_by_port_domains_with_deferred;
+use crate::families::standard::fbb::EDGE_DELIMITER;
+use crate::families::standard::tests::repeated_domain;
+use crate::families::standard::topology::complete_duplicate_face_slots;
+use crate::families::standard::topology::reconstruct_incidence;
+use crate::families::standard::topology::EdgeBoundaryLayout;
+use crate::families::standard::topology::EdgeRow;
+use crate::solve::matching::unique_coordinate_bijection;
+use crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable;
+use crate::solve::mesh_quotient::mesh_edge_points_compatible;
+use crate::solve::mesh_quotient::mesh_face_endpoint_configurations;
+use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support;
+use crate::solve::mesh_quotient::prune_mesh_endpoint_pair_support_with_limit;
+use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::missing_edge::bind_edge_port_candidates;
+use crate::solve::missing_edge::expand_deferred_edge_port_components;
+use crate::solve::missing_edge::propagate_edge_port_points;
+use crate::solve::missing_edge::propagate_edge_port_points_with_ordered_seeds;
+use crate::solve::missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred;
+use crate::solve::missing_edge::propagate_partial_edge_port_points_with_ordered_seeds;
+use crate::solve::missing_edge::resolve_edge_faces_from_runs;
+use crate::solve::missing_edge::same_unordered_pair;
+use crate::solve::missing_edge::unique_duplicate_face_assignment;
+use crate::solve::missing_edge::unique_mesh_edge_port_candidate_pairs;
+use crate::solve::missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred;
+use crate::solve::missing_edge::visit_duplicate_face_assignments;
+use crate::solve::missing_edge::DuplicateFaceAssignmentVisit;
+use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
+use crate::solve::missing_edge::MeshEdgeRun;
+use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
+use crate::solve::missing_edge::MeshFaceBoundaryDomain;
+use cadmpeg_core::decode::WorkBudget;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::Arc;
 
 #[test]
 fn endpoint_ports_propagate_resolved_pairs_to_unresolved_edges() {

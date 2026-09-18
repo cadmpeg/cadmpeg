@@ -3,6 +3,8 @@ use super::super::super::graph::{
     B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
     B5Surface,
 };
+use crate::families::b5::transfer::tests::test_loop_members;
+use crate::families::b5::transfer::tests::test_loop_metadata;
 const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
 use super::super::edges::merge_curve_plan;
@@ -14,7 +16,6 @@ use super::super::pcurves::{
 };
 use super::super::surfaces::revolution_surface;
 use super::super::*;
-use super::*;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::surface_point;

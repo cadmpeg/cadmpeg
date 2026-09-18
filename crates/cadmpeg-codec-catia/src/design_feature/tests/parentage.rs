@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::design_feature::tests::design_object;
+use crate::design_feature::tests::feature;
+use crate::design_feature::DesignFeatureTransfer;
+use crate::native::CatiaNative;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FeatureId;
+use std::collections::HashMap;
 
 #[test]
 fn assigns_parent_from_an_exact_transferred_owner_chain() {

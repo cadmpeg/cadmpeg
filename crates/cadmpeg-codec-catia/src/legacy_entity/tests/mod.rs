@@ -3,10 +3,24 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use crate::legacy_entity::parse_runs;
+use crate::legacy_entity::parse_runs_with_directory_offset;
+use crate::legacy_entity::LegacyRoleName;
+use crate::legacy_entity::LegacyRoleSelector;
+use crate::legacy_entity::LegacyRoleSelectorEncoding;
+use crate::legacy_entity::CATALOG_OPEN;
+use crate::legacy_entity::INTEGER_OPEN;
+use crate::legacy_entity::NAMED_SCALAR_OPEN;
+use crate::legacy_entity::SCALAR_OPEN;
+use crate::legacy_entity::SCHEMA_PROGRAM_FOOTER;
+use crate::legacy_entity::SCHEMA_PROGRAM_PREFIX;
+use crate::legacy_entity::STRING_OPEN;
+use crate::legacy_entity::TEXT_OPEN;
+use crate::legacy_entity::TYPE_OPEN;
+
 mod identity;
 mod transfer;
 
-use super::*;
 use crate::container;
 
 fn identity(bytes: &mut Vec<u8>, entity_id: u32) {

@@ -1,6 +1,25 @@
+use crate::families::standard::tests::sparse_degrees;
+use crate::families::standard::topology::reconstruct_incidence;
+use crate::families::standard::topology::EdgeBoundaryLayout;
+use crate::families::standard::topology::EdgeRow;
+use crate::solve::incidence::prepare_face_configuration_domains;
+use crate::solve::incidence::prune_face_configuration_singleton_support;
+use crate::solve::incidence::prune_face_configuration_support;
+use crate::solve::incidence::prune_incidence_choices_with_deferred_support;
+use crate::solve::incidence::prune_ordered_face_endpoint_support;
+use crate::solve::incidence::reconstruct_incidence_candidates;
 use crate::solve::incidence::IncidenceSearchState;
-
-use super::*;
+use crate::solve::mesh_quotient::AssignmentOrder;
+use crate::solve::mesh_quotient::MeshPartialEndpointConstraint;
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
+use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
+use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
+use crate::solve::missing_edge::MeshFaceBoundaryDomain;
+use cadmpeg_core::decode::WorkBudget;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 #[test]
 fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {

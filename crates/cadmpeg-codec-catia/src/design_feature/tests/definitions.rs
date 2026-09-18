@@ -1,12 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::design_feature::tests::design_object;
+use crate::design_feature::tests::entity_record;
+use crate::design_feature::tests::native_operation_object;
+use crate::design_feature::tests::object_record;
+use crate::design_feature::transfer_design_features;
+use crate::native::CatiaNative;
+use crate::native::CatiaObjectGraph;
 use crate::native::{
     CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaEntityEvaluation,
     CatiaEntityEvaluationEncoding, CatiaEntitySchemaValue, CatiaEntitySuffixPayload,
     CatiaEntitySuffixSchemaValue,
 };
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::UnresolvedFamily;
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 
 #[test]
 fn transfers_exact_definition_values_as_typed_feature_properties() {

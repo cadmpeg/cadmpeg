@@ -1,4 +1,15 @@
-use super::*;
+use crate::families::standard::tests::repeated_domain;
+use crate::solve::incidence::compact_boundary_domain_viable;
+use crate::solve::mesh_quotient::AssignmentOrder;
+use crate::solve::mesh_quotient::MeshPartialEndpointConstraint;
+use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
+use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
+use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
+use crate::solve::missing_edge::MeshFaceBoundaryDomain;
+use cadmpeg_core::decode::WorkBudget;
+use std::collections::HashSet;
+use std::sync::Arc;
 
 #[test]
 fn incidence_components_join_only_through_shared_face_vertices() {

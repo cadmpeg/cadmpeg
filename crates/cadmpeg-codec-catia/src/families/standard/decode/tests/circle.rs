@@ -1,4 +1,21 @@
-use super::*;
+use crate::families::standard::decode::build_standard_edge_curve;
+use crate::families::standard::decode::standard_pcurve_geometry;
+use crate::families::standard::records::StandardCurveGeometry;
+use crate::families::standard::records::StandardCurveSupport;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::PointId;
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::AnnotationBuilder;
+use std::collections::HashMap;
 
 #[test]
 fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() {

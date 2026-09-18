@@ -1,5 +1,5 @@
 use super::super::*;
-use super::*;
+use crate::families::b5::graph::tests::object_stream_pcurve;
 
 #[test]
 fn circle_pcurve_rejects_unbounded_subdivision_counts() {
