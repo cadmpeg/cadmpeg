@@ -3,16 +3,16 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
-
-use crate::design::decode::sketch::{
-    decode_sketch_visibilities_in_stream, decode_sketch_visibility_member,
-    CURRENT_SKETCH_CONTAINER_VERSION, SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID,
-    SKETCH_CONTAINER_MEMBER_TYPE_GUID, SKETCH_CONTAINER_MEMBER_VERSION, SKETCH_CONTAINER_TYPE_GUID,
-};
+use crate::design::decode::sketch::decode_sketch_visibilities_in_stream;
+use crate::design::decode::sketch::decode_sketch_visibility_member;
+use crate::design::decode::sketch::CURRENT_SKETCH_CONTAINER_VERSION;
+use crate::design::decode::sketch::SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID;
+use crate::design::decode::sketch::SKETCH_CONTAINER_MEMBER_TYPE_GUID;
+use crate::design::decode::sketch::SKETCH_CONTAINER_MEMBER_VERSION;
+use crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID;
+use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 const ENTITY_SUFFIX: u64 = 201;
 

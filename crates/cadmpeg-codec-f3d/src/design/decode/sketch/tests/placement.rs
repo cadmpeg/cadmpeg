@@ -3,12 +3,22 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+use crate::design::decode::sketch::bind_sketch_graph;
+use crate::design::decode::sketch::parse_sketch_placement_candidates;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::sketch_project::project_sketch_design;
 use crate::design::test_support::push_marked_reference;
+use crate::records::entity_header::DesignEntityHeader;
+use crate::records::entity_header::DESIGN_MODULE_SKETCH;
+use crate::records::sketch_geometry::SketchCurveGeometry;
+use crate::records::sketch_geometry::SketchPoint;
+use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::test_support::lp_ascii;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 
 fn candidates(
     bytes: &[u8],
