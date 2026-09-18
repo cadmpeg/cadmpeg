@@ -1017,9 +1017,10 @@ fn map_parameter(value: f64, domain: [f64; 2], extents: [f64; 2]) -> f64 {
 fn read_knots(reader: &mut BoundedReader<'_>, count: usize) -> Result<Vec<f64>, GeometryError> {
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
+        let knot_offset = reader.position();
         let value = reader.f64()?;
         if !value.is_finite() || knots.last().is_some_and(|last| value < *last) {
-            return Err(error(reader.position(), "NURBS knots are invalid"));
+            return Err(error(knot_offset, "NURBS knots are invalid"));
         }
         knots.push(value);
     }

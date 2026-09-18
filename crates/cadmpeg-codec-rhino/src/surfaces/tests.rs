@@ -414,6 +414,29 @@ fn a_nonfinite_pole_is_refused_at_the_pole_first_byte() {
     }
 }
 
+/// `read_knots` refuses a non-finite knot and a decreasing knot under one text,
+/// and both name the first byte of the knot that failed rather than the byte
+/// after it.
+#[test]
+fn an_invalid_knot_is_refused_at_the_knot_first_byte() {
+    for values in [[0.0_f64, 1.0, f64::NAN], [0.0_f64, 1.0, 0.5]] {
+        let mut bytes = vec![0xa5; 5];
+        let first_knot = bytes.len();
+        for value in values {
+            push_f64(&mut bytes, value);
+        }
+        let third_knot = first_knot + 16;
+        let mut reader =
+            BoundedReader::new(&bytes, first_knot, bytes.len()).expect("required invariant");
+        let error = read_knots(&mut reader, 3).expect_err("invalid knot");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(FramingError::Structural { offset, ref message })
+                if offset == third_knot && message == "NURBS knots are invalid"
+        ));
+    }
+}
+
 #[test]
 fn curve_payload_validates_rational_weights_counts_and_domain() {
     let mut bytes = curve_payload(0x10, true, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
