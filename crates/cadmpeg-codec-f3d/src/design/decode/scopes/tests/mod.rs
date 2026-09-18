@@ -7,9 +7,8 @@
     clippy::wildcard_imports
 )]
 
-mod assembly;
+pub(in crate::design::decode::scopes) mod assembly;
 mod assembly_variable_reference;
-mod coil;
 mod combine;
 mod copy_paste_bodies;
 mod derived_instance;
@@ -26,7 +25,6 @@ mod legacy_frames;
 mod legacy_work_planes;
 mod named_empty_label;
 mod named_variable_tail;
-mod pattern;
 mod prelude;
 mod scale;
 mod surfaces;
