@@ -342,9 +342,7 @@ fn rational_surface_patches_with_budget(
             .any(|knot| !knot.is_finite())
         || !knots_nondecreasing(surface.u_knots())
         || !knots_nondecreasing(surface.v_knots())
-        || surface.poles().iter().any(|control| {
-            !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
-        })
+        || surface.poles().iter().any(|control| !control.is_finite())
     {
         return None;
     }
@@ -447,7 +445,7 @@ fn rational_surface_residual_patches(
     point: Point3,
     budget: &WorkBudget<'_>,
 ) -> Option<Vec<RationalBezierSurfacePatch>> {
-    if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+    if !point.is_finite() {
         return None;
     }
     let mut patches = rational_surface_patches_with_budget(surface, budget)?;
@@ -671,9 +669,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     if parameters
         .iter()
         .any(|point| !point.u.is_finite() || !point.v.is_finite())
-        || chord
-            .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        || chord.iter().any(|point| !point.is_finite())
     {
         return None;
     }
@@ -1286,10 +1282,7 @@ pub fn nurbs_surface_parameter_near_point(
     const MAX_ITERATIONS: usize = 24;
     const MAX_LINE_SEARCH_STEPS: usize = 12;
 
-    if ![point.x, point.y, point.z]
-        .iter()
-        .all(|value| value.is_finite())
-    {
+    if !point.is_finite() {
         return None;
     }
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
@@ -1640,9 +1633,7 @@ pub fn nurbs_curve_parameter_near_point(
         || !tolerance.is_finite()
         || tolerance < 0.0
         || !seed.is_finite()
-        || !point.x.is_finite()
-        || !point.y.is_finite()
-        || !point.z.is_finite()
+        || !point.is_finite()
     {
         return None;
     }
@@ -1778,13 +1769,7 @@ fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'static, [f64
         .control_points()
         .iter()
         .zip(weights.as_ref())
-        .any(|(control, weight)| {
-            !control.x.is_finite()
-                || !control.y.is_finite()
-                || !control.z.is_finite()
-                || !weight.is_finite()
-                || *weight <= 0.0
-        })
+        .any(|(control, weight)| !control.is_finite() || !weight.is_finite() || *weight <= 0.0)
         || curve.knots().iter().any(|knot| !knot.is_finite())
         || !knots_nondecreasing(curve.knots())
     {
@@ -2726,8 +2711,7 @@ pub fn curve_tangent_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Ve
     if !t.is_finite() {
         return None;
     }
-    curve_tangent_inner(geometry, t, 0)
-        .filter(|tangent| tangent.x.is_finite() && tangent.y.is_finite() && tangent.z.is_finite())
+    curve_tangent_inner(geometry, t, 0).filter(Vector3::is_finite)
 }
 
 /// Evaluate the exact second derivative of a directly stored curve.
@@ -2735,9 +2719,7 @@ pub fn curve_second_derivative_solved(geometry: &SolvedCurveGeometry, t: f64) ->
     if !t.is_finite() {
         return None;
     }
-    curve_second_derivative_inner(geometry, t, 0).filter(|derivative| {
-        derivative.x.is_finite() && derivative.y.is_finite() && derivative.z.is_finite()
-    })
+    curve_second_derivative_inner(geometry, t, 0).filter(Vector3::is_finite)
 }
 
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
@@ -3053,7 +3035,7 @@ fn nurbs_curve_tangent(
         (weighted_derivative.y * weight - weighted.y * weight_derivative) / (weight * weight),
         (weighted_derivative.z * weight - weighted.z * weight_derivative) / (weight * weight),
     );
-    (tangent.x.is_finite() && tangent.y.is_finite() && tangent.z.is_finite()).then_some(tangent)
+    (tangent.is_finite()).then_some(tangent)
 }
 
 fn nurbs_curve_second_derivative(
@@ -3205,21 +3187,14 @@ fn helix_differential(
         (inverse_revolution, pitch),
     ]);
     let acceleration = vector_sum(&[(-radial_scale, radial), (2.0 * scale_first, radial_first)]);
-    let finite_vector = |vector: Vector3| {
-        [vector.x, vector.y, vector.z]
-            .into_iter()
-            .all(f64::is_finite)
-    };
-    (point.x.is_finite()
-        && point.y.is_finite()
-        && point.z.is_finite()
-        && finite_vector(tangent)
-        && finite_vector(acceleration))
-    .then_some(ModelCurveDifferential {
-        point,
-        tangent,
-        acceleration,
-    })
+    let finite_vector = |vector: Vector3| vector.is_finite();
+    (point.is_finite() && finite_vector(tangent) && finite_vector(acceleration)).then_some(
+        ModelCurveDifferential {
+            point,
+            tangent,
+            acceleration,
+        },
+    )
 }
 
 fn model_curve_differential_by_id(
@@ -4148,9 +4123,7 @@ fn helix_parameter_near_point(
         || seed < start
         || seed > end
         || tolerance < 0.0
-        || ![target.x, target.y, target.z]
-            .into_iter()
-            .all(f64::is_finite)
+        || !target.is_finite()
     {
         return None;
     }
@@ -4756,10 +4729,7 @@ pub fn rolling_ball_jet_point(
     let radial =
         first_direction.scale((s * angle).cos()) + second_direction.scale((s * angle).sin());
     let point = center.translated(radial, radius);
-    [point.x, point.y, point.z]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(point)
+    point.is_finite().then_some(point)
 }
 
 fn rolling_ball_jet_interpolate_point(
@@ -5441,20 +5411,13 @@ fn scale_sweep_profile(
         profile.acceleration.y * scale.y,
         profile.acceleration.z * scale.z,
     );
-    (point.x.is_finite()
-        && point.y.is_finite()
-        && point.z.is_finite()
-        && tangent.x.is_finite()
-        && tangent.y.is_finite()
-        && tangent.z.is_finite()
-        && acceleration.x.is_finite()
-        && acceleration.y.is_finite()
-        && acceleration.z.is_finite())
-    .then_some(ModelCurveDifferential {
-        point,
-        tangent,
-        acceleration,
-    })
+    (point.is_finite() && tangent.is_finite() && acceleration.is_finite()).then_some(
+        ModelCurveDifferential {
+            point,
+            tangent,
+            acceleration,
+        },
+    )
 }
 
 fn unit_domain_sweep_formula(name: &str) -> bool {
@@ -5590,10 +5553,7 @@ fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(
         vector_sum(&[(1.0, derivative), (-normal_component, unit)]),
         1.0 / length,
     );
-    (unit_derivative.x.is_finite()
-        && unit_derivative.y.is_finite()
-        && unit_derivative.z.is_finite())
-    .then_some((unit, unit_derivative))
+    (unit_derivative.is_finite()).then_some((unit, unit_derivative))
 }
 
 fn sweep_profile_reversed(
@@ -6411,10 +6371,7 @@ fn model_sum_surface_partials(
     u: f64,
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
-    if ![basepoint.x, basepoint.y, basepoint.z]
-        .into_iter()
-        .all(f64::is_finite)
-    {
+    if !basepoint.is_finite() {
         return None;
     }
     let first = model_curve_differential_by_id(index, first, u)?;
@@ -6436,12 +6393,8 @@ fn model_sum_surface_partials(
 }
 
 fn surface_second_partials_are_finite(partials: SurfaceSecondPartials) -> bool {
-    let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
-    let finite_vector = |vector: Vector3| {
-        [vector.x, vector.y, vector.z]
-            .into_iter()
-            .all(f64::is_finite)
-    };
+    let finite_point = |point: Point3| point.is_finite();
+    let finite_vector = |vector: Vector3| vector.is_finite();
     finite_point(partials.point)
         && finite_vector(partials.du)
         && finite_vector(partials.dv)

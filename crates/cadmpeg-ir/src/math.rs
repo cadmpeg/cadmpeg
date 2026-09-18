@@ -138,7 +138,7 @@ impl Vector3 {
     /// non-finite or the length is within [`f64::EPSILON`] of zero.
     #[must_use]
     pub fn unit(self) -> Option<Vector3> {
-        if ![self.x, self.y, self.z].into_iter().all(f64::is_finite) {
+        if !self.is_finite() {
             return None;
         }
         let scale = self.x.abs().max(self.y.abs()).max(self.z.abs());

@@ -43,7 +43,7 @@ impl std::error::Error for SubdError {}
 const EPS_SUBD_SYMMETRY_FRAME: f64 = 1.0e-9;
 
 fn require_finite_point(field: &str, point: Point3) -> Result<(), SubdError> {
-    if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+    if !point.is_finite() {
         return Err(SubdError(format!("{field} must be finite")));
     }
     Ok(())

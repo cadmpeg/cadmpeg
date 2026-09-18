@@ -74,13 +74,13 @@ macro_rules! checked_feature_geometry {
 checked_feature_geometry!(
     /// A model-space point with finite coordinates.
     FinitePoint3, Point3, value,
-    [value.x, value.y, value.z].into_iter().all(f64::is_finite),
+    value.is_finite(),
     "FinitePoint3 coordinates must be finite"
 );
 checked_feature_geometry!(
     /// A displacement with finite components, including zero.
     FiniteVector3, Vector3, value,
-    [value.x, value.y, value.z].into_iter().all(f64::is_finite),
+    value.is_finite(),
     "FiniteVector3 components must be finite"
 );
 impl FiniteVector3 {

@@ -214,7 +214,7 @@ impl TryFrom<SketchPlaneFrameWire> for SketchPlaneFrame {
         if dot.abs() > EPS_SKETCH_PLANE_ORTHOGONALITY * normal * u_norm {
             return Err("sketch normal and u_axis must be perpendicular");
         }
-        if !wire.origin.x.is_finite() || !wire.origin.y.is_finite() || !wire.origin.z.is_finite() {
+        if !wire.origin.is_finite() {
             return Err("sketch origin must be finite");
         }
         Ok(Self {
@@ -858,7 +858,7 @@ impl SpatialSketchProfile {
         u_axis: Vector3,
         boundary: Vec<SpatialSketchEntityUse>,
     ) -> Result<Self, &'static str> {
-        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+        if !origin.is_finite() {
             return Err("spatial profile origin must be finite");
         }
         let normal_length = normal.norm();
@@ -914,7 +914,7 @@ impl SpatialSketchProfile {
 
     /// Replace the origin after finite-coordinate admission.
     pub fn set_origin(&mut self, origin: Point3) -> Result<(), &'static str> {
-        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+        if !origin.is_finite() {
             return Err("spatial profile origin must be finite");
         }
         self.origin = origin;
@@ -1392,8 +1392,7 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
     type Error = &'static str;
 
     fn try_from(definition: SpatialSketchGeometryDefinition) -> Result<Self, Self::Error> {
-        let finite_point =
-            |point: &Point3| point.x.is_finite() && point.y.is_finite() && point.z.is_finite();
+        let finite_point = |point: &Point3| point.is_finite();
         match &definition {
             SpatialSketchGeometryDefinition::Point { position } if !finite_point(position) => {
                 return Err("spatial sketch point position must be finite");
