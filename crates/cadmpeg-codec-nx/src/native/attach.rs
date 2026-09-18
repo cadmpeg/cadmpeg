@@ -4560,7 +4560,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
     ) -> Self {
         let mut classes_by_entity = BTreeMap::new();
         for class_use in class_uses {
-            insert_unique(
+            insert_sole(
                 &mut classes_by_entity,
                 (
                     class_use.topology_attribute_reference.as_str(),
@@ -4572,7 +4572,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
 
         let mut fields_by_value_use = BTreeMap::new();
         for field_use in field_uses {
-            insert_unique(
+            insert_sole(
                 &mut fields_by_value_use,
                 field_use.value_use.as_str(),
                 field_use,
@@ -4581,12 +4581,12 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
 
         let mut definitions_by_id = BTreeMap::new();
         for definition in definitions {
-            insert_unique(&mut definitions_by_id, definition.id.as_str(), definition);
+            insert_sole(&mut definitions_by_id, definition.id.as_str(), definition);
         }
 
         let mut field_names_by_definition = BTreeMap::new();
         for names in field_names {
-            insert_unique(
+            insert_sole(
                 &mut field_names_by_definition,
                 names.attribute_definition.as_str(),
                 names,
@@ -4650,7 +4650,8 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
     }
 }
 
-fn insert_unique<'a, K: Ord, V>(values: &mut BTreeMap<K, Option<&'a V>>, key: K, value: &'a V) {
+/// Records `value` as the sole value for `key`, or `None` once the key repeats.
+fn insert_sole<'a, K: Ord, V>(values: &mut BTreeMap<K, Option<&'a V>>, key: K, value: &'a V) {
     match values.entry(key) {
         Entry::Vacant(entry) => {
             entry.insert(Some(value));
