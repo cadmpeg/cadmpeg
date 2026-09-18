@@ -5,7 +5,8 @@ use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsError, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, GeometryLayoutError, NurbsError, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationError;
@@ -323,20 +324,21 @@ fn transform_surface(
                 })?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {
-            let mut placed = true;
             surface
                 .edit_vertices(|points| {
                     for point in points {
-                        match transform.apply_point(*point) {
-                            Some(moved) => *point = moved,
-                            None => placed = false,
-                        }
+                        *point = transform.apply_point(*point).ok_or_else(|| {
+                            GeometryLayoutError::EditRefused(
+                                "baked body placement produced a non-finite point".to_string(),
+                            )
+                        })?;
                     }
+                    Ok(())
                 })
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
-            if !placed {
-                return Err(non_finite_point());
-            }
+                .map_err(|error| match error {
+                    GeometryLayoutError::EditRefused(_) => non_finite_point(),
+                    error => CodecError::malformed(error.to_string()),
+                })?;
         }
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {

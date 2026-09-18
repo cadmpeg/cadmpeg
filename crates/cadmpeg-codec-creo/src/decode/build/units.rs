@@ -1437,6 +1437,7 @@ fn scale_surface_geometry(
                     for point in points {
                         scale_point3(point, scale);
                     }
+                    Ok(())
                 })
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             scaled
