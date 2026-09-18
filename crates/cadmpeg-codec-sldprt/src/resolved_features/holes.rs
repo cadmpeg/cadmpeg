@@ -37,8 +37,6 @@ const EPS_HOLE_GEOMETRY: f64 = 1.0e-9;
 const EPS_HOLE_DEGENERATE_NORMAL: f64 = 1.0e-10;
 const EPS_HOLE_EXACT_GEOMETRY: f64 = 1.0e-12;
 
-#[cfg(test)]
-use super::parameters::enrich_history_parameters;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 

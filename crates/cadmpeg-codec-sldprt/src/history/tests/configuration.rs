@@ -2,7 +2,6 @@
 //! Configuration-lane membership and inherited-state tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
 use super::design_configuration;
 use super::feature;
 use super::feature_input_lane;
@@ -10,11 +9,25 @@ use super::native_configuration;
 use super::native_with_configuration_id;
 use super::native_with_configuration_lanes;
 use super::with_configuration_id;
+use crate::history::align_configuration_parameter_kinds;
+use crate::history::bind_configuration_topology_selections;
+use crate::history::bind_unique_sketch_feature;
+use crate::history::configuration_surface_carriers;
+use crate::history::inherit_configuration_hole_semantics;
+use crate::history::inherit_configuration_reference_plane_semantics;
+use crate::history::inherit_configuration_shared_semantics;
+use crate::history::project_configuration_sketch_states;
+use crate::history::project_configuration_supplemental_edge_selections;
+use crate::history::sync_neutral_configurations;
+use crate::history::unresolved_configuration_lanes;
+use crate::records::FeatureContent;
+use crate::records::FeatureHistory;
 use cadmpeg_ir::features::DesignConfiguration;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
+use std::collections::BTreeMap;
 
 #[test]
 fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {

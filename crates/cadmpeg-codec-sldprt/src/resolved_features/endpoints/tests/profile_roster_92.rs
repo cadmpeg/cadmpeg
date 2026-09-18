@@ -1,8 +1,11 @@
 //! Compact-legacy 92-byte profile-roster tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::endpoints::coordinate_roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::wide_indexed_curve_endpoint_indices;
 
 fn profile_payload(native_code: u32, selector: u8, endpoints: [u16; 2], terminal: bool) -> Vec<u8> {
     let length = if terminal {

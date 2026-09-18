@@ -1,9 +1,11 @@
 //! Compact-legacy 96-byte profile-roster tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
-use super::super::*;
 use crate::layout::compact_legacy_96_profile_roster_curve as legacy_96;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
+use crate::resolved_features::endpoints::compact_legacy_96_profile_roster_curve_uses_complete_roster;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
 
 fn profile_roster_payload(endpoints: [u16; 2]) -> Vec<u8> {
     let mut payload = vec![0; legacy_96::LEN + LEGACY_SKETCH_MARKER.len()];

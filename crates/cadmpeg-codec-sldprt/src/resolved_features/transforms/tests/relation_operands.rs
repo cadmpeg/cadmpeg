@@ -1,12 +1,20 @@
 //! Unary, binary, axis, and line operand resolution tests.
 
-use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use crate::resolved_features::relation_loci::profile_loci_by_marker;
+use crate::resolved_features::relation_loci::relation_constraint_is_inactive;
+use crate::resolved_features::relation_loci::single_marker_line_entity;
+use crate::resolved_features::relation_loci::typed_relation_definition;
+use crate::resolved_features::relation_loci::unique_profile_distance_locus;
+use crate::resolved_features::typed_relations::line_endpoint_markers;
+use crate::resolved_features::typed_relations::marker_relation_is_inactive;
+use crate::resolved_features::typed_relations::typed_marker_relation_definition;
+use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,

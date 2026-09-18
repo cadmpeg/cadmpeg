@@ -4,6 +4,10 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::records::operand_tag::NativeOperandTag;
+use crate::test_support::make_block;
+use crate::test_support::sldprt_native;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::triangle_body;
 const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
 use cadmpeg_ir::codec::write::EncodeInput;
@@ -14,7 +18,6 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
-use crate::test_support::*;
 use crate::SldprtCodec;
 
 #[test]

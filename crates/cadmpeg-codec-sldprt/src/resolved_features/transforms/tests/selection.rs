@@ -1,12 +1,24 @@
 //! Marker-transform selection tests.
 
-use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink,
 };
+use crate::resolved_features::projections::bind_circular_profile_by_dimension;
+use crate::resolved_features::relation_geometry::project_relation_point_geometry;
+use crate::resolved_features::relation_loci::marker_point_locus;
+use crate::resolved_features::relation_loci::profile_loci_by_marker;
+use crate::resolved_features::transforms::dimensioned_circle_surface_transforms;
+use crate::resolved_features::transforms::dimensioned_circle_transform;
+use crate::resolved_features::transforms::marker_entities;
+use crate::resolved_features::transforms::unique_compatible_marker_transform;
+use crate::resolved_features::transforms::unique_marker_transform;
+use crate::resolved_features::transforms::Axes;
+use crate::resolved_features::transforms::MarkerTransform;
+use crate::resolved_features::transforms::Sign;
+use crate::resolved_features::SKETCH_MARKER;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};

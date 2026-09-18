@@ -4,8 +4,12 @@ use super::super::super::relation_loci::same_dimension_length;
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
+use crate::resolved_features::endpoints::coordinate_circle_radius;
+use crate::resolved_features::endpoints::coordinate_roster_full_circle;
+use crate::resolved_features::endpoints::equal_index_coordinate_roster_full_circle;
+use crate::resolved_features::endpoints::extended_geometry_full_circle;
+use crate::resolved_features::endpoints::legacy_coordinate_circle_radius;
 
 #[test]
 fn current_coordinate_circle_uses_its_complete_square_handle_grid() {

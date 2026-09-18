@@ -1,8 +1,12 @@
 //! Legacy geometry-locus alternate profile-point marker tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
-use super::super::*;
 use crate::records::SketchInputKind;
+use crate::resolved_features::markers::legacy_declared_handle_coordinates;
+use crate::resolved_features::markers::legacy_geometry_locus_alternate_linked_profile_point;
+use crate::resolved_features::markers::legacy_geometry_locus_alternate_profile_point_coordinates;
+use crate::resolved_features::markers::marker_coordinates;
+use crate::resolved_features::markers::sketch_input_entities;
 
 #[test]
 fn legacy_geometry_locus_alternate_point_records_decode() {

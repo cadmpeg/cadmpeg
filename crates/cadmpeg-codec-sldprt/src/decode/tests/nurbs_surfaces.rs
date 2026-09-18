@@ -7,7 +7,33 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::LossTaxonomy;
 
-use crate::test_support::*;
+use crate::test_support::be16;
+use crate::test_support::be32;
+use crate::test_support::bef64;
+use crate::test_support::blend_triangle_body;
+use crate::test_support::bridge;
+use crate::test_support::coedge;
+use crate::test_support::compact_counted_nurbs_surface_carrier;
+use crate::test_support::compact_f64_array;
+use crate::test_support::cylinder_carrier;
+use crate::test_support::edge_use;
+use crate::test_support::f64_array;
+use crate::test_support::line_carrier;
+use crate::test_support::loop_head;
+use crate::test_support::make_block;
+use crate::test_support::markerless_nurbs_surface_carrier;
+use crate::test_support::nurbs_surface_carrier;
+use crate::test_support::nurbs_surface_carrier_with_v_knot_storage;
+use crate::test_support::offset_surface_carrier;
+use crate::test_support::outer_header;
+use crate::test_support::parasolid_with_body;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::strict_options;
+use crate::test_support::triangle_body;
+use crate::test_support::u16_array;
+use crate::test_support::untyped_triangle;
+use crate::test_support::vertex_use;
+use crate::test_support::world_point;
 use crate::SldprtCodec;
 
 #[test]

@@ -2,8 +2,14 @@
 //! Split-face, body-modifier, and operation-identity projection tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
 use super::feature;
+use crate::history::bind_definition_sketch;
+use crate::history::derive_feature_outputs;
+use crate::history::neutral_feature_id;
+use crate::history::project_features;
+use crate::history::project_fillet;
+use crate::history::project_semantic_notes;
+use crate::records::FeatureHistory;
 use cadmpeg_ir::features::BooleanOp;
 use cadmpeg_ir::features::DatumPlaneReference;
 use cadmpeg_ir::features::EdgeSelection;
@@ -14,6 +20,7 @@ use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::features::PathRef;
 use cadmpeg_ir::features::RibConstruction;
 use cadmpeg_ir::features::SplitFaceTool;
+use std::collections::BTreeMap;
 
 #[test]
 fn split_face_path_uses_the_prebound_source_sketch() {

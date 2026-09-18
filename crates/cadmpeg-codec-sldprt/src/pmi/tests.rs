@@ -5,7 +5,6 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
 use crate::SldprtCodec;
 
 use cadmpeg_ir::{
@@ -17,6 +16,19 @@ use cadmpeg_ir::{
 };
 
 use super::*;
+use crate::test_support::make_block;
+use crate::test_support::pmi_semantic_payload;
+use crate::test_support::pmi_semantic_payload_for;
+use crate::test_support::pmi_semantic_payload_for_with_guid;
+use crate::test_support::pmi_semantic_payload_for_with_guid_and_value;
+use crate::test_support::pmi_semantic_payload_record;
+use crate::test_support::pmi_semantic_payload_record_configured;
+use crate::test_support::pmi_semantic_payload_record_with_items;
+use crate::test_support::resolved_feature_classes_with_ids;
+use crate::test_support::sldprt_native;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::triangle_body;
+use crate::test_support::PmiPayloadOptions;
 
 fn dimension(subtype: &str, value: f64) -> PmiDimension {
     PmiDimension {

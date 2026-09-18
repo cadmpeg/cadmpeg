@@ -13,13 +13,26 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 
-use super::super::*;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{
     FeatureInputClass, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
 };
+use crate::resolved_features::holes::compact_position_loci;
+use crate::resolved_features::holes::coplanar_spatial_position_placements;
+use crate::resolved_features::holes::enrich_history_hole_constructions;
+use crate::resolved_features::holes::hole_position_carrier_present;
+use crate::resolved_features::holes::hole_position_feature;
+use crate::resolved_features::holes::hole_position_sketch_source;
+use crate::resolved_features::holes::hole_temporary_axis;
+use crate::resolved_features::holes::marker_pattern_bore_axes;
+use crate::resolved_features::holes::paired_object_locus_markers;
+use crate::resolved_features::holes::project_hole_axes;
+use crate::resolved_features::holes::project_hole_position_sketches;
+use crate::resolved_features::holes::project_spatial_hole_position_sketches;
+use crate::resolved_features::holes::HoleTopology;
+use crate::resolved_features::parameters::enrich_history_parameters;
 
 #[test]
 fn hole_position_carrier_presence_requires_a_serialized_position_source() {

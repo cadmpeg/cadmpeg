@@ -7,7 +7,14 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::make_block;
+use crate::test_support::sldprt_native;
+use crate::test_support::sldprt_with_compact_relation_pair;
+use crate::test_support::sldprt_with_nested_sketch_profile;
+use crate::test_support::sldprt_with_tagged_compact_relation;
+use crate::test_support::sldprt_with_tagged_compact_relation_names;
+use crate::test_support::sldprt_with_tagged_compact_relation_scalar;
+use crate::test_support::triangle_body;
 use crate::SldprtCodec;
 
 #[test]

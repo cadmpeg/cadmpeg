@@ -1,11 +1,11 @@
 //! Terminal relation-carrier layout tests.
 
 use super::super::super::{CLASS_MARKER, SKETCH_MARKER};
-use super::super::*;
 use crate::layout::{
     compact_indexed_curve_continuation120 as continuation,
     current_terminal_relation_carrier as terminal,
 };
+use crate::resolved_features::endpoints::terminal_relation_class_offset;
 
 fn append_class_declaration(payload: &mut [u8], offset: usize, name: &[u8]) {
     payload[offset..offset + CLASS_MARKER.len()].copy_from_slice(CLASS_MARKER);

@@ -7,7 +7,13 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::LossTaxonomy;
 
-use crate::test_support::*;
+use crate::test_support::bridge_owned;
+use crate::test_support::entity51;
+use crate::test_support::owned_triangle;
+use crate::test_support::owned_triangle_with_kind;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::triangle_body;
+use crate::test_support::untyped_triangle;
 use crate::SldprtCodec;
 
 #[test]

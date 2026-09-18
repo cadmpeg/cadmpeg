@@ -1,6 +1,5 @@
 //! Marker-backed profile sketch and owned-edge tests.
 
-use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureSource;
@@ -10,6 +9,18 @@ use crate::records::{
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use crate::resolved_features::component_paths::project_dissected_sketches;
+use crate::resolved_features::curves::closed_marker_profiles;
+use crate::resolved_features::curves::fitted_marker_circle;
+use crate::resolved_features::curves::resolve_connected_marker_arcs;
+use crate::resolved_features::dimensions::project_marker_dimensioned_circles;
+use crate::resolved_features::profiles::project_marker_backed_sketches;
+use crate::resolved_features::projections::project_compact_edge_selections;
+use crate::resolved_features::relation_loci::doubled_profile_distance_loci;
+use crate::resolved_features::relation_loci::relation_operand_marker;
+use crate::resolved_features::selections::input_owned_edge_selections;
+use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
+use crate::resolved_features::LEGACY_SKETCH_MARKER;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,

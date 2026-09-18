@@ -1,6 +1,5 @@
 //! Pattern input and line-reference binding tests.
 
-use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureSource;
@@ -10,6 +9,19 @@ use crate::records::{
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance,
 };
+use crate::resolved_features::axes::compact_line_reference_direction;
+use crate::resolved_features::axes::declared_line_reference_directions;
+use crate::resolved_features::axes::line_reference_direction;
+use crate::resolved_features::axes::linear_pattern_display_directions;
+use crate::resolved_features::bindings::bind_pattern_inputs;
+use crate::resolved_features::bindings::bind_sweep_adjacent_profiles;
+use crate::resolved_features::relation_geometry::project_relation_bindings;
+use crate::resolved_features::relation_geometry::project_relation_point_geometry;
+use crate::resolved_features::relation_geometry::project_relation_solved_line_geometry;
+use crate::resolved_features::relation_geometry::project_relation_solved_point_geometry;
+use crate::resolved_features::relation_loci::profile_loci_by_marker;
+use crate::resolved_features::relation_loci::typed_relation_definition;
+use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,

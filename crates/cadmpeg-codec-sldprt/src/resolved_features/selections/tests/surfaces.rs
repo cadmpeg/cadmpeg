@@ -2,7 +2,6 @@
 
 use super::super::super::CLASS_MARKER;
 use super::super::selection_vector_tail;
-use super::super::*;
 use crate::classification::FeatureClass;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -10,6 +9,33 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
     FeatureInputScalar, FeatureInputScalarRole,
 };
+use crate::resolved_features::selections::compact_edge_component_path_at;
+use crate::resolved_features::selections::compact_edge_selection_at;
+use crate::resolved_features::selections::compact_extrusion_endpoint_selector_for_marker;
+use crate::resolved_features::selections::compact_sketch_surface_component_path_at;
+use crate::resolved_features::selections::compact_surface_selection_at;
+use crate::resolved_features::selections::compact_surface_selections;
+use crate::resolved_features::selections::component_face_reference_at;
+use crate::resolved_features::selections::component_face_reference_at_for_full_round_fillet;
+use crate::resolved_features::selections::component_face_reference_at_for_operation;
+use crate::resolved_features::selections::component_face_reference_in_record;
+use crate::resolved_features::selections::component_vector_path_at;
+use crate::resolved_features::selections::cosmetic_thread_component_references;
+use crate::resolved_features::selections::cosmetic_thread_cylinder_marker_reference;
+use crate::resolved_features::selections::cosmetic_thread_cylinder_reference_at;
+use crate::resolved_features::selections::cosmetic_thread_cylinder_references;
+use crate::resolved_features::selections::cosmetic_thread_diameter_child_tail;
+use crate::resolved_features::selections::counted_surface_component_path_at;
+use crate::resolved_features::selections::face_reference_plane_selection_candidates;
+use crate::resolved_features::selections::fillet_face_selection_candidates;
+use crate::resolved_features::selections::generated_surface_identities;
+use crate::resolved_features::selections::history_features_with_object_sources;
+use crate::resolved_features::selections::inline_surface_reference_at;
+use crate::resolved_features::selections::mirror_pattern_component_path_at;
+use crate::resolved_features::selections::operation_surface_selection_candidates;
+use crate::resolved_features::selections::planar_surface_selection_candidates;
+use crate::resolved_features::selections::surface_reference_matches_at;
+use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use std::collections::{BTreeMap, HashSet};
 
 #[test]

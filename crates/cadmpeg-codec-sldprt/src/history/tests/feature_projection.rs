@@ -2,9 +2,34 @@
 //! Feature-class, hole, plane, and profile projection tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
 use super::feature;
 use super::feature_input_lane;
+use crate::history::bind_definition_sketch;
+use crate::history::custom_property_attributes;
+use crate::history::enrich_scene_classes;
+use crate::history::feature_tree_node_role;
+use crate::history::format_native_scalar;
+use crate::history::hole_sketch_construction;
+use crate::history::is_offset_plane;
+use crate::history::native_parameter_is_length;
+use crate::history::neutral_feature_id;
+use crate::history::order_model_features_for_regeneration;
+use crate::history::parameter_names;
+use crate::history::principal_plane_in_history;
+use crate::history::project_chamfer;
+use crate::history::project_definition;
+use crate::history::project_extrude;
+use crate::history::project_feature_content;
+use crate::history::project_feature_model;
+use crate::history::project_features;
+use crate::history::project_hole;
+use crate::history::project_parameters;
+use crate::history::projected_parameter_names;
+use crate::history::restore_configuration_tree_node_definitions;
+use crate::history::sync_neutral_features;
+use crate::records::Feature;
+use crate::records::FeatureContent;
+use crate::records::FeatureHistory;
 use crate::records::ObjectId;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::features::AngularTermination;
@@ -29,6 +54,8 @@ use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 const EPS_PROJECTED_REVOLUTION_ANGLE: f64 = 1.0e-12;
 const EPS_BOUND_REVOLUTION_ANGLE: f64 = 1.0e-12;

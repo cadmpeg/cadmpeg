@@ -2,7 +2,9 @@
 //! Sketch-constraint and native-operand design-loss tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::decode::append_design_losses;
+use crate::decode::sketch_constraint_has_complete_neutral_semantics;
+use crate::decode::spatial_sketch_constraint_has_complete_neutral_semantics;
 use cadmpeg_ir::features::{
     BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
 };

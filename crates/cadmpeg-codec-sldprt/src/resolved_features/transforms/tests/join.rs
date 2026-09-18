@@ -1,11 +1,15 @@
 //! Unique-translation profile join tests.
 
-use super::super::*;
 use super::marker;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use crate::resolved_features::relation_loci::profile_loci_by_marker;
+use crate::resolved_features::relation_loci::typed_relation_definition;
+use crate::resolved_features::relation_loci::unique_linked_endpoint_locus;
+use crate::resolved_features::transforms::marker_entities;
+use crate::resolved_features::typed_relations::typed_marker_relation_definition;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
