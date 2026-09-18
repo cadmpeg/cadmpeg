@@ -605,22 +605,19 @@ fn parse_bulk_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<BulkEnvelope<'a>, CodecError> {
-    let bytes = source.window();
-    let header = bytes
-        .get(..envelope::LEN)
-        .ok_or_else(|| CodecError::Malformed("truncated RSe bulk envelope".into()))?;
-    if bytes.len() == header.len() {
+    let mut header = source;
+    let prefix = crate::reader::array::<{ envelope::FORM - envelope::PREFIX }>(
+        &mut header,
+        "bulk envelope prefix",
+    )?;
+    let form = BulkForm(crate::reader::u16(&mut header, "bulk envelope form")?);
+    if header.remaining() == 0 {
         return Err(CodecError::Malformed(
             "RSe bulk envelope has no compressed member".into(),
         ));
     }
-    let mut prefix = [0; 16];
-    prefix.copy_from_slice(&header[envelope::PREFIX..envelope::FORM]);
-    let form = BulkForm(View::u16_le_at(header, envelope::FORM).ok_or_else(|| {
-        CodecError::Malformed("RSe bulk envelope form field is out of range".into())
-    })?);
     let compressed = source
-        .child(source.start() + header.len(), source.end())
+        .child(source.start() + envelope::LEN, source.end())
         .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;
     let expanded = inflate_zlib_exact(ctx, compressed)?;
     Ok(BulkEnvelope {
@@ -916,6 +913,30 @@ mod tests {
         assert_eq!(bulk.prefix, [0x3c; 16]);
         assert_eq!(bulk.form.value(), 0x0104);
         assert_eq!(bulk.expanded.window(), b"framed bulk records");
+    }
+
+    #[test]
+    fn a_truncated_bulk_envelope_is_located_and_names_its_field() {
+        for (len, expected) in [
+            (10, "Truncated bulk envelope prefix at offset 0"),
+            (17, "Truncated bulk envelope form at offset 16"),
+        ] {
+            let bytes = vec![0x3c; len];
+            let arena = DecodeArena::new();
+            let text =
+                match DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()) {
+                    Ok((ctx, root)) => match parse_bulk_stream(&ctx, root) {
+                        Ok(envelope) => format!("the read succeeded with {envelope:?}"),
+                        Err(CodecError::Truncated {
+                            location,
+                            operation,
+                        }) => format!("Truncated {operation} at offset {}", location.offset),
+                        Err(error) => error.to_string(),
+                    },
+                    Err(error) => error.to_string(),
+                };
+            assert_eq!(text, expected);
+        }
     }
 
     #[test]

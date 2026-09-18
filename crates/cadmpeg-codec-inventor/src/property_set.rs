@@ -218,9 +218,8 @@ pub(crate) fn parse_property_set_stream<'a>(
             ));
         }
         require_zero_range(bytes, previous_end, offset, "section gap")?;
-        let size = View::u32_le_at(bytes, offset).ok_or_else(|| {
-            CodecError::Malformed("truncated OLE property-set section size".into())
-        })? as usize;
+        let mut section = crate::reader::at(source, source.start() + offset, "section size")?;
+        let size = crate::reader::u32(&mut section, "section size")? as usize;
         let end = offset.checked_add(size).ok_or_else(|| {
             CodecError::Malformed("OLE property-set section range overflows".into())
         })?;
@@ -266,11 +265,9 @@ fn parse_section<'a>(
             CodecError::Malformed("OLE property directory length overflows".into())
         })?)
         .ok_or_else(|| CodecError::Malformed("OLE property directory range overflows".into()))?;
-    if directory_end > bytes.len() {
-        return Err(CodecError::Malformed(
-            "truncated OLE property directory".into(),
-        ));
-    }
+    // The directory is read entry by entry below, so the window states its own
+    // bound: a directory the section cannot hold stops at the entry that runs
+    // out of bytes.
     let mut ids = BTreeSet::new();
     let mut directory = Vec::with_capacity(property_count);
     for _ in 0..property_count {
@@ -784,12 +781,6 @@ impl<'a> Cursor<'a> {
     }
 
     fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
-        if self.view.position().checked_add(len).is_none() {
-            return Err(CodecError::malformed(format_args!(
-                "{} {field} range overflows",
-                self.scope
-            )));
-        }
         crate::reader::take(&mut self.view, len, field)
     }
 
@@ -1024,6 +1015,40 @@ mod tests {
             Err(error) => error.to_string(),
         };
         assert_eq!(text, "Truncated Unicode string at offset 0");
+    }
+
+    /// A one-section stream header naming `offset` as the section's start.
+    fn one_section_header(offset: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&BYTE_ORDER_LE.to_le_bytes());
+        bytes.extend_from_slice(&0_u16.to_le_bytes());
+        bytes.extend_from_slice(&0x0002_0006_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 16]);
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&FMTID_SUMMARY);
+        bytes.extend_from_slice(&offset.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn a_truncated_section_size_is_located_and_names_its_field() {
+        let mut bytes = one_section_header(48);
+        bytes.extend_from_slice(&[0, 0]);
+        with_parse(&bytes, |parsed| {
+            assert_eq!(truncation(parsed), "Truncated section size at offset 48");
+        });
+    }
+
+    #[test]
+    fn a_property_directory_the_section_cannot_hold_is_located_and_names_its_field() {
+        let mut bytes = one_section_header(48);
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&100_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&808_u32.to_le_bytes());
+        with_parse(&bytes, |parsed| {
+            assert_eq!(truncation(parsed), "Truncated property id at offset 64");
+        });
     }
 
     fn with_parse(bytes: &[u8], test: impl FnOnce(Result<PropertySetStream<'_>, CodecError>)) {
