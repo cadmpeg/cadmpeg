@@ -3564,16 +3564,28 @@ impl PolarNurbsPoles {
         }
     }
 
-    /// Edit every pole in place.
-    pub fn edit_poles(&mut self, mut edit: impl FnMut(&mut Point2, &mut f64)) {
-        match self {
-            Self::Polynomial { poles } => poles
-                .iter_mut()
-                .for_each(|pole| edit(&mut pole.radial, &mut pole.axial)),
-            Self::Rational { poles } => poles
-                .iter_mut()
-                .for_each(|pole| edit(&mut pole.radial, &mut pole.axial)),
+    /// Edit every pole, keeping the prior poles on a refusal.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
+    pub fn edit_poles(
+        &mut self,
+        mut edit: impl FnMut(&mut Point2, &mut f64) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
+        let mut candidate = self.clone();
+        match &mut candidate {
+            Self::Polynomial { poles } => {
+                for pole in poles.iter_mut() {
+                    edit(&mut pole.radial, &mut pole.axial)?;
+                }
+            }
+            Self::Rational { poles } => {
+                for pole in poles.iter_mut() {
+                    edit(&mut pole.radial, &mut pole.axial)?;
+                }
+            }
         }
+        *self = candidate;
+        Ok(())
     }
 }
 
@@ -3652,12 +3664,14 @@ impl PolarPcurveNurbs {
     }
 
     /// Atomically edit paired poles and preserve finite coordinates.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_poles(
         &mut self,
-        edit: impl FnMut(&mut Point2, &mut f64),
+        edit: impl FnMut(&mut Point2, &mut f64) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
-        poles.edit_poles(edit);
+        poles.edit_poles(edit)?;
         if poles.poles().iter().all(|pole| {
             pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
         }) {
