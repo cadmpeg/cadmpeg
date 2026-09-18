@@ -3,9 +3,10 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::{
-    push_u8_string, smbh_header_prefix, t_attribute_base, t_dbl, t_end, t_ident, t_long, t_pos,
-    t_ref, t_subident, t_vec,
+use crate::test_support::smbh_header_test::smbh_header_prefix;
+use crate::test_support::tokens_test::{
+    push_u8_string, t_attribute_base, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident,
+    t_vec,
 };
 
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.

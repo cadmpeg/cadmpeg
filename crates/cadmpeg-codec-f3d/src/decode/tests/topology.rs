@@ -18,14 +18,17 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::{
-    f3d_native, f3d_with_smbh, synthetic_exact_spl_sur_smbh, synthetic_free_vertex_body_smbh,
-    synthetic_full_rolling_ball_smbh, synthetic_geometry_smbh,
+use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::smbh_blends_test::synthetic_full_rolling_ball_smbh;
+use crate::test_support::smbh_curves_test::synthetic_geometry_with_procedural_curve_smbh;
+use crate::test_support::smbh_geometry_test::{
+    synthetic_free_vertex_body_smbh, synthetic_geometry_smbh,
     synthetic_geometry_with_degenerate_curve_smbh, synthetic_geometry_with_face_attribute_smbh,
-    synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_procedural_curve_smbh,
     synthetic_mixed_face_wire_body_smbh, synthetic_mixed_smbh, synthetic_wire_body_smbh,
-    update_f3d_native,
 };
+use crate::test_support::smbh_pcurves_test::synthetic_geometry_with_pcurve_smbh;
+use crate::test_support::smbh_surfaces_test::synthetic_exact_spl_sur_smbh;
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]

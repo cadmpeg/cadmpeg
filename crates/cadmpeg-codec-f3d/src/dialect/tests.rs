@@ -14,7 +14,7 @@ fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std
 
 #[test]
 fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
-    let bytes = crate::test_support::synthetic_f3d(true);
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, root) =

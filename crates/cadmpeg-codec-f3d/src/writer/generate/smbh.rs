@@ -1823,9 +1823,10 @@ mod tests {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
-    use crate::test_support::{
-        f3d_with_smbh, synthetic_free_vertex_body_smbh, synthetic_wire_body_smbh,
+    use crate::test_support::smbh_geometry_test::{
+        synthetic_free_vertex_body_smbh, synthetic_wire_body_smbh,
     };
+    use crate::test_support::zip_test::f3d_with_smbh;
     use crate::writer::generate::write_new;
 
     fn decoded_wire(bytes: &[u8]) -> cadmpeg_ir::CadIr {

@@ -2,7 +2,8 @@
 //! Historical edge-operand binding tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::history::bind_edge_operand_history_candidates;
+use std::collections::HashMap;
 
 #[test]
 fn sole_transition_deletion_does_not_supply_operand_identity() {

@@ -19,10 +19,12 @@ use cadmpeg_ir::report::LossKind;
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::{
+use crate::test_support::assembly_test::{
     f3d_with_text_brep, f3d_with_text_brep_stream, f3d_without_brep,
-    synthetic_ambiguous_multi_brep_f3d, synthetic_smbh, write_synthetic_manifests,
+    synthetic_ambiguous_multi_brep_f3d,
 };
+use crate::test_support::manifest_test::write_synthetic_manifests;
+use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 

@@ -87,7 +87,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::*;
-    use crate::test_support::synthetic_f3d;
+    use crate::test_support::zip_test::synthetic_f3d;
 
     #[test]
     fn decode_report_includes_a_kernel_identity_collision_loss() {

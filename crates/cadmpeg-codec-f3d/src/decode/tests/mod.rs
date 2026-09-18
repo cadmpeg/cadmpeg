@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests and synthetic geometry suites.
 
+mod attribute_colors;
 mod bodyless;
 mod codec;
 mod completeness;

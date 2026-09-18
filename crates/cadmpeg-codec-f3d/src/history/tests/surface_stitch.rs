@@ -11,7 +11,10 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use super::super::*;
+use crate::history::bind_feature_face_selections;
+use crate::history_records::{
+    AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
+};
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
 #[test]

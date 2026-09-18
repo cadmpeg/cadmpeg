@@ -3,11 +3,15 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::{
-    append_generated_float_array, generated_curve_block, generated_pcurve_block,
-    generated_rational_pcurve_block, generated_surface_block, push_native_enum, push_u8_string,
-    synthetic_geometry_smbh, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident, t_u16_string,
-    t_vec,
+use crate::test_support::smbh_blocks_test::{
+    generated_curve_block, generated_pcurve_block, generated_rational_pcurve_block,
+    generated_surface_block,
+};
+use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::smbh_surfaces_test::append_generated_float_array;
+use crate::test_support::tokens_test::{
+    push_native_enum, push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident,
+    t_u16_string, t_vec,
 };
 
 pub(crate) fn synthetic_geometry_with_procedural_curve_smbh() -> Vec<u8> {

@@ -4754,8 +4754,8 @@ mod native_interval_curve_tests {
 
         let decoded = crate::F3dCodec
             .decode(
-                &mut Cursor::new(crate::test_support::f3d_with_smbh(
-                    &crate::test_support::synthetic_law_driven_sweep_smbh(),
+                &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(
+                    &crate::test_support::smbh_surfaces_test::synthetic_law_driven_sweep_smbh(),
                 )),
                 &DecodeOptions::default(),
             )
@@ -5913,8 +5913,8 @@ mod pcurve_chart_tests {
 
         let decoded = crate::F3dCodec
             .decode(
-                &mut Cursor::new(crate::test_support::f3d_with_smbh(
-                    &crate::test_support::synthetic_geometry_with_null_support_spring_smbh(),
+                &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(
+                    &crate::test_support::smbh_curves_test::synthetic_geometry_with_null_support_spring_smbh(),
                 )),
                 &DecodeOptions::default(),
             )

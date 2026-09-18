@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mirror-history unit tests.
 
-use super::super::*;
+use crate::history::{
+    discard_projection_caches, historical_mirror_coedge_plane,
+    historical_mirror_face_operand_plane, historical_mirror_plane,
+    historical_selection_identity_kind,
+};
+use crate::history_records::{AsmDeltaState, AsmHistory};
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
 #[test]
 fn discard_projection_caches_retains_compact_mirror_plane_topology() {

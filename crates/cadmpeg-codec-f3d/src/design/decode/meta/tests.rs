@@ -3,17 +3,17 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
 
 use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
 
-use crate::test_support::{
-    design_metastream_with_records, lp_ascii, with_scan, write_synthetic_manifests,
-};
+use crate::test_support::lp_ascii;
+use crate::test_support::manifest_test::write_synthetic_manifests;
+use crate::test_support::streams_test::design_metastream_with_records;
+use crate::test_support::zip_test::with_scan;
 
 #[test]
 fn component_naming_space_binds_component_entity_to_context_uuid() {

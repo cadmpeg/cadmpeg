@@ -18,22 +18,27 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::{
-    f3d_with_smbh, generated_curve_block, generated_pcurve_block, renamed_generated_subtype,
-    synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh,
+use crate::test_support::native_test::TestEncode;
+use crate::test_support::smbh_blocks_test::{generated_curve_block, generated_pcurve_block};
+use crate::test_support::smbh_curves_test::{
     synthetic_geometry_with_deformable_curve_smbh, synthetic_geometry_with_helix_curve_smbh,
-    synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh,
     synthetic_geometry_with_null_support_spring_smbh,
+    synthetic_geometry_with_procedural_curve_smbh, synthetic_geometry_with_spring_smbh,
+    synthetic_geometry_with_surface_offset_smbh,
+};
+use crate::test_support::smbh_pcurves_test::{
+    synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh,
+    synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh,
     synthetic_geometry_with_out_of_scope_pcurve_cache_smbh, synthetic_geometry_with_pcurve_smbh,
-    synthetic_geometry_with_procedural_curve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
+    synthetic_geometry_with_rational_pcurve_smbh,
     synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh,
     synthetic_geometry_with_ref_pcurve_smbh, synthetic_geometry_with_short_pcurve_tail_smbh,
-    synthetic_geometry_with_spring_smbh, synthetic_geometry_with_surface_offset_smbh,
     synthetic_geometry_with_wrapped_ref_pcurve_smbh,
     synthetic_inline_pcurve_with_referenced_support_smbh, with_inline_pcurve_non_boolean_wrapper,
     with_pcurve_discriminator, with_ref_pcurve_companion_name, with_ref_pcurve_companion_reversed,
-    TestEncode,
 };
+use crate::test_support::tokens_test::renamed_generated_subtype;
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

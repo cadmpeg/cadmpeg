@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::default_trait_access)]
 
-use super::super::*;
+use crate::history::bind_hole_selection_history;
 use crate::history_records::AsmHistoricalPlane;
+use crate::history_records::{
+    AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalCylinder,
+    AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
+    AsmHistoricalTransition, AsmHistory,
+};
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn carrier(entity: i64, carrier: i64) -> AsmHistoricalCarrierBinding {

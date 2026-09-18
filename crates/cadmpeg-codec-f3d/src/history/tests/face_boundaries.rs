@@ -10,7 +10,11 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use super::super::*;
+use crate::history::{
+    bind_edge_identity_bounded_face_rules, cyclic_point_subsequence,
+    resolve_direct_face_recipe_clauses,
+};
+use crate::history_records::AsmHistoricalTopology;
 
 #[test]
 fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {

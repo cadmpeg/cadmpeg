@@ -11,7 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use super::super::*;
+use crate::history::{discard_projection_caches, side_one_recipe_edge};
+use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 
 #[test]
 fn projection_caches_end_after_history_consumers() {

@@ -15,12 +15,14 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::{
-    f3d_native, f3d_native_mut, f3d_with_smbh, synthetic_geometry_smbh,
-    synthetic_geometry_with_body_color_smbh, synthetic_geometry_with_body_decimal_color_chain_smbh,
+use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_test::{
+    synthetic_geometry_smbh, synthetic_geometry_with_body_color_smbh,
+    synthetic_geometry_with_body_decimal_color_chain_smbh,
     synthetic_geometry_with_body_truecolor_chain_smbh, synthetic_geometry_with_face_color_smbh,
     synthetic_geometry_with_transform_smbh,
 };
+use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]
