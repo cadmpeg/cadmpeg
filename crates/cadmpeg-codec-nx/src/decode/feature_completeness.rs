@@ -166,7 +166,7 @@ pub(crate) fn datum_coordinate_system_is_incomplete(
     y_axis: Vector3,
     z_axis: Vector3,
 ) -> bool {
-    if !finite_feature_point(origin)
+    if !origin.is_finite()
         || !unit_feature_direction(x_axis)
         || !unit_feature_direction(y_axis)
         || !unit_feature_direction(z_axis)
@@ -700,8 +700,4 @@ pub(crate) fn positive_feature_length(length: Length) -> bool {
 
 pub(crate) fn valid_feature_direction(direction: Vector3) -> bool {
     direction.norm().is_finite() && direction.norm() > 0.0
-}
-
-pub(crate) fn finite_feature_point(point: Point3) -> bool {
-    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
 }
