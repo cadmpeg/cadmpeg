@@ -4,12 +4,6 @@
 use crate::design::decode::parameters::design_parameter_discriminator;
 use crate::test_support::lp_utf16;
 
-pub(crate) fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(&class_tag);
-    bytes.extend_from_slice(&record_index.to_le_bytes());
-}
-
 pub(crate) fn parameter_record(
     owner: Option<u32>,
     expression: &str,
@@ -74,17 +68,6 @@ pub(crate) fn parameter_owner_frame() -> Vec<u8> {
     frame[93] = 1;
     frame[94..98].copy_from_slice(&12u32.to_le_bytes());
     frame
-}
-
-pub(crate) fn write_marked_reference(bytes: &mut [u8], at: usize, record_index: u32) {
-    bytes[at] = 1;
-    bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
-}
-
-pub(crate) fn push_marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
-    bytes.push(1);
-    bytes.extend_from_slice(&record_index.to_le_bytes());
-    bytes.extend_from_slice(&[0; 6]);
 }
 
 pub(crate) fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
@@ -153,4 +136,48 @@ pub(crate) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
     out.extend_from_slice(&23u32.to_le_bytes());
     out.extend_from_slice(b"IntrinsicMetaTypeuint64");
     out.extend_from_slice(&genesis.to_le_bytes());
+}
+
+pub(crate) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
+    let mut bytes = vec![0_u8; 648];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"273");
+    bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes[20] = 1;
+    bytes[25] = 1;
+    for (reference_at, transform_at, reference, translation) in [
+        (28, 40, 70_u32, [1.0_f64, 2.0, 3.0]),
+        (168, 180, 80_u32, [4.0, 5.0, 6.0]),
+    ] {
+        bytes[reference_at] = 1;
+        bytes[reference_at + 1..reference_at + 5].copy_from_slice(&reference.to_le_bytes());
+        for (ordinal, value) in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            bytes[transform_at + ordinal * 8..transform_at + ordinal * 8 + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes[637..641].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[641..644].copy_from_slice(b"259");
+    bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes
 }

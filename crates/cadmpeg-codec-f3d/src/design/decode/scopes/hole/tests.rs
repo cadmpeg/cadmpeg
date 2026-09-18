@@ -4,8 +4,8 @@ use super::exact_hole_face_selection;
 use super::HOLE_FACE_SELECTION_TYPE_GUID;
 use super::HOLE_POINT_DATA_TYPE_GUID;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::indexed_header;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use std::collections::HashMap;
 

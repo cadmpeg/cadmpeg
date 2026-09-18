@@ -4,12 +4,12 @@ use crate::design::decode::scopes::combine::exact_combine_operation;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::feature_project::project_combine;
-use crate::design::test_support::indexed_header;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::combine::{
     DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
 };
 use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_reference_u64;
 

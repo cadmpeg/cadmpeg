@@ -2,10 +2,10 @@
 
 use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::indexed_header;
-use crate::design::test_support::write_marked_reference;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::indexed_header;
+use crate::test_support::write_marked_reference;
 
 #[test]
 fn class_347_thicken_frame_admits_group_before_scalar() {

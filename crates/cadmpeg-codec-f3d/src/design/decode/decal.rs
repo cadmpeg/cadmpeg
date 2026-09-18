@@ -257,8 +257,8 @@ fn parse_decal_asset_record(
 #[cfg(test)]
 mod tests {
     use super::parse_decal_image_frame;
-    use crate::design::test_support::write_marked_reference;
     use crate::records::decal::DesignDecalMappingMode;
+    use crate::test_support::write_marked_reference;
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());

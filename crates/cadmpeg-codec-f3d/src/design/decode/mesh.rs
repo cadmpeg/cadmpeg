@@ -1540,7 +1540,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::design::test_support::design_type;
+    use crate::design::test_support::{design_type, primary_record};
     use crate::test_support::{lp_ascii, lp_utf16};
 
     fn matrix(cells: [f64; 16]) -> Vec<u8> {
@@ -1657,13 +1657,6 @@ mod tests {
         let tail_at = bytes.len() - SAME_SEGMENT_REFERENCE_BYTES;
         put_reference(&mut bytes, tail_at, collection_record_index);
         bytes
-    }
-
-    fn primary_record(entity_id: u64, bulk_offset: usize) -> crate::metastream::RecordIndexEntry {
-        crate::metastream::RecordIndexEntry {
-            entity_id,
-            bulk_offset: u64::try_from(bulk_offset).expect("test bulk offset"),
-        }
     }
 
     fn push_scene_footer(bytes: &mut Vec<u8>) {

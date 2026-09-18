@@ -8,8 +8,8 @@
 )]
 use super::*;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::indexed_header;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 
 fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {

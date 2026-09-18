@@ -5,13 +5,13 @@ use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from
 use crate::design::decode::scopes::pattern::exact_circular_pattern_construction_with_owners;
 use crate::design::decode::scopes::pattern::exact_rectangular_pattern_construction;
 use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
-use crate::design::decode::scopes::tests::assembly::assembly_operand_frame_fixture;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::indexed_header;
-use crate::design::test_support::push_marked_reference;
+use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::patterns::DesignCircularPatternConstruction;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
+use crate::test_support::push_marked_reference;
 
 #[test]
 fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {

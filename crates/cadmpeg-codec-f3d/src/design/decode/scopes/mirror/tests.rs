@@ -11,6 +11,7 @@ use super::exact_legacy_mirror_scope_tolerance;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::lp_utf16;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> usize {
     let start = bytes.len();
@@ -18,17 +19,6 @@ fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) ->
     bytes.extend_from_slice(&class_tag);
     bytes.extend_from_slice(&record_index.to_le_bytes());
     start
-}
-
-fn utf16(bytes: &mut Vec<u8>, value: &str) {
-    bytes.extend_from_slice(
-        &u32::try_from(value.encode_utf16().count())
-            .expect("test GUID length fits u32")
-            .to_le_bytes(),
-    );
-    for unit in value.encode_utf16() {
-        bytes.extend_from_slice(&unit.to_le_bytes());
-    }
 }
 
 #[test]
@@ -42,8 +32,8 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
     bytes.extend_from_slice(&(record_index + 3).to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     bytes.extend_from_slice(&1_u32.to_le_bytes());
-    utf16(&mut bytes, "dfa12ed5-41e3-47c2-947d-286843e235df");
-    utf16(&mut bytes, "15afb570-2968-417f-8485-96c81b2d332f");
+    lp_utf16(&mut bytes, "dfa12ed5-41e3-47c2-947d-286843e235df");
+    lp_utf16(&mut bytes, "15afb570-2968-417f-8485-96c81b2d332f");
     bytes.extend_from_slice(&2_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 4]);
     indexed_header(&mut bytes, *b"259", record_index);

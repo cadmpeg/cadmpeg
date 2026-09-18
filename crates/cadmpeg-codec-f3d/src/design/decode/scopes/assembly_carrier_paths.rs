@@ -408,7 +408,7 @@ fn exact_class_363_identity_guids(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::design::test_support::write_marked_reference;
+    use crate::test_support::write_marked_reference;
 
     fn write_header(bytes: &mut [u8], at: usize, class_tag: [u8; 3], record_index: u32) {
         bytes[at..at + 4].copy_from_slice(&3_u32.to_le_bytes());

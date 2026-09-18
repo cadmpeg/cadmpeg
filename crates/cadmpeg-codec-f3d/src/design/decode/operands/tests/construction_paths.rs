@@ -5,9 +5,9 @@ use crate::design::decode::operands::parse_construction_operand_path;
 use crate::design::decode::operands::parse_construction_operand_transform;
 use crate::design::decode::operands::parse_construction_tracking_path;
 use crate::design::decode::operands::parse_loft_legacy_body_carrier;
-use crate::design::test_support::indexed_header;
-use crate::design::test_support::push_marked_reference;
 use crate::records::decal::DesignRecordHeader;
+use crate::test_support::indexed_header;
+use crate::test_support::push_marked_reference;
 
 #[test]
 fn construction_operand_trailing_transform_has_exact_affine_frame() {

@@ -79,15 +79,43 @@ pub(crate) fn cross_document_reference(target: u64, link_name: &str) -> Vec<u8> 
     bytes.extend_from_slice(&target.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(
-        "11111111-2222-3333-4444-555555555555",
-    ));
+    lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-    bytes.extend(crate::bytes::lp_utf16_bytes(link_name));
+    lp_utf16(&mut bytes, link_name);
     bytes.push(0);
     bytes
+}
+
+/// Append an indexed record header: the three-byte class tag behind its
+/// little-endian `u32` length, then the little-endian record index.
+pub(crate) fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(&class_tag);
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+}
+
+/// Write an indexed record header over the first eleven bytes of `bytes`.
+pub(crate) fn write_indexed_header(bytes: &mut [u8], class_tag: [u8; 3], record_index: u32) {
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(&class_tag);
+    bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
+}
+
+/// Write a present marked reference to `record_index` at `at`: the presence
+/// byte then the little-endian record index.
+pub(crate) fn write_marked_reference(bytes: &mut [u8], at: usize, record_index: u32) {
+    bytes[at] = 1;
+    bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+}
+
+/// Append a present marked reference to `record_index`: the presence byte, the
+/// little-endian record index, then the six zero bytes that close the mark.
+pub(crate) fn push_marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
+    bytes.push(1);
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
 }
 
 mod tokens_test;

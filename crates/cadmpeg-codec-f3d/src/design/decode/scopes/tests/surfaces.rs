@@ -5,13 +5,13 @@ use crate::design::decode::scopes::surfaces::{
     exact_ruled_surface_operation, exact_surface_stitch_operation,
 };
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::indexed_header;
 use crate::design::test_support::{put_u32, put_u64};
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::{
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignSurfaceStitchOperation,
 };
+use crate::test_support::indexed_header;
 
 #[test]
 fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
