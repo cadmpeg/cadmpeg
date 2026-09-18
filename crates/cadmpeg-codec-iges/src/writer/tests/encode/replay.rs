@@ -1,10 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reporting of a declined verbatim replay.
 
-use super::*;
+use crate::loss::IgesLossCode;
+use crate::test_support::point_file;
+use crate::IgesCodec;
+use crate::IgesVersion;
 use cadmpeg_core::dialect::DialectId;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::ids::PointId;
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::FidelityResolution;
+use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::CadIr;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
 
 /// Reads the degradation reason from `plan`, or panics with the resolution.
 fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {

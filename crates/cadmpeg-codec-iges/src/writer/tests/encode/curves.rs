@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use crate::test_support::conic_arc_file;
+use crate::IgesCodec;
+use crate::IgesVersion;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::NurbsCurve;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
 
 #[test]
 fn encode_emits_the_typed_ellipse_form_for_v5_0() {

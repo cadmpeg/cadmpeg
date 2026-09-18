@@ -1,4 +1,20 @@
-use super::*;
+use super::directory_target;
+use super::integer_parameter_record;
+use super::token_parameter_record;
+use crate::parameter::analyze_trailing_pointer_groups;
+use crate::parameter::entity_primary_end;
+use crate::parameter::groups_for_candidate;
+use crate::parameter::structural_pointer_group_candidates;
+use crate::parameter::ParameterRecord;
+use crate::parameter::Token;
+use crate::parameter::TokenValue;
+use crate::test_support::owned_test_file;
+use crate::test_support::OwnedTestEntity;
+use crate::IgesCodec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::Codec;
+use std::collections::BTreeMap;
+use std::io::Cursor;
 
 #[test]
 fn type126_entity_table_boundary_uses_k_and_degree() {

@@ -5,7 +5,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::{assert_overdeclared_contract, code_count};
+use super::code_count;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;

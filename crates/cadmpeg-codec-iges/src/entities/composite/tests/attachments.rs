@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::loss::IgesLossCode;
+use crate::test_support::owned_test_file_with_global;
+use crate::test_support::owned_test_file_with_global_and_directory_fields;
+use crate::test_support::OwnedTestEntity;
+use crate::IgesCodec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
 
 #[test]
 fn decode_projects_a_v4_composite_with_a_point_attachment() {
