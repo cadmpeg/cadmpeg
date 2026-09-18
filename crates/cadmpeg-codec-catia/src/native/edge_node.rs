@@ -344,6 +344,7 @@ pub(super) fn consolidated_vertex_identities(
 mod tests {
     use crate::native::CatiaNative;
     use crate::test_support::test_a5_bound::a5_native_edge_run_stream;
+    use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
     fn vertex_wire_join_preserves_ids_and_rejects_conflicting_ids() {
@@ -365,26 +366,6 @@ mod tests {
         let error = serde_json::from_value::<CatiaNative>(wire)
             .expect_err("reject conflicting vertex join");
         assert!(error.to_string().contains("vertices differ"));
-    }
-
-    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-        let mut wire = serde_json::json!({});
-        wire[key] = serde_json::Value::Null;
-        let Err(refused) = serde_json::from_value::<T>(wire) else {
-            panic!("{key}: null was admitted")
-        };
-        refused.to_string()
-    }
-
-    fn states_the_key(key: &str, message: &str) {
-        assert!(
-            message.starts_with(&format!("{key}: ")),
-            "the refusal of a null {key} states {message}"
-        );
-        assert!(
-            message.contains("it does not state null"),
-            "the refusal of a null {key} states {message}"
-        );
     }
 
     /// A top-level optional key on an edge node names itself in its refusal.
