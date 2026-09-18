@@ -12,7 +12,7 @@ use super::{
     parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
     parse_dimension_presentation_frame, recipe_record_prefix,
 };
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::{
     null_locus_dimension_definition, remove_dimension_frame_relations,
 };
@@ -603,7 +603,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     assert_eq!(pair.loci()[1].geometry_index(), 194);
     assert_eq!(pair.loci()[1].role, 1);
     assert_eq!(pair.paired_class_tag.as_str(), "273");
-    let mut parameter = parse_design_parameter(&parameter_record(
+    let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(300),
         "40 mm",
         "Linear Dimension-3",

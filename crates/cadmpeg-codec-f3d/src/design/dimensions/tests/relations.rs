@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::project_dimension_constraints;
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::exact_atomic_constraint;
 use crate::design::dimensions::exact_counted_dimension_relation;
 use crate::design::dimensions::exact_offset_constraint;
@@ -1151,7 +1151,7 @@ fn parallel_group_binds_one_common_axis_angle() {
     let second = line("generated:test:line#second", Point2::new(-2.0, -2.0));
     let mismatch = line("generated:test:line#mismatch", Point2::new(1.0, 0.0));
     let crossed = line("generated:test:line#crossed", Point2::new(1.0, -1.0));
-    let parameter = parse_design_parameter(&parameter_record(
+    let parameter = parse_design_parameter_record(&parameter_record(
         Some(44),
         "45 deg",
         "Angular Dimension-2",

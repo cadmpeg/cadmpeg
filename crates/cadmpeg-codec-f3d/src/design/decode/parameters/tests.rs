@@ -11,9 +11,8 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use super::{
-    decode_parameters, parse_design_parameter_record as parse_design_parameter,
-    parse_legacy_parameter_owner_68, parse_legacy_parameter_owner_88, parse_parameter_companion,
-    parse_parameter_owner,
+    decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
+    parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::records::{
@@ -85,7 +84,7 @@ fn class_287_parameter_record_with_expression_trailer(
 
 #[test]
 fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
-    let parameter = parse_design_parameter(&class_287_parameter_record("HoleDepth", "d20"))
+    let parameter = parse_design_parameter_record(&class_287_parameter_record("HoleDepth", "d20"))
         .expect("class-287 parameter");
     assert_eq!(parameter.class_tag.as_str(), "287");
     assert_eq!(parameter.record_index, 887);
@@ -103,7 +102,7 @@ fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
     assert_eq!(parameter.evaluated_value_offset(), 108);
 
     let dimension =
-        parse_design_parameter(&class_287_parameter_record("Diameter Dimension-2", "d1"))
+        parse_design_parameter_record(&class_287_parameter_record("Diameter Dimension-2", "d1"))
             .expect("class-287 dimension parameter");
     assert_eq!(dimension.source_kind(), "Diameter Dimension-2");
     assert_eq!(dimension.name(), "d1");
@@ -111,37 +110,35 @@ fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
 
 #[test]
 fn class_287_parameter_accepts_the_marked_expression_trailer() {
-    let parameter = parse_design_parameter(&class_287_parameter_record_with_expression_trailer(
-        "OffsetX",
-        "d63",
-        [0, 0, 0, 1, 0],
-    ))
+    let parameter = parse_design_parameter_record(
+        &class_287_parameter_record_with_expression_trailer("OffsetX", "d63", [0, 0, 0, 1, 0]),
+    )
     .expect("class-287 parameter with marked expression trailer");
     assert_eq!(parameter.source_kind(), "OffsetX");
     assert_eq!(parameter.name(), "d63");
 
     let malformed =
         class_287_parameter_record_with_expression_trailer("OffsetX", "d63", [0, 0, 0, 2, 0]);
-    assert!(parse_design_parameter(&malformed).is_none());
+    assert!(parse_design_parameter_record(&malformed).is_none());
 }
 
 #[test]
 fn class_287_parameter_requires_its_marker_and_tail() {
     let mut frame = class_287_parameter_record("HoleDepth", "d20");
     frame[30] = 0;
-    assert!(parse_design_parameter(&frame).is_none());
+    assert!(parse_design_parameter_record(&frame).is_none());
 
     let mut frame = class_287_parameter_record("HoleDepth", "d20");
     let tail = frame.len() - 12;
     frame[tail + 2] = 174;
-    assert!(parse_design_parameter(&frame).is_none());
+    assert!(parse_design_parameter_record(&frame).is_none());
 }
 
 #[test]
 fn compact_owned_design_parameter_has_no_family_discriminator() {
     let bytes =
         compact_owned_parameter_record(6653, 99, "82.00 mm", "Diameter", Some("mm"), "d99", 8.2);
-    let parameter = parse_design_parameter(&bytes).expect("compact owned parameter");
+    let parameter = parse_design_parameter_record(&bytes).expect("compact owned parameter");
     assert_eq!(parameter.record_index, 6654);
     assert_eq!(parameter.owner_record_index(), Some(6653));
     assert_eq!(parameter.source_ordinal, 99);
@@ -184,7 +181,7 @@ fn legacy_owned_design_parameter_uses_the_compact_identity_prefix() {
     bytes.extend_from_slice(&0.0_f64.to_le_bytes());
     bytes.extend_from_slice(&[0, 1, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
-    let parameter = parse_design_parameter(&bytes).expect("legacy owned parameter");
+    let parameter = parse_design_parameter_record(&bytes).expect("legacy owned parameter");
     assert_eq!(parameter.record_index, 439);
     assert_eq!(parameter.owner_record_index(), Some(437));
     assert_eq!(parameter.source_ordinal, 5);
@@ -199,7 +196,7 @@ fn legacy_owned_design_parameter_uses_the_compact_identity_prefix() {
 
 #[test]
 fn parameter_variants_have_exact_string_and_scalar_boundaries() {
-    let user = parse_design_parameter(&parameter_record(
+    let user = parse_design_parameter_record(&parameter_record(
         None,
         "60 mm",
         "User Parameter",
@@ -213,7 +210,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(user.unit().map(|field| field.value.as_str()), Some("mm"));
     assert_eq!(user.evaluated_value(), 6.0);
 
-    let feature = parse_design_parameter(&parameter_record(
+    let feature = parse_design_parameter_record(&parameter_record(
         Some(44),
         "Width / 2",
         "AlongDistance",
@@ -226,7 +223,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(feature.owner_record_index(), Some(44));
     assert_eq!(feature.expression(), "Width / 2");
 
-    let boolean = parse_design_parameter(&parameter_record(
+    let boolean = parse_design_parameter_record(&parameter_record(
         None,
         "1",
         "User Parameter",
@@ -240,7 +237,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
 
     let mut tangency = parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
     tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
-    let tangency = parse_design_parameter(&tangency).expect("prefixed unitless parameter");
+    let tangency = parse_design_parameter_record(&tangency).expect("prefixed unitless parameter");
     assert_eq!(
         tangency
             .family_discriminator()
@@ -255,7 +252,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
     earlier_tangency[22..30].copy_from_slice(&0u64.to_le_bytes());
     assert_eq!(
-        parse_design_parameter(&earlier_tangency)
+        parse_design_parameter_record(&earlier_tangency)
             .expect("earlier tangency parameter")
             .family_discriminator()
             .map(|value| value.value.code()),
@@ -265,7 +262,8 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let mut scale_factor = parameter_record(Some(1331), "1", "ScaleFactor", None, "scale", 1.0);
     let scale_factor_tail = scale_factor.len() - 12;
     scale_factor[scale_factor_tail + 2] = 16;
-    let scale_factor = parse_design_parameter(&scale_factor).expect("scale-factor parameter");
+    let scale_factor =
+        parse_design_parameter_record(&scale_factor).expect("scale-factor parameter");
     assert_eq!(
         scale_factor
             .family_discriminator()
@@ -287,7 +285,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         );
         earlier_distance[22..30].copy_from_slice(&discriminator.to_le_bytes());
         assert_eq!(
-            parse_design_parameter(&earlier_distance)
+            parse_design_parameter_record(&earlier_distance)
                 .expect("earlier feature parameter")
                 .family_discriminator()
                 .map(|value| value.value.code()),
@@ -297,7 +295,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
 
     let mut invalid_tangency = earlier_tangency;
     invalid_tangency[22..30].copy_from_slice(&5u64.to_le_bytes());
-    assert!(parse_design_parameter(&invalid_tangency).is_none());
+    assert!(parse_design_parameter_record(&invalid_tangency).is_none());
 
     let mut revised_distance = parameter_record(
         Some(44),
@@ -311,7 +309,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let tail = revised_distance.len() - 12;
     revised_distance[tail + 2] = 16;
     assert_eq!(
-        parse_design_parameter(&revised_distance)
+        parse_design_parameter_record(&revised_distance)
             .expect("revision-six feature parameter")
             .family_discriminator()
             .map(|value| value.value.code()),
@@ -320,10 +318,10 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
 
     let mut invalid_distance = revised_distance.clone();
     invalid_distance[22..30].copy_from_slice(&7u64.to_le_bytes());
-    assert!(parse_design_parameter(&invalid_distance).is_none());
+    assert!(parse_design_parameter_record(&invalid_distance).is_none());
 
     revised_distance[tail + 2] = 19;
-    assert!(parse_design_parameter(&revised_distance).is_none());
+    assert!(parse_design_parameter_record(&revised_distance).is_none());
 
     let mut sheet_metal =
         parameter_record(Some(301), "50.00 mm", "FlangeHeight", Some("mm"), "d2", 5.0);
@@ -333,7 +331,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     sheet_metal.insert(expression_end + 9, 0);
     let tail = sheet_metal.len() - 12;
     sheet_metal[tail + 2] = 16;
-    let sheet_metal = parse_design_parameter(&sheet_metal)
+    let sheet_metal = parse_design_parameter_record(&sheet_metal)
         .expect("sheet-metal parameter with ten-byte expression trailer");
     assert_eq!(sheet_metal.source_kind(), "FlangeHeight");
     assert_eq!(sheet_metal.owner_record_index(), Some(301));
@@ -351,7 +349,7 @@ fn parameter_record_rejects_noncanonical_tail() {
         std::f64::consts::FRAC_PI_4,
     );
     *record.last_mut().unwrap() = 1;
-    assert!(parse_design_parameter(&record).is_none());
+    assert!(parse_design_parameter_record(&record).is_none());
 }
 
 #[test]
@@ -1081,13 +1079,13 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
 #[test]
 fn parameter_source_rejects_missing_or_unexpected_owner() {
     let unowned_feature = parameter_record(None, "1", "Distance", None, "d1", 1.0);
-    assert!(parse_design_parameter(&unowned_feature).is_none());
+    assert!(parse_design_parameter_record(&unowned_feature).is_none());
     let owned_user = parameter_record(Some(2), "1", "User Parameter", None, "d1", 1.0);
-    assert!(parse_design_parameter(&owned_user).is_none());
+    assert!(parse_design_parameter_record(&owned_user).is_none());
     let compact_user = compact_owned_parameter_record(2, 0, "1", "User Parameter", None, "d1", 1.0);
-    assert!(parse_design_parameter(&compact_user).is_none());
+    assert!(parse_design_parameter_record(&compact_user).is_none());
     let legacy_user = class_287_parameter_record("User Parameter", "d1");
-    assert!(parse_design_parameter(&legacy_user).is_none());
+    assert!(parse_design_parameter_record(&legacy_user).is_none());
 }
 
 #[test]

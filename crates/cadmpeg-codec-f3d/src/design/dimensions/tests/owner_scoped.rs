@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::owner_scoped_angular_dimension_definition;
 use crate::design::dimensions::owner_scoped_line_length_dimension_definition;
 use crate::design::dimensions::owner_scoped_radial_dimension_definition;
@@ -136,7 +136,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         diameter_parameter.clone(),
     )
     .is_none());
-    let parameter = parse_design_parameter(&parameter_record(
+    let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
         "10 mm",
         "Diameter Dimension-2",
@@ -193,7 +193,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             && parameter == diameter_parameter
     ));
 
-    let radial_parameter = parse_design_parameter(&parameter_record(
+    let radial_parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
         "5 mm",
         "Radial Dimension-2",
@@ -258,7 +258,7 @@ fn owner_scoped_line_lengths_preserve_repeated_entities() {
     };
     let first = line("first", 0.0, 4.0);
     let second = line("second", 2.0, 4.0 + 5.0e-7);
-    let parameter = parse_design_parameter(&parameter_record(
+    let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
         "4 mm",
         "Linear Dimension-2",
@@ -318,7 +318,7 @@ fn owner_scoped_angular_dimension_requires_one_matching_line_pair() {
     let horizontal = line("horizontal", 0.0);
     let sloped = line("sloped", std::f64::consts::FRAC_PI_6);
     let vertical = line("vertical", std::f64::consts::FRAC_PI_2);
-    let parameter = parse_design_parameter(&parameter_record(
+    let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
         "30 deg",
         "Angular Dimension-2",
@@ -474,7 +474,7 @@ fn owner_scoped_point_dimensions_quotient_coincident_identities() {
     let lower = point("lower", -53.0, -20.875);
     let lower_duplicate = point("lower-duplicate", -53.0, -20.875 + 5.0e-7);
     let upper = point("upper", -53.0, -7.875);
-    let parameter = parse_design_parameter(&parameter_record(
+    let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
         "13 mm",
         "Linear Dimension-2",
@@ -614,7 +614,7 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
         })
         .unwrap(),
     );
-    let parameter = parse_design_parameter(&parameter_record(
+    let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
         "5 mm",
         "Radial Dimension-2",

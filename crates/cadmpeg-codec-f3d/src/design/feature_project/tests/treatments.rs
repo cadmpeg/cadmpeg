@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::operands::decode_fillet_radius_groups;
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::feature_project::project_parameter_design;
 use crate::design::test_support::parameter_owner_frame;
@@ -58,7 +58,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                      name: &str,
                      expression: &str,
                      value| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             Some(owner_record_index),
             expression,
             source_kind,
@@ -896,7 +896,7 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     use cadmpeg_ir::scalar::Length;
 
     let parameter = |record_index, source_kind: &str, unit, value| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             Some(record_index + 100),
             "value",
             source_kind,
@@ -949,7 +949,7 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
     use cadmpeg_ir::scalar::Length;
 
     let parameter = |record_index, source_kind: &str, unit, value| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             Some(record_index + 100),
             "value",
             source_kind,
@@ -985,7 +985,7 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
 #[test]
 fn variable_fillet_law_rejects_duplicate_tangency_weights() {
     let parameter = |record_index, source_kind: &str, unit, value| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             Some(record_index + 100),
             "value",
             source_kind,
@@ -1107,7 +1107,7 @@ pub(super) fn localized_fillet_parameter(
     unit: Option<&str>,
     value: f64,
 ) -> DesignParameter {
-    let mut parameter = parse_design_parameter(&parameter_record(
+    let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(owner_index),
         "value",
         source_kind,
@@ -1850,7 +1850,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
     use crate::records::topology::{
         fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
     };
-    let mut weight = parse_design_parameter(&parameter_record(
+    let mut weight = parse_design_parameter_record(&parameter_record(
         Some(1),
         "1",
         "TangencyWeight",
@@ -1860,7 +1860,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
     ))
     .unwrap();
     weight.record_index = 11;
-    let mut radius = parse_design_parameter(&parameter_record(
+    let mut radius = parse_design_parameter_record(&parameter_record(
         Some(2),
         "1 mm",
         "Radius",
@@ -1947,7 +1947,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
 #[test]
 fn fillet_unit_conversion_rejects_finite_overflow() {
     let parameter = |kind, value| {
-        parse_design_parameter(&parameter_record(
+        parse_design_parameter_record(&parameter_record(
             Some(1),
             "1 mm",
             kind,

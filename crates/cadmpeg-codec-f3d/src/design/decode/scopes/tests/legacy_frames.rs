@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
 use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
@@ -489,7 +489,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     let taper_start = append_scalar(&mut bytes, 80, 0, -0.013_962_634_015_954_637);
     let along_start = append_scalar(&mut bytes, 82, 1, -2.5);
 
-    let mut taper_parameter = parse_design_parameter(&parameter_record(
+    let mut taper_parameter = parse_design_parameter_record(&parameter_record(
         Some(80),
         "taper",
         "TaperAngle",
@@ -500,7 +500,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     .expect("taper parameter");
     taper_parameter.id = "generated:parameter#81".into();
     taper_parameter.record_index = 81;
-    let mut along_parameter = parse_design_parameter(&parameter_record(
+    let mut along_parameter = parse_design_parameter_record(&parameter_record(
         Some(82),
         "along",
         "AlongDistance",
