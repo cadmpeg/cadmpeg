@@ -179,11 +179,6 @@ pub(crate) fn parse_meta_tables<'a>(
 
     let (block_count, section_1_payload, section_1_footer) =
         counted_section(&mut view, 4, "block-size table")?;
-    if block_count > 1_000_000 {
-        return Err(CodecError::Malformed(
-            "RSe block-size count exceeds 1000000".into(),
-        ));
-    }
     ctx.charge_collection_items(block_count as u64, "admit Inventor RSe block descriptors")?;
     let mut blocks = Vec::with_capacity(block_count);
     let mut sizes = section_1_payload;
@@ -220,8 +215,10 @@ pub(crate) fn parse_meta_tables<'a>(
             "RSe type table has more than 256 entries".into(),
         ));
     }
+    // The test above bounds `type_count` at 256 and `SECTION_COUNT` is 11, so
+    // the charge is at most 267 and `u64` holds it exactly.
     ctx.charge_collection_items(
-        type_count.saturating_add(SECTION_COUNT) as u64,
+        type_count as u64 + SECTION_COUNT as u64,
         "admit Inventor RSe metadata tables",
     )?;
     let mut types = Vec::with_capacity(type_count);
@@ -352,8 +349,13 @@ fn reverse_section<'a>(
     end: &mut usize,
     payload_len: &mut usize,
 ) -> Result<MetaSection<'a>, CodecError> {
+    // The previous section's back span states `payload_len`, so it is a whole
+    // `u32` wide and its sum with the 8-byte header passes a 32-bit `usize`.
+    // The two subtractions state that sum without forming it: the chain holds
+    // the section only when `end` covers the header and then the payload.
     let header = end
-        .checked_sub(payload_len.saturating_add(8))
+        .checked_sub(8)
+        .and_then(|after_header| after_header.checked_sub(*payload_len))
         .ok_or_else(|| CodecError::Malformed("RSe metadata section chain underflows".into()))?;
     let mut view = crate::reader::at(body, body.start() + header, "metadata section back span")?;
     let previous_span = crate::reader::u32(&mut view, "metadata section back span")? as usize;
@@ -387,14 +389,15 @@ fn counted_section<'a>(
             "RSe metadata {name} count exceeds 1000000"
         )));
     }
-    let payload_len = count.checked_mul(item_size).ok_or_else(|| {
-        CodecError::malformed(format_args!("RSe metadata {name} length overflows"))
-    })?;
+    // The test above bounds `count` at 1000000 and the four callers pass an
+    // `item_size` of 4, 10, 28 and 28, so the payload is at most 28000000
+    // bytes, which a 32-bit `usize` holds.
+    let payload_len = count * item_size;
     let payload_start = view.read_len();
-    let footer = payload_start.checked_add(payload_len).ok_or_else(|| {
-        CodecError::malformed(format_args!("RSe metadata {name} range overflows"))
-    })?;
     crate::reader::take(view, payload_len, name)?;
+    // `take` advances by exactly `payload_len` on success, so the window offset
+    // it reached is the payload's exclusive end.
+    let footer = view.read_len();
     let span = crate::reader::u32(view, name)? as usize;
     let expected_span = 4 + payload_len;
     if span != expected_span {
@@ -791,6 +794,29 @@ mod tests {
             assert_eq!(
                 truncation(parse_meta_tables(ctx, body)),
                 "Truncated metadata terminal id at offset 8"
+            );
+        });
+    }
+
+    #[test]
+    fn a_reverse_section_the_forward_sections_leave_no_room_for_underflows() {
+        // Fourteen prefix bytes, four empty counted sections and the terminal
+        // id. Section 11 declares a 0x48-byte payload, which the 46 bytes
+        // before the terminal id cannot hold behind its 8-byte header.
+        let mut body = vec![0_u8; meta_prefix::LEN];
+        for _ in 0..4 {
+            push_u32(&mut body, 0);
+            push_u32(&mut body, 4);
+        }
+        body.extend_from_slice(&[0_u8; TERMINAL_ID_LEN]);
+        with_view(&body, |ctx, view| {
+            let observed = match parse_meta_tables(ctx, view) {
+                Ok(tables) => format!("the body parsed with {} sections", tables.sections.len()),
+                Err(error) => error.to_string(),
+            };
+            assert_eq!(
+                observed,
+                "malformed container: RSe metadata section chain underflows"
             );
         });
     }
