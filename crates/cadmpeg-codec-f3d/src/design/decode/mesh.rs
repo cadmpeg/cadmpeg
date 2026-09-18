@@ -1541,7 +1541,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
 mod tests {
     use super::*;
     use crate::design::test_support::design_type;
-    use crate::test_support::lp_ascii;
+    use crate::test_support::{lp_ascii, lp_utf16};
 
     fn matrix(cells: [f64; 16]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(MATRIX_BYTES);
@@ -1579,16 +1579,6 @@ mod tests {
         put_reference(bytes, at, target);
     }
 
-    fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let encoded = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(
-            &u32::try_from(encoded.len())
-                .expect("test UTF-16 length")
-                .to_le_bytes(),
-        );
-        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
-    }
-
     fn mesh_entry_record(
         class_tag: u32,
         record_index: u32,
@@ -1599,7 +1589,7 @@ mod tests {
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
         push_reference(&mut bytes, guid_record_index);
-        push_utf16(&mut bytes, entry_name);
+        lp_utf16(&mut bytes, entry_name);
         bytes
     }
 
@@ -1816,7 +1806,7 @@ mod tests {
         bytes.extend_from_slice(&1u32.to_le_bytes());
         push_reference(&mut bytes, member_record_index);
         bytes.extend_from_slice(&7u32.to_le_bytes());
-        push_utf16(&mut bytes, "Base Mesh Feature");
+        lp_utf16(&mut bytes, "Base Mesh Feature");
         let mut tail = [0; 78];
         tail[..4].copy_from_slice(&1u32.to_le_bytes());
         tail[31..35].copy_from_slice(&2u32.to_le_bytes());
@@ -1848,7 +1838,7 @@ mod tests {
     fn texture_filename_record(class_tag: u32, record_index: u32, filename: &str) -> Vec<u8> {
         let mut bytes = identity_record(class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        push_utf16(&mut bytes, filename);
+        lp_utf16(&mut bytes, filename);
         bytes
     }
 

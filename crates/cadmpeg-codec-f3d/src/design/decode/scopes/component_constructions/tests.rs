@@ -8,6 +8,7 @@
 )]
 use super::exact_component_insert_construction;
 use crate::design::test_support::dump::{DesignParameterScope, IndexedRecordOffsets};
+use crate::test_support::lp_utf16;
 
 #[test]
 fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
@@ -255,28 +256,24 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         Some(expanded_carrier_transform_at as u64)
     );
 
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
-        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
-    };
     let mut legacy = Vec::new();
     header(&mut legacy, b"288", 10);
     legacy.resize(30, 0);
-    push_utf16(&mut legacy, "95cc7c78-04aa-4ffc-a36d-a512f02e0dda");
+    lp_utf16(&mut legacy, "95cc7c78-04aa-4ffc-a36d-a512f02e0dda");
     let legacy_role_at = legacy.len();
-    push_utf16(&mut legacy, role);
+    lp_utf16(&mut legacy, role);
     legacy.extend_from_slice(&[1, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut legacy, "96e2c767-721c-4c81-bbbc-8cc143d323fb");
+    lp_utf16(&mut legacy, "96e2c767-721c-4c81-bbbc-8cc143d323fb");
     legacy.push(0);
     let asset_identity = "864a8a41-7ed8-4c94-8871-ee9e87ab7648_urn:asset";
-    push_utf16(&mut legacy, asset_identity);
+    lp_utf16(&mut legacy, asset_identity);
     legacy.push(0);
     let legacy_carrier_transform_at = legacy.len();
     for value in transform.into_iter().flatten() {
         legacy.extend_from_slice(&value.to_le_bytes());
     }
     legacy.extend_from_slice(&[0; 4]);
-    push_utf16(&mut legacy, asset_identity);
+    lp_utf16(&mut legacy, asset_identity);
     legacy.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     let legacy_relation_at = legacy.len();
     header(&mut legacy, b"325", 20);
@@ -339,10 +336,6 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
         bytes.extend_from_slice(class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
     };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
-        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
-    };
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());
@@ -361,20 +354,20 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&[0; 4]);
-    push_utf16(&mut bytes, component_guid);
+    lp_utf16(&mut bytes, component_guid);
     bytes.push(0);
     push_ascii(&mut bytes, type_guid);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
-    push_utf16(&mut bytes, metadata_guid_a);
-    push_utf16(&mut bytes, metadata_guid_b);
+    lp_utf16(&mut bytes, metadata_guid_a);
+    lp_utf16(&mut bytes, metadata_guid_b);
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut bytes, component_guid);
+    lp_utf16(&mut bytes, component_guid);
     bytes.push(0);
     push_ascii(&mut bytes, type_guid);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(bytes.len(), 695);
 
@@ -476,10 +469,6 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
         bytes.extend_from_slice(class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
     };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
-        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
-    };
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());
@@ -498,20 +487,20 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&[0; 4]);
-    push_utf16(&mut bytes, component_guid);
+    lp_utf16(&mut bytes, component_guid);
     bytes.push(0);
     push_ascii(&mut bytes, type_guid);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
-    push_utf16(&mut bytes, metadata_guid_a);
-    push_utf16(&mut bytes, metadata_guid_b);
+    lp_utf16(&mut bytes, metadata_guid_a);
+    lp_utf16(&mut bytes, metadata_guid_b);
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut bytes, component_guid);
+    lp_utf16(&mut bytes, component_guid);
     bytes.push(0);
     push_ascii(&mut bytes, type_guid);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(bytes.len(), 695);
 
@@ -617,10 +606,6 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
         bytes.extend_from_slice(class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
     };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
-        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
-    };
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());
@@ -639,22 +624,22 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&[0; 4]);
-    push_utf16(&mut bytes, component_guid);
+    lp_utf16(&mut bytes, component_guid);
     bytes.push(0);
     push_ascii(&mut bytes, type_guid);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
-    push_utf16(&mut bytes, metadata_guid_a);
-    push_utf16(&mut bytes, metadata_guid_b);
+    lp_utf16(&mut bytes, metadata_guid_a);
+    lp_utf16(&mut bytes, metadata_guid_b);
     bytes.extend_from_slice(&[0, 1]);
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     bytes.extend_from_slice(&[1, 0, 0, 0, 0]);
-    push_utf16(&mut bytes, component_guid);
+    lp_utf16(&mut bytes, component_guid);
     bytes.push(0);
     push_ascii(&mut bytes, type_guid);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
     let relation_at = bytes.len();
@@ -751,10 +736,6 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
         bytes.extend_from_slice(class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
     };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
-        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
-    };
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());
@@ -773,20 +754,20 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&[0; 4]);
-    push_utf16(&mut bytes, component_guid);
+    lp_utf16(&mut bytes, component_guid);
     bytes.push(0);
     push_ascii(&mut bytes, type_guid);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 3, 0, 0, 0, 0, 1, 0, 0, 0]);
-    push_utf16(&mut bytes, metadata_guid_a);
-    push_utf16(&mut bytes, metadata_guid_b);
+    lp_utf16(&mut bytes, metadata_guid_a);
+    lp_utf16(&mut bytes, metadata_guid_b);
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut bytes, component_guid);
+    lp_utf16(&mut bytes, component_guid);
     bytes.push(0);
     push_ascii(&mut bytes, type_guid);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut bytes, role);
+    lp_utf16(&mut bytes, role);
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(bytes.len(), 695);
 
