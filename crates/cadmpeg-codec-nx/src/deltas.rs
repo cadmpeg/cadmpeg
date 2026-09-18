@@ -2926,17 +2926,7 @@ mod type_150_state_packet_tests {
 #[cfg(test)]
 mod schema_reference_preamble_tests {
     use super::*;
-
-    fn push_xmt(bytes: &mut Vec<u8>, reference: u32) {
-        if i16::try_from(reference).is_ok() {
-            bytes.extend_from_slice(&(reference as u16).to_be_bytes());
-            return;
-        }
-        let quotient = reference / 32_767;
-        let remainder = reference % 32_767;
-        bytes.extend_from_slice(&(-(remainder as i16)).to_be_bytes());
-        bytes.extend_from_slice(&(quotient as u16).to_be_bytes());
-    }
+    use crate::test_support::test_deltas::push_xmt;
 
     fn preamble() -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -3051,17 +3041,7 @@ mod schema_reference_preamble_tests {
 #[cfg(test)]
 mod inline_schema_tests {
     use super::*;
-
-    fn push_xmt(bytes: &mut Vec<u8>, reference: u32) {
-        if i16::try_from(reference).is_ok() {
-            bytes.extend_from_slice(&(reference as u16).to_be_bytes());
-            return;
-        }
-        let quotient = reference / 32_767;
-        let remainder = reference % 32_767;
-        bytes.extend_from_slice(&(-(remainder as i16)).to_be_bytes());
-        bytes.extend_from_slice(&(quotient as u16).to_be_bytes());
-    }
+    use crate::test_support::test_deltas::push_xmt;
 
     #[test]
     fn body_schema_header_is_bounded_independently_of_instance_state() {
