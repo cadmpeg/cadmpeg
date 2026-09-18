@@ -783,53 +783,49 @@ impl<'a> Cursor<'a> {
         self.view.seek_to_end();
     }
 
-    fn truncated(&self, field: &str) -> CodecError {
-        CodecError::malformed(format_args!("truncated {} {field}", self.scope))
-    }
-
-    fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
+    fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
         if self.view.position().checked_add(len).is_none() {
             return Err(CodecError::malformed(format_args!(
                 "{} {field} range overflows",
                 self.scope
             )));
         }
-        self.view.take(len).ok_or_else(|| self.truncated(field))
+        crate::reader::take(&mut self.view, len, field)
     }
 
-    fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
-        self.view.u8().ok_or_else(|| self.truncated(field))
+    fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
+        crate::reader::u8(&mut self.view, field)
     }
 
-    fn u16(&mut self, field: &str) -> Result<u16, CodecError> {
-        self.view.u16_le().ok_or_else(|| self.truncated(field))
+    fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
+        crate::reader::u16(&mut self.view, field)
     }
 
-    fn i16(&mut self, field: &str) -> Result<i16, CodecError> {
-        self.view.i16_le().ok_or_else(|| self.truncated(field))
+    fn i16(&mut self, field: &'static str) -> Result<i16, CodecError> {
+        crate::reader::i16(&mut self.view, field)
     }
 
-    fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
-        self.view.u32_le().ok_or_else(|| self.truncated(field))
+    fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
+        crate::reader::u32(&mut self.view, field)
     }
 
-    fn i32(&mut self, field: &str) -> Result<i32, CodecError> {
-        self.view.i32_le().ok_or_else(|| self.truncated(field))
+    fn i32(&mut self, field: &'static str) -> Result<i32, CodecError> {
+        crate::reader::i32(&mut self.view, field)
     }
 
-    fn u64(&mut self, field: &str) -> Result<u64, CodecError> {
-        self.view.u64_le().ok_or_else(|| self.truncated(field))
+    fn u64(&mut self, field: &'static str) -> Result<u64, CodecError> {
+        crate::reader::u64(&mut self.view, field)
     }
 
-    fn i64(&mut self, field: &str) -> Result<i64, CodecError> {
-        self.view.i64_le().ok_or_else(|| self.truncated(field))
+    fn i64(&mut self, field: &'static str) -> Result<i64, CodecError> {
+        crate::reader::i64(&mut self.view, field)
     }
 
-    fn array<const N: usize>(&mut self, field: &str) -> Result<[u8; N], CodecError> {
-        self.view.array().ok_or_else(|| self.truncated(field))
+    fn array<const N: usize>(&mut self, field: &'static str) -> Result<[u8; N], CodecError> {
+        crate::reader::array(&mut self.view, field)
     }
 
-    fn count(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
+    fn count(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
         let value = self.offset(field)?;
         if value > maximum {
             return Err(CodecError::malformed(format_args!(
@@ -840,12 +836,12 @@ impl<'a> Cursor<'a> {
         Ok(value)
     }
 
-    fn offset(&mut self, field: &str) -> Result<usize, CodecError> {
+    fn offset(&mut self, field: &'static str) -> Result<usize, CodecError> {
         usize::try_from(self.u32(field)?)
             .map_err(|_| CodecError::malformed(format_args!("{} {field} is too large", self.scope)))
     }
 
-    fn align4(&mut self, field: &str) -> Result<(), CodecError> {
+    fn align4(&mut self, field: &'static str) -> Result<(), CodecError> {
         let padding = (4 - self.position() % 4) % 4;
         if self.take(padding, field)?.iter().any(|byte| *byte != 0) {
             return Err(CodecError::malformed(format_args!(
@@ -861,7 +857,7 @@ impl<'a> Cursor<'a> {
         ctx: &DecodeContext<'_>,
         size: usize,
         code_page: Option<u16>,
-        field: &str,
+        field: &'static str,
     ) -> Result<String, CodecError> {
         let byte_len = if code_page == Some(1200) {
             size.checked_mul(2).ok_or_else(|| {
@@ -878,15 +874,17 @@ impl<'a> Cursor<'a> {
         &mut self,
         ctx: &DecodeContext<'_>,
         count: usize,
-        field: &str,
+        field: &'static str,
     ) -> Result<String, CodecError> {
         let byte_len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
         })?;
         ctx.charge_retained(byte_len as u64, "retain OLE Unicode property string")?;
+        // `utf16_le` proves the byte count before it reads a code unit, so a
+        // short window is refused with the view still at the read's start.
         let value = self.view.utf16_le(count).ok_or_else(|| {
             if self.view.remaining() < byte_len {
-                self.truncated(field)
+                CodecError::truncated(self.view.location(), field)
             } else {
                 CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
             }
@@ -968,6 +966,64 @@ mod tests {
             .expect("synthetic property set fits policy");
         let parsed = parse_property_set_stream(&ctx, root).expect("unordered directory parses");
         assert!(!parsed.sections[0].offsets_ordered);
+    }
+
+    /// The truncation a read reports, as its variant, field and offset,
+    /// without an unwrap on the route.
+    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
+        match result {
+            Ok(value) => format!("the read succeeded with {value:?}"),
+            Err(CodecError::Truncated {
+                location,
+                operation,
+            }) => format!("Truncated {operation} at offset {}", location.offset),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_truncated_property_set_read_is_located_and_names_its_field() {
+        let empty: &[u8] = &[];
+        let scope = "OLE property-set stream";
+        for (field, text) in [
+            (
+                "byte order",
+                truncation(Cursor::new(View::over_retained(empty), scope).u16("byte order")),
+            ),
+            (
+                "property id",
+                truncation(Cursor::new(View::over_retained(empty), scope).u32("property id")),
+            ),
+            (
+                "VT_I8",
+                truncation(Cursor::new(View::over_retained(empty), scope).i64("VT_I8")),
+            ),
+            (
+                "CLSID",
+                truncation(Cursor::new(View::over_retained(empty), scope).array::<16>("CLSID")),
+            ),
+            (
+                "BLOB",
+                truncation(Cursor::new(View::over_retained(empty), scope).take(4, "BLOB")),
+            ),
+        ] {
+            assert_eq!(text, format!("Truncated {field} at offset 0"));
+        }
+    }
+
+    #[test]
+    fn a_truncated_unicode_property_string_is_located_and_names_its_field() {
+        let arena = DecodeArena::new();
+        let bytes = [0x41, 0x00];
+        let text = match DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()) {
+            Ok((ctx, root)) => truncation(Cursor::new(root, "OLE typed property").unicode_string(
+                &ctx,
+                4,
+                "Unicode string",
+            )),
+            Err(error) => error.to_string(),
+        };
+        assert_eq!(text, "Truncated Unicode string at offset 0");
     }
 
     fn with_parse(bytes: &[u8], test: impl FnOnce(Result<PropertySetStream<'_>, CodecError>)) {

@@ -795,13 +795,11 @@ impl<'a> Cursor<'a> {
 
     fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
         self.require_statable_range(len, field)?;
-        self.view
-            .take(len)
-            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
+        crate::reader::take(&mut self.view, len, field)
     }
 
     fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
-        Ok(self.take(1, field)?[0])
+        crate::reader::u8(&mut self.view, field)
     }
 
     fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
@@ -821,9 +819,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn array<const N: usize>(&mut self, field: &'static str) -> Result<[u8; N], CodecError> {
-        self.view
-            .array()
-            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
+        crate::reader::array(&mut self.view, field)
     }
 
     fn peek_u32(&self, field: &'static str) -> Result<u32, CodecError> {
@@ -832,16 +828,14 @@ impl<'a> Cursor<'a> {
 
     fn peek_u16(&self, field: &'static str) -> Result<u16, CodecError> {
         let mut view = self.view;
-        view.u16_le()
-            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
+        crate::reader::u16(&mut view, field)
     }
 
     fn peek_u32_at(&self, relative: usize, field: &'static str) -> Result<u32, CodecError> {
         self.require_statable_range(relative, field)?;
         let mut view = self.view;
-        view.skip(relative)
-            .and_then(|()| view.u32_le())
-            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
+        crate::reader::take(&mut view, relative, field)?;
+        crate::reader::u32(&mut view, field)
     }
 
     fn count16(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
@@ -887,9 +881,11 @@ impl<'a> Cursor<'a> {
         })?;
         ctx.charge_retained(len as u64, "retain UFRxDoc string")?;
         self.require_statable_range(len, field)?;
+        // `utf16_le` proves the byte count before it reads a code unit, so a
+        // short window is refused with the view still at the read's start.
         self.view.utf16_le(count).ok_or_else(|| {
             if self.view.remaining() < len {
-                CodecError::malformed(format_args!("truncated UFRxDoc {field}"))
+                CodecError::truncated(self.view.location(), field)
             } else {
                 CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-16"))
             }
@@ -1307,6 +1303,69 @@ mod tests {
                 format!("truncated input during {field} at space 0 offset 0")
             );
         }
+    }
+
+    /// The truncation a read reports, as its variant, field and offset,
+    /// without an unwrap on the route.
+    fn located_truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
+        match result {
+            Ok(value) => format!("the read succeeded with {value:?}"),
+            Err(CodecError::Truncated {
+                location,
+                operation,
+            }) => format!("Truncated {operation} at offset {}", location.offset),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_truncated_ufrxdoc_byte_read_is_located_and_names_its_field() {
+        let empty: &[u8] = &[];
+        for (field, text) in [
+            (
+                "reference kind",
+                located_truncation(Cursor::new(View::over_retained(empty)).u8("reference kind")),
+            ),
+            (
+                "referenced document id",
+                located_truncation(
+                    Cursor::new(View::over_retained(empty)).array::<16>("referenced document id"),
+                ),
+            ),
+            (
+                "reference name",
+                located_truncation(
+                    Cursor::new(View::over_retained(empty)).take(4, "reference name"),
+                ),
+            ),
+            (
+                "reference marker",
+                located_truncation(
+                    Cursor::new(View::over_retained(empty)).peek_u16("reference marker"),
+                ),
+            ),
+            (
+                "reference version",
+                located_truncation(
+                    Cursor::new(View::over_retained(empty)).peek_u32("reference version"),
+                ),
+            ),
+        ] {
+            assert_eq!(text, format!("Truncated {field} at offset 0"));
+        }
+    }
+
+    #[test]
+    fn a_truncated_ufrxdoc_utf16_string_is_located_and_names_its_field() {
+        let bytes = [0x41, 0x00];
+        let arena = DecodeArena::new();
+        let text = match DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()) {
+            Ok((ctx, root)) => {
+                located_truncation(Cursor::new(root).utf16_counted(&ctx, "reference name", 4))
+            }
+            Err(error) => error.to_string(),
+        };
+        assert_eq!(text, "Truncated reference name at offset 0");
     }
 
     #[test]
