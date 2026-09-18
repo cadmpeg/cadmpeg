@@ -16,7 +16,7 @@ use crate::chunks::{
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor};
 use crate::settings::{bbox, utf16, MillimeterScale};
-use crate::wire::Uuid;
+use crate::wire::{uuid, Uuid};
 
 const INSTANCE_DEFINITION_UUID: Uuid = Uuid::from_canonical([
     0x26, 0xf8, 0xbf, 0xf6, 0x26, 0x18, 0x41, 0x7f, 0xa1, 0x58, 0x15, 0x3d, 0x64, 0xa9, 0x49, 0x89,
@@ -313,10 +313,6 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
         value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
     value
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn checksum_warning(

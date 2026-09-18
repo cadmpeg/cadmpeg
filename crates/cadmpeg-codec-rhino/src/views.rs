@@ -16,7 +16,7 @@ use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
 use crate::objects::parse_userdata;
 use crate::settings::{plane, utf16, Plane, UnitBinding};
-use crate::wire::{scaled_coordinate, Uuid};
+use crate::wire::{scaled_coordinate, uuid};
 
 const SETTINGS: u32 = 0x1000_0015;
 const NAMED_CPLANES: u32 = 0x2000_8035;
@@ -264,10 +264,6 @@ fn legacy_clipping_depth(value: f64) -> (f64, bool) {
     } else {
         (0.0, false)
     }
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn bool_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {

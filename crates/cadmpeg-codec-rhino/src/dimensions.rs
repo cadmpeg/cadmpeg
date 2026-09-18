@@ -7,7 +7,7 @@ use std::ops::Range;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16, Plane};
-use crate::wire::{scaled_coordinate, Uuid};
+use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 pub(crate) const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
@@ -230,10 +230,6 @@ fn anonymous(
         ));
     }
     Ok((reader, chunk.next_offset(), version))
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn point2(reader: &mut BoundedReader<'_>) -> Result<[f64; 2], FramingError> {

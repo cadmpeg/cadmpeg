@@ -13,7 +13,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
 use crate::settings::{interval, point, vector, xform};
-use crate::wire::{scaled_coordinate, Uuid};
+use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_LOCALIZERS: usize = 1 << 16;
@@ -127,10 +127,6 @@ fn count(
     checked_count_bytes(value, element_size, reader.remaining(), cap, offset)?;
     usize::try_from(value)
         .map_err(|_| GeometryError::malformed(offset, "morph-control count overflows"))
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, GeometryError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn captive_ids(
