@@ -237,15 +237,16 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                     return None;
                 };
                 let mut seen = BTreeSet::new();
-                let dependencies = crate::native::expression_parameter_names(&parameter.expression)
-                    .into_iter()
-                    .map(|name| {
-                        let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
-                            return None;
-                        };
-                        Some((*dependency).clone())
-                    })
-                    .collect::<Option<Vec<_>>>()?;
+                let dependencies =
+                    crate::native::om::expression_parameter_names(&parameter.expression)
+                        .into_iter()
+                        .map(|name| {
+                            let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
+                                return None;
+                            };
+                            Some((*dependency).clone())
+                        })
+                        .collect::<Option<Vec<_>>>()?;
                 Some(
                     dependencies
                         .into_iter()
@@ -274,13 +275,15 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
         }) {
             let parameter = parameters[index];
             let unit = parameter.properties.get("unit").map(String::as_str);
-            let value =
-                crate::native::evaluate_parameterized_expression(&parameter.expression, |name| {
+            let value = crate::native::om::evaluate_parameterized_expression(
+                &parameter.expression,
+                |name| {
                     let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
                         return None;
                     };
                     evaluated.get(*dependency).copied()
-                });
+                },
+            );
             let stored = match (unit, parameter.value.as_ref()) {
                 (
                     Some("millimeter" | "inch"),
@@ -299,7 +302,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
             };
             if let Some(native_value) = value {
                 let canonical_value = unit.map_or(Some(native_value), |unit| {
-                    crate::native::canonical_expression_value(unit, native_value)
+                    crate::native::om::canonical_expression_value(unit, native_value)
                 });
                 if let (Some(canonical_value), Some(stored)) = (canonical_value, stored) {
                     let tolerance =
