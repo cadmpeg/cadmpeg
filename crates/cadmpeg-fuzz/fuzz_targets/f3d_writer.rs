@@ -9,8 +9,8 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_f3d::F3dCodec;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::CadIr;
@@ -32,7 +32,11 @@ fuzz_target!(|data: &[u8]| {
     }
     let codec = F3dCodec;
     let mut encoded = Vec::new();
-    if codec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit).and_then(|plan| plan.write_to(&mut encoded)).is_ok() {
+    if codec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .is_ok()
+    {
         let mut inspect = Cursor::new(encoded.as_slice());
         assert!(codec
             .inspect(&mut inspect, &InspectOptions::default())
