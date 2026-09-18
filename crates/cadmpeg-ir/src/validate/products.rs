@@ -3,9 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::referential_error;
 use crate::document::CadIr;
 use crate::products::{AssemblyGraph, OccurrenceParent, OperandContainer, PrototypeReference};
-use crate::report::{Check, Finding, Severity};
+use crate::report::Finding;
 
 pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
     let definitions = ir
@@ -33,7 +34,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .iter()
             .any(|body| !bodies.contains(body.as_str()))
         {
-            invalid(
+            referential_error(
                 findings,
                 definition.id.as_str(),
                 "invalid product body reference",
@@ -42,7 +43,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 
     if AssemblyGraph::new(&ir.model.occurrences).is_err() {
-        invalid(
+        referential_error(
             findings,
             "model:assembly",
             "invalid occurrence parent graph",
@@ -86,7 +87,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             element_valid && copy_targets_valid
         });
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions {
-            invalid(
+            referential_error(
                 findings,
                 occurrence.id.as_str(),
                 "invalid occurrence reference, ordinal, or affine transform",
@@ -105,22 +106,13 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                     OperandContainer::Root {} | OperandContainer::External { .. } => true,
                 });
         if !operands_valid {
-            invalid(
+            referential_error(
                 findings,
                 joint.id.as_str(),
                 "invalid assembly joint operands, frames, or limits",
             );
         }
     }
-}
-
-fn invalid(findings: &mut Vec<Finding>, entity: &str, message: &str) {
-    findings.push(Finding {
-        check: Check::ReferentialIntegrity,
-        severity: Severity::Error,
-        message: message.into(),
-        entity: Some(entity.into()),
-    });
 }
 
 #[cfg(test)]

@@ -10,6 +10,23 @@ use crate::geometry::PcurveGeometry;
 const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
 const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
+fn collect_law_curves<'a>(
+    expression: &'a crate::geometry::LawExpression,
+    curves: &mut HashSet<&'a str>,
+) {
+    match expression {
+        crate::geometry::LawExpression::Edge { curve, .. } => {
+            curves.insert(curve.id.as_str());
+        }
+        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+            for operand in operands {
+                collect_law_curves(operand, curves);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut surfaces = ir
         .model
@@ -254,22 +271,6 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::Skin(definition_payload) => {
-                fn collect_law_curves<'a>(
-                    expression: &'a crate::geometry::LawExpression,
-                    curves: &mut HashSet<&'a str>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(curve.id.as_str());
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                collect_law_curves(operand, curves);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 let construction = definition_payload.construction();
                 match &construction.layout {
                     crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
@@ -294,22 +295,6 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::Law(definition_payload) => {
-                fn collect_law_curves<'a>(
-                    expression: &'a crate::geometry::LawExpression,
-                    curves: &mut HashSet<&'a str>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(curve.id.as_str());
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                collect_law_curves(operand, curves);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 let construction = definition_payload.construction();
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
@@ -320,22 +305,6 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::Net(definition_payload) => {
-                fn collect_law_curves<'a>(
-                    expression: &'a crate::geometry::LawExpression,
-                    curves: &mut HashSet<&'a str>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(curve.id.as_str());
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                collect_law_curves(operand, curves);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 let construction = definition_payload.construction();
                 for entry in construction
                     .sections
@@ -492,22 +461,6 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 curves.insert(definition_payload.directrix().as_str());
             }
             ProceduralSurfaceDefinition::Sweep(definition_payload) => {
-                fn collect_law_curves<'a>(
-                    expression: &'a crate::geometry::LawExpression,
-                    curves: &mut HashSet<&'a str>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(curve.id.as_str());
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                collect_law_curves(operand, curves);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 let profile = definition_payload.profile();
                 let spine = definition_payload.spine();
                 let native = definition_payload.native();
