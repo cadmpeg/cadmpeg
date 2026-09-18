@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::default_trait_access, clippy::wildcard_imports)]
-
-use super::prelude::*;
-use crate::design::decode::scopes::extrude::{
-    exact_class_338_two_sided_distance_extrude_prologue, exact_extrude_extent,
-};
+use super::super::{exact_class_338_two_sided_distance_extrude_prologue, exact_extrude_extent};
+use crate::design::test_support::dump::{DesignExtrudeExtent, DesignExtrudeOperation};
 
 #[test]
 fn extrude_extent_tuple_is_one_admission_key() {
