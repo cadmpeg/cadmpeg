@@ -615,6 +615,9 @@ pub enum NurbsError {
     /// A knot vector, degree, grid or coordinate the carrier cannot state.
     #[error("{0}")]
     Structure(String),
+    /// An edit closure refused the value it was given, stating its own reason.
+    #[error("{0}")]
+    EditRefused(String),
 }
 
 impl From<NurbsError> for cadmpeg_core::CodecError {
@@ -1217,18 +1220,25 @@ pub fn knots_strictly_increasing(knots: &[f64]) -> bool {
 
 /// Structural error in a sampled polyline or polygonal carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GeometryLayoutError(String);
+pub enum GeometryLayoutError {
+    /// A sample or vertex layout the carrier cannot state.
+    Layout(String),
+    /// An edit closure refused the value it was given, stating its own reason.
+    EditRefused(String),
+}
 
 impl std::fmt::Display for GeometryLayoutError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
+        match self {
+            Self::Layout(message) | Self::EditRefused(message) => formatter.write_str(message),
+        }
     }
 }
 
 impl std::error::Error for GeometryLayoutError {}
 
 fn geometry_layout_error(message: impl Into<String>) -> GeometryLayoutError {
-    GeometryLayoutError(message.into())
+    GeometryLayoutError::Layout(message.into())
 }
 
 /// Source-native polygonal surface with an explicit chordal error bound.
