@@ -18,7 +18,7 @@ mod nurbs;
 mod planar;
 mod targets;
 
-pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
+fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -66,7 +66,7 @@ pub(crate) fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge
     }
 }
 
-pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
+pub(super) fn polygon_sheet(points: &[Point3]) -> CadIr {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -216,7 +216,7 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     ir
 }
 
-pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
+fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::*;
     use cadmpeg_ir::math::Vector3;
@@ -325,7 +325,7 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
     ir.finalize();
 }
 
-pub(crate) fn adjacent_quad_sheet() -> CadIr {
+pub(super) fn adjacent_quad_sheet() -> CadIr {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -532,7 +532,7 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
     ir
 }
 
-pub(crate) fn planar_tetrahedron() -> CadIr {
+fn planar_tetrahedron() -> CadIr {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -770,7 +770,7 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
     ir
 }
 
-pub(crate) fn rectangular_nurbs_patch() -> CadIr {
+fn rectangular_nurbs_patch() -> CadIr {
     use cadmpeg_ir::geometry::{
         CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SolvedCurveGeometry,
         SolvedSurfaceGeometry, SurfaceGeometry,
@@ -865,7 +865,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
     ir
 }
 
-pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
+fn mixed_plane_nurbs_sheet() -> CadIr {
     use cadmpeg_ir::geometry::{
         CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SolvedCurveGeometry,
         SolvedSurfaceGeometry, SurfaceGeometry,
@@ -960,7 +960,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
     ir
 }
 
-pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
+fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
     use cadmpeg_ir::geometry::{
         NurbsSurface, Pcurve, PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
