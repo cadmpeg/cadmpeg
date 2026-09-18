@@ -1879,18 +1879,7 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
-    fn content(index: u32) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(&index.to_le_bytes()[..2]);
-        bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(&0x0002_0200u32.to_le_bytes());
-        bytes.extend_from_slice(&0x8000_0003u32.to_le_bytes());
-        bytes.extend_from_slice(&index.to_le_bytes());
-        bytes
-    }
+    use crate::test_support::test_fixtures::{content, parse};
 
     fn list(marker: u16, references: &[u32]) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -1910,13 +1899,6 @@ mod tests {
             }
         }
         bytes
-    }
-
-    fn parse<T>(bytes: &[u8], parser: impl FnOnce(&DecodeContext<'_>, View<'_>) -> T) -> T {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("view");
-        parser(&ctx, source)
     }
 
     fn entity_prefix(index: u32, sketch: u32, flags: u32) -> Vec<u8> {

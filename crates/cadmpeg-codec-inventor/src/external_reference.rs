@@ -895,6 +895,9 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::test_fixtures::push_u16;
+    use crate::test_support::test_fixtures::push_u32;
+    use crate::test_support::test_fixtures::push_utf16;
     use cadmpeg_container::compound::CompoundStreamId;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
@@ -1238,21 +1241,5 @@ mod tests {
         }
         push_u32(bytes, 0x00ff_ffff);
         push_u32(bytes, 0);
-    }
-
-    fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        push_u32(bytes, units.len() as u32);
-        for unit in units {
-            push_u16(bytes, unit);
-        }
-    }
-
-    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-
-    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
-        bytes.extend_from_slice(&value.to_le_bytes());
     }
 }

@@ -539,6 +539,9 @@ struct Cursor<'a> {
 }
 
 #[cfg(test)]
+use crate::test_support::test_fixtures::push_u32;
+
+#[cfg(test)]
 pub(crate) fn synthetic_meta_table_body() -> Vec<u8> {
     let mut body = Vec::new();
     for value in [3_u16, 0, 2, 1, 0, 4, 0] {
@@ -547,21 +550,21 @@ pub(crate) fn synthetic_meta_table_body() -> Vec<u8> {
     test_counted(&mut body, &[0x8000_0003, 0x8000_0005], 4);
     test_counted(&mut body, &[], 10);
     test_counted(&mut body, &[], 28);
-    push_test_u32(&mut body, 1);
+    push_u32(&mut body, 1);
     body.extend_from_slice(&[0x55; 16]);
     body.extend_from_slice(&1_u16.to_le_bytes());
-    push_test_u32(&mut body, 2);
+    push_u32(&mut body, 2);
     body.extend_from_slice(&3_u16.to_le_bytes());
-    push_test_u32(&mut body, 4);
-    push_test_u32(&mut body, 32);
+    push_u32(&mut body, 4);
+    push_u32(&mut body, 32);
 
     let payloads = [0_usize, 0, 0, 0, 0, 0, SECTION_11_PAYLOAD_LEN];
     let counts = [u32::MAX, 0, 0, 0, 0, 0, 18];
-    push_test_u32(&mut body, counts[0]);
+    push_u32(&mut body, counts[0]);
     body.resize(body.len() + payloads[0], 0);
     for index in 1..payloads.len() {
-        push_test_u32(&mut body, payloads[index - 1] as u32 + 4);
-        push_test_u32(&mut body, counts[index]);
+        push_u32(&mut body, payloads[index - 1] as u32 + 4);
+        push_u32(&mut body, counts[index]);
         body.resize(body.len() + payloads[index], 0);
     }
     body.extend_from_slice(&[0x77; 16]);
@@ -570,17 +573,12 @@ pub(crate) fn synthetic_meta_table_body() -> Vec<u8> {
 
 #[cfg(test)]
 fn test_counted(body: &mut Vec<u8>, values: &[u32], item_size: usize) {
-    push_test_u32(body, values.len() as u32);
+    push_u32(body, values.len() as u32);
     for value in values {
-        push_test_u32(body, *value);
+        push_u32(body, *value);
     }
     body.resize(body.len() + values.len() * (item_size - 4), 0);
-    push_test_u32(body, (4 + values.len() * item_size) as u32);
-}
-
-#[cfg(test)]
-fn push_test_u32(bytes: &mut Vec<u8>, value: u32) {
-    bytes.extend_from_slice(&value.to_le_bytes());
+    push_u32(body, (4 + values.len() * item_size) as u32);
 }
 
 impl<'a> Cursor<'a> {
@@ -718,10 +716,6 @@ mod tests {
 
     fn meta_fixture() -> Vec<u8> {
         synthetic_meta_table_body()
-    }
-
-    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
-        bytes.extend_from_slice(&value.to_le_bytes());
     }
 
     fn with_view(bytes: &[u8], test: impl FnOnce(&DecodeContext<'_>, View<'_>)) {
