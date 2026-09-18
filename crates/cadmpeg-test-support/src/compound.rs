@@ -13,7 +13,9 @@ const CFB_FAT: u32 = 0xffff_fffd;
 /// One FAT sector, eight data sectors of 0x5a, and a directory with Root Entry
 /// plus a 4096-byte Payload stream.
 pub fn compound_fixture() -> Vec<u8> {
-    let mut file = vec![0_u8; CFB_SECTOR * 11];
+    // A compile-time length: header sector, directory, eight data sectors,
+    // and the FAT sector.
+    let mut file = [0_u8; CFB_SECTOR * 11].to_vec();
     file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
     put_u16(&mut file, 24, 0x003e);
     put_u16(&mut file, 26, 3);
