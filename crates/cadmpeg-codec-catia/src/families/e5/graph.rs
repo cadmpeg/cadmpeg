@@ -1590,28 +1590,9 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::families::e5::tests::e5_loop_members;
+    use crate::test_support::test_e5::append_e5_record;
     use std::collections::BTreeMap;
-
-    fn e5_loop_members(pcurves: &[u32], edges: &[u32], reversed: &[bool]) -> Vec<E5LoopMember> {
-        pcurves
-            .iter()
-            .zip(edges)
-            .zip(reversed)
-            .map(|((&pcurve, &edge_use), &reversed)| E5LoopMember {
-                pcurve,
-                edge_use,
-                reversed,
-            })
-            .collect()
-    }
-
-    fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
-        bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
-        bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
-        bytes.extend_from_slice(&[0, 0]);
-        bytes.extend_from_slice(&id.to_le_bytes());
-        bytes.extend_from_slice(payload);
-    }
 
     #[test]
     fn topology_accepts_a_valid_43_byte_loop_payload() {

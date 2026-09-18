@@ -1,6 +1,3 @@
-use crate::families::b5::graph::controls::B5FramingControl;
-use crate::families::b5::graph::B5LoopMember;
-use crate::families::b5::graph::B5LoopMetadata;
 use crate::families::b5::graph::B5ObjectStreamPcurve;
 use crate::families::b5::graph::B5Pcurve;
 use crate::families::b5::graph::B5PcurveParameterization;
@@ -36,25 +33,6 @@ fn object_stream_pcurve(
         class_21_suffix_scalar: suffix,
         distinct_knots,
     }
-}
-
-fn test_loop_metadata() -> B5LoopMetadata {
-    B5LoopMetadata {
-        framing_controls: [B5FramingControl::Control05; 2],
-        extension: None,
-    }
-}
-
-fn test_loop_members(pcurves: &[u32], edges: &[u32]) -> Vec<B5LoopMember> {
-    pcurves
-        .iter()
-        .zip(edges)
-        .map(|(&pcurve, &edge)| B5LoopMember {
-            pcurve,
-            edge,
-            controls: [1, 1, 1],
-        })
-        .collect()
 }
 
 fn extended_loop_metadata(metadata_control: u8) -> Vec<u8> {

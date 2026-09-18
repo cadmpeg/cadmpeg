@@ -568,3 +568,22 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
 }
+
+pub(super) fn e5_loop_members(
+    pcurves: &[u32],
+    edges: &[u32],
+    reversed: &[bool],
+) -> Vec<crate::families::e5::graph::E5LoopMember> {
+    pcurves
+        .iter()
+        .zip(edges)
+        .zip(reversed)
+        .map(
+            |((&pcurve, &edge_use), &reversed)| crate::families::e5::graph::E5LoopMember {
+                pcurve,
+                edge_use,
+                reversed,
+            },
+        )
+        .collect()
+}

@@ -3069,10 +3069,11 @@ mod route_tests {
         parameter_ranges_reversed, plan_e5_boundary, solve_e5_plane_frame,
         E5OccurrenceIntersectionSide, EPS_E5_DECODE_EXACT_GEOMETRY, EPS_E5_DECODE_POSITION,
     };
+    use crate::families::e5::tests::e5_loop_members;
 
     use crate::families::e5::graph::{
         E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge, E5Face, E5Loop,
-        E5LoopMember, E5OrientedMember, E5Pcurve, E5PcurveJetSite, E5Topology,
+        E5OrientedMember, E5Pcurve, E5PcurveJetSite, E5Topology,
     };
     use crate::families::e5::records::E5Surface;
 
@@ -3088,19 +3089,6 @@ mod route_tests {
     use cadmpeg_ir::AnnotationBuilder;
 
     use std::collections::{BTreeMap, HashMap};
-
-    fn e5_loop_members(pcurves: &[u32], edges: &[u32], reversed: &[bool]) -> Vec<E5LoopMember> {
-        pcurves
-            .iter()
-            .zip(edges)
-            .zip(reversed)
-            .map(|((&pcurve, &edge_use), &reversed)| E5LoopMember {
-                pcurve,
-                edge_use,
-                reversed,
-            })
-            .collect()
-    }
 
     fn jet_pcurve(
         surface: u32,

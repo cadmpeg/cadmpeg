@@ -1,7 +1,5 @@
 use crate::families::b5::graph::controls::{B5FramingControl, B5VertexIncidenceControl};
 use crate::families::b5::graph::tests::extended_loop_metadata;
-use crate::families::b5::graph::tests::test_loop_members;
-use crate::families::b5::graph::tests::test_loop_metadata;
 use crate::families::b5::graph::tests::test_pcurve;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::graph::{
@@ -17,6 +15,8 @@ use crate::families::b5::graph::{
     B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization, B5Record,
     B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
 };
+use crate::families::b5::tests::test_loop_members;
+use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
 

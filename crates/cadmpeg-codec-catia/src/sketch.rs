@@ -884,26 +884,7 @@ mod tests {
         CatiaObjectRecordReferenceSource,
     };
     use crate::object_graph::{ObjectPayload, PayloadField};
-
-    fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
-        CatiaDesignObject {
-            id: id.to_string(),
-            parent: "graph".to_string(),
-            ordinal: 0,
-            first_field_byte_offset: 0,
-            owner_entity_id: 0,
-            owner_record: None,
-            owner_design_object: owner_design_object.map(str::to_string),
-            owner_class: None,
-            owner_storage_ref: None,
-            fields: Vec::new(),
-            field_classes: Vec::new(),
-            definition_values: Vec::new(),
-            definition_chain_values: Vec::new(),
-            relations: Vec::new(),
-            parallel_reference_table: None,
-        }
-    }
+    use crate::test_support::test_object_graph::design_object;
 
     fn object_record(
         id: &str,

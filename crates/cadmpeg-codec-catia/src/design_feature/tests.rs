@@ -17,35 +17,15 @@ use crate::object_graph::HeadToken;
 use crate::object_graph::ObjectPayload;
 use crate::test_support::test_formula::standard_catpart_with_definition_value;
 use crate::test_support::test_object_graph::{
-    catalog_stream, entity_backed_object_graph, object_graph_from_records, object_graph_record,
-    standard_catpart_with_design_class, standard_catpart_with_visualization_values_only,
-    value_block_stream,
+    catalog_stream, design_object, entity_backed_object_graph, object_graph_from_records,
+    object_graph_record, standard_catpart_with_design_class,
+    standard_catpart_with_visualization_values_only, value_block_stream,
 };
 use crate::CatiaCodec;
 
 mod definitions;
 mod range;
 mod reference_planes;
-
-fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
-    CatiaDesignObject {
-        id: id.to_string(),
-        parent: "graph".to_string(),
-        ordinal: 0,
-        first_field_byte_offset: 0,
-        owner_entity_id: 0,
-        owner_record: None,
-        owner_design_object: owner_design_object.map(str::to_string),
-        owner_class: None,
-        owner_storage_ref: None,
-        fields: Vec::new(),
-        field_classes: Vec::new(),
-        definition_values: Vec::new(),
-        definition_chain_values: Vec::new(),
-        relations: Vec::new(),
-        parallel_reference_table: None,
-    }
-}
 
 fn feature(id: &str, native_ref: &str) -> Feature {
     Feature {

@@ -13,9 +13,9 @@ use super::super::surfaces::{rational_arc, revolve_nurbs};
 use super::super::unit;
 use super::super::vertices::transfer_vertex_tolerances;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
+use crate::families::b5::tests::test_loop_members;
+use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
-use crate::families::b5::transfer::tests::test_loop_members;
-use crate::families::b5::transfer::tests::test_loop_metadata;
 use crate::families::b5::transfer::{
     curve_on_parameter_range, referenced_surface_ids, transfer, SurfacePlan,
 };

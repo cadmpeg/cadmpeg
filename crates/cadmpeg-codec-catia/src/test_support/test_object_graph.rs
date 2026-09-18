@@ -346,3 +346,26 @@ pub(crate) fn standard_catpart_with_design_class(class: &str) -> Vec<u8> {
     file[8..12].copy_from_slice(&be32(file_len));
     file
 }
+
+pub(crate) fn design_object(
+    id: &str,
+    owner_design_object: Option<&str>,
+) -> crate::native::CatiaDesignObject {
+    crate::native::CatiaDesignObject {
+        id: id.to_string(),
+        parent: "graph".to_string(),
+        ordinal: 0,
+        first_field_byte_offset: 0,
+        owner_entity_id: 0,
+        owner_record: None,
+        owner_design_object: owner_design_object.map(str::to_string),
+        owner_class: None,
+        owner_storage_ref: None,
+        fields: Vec::new(),
+        field_classes: Vec::new(),
+        definition_values: Vec::new(),
+        definition_chain_values: Vec::new(),
+        relations: Vec::new(),
+        parallel_reference_table: None,
+    }
+}
