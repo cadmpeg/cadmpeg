@@ -2,6 +2,8 @@
 //! Synthetic Design and ACT MetaStream/BulkStream payloads.
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
+
 /// Build one Design `MetaStream` segment with an empty primary record index.
 pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Vec<u8> {
     design_metastream_with_records(types, &[])
@@ -32,12 +34,8 @@ pub(crate) fn segment_metastream(
     types: &[(&str, &str, u32, &str, &[u64])],
     records: &[(u64, u64)],
 ) -> Vec<u8> {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
     let mut out = Vec::new();
-    lp(&mut out, short_name);
+    lp_ascii(&mut out, short_name);
     out.extend_from_slice(&0u32.to_le_bytes());
     let asset_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     out.extend_from_slice(&(asset_guid.encode_utf16().count() as u32).to_le_bytes());
@@ -46,15 +44,15 @@ pub(crate) fn segment_metastream(
     }
     out.extend_from_slice(&1234u32.to_le_bytes());
     out.extend_from_slice(&[0; 12]);
-    lp(&mut out, full_name);
-    lp(&mut out, add_in);
+    lp_ascii(&mut out, full_name);
+    lp_ascii(&mut out, add_in);
     out.extend_from_slice(&[0; 8]);
     out.extend_from_slice(&(types.len() as u32).to_le_bytes());
     for (type_guid, base_type_guid, version, module, entity_ids) in types {
-        lp(&mut out, type_guid);
-        lp(&mut out, base_type_guid);
+        lp_ascii(&mut out, type_guid);
+        lp_ascii(&mut out, base_type_guid);
         out.extend_from_slice(&version.to_le_bytes());
-        lp(&mut out, module);
+        lp_ascii(&mut out, module);
         out.extend_from_slice(&(entity_ids.len() as u32).to_le_bytes());
         for entity_id in *entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
@@ -537,17 +535,6 @@ pub(crate) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
 }
 
 pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
     let mut out = Vec::new();
     let mut records = vec![(2, out.len() as u64)];
     lp_ascii(&mut out, "256");
@@ -613,23 +600,9 @@ pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 }
 
 pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
     fn reference(relation: &mut [u8], at: usize, target: u32) {
         relation[at] = 1;
         relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
-    }
-
-    fn push_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
     }
 
     fn close_current_point(out: &mut Vec<u8>, paired_reference: u32, owner_reference: u32) {
@@ -639,8 +612,8 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         out.extend_from_slice(&1.0f32.to_le_bytes());
         out.extend_from_slice(&1.0f32.to_le_bytes());
         out.extend_from_slice(&[0, 1, 0, 0, 0]);
-        push_reference(out, u64::from(paired_reference));
-        push_reference(out, u64::from(owner_reference));
+        push_reference_u64(out, u64::from(paired_reference));
+        push_reference_u64(out, u64::from(owner_reference));
     }
 
     fn push_point_companion(
@@ -653,7 +626,7 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         out.extend_from_slice(class_tag.as_bytes());
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; 15]);
-        push_reference(out, u64::from(point_record_index));
+        push_reference_u64(out, u64::from(point_record_index));
     }
 
     let mut out = Vec::new();
@@ -686,9 +659,9 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         crate::design::presentation::PHYSICAL_MATERIAL_LIBRARY_ID,
     );
     lp_utf16(&mut out, "PrismMaterial-018");
-    push_reference(&mut out, 7);
+    push_reference_u64(&mut out, 7);
     out.push(0);
-    push_reference(&mut out, 986);
+    push_reference_u64(&mut out, 986);
     lp_utf16(&mut out, "Body");
     out.extend_from_slice(&1.0f32.to_le_bytes());
     out.extend_from_slice(&[1, 1]);
@@ -826,7 +799,7 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         let offset = 133 + ordinal * 8;
         curve[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    push_reference(&mut curve, 277);
+    push_reference_u64(&mut curve, 277);
     out.extend_from_slice(&curve);
     records.push((
         700,
@@ -912,7 +885,7 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         let offset = 371 + ordinal * 8;
         alternate_curve[offset..offset + 8].copy_from_slice(&coordinate.to_le_bytes());
     }
-    push_reference(&mut alternate_curve, 277);
+    push_reference_u64(&mut alternate_curve, 277);
     out.extend_from_slice(&alternate_curve);
     out.extend_from_slice(&10u32.to_le_bytes());
     out.extend_from_slice(b"BodiesRoot");
@@ -960,14 +933,6 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 /// scope-to-placement join so the normal projection pipeline can materialize
 /// that graph as a neutral Sketch.
 pub(crate) fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
     let (mut out, mut records) = generated_design_bulkstream();
 
     let scope_record = 1_100_u32;
@@ -1037,12 +1002,6 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
     fn marked_reference(bytes: &mut [u8], at: usize, record_index: u32) {
         bytes[at] = 1;
         bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn local_reference(bytes: &mut Vec<u8>, record_index: u64) {
-        bytes.push(1);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-        bytes.extend_from_slice(&[0; 2]);
     }
 
     let (mut out, mut records) = generated_design_bulkstream();
@@ -1119,9 +1078,9 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
     group.extend_from_slice(&u64::from(profile_group_record + 2).to_le_bytes());
     group.extend_from_slice(&[0, 0]);
     group.extend_from_slice(&[0, 0]);
-    local_reference(&mut group, u64::from(profile_group_record + 1));
+    push_reference_u64(&mut group, u64::from(profile_group_record + 1));
     group.push(0);
-    local_reference(&mut group, u64::from(scope_record));
+    push_reference_u64(&mut group, u64::from(scope_record));
     append_header(&mut group, b"259", profile_group_record);
     out.extend_from_slice(&group);
 
@@ -1170,14 +1129,6 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
 /// Add the self-contained 267-byte result-body form of a `Base Feature`
 /// parameter scope to the generated Design stream.
 pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let scope_class_tag = 268_u32;
@@ -1210,20 +1161,6 @@ pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, 
 /// Add a `RemoveBody` scope and its single whole-body construction group to
 /// the generated Design stream.
 pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    fn local_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
-    }
-
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let group_record = 1_500_u32;
@@ -1273,9 +1210,9 @@ pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u
     group.extend_from_slice(&u64::from(group_record + 2).to_le_bytes());
     group.extend_from_slice(&[0, 0]);
     group.extend_from_slice(&[0, 0]);
-    local_reference(&mut group, u64::from(group_record + 1));
+    push_reference_u64(&mut group, u64::from(group_record + 1));
     group.push(0);
-    local_reference(&mut group, u64::from(scope_record));
+    push_reference_u64(&mut group, u64::from(scope_record));
     group.extend_from_slice(&3_u32.to_le_bytes());
     group.extend_from_slice(b"259");
     group.extend_from_slice(&group_record.to_le_bytes());
@@ -1333,20 +1270,6 @@ pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u
 /// Add a `SurfaceStitch` scope, one face-selection group, and its tolerance
 /// and settings records to the generated Design stream.
 pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    fn local_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
-    }
-
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let group_record = 1_500_u32;
@@ -1367,7 +1290,7 @@ pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
         u64::from(tolerance_record),
         u64::from(settings_record),
     ] {
-        local_reference(&mut scope, reference);
+        push_reference_u64(&mut scope, reference);
     }
     scope.extend_from_slice(&0_u32.to_le_bytes());
     lp_utf16(&mut scope, "SurfaceStitch");
@@ -1414,9 +1337,9 @@ pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
     group.extend_from_slice(&u64::from(group_record + 2).to_le_bytes());
     group.extend_from_slice(&[0, 0]);
     group.extend_from_slice(&[0, 0]);
-    local_reference(&mut group, u64::from(group_record + 1));
+    push_reference_u64(&mut group, u64::from(group_record + 1));
     group.push(0);
-    local_reference(&mut group, u64::from(scope_record));
+    push_reference_u64(&mut group, u64::from(scope_record));
     group.extend_from_slice(&3_u32.to_le_bytes());
     group.extend_from_slice(b"259");
     group.extend_from_slice(&group_record.to_le_bytes());
@@ -1619,14 +1542,6 @@ pub(crate) fn generated_design_copy_paste_bodies_bulkstream() -> (Vec<u8>, Vec<(
         bytes.extend_from_slice(&record_index.to_le_bytes());
     }
 
-    fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
     fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
         bytes.push(1);
         bytes.extend_from_slice(&record_index.to_le_bytes());
@@ -1713,14 +1628,6 @@ pub(crate) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         bytes.extend_from_slice(class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
     }
 
     fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {

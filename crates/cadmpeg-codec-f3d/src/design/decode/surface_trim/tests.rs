@@ -10,14 +10,7 @@ use super::*;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::indexed_header;
 use crate::records::feature::scope::DesignParameterScope;
-
-fn utf16_field(bytes: &mut Vec<u8>, value: &str) {
-    let units = value.encode_utf16().collect::<Vec<_>>();
-    bytes.extend_from_slice(&(units.len() as u32).to_le_bytes());
-    for unit in units {
-        bytes.extend_from_slice(&unit.to_le_bytes());
-    }
-}
+use crate::test_support::lp_utf16;
 
 fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
     let mut bytes = Vec::new();
@@ -27,8 +20,8 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
     bytes.extend_from_slice(&814u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
-    utf16_field(&mut bytes, "00000000-0000-0000-0000-000000000000");
-    utf16_field(&mut bytes, "00000000-0000-0000-0000-000000000000");
+    lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
+    lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 4]);
     indexed_header(&mut bytes, *b"257", 811);

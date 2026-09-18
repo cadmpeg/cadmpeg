@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::operands::parse_work_point_sketch_point_frame;
-use crate::design::test_support::{indexed_header, lp_utf16};
+use crate::design::test_support::indexed_header;
+use crate::test_support::lp_utf16;
 
 #[test]
 fn direct_sketch_point_selection_reads_owner_and_persistent_ids() {

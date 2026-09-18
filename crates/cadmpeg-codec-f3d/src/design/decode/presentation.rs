@@ -605,20 +605,10 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
 mod tests {
     use super::*;
     use crate::design::test_support::{design_type, primary_record};
-
-    fn push_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
+    use crate::test_support::{lp_ascii, push_reference_u64};
 
     fn push_utf16(out: &mut Vec<u8>, value: &str) {
         out.extend(lp_utf16_bytes(value));
-    }
-
-    fn push_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
     }
 
     #[test]
@@ -629,7 +619,7 @@ mod tests {
         let node_guid = "11111111-2222-8333-A444-555555555555";
         let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, &body_tag.to_string());
+        lp_ascii(&mut bytes, &body_tag.to_string());
         bytes.extend_from_slice(&entity.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
         push_utf16(&mut bytes, &format!("0_{entity}"));
@@ -638,9 +628,9 @@ mod tests {
         push_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
         push_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
         push_utf16(&mut bytes, "PrismMaterial-001");
-        push_reference(&mut bytes, 7);
+        push_reference_u64(&mut bytes, 7);
         bytes.push(0);
-        push_reference(&mut bytes, entity + 1);
+        push_reference_u64(&mut bytes, entity + 1);
         push_utf16(&mut bytes, "Body");
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
@@ -649,7 +639,7 @@ mod tests {
             push_utf16(&mut bytes, marker);
         }
         let node_start = bytes.len();
-        push_ascii(&mut bytes, &node_tag.to_string());
+        lp_ascii(&mut bytes, &node_tag.to_string());
         bytes.extend_from_slice(&43u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
         push_utf16(&mut bytes, node_guid);
@@ -715,7 +705,7 @@ mod tests {
         let entity = 42u64;
         let node_guid = "11111111-2222-8333-A444-555555555555";
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, &body_tag.to_string());
+        lp_ascii(&mut bytes, &body_tag.to_string());
         bytes.extend_from_slice(&entity.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
         push_utf16(&mut bytes, "0_42");
@@ -724,9 +714,9 @@ mod tests {
         push_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
         push_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
         push_utf16(&mut bytes, "PrismMaterial-001");
-        push_reference(&mut bytes, 7);
+        push_reference_u64(&mut bytes, 7);
         bytes.push(0);
-        push_reference(&mut bytes, entity + 1);
+        push_reference_u64(&mut bytes, entity + 1);
         push_utf16(&mut bytes, "Body");
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
@@ -784,13 +774,13 @@ mod tests {
         let entity = 42u64;
         let node_guid = "11111111-2222-8333-A444-555555555555";
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, "256");
+        lp_ascii(&mut bytes, "256");
         bytes.extend_from_slice(&entity.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
         push_utf16(&mut bytes, "0_42");
 
         let next_start = bytes.len();
-        push_ascii(&mut bytes, "257");
+        lp_ascii(&mut bytes, "257");
         bytes.extend_from_slice(&99u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
         push_utf16(&mut bytes, node_guid);
@@ -798,9 +788,9 @@ mod tests {
         push_utf16(&mut bytes, "99999999-8888-8777-A666-555555555555");
         push_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
         push_utf16(&mut bytes, "PrismMaterial-001");
-        push_reference(&mut bytes, 7);
+        push_reference_u64(&mut bytes, 7);
         bytes.push(0);
-        push_reference(&mut bytes, entity + 1);
+        push_reference_u64(&mut bytes, entity + 1);
         push_utf16(&mut bytes, "Body");
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
@@ -853,7 +843,7 @@ mod tests {
     fn browser_node_records_skip_other_typed_member_variants() {
         let record_index = 43u32;
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, "256");
+        lp_ascii(&mut bytes, "256");
         bytes.extend_from_slice(&record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
         push_utf16(&mut bytes, "11111111-2222-8333-A444-555555555555");
@@ -913,20 +903,20 @@ mod tests {
         ]);
 
         let mut bytes = Vec::new();
-        push_ascii(&mut bytes, &body_tag.to_string());
+        lp_ascii(&mut bytes, &body_tag.to_string());
         bytes.extend_from_slice(&entity.to_le_bytes());
         bytes.extend_from_slice(&[0; 16]);
-        push_ascii(&mut bytes, "299");
+        lp_ascii(&mut bytes, "299");
         bytes.extend_from_slice(&999_999u64.to_le_bytes());
         bytes.extend_from_slice(&[0; 16]);
         push_utf16(&mut bytes, BODY_PRESENTATION_MATERIAL_ENVELOPE_ID);
         push_utf16(&mut bytes, PHYSICAL_MATERIAL_LIBRARY_ID);
         bytes.extend_from_slice(&[0; 4]);
         push_utf16(&mut bytes, "PrismMaterial-018");
-        push_reference(&mut bytes, 1_900);
+        push_reference_u64(&mut bytes, 1_900);
         bytes.push(0);
         push_utf16(&mut bytes, node_guid);
-        push_reference(&mut bytes, entity + 1);
+        push_reference_u64(&mut bytes, entity + 1);
         bytes.extend_from_slice(&[0; 12]);
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
@@ -942,7 +932,7 @@ mod tests {
         assert!(
             bare_presentation_material(&bytes, 15, node_start - trailer_len, entity,).is_none()
         );
-        push_ascii(&mut bytes, &node_tag.to_string());
+        lp_ascii(&mut bytes, &node_tag.to_string());
         bytes.extend_from_slice(&node_record.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
         push_utf16(&mut bytes, node_guid);

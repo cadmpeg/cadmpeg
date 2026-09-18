@@ -8,7 +8,7 @@
 )]
 
 pub(crate) use super::{
-    lp_utf16, parameter_owner_frame, parameter_record, push_genesis_block, push_reference,
+    parameter_owner_frame, parameter_record, push_genesis_block, push_reference,
 };
 pub(crate) use crate::design::decode::dimension_frames::companion_owned_interval;
 pub(crate) use crate::design::decode::operands::{
@@ -146,6 +146,7 @@ pub(crate) use crate::records::{
         sketch_profile::DesignSketchProfileOperand,
     },
 };
+pub(crate) use crate::test_support::lp_utf16;
 pub(crate) use cadmpeg_core::decode::WorkBudget;
 pub(crate) use cadmpeg_ir::attributes::AttributeTarget;
 pub(crate) use cadmpeg_ir::features::{

@@ -8,6 +8,7 @@
 )]
 use super::prelude::*;
 use crate::design::test_support::push_marked_reference;
+use crate::test_support::lp_ascii;
 
 fn candidates(
     bytes: &[u8],
@@ -589,20 +590,15 @@ fn text_frame_line_decodes_after_point_references() {
 
 #[test]
 fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
-    fn ascii(bytes: &mut Vec<u8>, value: &str) {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(value.as_bytes());
-    }
-
     let mut bytes = Vec::new();
-    ascii(&mut bytes, "256");
+    lp_ascii(&mut bytes, "256");
     bytes.extend_from_slice(&1200u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 9]);
     bytes.push(1);
     bytes.extend_from_slice(&2u32.to_le_bytes());
     for (name, value) in [("crv_primary_id", 700u64), ("crv_secondary_id", 0)] {
-        ascii(&mut bytes, name);
-        ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        lp_ascii(&mut bytes, name);
+        lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     assert_eq!(bytes.len(), 133);

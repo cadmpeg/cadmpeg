@@ -8,6 +8,7 @@
 )]
 use super::prelude::*;
 use crate::design::test_support::indexed_header;
+use crate::test_support::push_reference_u64;
 
 #[test]
 fn combine_scope_projects_ordered_target_tools_and_retention() {
@@ -203,11 +204,6 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
 
 #[test]
 fn combine_extended_reference_scope_retains_external_tool_identity() {
-    fn local_reference(bytes: &mut Vec<u8>, target: u64) {
-        bytes.push(1);
-        bytes.extend_from_slice(&target.to_le_bytes());
-        bytes.extend_from_slice(&[0; 2]);
-    }
     fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
         indexed_header(bytes, *b"304", record_index);
         bytes.extend_from_slice(&[0; 9]);
@@ -238,14 +234,14 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         const CONTEXT: &str = "22222222-2222-4222-8222-222222222222";
         indexed_header(bytes, *b"312", record_index);
         bytes.extend_from_slice(&[0; 14]);
-        local_reference(bytes, u64::from(record_index + 3));
+        push_reference_u64(bytes, u64::from(record_index + 3));
         bytes.extend_from_slice(&1u32.to_le_bytes());
         lp_utf16(bytes, ASSET);
         lp_utf16(bytes, CONTEXT);
         bytes.extend_from_slice(&2u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
-        local_reference(bytes, 5_001);
+        push_reference_u64(bytes, 5_001);
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.push(1);
         bytes.extend_from_slice(&6_001u64.to_le_bytes());
@@ -262,11 +258,11 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         bytes.extend_from_slice(&11u64.to_le_bytes());
         bytes.extend_from_slice(&48u32.to_le_bytes());
         bytes.extend_from_slice(&12u64.to_le_bytes());
-        local_reference(bytes, u64::from(record_index + 2));
+        push_reference_u64(bytes, u64::from(record_index + 2));
         bytes.extend_from_slice(&[0; 2]);
-        local_reference(bytes, u64::from(record_index + 1));
+        push_reference_u64(bytes, u64::from(record_index + 1));
         bytes.push(0);
-        local_reference(bytes, u64::from(scope));
+        push_reference_u64(bytes, u64::from(scope));
         indexed_header(bytes, *b"261", record_index);
     }
     fn simple_selection_record(bytes: &mut Vec<u8>, record_index: u32) {

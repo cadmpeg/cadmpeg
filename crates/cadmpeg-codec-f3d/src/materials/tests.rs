@@ -152,24 +152,19 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
 
 #[test]
 fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker() {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
     let category: String = std::iter::repeat_n('x', 0x1_0080).collect();
     let mut logical = RECORD_MARKER.to_vec();
-    lp(&mut logical, "GenericSchema");
+    lp_ascii(&mut logical, "GenericSchema");
     logical.push(0);
-    lp(&mut logical, "Prism-001");
-    lp(&mut logical, "Prism-001");
+    lp_ascii(&mut logical, "Prism-001");
+    lp_ascii(&mut logical, "Prism-001");
     logical.extend_from_slice(&2_u32.to_le_bytes());
-    lp(&mut logical, &category);
-    lp(&mut logical, "Default");
-    lp(&mut logical, "Generated appearance");
+    lp_ascii(&mut logical, &category);
+    lp_ascii(&mut logical, "Default");
+    lp_ascii(&mut logical, "Generated appearance");
     logical.extend_from_slice(&0_u32.to_le_bytes());
     logical.extend_from_slice(&1_u32.to_le_bytes());
-    lp(&mut logical, "");
+    lp_ascii(&mut logical, "");
 
     let paged = super::page_logical(&logical).expect("page catalog record");
     let frames = cadmpeg_protein::framing::record_frames(&paged).expect("frame catalog pages");
@@ -185,22 +180,17 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
 
 #[test]
 fn definition_catalog_version_one_omits_category() {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
     let mut logical = RECORD_MARKER.to_vec();
-    lp(&mut logical, "PrismOpaqueSchema");
+    lp_ascii(&mut logical, "PrismOpaqueSchema");
     logical.push(1);
-    lp(&mut logical, "Opaque(246,246,243)");
-    lp(&mut logical, "EFD2D83C-576F-3A9B-8535-31523D8D8432");
+    lp_ascii(&mut logical, "Opaque(246,246,243)");
+    lp_ascii(&mut logical, "EFD2D83C-576F-3A9B-8535-31523D8D8432");
     logical.extend_from_slice(&1_u32.to_le_bytes());
-    lp(&mut logical, "Default");
-    lp(&mut logical, "Prism opaque material.");
+    lp_ascii(&mut logical, "Default");
+    lp_ascii(&mut logical, "Prism opaque material.");
     logical.extend_from_slice(&2_u32.to_le_bytes());
-    lp(&mut logical, "materials");
-    lp(&mut logical, "opaque");
+    lp_ascii(&mut logical, "materials");
+    lp_ascii(&mut logical, "opaque");
     logical.extend_from_slice(&0_u32.to_le_bytes());
 
     let decoded = super::decode_definition_catalog_record(&logical)
@@ -212,23 +202,18 @@ fn definition_catalog_version_one_omits_category() {
 
 #[test]
 fn definition_catalog_version_zero_omits_category_and_group() {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
     let mut logical = RECORD_MARKER.to_vec();
-    lp(&mut logical, "UnifiedBitmapSchema");
+    lp_ascii(&mut logical, "UnifiedBitmapSchema");
     logical.push(0);
-    lp(&mut logical, "Metal-045_metal_pattern_shader");
-    lp(&mut logical, "Metal-045_metal_pattern_shader");
+    lp_ascii(&mut logical, "Metal-045_metal_pattern_shader");
+    lp_ascii(&mut logical, "Metal-045_metal_pattern_shader");
     logical.extend_from_slice(&0_u32.to_le_bytes());
-    lp(&mut logical, "Unified Bitmap.");
+    lp_ascii(&mut logical, "Unified Bitmap.");
     logical.extend_from_slice(&2_u32.to_le_bytes());
-    lp(&mut logical, "maps");
-    lp(&mut logical, "misc");
+    lp_ascii(&mut logical, "maps");
+    lp_ascii(&mut logical, "misc");
     logical.extend_from_slice(&1_u32.to_le_bytes());
-    lp(&mut logical, "Maps/UnifiedBitmap/UnifiedBitmap.png");
+    lp_ascii(&mut logical, "Maps/UnifiedBitmap/UnifiedBitmap.png");
 
     let decoded = super::decode_definition_catalog_record(&logical)
         .expect("decode version-zero definition record");
@@ -239,19 +224,14 @@ fn definition_catalog_version_zero_omits_category_and_group() {
 
 #[test]
 fn definition_catalog_version_three_adds_subgroup() {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
     let mut logical = RECORD_MARKER.to_vec();
-    lp(&mut logical, "GenericSchema");
+    lp_ascii(&mut logical, "GenericSchema");
     logical.push(0);
-    lp(&mut logical, "InvGen-063");
-    lp(&mut logical, "InvGen-063");
+    lp_ascii(&mut logical, "InvGen-063");
+    lp_ascii(&mut logical, "InvGen-063");
     logical.extend_from_slice(&3_u32.to_le_bytes());
     for value in ["Metal", "Default", "Miscellaneous", "Generic material."] {
-        lp(&mut logical, value);
+        lp_ascii(&mut logical, value);
     }
     logical.extend_from_slice(&0_u32.to_le_bytes());
     logical.extend_from_slice(&0_u32.to_le_bytes());
@@ -1387,14 +1367,6 @@ fn decode_mixed_analytic_and_unknown_faces_sharing_an_edge() {
 
 #[test]
 fn body_visibility_maps_asm_keys_through_member_nodes() {
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units: Vec<u16> = value.encode_utf16().collect();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
     let mut bulk = Vec::new();
     let mut primary_records = vec![(899u64, 0u64)];
     // Typed body-map record: indexed header, ten zero bytes, pair count,

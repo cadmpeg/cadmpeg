@@ -133,10 +133,6 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
 fn design_feature_timeline_versions_share_variable_width_local_references() {
     const INLINE_TYPE_GUID: &str = "11111111-2222-3333-4444-555555555555";
 
-    fn lp_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
     fn local_reference(out: &mut Vec<u8>, target: u64, inline_type: bool) {
         out.push(1);
         out.extend_from_slice(&target.to_le_bytes());

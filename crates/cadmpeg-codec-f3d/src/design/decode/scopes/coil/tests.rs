@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::exact_coil_placement;
 use crate::design::test_support::dump::{
-    lp_utf16, parse_parameter_scope, ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent,
+    parse_parameter_scope, ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent,
     DesignCoilSection, DesignCoilSectionPlacement, DesignExtrudeOperation, DesignParameterScope,
     DesignRecordHeader, IndexedRecordOffsets,
 };
@@ -11,6 +11,7 @@ use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sele
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
 use crate::records::feature::coil::DesignCoilSelection;
+use crate::test_support::lp_utf16;
 
 fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
     bytes[offset] = 1;

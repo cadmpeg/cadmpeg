@@ -466,20 +466,7 @@ pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError
 #[cfg(test)]
 mod tests {
     use super::{parse, primary_record_frames, MetaStream, RecordIndexEntry};
-    use crate::test_support::design_metastream;
-
-    fn lp_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
+    use crate::test_support::{design_metastream, lp_ascii, lp_utf16};
 
     fn stream_prefix() -> Vec<u8> {
         let mut bytes = Vec::new();
