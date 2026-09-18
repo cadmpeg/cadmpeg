@@ -2368,13 +2368,11 @@ pub(crate) fn e5_boundary_curve(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
-    let finite_point = |point: Point3| point.is_finite();
-    let finite_vector = |vector: Vector3| vector.is_finite();
     if !uv_scale
         .into_iter()
         .all(|value| value.is_finite() && value != 0.0)
         || !range.into_iter().all(f64::is_finite)
-        || !endpoints.iter().copied().all(finite_point)
+        || !endpoints.iter().copied().all(|point| point.is_finite())
     {
         return None;
     }
@@ -2390,10 +2388,10 @@ pub(crate) fn e5_boundary_curve(
         let center = (*origin)
             .translated(*u_axis, center[0] * uv_scale[0])
             .translated(v_axis, center[1] * uv_scale[1]);
-        if !finite_point(center)
-            || !finite_vector(*normal)
-            || !finite_vector(*u_axis)
-            || !finite_vector(v_axis)
+        if !center.is_finite()
+            || !normal.is_finite()
+            || !u_axis.is_finite()
+            || !v_axis.is_finite()
             || !radius.is_finite()
             || *radius <= 0.0
         {
@@ -2431,13 +2429,16 @@ pub(crate) fn e5_boundary_curve(
                     .translated(v_axis, point.v)
             })
             .collect::<Vec<_>>();
-        if !finite_point(*origin)
-            || !finite_vector(*normal)
-            || !finite_vector(*u_axis)
-            || !finite_vector(v_axis)
+        if !origin.is_finite()
+            || !normal.is_finite()
+            || !u_axis.is_finite()
+            || !v_axis.is_finite()
             || !range.into_iter().all(f64::is_finite)
             || !nurbs.knots().iter().copied().all(f64::is_finite)
-            || !control_points.iter().copied().all(finite_point)
+            || !control_points
+                .iter()
+                .copied()
+                .all(|point| point.is_finite())
             || nurbs
                 .weights()
                 .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
@@ -2481,13 +2482,16 @@ pub(crate) fn e5_boundary_curve(
                     .translated(v_axis, point.v)
             })
             .collect::<Vec<_>>();
-        if !finite_point(*origin)
-            || !finite_vector(*normal)
-            || !finite_vector(*u_axis)
-            || !finite_vector(v_axis)
+        if !origin.is_finite()
+            || !normal.is_finite()
+            || !u_axis.is_finite()
+            || !v_axis.is_finite()
             || !range.into_iter().all(f64::is_finite)
             || !nurbs.knots().iter().copied().all(f64::is_finite)
-            || !control_points.iter().copied().all(finite_point)
+            || !control_points
+                .iter()
+                .copied()
+                .all(|point| point.is_finite())
             || nurbs
                 .weights()
                 .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
@@ -2536,14 +2540,14 @@ pub(crate) fn e5_boundary_curve(
         None => None,
     };
     if let Some((center, radius, axis)) = circle {
-        if !finite_point(center) || !finite_vector(axis) || !radius.is_finite() || radius <= 0.0 {
+        if !center.is_finite() || !axis.is_finite() || !radius.is_finite() || radius <= 0.0 {
             return None;
         }
         let candidates = [axis, axis.scale(-1.0)]
             .into_iter()
             .filter_map(|axis| {
                 let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                if !finite_vector(ref_direction) {
+                if !ref_direction.is_finite() {
                     return None;
                 }
                 let range = circle_parameter_range_from_surface_branch(
@@ -2595,7 +2599,7 @@ pub(crate) fn e5_boundary_curve(
         return None;
     }
     let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
-    finite_vector(direction).then_some((
+    direction.is_finite().then_some((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(endpoints[0], direction).ok()?,
         )),
