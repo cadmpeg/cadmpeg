@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design booleans-patterns transfer unit tests.
 
+use crate::design::tests::definition;
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -422,21 +423,6 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
 
 #[test]
 fn distinguishes_absent_and_malformed_pattern_modes() {
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    }
-
     let pattern_document = |linear_mode: &str, polar_mode: &str, mode2: &str| {
         let linear_count = 5 + usize::from(!linear_mode.is_empty());
         let polar_count = 5 + usize::from(!polar_mode.is_empty());
@@ -778,21 +764,6 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
                 &DecodeOptions::default(),
             )
             .expect("pattern carrier document")
-    }
-
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
     }
 
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str) {

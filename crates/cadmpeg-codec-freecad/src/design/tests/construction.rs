@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design construction transfer unit tests.
 
+use crate::design::tests::definition;
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{
@@ -456,21 +457,6 @@ fn transfers_uniform_and_anisotropic_part_scale() {
 
 #[test]
 fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    }
-
     fn document(uniform_property: Option<&str>) -> String {
         let uniform = uniform_property.unwrap_or_default();
         let count = 5 + usize::from(!uniform.is_empty());
@@ -1025,21 +1011,6 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
 
 #[test]
 fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    }
-
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="17">
  <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
@@ -1589,24 +1560,9 @@ fn transfers_part_thickness_and_shape_offset_construction() {
 
 #[test]
 fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
-    fn feature_definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    }
-
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, kind: &str) {
         assert!(matches!(
-            feature_definition(result, "Target"),
+            definition(result, "Target"),
             FeatureDefinition::Operation(FeatureOperation::Native { kind: actual, .. }) if actual.as_str() == kind
         ));
         assert_eq!(result.report().losses.len(), 1);
@@ -1670,14 +1626,14 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
         };
         assert!(
             matches!(
-                feature_definition(&result, "Target"),
+                definition(&result, "Target"),
                 FeatureDefinition::Operation(FeatureOperation::Shell {
                     mode: Some(mode),
                     join: Some(ShellJoin::Arc),
                     ..
                 }) if *mode == expected_mode
             ) || matches!(
-                feature_definition(&result, "Target"),
+                definition(&result, "Target"),
                 FeatureDefinition::Operation(FeatureOperation::OffsetShape {
                     mode,
                     join: ShellJoin::Arc,
@@ -1762,7 +1718,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
     ] {
         let result = decode_surface(&surface_document(mode));
         assert!(matches!(
-            feature_definition(&result, "Target"),
+            definition(&result, "Target"),
             FeatureDefinition::Operation(FeatureOperation::ProjectOnSurface { mode: actual, .. }) if *actual == expected
         ));
         assert!(result.report().losses.is_empty());
@@ -1782,7 +1738,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
         };
         let result = decode_surface(&surface_document(&mode));
         assert!(matches!(
-            feature_definition(&result, "Target"),
+            definition(&result, "Target"),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::ProjectOnSurface"
         ));
         assert_eq!(result.report().losses.len(), 1);
