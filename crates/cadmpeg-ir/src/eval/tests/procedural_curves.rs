@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+
+use crate::eval::model_curve_differential_by_id;
+use crate::eval::model_curve_parameter_near_point_with_tolerance;
+use crate::eval::model_curve_point_by_id;
+use crate::geometry::Curve;
+use crate::geometry::CurveGeometry;
+use crate::geometry::ProceduralCurve;
+use crate::geometry::ProceduralCurveDefinition;
+use crate::geometry::SolvedCurveGeometry;
+use crate::ids::CurveId;
+use crate::math::Point3;
+use crate::math::Vector3;
+use crate::CadIr;
+
 use crate::ids::ProceduralCurveId;
 
 #[test]

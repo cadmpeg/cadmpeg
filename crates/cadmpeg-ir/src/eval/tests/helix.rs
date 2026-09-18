@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::math::Point3;
+use crate::math::Vector3;
+use crate::CadIr;
+
 use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
 use crate::ids::{CurveId, ProceduralCurveId};
 

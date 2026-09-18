@@ -1,27 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
-use crate::examples::unit_cube;
+use crate::eval::curve_point;
+use crate::eval::curve_second_derivative;
+use crate::eval::curve_tangent;
+use crate::eval::model_curve_differential_by_id;
+use crate::eval::model_curve_parameter_near_point;
+use crate::eval::model_curve_point_by_id;
+use crate::eval::model_surface_partials_by_id;
+use crate::eval::model_surface_point;
+use crate::eval::model_surface_point_by_id;
+use crate::eval::model_surface_point_by_id_with_budget;
+use crate::eval::model_surface_second_partials_by_id;
+use crate::eval::nurbs_curve_parameter_near_point;
+use crate::eval::nurbs_curve_point;
+use crate::eval::nurbs_curve_speed_bound;
+use crate::eval::nurbs_surface_closest_parameter;
+use crate::eval::nurbs_surface_isocurve;
+use crate::eval::nurbs_surface_isoline;
+use crate::eval::nurbs_surface_parameter_near_point;
+use crate::eval::nurbs_surface_parameter_segment_chord_bound;
+use crate::eval::nurbs_surface_parameter_within_tolerance;
+use crate::eval::nurbs_surface_parameter_within_tolerance_with_budget;
+use crate::eval::nurbs_surface_partials;
+use crate::eval::nurbs_surface_partials_with_budget;
+use crate::eval::nurbs_surface_point;
+use crate::eval::nurbs_surface_point_with_budget;
+use crate::eval::nurbs_surface_second_partials;
+use crate::eval::rolling_ball_jet_point;
+use crate::eval::surface_partials;
+use crate::eval::surface_point_with_budget;
+use crate::eval::surface_second_partials;
+use crate::eval::IsolineDirection;
 use crate::geometry::{
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
-    LawFormula, LegacyExtensionFlags, NurbsCurve, NurbsSurface, OffsetExtension, PcurveGeometry,
-    PolylineCurve, PolylineSamples, PolylineVertex, ProceduralCurve, ProceduralSurface,
-    ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm, RevisionSurfaceForm,
-    RevisionSurfaceParameterization, RollingBallConstruction, RollingBallJetDerivative,
-    RollingBallJetSite, RollingBallRadiusSelector, RollingBallSide, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm,
-    SweepSurfaceConstruction, SweepSurfaceLayout, VariableBlendConstruction,
-    VariableBlendConvexity, VariableBlendCrossSection, VariableBlendRadii, VariableBlendRenderMode,
-    VariableBlendSupportKind, VariableBlendSurfaceSubtype, VariableBlendValue,
-    VariableBlendValuePayload,
+    Curve, CurveGeometry, LawExpression, LawFormula, LegacyExtensionFlags, NurbsCurve,
+    NurbsSurface, OffsetExtension, PolylineCurve, PolylineSamples, PolylineVertex,
+    ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm,
+    RevisionSurfaceForm, RevisionSurfaceParameterization, RollingBallJetDerivative,
+    RollingBallJetSite, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
-use crate::report::Check;
 use crate::topology::{Edge, Point, Vertex};
-use crate::transform::{Transform, Transform2};
-use crate::validate::validate_neutral;
+use crate::transform::Transform;
 use crate::CadIr;
 use cadmpeg_core::decode::WorkBudget;
 

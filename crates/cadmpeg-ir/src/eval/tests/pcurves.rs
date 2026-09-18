@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+
+use crate::eval::pcurve_tangent;
+use crate::eval::pcurve_uv;
+use crate::eval::pcurve_uv_differential_inner;
+use crate::geometry::PcurveGeometry;
+use crate::math::Point2;
+use crate::transform::Transform2;
 
 #[test]
 fn analytic_pcurves_preserve_angular_parameterization() {

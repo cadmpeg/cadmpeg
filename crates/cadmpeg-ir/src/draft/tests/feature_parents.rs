@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::annotations::Annotations;
+use crate::document::CadIr;
+use crate::draft::CommitSession;
+use crate::draft::DraftError;
+use crate::draft::ModelDraft;
+use crate::report::TransferLedger;
+
 use crate::document::Model;
 use crate::features::{
     Feature, FeatureDefinition, FeatureOperation, FeatureTreeNodeRole, TreeChildren,

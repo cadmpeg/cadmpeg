@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::features::BodySelection;
+
 use std::collections::BTreeMap;
 
 use crate::examples::unit_cube;
@@ -9,8 +11,6 @@ use crate::math::{Point3, Vector3};
 use crate::report::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
-
-use super::*;
 
 #[test]
 fn historical_body_overlap_spans_direct_and_paired_member_selections() {

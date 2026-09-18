@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::validate::validate_neutral;
+use crate::CadIr;
+
 use crate::features::{
     Feature, FeatureDefinition, FeatureOperation, FeatureTreeNodeRole, TreeChildren,
 };

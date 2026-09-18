@@ -1,6 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::eval::model_surface_partials_by_id;
+use crate::eval::model_surface_point;
+use crate::eval::model_surface_point_by_id;
+use crate::eval::model_surface_second_partials_by_id;
+use crate::geometry::Curve;
+use crate::geometry::CurveGeometry;
+use crate::geometry::ProceduralSurface;
+use crate::geometry::ProceduralSurfaceDefinition;
+use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::Surface;
+use crate::geometry::SurfaceGeometry;
+use crate::ids::CurveId;
+use crate::ids::ProceduralSurfaceId;
+use crate::ids::SurfaceId;
+use crate::math::Point3;
+use crate::math::Vector3;
+use crate::CadIr;
 
 fn direct_surface_fixture(
     definition: ProceduralSurfaceDefinition,
