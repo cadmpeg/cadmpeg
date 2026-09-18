@@ -25,8 +25,8 @@ use cadmpeg_ir::{
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    content_header, reference_list, type_id_string, u32_list, Cursor, PmDcContentHeader,
-    PmDcReferenceList, PmDcU32List,
+    content_header, inventor_id, reference_list, type_id_string, u32_list, Cursor,
+    PmDcContentHeader, PmDcReferenceList, PmDcU32List,
 };
 use crate::record_identity::{Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -102,14 +102,6 @@ const PROFILE_SELECTION_TYPE: [u8; 16] = [
 const FEATURE_LABEL_TYPE: [u8; 16] = [
     0x2b, 0xa4, 0x48, 0x2b, 0xd2, 0x11, 0x58, 0x64, 0x60, 0x00, 0x74, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
 ];
-
-const fn inventor_id(time_low: u32) -> [u8; 16] {
-    let first = time_low.to_le_bytes();
-    [
-        first[0], first[1], first[2], first[3], 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc,
-        0x06, 0x63, 0xdc, 0x09,
-    ]
-}
 
 #[derive(Debug)]
 pub(crate) struct FeatureInventory {

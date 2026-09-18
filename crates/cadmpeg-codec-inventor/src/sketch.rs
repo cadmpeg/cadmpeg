@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::compact_matrix::CompactMatrix;
 use crate::pmdc::{
-    content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReference,
-    PmDcReferenceList,
+    content_header, inventor_id, reference_list, type_id_string, Cursor, PmDcContentHeader,
+    PmDcReference, PmDcReferenceList,
 };
 use crate::record_identity::{Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
@@ -64,14 +64,6 @@ const CIRCLE_CENTER_TYPE: [u8; 16] = [
 const EQUAL_RADIUS_TYPE: [u8; 16] = [
     0xd0, 0x7d, 0x2c, 0x44, 0xd1, 0x11, 0x89, 0xe6, 0x80, 0x00, 0x6f, 0xb1, 0xe1, 0x35, 0x54, 0xc7,
 ];
-
-const fn inventor_id(time_low: u32) -> [u8; 16] {
-    let first = time_low.to_le_bytes();
-    [
-        first[0], first[1], first[2], first[3], 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc,
-        0x06, 0x63, 0xdc, 0x09,
-    ]
-}
 
 const fn sketch_entity_id(time_low: u32) -> [u8; 16] {
     let first = time_low.to_le_bytes();
