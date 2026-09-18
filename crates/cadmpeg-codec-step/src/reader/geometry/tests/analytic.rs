@@ -16,10 +16,11 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+use crate::export::write_step;
 use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::exchange::decode_inline;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
 const EPS_APLL_POINT: f64 = 1.0e-12;

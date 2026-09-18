@@ -11,9 +11,10 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::export::write_step;
 use crate::loss::StepLossCode;
 use crate::test_support::exchange::decode_inline;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {
@@ -920,7 +921,7 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
     let mut output = Vec::new();
-    let report = crate::write_step(
+    let report = crate::export::write_step(
         result.ir(),
         &mut output,
         StepSchema::Ap242Edition3,

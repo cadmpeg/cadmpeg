@@ -6,7 +6,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::CadIr;
 
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::export::write_step;
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 pub(crate) fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();

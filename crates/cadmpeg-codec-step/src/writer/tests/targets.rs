@@ -24,7 +24,7 @@ use crate::options::{StepSchema, StepWriteOptions};
 fn source_declaring(identifier: &str) -> cadmpeg_ir::codec::DecodeResult {
     let written = StepSchema::Ap242Edition3;
     let mut bytes = Vec::new();
-    crate::write_step(
+    crate::export::write_step(
         &unit_cube().expect("unit cube fixture is admitted"),
         &mut bytes,
         written,

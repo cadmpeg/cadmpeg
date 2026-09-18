@@ -12,6 +12,7 @@ use crate::archive::tests::{
     codec_detects_and_inspects_ap242_exchange_structure,
     codec_inspects_edition3_sections_and_external_references,
 };
+use crate::export::write_step;
 use crate::reader::dependencies::tests::decode_reports_data_section_external_dependencies;
 use crate::reader::geometry::tests::{
     decode_conical_apex_and_context_plane_angle_units,
@@ -60,7 +61,7 @@ use crate::writer::tests::{
     writer_round_trips_edge_based_wire_bodies, writer_round_trips_product_body_ownership,
     writer_round_trips_rational_nurbs_pcurves, writer_round_trips_rigid_body_placements,
 };
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());

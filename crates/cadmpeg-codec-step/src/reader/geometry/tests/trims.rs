@@ -13,9 +13,10 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::export::write_step;
 use crate::loss::StepLossCode;
 use crate::test_support::exchange::decode_inline;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
