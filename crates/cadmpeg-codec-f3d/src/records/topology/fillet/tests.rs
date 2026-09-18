@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Variable fillet midpoints and the flattened historical binding.
 
-use crate::records::topology::test_support::{refusal, states_the_key};
+use crate::records::test_support::refusal;
+use crate::records::topology::test_support::states_the_key;
 
 #[test]
 fn variable_fillet_midpoints_preserve_wire_and_reject_unpaired_records() {
