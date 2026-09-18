@@ -271,7 +271,10 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     let original = pcurve.clone();
     assert!(pcurve.edit_knots(<[f64]>::reverse).is_err());
     assert!(pcurve
-        .edit_control_points(|point| point.u = f64::NAN)
+        .edit_control_points(|point| {
+            point.u = f64::NAN;
+            Ok(())
+        })
         .is_err());
     assert!(pcurve_weights(&pcurve, vec![1.0, -1.0]).is_err());
     assert!(pcurve_weights(&pcurve, vec![1.0]).is_err());
@@ -287,6 +290,25 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(polar_weights(&polar, vec![1.0, -1.0]).is_err());
     assert!(polar_weights(&polar, vec![1.0]).is_err());
     assert_eq!(polar, original);
+}
+
+#[test]
+fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
+    let mut pcurve = pcurve();
+    let original = pcurve.clone();
+    let refusal = pcurve.edit_control_points(|point| {
+        point.u = 9.0;
+        Err(crate::geometry::NurbsError::EditRefused(
+            "caller refused this pole".into(),
+        ))
+    });
+    assert_eq!(
+        refusal,
+        Err(crate::geometry::NurbsError::EditRefused(
+            "caller refused this pole".into()
+        ))
+    );
+    assert_eq!(pcurve, original);
 }
 
 #[test]

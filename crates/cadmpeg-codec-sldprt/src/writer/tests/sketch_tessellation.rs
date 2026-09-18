@@ -523,6 +523,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                             point.v += 250.0;
                         }
                         pole_index += 1;
+                        Ok(())
                     })
                     .unwrap();
                 if let Some(mut weights) = curve.weights() {

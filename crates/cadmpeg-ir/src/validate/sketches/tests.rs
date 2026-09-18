@@ -277,6 +277,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                         point.u += 0.01;
                     }
                     index += 1;
+                    Ok(())
                 })
                 .unwrap();
         })
