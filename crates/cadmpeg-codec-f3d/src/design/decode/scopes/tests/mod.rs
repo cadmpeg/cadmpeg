@@ -13,7 +13,6 @@ mod coil;
 mod combine;
 mod copy_paste_bodies;
 mod derived_instance;
-mod existing;
 mod extrude_class_296;
 mod extrude_coil;
 mod extrude_extent;
@@ -33,7 +32,6 @@ mod scale;
 mod surfaces;
 mod thicken;
 mod thread;
-mod work_point;
 
 mod fixed_kind_path_operations;
 mod fixed_kind_tail_operations;
