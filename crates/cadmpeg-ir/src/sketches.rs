@@ -1392,17 +1392,15 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
     type Error = &'static str;
 
     fn try_from(definition: SpatialSketchGeometryDefinition) -> Result<Self, Self::Error> {
-        let finite_point = |point: &Point3| point.is_finite();
         match &definition {
-            SpatialSketchGeometryDefinition::Point { position } if !finite_point(position) => {
+            SpatialSketchGeometryDefinition::Point { position } if !position.is_finite() => {
                 return Err("spatial sketch point position must be finite");
             }
             SpatialSketchGeometryDefinition::Line { start, end } => {
                 let distance = (end.x - start.x)
                     .hypot(end.y - start.y)
                     .hypot(end.z - start.z);
-                if !finite_point(start) || !finite_point(end) || distance <= EPS_SPATIAL_LINE_LENGTH
-                {
+                if !start.is_finite() || !end.is_finite() || distance <= EPS_SPATIAL_LINE_LENGTH {
                     return Err("spatial sketch line endpoints must be finite and separated");
                 }
             }
@@ -1419,7 +1417,7 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
                 radius,
                 ..
             } => {
-                if !finite_point(center) || radius.get() <= 0.0 {
+                if !center.is_finite() || radius.get() <= 0.0 {
                     return Err("spatial circular geometry requires finite center and positive finite radius");
                 }
                 let normal_length = normal.norm();
