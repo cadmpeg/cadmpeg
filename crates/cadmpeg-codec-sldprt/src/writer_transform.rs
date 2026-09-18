@@ -151,11 +151,9 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 })?,
             };
             mesh.edit_vertices(|point| {
-                *point = transform.apply_point(*point).ok_or_else(|| {
-                    TessellationError::EditRefused(
-                        "baked body placement produced a non-finite point".to_string(),
-                    )
-                })?;
+                *point = transform
+                    .apply_point(*point)
+                    .ok_or_else(|| TessellationError::EditRefused(NON_FINITE_POINT.to_string()))?;
                 Ok(())
             })
             .map_err(|error| match error {
@@ -167,9 +165,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
                 mesh.edit_normals(|normal| {
                     *normal = transform.apply_vector(*normal).ok_or_else(|| {
-                        TessellationError::EditRefused(
-                            "baked body placement produced a non-finite direction".to_string(),
-                        )
+                        TessellationError::EditRefused(NON_FINITE_DIRECTION.to_string())
                     })?;
                     Ok(())
                 })
@@ -205,12 +201,15 @@ fn assign(
     Ok(())
 }
 
+const NON_FINITE_POINT: &str = "baked body placement produced a non-finite point";
+const NON_FINITE_DIRECTION: &str = "baked body placement produced a non-finite direction";
+
 fn non_finite_point() -> CodecError {
-    CodecError::malformed("baked body placement produced a non-finite point")
+    CodecError::malformed(NON_FINITE_POINT)
 }
 
 fn non_finite_vector() -> CodecError {
-    CodecError::malformed("baked body placement produced a non-finite direction")
+    CodecError::malformed(NON_FINITE_DIRECTION)
 }
 
 /// Places a point, refusing a placement that leaves the finite range.
@@ -309,11 +308,9 @@ fn transform_surface(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             nurbs
                 .edit_control_points(|point| {
-                    *point = transform.apply_point(*point).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "baked body placement produced a non-finite point".to_string(),
-                        )
-                    })?;
+                    *point = transform
+                        .apply_point(*point)
+                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))?;
                     Ok(())
                 })
                 .map_err(|error| match error {
@@ -328,9 +325,7 @@ fn transform_surface(
                 .edit_vertices(|points| {
                     for point in points {
                         *point = transform.apply_point(*point).ok_or_else(|| {
-                            GeometryLayoutError::EditRefused(
-                                "baked body placement produced a non-finite point".to_string(),
-                            )
+                            GeometryLayoutError::EditRefused(NON_FINITE_POINT.to_string())
                         })?;
                     }
                     Ok(())
@@ -401,11 +396,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs
                 .edit_control_points(|point| {
-                    *point = transform.apply_point(*point).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "baked body placement produced a non-finite point".to_string(),
-                        )
-                    })?;
+                    *point = transform
+                        .apply_point(*point)
+                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))?;
                     Ok(())
                 })
                 .map_err(|error| match error {
@@ -420,9 +413,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 .edit_samples(|samples| {
                     samples.edit_points(|point| {
                         *point = transform.apply_point(*point).ok_or_else(|| {
-                            GeometryLayoutError::EditRefused(
-                                "baked body placement produced a non-finite point".to_string(),
-                            )
+                            GeometryLayoutError::EditRefused(NON_FINITE_POINT.to_string())
                         })?;
                         Ok(())
                     })
