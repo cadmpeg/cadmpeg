@@ -110,7 +110,7 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
 #[test]
 fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
         prefixed: false,
@@ -173,7 +173,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     );
 
     scan.features.entity_tables[0].entries[2].payload =
-        crate::feature::EntryPayload::Source { entity: None };
+        crate::feature::entity::EntryPayload::Source { entity: None };
     assert!(generated_cap_plane_extent(&scan, &ir, 7).is_none());
     scan.features.entity_tables[0] = table.clone();
     scan.features.entity_tables.push(table);

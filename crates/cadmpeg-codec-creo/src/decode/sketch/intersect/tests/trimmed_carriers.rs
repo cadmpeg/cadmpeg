@@ -298,7 +298,7 @@ fn arc_carriers_use_trim_vertices() {
     var_segment.radius_ref = Some(10);
     let mut var_arc = definition;
     var_arc.variables = Some(crate::feature::definitions::test_support::with_points(
-        crate::feature::FeatureVariableTable {
+        crate::feature::definitions::FeatureVariableTable {
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),

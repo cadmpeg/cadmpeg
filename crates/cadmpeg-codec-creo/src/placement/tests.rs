@@ -11,10 +11,11 @@ use crate::CreoCodec;
 
 use super::*;
 
+use crate::feature::definitions::FeatureVariableTable;
 use crate::feature::{
     FeatureEntityTableEntry, FeatureGeometryTableKind, FeatureParameterFrame, FeatureSection3d,
     FeatureSectionOrientation, FeatureSectionPoint, FeatureSectionReferencePlane, FeatureSegment,
-    FeatureSegmentTable, FeatureVariableTable,
+    FeatureSegmentTable,
 };
 use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
 
@@ -460,7 +461,7 @@ fn resolves_generated_section_from_declared_cap_pair() {
     }];
     let entries = [(43, 204), (92, 203)].map(|(entity_id, class_id)| {
         crate::feature::FeatureEntityTableEntry {
-            payload: crate::feature::entry_payload(class_id, None, None, None),
+            payload: crate::feature::entity::entry_payload(class_id, None, None, None),
 
             entity_id,
             prefixed: false,
@@ -474,7 +475,7 @@ fn resolves_generated_section_from_declared_cap_pair() {
             80,
             vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 700,
-                payload: crate::feature::entry_payload(7, None, None, None),
+                payload: crate::feature::entity::entry_payload(7, None, None, None),
                 prefixed: false,
                 offset: 60,
                 end_offset: 61,
@@ -1004,7 +1005,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     ];
     let entry = |entity_id, source_entity_id, offset| FeatureEntityTableEntry {
         entity_id,
-        payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
+        payload: crate::feature::entity::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset,
         end_offset: offset + 1,
@@ -1084,8 +1085,8 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         generated_cylinder_section_transform(&definition, &divergent_sources, &tables).is_none()
     );
     let mut wrong_class = tables.clone();
-    wrong_class[0].entries[0].payload = crate::feature::EntryPayload::Plain {
-        class: crate::feature::PlainClass::new(201).expect("201 is not the source class"),
+    wrong_class[0].entries[0].payload = crate::feature::entity::EntryPayload::Plain {
+        class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
     };
     assert!(generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none());
     let mut non_surface = tables;
@@ -1197,7 +1198,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         outline(29, [-20.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ];
     let entry = |entity_id, class_id, source_entity_id| FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(class_id, source_entity_id, None, None),
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
         entity_id,
         prefixed: false,

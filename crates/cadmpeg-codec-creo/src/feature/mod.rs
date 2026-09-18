@@ -7,10 +7,10 @@
 //! when its byte offset is bounded by that row's known feature-id header.
 
 pub(crate) mod definitions;
-mod entity;
+pub(crate) mod entity;
 mod helpers;
 pub(crate) mod operations;
-mod rows;
+pub(crate) mod rows;
 pub(crate) mod schema;
 pub(crate) mod segment_rows;
 
@@ -18,7 +18,6 @@ pub(crate) mod segment_rows;
 mod tests;
 
 pub use definitions::equation_table;
-pub(crate) use definitions::saved_entity_offset;
 pub use definitions::{
     bind_definition_owners, bind_replay_definition_owners, bind_section_owners,
     bind_trimmed_definition_owners, definition_revolution_extents, definitions, depdb_definitions,
@@ -31,17 +30,12 @@ pub use definitions::{
     FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem, FeatureTrimEntity,
     FeatureVariableRow, OutlinePhase, TrimEntityKind,
 };
-pub(crate) use definitions::{FeatureEquation, FeatureVariableTable};
 #[cfg(test)]
 pub use definitions::{
     FeatureOrderRow, FeatureParameterFrame, FeatureSavedCircle, FeatureSavedConic,
     FeatureSavedSection, FeatureSectionOrientation, FeatureSectionPoint,
     FeatureSectionReferencePlane, FeatureTrimBucket, FeatureTrimEntityTable, FeatureTrimVertex,
     FeatureTrimVertexTable,
-};
-#[cfg(test)]
-pub(crate) use entity::{
-    dummy_table_entry, entry_payload, EntryPayload, PlainClass, RelatedClass, RelatedState,
 };
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
@@ -61,4 +55,3 @@ pub use rows::{
     FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow, FeatureSurfaceMergeAffectedIds,
     LoopRestoreDirectionLane, ReplayExtentSource,
 };
-pub(crate) use rows::{round_replay_scalars, FeatureRoundReplayScalar};

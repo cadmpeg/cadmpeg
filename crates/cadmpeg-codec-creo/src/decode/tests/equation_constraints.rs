@@ -176,7 +176,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 7,
             entity_ref: None,
             rows: vec![
@@ -316,7 +316,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 2,
             entity_ref: None,
             rows: vec![
@@ -463,7 +463,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 6,
             entity_ref: None,
             rows: vec![
@@ -643,7 +643,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 5,
             entity_ref: None,
             rows: vec![
@@ -808,7 +808,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 3,
             entity_ref: None,
             rows: vec![
@@ -932,7 +932,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 4,
             entity_ref: None,
             rows: vec![
@@ -1081,7 +1081,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 9,
             entity_ref: None,
             rows: vec![
@@ -1230,7 +1230,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 9,
             entity_ref: None,
             rows: vec![
@@ -1392,7 +1392,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 3,
             entity_ref: None,
             rows: vec![
@@ -1541,7 +1541,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 8,
             entity_ref: None,
             rows: vec![

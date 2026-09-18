@@ -9,7 +9,7 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
             29,
             vec![crate::feature::FeatureEntityTableEntry {
                 entity_id: 226,
-                payload: crate::feature::entry_payload(209, None, None, None),
+                payload: crate::feature::entity::entry_payload(209, None, None, None),
                 prefixed: true,
                 offset: 0,
                 end_offset: 0,
@@ -36,7 +36,7 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
 
     scan.features.entity_tables[0]
         .entries
-        .push(crate::feature::dummy_table_entry(226));
+        .push(crate::feature::entity::dummy_table_entry(226));
     assert_eq!(
         super::draft_neutral_plane_selection(&scan, 225),
         cadmpeg_ir::features::FaceSelection::Unresolved
@@ -46,7 +46,7 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
 #[test]
 fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
     let entry = |entity_id, class_id, related_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entry_payload(
+        payload: crate::feature::entity::entry_payload(
             class_id,
             None,
             related_entity_id,

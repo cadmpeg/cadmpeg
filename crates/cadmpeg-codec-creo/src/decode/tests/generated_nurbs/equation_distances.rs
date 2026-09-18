@@ -32,7 +32,7 @@ fn equation_function_six_derives_positive_point_distance() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 5,
             entity_ref: None,
             rows: vec![
@@ -113,7 +113,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
                 .to_vec(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
-            variables: Some(crate::feature::FeatureVariableTable {
+            variables: Some(crate::feature::definitions::FeatureVariableTable {
                 declared_count: 8,
                 entity_ref: None,
                 rows: vec![
@@ -210,7 +210,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 5,
             entity_ref: None,
             rows: vec![
@@ -345,7 +345,7 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
             .to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 9,
             entity_ref: None,
             rows: vec![

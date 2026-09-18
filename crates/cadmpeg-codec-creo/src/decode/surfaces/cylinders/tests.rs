@@ -791,7 +791,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         });
     let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,
-        payload: crate::feature::entry_payload(200, Some(source_entity_id), None, None),
+        payload: crate::feature::entity::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
         offset: entity_id as usize,
         end_offset: entity_id as usize + 1,
@@ -934,10 +934,10 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
             23,
             80,
             vec![
-                crate::feature::dummy_table_entry(10),
-                crate::feature::dummy_table_entry(11),
-                crate::feature::dummy_table_entry(12),
-                crate::feature::dummy_table_entry(13),
+                crate::feature::entity::dummy_table_entry(10),
+                crate::feature::entity::dummy_table_entry(11),
+                crate::feature::entity::dummy_table_entry(12),
+                crate::feature::entity::dummy_table_entry(13),
             ],
             &std::collections::BTreeSet::new(),
             47,
@@ -976,10 +976,10 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
         23,
         80,
         vec![
-            crate::feature::dummy_table_entry(10),
-            crate::feature::dummy_table_entry(11),
-            crate::feature::dummy_table_entry(12),
-            crate::feature::dummy_table_entry(13),
+            crate::feature::entity::dummy_table_entry(10),
+            crate::feature::entity::dummy_table_entry(11),
+            crate::feature::entity::dummy_table_entry(12),
+            crate::feature::entity::dummy_table_entry(13),
         ],
         &std::collections::BTreeSet::new(),
         47,

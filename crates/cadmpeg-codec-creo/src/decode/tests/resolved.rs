@@ -323,7 +323,7 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(crate::feature::definitions::FeatureVariableTable {
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
@@ -492,7 +492,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
-            crate::feature::FeatureVariableTable {
+            crate::feature::definitions::FeatureVariableTable {
                 declared_count: 1,
                 entity_ref: None,
                 rows: vec![crate::feature::FeatureVariableRow {
