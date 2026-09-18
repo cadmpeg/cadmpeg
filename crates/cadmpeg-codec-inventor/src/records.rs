@@ -311,7 +311,7 @@ pub(crate) fn frame_bulk_records<'a>(
                 block.ordinal
             ))
         })?;
-        let payload_offset = cursor.position as u64;
+        let payload_offset = cursor.position() as u64;
         let payload = cursor.view(block.payload_len as usize, "record payload")?;
         let trailing_payload_len = cursor.u32("record trailing payload length")?;
         if trailing_payload_len != 0 && trailing_payload_len != block.payload_len {
@@ -320,11 +320,11 @@ pub(crate) fn frame_bulk_records<'a>(
                 block.ordinal, block.payload_len
             )));
         }
-        let trailer_start = cursor.position;
+        let trailer_start = cursor.position();
         if uses_extended_record_trailer(segment_version_major) {
             parse_extended_record_trailer(ctx, &mut cursor)?;
         }
-        let trailer = child(bulk, trailer_start, cursor.position, "record trailer")?;
+        let trailer = child(bulk, trailer_start, cursor.position(), "record trailer")?;
         records.push(RseRecordFrame {
             ordinal: block.ordinal,
             selector,
@@ -335,7 +335,7 @@ pub(crate) fn frame_bulk_records<'a>(
             trailer,
         });
     }
-    let trailer_start = cursor.position;
+    let trailer_start = cursor.position();
     let trailer_marker = cursor.u32("stream trailer marker")?;
     if trailer_marker != u32::MAX {
         return Err(CodecError::malformed(format_args!(
@@ -343,7 +343,8 @@ pub(crate) fn frame_bulk_records<'a>(
         )));
     }
     let stream_trailer = child(bulk, trailer_start, bulk.window().len(), "stream trailer")?;
-    cursor.position = bulk.window().len();
+    let trailing = cursor.remaining();
+    cursor.skip(trailing, "stream trailer")?;
     cursor.finish()?;
     Ok(RseRecordTable {
         records,
@@ -544,7 +545,6 @@ fn read_u32(bytes: &[u8], offset: usize, name: &str) -> Result<u32, CodecError> 
 
 struct Cursor<'a> {
     source: View<'a>,
-    position: usize,
 }
 
 #[cfg(test)]
@@ -592,24 +592,22 @@ fn test_counted(body: &mut Vec<u8>, values: &[u32], item_size: usize) {
 
 impl<'a> Cursor<'a> {
     const fn new(source: View<'a>) -> Self {
-        Self {
-            source,
-            position: 0,
-        }
+        Self { source }
+    }
+
+    /// The offset already read, relative to the start of the window.
+    fn position(&self) -> usize {
+        self.source.read_len()
     }
 
     fn remaining(&self) -> usize {
-        self.source.window().len().saturating_sub(self.position)
+        self.source.remaining()
     }
 
     /// Reads the extended record trailer presence flag, which states only
     /// whether a trailer follows.
     fn record_trailer_presence(&mut self) -> Result<bool, CodecError> {
-        let value =
-            *self.source.window().get(self.position).ok_or_else(|| {
-                CodecError::Malformed("truncated RSe record trailer presence".into())
-            })?;
-        self.position += 1;
+        let value = crate::reader::u8(&mut self.source, "record trailer presence")?;
         match value {
             0 => Ok(false),
             1 => Ok(true),
@@ -619,33 +617,28 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn u16(&mut self, name: &str) -> Result<u16, CodecError> {
-        let value = read_u16(self.source.window(), self.position, name)?;
-        self.position += 2;
-        Ok(value)
+    fn u16(&mut self, name: &'static str) -> Result<u16, CodecError> {
+        crate::reader::u16(&mut self.source, name)
     }
 
-    fn u32(&mut self, name: &str) -> Result<u32, CodecError> {
-        let value = read_u32(self.source.window(), self.position, name)?;
-        self.position += 4;
-        Ok(value)
+    fn u32(&mut self, name: &'static str) -> Result<u32, CodecError> {
+        crate::reader::u32(&mut self.source, name)
     }
 
-    fn skip(&mut self, len: usize, name: &str) -> Result<(), CodecError> {
+    fn skip(&mut self, len: usize, name: &'static str) -> Result<(), CodecError> {
         self.view(len, name).map(|_| ())
     }
 
-    fn view(&mut self, len: usize, name: &str) -> Result<View<'a>, CodecError> {
-        let end = self
-            .position
+    fn view(&mut self, len: usize, name: &'static str) -> Result<View<'a>, CodecError> {
+        let start = self.position();
+        let end = start
             .checked_add(len)
             .ok_or_else(|| CodecError::malformed(format_args!("RSe {name} range overflows")))?;
-        let view = child(self.source, self.position, end, name)?;
-        self.position = end;
-        Ok(view)
+        crate::reader::take(&mut self.source, len, name)?;
+        child(self.source, start, end, name)
     }
 
-    fn sized_bytes(&mut self, maximum: usize, name: &str) -> Result<(), CodecError> {
+    fn sized_bytes(&mut self, maximum: usize, name: &'static str) -> Result<(), CodecError> {
         let len = self.u32(name)? as usize;
         if len > maximum {
             return Err(CodecError::malformed(format_args!(
@@ -767,9 +760,49 @@ mod tests {
             };
             assert_eq!(
                 observed,
-                "malformed container: truncated RSe record trailer presence"
+                "truncated input during record trailer presence at space 0 offset 0"
             );
         });
+    }
+
+    /// The truncation a read reports, as its variant, field and offset,
+    /// without an unwrap on the route.
+    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
+        match result {
+            Ok(value) => format!("the read succeeded with {value:?}"),
+            Err(CodecError::Truncated {
+                location,
+                operation,
+            }) => format!("Truncated {operation} at offset {}", location.offset),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_truncated_rse_record_read_is_located_and_names_its_field() {
+        let short = [0_u8; 1];
+        for (field, text) in [
+            (
+                "record trailer list type",
+                truncation(
+                    Cursor::new(View::over_retained(&short)).u16("record trailer list type"),
+                ),
+            ),
+            (
+                "record type selector",
+                truncation(Cursor::new(View::over_retained(&short)).u32("record type selector")),
+            ),
+            (
+                "record payload",
+                truncation(Cursor::new(View::over_retained(&short)).view(2, "record payload")),
+            ),
+            (
+                "record trailer presence",
+                truncation(Cursor::new(View::over_retained(&[])).record_trailer_presence()),
+            ),
+        ] {
+            assert_eq!(text, format!("Truncated {field} at offset 0"));
+        }
     }
 
     fn meta_fixture() -> Vec<u8> {
