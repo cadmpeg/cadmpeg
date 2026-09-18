@@ -297,6 +297,7 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
                         normal.x = invalid;
                     }
                     seen += 1;
+                    Ok(())
                 })
                 .is_err());
             assert_eq!(value, original);
@@ -316,6 +317,7 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
                 if std::mem::take(&mut first) {
                     normal.z = -2.0;
                 }
+                Ok(())
             })
             .unwrap();
         assert_eq!(value.vertices()[0].x, f64::MAX);
@@ -356,7 +358,12 @@ fn absent_normals_reject_edit_without_calling_the_editor() {
     let mut value = mesh();
     let original = value.clone();
     let mut called = false;
-    assert!(value.edit_normals(|_| called = true).is_err());
+    assert!(value
+        .edit_normals(|_| {
+            called = true;
+            Ok(())
+        })
+        .is_err());
     assert!(!called);
     assert_eq!(value, original);
 }
@@ -375,6 +382,35 @@ fn a_refused_vertex_edit_keeps_the_prior_vertices() {
             } else {
                 Err(TessellationError::EditRefused(
                     "the caller refused this vertex".to_string(),
+                ))
+            }
+        })
+        .is_err());
+    assert_eq!(seen, 2);
+    assert_eq!(value, original);
+}
+
+#[test]
+fn a_refused_normal_edit_keeps_the_prior_normals() {
+    let base = mesh();
+    let rows = TessellationMesh::from_list_lanes(
+        base.vertices(),
+        base.triangles(),
+        Some(vec![Vector3::new(0.0, 0.0, 1.0); 4]),
+    )
+    .unwrap();
+    let mut value = Tessellation::new("test:mesh:tessellation#refused", rows, Vec::new()).unwrap();
+    let original = value.clone();
+    let mut seen = 0;
+    assert!(value
+        .edit_normals(|normal| {
+            seen += 1;
+            if seen == 1 {
+                normal.z = -1.0;
+                Ok(())
+            } else {
+                Err(TessellationError::EditRefused(
+                    "the caller refused this normal".to_string(),
                 ))
             }
         })

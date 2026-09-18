@@ -614,32 +614,39 @@ impl TessellationMesh {
         Ok(())
     }
 
-    /// Edit every shading normal in place; absent when the mesh carries none.
-    pub fn edit_normals(&mut self, mut edit: impl FnMut(&mut Vector3)) -> bool {
-        match self {
-            Self::List { .. } | Self::Strips { .. } => false,
+    /// Edit every shading normal, keeping the prior normals on a refusal.
+    ///
+    /// The mesh states `false` when it carries no shading normal, and the
+    /// closure states its own refusal, which discards the whole edit.
+    pub fn edit_normals(
+        &mut self,
+        mut edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
+    ) -> Result<bool, TessellationError> {
+        let mut candidate = self.clone();
+        match &mut candidate {
+            Self::List { .. } | Self::Strips { .. } => return Ok(false),
             Self::ShadedList { vertices, .. } => {
-                for vertex in vertices {
-                    edit(&mut vertex.normal);
+                for vertex in vertices.iter_mut() {
+                    edit(&mut vertex.normal)?;
                 }
-                true
             }
             Self::CornerShadedList { triangles, .. } => {
-                for triangle in triangles {
-                    triangle.normals.iter_mut().for_each(&mut edit);
+                for triangle in triangles.iter_mut() {
+                    for normal in triangle.normals.iter_mut() {
+                        edit(normal)?;
+                    }
                 }
-                true
             }
             Self::ShadedStrips { strips } => {
-                strips.as_mut_slice().iter_mut().for_each(|strip| {
-                    strip
-                        .vertices_mut()
-                        .iter_mut()
-                        .for_each(|vertex| edit(&mut vertex.normal));
-                });
-                true
+                for strip in strips.as_mut_slice().iter_mut() {
+                    for vertex in strip.vertices_mut().iter_mut() {
+                        edit(&mut vertex.normal)?;
+                    }
+                }
             }
         }
+        *self = candidate;
+        Ok(true)
     }
 }
 
@@ -1072,12 +1079,14 @@ impl Tessellation {
     }
 
     /// Atomically edit the stored shading normals while preserving finite coordinates.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_normals(
         &mut self,
-        edit: impl FnMut(&mut Vector3),
+        edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
     ) -> Result<(), TessellationError> {
         let mut mesh = self.mesh.clone();
-        if !mesh.edit_normals(edit) {
+        if !mesh.edit_normals(edit)? {
             return Err(tessellation_error("mesh has no shading normals to edit"));
         }
         require_finite_normals(&mesh.vertex_normals())?;

@@ -1921,17 +1921,16 @@ impl<'a> DecodeContext<'a> {
             })
             .map_err(|error| error.to_string())?;
             if !mesh.vertex_normals().is_empty() {
-                let mut singular = false;
-                mesh.edit_normals(|value| match transform.apply_normal(*value) {
-                    Some(transformed) => *value = transformed,
-                    None => singular = true,
+                mesh.edit_normals(|value| {
+                    *value = transform.apply_normal(*value).ok_or_else(|| {
+                        cadmpeg_ir::tessellation::TessellationError::EditRefused(
+                            "mesh normal transform could not produce a finite unit normal"
+                                .to_string(),
+                        )
+                    })?;
+                    Ok(())
                 })
                 .map_err(|error| error.to_string())?;
-                if singular {
-                    return Err(
-                        "mesh normal transform could not produce a finite unit normal".to_string(),
-                    );
-                }
             }
             links.push(mesh.id.to_string());
             derived_ids.push(mesh.id.to_string());
