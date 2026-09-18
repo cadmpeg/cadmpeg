@@ -951,7 +951,7 @@ pub(crate) fn parse_attributes(
                 "unsupported fixed object-attributes version",
             ));
         }
-        let object_id = uuid_reader(&mut reader)?;
+        let object_id = uuid(&mut reader)?;
         let layer_index = reader.i32()?;
         let material_index = reader.i32()?;
         let color = reader.array::<4>()?;
@@ -987,7 +987,7 @@ pub(crate) fn parse_attributes(
             let bytes = bounded_count(&reader, count, 32)?;
             let mut values = Vec::with_capacity(bytes / 32);
             for _ in 0..bytes / 32 {
-                values.push((uuid_reader(&mut reader)?, uuid_reader(&mut reader)?));
+                values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
             values
         } else {
@@ -1012,7 +1012,7 @@ pub(crate) fn parse_attributes(
             let bytes = bounded_count(&reader, count, 32)?;
             let mut values = Vec::with_capacity(bytes / 32);
             for _ in 0..bytes / 32 {
-                values.push((uuid_reader(&mut reader)?, uuid_reader(&mut reader)?));
+                values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
             (active_space, Uuid::nil(), values)
         } else {
@@ -1101,7 +1101,7 @@ pub(crate) fn parse_attributes(
             "unsupported tagged object-attributes version",
         ));
     }
-    let object_id = uuid_reader(&mut reader)?;
+    let object_id = uuid(&mut reader)?;
     let layer_index = reader.i32()?;
     let mut attributes = ObjectAttributes {
         source: SourceRange {
@@ -1230,7 +1230,7 @@ pub(crate) fn parse_attributes(
                 }
             }
             AttributeItem::ActiveSpace => attributes.active_space = reader.u8()?,
-            AttributeItem::ViewportId => attributes.viewport_id = uuid_reader(&mut reader)?,
+            AttributeItem::ViewportId => attributes.viewport_id = uuid(&mut reader)?,
             AttributeItem::DisplayMaterials => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 32)?;
@@ -1238,7 +1238,7 @@ pub(crate) fn parse_attributes(
                 for _ in 0..bytes / 32 {
                     attributes
                         .display_materials
-                        .push((uuid_reader(&mut reader)?, uuid_reader(&mut reader)?));
+                        .push((uuid(&mut reader)?, uuid(&mut reader)?));
                 }
             }
             AttributeItem::DisplayOrder => attributes.display_order = reader.i32()?,
@@ -1345,15 +1345,11 @@ pub(crate) fn read_uuid_list(
     let bytes = bounded_count(&payload, count, 16)?;
     let mut values = Vec::with_capacity(bytes / 16);
     for _ in 0..bytes / 16 {
-        values.push(uuid_reader(&mut payload)?);
+        values.push(uuid(&mut payload)?);
     }
     payload.skip_remaining()?;
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(values)
-}
-
-fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array::<16>()?))
 }
 
 pub(crate) fn parse_attribute_userdata(

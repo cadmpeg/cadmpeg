@@ -149,6 +149,11 @@ pub(crate) fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError>
     Ok(Uuid::from_wire(reader.array()?))
 }
 
+/// Reads one archive boolean stored as a 32-bit integer flag.
+pub(crate) fn flag_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {
+    Ok(reader.i32()? != 0)
+}
+
 /// Converts an archive vector to the model vector type.
 pub(crate) fn vector(value: crate::settings::Vector3) -> Vector3 {
     Vector3::new(value.0[0], value.0[1], value.0[2])

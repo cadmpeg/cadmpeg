@@ -16,7 +16,7 @@ use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
 use crate::objects::parse_userdata;
 use crate::settings::{plane, utf16, Plane, UnitBinding};
-use crate::wire::{scaled_coordinate, uuid};
+use crate::wire::{flag_i32, scaled_coordinate, uuid};
 
 const SETTINGS: u32 = 0x1000_0015;
 const NAMED_CPLANES: u32 = 0x2000_8035;
@@ -264,10 +264,6 @@ fn legacy_clipping_depth(value: f64) -> (f64, bool) {
     } else {
         (0.0, false)
     }
-}
-
-fn bool_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {
-    Ok(reader.i32()? != 0)
 }
 
 fn scale3(value: &mut [f64; 3], scale: f64, offset: usize) -> Result<(), FramingError> {
@@ -518,9 +514,9 @@ fn parse_viewport(
             "viewport version is unsupported",
         ));
     }
-    let camera_valid = bool_i32(&mut reader)?;
-    let frustum_valid = bool_i32(&mut reader)?;
-    let port_valid = bool_i32(&mut reader)?;
+    let camera_valid = flag_i32(&mut reader)?;
+    let frustum_valid = flag_i32(&mut reader)?;
+    let port_valid = flag_i32(&mut reader)?;
     let projection = reader.i32()?;
     let mut camera_location = [reader.f64()?, reader.f64()?, reader.f64()?];
     scale3(&mut camera_location, scale, reader.position() - 24)?;
