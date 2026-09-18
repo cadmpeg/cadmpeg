@@ -2,6 +2,11 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::container::SectionRole;
+use crate::test_support::assert_annotation;
+use crate::test_support::build_prt;
+use crate::test_support::build_prt_raw;
+use crate::test_support::jpeg_payload;
+use crate::test_support::visibgeom_payload;
 
 use std::io::Cursor;
 
@@ -9,7 +14,6 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, Layout, UnknownLayout};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 #[test]

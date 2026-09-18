@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::allfeatur_row;
+use crate::test_support::assert_annotation;
+use crate::test_support::build_prt;
+use crate::test_support::push_generated_scalar;
+use crate::test_support::visibgeom_payload;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
@@ -9,7 +14,6 @@ use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
 use crate::loss::CreoLossCode;
-use crate::test_support::*;
 use crate::CreoCodec;
 
 #[test]

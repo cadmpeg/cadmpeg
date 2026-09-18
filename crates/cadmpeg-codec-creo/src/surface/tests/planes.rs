@@ -1,8 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
-
+use crate::psb;
+use crate::scalar;
+use crate::surface::admitted_counted_parameter_body;
+use crate::surface::complete_plane_compact_scalar_suffix;
+use crate::surface::complete_plane_local_system_slots;
+use crate::surface::counted_parameter_scalar_slots;
+use crate::surface::decode_row_scalar;
+use crate::surface::first_compound_close;
+use crate::surface::frame_bound_outline_planes;
+use crate::surface::named_prototype_records;
+use crate::surface::named_surface_value;
+use crate::surface::opaque_spans;
+use crate::surface::outline_planes;
+use crate::surface::parameter_records;
+use crate::surface::plane_direct_frame;
+use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
+use crate::surface::plane_envelopes;
+use crate::surface::plane_frame;
+use crate::surface::plane_local_system_compound_close;
+use crate::surface::plane_local_systems;
+use crate::surface::plane_matrix_frame;
+use crate::surface::positional_frame_planes;
+use crate::surface::rows;
+use crate::surface::scalar_frames;
+use crate::surface::scalar_slots_with_tokens_and_end;
+use crate::surface::scalar_tokens;
+use crate::surface::sequential_named_local_system_slots;
+use crate::surface::slot_equality;
+use crate::surface::LocalSystemClassification;
+use crate::surface::OutlinePlane;
+use crate::surface::PlaneEnvelope;
+use crate::surface::PlaneEnvelopeRecord;
+use crate::surface::PlaneLocalSystem;
+use crate::surface::ScalarBodyRefusal;
+use crate::surface::SurfaceBodyBoundary;
+use crate::surface::SurfaceKind;
+use crate::surface::SurfaceNamedValue;
+use crate::surface::SurfaceParameterOpaqueSpan;
+use crate::surface::SurfaceParameterRecord;
+use crate::surface::SurfaceParameterScalar;
+use crate::surface::SurfaceParameterScalarFrame;
+use crate::surface::SurfacePrototypeFamily;
+use crate::surface::SurfaceRow;
 #[test]
 fn derives_one_held_coordinate_outline_plane() {
     let records = [PlaneEnvelopeRecord {

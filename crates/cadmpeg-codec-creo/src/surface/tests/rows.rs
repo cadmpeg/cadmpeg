@@ -1,8 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
-
+use crate::scalar;
+use crate::surface::complete_surface_array_bounds;
+use crate::surface::counted_parameter_scalar_slots;
+use crate::surface::counted_row_bounds;
+use crate::surface::cross_section_parameter_records;
+use crate::surface::cross_section_plane_envelopes;
+use crate::surface::cross_section_rows;
+use crate::surface::decode_compound_local_system_cylinder_frame;
+use crate::surface::decode_positional_spline_replay;
+use crate::surface::decode_tabulated_cylinder_frame;
+use crate::surface::named_prototype_records;
+use crate::surface::named_spline_scalar_slots;
+use crate::surface::outline_planes;
+use crate::surface::parameter_records;
+use crate::surface::plane_envelopes_for_rows;
+use crate::surface::plane_local_systems_for_rows;
+use crate::surface::positional_body_start;
+use crate::surface::positional_spline_replay_body_end;
+use crate::surface::positional_spline_replay_prototype;
+use crate::surface::prototype_count;
+use crate::surface::rows;
+use crate::surface::scalar_tokens;
+use crate::surface::spline_replay_shape;
+use crate::surface::surface_body_compound_close;
+use crate::surface::unique_surface_parameter;
+use crate::surface::unique_surface_row;
+use crate::surface::uniquely_identified_rows;
+use crate::surface::ScalarBodyRefusal;
+use crate::surface::SurfaceBodyBoundary;
+use crate::surface::SurfaceKind;
+use crate::surface::SurfaceNamedValue;
+use crate::surface::SurfacePrototypeFamily;
+use crate::surface::SurfaceRow;
+use crate::surface::TabulatedCylinderFrame;
 #[test]
 fn finds_one_byte_and_two_byte_surface_rows() {
     let payload = [

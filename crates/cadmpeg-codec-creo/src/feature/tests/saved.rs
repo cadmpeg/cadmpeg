@@ -1,9 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::definitions::*;
-use super::super::operations::*;
-use super::super::rows::*;
+use crate::feature::definitions::decode_section_coordinate_scalar;
+use crate::feature::definitions::decode_variable_scalar;
+use crate::feature::definitions::placement_instruction_rows;
+use crate::feature::definitions::positional_saved_section;
+use crate::feature::definitions::saved_arc_scalar;
+use crate::feature::definitions::saved_circular_entities;
+use crate::feature::definitions::saved_conic_entities;
+use crate::feature::definitions::saved_line_entities;
+use crate::feature::definitions::saved_positional_generated_entities;
+use crate::feature::definitions::saved_section;
+use crate::feature::definitions::saved_section_scalar;
+use crate::feature::definitions::saved_spline_entities;
+use crate::feature::definitions::saved_spline_parameter;
+use crate::feature::definitions::variable_table;
+use crate::feature::definitions::FeatureOrderRow;
+use crate::feature::definitions::FeatureOrderTable;
+use crate::feature::definitions::FeatureSavedEntity;
+use crate::feature::definitions::FeatureSegment;
+use crate::feature::definitions::FeatureSegmentKind;
+use crate::feature::definitions::FeatureSegmentTable;
+use crate::feature::definitions::ScalarLane;
+use crate::feature::operations::operation_states;
+use crate::feature::operations::operations;
+use crate::feature::operations::reference_names;
+use crate::feature::operations::FeatureRecipe;
+use crate::feature::operations::FeatureReferenceName;
+use crate::feature::rows::field_value;
+use crate::feature::rows::FeatureFieldValue;
 use crate::psb;
 use crate::scalar;
 

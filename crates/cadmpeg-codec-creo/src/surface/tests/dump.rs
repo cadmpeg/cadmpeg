@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use crate::test_support::assert_annotation;
+use crate::test_support::assert_unknown_visible_surface;
+use crate::test_support::build_prt;
+use crate::test_support::push_generated_scalar;
+use crate::test_support::push_named_analytic_prototype;
+use crate::test_support::visibgeom_payload;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use std::io::Cursor;
@@ -8,7 +14,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 const EPS_ANALYTIC_FRAME: f64 = 1.0e-12;

@@ -2,8 +2,27 @@
 #![allow(clippy::unwrap_used)]
 
 use super::EPS_FRAME_COMPONENT;
-
-use super::super::*;
+use crate::scalar;
+use crate::surface::decode_local_system_suffix_cylinder_frame;
+use crate::surface::decode_positional_cylinder_frame;
+use crate::surface::named_prototype_records;
+use crate::surface::parameter_records;
+use crate::surface::prototype_count;
+use crate::surface::split_cylinder_outline_bounds;
+use crate::surface::tabulated_cylinder_curve_replays;
+use crate::surface::unique_positional_cylinder_frame;
+use crate::surface::unique_surface_parameter;
+use crate::surface::unique_terminal_positive_scalar;
+use crate::surface::PositionalCylinderFrame;
+use crate::surface::PositionalTorusFrame;
+use crate::surface::SurfaceBodyBoundary;
+use crate::surface::SurfaceNamedValue;
+use crate::surface::SurfaceParameterOpaqueSpan;
+use crate::surface::SurfaceParameterRecord;
+use crate::surface::SurfaceParameterScalar;
+use crate::surface::SurfaceParameterScalarFrame;
+use crate::surface::Type24RoundEnvelope;
+use crate::surface::EPS_CYLINDER_GEOMETRY_MIN;
 
 const EPS_ROUND_RADIUS: f64 = 1.0e-12;
 

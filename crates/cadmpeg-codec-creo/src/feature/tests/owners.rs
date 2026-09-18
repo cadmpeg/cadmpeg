@@ -1,12 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::feature::definitions::bind_definition_owners;
+use crate::feature::definitions::bind_replay_definition_owners;
+use crate::feature::definitions::bind_section_owners;
+use crate::feature::definitions::bind_trimmed_definition_owners;
+use crate::feature::definitions::definition_revolution_extents;
+use crate::feature::definitions::definitions;
+use crate::feature::definitions::positional_replay_definitions;
+use crate::feature::definitions::positional_segment_table;
+use crate::feature::definitions::segment_table;
+use crate::feature::definitions::segment_table_body;
+use crate::feature::definitions::DefinitionIdentity;
+use crate::feature::definitions::FeatureBoundedCurveSegment;
+use crate::feature::definitions::FeatureCenteredLineSegment;
+use crate::feature::definitions::FeatureCircleSegment;
+use crate::feature::definitions::FeatureConicSegment;
+use crate::feature::definitions::FeatureDefinition;
+use crate::feature::definitions::FeatureOrderRow;
+use crate::feature::definitions::FeatureOrderTable;
+use crate::feature::definitions::FeaturePointSegment;
+use crate::feature::definitions::FeatureSection3d;
+use crate::feature::definitions::FeatureSectionOrientation;
+use crate::feature::definitions::FeatureSegmentKind;
+use crate::feature::definitions::FeatureTrimEntity;
+use crate::feature::definitions::FeatureTrimEntityTable;
+use crate::feature::definitions::TrimEntityKind;
+use crate::feature::entity::FeatureEntityTable;
+use crate::feature::entity::FeatureEntityTableEntry;
+use crate::feature::operations::FeatureOperation;
+use crate::feature::operations::FeatureRecipe;
+use crate::feature::operations::OperationKind;
+use crate::feature::operations::OperationName;
+use crate::feature::rows::FeatureGeometryTable;
+use crate::feature::rows::FeatureGeometryTableKind;
 use std::collections::BTreeSet;
-
-use super::super::definitions::*;
-use super::super::entity::*;
-use super::super::operations::*;
-use super::super::rows::*;
 
 #[test]
 fn binds_missing_definition_owner_from_unique_generated_datum_table() {
