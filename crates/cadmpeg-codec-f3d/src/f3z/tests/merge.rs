@@ -81,6 +81,68 @@ fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
         .contains("merged F3Z feature ordinal exceeds u64::MAX"));
 }
 
+/// The rescoping round-trip carries an entity through an untyped value tree.
+/// A texture-mapping coordinate is an `f64`, and a decoded one is not
+/// guaranteed finite, so the tree must hold the value itself rather than a
+/// decimal rendering of it.
+#[test]
+fn rescoping_a_model_entity_preserves_a_non_finite_coordinate() {
+    use cadmpeg_ir::appearance::{Appearance, TextureMap2d, TextureRef};
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let appearance = Appearance {
+        id: AppearanceId::mint("f3d:model:appearance#1").expect("identity grammar"),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: std::collections::BTreeMap::new(),
+        textures: vec![TextureRef {
+            asset_guid: "texture-guid".into(),
+            slot: "generic_diffuse".into(),
+            schema: "UnifiedBitmapSchema".into(),
+            paths: Vec::new(),
+            urn: None,
+            mapping: TextureMap2d {
+                map_channel: 1,
+                uvw_source: 0,
+                u_offset: f64::NAN,
+                v_offset: f64::INFINITY,
+                u_scale: f64::NEG_INFINITY,
+                v_scale: 1.0,
+                rotation: 0.0,
+                repeat_u: true,
+                repeat_v: true,
+                real_world_offset_x: 0.0,
+                real_world_offset_y: 0.0,
+                real_world_scale_x: 1.0,
+                real_world_scale_y: 1.0,
+            },
+            bump: None,
+        }],
+    };
+
+    let rescoped = OccurrenceScope {
+        occurrence: "role/occurrence-0",
+    }
+    .rewrite(appearance)
+    .expect("a model entity rescopes through the value tree");
+
+    assert_eq!(
+        rescoped.id.as_str(),
+        "f3d:xref/role/occurrence-0/model:appearance#1"
+    );
+    let mapping = &rescoped.textures[0].mapping;
+    assert!(mapping.u_offset.is_nan());
+    assert_eq!(mapping.v_offset, f64::INFINITY);
+    assert_eq!(mapping.u_scale, f64::NEG_INFINITY);
+}
+
 #[test]
 fn occurrence_transform_composes_outside_existing_body_transform() {
     let outer = Transform::affine([
