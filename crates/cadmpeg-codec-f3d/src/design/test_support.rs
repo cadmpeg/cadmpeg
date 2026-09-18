@@ -154,5 +154,3 @@ pub(crate) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
     out.extend_from_slice(b"IntrinsicMetaTypeuint64");
     out.extend_from_slice(&genesis.to_le_bytes());
 }
-
-pub(crate) mod dump;

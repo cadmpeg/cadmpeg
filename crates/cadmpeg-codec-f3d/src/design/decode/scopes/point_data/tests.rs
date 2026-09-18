@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::exact_work_point_construction;
 use super::POINT_DATA_TYPE_GUID;
-use crate::design::test_support::dump::{
-    parse_parameter_scope, DesignParameterScope, DesignRecordHeader, HashMap, IndexedRecordOffsets,
-};
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::records::decal::DesignRecordHeader;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkPointRule;
 use crate::test_support::lp_utf16;
+use std::collections::HashMap;
 
 /// A `WorkPoint` scope record, its paired header, and one point-data record
 /// frame: the indexed header, the payload prologue with an optional property
