@@ -6,12 +6,7 @@ use super::HOLE_POINT_DATA_TYPE_GUID;
 use crate::design::test_support::dump::{
     lp_utf16, DesignParameterScope, HashMap, IndexedRecordOffsets,
 };
-
-fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(&class_tag);
-    bytes.extend_from_slice(&record_index.to_le_bytes());
-}
+use crate::design::test_support::indexed_header;
 
 const EPS_HOLE_TEST_VALUE: f64 = 1.0e-12;
 

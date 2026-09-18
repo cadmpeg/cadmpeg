@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::coil::tests::indexed_header;
 use super::exact_path_feature_construction;
 use crate::design::test_support::dump::{
     DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
     IndexedRecordOffsets,
 };
+use crate::design::test_support::indexed_header;
 
 #[test]
 fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() {

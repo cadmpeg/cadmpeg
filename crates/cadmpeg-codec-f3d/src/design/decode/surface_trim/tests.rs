@@ -8,13 +8,8 @@
 )]
 use super::*;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::test_support::indexed_header;
 use crate::records::feature::scope::DesignParameterScope;
-
-fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(&class_tag);
-    bytes.extend_from_slice(&record_index.to_le_bytes());
-}
 
 fn utf16_field(bytes: &mut Vec<u8>, value: &str) {
     let units = value.encode_utf16().collect::<Vec<_>>();
