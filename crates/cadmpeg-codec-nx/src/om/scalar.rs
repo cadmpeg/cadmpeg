@@ -58,7 +58,7 @@ pub(super) fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
     ShiftedBinary64::read(bytes).map(ShiftedBinary64::value)
 }
 
-pub(super) fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
+fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
     matches!(marker, 0x20..=0x3f | 0xa0..=0xbf)
 }
 
