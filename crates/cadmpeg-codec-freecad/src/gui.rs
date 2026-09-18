@@ -22,8 +22,8 @@ use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;
 use crate::native::element_map::{ElementMapGroup, ElementMapRecord};
 use crate::native::{
-    GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord, GuiViewProviderRecord, ObjectRecord,
-    PropertyRecord, ValueRecord,
+    parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord, GuiViewProviderRecord,
+    ObjectRecord, PropertyRecord, ValueRecord,
 };
 
 use schema::Admission as GuiSchemaAdmission;
@@ -4236,14 +4236,6 @@ fn convert_packed_alpha(value: u32, required: bool) -> u32 {
         (value & 0xffff_ff00) | (0xff - (value & 0xff))
     } else {
         value
-    }
-}
-
-fn parse_bool(value: &str) -> Option<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
     }
 }
 

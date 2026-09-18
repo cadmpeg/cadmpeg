@@ -9,8 +9,9 @@ use std::num::NonZeroUsize;
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
-    ContainerNode, CopyOnChangePolicy as NativeCopyOnChangePolicy, LinkArrayCardinality,
-    LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
+    parse_bool, ContainerNode, CopyOnChangePolicy as NativeCopyOnChangePolicy,
+    LinkArrayCardinality, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord,
+    PropertyRecord,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -927,14 +928,6 @@ fn metadata_string(properties: &[&PropertyRecord], name: &str) -> Option<String>
         return None;
     }
     value.attribute("value").map(str::to_owned)
-}
-
-fn parse_bool(value: &str) -> Option<bool> {
-    match value.to_ascii_lowercase().as_str() {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
-    }
 }
 
 fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bool>, CodecError> {

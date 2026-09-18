@@ -2453,6 +2453,15 @@ where
     Ok(property)
 }
 
+/// Reads a `FreeCAD` boolean property text, which is `true`, `false`, `1` or `0`.
+pub(crate) fn parse_bool(value: &str) -> Option<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    }
+}
+
 impl PropertyRecord {
     /// Whether this is a status-only transient property declaration.
     pub fn is_transient(&self) -> bool {
