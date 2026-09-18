@@ -1,6 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::records::sketch_placement::DesignSketchPlacement;
+use cadmpeg_ir::document::Model;
+use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::RegionId;
+use cadmpeg_ir::topology::Body;
+use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::topology::Region;
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::Native;
+
 use crate::f3z::merge::{
     append_feature_history, compose_transforms, extend_native, occurrence_key,
     reparent_component_roots, OccurrenceScope,

@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::test_support::{
     f3d_with_smbh, f3d_with_smbh_and_manifest_version, f3d_with_text_brep_stream, f3d_without_brep,
     f3z_archive, synthetic_geometry_smbh, synthetic_smbh, XREF_ROLE,
 };
+use crate::F3dCodec;
+use crate::F3dLossCode;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use std::io::Cursor;
 
 /// The outer archive's row survives the inner member's decode.
 ///
