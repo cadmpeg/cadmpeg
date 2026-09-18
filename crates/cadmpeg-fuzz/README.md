@@ -162,7 +162,7 @@ truncated inputs are not CAD container files. `generate_fcstd_seeds` fills the
 out of that fixture. Public CAD fixtures enter the repository only through the
 [corpus donation process](../../corpus/README.md).
 
-The checked-in tree is the output of six generators, run from the repository
+The checked-in tree is the output of seven generators, run from the repository
 root in this order:
 
 ```sh
@@ -172,15 +172,19 @@ cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_all_seed
 cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_submodule_seeds
 cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_rhino_seeds
 cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_iges_seeds
+cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_fcstd_seeds
 ```
 
 The order fixes the container targets that more than one generator writes.
-Running the sequence again writes the same bytes. `generate_fcstd_seeds` is
-outside it, and rewrites the `fcstd_*` seeds from the current donated fixture:
+Running the sequence again writes the same bytes. `generate_fcstd_seeds`
+rewrites the `fcstd_*` seeds from the donated fixture and writes nothing else.
 
-```sh
-cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_fcstd_seeds
-```
+`scripts/check-fuzz-seeds.py` builds the seven generators, runs that sequence
+into a temporary tree outside the repository, and compares it with the
+checked-in tree file by file. It exits 1 and names every differing, missing, or
+extra path. The `CADMPEG_FUZZ_SEED_ROOT` environment variable it sets redirects
+`seed_dir` to that temporary tree; unset, the generators write
+`crates/cadmpeg-fuzz/seeds`. The nightly fuzz smoke job runs the check.
 
 `generate_all_seeds` writes container and IR seeds, then derives deterministic
 truncation, byte-flip, and oversized-length mutants. `generate_submodule_seeds`
