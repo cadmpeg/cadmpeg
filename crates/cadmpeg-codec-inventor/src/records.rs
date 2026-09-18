@@ -434,9 +434,11 @@ fn validate_reverse_section(
         ReverseSectionNumber::Eleven => 4,
         ReverseSectionNumber::Five | ReverseSectionNumber::Six => return Ok(()),
     };
-    let expected = (discriminator as usize)
-        .checked_mul(item_size)
-        .ok_or_else(|| CodecError::Malformed("RSe metadata section length overflows".into()))?;
+    // Sections 7 through 11 are the only numbers that reach here, and each one
+    // passed the test above, so `discriminator` is at most 1000000. The match
+    // states an `item_size` of at most 32, so the product is at most 32000000,
+    // which a 32-bit `usize` holds.
+    let expected = discriminator as usize * item_size;
     if payload_len != expected {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata section {number} stores {payload_len} bytes for {discriminator} entries of {item_size} bytes"
@@ -610,6 +612,9 @@ impl<'a> Cursor<'a> {
 
     fn view(&mut self, len: usize, name: &'static str) -> Result<View<'a>, CodecError> {
         let start = self.position();
+        // A record trailer byte array states its length as a whole `u32`, so
+        // `len` reaches 4294967295 and its sum with any non-zero offset passes
+        // a 32-bit `usize`.
         let end = start
             .checked_add(len)
             .ok_or_else(|| CodecError::malformed(format_args!("RSe {name} range overflows")))?;
@@ -818,6 +823,34 @@ mod tests {
                 observed,
                 "malformed container: RSe metadata section chain underflows"
             );
+        });
+    }
+
+    #[test]
+    fn a_record_trailer_byte_array_states_a_length_a_32_bit_usize_cannot_offset() {
+        // One property of type 14, whose byte-array length is the largest
+        // `u32`. `Cursor::view` adds it to the 19 bytes already read: a 32-bit
+        // `usize` cannot hold that sum and states the refusal, a 64-bit one
+        // holds it and the take refuses the absent bytes instead.
+        let mut trailer = vec![1_u8];
+        push_u32(&mut trailer, 1);
+        push_u32(&mut trailer, 0);
+        push_u32(&mut trailer, 14);
+        trailer.extend_from_slice(&[0, 0]);
+        push_u32(&mut trailer, u32::MAX);
+        assert_eq!(trailer.len(), 19);
+        with_view(&trailer, |ctx, view| {
+            let mut cursor = Cursor::new(view);
+            let observed = match parse_extended_record_trailer(ctx, &mut cursor) {
+                Ok(()) => "the record trailer parsed".to_owned(),
+                Err(error) => error.to_string(),
+            };
+            let expected = if cfg!(target_pointer_width = "32") {
+                "malformed container: RSe record trailer byte array range overflows"
+            } else {
+                "truncated input during record trailer byte array at space 0 offset 19"
+            };
+            assert_eq!(observed, expected);
         });
     }
 
