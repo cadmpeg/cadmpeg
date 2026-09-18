@@ -4,10 +4,9 @@
 use std::fs;
 use std::io::Write as _;
 
-include!("../seed_paths.rs");
-
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
+use cadmpeg_fuzz::seed_paths::seed_dir;
 
 const EPS_SEED_GEOMETRY_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_SEED_GEOMETRY_DEGENERATE: f64 = 1.0e-10;

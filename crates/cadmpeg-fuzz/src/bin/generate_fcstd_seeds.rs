@@ -4,7 +4,7 @@
 use std::fs;
 use std::io::{Cursor, Read};
 
-include!("../seed_paths.rs");
+use cadmpeg_fuzz::seed_paths::{crate_root, seed_dir};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     for target in [

@@ -4,8 +4,7 @@
 use std::fs;
 use std::io::{Cursor, Write};
 
-include!("../seed_paths.rs");
-
+use cadmpeg_fuzz::seed_paths::seed_dir;
 use cadmpeg_fuzz::seeds::f3d::{
     push_tagged_f64, push_u8_string, smbh_header_prefix, synthetic_mixed_smbh, t_end, t_ident,
     t_long, t_pos, t_ref, t_subident, t_vec, SEED_ANGULAR_TOLERANCE, SEED_LINEAR_TOLERANCE,
