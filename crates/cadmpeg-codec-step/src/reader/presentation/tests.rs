@@ -72,9 +72,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::transform::Transform;
 
+use crate::export::write_step;
 use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, export};
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn presentation_layer_expands_all_product_definition_views() {

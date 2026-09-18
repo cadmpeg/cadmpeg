@@ -10,7 +10,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::export::write_step;
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 pub(crate) fn decode_and_write_singular_vertex_loops() {

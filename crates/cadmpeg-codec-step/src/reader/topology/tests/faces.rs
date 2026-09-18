@@ -14,10 +14,11 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::export::write_step;
 use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::exchange::export;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn base_face_with_polygon_loop_gets_an_inferred_plane() {

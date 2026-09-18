@@ -17,8 +17,9 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
+use crate::export::write_step;
 use crate::loss::StepLossCode;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 use super::round_trips::cylinder_surface_doc;
 

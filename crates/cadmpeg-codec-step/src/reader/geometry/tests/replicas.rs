@@ -20,10 +20,11 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use crate::export::is_rigid_transform;
+use crate::export::write_step;
 use crate::ids;
 use crate::loss::StepLossCode;
 use crate::test_support::exchange::decode_inline;
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn rigid_transform_rejects_reflections() {

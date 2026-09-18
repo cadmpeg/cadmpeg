@@ -10,9 +10,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::transform::Transform;
 
+use crate::export::write_step;
 use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, export};
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn product_descriptions_transfer_from_product_and_definition() {
