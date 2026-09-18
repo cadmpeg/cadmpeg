@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
 use crate::design::feature_project::{
     bind_surface_trim_cell_selections, project_replace_face, project_surface_trim,
 };
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::records::topology::face::DesignFaceOperand;
 
 use crate::records::{
     feature::surface_ops::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation},

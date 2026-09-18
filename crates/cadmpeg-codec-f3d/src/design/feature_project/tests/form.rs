@@ -1,11 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
 
 use crate::design::feature_project::{
     form_cage_objects, form_cage_serializers, form_cage_surface, form_class_325_cage_objects,

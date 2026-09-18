@@ -1,14 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
-use super::prelude::*;
+use crate::design::feature_project::project_parameter_design;
+use crate::design::feature_project::project_parameter_design_with_edge_identities;
+use crate::ids::neutral_sketch_id;
+use crate::records::entity_header::DesignFeatureTimeline;
+use crate::records::feature::body_ops::DesignScaleOperation;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
+use crate::records::feature::thread::DesignThreadConstruction;
+use crate::records::feature::thread::DesignThreadForm;
+use crate::records::sketch_placement::DesignSketchPlacement;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {

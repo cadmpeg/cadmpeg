@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(
-    clippy::default_trait_access,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
-)]
 
-use super::prelude::*;
+use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::project_split_face;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 
 fn group(
