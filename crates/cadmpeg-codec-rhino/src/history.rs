@@ -10,7 +10,7 @@ use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
 use crate::settings::{point, utf16, vector, xform, Point3, Vector3, Xform};
-use crate::wire::Uuid;
+use crate::wire::{uuid, Uuid};
 
 const HISTORY_RECORD: u32 = 0x2000_807b;
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -128,10 +128,6 @@ pub(crate) struct HistoryScan {
 /// Stable source-fidelity identity for a complete history record boundary.
 pub(crate) fn source_id(source_offset: usize) -> String {
     format!("rhino:history:source#{source_offset:012}")
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn anonymous(

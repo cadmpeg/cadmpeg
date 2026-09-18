@@ -24,7 +24,7 @@ use crate::objects::{
     ClassUserdata, ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
 };
 use crate::settings::{self, utf16, MillimeterScale, StandardUnit, UnitBinding};
-use crate::wire::{scaled_coordinate, Uuid};
+use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
@@ -1269,10 +1269,6 @@ fn object_attributes_presentation(
             .as_ref()
             .map(mesh_modifiers_record),
     }
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn finite(reader: &BoundedReader<'_>, value: f64, label: &str) -> Result<f64, FramingError> {

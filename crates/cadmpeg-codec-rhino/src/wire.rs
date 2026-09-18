@@ -7,6 +7,7 @@ use std::fmt;
 use cadmpeg_core::decode::BoundedCount;
 use cadmpeg_core::CodecError;
 
+use crate::chunks::{BoundedReader, FramingError};
 use crate::layout::uuid_wire_form as uuid_wire;
 
 /// A vector that must contain exactly a count proven against input.
@@ -140,6 +141,11 @@ impl fmt::Display for Uuid {
         let leading = HEX_DIGITS[usize::from(self.bytes[0] >> 4)];
         write!(formatter, "{leading}{}", UuidTail(self.bytes))
     }
+}
+
+/// Reads one mixed-endian UUID from the bounded reader.
+pub(crate) fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
+    Ok(Uuid::from_wire(reader.array()?))
 }
 
 /// Multiplies an archive coordinate by a positive finite unit scale.

@@ -12,7 +12,7 @@ use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::settings::{utf16, Plane, UnitBinding};
-use crate::wire::{scaled_coordinate, Uuid};
+use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const TEXT: Uuid = Uuid::from_canonical([
@@ -279,10 +279,6 @@ fn anonymous(
         ));
     }
     Ok(reader)
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn parse_v5_text_extra(

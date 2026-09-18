@@ -19,7 +19,7 @@ use crate::objects::{
     parse_class_wrapper, parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor,
 };
 use crate::settings::{bbox, interval, BoundingBox, Interval, Point3};
-use crate::wire::Uuid;
+use crate::wire::{uuid, Uuid};
 
 /// `ON_Brep` class UUID.
 pub(crate) const ON_BREP: Uuid = Uuid::from_canonical([
@@ -2727,10 +2727,6 @@ fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, GeometryError> {
         return Err(error(reader.position() - 24, "Brep point is not finite"));
     }
     Ok(point)
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, GeometryError> {
-    Ok(Uuid::from_wire(reader.array::<16>()?))
 }
 
 fn supported_mesh(uuid: Uuid) -> bool {

@@ -26,7 +26,7 @@ use crate::curves::{error, GeometryError};
 use crate::decode::session_ceiling;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::subd::MeshProxyFingerprint;
-use crate::wire::Uuid;
+use crate::wire::{uuid, Uuid};
 
 const EPS_MESH_SYNCHRONIZATION_OK_E6: f64 = 1.0e-6;
 
@@ -1535,10 +1535,6 @@ fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
         });
     }
     Ok(())
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array::<16>()?))
 }
 
 /// Reads a mesh element count bounded by the codec-local `cap`.

@@ -13,7 +13,7 @@ use crate::container::{OpaqueRecord, Record, Table};
 use crate::objects::{
     parse_class_wrapper_with_userdata, read_uuid_list, ClassUserdata, UserdataDescriptor,
 };
-use crate::wire::Uuid;
+use crate::wire::{uuid, Uuid};
 
 const MAX_STRING_BYTES: usize = 1 << 20;
 const MAX_ARRAY_ITEMS: usize = 1 << 16;
@@ -821,10 +821,6 @@ pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingErr
         .ok_or_else(|| {
             FramingError::structural(reader.position(), "invalid UTF-16 surrogate sequence")
         })
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {

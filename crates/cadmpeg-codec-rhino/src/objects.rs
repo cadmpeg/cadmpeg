@@ -12,7 +12,7 @@ use crate::chunks::{
 use crate::container::Record;
 use crate::layout::class_uuid_chunk_body as class_uuid_body;
 use crate::settings::{self, DocumentMetadata, SourceRange, Xform};
-use crate::wire::Uuid;
+use crate::wire::{uuid, Uuid};
 
 const OBJECT_RECORD_TYPE: u32 = 0x8200_0071;
 const OBJECT_RECORD_ATTRIBUTES: u32 = 0x0200_8072;
@@ -436,10 +436,6 @@ pub(crate) struct ClassDescriptor {
     pub(crate) class_uuid: Uuid,
     /// Class-data payload range, excluding its chunk framing.
     pub(crate) class_data_range: Range<usize>,
-}
-
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
