@@ -15,7 +15,7 @@ use crate::chunks::{
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
 use crate::objects::parse_userdata;
-use crate::settings::{plane, utf16, Plane, UnitBinding};
+use crate::settings::{plane, utf16, MillimeterScale, Plane, UnitBinding};
 use crate::wire::{flag_i32, scaled_coordinate, uuid};
 
 const SETTINGS: u32 = 0x1000_0015;
@@ -266,7 +266,7 @@ fn legacy_clipping_depth(value: f64) -> (f64, bool) {
     }
 }
 
-fn scale3(value: &mut [f64; 3], scale: f64, offset: usize) -> Result<(), FramingError> {
+fn scale3(value: &mut [f64; 3], scale: MillimeterScale, offset: usize) -> Result<(), FramingError> {
     for coordinate in value {
         *coordinate = scaled_coordinate(*coordinate, scale)
             .ok_or_else(|| FramingError::structural(offset, "scaled view coordinate is invalid"))?;
@@ -274,7 +274,11 @@ fn scale3(value: &mut [f64; 3], scale: f64, offset: usize) -> Result<(), Framing
     Ok(())
 }
 
-fn scaled_plane(mut value: Plane, scale: f64, offset: usize) -> Result<Plane, FramingError> {
+fn scaled_plane(
+    mut value: Plane,
+    scale: MillimeterScale,
+    offset: usize,
+) -> Result<Plane, FramingError> {
     scale3(&mut value.origin.0, scale, offset)?;
     value.equation[3] = scaled_coordinate(value.equation[3], scale)
         .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
@@ -304,7 +308,7 @@ fn parse_trace_image(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     losses: &mut Vec<LossNote>,
 ) -> Result<(TraceImage, Option<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
@@ -463,7 +467,7 @@ fn view_checksum_tag(typecode: u32) -> &'static str {
 fn parse_cplane(
     data: &[u8],
     body: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<ConstructionPlane, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
@@ -503,7 +507,7 @@ fn parse_cplane(
 fn parse_viewport(
     data: &[u8],
     body: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<Viewport, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
@@ -686,7 +690,7 @@ fn parse_attributes(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<(ViewAttributes, Vec<std::ops::Range<usize>>), FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let mut checksum_children = Vec::new();
@@ -993,7 +997,7 @@ fn parse_view(
     data: &[u8],
     record: &crate::chunks::Chunk,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     list_kind: ViewListKind,
     list_index: usize,
     losses: &mut Vec<LossNote>,
@@ -1253,7 +1257,7 @@ fn parse_list(
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     list_kind: ViewListKind,
 ) -> (Vec<ViewRecord>, Vec<LossNote>) {
     let kind = list_kind.as_str();
@@ -1379,7 +1383,7 @@ fn parse_named_cplanes(
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<Vec<NamedConstructionPlane>, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let count_offset = reader.position();
@@ -1584,7 +1588,12 @@ mod tests {
     #[test]
     fn construction_plane_scales_spatial_fields_and_reads_depth_flag() {
         let bytes = construction_plane();
-        let value = parse_cplane(&bytes, 0..bytes.len(), 2.0).expect("construction plane");
+        let value = parse_cplane(
+            &bytes,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(2.0),
+        )
+        .expect("construction plane");
 
         assert_eq!(value.plane_origin_mm, [2.0, -4.0, 6.0]);
         assert_eq!(value.plane_x_axis, [1.0, 0.0, 0.0]);
@@ -1634,7 +1643,12 @@ mod tests {
     #[test]
     fn viewport_scales_spatial_state_but_not_frames_or_view_scale() {
         let bytes = viewport();
-        let value: Viewport = parse_viewport(&bytes, 0..bytes.len(), 10.0).expect("valid viewport");
+        let value: Viewport = parse_viewport(
+            &bytes,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(10.0),
+        )
+        .expect("valid viewport");
         assert_eq!(value.camera_location_mm, [10.0, 20.0, 30.0]);
         assert_eq!(value.camera_direction, [0.0, 0.0, -1.0]);
         assert_eq!(value.frustum_mm, [-20.0, 20.0, -10.0, 10.0, 1.0, 1000.0]);
@@ -1700,8 +1714,14 @@ mod tests {
         trace.extend([0, 1, 1]);
         trace.extend([0xde, 0xad, 0xbe, 0xef]);
         let mut losses = Vec::new();
-        let (trace, _) = parse_trace_image(&trace, 0..trace.len(), archive, 1.0, &mut losses)
-            .expect("trace image");
+        let (trace, _) = parse_trace_image(
+            &trace,
+            0..trace.len(),
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            &mut losses,
+        )
+        .expect("trace image");
         assert_eq!(trace.legacy_file_path, "trace-witness.png");
         assert_eq!([trace.width_mm, trace.height_mm], [42.0, 24.0]);
         assert!(!trace.grayscale);
@@ -1728,7 +1748,13 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert!(views.is_empty());
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1745,7 +1771,13 @@ mod tests {
         body.extend(child);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert!(views.is_empty());
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("unexpected typecode"));
@@ -1768,7 +1800,13 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1805,7 +1843,13 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -1839,7 +1883,13 @@ mod tests {
         body.extend(view);
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
         assert_eq!(views[0].children.len(), 1);
@@ -1881,8 +1931,13 @@ mod tests {
         body.extend(1_i32.to_le_bytes());
         body.extend(anonymous_chunk(archive, 4, &clipping_plane));
 
-        let (value, _) =
-            parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
+        let (value, _) = parse_attributes(
+            &body,
+            0..body.len(),
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+        .expect("view attributes");
         assert_eq!(value.clipping_planes.len(), 1);
         assert_eq!(value.clipping_planes[0].depth_mm, Some(3.0));
         assert!(value.clipping_planes[0].depth_enabled);
@@ -1916,8 +1971,13 @@ mod tests {
             .windows(8)
             .position(|window| window == f64::NAN.to_le_bytes())
             .expect("the nonfinite margin is in the payload");
-        let error = parse_attributes(&body, 0..body.len(), archive, 1.0)
-            .expect_err("nonfinite page setting");
+        let error = parse_attributes(
+            &body,
+            0..body.len(),
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+        .expect_err("nonfinite page setting");
         assert_eq!(
             error,
             FramingError::structural(nonfinite - 24, "page setting is not finite")
@@ -1948,8 +2008,13 @@ mod tests {
         body.push(1);
         body.extend([0xa1, 0xb2, 0xc3]);
 
-        let (value, _) =
-            parse_attributes(&body, 0..body.len(), archive, 1.0).expect("view attributes");
+        let (value, _) = parse_attributes(
+            &body,
+            0..body.len(),
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+        .expect("view attributes");
         assert_eq!(value.view_type, 1);
         assert!(value.projection_locked);
         let page = value.page_settings.expect("page settings");
@@ -2006,7 +2071,13 @@ mod tests {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&attributes));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
 
@@ -2020,8 +2091,13 @@ mod tests {
             0..corrupted_body.len(),
             0..corrupted_body.len(),
         );
-        let (views, losses) =
-            parse_list(&corrupted_body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &corrupted_body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("0x20008c3b"));
@@ -2089,7 +2165,13 @@ mod tests {
             let mut body = 1_i32.to_le_bytes().to_vec();
             body.extend(view);
             let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-            parse_list(&body, &record, archive, 1.0, ViewListKind::Named)
+            parse_list(
+                &body,
+                &record,
+                archive,
+                crate::settings::MillimeterScale::IDENTITY,
+                ViewListKind::Named,
+            )
         };
 
         let (views, losses) = parse(make_view(&trace, &wallpaper));
@@ -2207,7 +2289,13 @@ mod tests {
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&viewport_userdata));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
-        let (views, losses) = parse_list(&body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert_eq!(
@@ -2225,8 +2313,13 @@ mod tests {
             0..corrupted_body.len(),
             0..corrupted_body.len(),
         );
-        let (views, losses) =
-            parse_list(&corrupted_body, &record, archive, 1.0, ViewListKind::Named);
+        let (views, losses) = parse_list(
+            &corrupted_body,
+            &record,
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            ViewListKind::Named,
+        );
         assert_eq!(views.len(), 1);
         assert!(losses.iter().any(|loss| {
             loss.code == crate::loss::RhinoLossCode::ViewportUserdataDropped.kind()

@@ -10,7 +10,7 @@ use std::ops::Range;
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::objects::{parse_userdata, UserdataDescriptor};
-use crate::settings::{utf16, UnitBinding};
+use crate::settings::{utf16, MillimeterScale, UnitBinding};
 use crate::wire::{flag_i32, scaled_coordinate, Uuid};
 
 const SETTINGS_TABLE: u32 = 0x1000_0015;
@@ -183,7 +183,7 @@ struct RenderSettingsRecord {
     force_viewport_aspect_ratio: Option<bool>,
 }
 
-fn length(reader: &mut BoundedReader<'_>, scale: f64) -> Result<f64, FramingError> {
+fn length(reader: &mut BoundedReader<'_>, scale: MillimeterScale) -> Result<f64, FramingError> {
     scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
         FramingError::structural(reader.position(), "scaled setting length is invalid")
     })
@@ -193,7 +193,7 @@ fn annotation_settings(
     data: &[u8],
     body: std::ops::Range<usize>,
     source_offset: usize,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<AnnotationSettingsRecord, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let packed = reader.u8()?;
@@ -245,7 +245,7 @@ fn grid_defaults(
     data: &[u8],
     body: std::ops::Range<usize>,
     source_offset: usize,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<GridDefaultsRecord, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     if reader.u8()? >> 4 != 1 {
@@ -274,7 +274,7 @@ fn render_settings(
     body: std::ops::Range<usize>,
     source_offset: usize,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<RenderSettingsRecord, FramingError> {
     let modern = data.get(body.start).copied() == Some(0);
     let (mut reader, minor, legacy_version) = if modern {

@@ -12,7 +12,7 @@ use crate::cage::Cage;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
-use crate::settings::{interval, point, vector, xform};
+use crate::settings::{interval, point, vector, xform, MillimeterScale};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -159,7 +159,7 @@ fn captive_ids(
 
 fn scale_point(
     value: crate::settings::Point3,
-    scale: f64,
+    scale: MillimeterScale,
     offset: usize,
 ) -> Result<[f64; 3], GeometryError> {
     let mut result = [0.0; 3];
@@ -171,7 +171,11 @@ fn scale_point(
     Ok(result)
 }
 
-fn scale_interval(value: [f64; 2], scale: f64, offset: usize) -> Result<[f64; 2], GeometryError> {
+fn scale_interval(
+    value: [f64; 2],
+    scale: MillimeterScale,
+    offset: usize,
+) -> Result<[f64; 2], GeometryError> {
     Ok([
         scaled_coordinate(value[0], scale).ok_or_else(|| {
             GeometryError::malformed(offset, "scaled localizer interval is invalid")
@@ -185,7 +189,7 @@ fn scale_interval(value: [f64; 2], scale: f64, offset: usize) -> Result<[f64; 2]
 fn optional_curve(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Option<NurbsCurve>, GeometryError> {
     let (mut child, next, major, minor) = anonymous(
@@ -213,7 +217,7 @@ fn optional_curve(
 fn optional_surface(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Option<NurbsSurface>, GeometryError> {
     let (mut child, next, major, minor) = anonymous(
@@ -241,7 +245,7 @@ fn optional_surface(
 fn localizer(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Localizer, GeometryError> {
     let (mut value, next, major, minor) =
@@ -295,7 +299,7 @@ fn control_child<T>(
 
 fn scaled_transform(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<[f64; 16], GeometryError> {
     let mut transform = xform(reader)?.0;
     for index in [3, 7, 11] {
@@ -309,7 +313,7 @@ fn scaled_transform(
 fn cage_at(
     expand: MeshExpand<'_>,
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Cage, GeometryError> {
     let (cage, next) =
@@ -321,7 +325,7 @@ fn cage_at(
 pub(crate) fn decode(
     expand: MeshExpand<'_>,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Morph, GeometryError> {
     let data = expand.data();
@@ -728,7 +732,12 @@ mod tests {
         let bytes = anonymous(2, 2, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
         })
         .expect("required invariant");
         assert_eq!(morph.captive_ids.len(), 1);
@@ -775,7 +784,12 @@ mod tests {
     fn rejects_unknown_morph_control_major() {
         let bytes = anonymous(3, 0, &[]);
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 1.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
         });
         assert!(matches!(
             result,
@@ -808,7 +822,12 @@ mod tests {
         let bytes = anonymous(2, 1, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
         })
         .expect("required invariant");
         let Control::Curve { start, end } = &morph.control else {
@@ -864,8 +883,13 @@ mod tests {
             payload.extend(anonymous(1, 0, &surface_payload));
             let bytes = anonymous(1, 0, &payload);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("localizer bounds");
-            let value =
-                localizer(&bytes, &mut reader, 1.0, ArchiveVersion::V8).expect("localizer fields");
+            let value = localizer(
+                &bytes,
+                &mut reader,
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect("localizer fields");
             assert_eq!(value.kind, kind);
             assert!(value.curve.is_some());
             assert!(value.surface.is_some());

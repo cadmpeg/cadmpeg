@@ -11,7 +11,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
 use crate::curves::{decode_embedded_curve_2d, error, exact_nurbs, DecodedCurve, GeometryError};
 use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
-use crate::settings::{interval, point, vector};
+use crate::settings::{interval, point, vector, MillimeterScale};
 use crate::wire::Uuid;
 
 const EPS_EXTRUSION_POSITION: f64 = 1.0e-8;
@@ -97,7 +97,7 @@ pub(crate) fn decode(
     range: Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    scale: f64,
+    scale: MillimeterScale,
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
 ) -> Result<DecodedExtrusion, GeometryError> {
@@ -620,7 +620,7 @@ fn read_mesh_cache(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    scale: f64,
+    scale: MillimeterScale,
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Diagnostics,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
@@ -700,7 +700,7 @@ fn read_v5_mesh_cache(
     data: &[u8],
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    scale: f64,
+    scale: MillimeterScale,
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Diagnostics,
@@ -882,7 +882,7 @@ fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, Geome
     Ok(value.scale(1.0 / length))
 }
 
-fn scaled_point(value: crate::settings::Point3, scale: f64) -> Option<Point3> {
+fn scaled_point(value: crate::settings::Point3, scale: MillimeterScale) -> Option<Point3> {
     Some(Point3::new(
         crate::wire::scaled_coordinate(value.0[0], scale)?,
         crate::wire::scaled_coordinate(value.0[1], scale)?,
@@ -931,7 +931,7 @@ pub(crate) mod tests {
         range: std::ops::Range<usize>,
         archive: ArchiveVersion,
         writer_version: Option<i64>,
-        scale: f64,
+        scale: MillimeterScale,
         mesh_budget: &mut crate::mesh::MeshBudget,
     ) -> Result<super::DecodedExtrusion, GeometryError> {
         crate::decode::with_expand_bytes(data, |expand| {
@@ -1263,7 +1263,7 @@ pub(crate) mod tests {
                 0..bytes.len(),
                 ArchiveVersion::V5,
                 None,
-                1.0,
+                MillimeterScale::IDENTITY,
                 &mut crate::mesh::MeshBudget::new(),
             )
             .expect("required invariant");
@@ -1293,7 +1293,7 @@ pub(crate) mod tests {
             0..bytes.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::new(),
         )
         .is_err());
@@ -1307,7 +1307,7 @@ pub(crate) mod tests {
             0..bytes.len(),
             ArchiveVersion::V5,
             None,
-            25.4,
+            crate::test_support::millimeter_scale(25.4),
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect("required invariant");
@@ -1327,7 +1327,7 @@ pub(crate) mod tests {
             0..legacy.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect("required invariant");
@@ -1339,7 +1339,7 @@ pub(crate) mod tests {
             0..capped.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::new(),
         )
         .is_err());
@@ -1423,7 +1423,7 @@ pub(crate) mod tests {
             0..noncanonical_bool.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::new(),
         )
         .is_ok());
@@ -1439,7 +1439,7 @@ pub(crate) mod tests {
                 0..bytes.len(),
                 ArchiveVersion::V5,
                 None,
-                1.0,
+                MillimeterScale::IDENTITY,
                 &mut crate::mesh::MeshBudget::new(),
             )
             .is_err());
@@ -1452,7 +1452,7 @@ pub(crate) mod tests {
             0..future.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::new(),
         )
         .is_ok());
@@ -1466,7 +1466,7 @@ pub(crate) mod tests {
             0..bytes.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::with_limit(0),
         )
         .expect("extrusion remains usable");
@@ -1519,7 +1519,7 @@ pub(crate) mod tests {
             0..bytes.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect("required invariant");
@@ -1536,7 +1536,7 @@ pub(crate) mod tests {
             0..bytes.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect("required invariant");
@@ -1567,7 +1567,7 @@ pub(crate) mod tests {
                 &bytes,
                 ArchiveVersion::V5,
                 None,
-                1.0,
+                MillimeterScale::IDENTITY,
                 std::slice::from_ref(&descriptor),
                 &mut crate::mesh::MeshBudget::new(),
                 &mut Diagnostics::new(),
@@ -1600,7 +1600,7 @@ pub(crate) mod tests {
                 &bytes,
                 ArchiveVersion::V5,
                 None,
-                1.0,
+                MillimeterScale::IDENTITY,
                 std::slice::from_ref(&descriptor),
                 &mut crate::mesh::MeshBudget::new(),
                 &mut Diagnostics::new(),
@@ -1626,7 +1626,7 @@ pub(crate) mod tests {
             0..bytes.len(),
             ArchiveVersion::V5,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut crate::mesh::MeshBudget::new(),
         )
         .is_ok());

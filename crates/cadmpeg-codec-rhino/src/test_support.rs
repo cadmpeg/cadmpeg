@@ -7,6 +7,11 @@
 pub(crate) mod test_archive;
 pub(crate) mod test_dump;
 
+/// The millimetre scale a fixture states directly.
+pub(crate) fn millimeter_scale(millimeters_per_unit: f64) -> crate::settings::MillimeterScale {
+    crate::settings::MillimeterScale::new(millimeters_per_unit).expect("test millimetre scale")
+}
+
 /// Plans a write at one archive version, the request the command line builds
 /// for an explicit target.
 ///

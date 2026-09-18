@@ -1053,13 +1053,17 @@ fn parse_legacy_major2(
     let c3_start = reader.position();
     let mut c3_meta = Vec::with_capacity(edge_count);
     for _ in 0..edge_count {
-        let curve_range =
-            crate::curves::consume_legacy_polycurve(bytes, &mut reader, 1.0, archive)?;
+        let curve_range = crate::curves::consume_legacy_polycurve(
+            bytes,
+            &mut reader,
+            crate::settings::MillimeterScale::IDENTITY,
+            archive,
+        )?;
         let decoded = crate::curves::decode(
             bytes,
             crate::curves::POLYCURVE,
             curve_range.clone(),
-            1.0,
+            crate::settings::MillimeterScale::IDENTITY,
             archive,
         )?;
         let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
@@ -1075,7 +1079,10 @@ fn parse_legacy_major2(
     let mut surface_slots = Vec::with_capacity(face_count);
     for _ in 0..face_count {
         let start = reader.position();
-        let _surface = crate::surfaces::read_nurbs_surface_prefix(&mut reader, 1.0)?;
+        let _surface = crate::surfaces::read_nurbs_surface_prefix(
+            &mut reader,
+            crate::settings::MillimeterScale::IDENTITY,
+        )?;
         let surface_range = start..reader.position();
         surface_slots.push(Some(RawBrepChild {
             class_uuid: crate::surfaces::NURBS_SURFACE,

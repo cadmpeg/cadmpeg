@@ -384,7 +384,12 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
             structured_value_properties(
                 "value_7",
                 &parsed.value,
-                Some((expand, ArchiveVersion::V8, None, 2.0)),
+                Some((
+                    expand,
+                    ArchiveVersion::V8,
+                    None,
+                    crate::test_support::millimeter_scale(2.0),
+                )),
                 &mut properties,
                 &mut sink,
             );
@@ -463,7 +468,12 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
         structured_value_properties(
             "value_7",
             &parsed.value,
-            Some((expand, ArchiveVersion::V8, None, 2.0)),
+            Some((
+                expand,
+                ArchiveVersion::V8,
+                None,
+                crate::test_support::millimeter_scale(2.0),
+            )),
             &mut properties,
             &mut sink,
         );
@@ -575,7 +585,7 @@ fn embedded_cage_projects_exact_construction_semantics() {
             &geometry,
             ArchiveVersion::V8,
             None,
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             &mut Diagnostics::new(),
         )
     })
@@ -600,7 +610,7 @@ fn embedded_cage_projects_exact_construction_semantics() {
             &geometry,
             ArchiveVersion::V8,
             None,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut Diagnostics::new(),
         )
     })
@@ -622,7 +632,7 @@ fn embedded_cage_projects_exact_construction_semantics() {
             &geometry,
             ArchiveVersion::V8,
             None,
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             &mut Diagnostics::new(),
         )
     })

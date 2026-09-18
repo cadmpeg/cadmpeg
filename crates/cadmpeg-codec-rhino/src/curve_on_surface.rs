@@ -7,6 +7,7 @@ use std::ops::Range;
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::parse_class_wrapper;
+use crate::settings::MillimeterScale;
 use crate::surfaces::DecodedSurface;
 use crate::wire::Uuid;
 
@@ -39,7 +40,7 @@ fn class(
 pub(crate) fn decode(
     data: &[u8],
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<CurveOnSurface, GeometryError> {
@@ -162,8 +163,14 @@ mod tests {
         ));
         bytes.extend(class_wrapper(PLANE_SURFACE, &plane_surface()));
 
-        let decoded = decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8, 0)
-            .expect("required invariant");
+        let decoded = decode(
+            &bytes,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(10.0),
+            ArchiveVersion::V8,
+            0,
+        )
+        .expect("required invariant");
         assert!(decoded.model_curve.is_some());
         let crate::curves::DecodedCurve::Leaf {
             geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(c2)),

@@ -2409,7 +2409,7 @@ fn disambiguate_group_ids(groups: &mut [GroupRecord]) -> usize {
 fn parse_light(
     data: &[u8],
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     source_offset: usize,
     link: Option<String>,
 ) -> Result<LightRecord, FramingError> {
@@ -2617,7 +2617,7 @@ fn parse_linetype(
         .map(|segment| {
             let length_millimeters = if always {
                 let scale = pattern_document_scale(binding)?;
-                scaled_coordinate(segment.length, scale.value()).ok_or_else(|| {
+                scaled_coordinate(segment.length, scale).ok_or_else(|| {
                     FramingError::structural(
                         source_offset,
                         "scaled model-distance linetype segment is invalid",
@@ -2720,7 +2720,7 @@ impl SourceHatchLine {
             .chain(self.offset.iter_mut())
             .chain(self.dashes.iter_mut())
         {
-            *value = scaled_coordinate(*value, scale.value()).ok_or_else(|| {
+            *value = scaled_coordinate(*value, scale).ok_or_else(|| {
                 FramingError::structural(source_offset, "scaled hatch line is invalid")
             })?;
         }
@@ -2874,7 +2874,7 @@ fn parse_hatch_pattern(
 
 fn scaled_length(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     label: &str,
 ) -> Result<f64, FramingError> {
     let value = read_finite(reader, label)?;
@@ -2908,7 +2908,7 @@ fn dimension_style_controls(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     minor: i32,
 ) -> Result<BTreeMap<String, serde_json::Value>, FramingError> {
     let mut values = BTreeMap::new();
@@ -3104,7 +3104,7 @@ fn parse_v5_dimension_style_extra(
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<V5DimensionStyleExtraRecord, FramingError> {
     let (mut reader, version) = anonymous(data, extra.payload_range.clone(), archive)?;
     if version.0 != 1 || version.1 < 0 {
@@ -3171,7 +3171,7 @@ fn parse_v5_dimension_style_extra(
 fn parse_v5_dimension_style(
     data: &[u8],
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     source_offset: usize,
     extra: Option<V5DimensionStyleExtraRecord>,
 ) -> Result<DimensionStyleRecord, FramingError> {
@@ -3204,7 +3204,7 @@ fn parse_v5_dimension_style(
     let text_height_mm = if minor >= 1 {
         scaled_length(&mut reader, scale, "text height")?
     } else {
-        scale
+        scale.value()
     };
     let mut controls = BTreeMap::new();
     controls.insert(
@@ -3299,7 +3299,7 @@ fn parse_v5_dimension_style(
             reader.bool()?,
         )
     } else {
-        (scale, 0, false, false)
+        (scale.value(), 0, false, false)
     };
     reader.skip_remaining()?;
     controls.insert(
@@ -3350,7 +3350,7 @@ fn parse_dimension_style(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     source_offset: usize,
 ) -> Result<DimensionStyleRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;

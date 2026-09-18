@@ -25,6 +25,7 @@ use crate::chunks::{
 use crate::curves::{error, GeometryError};
 use crate::decode::session_ceiling;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
+use crate::settings::MillimeterScale;
 use crate::subd::MeshProxyFingerprint;
 use crate::wire::{uuid, Uuid};
 
@@ -208,7 +209,7 @@ pub(crate) struct MeshDecodeOptions<'a> {
     /// Deterministic tessellation ID.
     pub(crate) id: String,
     /// Native-unit to millimeter scale.
-    pub(crate) scale: f64,
+    pub(crate) scale: MillimeterScale,
     /// Class userdata attached to the owning mesh object.
     pub(crate) userdata: &'a [UserdataDescriptor],
 }
@@ -546,7 +547,7 @@ pub(crate) fn decode(
         .with_source_object(association),
         warnings: decoded.warnings,
         losses: decoded.losses,
-        scaled: scale != 1.0,
+        scaled: scale != MillimeterScale::IDENTITY,
         ngon_count,
         quad_count,
         proxy_fingerprint,
@@ -1775,7 +1776,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#legacy-minor-five".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
                 &mut MeshBudget::new(),
@@ -1805,7 +1806,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#v5-double".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1834,7 +1835,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#v5-double-mismatch".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1871,7 +1872,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#v4v5-ngon".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1905,7 +1906,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#v4v5-ngon-later".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1938,7 +1939,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#v4v5-ngon-old".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -1971,7 +1972,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#v4v5-ngon-invalid".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -2008,7 +2009,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#v4v5-ngon-bad-index".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -2047,7 +2048,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#v4v5-ngon-crc".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: std::slice::from_ref(&descriptor),
                 },
                 &mut MeshBudget::new(),
@@ -2320,7 +2321,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#first".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
                 &mut budget,
@@ -2335,7 +2336,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "synthetic:test:tessellation#second".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
                 &mut budget,
@@ -2468,7 +2469,7 @@ mod tests {
                     writer_version: None,
                     association: None,
                     id: "test".to_string(),
-                    scale: 1.0,
+                    scale: MillimeterScale::IDENTITY,
                     userdata: &[],
                 },
                 &mut MeshBudget::new(),

@@ -404,7 +404,10 @@ pub(crate) fn quad_payload(archive: ArchiveVersion) -> Vec<u8> {
     })
 }
 
-fn decode_fixture(fixture: Fixture, scale: f64) -> Result<Option<DecodedSubd>, SubdError> {
+fn decode_fixture(
+    fixture: Fixture,
+    scale: crate::settings::MillimeterScale,
+) -> Result<Option<DecodedSubd>, SubdError> {
     let bytes = payload(fixture);
     decode(
         &bytes,
@@ -489,7 +492,7 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:proxy-subd#0"
             .try_into()
             .expect("valid identity"),
@@ -505,7 +508,7 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:proxy-subd#0"
             .try_into()
             .expect("valid identity"),
@@ -525,7 +528,7 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:proxy-subd#0"
             .try_into()
             .expect("valid identity"),
@@ -539,7 +542,7 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
         &bytes,
         &descriptor,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:proxy-subd#0"
             .try_into()
             .expect("valid identity"),
@@ -555,7 +558,7 @@ fn decodes_empty_outer_subd_without_carrier() {
         &[0],
         0..1,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity")
     )
     .expect("required invariant")
@@ -564,7 +567,7 @@ fn decodes_empty_outer_subd_without_carrier() {
         &[2],
         0..1,
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity")
     )
     .is_err());
@@ -580,7 +583,7 @@ fn nested_crc_mismatch_warns_without_discarding_subd() {
         &bytes,
         0..bytes.len(),
         fixture.archive,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity"),
     )
     .expect("recoverable checksum mismatch");
@@ -606,7 +609,7 @@ fn decodes_minor_suffix_gates_across_archive_bands() {
                 minor,
                 ..Fixture::default()
             },
-            1.0,
+            crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("required invariant");
         assert!(matches!(decoded, Some(DecodedSubd { .. })));
@@ -626,7 +629,7 @@ fn decodes_valid_old_and_new_component_bases() {
                 archive,
                 ..Fixture::default()
             },
-            1.0
+            crate::settings::MillimeterScale::IDENTITY
         )
         .is_ok());
     }
@@ -639,7 +642,7 @@ fn preserves_directed_reversed_face_edge_use() {
             reversed_edge: true,
             ..Fixture::default()
         },
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant") else {
         panic!("expected surface");
@@ -655,7 +658,7 @@ fn rejects_open_or_repeated_face_rings() {
             open_ring: true,
             ..Fixture::default()
         },
-        1.0
+        crate::settings::MillimeterScale::IDENTITY
     )
     .is_err());
 }
@@ -676,7 +679,7 @@ fn rejects_pointer_type_null_and_reciprocity_errors() {
             ..Fixture::default()
         },
     ] {
-        assert!(decode_fixture(fixture, 1.0).is_err());
+        assert!(decode_fixture(fixture, crate::settings::MillimeterScale::IDENTITY).is_err());
     }
 }
 
@@ -688,7 +691,7 @@ fn preserves_vertex_edge_tags_and_sector_coefficients() {
             edge_tag: 4,
             ..Fixture::default()
         },
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant") else {
         panic!("expected surface");
@@ -703,9 +706,11 @@ fn preserves_vertex_edge_tags_and_sector_coefficients() {
 
 #[test]
 fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
-    let Some(DecodedSubd { surface, .. }) =
-        decode_fixture(Fixture::default(), 1.0).expect("required invariant")
-    else {
+    let Some(DecodedSubd { surface, .. }) = decode_fixture(
+        Fixture::default(),
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect("required invariant") else {
         panic!("expected old surface");
     };
     assert_eq!(surface.cage.edges()[0].sharpness(), [0.25, 0.25]);
@@ -715,7 +720,7 @@ fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
             end_sharpness: 0.75,
             ..Fixture::default()
         },
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant") else {
         panic!("expected V8 surface");
@@ -732,7 +737,7 @@ fn consumes_saved_limit_points_and_future_additions() {
             future_additions: true,
             ..Fixture::default()
         },
-        1.0
+        crate::settings::MillimeterScale::IDENTITY
     )
     .is_ok());
 }
@@ -746,7 +751,7 @@ fn validates_higher_levels_and_render_mesh_chunks() {
             render_mesh: true,
             ..Fixture::default()
         },
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("required invariant");
     let Some(DecodedSubd {
@@ -760,9 +765,11 @@ fn validates_higher_levels_and_render_mesh_chunks() {
 
 #[test]
 fn scales_control_points_once_without_scaling_edge_metadata() {
-    let Some(DecodedSubd { surface, .. }) =
-        decode_fixture(Fixture::default(), 25.4).expect("required invariant")
-    else {
+    let Some(DecodedSubd { surface, .. }) = decode_fixture(
+        Fixture::default(),
+        crate::test_support::millimeter_scale(25.4),
+    )
+    .expect("required invariant") else {
         panic!("expected surface");
     };
     assert_eq!(
@@ -789,7 +796,7 @@ fn rejects_noncontiguous_partitions_and_future_versions() {
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V5,
-        1.0,
+        MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity")
     )
     .is_err());
@@ -801,7 +808,7 @@ fn rejects_noncontiguous_partitions_and_future_versions() {
             &future,
             0..future.len(),
             ArchiveVersion::V5,
-            1.0,
+            MillimeterScale::IDENTITY,
             "rhino:test:subd#0".try_into().expect("valid identity")
         ),
         Err(SubdError::UnsupportedVersion { .. })

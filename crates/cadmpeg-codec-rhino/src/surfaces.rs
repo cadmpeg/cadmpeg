@@ -14,7 +14,8 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
 use crate::settings::{
-    bbox, interval, plane, point, vector as native_vector, Plane, Point3 as NativePoint3,
+    bbox, interval, plane, point, vector as native_vector, MillimeterScale, Plane,
+    Point3 as NativePoint3,
 };
 use crate::wire::{vector, Uuid};
 
@@ -204,7 +205,7 @@ pub(crate) fn decode(
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
@@ -221,7 +222,7 @@ pub(crate) fn decode(
         let geometry = read_plane_surface_with_parameterization(&mut reader, scale)?;
         DecodedSurface::Typed {
             geometry,
-            derived: scale != 1.0,
+            derived: scale != MillimeterScale::IDENTITY,
         }
     } else if class == CLIPPING_PLANE_SURFACE {
         read_clipping_plane_surface(data, &mut reader, scale, archive)?
@@ -242,7 +243,7 @@ pub(crate) fn decode(
 fn read_clipping_plane_surface(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<DecodedSurface, GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
@@ -278,7 +279,7 @@ fn read_clipping_plane_surface(
     reader.skip(outer.next_offset() - reader.position())?;
     Ok(DecodedSurface::Typed {
         geometry,
-        derived: scale != 1.0,
+        derived: scale != MillimeterScale::IDENTITY,
     })
 }
 
@@ -391,7 +392,7 @@ fn read_clipping_participation(reader: &mut BoundedReader<'_>) -> Result<(), Geo
 fn read_revolution(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
@@ -480,7 +481,7 @@ fn read_revolution(
 fn read_sum(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
@@ -758,7 +759,7 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 
 pub(crate) fn read_nurbs_curve(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<NurbsCurve, GeometryError> {
     read_nurbs_curve_inner(reader, scale, None)
 }
@@ -767,12 +768,12 @@ pub(crate) fn read_nurbs_curve(
 pub(crate) fn read_nurbs_curve_2d(
     reader: &mut BoundedReader<'_>,
 ) -> Result<NurbsCurve, GeometryError> {
-    read_nurbs_curve_inner(reader, 1.0, Some(2))
+    read_nurbs_curve_inner(reader, MillimeterScale::IDENTITY, Some(2))
 }
 
 fn read_nurbs_curve_inner(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     expected_dimension: Option<i32>,
 ) -> Result<NurbsCurve, GeometryError> {
     let version_offset = reader.position();
@@ -814,7 +815,7 @@ fn read_nurbs_curve_inner(
         return Err(error(reader.position(), "NURBS curve CV count mismatch"));
     }
     let (control_points, weights) =
-        read_curve_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
+        read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
     if minor >= 1 {
         reader.bool()?;
     }
@@ -831,51 +832,9 @@ fn read_nurbs_curve_inner(
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
-fn read_curve_poles(
-    reader: &mut BoundedReader<'_>,
-    count: usize,
-    rational: bool,
-    dimension: i32,
-    scale: f64,
-) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
-    let mut points = Vec::with_capacity(count);
-    let mut weights = rational.then(|| Vec::with_capacity(count));
-    for _ in 0..count {
-        let pole_offset = reader.position();
-        let x = reader.f64()?;
-        let y = reader.f64()?;
-        let z = if dimension == 3 { reader.f64()? } else { 0.0 };
-        let weight = weights
-            .as_mut()
-            .map(|target| reader.f64().map(|weight| (target, weight)))
-            .transpose()?;
-        if !x.is_finite() || !y.is_finite() || !z.is_finite() {
-            return Err(error(pole_offset, "NURBS pole is not finite"));
-        }
-        let point = if let Some((target, weight)) = weight {
-            if !weight.is_finite() || weight == 0.0 {
-                return Err(error(reader.position(), "NURBS weight is invalid"));
-            }
-            target.push(weight);
-            [x / weight, y / weight, z / weight]
-        } else {
-            [x, y, z]
-        };
-        points.push(Point3::new(
-            crate::wire::scaled_coordinate(point[0], scale)
-                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
-            crate::wire::scaled_coordinate(point[1], scale)
-                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
-            crate::wire::scaled_coordinate(point[2], scale)
-                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
-        ));
-    }
-    Ok((points, weights))
-}
-
 pub(crate) fn read_nurbs_surface(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<NurbsSurface, GeometryError> {
     let surface = read_nurbs_surface_prefix(reader, scale)?;
     reader.skip_remaining()?;
@@ -885,7 +844,7 @@ pub(crate) fn read_nurbs_surface(
 /// Reads one NURBS surface without consuming bytes after its final pole.
 pub(crate) fn read_nurbs_surface_prefix(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<NurbsSurface, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
@@ -969,7 +928,7 @@ pub(crate) fn read_nurbs_surface_prefix(
 
 fn read_plane_surface_with_parameterization(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<TypedSurface, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
@@ -1032,7 +991,7 @@ fn read_poles(
     count: usize,
     rational: bool,
     dimension: i32,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
     let mut points = Vec::with_capacity(count);
     let mut weights = rational.then(|| Vec::with_capacity(count));
@@ -1057,11 +1016,14 @@ fn read_poles(
         } else {
             [x, y, z]
         };
-        let scaled = [point[0] * scale, point[1] * scale, point[2] * scale];
-        if !scaled.iter().all(|value| value.is_finite()) {
-            return Err(error(pole_offset, "scaled NURBS pole is not finite"));
-        }
-        points.push(Point3::new(scaled[0], scaled[1], scaled[2]));
+        points.push(Point3::new(
+            crate::wire::scaled_coordinate(point[0], scale)
+                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
+            crate::wire::scaled_coordinate(point[1], scale)
+                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
+            crate::wire::scaled_coordinate(point[2], scale)
+                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
+        ));
     }
     Ok((points, weights))
 }
@@ -1195,7 +1157,7 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
     Ok(())
 }
 
-fn scale_native_point(value: NativePoint3, scale: f64) -> Option<Point3> {
+fn scale_native_point(value: NativePoint3, scale: MillimeterScale) -> Option<Point3> {
     Some(Point3::new(
         crate::wire::scaled_coordinate(value.0[0], scale)?,
         crate::wire::scaled_coordinate(value.0[1], scale)?,

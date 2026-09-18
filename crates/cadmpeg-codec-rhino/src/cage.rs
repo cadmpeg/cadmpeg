@@ -10,6 +10,7 @@ use cadmpeg_core::CodecError;
 use crate::chunks::{chunk_at, ArchiveVersion};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
+use crate::settings::MillimeterScale;
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -69,7 +70,7 @@ fn positive(view: &mut View<'_>, label: &str) -> Result<usize, GeometryError> {
 pub(crate) fn decode(
     expand: MeshExpand<'_>,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Cage, GeometryError> {
     let (cage, next) = decode_at(expand, range.start, range.end, scale, archive)?;
@@ -86,7 +87,7 @@ pub(crate) fn decode_at(
     expand: MeshExpand<'_>,
     offset: usize,
     end: usize,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<(Cage, usize), GeometryError> {
     let data = expand.data();
@@ -322,7 +323,12 @@ mod tests {
     fn decodes_rational_cage_order_knots_and_u_v_w_control_order() {
         let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &rational_cage_body());
         let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
         })
         .expect("required invariant");
         assert_eq!(cage.orders, [2, 2, 2]);
@@ -339,7 +345,12 @@ mod tests {
         body.extend(0x1357_9bdf_i32.to_le_bytes());
         let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
         let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
         })
         .expect("major-one future minor is bounded-compatible");
         assert_eq!(cage.control_points[7][0], 70.0);
@@ -351,7 +362,12 @@ mod tests {
         body[..4].copy_from_slice(&2_i32.to_le_bytes());
         let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
-            decode(expand, 0..bytes.len(), 10.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
         });
         assert!(matches!(
             result,
@@ -369,7 +385,7 @@ mod tests {
         assert!(crate::decode::with_expand_bytes(&bytes, |expand| decode(
             expand,
             0..bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             ArchiveVersion::V8
         ))
         .is_err());

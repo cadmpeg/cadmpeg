@@ -112,7 +112,9 @@ fn unit_binding_keeps_native_and_unavailable_distinct_from_physical_scale() {
     );
     assert_eq!(
         settings::UnitBinding::from_units(Some(&physical)).neutral_scale(),
-        Some(25.4)
+        Some(settings::MillimeterScale::from(
+            settings::StandardUnit::Inches
+        ))
     );
     assert_eq!(settings::UnitBinding::Native.neutral_scale(), None);
     assert_eq!(settings::UnitBinding::Unavailable.neutral_scale(), None);
