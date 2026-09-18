@@ -3,7 +3,6 @@
 //! what ends a table sequence, and what a recognised table refuses.
 
 use super::class;
-use super::descriptor;
 use super::table;
 use crate::tessellation::descriptor_table_offset;
 use crate::tessellation::parse_table;
@@ -12,6 +11,7 @@ use crate::tessellation::scene_classes;
 use crate::tessellation::CLASS_MARKER;
 use crate::test_support::make_block;
 use crate::test_support::sldprt_with_body;
+use crate::test_support::tessellation::descriptor;
 use crate::test_support::triangle_body;
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::DecodeOptions;

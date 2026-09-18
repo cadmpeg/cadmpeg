@@ -17,6 +17,8 @@ use cadmpeg_ir::{
 
 use super::*;
 use crate::test_support::make_block;
+use crate::test_support::pmi::fixstr;
+use crate::test_support::pmi::push_array_header;
 use crate::test_support::pmi_semantic_payload;
 use crate::test_support::pmi_semantic_payload_for;
 use crate::test_support::pmi_semantic_payload_for_with_guid;
@@ -239,21 +241,6 @@ fn conflicting_pmi_metadata_do_not_enrich_history() {
     enrich_history_parameters(&mut history, &[first, second]);
 
     assert!(history[0].features[0].parameters.is_empty());
-}
-
-fn fixstr(bytes: &mut Vec<u8>, value: &str) {
-    assert!(value.len() < 32);
-    bytes.push(0xa0 | value.len() as u8);
-    bytes.extend_from_slice(value.as_bytes());
-}
-
-fn push_array_header(bytes: &mut Vec<u8>, len: usize) {
-    if len < 16 {
-        bytes.push(0x90 | len as u8);
-    } else {
-        bytes.push(0xdc);
-        bytes.extend_from_slice(&(len as u16).to_be_bytes());
-    }
 }
 
 fn push_map_header(bytes: &mut Vec<u8>, len: usize) {

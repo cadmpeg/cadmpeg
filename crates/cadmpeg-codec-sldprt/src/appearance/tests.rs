@@ -20,6 +20,7 @@ use crate::test_support::owned_triangle;
 use crate::test_support::plane_carrier;
 use crate::test_support::sldprt_with_body;
 use crate::test_support::sldprt_with_body_and_material;
+use crate::test_support::tessellation::descriptor;
 use crate::test_support::triangle_body;
 use crate::test_support::FACE_COLOR_DEFINITION_ID;
 use crate::SldprtCodec;
@@ -36,27 +37,17 @@ fn appearance_from_nameless_block_keeps_source_owner() {
     assert_eq!(definitions[0].source_name.as_str(), "block@8");
 }
 
-fn display_descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend(item_size.to_le_bytes());
-    out.extend(kind.to_le_bytes());
-    out.extend(2_u32.to_le_bytes());
-    out.extend(count.to_le_bytes());
-    out.extend(data);
-    out
-}
-
 fn display_table(x: f32) -> Vec<u8> {
-    let mut out = display_descriptor(4, 8, 1, &3_u32.to_le_bytes());
+    let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());
     let positions = [x, 0.0_f32, 0.0, x + 1.0, 0.0, x, 0.0, 1.0, x]
         .into_iter()
         .flat_map(f32::to_le_bytes)
         .collect::<Vec<_>>();
-    out.extend(display_descriptor(12, 100, 3, &positions));
-    out.extend(display_descriptor(12, 100, 3, &[0; 36]));
-    out.extend(display_descriptor(4, 8, 4, &[0; 16]));
-    out.extend(display_descriptor(4, 8, 1, &4_u32.to_le_bytes()));
-    out.extend(display_descriptor(1, 8, 4, &[0; 4]));
+    out.extend(descriptor(12, 100, 3, &positions));
+    out.extend(descriptor(12, 100, 3, &[0; 36]));
+    out.extend(descriptor(4, 8, 4, &[0; 16]));
+    out.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
+    out.extend(descriptor(1, 8, 4, &[0; 4]));
     out
 }
 
