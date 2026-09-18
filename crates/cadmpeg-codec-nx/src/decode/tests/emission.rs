@@ -9,6 +9,21 @@ use crate::decode::blend::analytic_surface_offset;
 use crate::decode::build::{
     ordered_curve_candidates, ordered_point_candidates, ordered_surface_candidates,
 };
+use crate::test_support::test_bytes::put_f64;
+use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::put_vec3;
+use crate::test_support::test_bytes::record;
+use crate::test_support::test_bytes::zlib_compress;
+use crate::test_support::test_deltas::topology_with_escaped_geometry_envelopes;
+use crate::test_support::test_om::offset_only_indexed_om_section_with_control;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_prt::topology_part_prt;
+use crate::test_support::test_streams::external_reference_stream;
+use crate::test_support::test_streams::pcurve_topology_partition_stream;
+use crate::test_support::test_streams::shared_region_shells_partition_stream;
+use crate::test_support::test_streams::topology_partition_stream;
 
 use crate::framing::node_kind::NodeKind;
 use std::io::Cursor;
@@ -23,7 +38,6 @@ use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
 use cadmpeg_ir::Exactness;
 
 use crate::loss::NxLossCode;
-use crate::test_support::*;
 use crate::NxCodec;
 
 #[test]

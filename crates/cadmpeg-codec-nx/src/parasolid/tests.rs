@@ -4,7 +4,16 @@
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
-use crate::test_support::*;
+use crate::test_support::extract_streams;
+use crate::test_support::test_bytes::zlib_compress;
+use crate::test_support::test_bytes::zlib_compress_at_level;
+use crate::test_support::test_om::segment_stream_payload;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_streams::parasolid_entity_records_stream;
+use crate::test_support::test_streams::parasolid_group_partition_stream;
+use crate::test_support::test_streams::partition_stream;
 
 fn token(text: &str) -> cadmpeg_parasolid::OwnedSchemaToken {
     cadmpeg_parasolid::OwnedSchemaToken::try_from(text).expect("the fixture text is a schema token")

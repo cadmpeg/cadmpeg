@@ -3,7 +3,7 @@
 use crate::om::sketch_payload_fixed_pairs;
 use crate::om::sketch_payload_mixed_pairs;
 use crate::om::sketch_payload_scalar_lanes;
-use crate::test_support::shifted_f64_bytes;
+use crate::test_support::test_bytes::shifted_f64_bytes;
 
 const EPS_SKETCH_FIXED_ATOM: f64 = 1e-12;
 

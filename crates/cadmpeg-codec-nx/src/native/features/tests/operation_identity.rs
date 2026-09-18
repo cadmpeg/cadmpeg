@@ -18,9 +18,9 @@ use crate::native::features::FeatureOperationTerminalFrame;
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::segments::SegmentBodyBinding;
 use crate::om::state_journal::JournalRow;
-use crate::test_support::{
-    composed_feature_history_payload, composed_feature_history_section, prt_with_named_payloads,
-};
+use crate::test_support::test_om::composed_feature_history_payload;
+use crate::test_support::test_om::composed_feature_history_section;
+use crate::test_support::test_prt::prt_with_named_payloads;
 use std::collections::BTreeMap;
 
 fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabel {

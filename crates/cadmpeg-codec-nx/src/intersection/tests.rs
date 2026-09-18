@@ -6,12 +6,20 @@ use crate::decode::pcurves::{
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_supports_from_edge_incidence, pcurve_matches_edge,
 };
+use crate::test_support::test_bytes::put_f64;
+use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::put_vec3;
+use crate::test_support::test_bytes::record;
+use crate::test_support::test_streams::blend_bound_charted_intersection_curve_stream;
+use crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream;
+use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_witnesses_stream;
+use crate::test_support::test_streams::deltas_intersection_curve_stream;
+use crate::test_support::test_streams::ext11_charted_intersection_curve_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream;
 
 use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition};
 use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
-
-use crate::test_support::*;
 
 #[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {

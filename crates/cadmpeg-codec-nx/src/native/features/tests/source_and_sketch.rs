@@ -28,6 +28,12 @@ use crate::native::features::FeatureOperationLabel;
 use crate::native::features::FeaturePayloadString;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
 use crate::om::compact::CompactIndexTarget;
+use crate::test_support::test_bytes::shifted_f64_bytes;
+use crate::test_support::test_om::multi_section_feature_history_payload;
+use crate::test_support::test_om::segment_om_record_area_payload;
+use crate::test_support::test_om::segment_om_record_area_with_input_store_payload;
+use crate::test_support::test_om::size_framed_om_section_with_repeated_operations;
+use crate::test_support::test_prt::prt_with_named_payloads;
 
 use std::io::Cursor;
 use std::sync::Arc;
@@ -36,7 +42,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{DirEntry, Region};
 use crate::om::{EntityRecord, IndexedSection, IndexedStore};
-use crate::test_support::*;
 use crate::NxCodec;
 
 use crate::native::features::operation_record::FeatureOperationRecord;

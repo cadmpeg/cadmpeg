@@ -384,7 +384,7 @@ impl<'a> ParsedStreams<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::bspline_partition_stream;
+    use crate::test_support::test_deltas::bspline_partition_stream;
 
     use super::*;
 

@@ -3666,8 +3666,8 @@ mod tests {
     fn class_use_annotation_survives_absent_entity_record() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         use cadmpeg_ir::native::catalogue::NotePhase;
-        let bytes = crate::test_support::prt_with_partition(
-            &crate::test_support::parasolid_entity_records_stream(),
+        let bytes = crate::test_support::test_prt::prt_with_partition(
+            &crate::test_support::test_streams::parasolid_entity_records_stream(),
         );
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();

@@ -2,6 +2,14 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::test_support::test_om::offset_only_indexed_om_section_with_index_values;
+use crate::test_support::test_om::segment_index_payload;
+use crate::test_support::test_om::size_framed_om_section_with_repeated_operations;
+use crate::test_support::test_prt::append_rmfastload_table;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::rmfastload_prt;
+use crate::test_support::test_prt::single_part_prt;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -10,7 +18,6 @@ use cadmpeg_core::decode::InspectOptions;
 
 use crate::container;
 use crate::container::{test_modern_layout, Container, ContainerLayout, DirEntry, Region};
-use crate::test_support::*;
 use crate::NxCodec;
 
 #[test]

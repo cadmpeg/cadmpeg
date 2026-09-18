@@ -3,6 +3,45 @@
 #![allow(clippy::default_trait_access)]
 
 use crate::decode::tests::options_in;
+use crate::test_support::extract_streams;
+use crate::test_support::test_bytes::put_f64;
+use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::put_vec3;
+use crate::test_support::test_bytes::record;
+use crate::test_support::test_deltas::bspline_curve_replacement_partition_stream;
+use crate::test_support::test_deltas::bspline_partition_stream;
+use crate::test_support::test_deltas::bspline_surface_replacement_partition_stream;
+use crate::test_support::test_deltas::deltas_bspline_curve_wrapper_stream;
+use crate::test_support::test_deltas::deltas_bspline_surface_wrapper_stream;
+use crate::test_support::test_deltas::forward_trimmed_curve_chain_stream;
+use crate::test_support::test_deltas::mismatched_trimmed_topology_partition_stream;
+use crate::test_support::test_deltas::partnered_trimmed_topology_partition_stream;
+use crate::test_support::test_deltas::topology_with_escaped_geometry_envelopes;
+use crate::test_support::test_deltas::topology_with_extended_edge_attribute_reference;
+use crate::test_support::test_deltas::topology_with_extended_edge_curve_reference;
+use crate::test_support::test_deltas::topology_with_extended_face_attribute_reference;
+use crate::test_support::test_deltas::topology_with_extended_internal_topology_references;
+use crate::test_support::test_deltas::topology_with_fully_extended_geometry_headers;
+use crate::test_support::test_deltas::trimmed_topology_partition_stream;
+use crate::test_support::test_prt::assembly_prt;
+use crate::test_support::test_prt::large_xmt_headers;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_missing_active_body_record;
+use crate::test_support::test_prt::prt_with_named_payloads;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_prt::prt_with_streams;
+use crate::test_support::test_prt::prt_with_two_active_bodies_and_rmfastload;
+use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
+use crate::test_support::test_prt::prt_with_two_terminal_bodies;
+use crate::test_support::test_prt::prt_with_weak_rmfastload_overlap;
+use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_prt::topology_part_prt;
+use crate::test_support::test_prt::topology_with_missing_tolerances;
+use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_witnesses_stream;
+use crate::test_support::test_streams::inline_descriptor_intersection_curve_stream;
+use crate::test_support::test_streams::topology_partition_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream_with_second_plane_axis;
 
 use crate::decode::build::{rmfastload_allows_terminal_lineage, topology_body_node_ids};
 use crate::decode::feature_completeness::output_free_local_body_construction;
@@ -22,7 +61,6 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::Exactness;
 
-use crate::test_support::*;
 use crate::NxCodec;
 
 #[test]

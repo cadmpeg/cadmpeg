@@ -6,7 +6,8 @@
 
 use super::*;
 use crate::container::MAGIC;
-use crate::test_support::{extract_streams, single_part_prt};
+use crate::test_support::extract_streams;
+use crate::test_support::test_prt::single_part_prt;
 use cadmpeg_core::dialect::Admission;
 use std::sync::OnceLock;
 

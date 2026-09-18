@@ -227,7 +227,7 @@ pub(crate) fn sketch_pairs(bytes: &[u8]) -> Vec<Binary64Pair<SketchBinary64PairF
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::shifted_f64_bytes;
+    use crate::test_support::test_bytes::shifted_f64_bytes;
 
     #[test]
     fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {

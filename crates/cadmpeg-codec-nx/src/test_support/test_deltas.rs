@@ -5,7 +5,13 @@
 //! construct raw bytes only; no native record type crosses in here.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::test_bytes::encoded_xmt;
+use super::test_bytes::put_f64;
+use super::test_bytes::put_ref;
+use super::test_bytes::put_vec3;
+use super::test_bytes::record;
+use super::test_streams::offset_surface_topology_partition_stream;
+use super::test_streams::topology_partition_stream;
 
 /// Shared `PS`-signatured deltas-stream transmit preamble used by the deltas
 /// fixture builders.

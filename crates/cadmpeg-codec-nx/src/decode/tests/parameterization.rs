@@ -8,6 +8,27 @@ use crate::decode::support_uv::{
     complete_ext11_support_uv, complete_parameterization_equivalent_support_uv,
     invalidate_inconsistent_support_uv, parameterization_equivalent_surfaces, SerializedSupportUv,
 };
+use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_deltas::bspline_partition_stream;
+use crate::test_support::test_deltas::fully_extend_common_header;
+use crate::test_support::test_deltas::offset_surface_with_fully_extended_common_header;
+use crate::test_support::test_deltas::trimmed_topology_partition_stream;
+use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_streams::blend_surface_topology_partition_stream;
+use crate::test_support::test_streams::blend_surface_with_extended_support_reference;
+use crate::test_support::test_streams::blend_surface_with_forward_blend_support;
+use crate::test_support::test_streams::blend_surface_with_intersection_spine;
+use crate::test_support::test_streams::charted_intersection_with_approximated_term_stream;
+use crate::test_support::test_streams::charted_intersection_without_uv_stream;
+use crate::test_support::test_streams::intersection_curve_topology_partition_stream;
+use crate::test_support::test_streams::offset_surface_topology_partition_stream;
+use crate::test_support::test_streams::partial_ext11_charted_intersection_curve_stream;
+use crate::test_support::test_streams::pcurve_topology_partition_stream;
+use crate::test_support::test_streams::prt_with_ext11_intersection;
+use crate::test_support::test_streams::surface_curve_topology_partition_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream;
+use crate::test_support::test_streams::two_support_charted_intersection_curve_stream_with_second_plane_axis;
+use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 use cadmpeg_ir::annotations::StreamHandle;
 
 use std::io::Cursor;
@@ -21,7 +42,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-use crate::test_support::*;
 use crate::NxCodec;
 
 #[test]

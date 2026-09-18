@@ -6,7 +6,27 @@
 #![allow(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
-use crate::test_support::*;
+use crate::test_support::test_bytes::encoded_xmt;
+use crate::test_support::test_bytes::put_f64;
+use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::put_vec3;
+use crate::test_support::test_bytes::record;
+use crate::test_support::test_deltas::bspline_partition_stream;
+use crate::test_support::test_deltas::deltas_blend_surface_partition_stream;
+use crate::test_support::test_deltas::deltas_bspline_curve_wrapper_stream;
+use crate::test_support::test_deltas::deltas_offset_surface_partition_stream;
+use crate::test_support::test_deltas::deltas_surface_curve_partition_stream;
+use crate::test_support::test_deltas::deltas_trimmed_curve_partition_stream;
+use crate::test_support::test_deltas::status_framed_deltas_intersection_stream;
+use crate::test_support::test_deltas::status_framed_deltas_point_stream;
+use crate::test_support::test_streams::blend_bound_charted_intersection_curve_stream;
+use crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream;
+use crate::test_support::test_streams::deltas_intersection_curve_stream;
+use crate::test_support::test_streams::ext11_charted_intersection_curve_stream;
+use crate::test_support::test_streams::ext11_intersection_deltas;
+use crate::test_support::test_streams::partial_ext11_charted_intersection_curve_stream;
+use crate::test_support::test_streams::topology_partition_stream;
+use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 
 pub(crate) fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     let mut revision = Vec::with_capacity(32);
@@ -714,7 +734,7 @@ fn deltas_point_normalizes_to_partition_record_framing() {
         .into_events()
         .records
         .remove(0);
-    let mut expected = crate::test_support::record(29, 40);
+    let mut expected = crate::test_support::test_bytes::record(29, 40);
     put_ref(&mut expected, 2, 50);
     expected[4..8].copy_from_slice(&900u32.to_be_bytes());
     for at in [8, 10, 12, 14] {
