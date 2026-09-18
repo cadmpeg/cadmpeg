@@ -5,7 +5,9 @@ use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
 
-use crate::native::{AttachmentRecord, LinkTarget, ObjectRecord, PropertyRecord};
+use crate::native::{
+    sole_named_property, AttachmentRecord, LinkTarget, ObjectRecord, PropertyRecord,
+};
 
 const MAP_MODE_NAMES: &[&str] = &[
     "Deactivated",
@@ -129,10 +131,15 @@ pub(crate) fn transfer(
             let Some(owned) = by_owner.get(object.id.as_str()) else {
                 return Ok(None);
             };
-            let support = unique_property(owned, "AttachmentSupport")?;
-            let mode = unique_property(owned, "MapMode")?;
-            let placement = placement_matrix(unique_property(owned, "Placement")?)?;
-            let offset = placement_matrix(unique_property(owned, "AttachmentOffset")?)?;
+            let support = sole_named_property("attachment", owned, "AttachmentSupport")?;
+            let mode = sole_named_property("attachment", owned, "MapMode")?;
+            let placement =
+                placement_matrix(sole_named_property("attachment", owned, "Placement")?)?;
+            let offset = placement_matrix(sole_named_property(
+                "attachment",
+                owned,
+                "AttachmentOffset",
+            )?)?;
             if support.is_none() && mode.is_none() && placement.is_none() && offset.is_none() {
                 return Ok(None);
             }
@@ -161,18 +168,6 @@ pub(crate) fn effective_frame(
         (None, Some(offset)) => offset,
         (None, None) => IDENTITY,
     }
-}
-
-fn unique_property<'a>(
-    properties: &[&'a PropertyRecord],
-    name: &str,
-) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
-        .map_err(|_| {
-            CodecError::malformed(format_args!(
-                "attachment property {name} occurs more than once"
-            ))
-        })
 }
 
 fn placement_matrix(

@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
-use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
+use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
@@ -27,8 +27,8 @@ pub(crate) fn transfer(
             .get(object.id.as_str())
             .cloned()
             .unwrap_or_default();
-        let grounded_property = unique_property(&owned, "ObjectToGround")?;
-        let joint_type_property = unique_property(&owned, "JointType")?;
+        let grounded_property = sole_named_property("joint", &owned, "ObjectToGround")?;
+        let joint_type_property = sole_named_property("joint", &owned, "JointType")?;
         if grounded_property.is_some() && joint_type_property.is_some() {
             return Err(CodecError::malformed(format_args!(
                 "joint object {} carries both ObjectToGround and JointType",
@@ -515,16 +515,6 @@ fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecEr
     Ok(Some(value))
 }
 
-fn unique_property<'a>(
-    properties: &[&'a PropertyRecord],
-    name: &str,
-) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    crate::native::unique_property(properties.iter().copied(), |property| property.name == name)
-        .map_err(|_| {
-            CodecError::malformed(format_args!("joint property {name} occurs more than once"))
-        })
-}
-
 fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkTarget> {
     properties
         .iter()
@@ -545,7 +535,7 @@ fn connector(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("joint", properties, name)? else {
         return Err(malformed(format!("joint connector {name} is missing")));
     };
     if !matches!(
@@ -581,7 +571,7 @@ fn placement(
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<crate::native::frame::FiniteFrame>, CodecError> {
-    let Some(property) = unique_property(properties, name)? else {
+    let Some(property) = sole_named_property("joint", properties, name)? else {
         return Ok(None);
     };
     crate::product::placement_matrix(property)

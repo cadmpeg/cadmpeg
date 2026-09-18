@@ -9,6 +9,7 @@ use crate::attachment::MapModeIndex;
 use frame::{FiniteFrame, FiniteVec3};
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityError, IdentityKey};
 use serde::{Deserialize, Serialize};
@@ -2451,6 +2452,22 @@ where
         return Err(DuplicateProperty);
     }
     Ok(property)
+}
+
+/// Returns the sole property with a name.
+///
+/// `owner` is the noun that names the property carrier in the duplicate
+/// diagnostic.
+pub(crate) fn sole_named_property<'a>(
+    owner: &str,
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    unique_property(properties.iter().copied(), |property| property.name == name).map_err(|_| {
+        CodecError::malformed(format_args!(
+            "{owner} property {name} occurs more than once"
+        ))
+    })
 }
 
 /// Reads a `FreeCAD` boolean property text, which is `true`, `false`, `1` or `0`.
