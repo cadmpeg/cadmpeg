@@ -300,6 +300,13 @@ impl<'a> Cursor<'a> {
         crate::reader::i32(&mut self.source, field)
     }
 
+    pub(crate) fn u32_array<const N: usize>(
+        &mut self,
+        field: &'static str,
+    ) -> Result<[u32; N], CodecError> {
+        crate::reader::u32_array(&mut self.source, field)
+    }
+
     pub(crate) fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
         let value = self.source.req_f64_le()?;
         if !value.is_finite() {

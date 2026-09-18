@@ -788,19 +788,11 @@ impl<'a> MetaCursor<'a> {
     }
 
     fn u32_array<const N: usize>(&mut self, what: &'static str) -> Result<[u32; N], CodecError> {
-        let mut values = [0; N];
-        for value in &mut values {
-            *value = self.u32(what)?;
-        }
-        Ok(values)
+        crate::reader::u32_array(&mut self.source, what)
     }
 
     fn u16_array<const N: usize>(&mut self, what: &'static str) -> Result<[u16; N], CodecError> {
-        let mut values = [0; N];
-        for value in &mut values {
-            *value = self.u16(what)?;
-        }
-        Ok(values)
+        crate::reader::u16_array(&mut self.source, what)
     }
 
     fn length(&mut self, what: &'static str, width: usize) -> Result<usize, CodecError> {

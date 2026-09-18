@@ -354,19 +354,11 @@ impl<'a> Cursor<'a> {
     }
 
     fn u16_array<const N: usize>(&mut self, field: &'static str) -> Result<[u16; N], CodecError> {
-        let mut values = [0; N];
-        for value in &mut values {
-            *value = self.u16(field)?;
-        }
-        Ok(values)
+        crate::reader::u16_array(&mut self.source, field)
     }
 
     fn u32_array<const N: usize>(&mut self, field: &'static str) -> Result<[u32; N], CodecError> {
-        let mut values = [0; N];
-        for value in &mut values {
-            *value = self.u32(field)?;
-        }
-        Ok(values)
+        crate::reader::u32_array(&mut self.source, field)
     }
 
     fn version(&mut self, field: &'static str) -> Result<VersionTuple, CodecError> {
