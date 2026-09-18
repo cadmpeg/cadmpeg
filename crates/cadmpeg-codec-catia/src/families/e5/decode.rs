@@ -2162,7 +2162,6 @@ pub(crate) fn e5_pcurve_on_surface(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
     let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
-    let finite_point3 = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
     let surface = &decoded_surface.geometry;
     match pcurve {
         crate::families::e5::graph::E5Pcurve::Line {
@@ -2193,7 +2192,7 @@ pub(crate) fn e5_pcurve_on_surface(
             }
             let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
             let endpoints = [lifted[0]?, lifted[1]?];
-            if !endpoints.iter().copied().all(finite_point3) {
+            if !endpoints.iter().copied().all(crate::nurbs::finite_point3) {
                 return None;
             }
             Some((
@@ -2247,7 +2246,7 @@ pub(crate) fn e5_pcurve_on_surface(
                 )
             });
             let endpoints = [endpoints[0]?, endpoints[1]?];
-            if !endpoints.iter().copied().all(finite_point3) {
+            if !endpoints.iter().copied().all(crate::nurbs::finite_point3) {
                 return None;
             }
             Some((geometry, angular_range, endpoints))
@@ -2320,7 +2319,7 @@ pub(crate) fn e5_pcurve_on_surface(
             let endpoints = [*points.first()?, *points.last()?]
                 .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]));
             let endpoints = [endpoints[0]?, endpoints[1]?];
-            if !endpoints.iter().copied().all(finite_point3) {
+            if !endpoints.iter().copied().all(crate::nurbs::finite_point3) {
                 return None;
             }
             Some((geometry, *range, endpoints))
@@ -2365,7 +2364,7 @@ pub(crate) fn e5_pcurve_on_surface(
             let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
             let endpoints = lifted[0].zip(lifted[1])?;
             let endpoints = [endpoints.0, endpoints.1];
-            if !endpoints.iter().copied().all(finite_point3) {
+            if !endpoints.iter().copied().all(crate::nurbs::finite_point3) {
                 return None;
             }
             Some((geometry, *range, endpoints))

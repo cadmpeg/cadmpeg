@@ -7,6 +7,7 @@ use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 
 use super::records::ZeroEntitySupportRun;
+use crate::solve::union_find::UnionFind;
 
 const MODEL_POINT_TOLERANCE: f64 = 2e-3;
 pub(crate) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
@@ -155,7 +156,7 @@ fn endpoint_pair_candidates_inner(
         .enumerate()
         .map(|(index, ordinal)| (ordinal, index))
         .collect::<HashMap<_, _>>();
-    let mut face_components = DisjointSet::new(face_indices.len());
+    let mut face_components = UnionFind::new(face_indices.len());
     for (index, neighbors) in radial_matches.iter().enumerate() {
         let [neighbor] = neighbors.as_slice() else {
             continue;
@@ -437,33 +438,6 @@ fn unordered_endpoint_pairs_match(left: [Point3; 2], right: [Point3; 2]) -> bool
     let direct = left[0].distance(right[0]).max(left[1].distance(right[1]));
     let reversed = left[0].distance(right[1]).max(left[1].distance(right[0]));
     direct.min(reversed) <= MODEL_POINT_TOLERANCE
-}
-
-struct DisjointSet {
-    parents: Vec<usize>,
-}
-
-impl DisjointSet {
-    fn new(len: usize) -> Self {
-        Self {
-            parents: (0..len).collect(),
-        }
-    }
-
-    fn find(&mut self, index: usize) -> usize {
-        if self.parents[index] != index {
-            self.parents[index] = self.find(self.parents[index]);
-        }
-        self.parents[index]
-    }
-
-    fn union(&mut self, left: usize, right: usize) {
-        let left = self.find(left);
-        let right = self.find(right);
-        if left != right {
-            self.parents[right] = left;
-        }
-    }
 }
 
 #[cfg(test)]
