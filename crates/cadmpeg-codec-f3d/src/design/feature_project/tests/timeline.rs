@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::design::feature_project::{ScopeHistoryBinding, ScopeHistoryGraph};
 use crate::design::test_support::parameter_record;
@@ -335,7 +335,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         std::num::NonZeroU64::new(17).unwrap(),
     )
     .unwrap();
-    let mut parameter = parse_design_parameter(&parameter_record(
+    let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(40),
         "1 mm",
         "FeatureInput",
@@ -942,7 +942,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));
     let successor = scope(22, 100, "Chamfer", Some(11), Some(10));
     let parameter = |owner_record_index, record_index, expression: &str, name: &str| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             Some(owner_record_index),
             expression,
             "FeatureInput",

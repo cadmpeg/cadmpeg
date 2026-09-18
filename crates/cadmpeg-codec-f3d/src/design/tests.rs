@@ -9,7 +9,7 @@
 
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::project_parameter_design;
@@ -152,7 +152,7 @@ fn parameter_identity_uses_stream_and_native_record_index() {
 
 #[test]
 fn parameter_identity_distinguishes_repeated_source_ordinals() {
-    let mut first = parse_design_parameter(&parameter_record(
+    let mut first = parse_design_parameter_record(&parameter_record(
         Some(40),
         "1 cm",
         "AlongDistance",
@@ -390,7 +390,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     );
 
     let parameter = |stream: &str, record_index, name: &str, expression: &str| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             None,
             expression,
             "User Parameter",

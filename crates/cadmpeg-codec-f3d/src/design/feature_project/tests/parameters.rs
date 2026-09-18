@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::dimensions::expression_identifiers;
 use crate::design::feature_project::project_parameter_design;
@@ -20,7 +20,7 @@ use cadmpeg_ir::scalar::Length;
 
 #[test]
 fn user_parameters_project_in_source_order_with_units_and_dependencies() {
-    let mut width = parse_design_parameter(&parameter_record(
+    let mut width = parse_design_parameter_record(&parameter_record(
         None,
         "60 mm",
         "User Parameter",
@@ -32,7 +32,7 @@ fn user_parameters_project_in_source_order_with_units_and_dependencies() {
     width.id = "f3d:native:parameter#width".into();
     width.record_index = 20;
     width.source_ordinal = 4;
-    let mut half = parse_design_parameter(&parameter_record(
+    let mut half = parse_design_parameter_record(&parameter_record(
         None,
         "Width / 2",
         "User Parameter",
@@ -70,7 +70,7 @@ fn parameters_project_all_design_database_unit_tokens() {
         .into_iter()
         .enumerate()
         .map(|(ordinal, unit)| {
-            let mut parameter = parse_design_parameter(&parameter_record(
+            let mut parameter = parse_design_parameter_record(&parameter_record(
                 None,
                 "value",
                 "User Parameter",
@@ -86,7 +86,7 @@ fn parameters_project_all_design_database_unit_tokens() {
         })
         .collect::<Vec<_>>();
     native.reverse();
-    let mut unclassified = parse_design_parameter(&parameter_record(
+    let mut unclassified = parse_design_parameter_record(&parameter_record(
         None,
         "value",
         "User Parameter",
@@ -146,7 +146,7 @@ fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
         [name]
     );
     let parameter = |record_index, source_ordinal, expression: &str, name: &str| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             None,
             expression,
             "User Parameter",
@@ -202,7 +202,7 @@ fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
 
 #[test]
 fn owned_parameter_projects_under_its_real_scope_feature() {
-    let mut parameter = parse_design_parameter(&parameter_record(
+    let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(44),
         "60 mm",
         "AlongDistance",
@@ -316,7 +316,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
 
 #[test]
 fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
-    let mut parameter = parse_design_parameter(&parameter_record(
+    let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(44),
         "60 mm",
         "AlongDistance",
@@ -359,7 +359,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
 #[test]
 fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let parameter = |owner, record_index, expression: &str, name: &str| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             owner,
             expression,
             if owner.is_some() {
@@ -530,7 +530,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
 #[test]
 fn parameter_expressions_project_feature_dependencies() {
     let parameter = |owner_record_index, record_index, name: &str, expression: &str| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             Some(owner_record_index),
             expression,
             "AlongDistance",

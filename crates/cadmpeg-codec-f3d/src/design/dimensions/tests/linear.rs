@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::project_dimension_constraints;
 use super::project_spatial_dimension_constraints;
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::directional_point_dimension;
 use crate::design::dimensions::exact_counted_dimension_relation;
 use crate::design::dimensions::repeated_linear_dimension;
@@ -33,7 +33,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     const DOCUMENT_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
     let dimension = |source_kind: &str, unit: &str| {
-        parse_design_parameter(&parameter_record(
+        parse_design_parameter_record(&parameter_record(
             Some(44),
             "value",
             source_kind,
@@ -393,7 +393,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         role: 0,
         role_offset: 0,
     };
-    let tangent_span = parse_design_parameter(&parameter_record(
+    let tangent_span = parse_design_parameter_record(&parameter_record(
         Some(44),
         "10.16",
         "Tangent Dimension-2",
@@ -415,7 +415,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             if entities.len() == 2
     ));
 
-    let tangent_radius = parse_design_parameter(&parameter_record(
+    let tangent_radius = parse_design_parameter_record(&parameter_record(
         Some(45),
         "1.27",
         "Tangent Dimension-2",
@@ -448,7 +448,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities.len() == 2
     ));
-    let ambiguous_tangent = parse_design_parameter(&parameter_record(
+    let ambiguous_tangent = parse_design_parameter_record(&parameter_record(
         Some(47),
         "3.81",
         "Tangent Dimension-2",
@@ -470,7 +470,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         .is_none()
     );
 
-    let point_distance = parse_design_parameter(&parameter_record(
+    let point_distance = parse_design_parameter_record(&parameter_record(
         Some(46),
         "0.381",
         "Linear Dimension-2",
@@ -519,7 +519,7 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
         })
         .unwrap(),
     );
-    let parameter = parse_design_parameter(&parameter_record(
+    let parameter = parse_design_parameter_record(&parameter_record(
         Some(44),
         "value",
         "Linear Dimension-3",

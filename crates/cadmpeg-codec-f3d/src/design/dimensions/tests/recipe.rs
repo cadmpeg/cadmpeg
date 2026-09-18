@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::project_dimension_constraints;
-use crate::design::decode::parameters::parse_design_parameter_record as parse_design_parameter;
+use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::unresolved_parameter_expression_dependency_count;
 use crate::design::feature_project::project_parameter_design;
 use crate::design::test_support::parameter_record;
@@ -1193,7 +1193,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
 #[test]
 fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
     let parameter = |stream: &str, record_index, expression: &str, name: &str| {
-        let mut parameter = parse_design_parameter(&parameter_record(
+        let mut parameter = parse_design_parameter_record(&parameter_record(
             None,
             expression,
             "User Parameter",
