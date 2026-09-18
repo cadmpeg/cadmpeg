@@ -13,7 +13,7 @@ use cadmpeg_ir::transform::Transform;
 use super::edits::{
     NurbsCurveEdit, NurbsSurfaceEdit, PcurveEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
 };
-use crate::writer::primitives::{finite_vector, unique_knot_count};
+use crate::writer::primitives::unique_knot_count;
 use cadmpeg_asm::brep::attributes::{attribute_chain_color_carrier, DirectColorCarrier};
 use cadmpeg_asm::brep::records::EndpointSlot;
 use cadmpeg_asm::edit::{
@@ -54,8 +54,8 @@ pub(crate) fn valid_edited_nurbs_direction(
 }
 
 pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
-    finite_vector(first)
-        && finite_vector(second)
+    first.is_finite()
+        && second.is_finite()
         && (first.norm() - 1.0).abs() <= EPS_ORTHONORMAL
         && (second.norm() - 1.0).abs() <= EPS_ORTHONORMAL
         && first.dot(second).abs() <= EPS_ORTHONORMAL

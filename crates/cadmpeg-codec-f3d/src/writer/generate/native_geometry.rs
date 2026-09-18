@@ -17,7 +17,7 @@ use super::native_bytes::{
     native_length_prefixed_string, native_point, native_ref, native_string, native_subident,
     native_surface_base, native_u16_string, native_vector,
 };
-use crate::writer::primitives::{finite_point, finite_vector, native_bool, unique_knot_count};
+use crate::writer::primitives::{native_bool, unique_knot_count};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
@@ -4451,7 +4451,7 @@ fn native_interval_curve(
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
-            if !finite_point(*origin) || !finite_vector(*direction) || direction.norm() == 0.0 {
+            if !origin.is_finite() || !direction.is_finite() || direction.norm() == 0.0 {
                 return Err(CodecError::Malformed(
                     "source-less F3D interval line requires finite nonzero geometry".into(),
                 ));
@@ -4520,9 +4520,9 @@ fn native_conic_interval_curve(
     minor_radius: f64,
     parameter_range: [f64; 2],
 ) -> Result<NurbsCurve, CodecError> {
-    if !finite_point(center)
-        || !finite_vector(axis)
-        || !finite_vector(major_direction)
+    if !center.is_finite()
+        || !axis.is_finite()
+        || !major_direction.is_finite()
         || !major_radius.is_finite()
         || !minor_radius.is_finite()
         || axis.norm() == 0.0

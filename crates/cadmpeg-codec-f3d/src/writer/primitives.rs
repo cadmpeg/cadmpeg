@@ -5,7 +5,6 @@
 use crate::native::F3dNative;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 
 pub(crate) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
@@ -87,18 +86,10 @@ pub(crate) fn native_bool(value: bool) -> u8 {
     }
 }
 
-pub(crate) fn finite_point(point: Point3) -> bool {
-    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-}
-
 pub(crate) fn unique_knot_count(knots: &[f64]) -> usize {
     knots
         .iter()
         .enumerate()
         .filter(|(index, value)| *index == 0 || knots[*index - 1] != **value)
         .count()
-}
-
-pub(crate) fn finite_vector(vector: Vector3) -> bool {
-    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
 }
