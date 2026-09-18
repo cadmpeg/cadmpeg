@@ -294,18 +294,28 @@ impl NurbsPoleGrid {
         }
     }
 
-    /// Edit every pole position in place.
-    pub fn edit_points(&mut self, mut edit: impl FnMut(&mut Point3)) {
-        match self {
-            Self::Polynomial { rows } => rows
-                .iter_mut()
-                .for_each(|row| row.iter_mut().for_each(&mut edit)),
+    /// Edit every pole position, keeping the prior positions on a refusal.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
+    pub fn edit_points(
+        &mut self,
+        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
+        let mut candidate = self.clone();
+        match &mut candidate {
+            Self::Polynomial { rows } => {
+                for point in rows.iter_mut().flatten() {
+                    edit(point)?;
+                }
+            }
             Self::Rational { rows } => {
                 for pole in rows.iter_mut().flatten() {
-                    edit(&mut pole.point);
+                    edit(&mut pole.point)?;
                 }
             }
         }
+        *self = candidate;
+        Ok(())
     }
 }
 
@@ -933,9 +943,14 @@ impl NurbsSurface {
     }
 
     /// Atomically edit pole positions and preserve finite coordinates.
-    pub fn edit_control_points(&mut self, edit: impl FnMut(&mut Point3)) -> Result<(), NurbsError> {
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
+    pub fn edit_control_points(
+        &mut self,
+        edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
-        poles.edit_points(edit);
+        poles.edit_points(edit)?;
         poles.require_finite_points()?;
         self.poles = poles;
         Ok(())

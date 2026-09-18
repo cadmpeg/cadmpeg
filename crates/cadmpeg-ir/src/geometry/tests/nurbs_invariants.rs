@@ -255,7 +255,10 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(surface.edit_u_knots(<[f64]>::reverse).is_err());
     assert!(surface.edit_v_knots(|knots| knots[1] = f64::NAN).is_err());
     assert!(surface
-        .edit_control_points(|point| point.y = f64::NEG_INFINITY)
+        .edit_control_points(|point| {
+            point.y = f64::NEG_INFINITY;
+            Ok(())
+        })
         .is_err());
     assert!(surface_weights(&surface, vec![vec![0.0, 1.0], vec![1.0, 1.0]]).is_err());
     assert!(surface_weights(&surface, vec![vec![1.0]]).is_err());
@@ -281,6 +284,25 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(polar_weights(&polar, vec![1.0, -1.0]).is_err());
     assert!(polar_weights(&polar, vec![1.0]).is_err());
     assert_eq!(polar, original);
+}
+
+#[test]
+fn a_refused_surface_pole_edit_keeps_the_prior_poles() {
+    let mut surface = surface();
+    let original = surface.clone();
+    let refusal = surface.edit_control_points(|point| {
+        point.z = 9.0;
+        Err(crate::geometry::NurbsError::EditRefused(
+            "caller refused this pole".into(),
+        ))
+    });
+    assert_eq!(
+        refusal,
+        Err(crate::geometry::NurbsError::EditRefused(
+            "caller refused this pole".into()
+        ))
+    );
+    assert_eq!(surface, original);
 }
 
 #[test]

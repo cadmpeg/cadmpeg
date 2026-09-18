@@ -641,6 +641,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
                 pole.z += 0.000_5;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
 
@@ -896,6 +897,7 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
                 *pole = *source;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     assert!(certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
@@ -914,6 +916,7 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
                 pole.x = 0.0;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     assert_eq!(
@@ -1003,6 +1006,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
             point.x += 1.0e12;
             point.y -= 2.0e12;
             point.z += 3.0e12;
+            Ok(())
         })
         .unwrap();
     let axis_weights = [1.0, 1.01, 1.02];
@@ -1739,6 +1743,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
                 pole.z = 1.0;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     assert!(!coincident_pcurve_pair(

@@ -1554,6 +1554,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     coplanar
         .edit_control_points(|point| {
             point.z = 0.0;
+            Ok(())
         })
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(nurbs_plane_boundary_curve(
@@ -1572,6 +1573,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
             if let Some(value) = restored.next() {
                 *point = value;
             }
+            Ok(())
         })
         .expect("finite fixture geometry preserves NURBS invariants");
     let mut zero_weights = coplanar.weights().expect("rational fixture");

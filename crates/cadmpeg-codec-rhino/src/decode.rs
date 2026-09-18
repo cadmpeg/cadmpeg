@@ -7,9 +7,9 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsError, Pcurve, PcurveGeometry, PcurveNurbs,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
@@ -5437,18 +5437,17 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     );
     surface.geometry = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
-            let mut placed = true;
             nurbs
-                .edit_control_points(|pole| match transform.apply_point(*pole) {
-                    Some(moved) => *pole = moved,
-                    None => placed = false,
+                .edit_control_points(|pole| {
+                    *pole = transform.apply_point(*pole).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "instance control point transform produced a non-finite coordinate"
+                                .to_string(),
+                        )
+                    })?;
+                    Ok(())
                 })
                 .map_err(|error| error.to_string())?;
-            if !placed {
-                return Err(
-                    "instance control point transform produced a non-finite coordinate".to_string(),
-                );
-            }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
