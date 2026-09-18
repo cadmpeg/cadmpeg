@@ -393,10 +393,11 @@ fn counted_section<'a>(
     // `item_size` of 4, 10, 28 and 28, so the payload is at most 28000000
     // bytes, which a 32-bit `usize` holds.
     let payload_len = count * item_size;
-    let payload_start = view.read_len();
-    crate::reader::take(view, payload_len, name)?;
-    // `take` advances by exactly `payload_len` on success, so the window offset
-    // it reached is the payload's exclusive end.
+    // The take states the payload's window: a `payload_len` the section does
+    // not hold is the located truncation, and the window it returns is exactly
+    // the bytes it advanced over. It advances by `payload_len` on success, so
+    // the window offset it reached is the payload's exclusive end.
+    let payload = crate::reader::take_child(view, payload_len, name)?;
     let footer = view.read_len();
     let span = crate::reader::u32(view, name)? as usize;
     let expected_span = 4 + payload_len;
@@ -405,7 +406,7 @@ fn counted_section<'a>(
             "RSe metadata {name} spans {span} bytes, expected {expected_span}"
         )));
     }
-    Ok((count, child(*view, payload_start, footer, name)?, footer))
+    Ok((count, payload, footer))
 }
 
 fn validate_reverse_section(
@@ -522,10 +523,15 @@ fn parse_extended_record_trailer(
 /// Every caller states both bounds as positions the parent's cursor reached, or
 /// as multiples of one entry size inside a payload of that many entries, so the
 /// bounds are ordered and inside the window and the refusal has no reaching
-/// input. It stands because `View::child` states containment as an `Option`;
-/// `cadmpeg-core` holds no operation that yields a taken window as a `View`.
-/// The two sums are total for the same reason: `parent.start()` plus the
-/// window's length is `parent.end()`, and neither bound passes that length.
+/// input. It stands because each remaining caller carves a span whose length is
+/// not the count of a take at the cursor: the type descriptor indexes a
+/// retained payload, the record trailer spans from a saved position to the one
+/// a variable-length parse reached, the stream trailer spans to the window's
+/// end, and the metadata section payload takes both bounds from the backward
+/// section chain. A caller that does hold that count takes the window itself
+/// with `reader::take_child`, where the take is the whole proof. The two sums
+/// are total because `parent.start()` plus the window's length is
+/// `parent.end()`, and neither bound passes that length.
 fn child<'a>(
     parent: View<'a>,
     start: usize,
@@ -620,14 +626,10 @@ impl<'a> Cursor<'a> {
     }
 
     fn view(&mut self, len: usize, name: &'static str) -> Result<View<'a>, CodecError> {
-        let start = self.position();
         // The take proves the range with no arithmetic: a `len` the window does
-        // not hold is the located truncation it states, on every target. It
-        // advances by exactly `len` on success, so the window offset it reached
-        // is the taken range's exclusive end.
-        crate::reader::take(&mut self.source, len, name)?;
-        let end = self.position();
-        child(self.source, start, end, name)
+        // not hold is the located truncation it states, on every target, and
+        // the window it returns is exactly the bytes it advanced over.
+        crate::reader::take_child(&mut self.source, len, name)
     }
 
     fn sized_bytes(&mut self, maximum: usize, name: &'static str) -> Result<(), CodecError> {
