@@ -16,6 +16,7 @@ use crate::chunks::{
     BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
+use crate::instances::hex;
 use crate::loss::RhinoLossCode;
 use crate::objects::{
     apply_attribute_userdata, parse_attribute_userdata, parse_attributes, parse_class_wrapper,
@@ -1268,16 +1269,6 @@ fn object_attributes_presentation(
             .as_ref()
             .map(mesh_modifiers_record),
     }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut value = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
-        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
-    }
-    value
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {

@@ -13,6 +13,7 @@ use crate::chunks::{
     ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_ENDOFTABLE,
 };
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
+use crate::instances::hex;
 use crate::objects::parse_userdata;
 use crate::settings::{plane, utf16, Plane, UnitBinding};
 use crate::wire::{scaled_coordinate, Uuid};
@@ -286,16 +287,6 @@ fn scaled_plane(mut value: Plane, scale: f64, offset: usize) -> Result<Plane, Fr
     value.equation[3] = scaled_coordinate(value.equation[3], scale)
         .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
     Ok(value)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut value = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
-        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
-    }
-    value
 }
 
 fn image_reference<'a>(
