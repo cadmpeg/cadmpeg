@@ -5,15 +5,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 
-pub(super) fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-    let mut wire = serde_json::json!({});
-    wire[key] = serde_json::Value::Null;
-    let Err(refused) = serde_json::from_value::<T>(wire) else {
-        panic!("{key}: null was admitted")
-    };
-    refused.to_string()
-}
-
 pub(super) fn states_the_key(key: &str, message: &str) {
     assert!(
         message.starts_with(&format!("{key}: ")),

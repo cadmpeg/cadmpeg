@@ -49,14 +49,7 @@ fn coil_recipe_design_wire_refuses_a_null_design_key() {
 /// one. The key reaches the refusal because the reading declaration states it.
 #[test]
 fn a_flattened_coil_reader_names_the_null_key_it_refuses() {
-    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-        let mut wire = serde_json::json!({});
-        wire[key] = serde_json::Value::Null;
-        let Err(refused) = serde_json::from_value::<T>(wire) else {
-            panic!("{key}: null was admitted")
-        };
-        refused.to_string()
-    }
+    use crate::records::test_support::refusal;
 
     #[derive(serde::Deserialize)]
     struct Secondary {
