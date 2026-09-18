@@ -65,6 +65,7 @@ jobs:
           set -euo pipefail
           python3 -m unittest -q scripts/test_pre_commit.py
           python3 -m unittest -v scripts/test_check_source_policy.py
+          python3 -m unittest -v scripts/test_check_fuzz_seeds.py
           python3 scripts/check-source-policy.py
           python3 scripts/check-deny-census.py
 

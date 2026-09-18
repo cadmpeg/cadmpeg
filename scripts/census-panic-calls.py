@@ -64,7 +64,6 @@ TEST_ONLY_CRATES = {
 EXPECT_CALL = re.compile(r"\.\s*expect\s*\(")
 BARE_UNWRAP = re.compile(r"\.\s*unwrap\s*\(\s*\)")
 INCLUDE = re.compile(r'include!\s*\(\s*"([^"]+)"\s*\)')
-SEED_GENERATOR = "crates/cadmpeg-fuzz/src/bin/generate_all_seeds.rs"
 
 
 def scope() -> list[Path]:
@@ -347,7 +346,7 @@ def census_panic_calls(listing: bool = False, check: bool = False) -> int:
         macro_sites = panic_macro_sites(code)
         if macro_sites:
             macro_buckets[relative] = len(macro_sites)
-        if relative != SEED_GENERATOR and test_only_reason(relative) is None:
+        if test_only_reason(relative) is None:
             remaining_calls += len(PANIC_CALL.findall(code)) + len(macro_sites)
     print("census: .expect( and .unwrap( in crate source")
     print(f"scope: crates/*/src/**/*.rs, {files_in_scope} files")
@@ -364,7 +363,6 @@ def census_panic_calls(listing: bool = False, check: bool = False) -> int:
     for relative, count in sorted(macro_buckets.items()):
         print(f"  {relative} {count}")
     if check:
-        print(f"check excludes the seed-generation tool: {SEED_GENERATOR}")
         for crate, reason in sorted(TEST_ONLY_CRATES.items()):
             print(f"check excludes {crate}: {reason}")
         print(f"remaining production panic calls: {remaining_calls}")
@@ -389,7 +387,7 @@ def main() -> int:
     parser.add_argument(
         "--check", action="store_true",
         help="fail on production expect/unwrap calls and runtime panic!/unreachable! sites, "
-             "except the declared seed-generation tool and the declared test-only crates",
+             "except the declared test-only crates",
     )
     arguments = parser.parse_args()
     if arguments.check and arguments.pattern is not None:
