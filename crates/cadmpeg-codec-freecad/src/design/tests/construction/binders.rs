@@ -1,5 +1,6 @@
 //! Carrier admission tests for shape binders.
 
+use crate::design::tests::definition;
 use crate::test_support::test_archive::archive;
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -121,21 +122,6 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
                 &DecodeOptions::default(),
             )
             .expect("shape binder carriers")
-    }
-
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
     }
 
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str) {

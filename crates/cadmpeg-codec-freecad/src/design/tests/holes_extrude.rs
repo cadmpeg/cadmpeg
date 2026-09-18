@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design holes-extrude transfer unit tests.
 
+use crate::design::tests::{definition, extrusion_definition};
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{
@@ -12,6 +13,19 @@ use cadmpeg_ir::{
 };
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
+
+/// Definition of the single `Hole` feature.
+fn hole_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
+    result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hole"))
+        .expect("hole feature")
+        .evaluation
+        .definition()
+}
 
 #[test]
 pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
@@ -155,21 +169,6 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
 
 #[test]
 fn distinguishes_absent_and_malformed_hole_enumerations() {
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    }
-
     let hole_document = |target: &str, type_name: &str, value: &str| {
         let property = if target.is_empty() {
             String::new()
@@ -256,18 +255,6 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
 
 #[test]
 fn uses_only_direct_custom_hole_enumeration_labels() {
-    fn hole_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Hole"))
-            .expect("hole feature")
-            .evaluation
-            .definition()
-    }
-
     fn retains_thread_size_property(
         result: &cadmpeg_ir::codec::DecodeResult,
         raw_value: &str,
@@ -395,18 +382,6 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
 
 #[test]
 fn distinguishes_absent_and_malformed_hole_flags() {
-    fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Hole"))
-            .expect("hole feature")
-            .evaluation
-            .definition()
-    }
-
     let base_properties = [
         (
             "BaseProfileType",
@@ -480,7 +455,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     };
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
         assert!(matches!(
-            definition(result),
+            hole_definition(result),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Hole"
         ));
         assert_eq!(result.report().losses.len(), 1);
@@ -511,7 +486,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             shape,
             allow_multi_profile_faces,
             ..
-        }) = definition(&result)
+        }) = hole_definition(&result)
         else {
             panic!("{target} absent carrier");
         };
@@ -608,7 +583,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             shape,
             allow_multi_profile_faces,
             ..
-        }) = definition(&result)
+        }) = hole_definition(&result)
         else {
             panic!("{target} valid carrier");
         };
@@ -731,7 +706,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     ));
     assert!(high_bits.report().losses.is_empty());
     assert!(matches!(
-        definition(&high_bits),
+        hole_definition(&high_bits),
         FeatureDefinition::Operation(FeatureOperation::Hole {
             profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter::PointsAndCircles),
             ..
@@ -1112,20 +1087,6 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
 
 #[test]
 fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
-    fn extrusion_definition(
-        result: &cadmpeg_ir::codec::DecodeResult,
-    ) -> &cadmpeg_ir::features::FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Extrusion"))
-            .expect("extrusion feature")
-            .evaluation
-            .definition()
-    }
-
     let malformed_values = [
         "<Integer value=\"bad\"/>",
         "<String value=\"0\"/>",
@@ -1525,21 +1486,6 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
 
 #[test]
 fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
-    fn feature_definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    }
-
     fn flag_document(target: &str, replacement: Option<&str>) -> String {
         let property = |name: &str, value: &str| {
             if target == name {
@@ -1579,7 +1525,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
 
     fn assert_typed(result: &cadmpeg_ir::codec::DecodeResult, name: &str) {
         assert!(matches!(
-            feature_definition(result, name),
+            definition(result, name),
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
         ));
         assert_valid_document(result.ir());
@@ -1612,7 +1558,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "Midplane" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
+                        definition(&absent, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             extent: ExtrudeExtent::OneSided { .. },
                             ..
@@ -1623,7 +1569,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "AlongSketchNormal" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
+                        definition(&absent, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             length_along_profile_normal: Some(true),
                             ..
@@ -1634,7 +1580,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "AllowMultiFace" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
+                        definition(&absent, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             allow_multi_profile_faces: Some(false),
                             ..
@@ -1645,7 +1591,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "Reversed" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
+                        definition(&absent, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
@@ -1659,7 +1605,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "UseCustomVector" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&absent, name),
+                        definition(&absent, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
@@ -1696,7 +1642,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "Midplane" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
+                        definition(&valid, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             extent: ExtrudeExtent::Symmetric { .. },
                             ..
@@ -1707,7 +1653,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "AlongSketchNormal" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
+                        definition(&valid, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             length_along_profile_normal: Some(false),
                             ..
@@ -1718,7 +1664,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "AllowMultiFace" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
+                        definition(&valid, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             allow_multi_profile_faces: Some(true),
                             ..
@@ -1729,7 +1675,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "Reversed" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
+                        definition(&valid, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
@@ -1743,7 +1689,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             "UseCustomVector" => {
                 for name in ["Pad", "Pocket"] {
                     assert!(matches!(
-                        feature_definition(&valid, name),
+                        definition(&valid, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                                 vector: direction,
@@ -1767,7 +1713,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 .expect("malformed extrusion flag");
             for name in ["Pad", "Pocket"] {
                 assert!(matches!(
-                    feature_definition(&result, name),
+                    definition(&result, name),
                     FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == format!("PartDesign::{name}")
                 ));
             }

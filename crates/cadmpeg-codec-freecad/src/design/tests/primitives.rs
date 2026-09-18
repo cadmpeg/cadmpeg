@@ -3,6 +3,7 @@
 
 const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
+use crate::design::tests::{definition, extrusion_definition};
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{
@@ -131,21 +132,6 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
 
 #[test]
 fn distinguishes_absent_and_malformed_dress_up_flags() {
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    }
-
     fn document(target: &str, replacement: Option<&str>) -> String {
         let property = |name: &str, value: &str, include: bool| {
             if !include {
@@ -341,18 +327,6 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
 
 #[test]
 fn distinguishes_absent_and_malformed_part_extrusion_flags() {
-    fn definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Extrusion"))
-            .expect("extrusion feature")
-            .evaluation
-            .definition()
-    }
-
     let base_properties = [
         (
             "Solid",
@@ -394,7 +368,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     };
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
         assert!(matches!(
-            definition(result),
+            extrusion_definition(result),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::Extrusion"
         ));
         assert_eq!(result.report().losses.len(), 1);
@@ -413,7 +387,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
             extent,
             solid,
             ..
-        }) = definition(&result)
+        }) = extrusion_definition(&result)
         else {
             panic!("{target} absent carrier");
         };
@@ -454,7 +428,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
             extent,
             solid,
             ..
-        }) = definition(&result)
+        }) = extrusion_definition(&result)
         else {
             panic!("{target} valid carrier");
         };
@@ -500,21 +474,6 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
 
 #[test]
 fn distinguishes_absent_and_malformed_revolution_flags() {
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    }
-
     let part_design_flags = [
         (
             "Midplane",
@@ -1379,21 +1338,6 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
             additive_count = additive.matches("<Property ").count(),
             subtractive_count = subtractive.matches("<Property ").count(),
         )
-    }
-
-    fn definition<'a>(
-        result: &'a cadmpeg_ir::codec::DecodeResult,
-        name: &str,
-    ) -> &'a FeatureDefinition {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
     }
 
     let decode = |document: &str| {
