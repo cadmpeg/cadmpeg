@@ -4,16 +4,18 @@
 
 use super::{make_block, sldprt_with_body};
 
+/// Build a display-list descriptor header followed by its payload bytes.
+pub(crate) fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend(item_size.to_le_bytes());
+    out.extend(kind.to_le_bytes());
+    out.extend(2_u32.to_le_bytes());
+    out.extend(count.to_le_bytes());
+    out.extend(data);
+    out
+}
+
 pub(crate) fn display_list_payload() -> Vec<u8> {
-    fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(&item_size.to_le_bytes());
-        b.extend_from_slice(&kind.to_le_bytes());
-        b.extend_from_slice(&2u32.to_le_bytes());
-        b.extend_from_slice(&count.to_le_bytes());
-        b.extend_from_slice(data);
-        b
-    }
     let mut b = b"uoTempBodyTessData_c".to_vec();
     b.extend_from_slice(&[0u8; 8]);
     b.extend_from_slice(b"uoTempFaceTessData_c");

@@ -53,6 +53,7 @@ use crate::test_support::extended_display_list_payload;
 use crate::test_support::make_block;
 use crate::test_support::sldprt_with_body;
 use crate::test_support::sldprt_with_body_and_display_list;
+use crate::test_support::tessellation::descriptor;
 use crate::test_support::triangle_body;
 use cadmpeg_ir::geometry::{Curve, NurbsSurface, Surface};
 use cadmpeg_ir::ids::{
@@ -65,16 +66,6 @@ use cadmpeg_ir::topology::{
 };
 
 mod display_tables;
-
-fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend(item_size.to_le_bytes());
-    out.extend(kind.to_le_bytes());
-    out.extend(2_u32.to_le_bytes());
-    out.extend(count.to_le_bytes());
-    out.extend(data);
-    out
-}
 
 fn table() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());

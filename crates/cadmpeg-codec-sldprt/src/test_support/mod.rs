@@ -27,8 +27,8 @@ mod history;
 mod ir;
 mod native;
 mod parasolid;
-mod pmi;
-mod tessellation;
+pub(crate) mod pmi;
+pub(crate) mod tessellation;
 
 pub(crate) use appearance::{material_payload, sldprt_with_body_and_material};
 pub(crate) use container::{

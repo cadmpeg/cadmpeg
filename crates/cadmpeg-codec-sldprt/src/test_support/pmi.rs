@@ -2,6 +2,25 @@
 //! Synthetic PMI semantic-map byte builders for crate tests.
 #![allow(clippy::unwrap_used)]
 
+/// Append a msgpack fixstr header and its bytes.
+pub(crate) fn fixstr(bytes: &mut Vec<u8>, value: &str) {
+    assert!(value.len() < 32);
+    bytes.push(0xa0 | value.len() as u8);
+    bytes.extend_from_slice(value.as_bytes());
+}
+
+/// Append a msgpack fixarray or array16 header.
+pub(crate) fn push_array_header(bytes: &mut Vec<u8>, len: usize) {
+    if len < 16 {
+        bytes.push(0x90 | len as u8);
+    } else if let Ok(len16) = u16::try_from(len) {
+        bytes.push(0xdc);
+        bytes.extend_from_slice(&len16.to_be_bytes());
+    } else {
+        panic!("dimItems length exceeds array16");
+    }
+}
+
 pub(crate) fn pmi_semantic_payload() -> Vec<u8> {
     pmi_semantic_payload_for("D1@Sketch1")
 }
@@ -64,21 +83,6 @@ pub(crate) fn pmi_semantic_payload_record_configured(
     display_text: &str,
     options: PmiPayloadOptions,
 ) -> Vec<u8> {
-    fn string(bytes: &mut Vec<u8>, value: &str) {
-        assert!(value.len() < 32);
-        bytes.push(0xa0 | value.len() as u8);
-        bytes.extend_from_slice(value.as_bytes());
-    }
-    fn push_array_header(bytes: &mut Vec<u8>, len: usize) {
-        if len < 16 {
-            bytes.push(0x90 | len as u8);
-        } else if let Ok(len16) = u16::try_from(len) {
-            bytes.push(0xdc);
-            bytes.extend_from_slice(&len16.to_be_bytes());
-        } else {
-            panic!("dimItems length exceeds array16");
-        }
-    }
     fn push_map_header(bytes: &mut Vec<u8>, len: usize) {
         if len < 16 {
             bytes.push(0x80 | len as u8);
@@ -96,19 +100,19 @@ pub(crate) fn pmi_semantic_payload_record_configured(
     let outer_len = if options.reorder_and_extra_key { 8 } else { 7 };
     push_map_header(&mut payload, outer_len);
     if options.reorder_and_extra_key {
-        string(&mut payload, "cadText");
-        string(&mut payload, cad_text);
-        string(&mut payload, "extraKey");
-        string(&mut payload, "ignored");
-        string(&mut payload, "annoType");
+        fixstr(&mut payload, "cadText");
+        fixstr(&mut payload, cad_text);
+        fixstr(&mut payload, "extraKey");
+        fixstr(&mut payload, "ignored");
+        fixstr(&mut payload, "annoType");
         payload.push(1);
     } else {
-        string(&mut payload, "annoType");
+        fixstr(&mut payload, "annoType");
         payload.push(1);
-        string(&mut payload, "cadText");
-        string(&mut payload, cad_text);
+        fixstr(&mut payload, "cadText");
+        fixstr(&mut payload, cad_text);
     }
-    string(&mut payload, "dimItems");
+    fixstr(&mut payload, "dimItems");
     if options.truncate_after_dim_items_key {
         // Declare one element and stop so the outer map cannot finish.
         push_array_header(&mut payload, 1);
@@ -117,33 +121,33 @@ pub(crate) fn pmi_semantic_payload_record_configured(
     push_array_header(&mut payload, items.len());
     for (subtype, value) in items {
         payload.push(0x87);
-        string(&mut payload, "class");
-        string(&mut payload, "DimSemData");
-        string(&mut payload, "dimSubType");
-        string(&mut payload, subtype);
-        string(&mut payload, "isBasic");
+        fixstr(&mut payload, "class");
+        fixstr(&mut payload, "DimSemData");
+        fixstr(&mut payload, "dimSubType");
+        fixstr(&mut payload, subtype);
+        fixstr(&mut payload, "isBasic");
         payload.push(0xc3);
-        string(&mut payload, "isInspection");
+        fixstr(&mut payload, "isInspection");
         payload.push(0xc2);
-        string(&mut payload, "isReferenceOnly");
+        fixstr(&mut payload, "isReferenceOnly");
         payload.push(0xc3);
-        string(&mut payload, "valPrecision");
+        fixstr(&mut payload, "valPrecision");
         payload.push(3);
-        string(&mut payload, "value");
+        fixstr(&mut payload, "value");
         payload.push(0xcb);
         payload.extend_from_slice(&value.to_be_bytes());
     }
-    string(&mut payload, "dimText");
+    fixstr(&mut payload, "dimText");
     if options.key_like_string_in_value {
-        string(&mut payload, "cadText");
+        fixstr(&mut payload, "cadText");
     } else {
-        string(&mut payload, display_text);
+        fixstr(&mut payload, display_text);
     }
-    string(&mut payload, "dimType");
+    fixstr(&mut payload, "dimType");
     payload.push(0);
-    string(&mut payload, "iDString");
-    string(&mut payload, "native-id");
-    string(&mut payload, "reserved");
+    fixstr(&mut payload, "iDString");
+    fixstr(&mut payload, "native-id");
+    fixstr(&mut payload, "reserved");
     payload.push(0xc0);
     payload
 }
