@@ -46,7 +46,7 @@ use geometry_consistency::{
     check_edge_endpoint_consistency, check_pcurve_surface_consistency,
     check_procedural_support_consistency,
 };
-use geometry_payloads::check_tessellations;
+use geometry_payloads::{check_point_positions, check_tessellations};
 use identity_order::{check_identity_and_order, collect_native_ids};
 use pmi::check_pmi;
 use presentation::check_presentation;
@@ -108,6 +108,7 @@ fn validate_model_with_index(
     check_procedural_support_consistency(ir, &mut findings);
     check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings);
+    check_point_positions(ir, &mut findings);
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);
     check_products(ir, &mut findings);
