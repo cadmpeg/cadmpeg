@@ -331,3 +331,6 @@ pub(crate) fn exact_path_feature_construction(
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

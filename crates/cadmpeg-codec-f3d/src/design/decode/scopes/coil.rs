@@ -733,3 +733,6 @@ pub(super) fn bind_coil_extent_from_parameters(
         }
     }
 }
+
+#[cfg(test)]
+pub(super) mod tests;

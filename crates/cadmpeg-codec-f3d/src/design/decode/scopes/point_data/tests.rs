@@ -5,6 +5,7 @@ use crate::design::test_support::dump::{
     lp_utf16, parse_parameter_scope, DesignParameterScope, DesignRecordHeader, HashMap,
     IndexedRecordOffsets,
 };
+use crate::records::feature::work_geometry::DesignWorkPointRule;
 
 /// A `WorkPoint` scope record, its paired header, and one point-data record
 /// frame: the indexed header, the payload prologue with an optional property
@@ -170,4 +171,362 @@ fn work_point_position_does_not_depend_on_the_segment_local_class_tag() {
             "class tag {class_tag}"
         );
     }
+}
+
+#[test]
+fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
+    let (bytes, scope, position_at) =
+        work_point_stream("282", 3, true, Some(9), [1.25, -2.5, 3.75], 20, 1);
+
+    let frame = exact_work_point_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(work_point_input_indices(&frame.rule), [70]);
+}
+
+#[test]
+fn work_point_position_reads_every_class_version_that_stores_one() {
+    for version in 0..=3 {
+        let (bytes, scope, position_at) =
+            work_point_stream("282", version, false, None, [4.0, 5.0, 6.0], 5, 1);
+
+        let frame = exact_work_point_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .unwrap_or_else(|| panic!("class version {version}"));
+        assert_eq!(frame.position, [4.0, 5.0, 6.0], "class version {version}");
+        assert_eq!(
+            frame.position_offset, position_at as u64,
+            "class version {version}"
+        );
+    }
+}
+
+#[test]
+fn work_point_rejects_a_registered_entity_of_another_type() {
+    // The tag says `282`, but the type table names a different class for
+    // this entity, so the record is not point data whatever its tag reads.
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
+    let records = IndexedRecordOffsets::build(&bytes);
+
+    assert_eq!(
+        exact_work_point_construction(
+            &bytes,
+            &records,
+            &scope,
+            &HashMap::from([(55, ("A0A15D26-1F3B-4120-A3F1-9CDDA189AB74", 2))])
+        ),
+        None
+    );
+}
+
+#[test]
+fn work_point_uses_the_serialized_input_count_for_every_rule() {
+    // The input count is a member of the point-data level. It frames the
+    // run independently of the rule selector, including three-input
+    // constructions.
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 1);
+
+    let records = IndexedRecordOffsets::build(&bytes);
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(work_point_input_indices(&frame.rule), [70]);
+    assert_eq!(frame.rule.reference_type(), 18);
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
+    let frame = exact_work_point_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(work_point_input_indices(&frame.rule), [70, 71]);
+
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 8, 3);
+    let frame = exact_work_point_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(work_point_input_indices(&frame.rule), [70, 71, 72]);
+
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
+    let frame = exact_work_point_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(work_point_input_indices(&frame.rule), [70, 71]);
+}
+
+#[test]
+fn work_point_rule_codes_select_typed_input_arities() {
+    for (reference_type, arity) in [(5, 1), (7, 2), (8, 3), (10, 1), (14, 2), (20, 1)] {
+        let (bytes, scope, _) = work_point_stream(
+            "282",
+            2,
+            false,
+            None,
+            [1.0, 2.0, 3.0],
+            reference_type,
+            arity,
+        );
+        let frame = exact_work_point_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &HashMap::new(),
+        )
+        .expect("work point frame");
+        assert_eq!(frame.rule.reference_type(), reference_type);
+        assert_eq!(u32::try_from(frame.rule.inputs().len()).unwrap(), arity);
+        assert!(match frame.rule.form() {
+            crate::records::feature::work_geometry::DesignWorkPointRuleForm::CircleCenter { .. } =>
+                reference_type == 5,
+            crate::records::feature::work_geometry::DesignWorkPointRuleForm::TwoEdgeIntersection { .. } =>
+                reference_type == 7,
+            crate::records::feature::work_geometry::DesignWorkPointRuleForm::ThreePlaneIntersection { .. } =>
+                reference_type == 8,
+            crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex { .. } => reference_type == 10,
+            crate::records::feature::work_geometry::DesignWorkPointRuleForm::EdgePlaneIntersection { .. } =>
+                reference_type == 14,
+            crate::records::feature::work_geometry::DesignWorkPointRuleForm::DistanceOnEdge { .. } =>
+                reference_type == 20,
+            crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native { .. } => false,
+        });
+    }
+}
+
+#[test]
+fn work_point_rule_code_with_wrong_arity_remains_native() {
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 5, 2);
+    let frame = exact_work_point_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+
+    assert!(matches!(
+        frame.rule.form(),
+        crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
+            reference_type: 5,
+            ref inputs,
+        } if inputs.len() == 2
+    ));
+}
+
+#[test]
+fn work_point_rule_rejects_an_incompatible_input_carrier() {
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
+    let frame = exact_work_point_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    let mut wire = serde_json::to_value(&frame.rule).expect("serialize valid rule");
+
+    wire["inputs"][1]["carrier"] = serde_json::json!({
+        "kind": "edge_recipe", "operand_id": "f3d:native:edge-operand#wrong-role"
+    });
+    assert!(serde_json::from_value::<DesignWorkPointRule>(wire).is_err());
+}
+
+#[test]
+fn work_point_direct_record_carries_model_space_position() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"427");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "WorkPoint");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+
+    let point_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 27]);
+    let position_at = bytes.len();
+    for value in [1.25, -2.5, 3.75] {
+        bytes.extend_from_slice(&f64::to_le_bytes(value));
+    }
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    for _ in 0..3 {
+        bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
+    }
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for target in [56u32, 57] {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    bytes.resize(point_at + 208, 0);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 12,
+        class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    let scope = parse_parameter_scope(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("WorkPoint scope");
+    let frame = exact_work_point_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.rule.reference_type(), 7);
+    assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
+    bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
+    bytes[point_at + 94..point_at + 98].copy_from_slice(&1u32.to_le_bytes());
+    bytes.drain(point_at + 197..point_at + 208);
+    let frame = exact_work_point_construction(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::new(),
+    )
+    .expect("work point frame");
+    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.rule.reference_type(), 1);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
+}
+
+#[test]
+fn work_point_input_count_frames_the_rule_inputs() {
+    // The counted input run is framed by its serialized count. The rule
+    // selector is retained independently and does not impose a fixed arity.
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"427");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "WorkPoint");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 11]);
+
+    let point_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 27]);
+    let position_at = bytes.len();
+    for value in [4.0, 5.0, 6.0] {
+        bytes.extend_from_slice(&f64::to_le_bytes(value));
+    }
+    bytes.extend_from_slice(&18u32.to_le_bytes());
+    for _ in 0..3 {
+        bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
+    }
+    let count_at = bytes.len();
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for target in [56u32, 57] {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    bytes.resize(point_at + 208, 0);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 12,
+        class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    let records = IndexedRecordOffsets::build(&bytes);
+    let scope = parse_parameter_scope(
+        &bytes,
+        &records,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .expect("WorkPoint scope");
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(frame.rule.reference_type(), 18);
+    assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
+
+    bytes[count_at..count_at + 4].copy_from_slice(&1u32.to_le_bytes());
+    let records = IndexedRecordOffsets::build(&bytes);
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(frame.rule.reference_type(), 18);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
+
+    // A rule above the values the shipped range check admitted still names a
+    // coordinate when its input arity agrees.
+    bytes[position_at + 24..position_at + 28].copy_from_slice(&64u32.to_le_bytes());
+    let records = IndexedRecordOffsets::build(&bytes);
+    let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
+        .expect("work point frame");
+    assert_eq!(frame.position, [4.0, 5.0, 6.0]);
+    assert_eq!(frame.rule.reference_type(), 64);
+    assert_eq!(work_point_input_indices(&frame.rule), [56]);
+}
+
+fn work_point_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
+    rule.inputs()
+        .iter()
+        .map(crate::records::feature::work_geometry::DesignWorkPointInput::record_index)
+        .collect()
 }
