@@ -32,7 +32,6 @@ pub(crate) use crate::design::decode::scopes::axial_assembly::bind_axial_assembl
 pub(crate) use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from_assemblies;
 pub(crate) use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
 pub(crate) use crate::design::decode::scopes::combine::exact_combine_operation;
-pub(crate) use crate::design::decode::scopes::component_constructions::exact_component_insert_construction;
 pub(crate) use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
 pub(crate) use crate::design::decode::scopes::direct_face::exact_scale_operation;
 pub(crate) use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
@@ -44,7 +43,6 @@ pub(crate) use crate::design::decode::scopes::path_feature::exact_path_feature_c
 pub(crate) use crate::design::decode::scopes::pattern::exact_circular_pattern_construction_with_owners;
 pub(crate) use crate::design::decode::scopes::pattern::exact_rectangular_pattern_construction;
 pub(crate) use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
-pub(crate) use crate::design::decode::scopes::point_data::exact_work_point_construction;
 pub(crate) use crate::design::decode::scopes::surfaces::exact_ruled_surface_operation;
 pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_extend_operation;
 pub(crate) use crate::design::decode::scopes::surfaces::exact_surface_offset_operation;
