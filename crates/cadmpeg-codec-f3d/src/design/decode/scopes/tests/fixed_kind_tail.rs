@@ -3,15 +3,22 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::scopes::work_geometry::{
+    exact_joint_origin_frame, exact_work_axis_construction, exact_work_plane_frame,
+};
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::feature_project::project_parameter_design;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
-use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
-use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
-use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
+use crate::records::decal::DesignRecordHeader;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::test_support::lp_utf16;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::{Feature, FeatureDefinition};
+use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]
 fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {

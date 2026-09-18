@@ -3,13 +3,33 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
+use crate::design::decode::scopes::fixed_parameters::{
+    exact_fixed_chamfer_parameters, exact_fixed_fillet_parameters,
+};
+use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::records::feature::direct_face::DesignDraftOperation;
+use crate::records::feature::extrude::DesignExtrudeOperation;
+use crate::records::feature::fixed_parameters::{
+    DesignFixedChamferParameters, DesignFixedFilletParameters,
+};
+use crate::records::feature::path_features::DesignPathFeatureConstruction;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::recipes::ConstructionRecipeKind;
+use crate::records::sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity};
+use crate::records::sketch_placement::DesignSketchPlacement;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::records::topology::face::DesignFaceOperand;
+use crate::test_support::lp_utf16;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::math::{Point3, Vector3};
 
 pub(super) fn continue_fixed_kind_operations(
     bytes: Vec<u8>,

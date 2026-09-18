@@ -1,9 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::prelude::*;
+
+use crate::design::decode::scopes::direct_face::{
+    exact_direct_face_operation, exact_scale_operation,
+};
+use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_parameters;
+use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
+use crate::design::decode::scopes::surfaces::{
+    exact_surface_extend_operation, exact_surface_offset_operation,
+};
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::feature_project::project_parameter_design;
+use crate::records::feature::body_ops::DesignScaleOperation;
+use crate::records::feature::direct_face::DesignDirectFaceOperation;
+use crate::records::feature::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
+use crate::records::feature::fixed_parameters::{
+    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
+};
+use crate::records::feature::primitives::DesignSolidPrimitive;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::surface_ops::{
+    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
+    DesignSurfaceOffsetSupport,
+};
+use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
 };
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::{FaceSelection, Feature, FeatureDefinition};
+use std::collections::HashMap;
 
 pub(super) fn fixed_kind_tail_operations(
     mut bytes: Vec<u8>,

@@ -3,12 +3,21 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
+use crate::design::decode::scopes::surfaces::{
+    exact_ruled_surface_operation, exact_surface_stitch_operation,
+};
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::indexed_header;
 use crate::design::test_support::{put_u32, put_u64};
+use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::surface_ops::{
+    DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignSurfaceStitchOperation,
+};
 
 #[test]
 fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {

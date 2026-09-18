@@ -3,12 +3,11 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
 
-use super::prelude::*;
 use crate::design::decode::scopes::component_constructions::exact_derived_instance_construction;
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::identity_matrix;
 use crate::layout::{
     derived_instance_relation_310_57 as relation_310, derived_instance_scope_279_261 as scope_279,

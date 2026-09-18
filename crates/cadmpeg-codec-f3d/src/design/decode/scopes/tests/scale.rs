@@ -3,10 +3,13 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::scopes::direct_face::exact_scale_operation;
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::records::feature::scope::DesignParameterScope;
+use std::collections::HashMap;
 
 const EPS_SCALE_VALUE: f64 = 1.0e-12;
 

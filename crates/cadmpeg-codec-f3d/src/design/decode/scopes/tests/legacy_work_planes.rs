@@ -3,12 +3,14 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::prelude::*;
+
+use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
+use crate::records::feature::scope::DesignParameterScope;
 
 #[test]
 fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
