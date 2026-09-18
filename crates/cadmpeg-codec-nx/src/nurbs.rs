@@ -7,6 +7,7 @@
 //! weights cause the affected carrier to be omitted.
 #![deny(clippy::disallowed_methods)]
 
+use crate::framing::insert_unique;
 use crate::framing::node_kind::NodeKind;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1027,21 +1028,6 @@ fn unique_records<T>(records: impl IntoIterator<Item = (u32, T)>) -> BTreeMap<u3
         insert_unique(&mut unique, &mut duplicates, xmt, record);
     }
     unique
-}
-
-fn insert_unique<T>(
-    records: &mut BTreeMap<u32, T>,
-    duplicates: &mut BTreeSet<u32>,
-    xmt: u32,
-    record: T,
-) {
-    if duplicates.contains(&xmt) {
-        return;
-    }
-    if records.insert(xmt, record).is_some() {
-        records.remove(&xmt);
-        duplicates.insert(xmt);
-    }
 }
 
 fn read_enveloped_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {

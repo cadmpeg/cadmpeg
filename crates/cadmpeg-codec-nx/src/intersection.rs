@@ -19,6 +19,7 @@ use support_uv_values::{SupportUvPacking, SupportUvValues};
 
 use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
 
+use crate::framing::insert_unique;
 use crate::framing::node_kind::NodeKind;
 use crate::framing::read_xmt_width as read_xmt;
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
@@ -1066,21 +1067,6 @@ pub(crate) fn support_uv_record_at(stream: &[u8], tag: usize) -> Option<(Support
         }
     }
     None
-}
-
-fn insert_unique<T>(
-    records: &mut BTreeMap<u32, T>,
-    duplicates: &mut BTreeSet<u32>,
-    xmt: u32,
-    record: T,
-) {
-    if duplicates.contains(&xmt) {
-        return;
-    }
-    if records.insert(xmt, record).is_some() {
-        records.remove(&xmt);
-        duplicates.insert(xmt);
-    }
 }
 
 fn uv_at(

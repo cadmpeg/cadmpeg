@@ -6238,16 +6238,17 @@ pub fn feature_sketch_named_point_block_uses(
     uses
 }
 
+/// Split a data-block id into its offset-store id and block ordinal.
+fn block_key(block: &str) -> Option<(&str, u32)> {
+    let (store, ordinal) = block.rsplit_once(":block#")?;
+    Some((store, ordinal.parse().ok()?))
+}
+
 /// Join one named point to a complete sketch lane through unique consecutive block adjacency.
 pub fn feature_sketch_preceding_named_point_uses(
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
 ) -> Vec<FeatureSketchPrecedingNamedPointUse> {
-    fn block_key(block: &str) -> Option<(&str, u32)> {
-        let (store, ordinal) = block.rsplit_once(":block#")?;
-        Some((store, ordinal.parse().ok()?))
-    }
-
     let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureSketchReference>>::new();
     for reference in references {
         references_by_operation
@@ -6403,11 +6404,6 @@ pub fn feature_sketch_datum_csys_dependencies(
     constructions: &[FeatureDatumCsysConstruction],
     scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureSketchDatumCsysDependency> {
-    fn block_key(block: &str) -> Option<(&str, u32)> {
-        let (store, ordinal) = block.rsplit_once(":block#")?;
-        Some((store, ordinal.parse().ok()?))
-    }
-
     let positions = feature_operation_chronological_labels(labels)
         .into_iter()
         .enumerate()
