@@ -244,12 +244,14 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
 
 pub fn synthetic_smbh() -> Vec<u8> {
     let mut b = smbh_header_prefix();
-    b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
-    let active_len = b.len();
-    b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
-    b.extend_from_slice(b"delta_state");
+    t_ident(&mut b, "body");
+    t_end(&mut b);
+    // The active model ends on its own terminator; the history partition opens
+    // with the `delta_state` record name, whose length byte `t_ident` derives
+    // from the name itself.
+    t_end(&mut b);
+    t_ident(&mut b, "delta_state");
     b.extend_from_slice(&[0u8; 16]);
-    assert_eq!(&b[active_len + 3..active_len + 3 + 11], b"delta_state");
     b
 }
 
