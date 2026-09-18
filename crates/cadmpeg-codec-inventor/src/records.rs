@@ -517,6 +517,15 @@ fn parse_extended_record_trailer(
     Ok(())
 }
 
+/// Carves the window `start..end`, stated as offsets of `parent`'s own window.
+///
+/// Every caller states both bounds as positions the parent's cursor reached, or
+/// as multiples of one entry size inside a payload of that many entries, so the
+/// bounds are ordered and inside the window and the refusal has no reaching
+/// input. It stands because `View::child` states containment as an `Option`;
+/// `cadmpeg-core` holds no operation that yields a taken window as a `View`.
+/// The two sums are total for the same reason: `parent.start()` plus the
+/// window's length is `parent.end()`, and neither bound passes that length.
 fn child<'a>(
     parent: View<'a>,
     start: usize,
@@ -612,13 +621,12 @@ impl<'a> Cursor<'a> {
 
     fn view(&mut self, len: usize, name: &'static str) -> Result<View<'a>, CodecError> {
         let start = self.position();
-        // A record trailer byte array states its length as a whole `u32`, so
-        // `len` reaches 4294967295 and its sum with any non-zero offset passes
-        // a 32-bit `usize`.
-        let end = start
-            .checked_add(len)
-            .ok_or_else(|| CodecError::malformed(format_args!("RSe {name} range overflows")))?;
+        // The take proves the range with no arithmetic: a `len` the window does
+        // not hold is the located truncation it states, on every target. It
+        // advances by exactly `len` on success, so the window offset it reached
+        // is the taken range's exclusive end.
         crate::reader::take(&mut self.source, len, name)?;
+        let end = self.position();
         child(self.source, start, end, name)
     }
 
@@ -827,11 +835,11 @@ mod tests {
     }
 
     #[test]
-    fn a_record_trailer_byte_array_states_a_length_a_32_bit_usize_cannot_offset() {
+    fn a_record_trailer_byte_array_longer_than_its_window_is_located() {
         // One property of type 14, whose byte-array length is the largest
-        // `u32`. `Cursor::view` adds it to the 19 bytes already read: a 32-bit
-        // `usize` cannot hold that sum and states the refusal, a 64-bit one
-        // holds it and the take refuses the absent bytes instead.
+        // `u32`. The window holds 19 bytes and none of them follow the length,
+        // so the take states the truncation at the offset already read. The
+        // outcome is the same on every target.
         let mut trailer = vec![1_u8];
         push_u32(&mut trailer, 1);
         push_u32(&mut trailer, 0);
@@ -845,12 +853,10 @@ mod tests {
                 Ok(()) => "the record trailer parsed".to_owned(),
                 Err(error) => error.to_string(),
             };
-            let expected = if cfg!(target_pointer_width = "32") {
-                "malformed container: RSe record trailer byte array range overflows"
-            } else {
+            assert_eq!(
+                observed,
                 "truncated input during record trailer byte array at space 0 offset 19"
-            };
-            assert_eq!(observed, expected);
+            );
         });
     }
 
