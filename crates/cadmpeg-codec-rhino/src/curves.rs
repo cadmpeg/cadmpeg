@@ -1309,7 +1309,7 @@ fn read_line(
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?;
     let to = scale_point(native_point(reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?;
-    let domain = finite_interval(interval(reader)?, reader.position())?;
+    let domain = interval(reader)?.0;
     let dimension = reader.i32()?;
     if expected_dimension.is_some_and(|expected| dimension != expected)
         || !(dimension == 2 || dimension == 3)
@@ -1393,8 +1393,8 @@ fn read_arc(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let circle = read_circle(reader, scale)?;
-    let angle = finite_interval(interval(reader)?, reader.position())?;
-    let domain = finite_interval(interval(reader)?, reader.position())?;
+    let angle = interval(reader)?.0;
+    let domain = interval(reader)?.0;
     let dimension = reader.i32()?;
     let mut warnings = Diagnostics::new();
     if expected_dimension.is_some_and(|expected| dimension != expected) {
@@ -1690,17 +1690,6 @@ fn scale_point(value: NativePoint3, scale: f64) -> Option<Point3> {
         crate::wire::scaled_coordinate(value.0[1], scale)?,
         crate::wire::scaled_coordinate(value.0[2], scale)?,
     ))
-}
-
-fn finite_interval(
-    value: crate::settings::Interval,
-    offset: usize,
-) -> Result<[f64; 2], GeometryError> {
-    if value.0[0].is_finite() && value.0[1].is_finite() {
-        Ok(value.0)
-    } else {
-        Err(error(offset, "interval contains a nonfinite value"))
-    }
 }
 
 fn count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, GeometryError> {
