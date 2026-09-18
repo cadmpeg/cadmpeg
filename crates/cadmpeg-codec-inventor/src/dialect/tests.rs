@@ -14,7 +14,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossNote;
 
 use super::*;
-use crate::test_support::{
+use crate::test_support::test_fixtures::{
     fixture, primary_envelope_fixture_with, primary_envelope_fixture_with_broken_database,
     primary_envelope_fixture_with_broken_metadata,
     primary_envelope_fixture_with_unavailable_carrier, EnvelopeDeclarations,

@@ -901,7 +901,7 @@ mod tests {
     use super::*;
 
     fn stream_id() -> CompoundStreamId {
-        let bytes = crate::test_support::fixture(true);
+        let bytes = crate::test_support::test_fixtures::fixture(true);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic compound file fits policy");

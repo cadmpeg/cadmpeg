@@ -306,7 +306,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::*;
-    use crate::test_support::acis_sphere_kernel_stream;
+    use crate::test_support::test_fixtures::acis_sphere_kernel_stream;
 
     fn decode_test_carrier(
         ctx: &DecodeContext<'_>,

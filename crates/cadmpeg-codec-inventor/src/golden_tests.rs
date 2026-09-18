@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Golden inspect and decode snapshots over field-built CFB declarations.
 //!
-//! Inputs are constructed in code by [`crate::test_support::fixture`] and
-//! [`crate::test_support::primary_envelope_fixture`]. Shared harness:
+//! Inputs are constructed in code by [`crate::test_support::test_fixtures::fixture`] and
+//! [`crate::test_support::test_fixtures::primary_envelope_fixture`]. Shared harness:
 //! [`cadmpeg_test_support::golden`]. `UPDATE_GOLDEN=1` rewrites goldens only.
 
 use std::io::Cursor;
@@ -28,10 +28,13 @@ fn branches() -> [Branch; 2] {
 
 fn inputs() -> Vec<(String, Vec<u8>)> {
     vec![
-        ("structural".to_string(), crate::test_support::fixture(true)),
+        (
+            "structural".to_string(),
+            crate::test_support::test_fixtures::fixture(true),
+        ),
         (
             "primary".to_string(),
-            crate::test_support::primary_envelope_fixture(),
+            crate::test_support::test_fixtures::primary_envelope_fixture(),
         ),
     ]
 }

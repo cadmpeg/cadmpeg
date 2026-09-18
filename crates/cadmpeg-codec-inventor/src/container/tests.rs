@@ -2,7 +2,7 @@
 
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::test_support::{fixture, primary_envelope_fixture_with_broken_metadata};
+use crate::test_support::test_fixtures::{fixture, primary_envelope_fixture_with_broken_metadata};
 use crate::InventorCodec;
 
 #[test]

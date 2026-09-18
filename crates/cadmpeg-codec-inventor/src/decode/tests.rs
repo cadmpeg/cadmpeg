@@ -8,7 +8,7 @@ mod native_admission;
 
 use super::*;
 use crate::loss::InventorLossCode;
-use crate::test_support::{
+use crate::test_support::test_fixtures::{
     acis_kernel_stream, acis_sphere_kernel_stream, fixture, primary_envelope_fixture,
     primary_envelope_fixture_with_kernel, EnvelopeDeclarations,
 };
@@ -191,7 +191,8 @@ fn database_record_projects_schema_and_creation_and_save_versions() {
 
 #[test]
 fn database_issues_preserve_the_unframed_database_instead_of_a_database_record() {
-    let source = crate::test_support::primary_envelope_fixture_with_broken_database();
+    let source =
+        crate::test_support::test_fixtures::primary_envelope_fixture_with_broken_database();
     let decoded = InventorCodec
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("broken database does not prevent envelope decode");
