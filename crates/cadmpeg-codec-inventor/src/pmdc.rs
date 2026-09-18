@@ -265,9 +265,9 @@ impl<'a> Cursor<'a> {
         self.source.remaining()
     }
 
-    pub(crate) fn peek_u32(&self) -> Result<u32, CodecError> {
+    pub(crate) fn peek_u32(&self, field: &'static str) -> Result<u32, CodecError> {
         let mut view = self.source;
-        Ok(view.req_u32_le()?)
+        Ok(view.req_u32_le().map_err(|error| error.during(field))?)
     }
 
     /// Reads a fixed-width byte array.
@@ -280,24 +280,36 @@ impl<'a> Cursor<'a> {
             .ok_or_else(|| CodecError::malformed(format_args!("truncated Inventor PmDc {field}")))
     }
 
-    pub(crate) fn u8(&mut self) -> Result<u8, CodecError> {
-        Ok(self.source.req_u8()?)
+    pub(crate) fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
+        Ok(self.source.req_u8().map_err(|error| error.during(field))?)
     }
 
-    pub(crate) fn u16(&mut self) -> Result<u16, CodecError> {
-        Ok(self.source.req_u16_le()?)
+    pub(crate) fn u16(&mut self, field: &'static str) -> Result<u16, CodecError> {
+        Ok(self
+            .source
+            .req_u16_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    pub(crate) fn i16(&mut self) -> Result<i16, CodecError> {
-        Ok(self.source.req_i16_le()?)
+    pub(crate) fn i16(&mut self, field: &'static str) -> Result<i16, CodecError> {
+        Ok(self
+            .source
+            .req_i16_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    pub(crate) fn u32(&mut self) -> Result<u32, CodecError> {
-        Ok(self.source.req_u32_le()?)
+    pub(crate) fn u32(&mut self, field: &'static str) -> Result<u32, CodecError> {
+        Ok(self
+            .source
+            .req_u32_le()
+            .map_err(|error| error.during(field))?)
     }
 
-    pub(crate) fn i32(&mut self) -> Result<i32, CodecError> {
-        Ok(self.source.req_i32_le()?)
+    pub(crate) fn i32(&mut self, field: &'static str) -> Result<i32, CodecError> {
+        Ok(self
+            .source
+            .req_i32_le()
+            .map_err(|error| error.during(field))?)
     }
 
     pub(crate) fn f64(&mut self, field: &str) -> Result<f64, CodecError> {
@@ -315,7 +327,7 @@ impl<'a> Cursor<'a> {
         ctx: &DecodeContext<'_>,
         field: &str,
     ) -> Result<String, CodecError> {
-        let units = self.u32()? as usize;
+        let units = self.u32("string length")? as usize;
         if units > 1_048_576 {
             return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} exceeds 1048576 code units"
@@ -330,8 +342,8 @@ impl<'a> Cursor<'a> {
         })
     }
 
-    pub(crate) fn reference(&mut self) -> Result<PmDcReference, CodecError> {
-        let value = self.u32()?;
+    pub(crate) fn reference(&mut self, field: &'static str) -> Result<PmDcReference, CodecError> {
+        let value = self.u32(field)?;
         Ok(PmDcReference {
             index: value & 0x7fff_ffff,
             qualified: value & 0x8000_0000 != 0,
@@ -352,12 +364,12 @@ impl<'a> Cursor<'a> {
 
 pub(crate) fn content_header(cursor: &mut Cursor<'_>) -> Result<PmDcContentHeader, CodecError> {
     Ok(PmDcContentHeader {
-        header_value: cursor.u32()?,
-        header_id: cursor.u16()?,
-        next: cursor.reference()?,
-        flags: cursor.u32()?,
-        context: cursor.reference()?,
-        source_index: cursor.u32()?,
+        header_value: cursor.u32("content header value")?,
+        header_id: cursor.u16("content header id")?,
+        next: cursor.reference("content header next reference")?,
+        flags: cursor.u32("content header flags")?,
+        context: cursor.reference("content header context reference")?,
+        source_index: cursor.u32("content header source index")?,
     })
 }
 
@@ -371,7 +383,7 @@ pub(crate) fn reference_list(
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc references")?;
     let mut references = Vec::with_capacity(count);
     for _ in 0..count {
-        references.push(cursor.reference()?);
+        references.push(cursor.reference("reference-list entry")?);
     }
     PmDcReferenceList::new(marker, metadata, references).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc reference list metadata disagrees with length".into())
@@ -385,20 +397,26 @@ fn list_preamble(
     field: &str,
     admission: &'static str,
 ) -> Result<(usize, Option<PmDcListMetadata>), CodecError> {
-    let actual = [cursor.u16()?, cursor.u16()?];
+    let actual = [cursor.u16("list marker 0")?, cursor.u16("list marker 1")?];
     if actual != [marker, 0x3000] {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc {field} marker is {actual:?}"
         )));
     }
-    let count = cursor.u32()? as usize;
+    let count = cursor.u32("list count")? as usize;
     ctx.charge_collection_items(count as u64, admission)?;
     let metadata = if count == 0 {
         None
     } else if marker == 8 {
-        Some(PmDcListMetadata::U16([cursor.u16()?, cursor.u16()?]))
+        Some(PmDcListMetadata::U16([
+            cursor.u16("list metadata 0")?,
+            cursor.u16("list metadata 1")?,
+        ]))
     } else {
-        Some(PmDcListMetadata::U32([cursor.u32()?, cursor.u32()?]))
+        Some(PmDcListMetadata::U32([
+            cursor.u32("list metadata 0")?,
+            cursor.u32("list metadata 1")?,
+        ]))
     };
     Ok((count, metadata))
 }
@@ -413,7 +431,7 @@ pub(crate) fn u32_list(
         list_preamble(ctx, cursor, marker, field, "admit Inventor PmDc integers")?;
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
-        values.push(cursor.u32()?);
+        values.push(cursor.u32("integer-list value")?);
     }
     PmDcU32List::new(marker, metadata, values).ok_or_else(|| {
         CodecError::Malformed("Inventor PmDc integer list metadata disagrees with length".into())
@@ -505,5 +523,95 @@ impl<V> TryFrom<PmDcPairedMapWire<V>> for PmDcPairedMap<V> {
     fn try_from(wire: PmDcPairedMapWire<V>) -> Result<Self, Self::Error> {
         Self::new(wire.metadata, wire.entries)
             .ok_or_else(|| "PmDc map metadata disagrees with length".to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+    /// The diagnostic a truncated read produces, without an unwrap on the route.
+    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
+        match result {
+            Ok(value) => format!("the read succeeded with {value:?}"),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    #[test]
+    fn truncated_scalar_reads_name_the_field() {
+        let empty = &[];
+        for (field, text) in [
+            (
+                "unit visibility",
+                truncation(Cursor::new(View::over_retained(empty)).u8("unit visibility")),
+            ),
+            (
+                "parameter tolerance",
+                truncation(Cursor::new(View::over_retained(empty)).u16("parameter tolerance")),
+            ),
+            (
+                "parameter terminal value",
+                truncation(Cursor::new(View::over_retained(empty)).i16("parameter terminal value")),
+            ),
+            (
+                "sketch state",
+                truncation(Cursor::new(View::over_retained(empty)).u32("sketch state")),
+            ),
+            (
+                "edge-item index reference value",
+                truncation(
+                    Cursor::new(View::over_retained(empty)).i32("edge-item index reference value"),
+                ),
+            ),
+            (
+                "transform prefix",
+                truncation(Cursor::new(View::over_retained(empty)).peek_u32("transform prefix")),
+            ),
+            (
+                "content header next reference",
+                truncation(
+                    Cursor::new(View::over_retained(empty))
+                        .reference("content header next reference"),
+                ),
+            ),
+        ] {
+            assert_eq!(
+                text,
+                format!("truncated input during {field} at space 0 offset 0")
+            );
+        }
+    }
+
+    #[test]
+    fn a_truncated_content_header_names_the_field_it_stopped_in() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&7_u32.to_le_bytes());
+        bytes.extend_from_slice(&9_u16.to_le_bytes());
+        let mut cursor = Cursor::new(View::over_retained(&bytes));
+        assert_eq!(
+            truncation(content_header(&mut cursor)),
+            "truncated input during content header next reference at space 0 offset 6"
+        );
+    }
+
+    #[test]
+    fn a_truncated_typed_list_names_its_preamble_field() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&8_u16.to_le_bytes());
+        bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+        let arena = DecodeArena::new();
+        let text = match DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()) {
+            Ok((ctx, root)) => {
+                let mut cursor = Cursor::new(root);
+                truncation(reference_list(&ctx, &mut cursor, 8, "sketch entity array"))
+            }
+            Err(error) => error.to_string(),
+        };
+        assert_eq!(
+            text,
+            "truncated input during list count at space 0 offset 4"
+        );
     }
 }

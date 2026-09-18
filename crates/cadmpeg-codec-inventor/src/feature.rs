@@ -480,36 +480,36 @@ fn parse_pattern_feature(
 ) -> Result<PmDcPatternFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32()? as i32;
-    let outline_value = cursor.u32()?;
+    let state = cursor.u32("pattern-feature state")? as i32;
+    let outline_value = cursor.u32("pattern-feature outline value")?;
     let properties = reference_list(ctx, &mut cursor, 2, "pattern-feature properties")?;
-    let value = cursor.u32()?;
+    let value = cursor.u32("pattern-feature value")?;
     let participants = reference_list(ctx, &mut cursor, 2, "pattern-feature participants")?;
     let mut property_slots = Vec::new();
     for _ in 0..6 {
-        property_slots.push(cursor.reference()?);
+        property_slots.push(cursor.reference("pattern-feature property slot")?);
     }
-    let control = cursor.u8()?;
+    let control = cursor.u8("pattern-feature control")?;
     let mut extension_values = Vec::new();
     match family {
         PmDcPatternFamily::Rectangular => {
             let remaining = if version > 20 { 26 } else { 20 };
             for _ in 0..remaining {
-                property_slots.push(cursor.reference()?);
+                property_slots.push(cursor.reference("pattern-feature property slot")?);
             }
         }
         PmDcPatternFamily::Mirror => {
             for _ in 0..5 {
-                property_slots.push(cursor.reference()?);
+                property_slots.push(cursor.reference("pattern-feature property slot")?);
             }
             if version > 20 {
                 extension_values.reserve(6);
                 for _ in 0..6 {
-                    extension_values.push(cursor.u32()?);
+                    extension_values.push(cursor.u32("pattern-feature extension value")?);
                 }
             }
             for _ in 0..2 {
-                property_slots.push(cursor.reference()?);
+                property_slots.push(cursor.reference("pattern-feature property slot")?);
             }
         }
     }
@@ -536,10 +536,10 @@ fn parse_feature(
 ) -> Result<PmDcFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32()? as i32;
-    let outline_value = cursor.u32()?;
+    let state = cursor.u32("feature state")? as i32;
+    let outline_value = cursor.u32("feature outline value")?;
     let properties = reference_list(ctx, &mut cursor, 2, "feature property list")?;
-    let value = cursor.u32()?;
+    let value = cursor.u32("feature value")?;
     cursor.finish("feature")?;
     Ok(PmDcFeaturePayload {
         save_version_major: version,
@@ -557,7 +557,7 @@ fn parse_terminator(
 ) -> Result<PmDcFeatureTerminatorPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let state = cursor.u32()? as i32;
+    let state = cursor.u32("feature terminator state")? as i32;
     cursor.finish("feature terminator")?;
     Ok(PmDcFeatureTerminatorPayload {
         save_version_major: version,
@@ -613,8 +613,8 @@ fn parse_enumeration(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let type_value = cursor.i16()?;
-    let value = cursor.u16()?;
+    let type_value = cursor.i16("feature enumeration type value")?;
+    let value = cursor.u16("feature enumeration value")?;
     cursor.finish("feature enumeration")?;
     Ok(property(
         version,
@@ -652,9 +652,9 @@ fn parse_chamfer(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let type_value = cursor.i16()?;
-    let value = cursor.u16()?;
-    let terminal = cursor.u32()?;
+    let type_value = cursor.i16("chamfer enumeration type value")?;
+    let value = cursor.u16("chamfer enumeration value")?;
+    let terminal = cursor.u32("chamfer enumeration terminal")?;
     if terminal != 0 {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc chamfer enumeration terminal value is {terminal}"
@@ -679,8 +679,8 @@ fn parse_fillet_edge_selection(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let type_value = cursor.u32()?;
-    let value = cursor.u32()?;
+    let type_value = cursor.u32("fillet edge-selection type value")?;
+    let value = cursor.u32("fillet edge-selection value")?;
     cursor.finish("fillet edge-selection enumeration")?;
     Ok(property(
         version,
@@ -697,8 +697,8 @@ fn parse_boolean(
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let name = cursor.utf16(ctx, "feature Boolean name")?;
-    let name_value = cursor.u32()?;
-    let raw = cursor.u8()?;
+    let name_value = cursor.u32("feature Boolean name value")?;
+    let raw = cursor.u8("feature Boolean raw value")?;
     if raw > 1 {
         return Err(CodecError::malformed(format_args!(
             "Inventor PmDc feature Boolean value is {raw}"
@@ -759,9 +759,9 @@ fn parse_rdx_variable(
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let name = cursor.utf16(ctx, "feature RDx variable name")?;
-    let name_value = cursor.u32()?;
-    let nominal_value = cursor.u32()?;
-    let model_value = cursor.u32()?;
+    let name_value = cursor.u32("feature RDx variable name value")?;
+    let nominal_value = cursor.u32("feature RDx variable nominal value")?;
+    let model_value = cursor.u32("feature RDx variable model value")?;
     cursor.finish("feature RDx variable")?;
     Ok(property(
         version,
@@ -782,7 +782,7 @@ fn parse_surface_body(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let body = cursor.reference()?;
+    let body = cursor.reference("feature surface body reference")?;
     cursor.finish("feature surface body")?;
     Ok(property(
         version,
@@ -798,8 +798,8 @@ fn parse_profile_selection(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let entity_link = cursor.reference()?;
-    let value = cursor.u8()?;
+    let entity_link = cursor.reference("profile selection entity link")?;
+    let value = cursor.u8("profile selection value")?;
     cursor.finish("profile selection")?;
     Ok(property(
         version,
@@ -814,9 +814,9 @@ fn parse_entity_style_link(
 ) -> Result<PmDcEntityStyleLinkPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = linked_header(&mut cursor)?;
-    let value = cursor.u32()?;
-    let associative_id = cursor.u32()?;
-    let entity_type = cursor.u32()?;
+    let value = cursor.u32("entity-style link value")?;
+    let associative_id = cursor.u32("entity-style link associative id")?;
+    let entity_type = cursor.u32("entity-style link entity type")?;
     cursor.finish("entity-style link")?;
     Ok(PmDcEntityStyleLinkPayload {
         save_version_major: version,
@@ -834,9 +834,9 @@ fn parse_placement(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let transform = cursor.reference()?;
-    let point = cursor.reference()?;
-    let value = cursor.reference()?;
+    let transform = cursor.reference("feature placement transform reference")?;
+    let point = cursor.reference("feature placement point reference")?;
+    let value = cursor.reference("feature placement value reference")?;
     cursor.finish("feature placement")?;
     Ok(property(
         version,
@@ -856,10 +856,10 @@ fn parse_fillet_edge_set(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
-    let edges = cursor.reference()?;
-    let radius = cursor.reference()?;
-    let selection = cursor.reference()?;
-    let continuity = cursor.reference()?;
+    let edges = cursor.reference("fillet edge-set edges reference")?;
+    let radius = cursor.reference("fillet edge-set radius reference")?;
+    let selection = cursor.reference("fillet edge-set selection reference")?;
+    let continuity = cursor.reference("fillet edge-set continuity reference")?;
     cursor.finish("fillet edge set")?;
     Ok(property(
         version,
@@ -884,9 +884,9 @@ fn parse_edge_item(
     let index_reference_value = if index_references.values().is_empty() {
         -1
     } else {
-        cursor.i32()?
+        cursor.i32("edge-item index reference value")?
     };
-    let value = cursor.u32()?;
+    let value = cursor.u32("edge-item value")?;
     cursor.finish("edge item")?;
     Ok(property(
         version,
@@ -901,12 +901,15 @@ fn parse_edge_item(
 
 fn linked_header(cursor: &mut Cursor<'_>) -> Result<PmDcLinkedHeader, CodecError> {
     Ok(PmDcLinkedHeader {
-        header_value: cursor.u32()?,
-        header_id: cursor.u16()?,
-        values: [cursor.u32()?, cursor.u32()?],
-        owner: cursor.reference()?,
-        parent: cursor.reference()?,
-        next: cursor.reference()?,
+        header_value: cursor.u32("linked header value")?,
+        header_id: cursor.u16("linked header id")?,
+        values: [
+            cursor.u32("linked header value 0")?,
+            cursor.u32("linked header value 1")?,
+        ],
+        owner: cursor.reference("linked header owner reference")?,
+        parent: cursor.reference("linked header parent reference")?,
+        next: cursor.reference("linked header next reference")?,
     })
 }
 
@@ -917,7 +920,7 @@ fn parse_label(
 ) -> Result<PmDcFeatureLabelPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = linked_header(&mut cursor)?;
-    let index = cursor.u32()?;
+    let index = cursor.u32("feature label index")?;
     let participants = reference_list(ctx, &mut cursor, 2, "feature-label participants")?;
     let name = cursor.utf16(ctx, "feature label")?;
     let class_id = type_id_string(cursor.take_array("feature-label class id")?);
