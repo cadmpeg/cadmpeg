@@ -760,7 +760,7 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
         || curve
             .control_points()
             .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+            .any(|point| !point.is_finite())
     {
         return None;
     }
@@ -844,9 +844,7 @@ pub(crate) fn rational_four_arc_circle(
         .zip(weights)
         .map(|(point, weight)| {
             let homogeneous = [point.x * weight, point.y * weight, point.z * weight, weight];
-            (point.x.is_finite()
-                && point.y.is_finite()
-                && point.z.is_finite()
+            (point.is_finite()
                 && weight.is_finite()
                 && weight != 0.0
                 && homogeneous.iter().all(|value| value.is_finite()))
