@@ -5,13 +5,7 @@ use super::{
     Deserialize, DisplayColorFrame, LinkedRow, PaletteIndex, RmDisplayColorAssignment,
     RmDisplayColorAssignmentEncoding, Serialize, TargetRow,
 };
-use crate::om::compact::{atom, CompactIndexAtom};
-
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
-fn row_indices(values: [u32; 3], raw: [Vec<u8>; 3]) -> [Result<CompactIndexAtom, String>; 3] {
-    std::array::from_fn(|i| atom(values[i], &raw[i], "indices/raw_indices"))
-}
+use crate::om::compact::{atom, row_indices};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
