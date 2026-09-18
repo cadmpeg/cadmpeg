@@ -161,14 +161,11 @@ fn production() { value.expect("production"); }
         with redirect_stdout(io.StringIO()):
             self.assertEqual(census.census_panic_calls(check=True), 1)
 
-    def test_check_exempts_only_the_declared_seed_tool(self) -> None:
+    def test_check_counts_a_seed_generator_bin_like_any_other_source(self) -> None:
         self.write("lib.rs", "fn f() {}\n")
-        seed = self.root / census.SEED_GENERATOR
-        seed.parent.mkdir(parents=True)
-        seed.write_text('fn main() { value.unwrap(); }\n')
-        with redirect_stdout(io.StringIO()):
-            self.assertEqual(census.census_panic_calls(check=True), 0)
-        seed.with_name("production.rs").write_text('fn main() { value.unwrap(); }\n')
+        generator = self.root / "crates/cadmpeg-fuzz/src/bin/generate_all_seeds.rs"
+        generator.parent.mkdir(parents=True)
+        generator.write_text('fn main() { value.unwrap(); }\n')
         with redirect_stdout(io.StringIO()):
             self.assertEqual(census.census_panic_calls(check=True), 1)
 
