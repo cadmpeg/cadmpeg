@@ -138,11 +138,10 @@ pub(crate) fn parabolic_arc_nurbs(
     let end_point = vertex
         .translated(major_direction, focal_distance * end * end)
         .translated(transverse, 2.0 * focal_distance * end);
-    if ![start_point, middle_point, end_point].iter().all(|point| {
-        [point.x, point.y, point.z]
-            .iter()
-            .all(|value| value.is_finite())
-    }) {
+    if ![start_point, middle_point, end_point]
+        .iter()
+        .all(Point3::is_finite)
+    {
         return Ok(None);
     }
     Ok(Some(NurbsCurve::from_lanes(

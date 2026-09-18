@@ -1416,9 +1416,7 @@ fn linear_nurbs_boundary_points(
 ) -> Option<Vec<Point3>> {
     let control_points = nurbs.control_points();
     let weights = nurbs.weights();
-    if control_points
-        .iter()
-        .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+    if control_points.iter().any(|point| !point.is_finite())
         || nurbs.knots().iter().any(|knot| !knot.is_finite())
         || weights.as_ref().is_some_and(|weights| {
             weights
@@ -1444,7 +1442,7 @@ fn linear_nurbs_boundary_points(
             weights.as_deref(),
             parameter,
         )
-        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        .filter(Point3::is_finite)
     })
     .collect()
 }
@@ -1465,9 +1463,7 @@ fn linear_nurbs_is_simple_closed(
         return false;
     };
     if points.len() < 3
-        || points
-            .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        || points.iter().any(|point| !point.is_finite())
         || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
         || polyline_has_forbidden_duplicate(&points, resolution)
     {

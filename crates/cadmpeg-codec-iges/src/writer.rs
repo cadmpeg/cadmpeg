@@ -4574,11 +4574,7 @@ fn extrusion_surface_entities(
             "IGES Type 122 directrix parameter interval is invalid".into(),
         ));
     }
-    if !direction.x.is_finite()
-        || !direction.y.is_finite()
-        || !direction.z.is_finite()
-        || direction.norm() <= 0.0
-    {
+    if !direction.is_finite() || direction.norm() <= 0.0 {
         return Err(CodecError::Malformed(
             "IGES Type 122 sweep direction must be finite and non-zero".into(),
         ));
@@ -5982,7 +5978,7 @@ fn encode_nurbs(
     if nurbs
         .control_points()
         .iter()
-        .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        .any(|point| !point.is_finite())
     {
         return Err(CodecError::Malformed(
             "IGES NURBS control point is non-finite".into(),
@@ -6431,10 +6427,7 @@ fn close_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f
 }
 
 fn ensure_finite_point(point: Point3, label: &str) -> Result<(), CodecError> {
-    if [point.x, point.y, point.z]
-        .iter()
-        .all(|value| value.is_finite())
-    {
+    if point.is_finite() {
         Ok(())
     } else {
         Err(CodecError::malformed(format_args!(

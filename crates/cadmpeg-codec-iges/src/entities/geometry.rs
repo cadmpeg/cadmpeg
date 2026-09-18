@@ -503,10 +503,7 @@ fn interval_squared_norm(components: [DeclaredInterval; 3]) -> DeclaredInterval 
 }
 
 fn is_finite_nonzero_vector(vector: Vector3) -> bool {
-    vector.x.is_finite()
-        && vector.y.is_finite()
-        && vector.z.is_finite()
-        && (vector.x != 0.0 || vector.y != 0.0 || vector.z != 0.0)
+    vector.is_finite() && (vector.x != 0.0 || vector.y != 0.0 || vector.z != 0.0)
 }
 
 /// The normalized finite vector, when its length is nonzero and finite.
@@ -1622,7 +1619,7 @@ pub(crate) fn project_geometry(
             }
         };
         let position = transform.point(Point3::new(x * factor, y * factor, z * factor));
-        if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+        if !position.is_finite() {
             losses.push(entity_loss(entry, "scaled coordinates are not finite"));
             continue;
         }
@@ -1710,7 +1707,7 @@ pub(crate) fn project_geometry(
             }
         };
         let position = transform.point(Point3::new(x * factor, y * factor, 0.0));
-        if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+        if !position.is_finite() {
             losses.push(entity_loss(entry, "scaled reference point is not finite"));
             continue;
         }
@@ -2033,10 +2030,7 @@ pub(crate) fn project_geometry(
                 ))
             })
             .collect::<Vec<_>>();
-        if control_points
-            .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-        {
+        if control_points.iter().any(|point| !point.is_finite()) {
             losses.push(entity_loss(
                 entry,
                 "transformed control-point vector is non-finite",
@@ -2127,7 +2121,7 @@ pub(crate) fn project_geometry(
             nurbs_weights.as_deref(),
             parameter_range[0],
         )
-        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
+        .filter(Point3::is_finite) else {
             losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
             continue;
         };
@@ -2138,7 +2132,7 @@ pub(crate) fn project_geometry(
             nurbs_weights.as_deref(),
             parameter_range[1],
         )
-        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
+        .filter(Point3::is_finite) else {
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
         };
