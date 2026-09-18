@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::Point2;
 
 use crate::loss::StepLossCode;
-use crate::test_support::decode_inline;
+use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
 const EPS_PCURVE_PARAMETERS: f64 = 1.0e-12;

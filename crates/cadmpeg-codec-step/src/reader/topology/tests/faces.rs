@@ -16,7 +16,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::ids;
 use crate::loss::StepLossCode;
-use crate::test_support::export;
+use crate::test_support::exchange::export;
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]

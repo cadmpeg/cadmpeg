@@ -9,7 +9,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::StepLossCode;
-use crate::test_support::decode_inline;
+use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
 #[test]

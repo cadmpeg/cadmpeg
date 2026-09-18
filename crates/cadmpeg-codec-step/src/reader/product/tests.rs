@@ -11,7 +11,7 @@ use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
+use crate::test_support::exchange::{decode_inline, export};
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]

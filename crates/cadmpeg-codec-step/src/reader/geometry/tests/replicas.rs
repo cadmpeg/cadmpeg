@@ -22,7 +22,7 @@ use cadmpeg_ir::CadIr;
 use crate::export::is_rigid_transform;
 use crate::ids;
 use crate::loss::StepLossCode;
-use crate::test_support::decode_inline;
+use crate::test_support::exchange::decode_inline;
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]

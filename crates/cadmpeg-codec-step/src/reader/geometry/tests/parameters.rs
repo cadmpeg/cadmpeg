@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::*;
+use crate::parse::Value;
+use crate::reader::geometry::{
+    curve_endpoint_seed, decode_pcurve_geometry, directrix_geometry_parameter_scale,
+    edge_parameter_range, nurbs_surface_parameter_period, pcurve_trim_parameter, si_prefix,
+    surface_parameter_periods, surface_parameter_scales_for_step, unit_scale_mm,
+    unit_scale_radians,
+};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::nurbs_curve_parameter_near_point;
 use cadmpeg_ir::eval::nurbs_curve_point;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::transform::{Transform, Transform2};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {

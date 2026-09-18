@@ -20,7 +20,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::StepLossCode;
-use crate::test_support::export;
+use crate::test_support::exchange::export;
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 fn curve_geometry_for_sheet_pcurve(

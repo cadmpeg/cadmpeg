@@ -10,7 +10,7 @@ use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
-use crate::test_support::{decode_inline, export};
+use crate::test_support::exchange::{decode_inline, export};
 use crate::StepSchema;
 
 #[test]

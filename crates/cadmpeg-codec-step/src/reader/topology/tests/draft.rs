@@ -1,6 +1,5 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 // SPDX-License-Identifier: Apache-2.0
-use super::super::*;
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -15,6 +14,13 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 use crate::loss::StepLossCode;
+use crate::reader::topology::{
+    drop_committed_surfaces, pcurve_declared_endpoint_fit, pcurve_selection_seeds,
+    pcurve_surface_closest, PCURVE_LOCUS_SAMPLE_COUNT,
+};
+use cadmpeg_ir::eval::model_surface_point_by_id;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
 fn surface_draft(id: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
