@@ -15,6 +15,7 @@ use crate::records::sketch_geometry::{
     SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
     SketchPointRecordForm,
 };
+use crate::test_support::lp_ascii;
 use std::collections::HashMap;
 
 const POINT: u32 = 41;
@@ -29,16 +30,11 @@ fn push_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
     out.extend_from_slice(&record_index.to_le_bytes());
 }
 
-fn push_ascii(out: &mut Vec<u8>, value: &str) {
-    out.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
-    out.extend_from_slice(value.as_bytes());
-}
-
 fn push_reference(out: &mut Vec<u8>, target: u32, type_guid: Option<&str>) {
     out.push(1);
     out.extend_from_slice(&u64::from(target).to_le_bytes());
     if let Some(type_guid) = type_guid {
-        push_ascii(out, type_guid);
+        lp_ascii(out, type_guid);
     }
     out.extend_from_slice(&[0; 2]);
 }
@@ -55,8 +51,8 @@ fn tagged_point_payload(
     payload.extend_from_slice(&[0; 9]);
     payload.push(1);
     payload.extend_from_slice(&1u32.to_le_bytes());
-    push_ascii(&mut payload, "pt_tag");
-    push_ascii(&mut payload, "IntrinsicMetaTypeuint64");
+    lp_ascii(&mut payload, "pt_tag");
+    lp_ascii(&mut payload, "IntrinsicMetaTypeuint64");
     payload.extend_from_slice(&500u64.to_le_bytes());
     let paired_type = inline_typed.then_some(SKETCH_POINT_COMPANION_TYPE.0);
     push_reference(&mut payload, COMPANION, paired_type);

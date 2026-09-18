@@ -19,6 +19,7 @@ use crate::records::{
     references::DesignClassTag,
     sketch_placement::SketchPlacementMatrix,
 };
+use crate::test_support::push_reference_u64;
 
 const EPS_EXACT_FIXTURE: f64 = f64::EPSILON * 4.0;
 
@@ -1815,12 +1816,6 @@ fn append_axial_test_utf16(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
 }
 
-fn append_axial_test_reference(bytes: &mut Vec<u8>, target: u64) {
-    bytes.push(1);
-    bytes.extend_from_slice(&target.to_le_bytes());
-    bytes.extend_from_slice(&[0; 2]);
-}
-
 fn write_axial_test_reference(bytes: &mut [u8], at: usize, target: u64) {
     bytes[at] = 1;
     bytes[at + 1..at + 9].copy_from_slice(&target.to_le_bytes());
@@ -1844,14 +1839,14 @@ fn append_axial_test_selector(
     let selector_record_index = axis_record_index + 3;
     indexed_header(bytes, *b"277", selector_record_index);
     bytes.extend_from_slice(&[0; 11]);
-    append_axial_test_reference(bytes, u64::from(selector_record_index + 3));
+    push_reference_u64(bytes, u64::from(selector_record_index + 3));
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     append_axial_test_utf16(bytes, ASSET);
     append_axial_test_utf16(bytes, CONTEXT);
     for value in [2_u32, 0, 1] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
-    append_axial_test_reference(bytes, occurrence_reference);
+    push_reference_u64(bytes, occurrence_reference);
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&external_object_reference.to_le_bytes());

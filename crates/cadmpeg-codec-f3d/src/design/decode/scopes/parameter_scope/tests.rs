@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::named_parameter_scope_tail_is_valid;
-use crate::design::test_support::dump::lp_utf16;
+use crate::test_support::lp_utf16;
 
 fn named_scope_tail(lane_value: u64) -> Vec<u8> {
     let label = "Canvas";

@@ -1541,6 +1541,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
 mod tests {
     use super::*;
     use crate::design::test_support::design_type;
+    use crate::test_support::lp_ascii;
 
     fn matrix(cells: [f64; 16]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(MATRIX_BYTES);
@@ -1578,15 +1579,6 @@ mod tests {
         put_reference(bytes, at, target);
     }
 
-    fn push_ascii(bytes: &mut Vec<u8>, value: &str) {
-        bytes.extend_from_slice(
-            &u32::try_from(value.len())
-                .expect("test ASCII length")
-                .to_le_bytes(),
-        );
-        bytes.extend_from_slice(value.as_bytes());
-    }
-
     fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
         let encoded = value.encode_utf16().collect::<Vec<_>>();
         bytes.extend_from_slice(
@@ -1620,7 +1612,7 @@ mod tests {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 21]);
-        push_ascii(&mut bytes, fusion_uuid);
+        lp_ascii(&mut bytes, fusion_uuid);
         push_reference(&mut bytes, entry_name_record_index);
         bytes.extend_from_slice(&[0; 4]);
         bytes
@@ -1731,12 +1723,12 @@ mod tests {
         bytes.extend_from_slice(&[0; 10]);
         bytes.extend_from_slice(&(flags.len() as u32).to_le_bytes());
         for (guid, value) in flags {
-            push_ascii(&mut bytes, guid);
+            lp_ascii(&mut bytes, guid);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         bytes.extend_from_slice(&(filenames.len() as u32).to_le_bytes());
         for (guid, target) in filenames {
-            push_ascii(&mut bytes, guid);
+            lp_ascii(&mut bytes, guid);
             push_reference(&mut bytes, *target);
         }
         bytes

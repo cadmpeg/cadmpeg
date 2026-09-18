@@ -94,29 +94,6 @@ pub(crate) fn f3d_without_brep_with_xref_placement(
 /// Build the complete modern Design occurrence-placement record used by the
 /// focused archive controls.
 fn xref_placement_record(role: &str, transform: [[f64; 4]; 4]) -> Vec<u8> {
-    fn local_reference(target: u64) -> Vec<u8> {
-        let mut bytes = vec![1];
-        bytes.extend_from_slice(&target.to_le_bytes());
-        bytes.extend_from_slice(&[0, 0]);
-        bytes
-    }
-
-    fn cross_document_reference(target: u64, link_name: &str) -> Vec<u8> {
-        let mut bytes = vec![1];
-        bytes.extend_from_slice(&target.to_le_bytes());
-        bytes.push(1);
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend(crate::bytes::lp_utf16_bytes(
-            "11111111-2222-3333-4444-555555555555",
-        ));
-        bytes.push(0);
-        bytes.extend_from_slice(&36_u32.to_le_bytes());
-        bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-        bytes.extend(crate::bytes::lp_utf16_bytes(link_name));
-        bytes.push(0);
-        bytes
-    }
-
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(b"256");

@@ -666,17 +666,7 @@ fn marker_value(bytes: &[u8], position: usize, frame_end: usize) -> Option<(u32,
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn lp_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-        out.extend(units.into_iter().flat_map(u16::to_le_bytes));
-    }
+    use crate::test_support::{lp_ascii, lp_utf16};
 
     fn table_entry(entity_id: &str) -> TableEntry {
         TableEntry {

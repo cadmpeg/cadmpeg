@@ -182,6 +182,7 @@ pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::test_support::{lp_ascii, lp_utf16};
 
     /// The six systems in collection order.
     const SYSTEMS: [&str; 6] = [
@@ -219,19 +220,6 @@ pub(crate) mod tests {
         out.extend_from_slice(&3u32.to_le_bytes());
         out.extend_from_slice(b"001");
         out.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn lp_ascii(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
-    fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        out.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
     }
 
     fn reference(out: &mut Vec<u8>, record_index: u32) {

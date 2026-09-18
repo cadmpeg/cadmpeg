@@ -2,14 +2,7 @@
 //! Shared helpers for design-owner unit tests.
 
 use crate::design::decode::parameters::design_parameter_discriminator;
-
-pub(crate) fn lp_utf16(out: &mut Vec<u8>, value: &str) {
-    let units = value.encode_utf16().collect::<Vec<_>>();
-    out.extend_from_slice(&(units.len() as u32).to_le_bytes());
-    for unit in units {
-        out.extend_from_slice(&unit.to_le_bytes());
-    }
-}
+use crate::test_support::lp_utf16;
 
 pub(crate) fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3u32.to_le_bytes());

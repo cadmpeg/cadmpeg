@@ -274,29 +274,6 @@ fn component_reference_data_is_an_open_json_object() {
     assert!(super::parse_component_reference_data(b"not-json").is_err());
 }
 
-fn local_reference(target: u64) -> Vec<u8> {
-    let mut bytes = vec![1];
-    bytes.extend_from_slice(&target.to_le_bytes());
-    bytes.extend_from_slice(&[0, 0]);
-    bytes
-}
-
-fn cross_document_reference(target: u64, link_name: &str) -> Vec<u8> {
-    let mut bytes = vec![1];
-    bytes.extend_from_slice(&target.to_le_bytes());
-    bytes.push(1);
-    bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(
-        "11111111-2222-3333-4444-555555555555",
-    ));
-    bytes.push(0);
-    bytes.extend_from_slice(&36_u32.to_le_bytes());
-    bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-    bytes.extend(crate::bytes::lp_utf16_bytes(link_name));
-    bytes.push(0);
-    bytes
-}
-
 /// One occurrence-placement record: a target path whose last element
 /// carries `role` as its cross-document link name, the identity marker,
 /// and the three closing reference runs.

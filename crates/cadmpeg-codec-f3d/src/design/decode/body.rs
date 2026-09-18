@@ -1239,6 +1239,7 @@ mod tests {
     };
     use crate::design::test_support::{design_type, indexed_header, primary_record};
     use crate::records::entity_header::DESIGN_MODULE_FUSION;
+    use crate::test_support::push_reference_u64;
 
     fn push_entity_header(out: &mut Vec<u8>, class_tag: &str, entity: u64) {
         out.extend_from_slice(&3u32.to_le_bytes());
@@ -1246,12 +1247,6 @@ mod tests {
         out.extend_from_slice(&entity.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
         out.extend(lp_utf16_bytes(&format!("0_{entity}")));
-    }
-
-    fn push_reference(out: &mut Vec<u8>, target: u64) {
-        out.push(1);
-        out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&[0, 0]);
     }
 
     fn body_map_bytes(prefix_len: usize, declared_count: u32, pairs: &[(u64, u64)]) -> Vec<u8> {
@@ -1351,7 +1346,7 @@ mod tests {
                 out.extend_from_slice(&target.to_le_bytes());
             }
             // Form 0 and every other stated form write the plain reference.
-            _ => push_reference(out, target),
+            _ => push_reference_u64(out, target),
         }
     }
 
@@ -1634,9 +1629,9 @@ mod tests {
         bytes.extend(lp_utf16_bytes("99999999-8888-8777-A666-555555555555"));
         bytes.extend(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID));
         bytes.extend(lp_utf16_bytes("PrismMaterial-001"));
-        push_reference(&mut bytes, 7);
+        push_reference_u64(&mut bytes, 7);
         bytes.push(0);
-        push_reference(&mut bytes, entity + 1);
+        push_reference_u64(&mut bytes, entity + 1);
         bytes.extend(lp_utf16_bytes("Body"));
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);

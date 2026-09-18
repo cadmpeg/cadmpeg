@@ -4,11 +4,12 @@ use crate::design::decode::scopes::tests::assembly::assembly_operand_frame_fixtu
 use crate::design::test_support::dump::{
     bind_joint_origin_frames_from_assemblies, exact_assembly_alignment,
     exact_circular_pattern_construction_with_owners, exact_rectangular_pattern_construction,
-    lp_utf16, select_circular_pattern_axis, DesignCircularPatternConstruction,
-    DesignParameterScope, IndexedRecordOffsets,
+    select_circular_pattern_axis, DesignCircularPatternConstruction, DesignParameterScope,
+    IndexedRecordOffsets,
 };
 use crate::design::test_support::indexed_header;
 use crate::design::test_support::push_marked_reference;
+use crate::test_support::lp_utf16;
 
 #[test]
 fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {

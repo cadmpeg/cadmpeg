@@ -2,21 +2,17 @@
 //! Synthetic Protein instance-property payloads.
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::lp_ascii;
 use cadmpeg_protein::{
     CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
 };
 
 pub(crate) fn generated_instance_properties_for(guid: &str) -> Vec<u8> {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
     let mut logical = RECORD_MARKER.to_vec();
-    lp(&mut logical, "GenericSchema");
-    lp(&mut logical, guid);
-    lp(&mut logical, "Prism-001");
-    lp(&mut logical, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    lp_ascii(&mut logical, "GenericSchema");
+    lp_ascii(&mut logical, guid);
+    lp_ascii(&mut logical, "Prism-001");
+    lp_ascii(&mut logical, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     let value_block = logical.len();
     logical.resize(value_block + 209, 0);
     for (ordinal, value) in [0.1f64, 0.2, 0.3, 1.0].into_iter().enumerate() {
@@ -32,16 +28,11 @@ pub(crate) fn generated_instance_properties_for(guid: &str) -> Vec<u8> {
 }
 
 pub(crate) fn generated_prism_instance_properties(schema: &str, guid: &str) -> Vec<u8> {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
-
     let mut logical = RECORD_MARKER.to_vec();
-    lp(&mut logical, schema);
-    lp(&mut logical, guid);
-    lp(&mut logical, "Prism-001");
-    lp(&mut logical, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    lp_ascii(&mut logical, schema);
+    lp_ascii(&mut logical, guid);
+    lp_ascii(&mut logical, "Prism-001");
+    lp_ascii(&mut logical, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     let position = logical.len();
     match schema {
         "PrismOpaqueSchema" => {
@@ -101,21 +92,17 @@ pub(crate) fn generated_schema_from_paged(properties: &[u8]) -> &str {
 }
 
 pub(crate) fn generated_definition_catalog_for(schema: &str) -> Vec<u8> {
-    fn lp(out: &mut Vec<u8>, value: &str) {
-        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
-        out.extend_from_slice(value.as_bytes());
-    }
     let mut out = RECORD_MARKER.to_vec();
-    lp(&mut out, schema);
+    lp_ascii(&mut out, schema);
     out.push(0);
-    lp(&mut out, "Prism-001");
-    lp(&mut out, "Prism-001");
+    lp_ascii(&mut out, "Prism-001");
+    lp_ascii(&mut out, "Prism-001");
     out.extend_from_slice(&2_u32.to_le_bytes());
     for value in ["Plastic/Thermoplastic", "Default", "Generated appearance"] {
-        lp(&mut out, value);
+        lp_ascii(&mut out, value);
     }
     out.extend_from_slice(&0_u32.to_le_bytes());
     out.extend_from_slice(&1_u32.to_le_bytes());
-    lp(&mut out, "");
+    lp_ascii(&mut out, "");
     paged_instance_properties(&out)
 }

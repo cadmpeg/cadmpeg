@@ -15,11 +15,12 @@ use super::{
     parse_legacy_parameter_owner_68, parse_legacy_parameter_owner_88, parse_parameter_companion,
     parse_parameter_owner,
 };
-use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
+use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::records::{
     parameters::{DesignParameterCompanion, DesignParameterKind, DesignParameterOwner},
     recipes::{ConstructionRecipe, ConstructionRecipeKind},
 };
+use crate::test_support::lp_utf16;
 use crate::test_support::*;
 
 fn compact_owned_parameter_record(

@@ -31,6 +31,65 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// Write a length-prefixed ASCII string: a little-endian `u32` byte count then
+/// the bytes.
+pub(crate) fn lp_ascii(out: &mut Vec<u8>, value: &str) {
+    out.extend_from_slice(
+        &u32::try_from(value.len())
+            .expect("test ASCII string length")
+            .to_le_bytes(),
+    );
+    out.extend_from_slice(value.as_bytes());
+}
+
+/// Write a length-prefixed UTF-16 string: a little-endian `u32` code-unit count
+/// then the little-endian units.
+pub(crate) fn lp_utf16(out: &mut Vec<u8>, value: &str) {
+    let units = value.encode_utf16().collect::<Vec<_>>();
+    out.extend_from_slice(
+        &u32::try_from(units.len())
+            .expect("test UTF-16 unit count")
+            .to_le_bytes(),
+    );
+    for unit in units {
+        out.extend_from_slice(&unit.to_le_bytes());
+    }
+}
+
+/// Write a same-document reference to a `u64` target: the presence byte, the
+/// target, then the two zero bytes that close the reference.
+pub(crate) fn push_reference_u64(out: &mut Vec<u8>, target: u64) {
+    out.push(1);
+    out.extend_from_slice(&target.to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
+}
+
+/// A same-document reference record to `target`.
+pub(crate) fn local_reference(target: u64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_reference_u64(&mut bytes, target);
+    bytes
+}
+
+/// A cross-document reference record: the presence byte, the target, the
+/// cross-document marker, the source type GUID, the link type GUID, and the
+/// link name.
+pub(crate) fn cross_document_reference(target: u64, link_name: &str) -> Vec<u8> {
+    let mut bytes = vec![1];
+    bytes.extend_from_slice(&target.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend(crate::bytes::lp_utf16_bytes(
+        "11111111-2222-3333-4444-555555555555",
+    ));
+    bytes.push(0);
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    bytes.extend(crate::bytes::lp_utf16_bytes(link_name));
+    bytes.push(0);
+    bytes
+}
+
 mod tokens_test;
 pub(crate) use tokens_test::*;
 
