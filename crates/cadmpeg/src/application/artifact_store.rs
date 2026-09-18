@@ -373,6 +373,8 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+    #[cfg(feature = "nx")]
+    use crate::test_support::{put_u16, put_u32};
     use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
     use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
@@ -651,15 +653,5 @@ mod tests {
         put_u32(entry, 72, FREE);
         put_u32(entry, 76, child);
         put_u32(entry, 116, start);
-    }
-
-    #[cfg(feature = "nx")]
-    fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-    }
-
-    #[cfg(feature = "nx")]
-    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 }
