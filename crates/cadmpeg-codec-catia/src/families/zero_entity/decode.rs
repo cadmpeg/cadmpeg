@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-use crate::nurbs::finite_point3;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -104,7 +103,7 @@ fn closed_wire_loop_members<'a>(
     let members = members?;
     if members.iter().any(|member| {
         let [start, end] = member.endpoints;
-        !finite_point3(start) || !finite_point3(end)
+        !start.is_finite() || !end.is_finite()
     }) {
         return None;
     }
