@@ -1,4 +1,27 @@
-use super::*;
+use crate::framing::xmt_reference::XmtTarget;
+use crate::native::parasolid::ParasolidOffsetSurfaceRecord;
+use crate::test_support::blend_bound_charted_intersection_curve_stream;
+use crate::test_support::blend_surface_topology_partition_stream;
+use crate::test_support::charted_intersection_curve_topology_partition_stream;
+use crate::test_support::deltas_intersection_curve_stream;
+use crate::test_support::intersection_curve_topology_partition_stream;
+use crate::test_support::offset_surface_topology_partition_stream;
+use crate::test_support::prt_with_partition;
+use crate::test_support::prt_with_streams;
+use crate::test_support::put_ref;
+use crate::test_support::surface_curve_topology_partition_stream;
+use crate::test_support::topology_partition_stream;
+use crate::test_support::trimmed_topology_partition_stream;
+use crate::NxCodec;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::BlendCrossSection;
+use cadmpeg_ir::geometry::BlendRadiusLaw;
+use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::report::LossCategory;
+use std::io::Cursor;
 
 #[test]
 fn parasolid_attribute_definition_requires_declared_printable_name_and_field_record() {

@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::native::om::display_color::DisplayColorFrame;
+use crate::native::om::display_color::RmDisplayColorAssignment;
+use crate::native::om::display_color::RmDisplayColorAssignmentEncoding;
+use crate::om::column_row::LinkedRow;
+use crate::om::column_row::TargetRow;
+use crate::om::compact::CompactIndexAtom;
+
 use crate::native::attach::resolve_rm_face_color_bindings;
 use crate::native::attach::resolve_rm_face_colors;
 use crate::native::attach::resolve_rm_source_color_bindings;

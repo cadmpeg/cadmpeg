@@ -4280,13 +4280,6 @@ mod tests {
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-    use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-        SurfaceGeometry,
-    };
-
-    use cadmpeg_ir::report::LossCategory;
-
     use crate::test_support::*;
     use crate::NxCodec;
 
