@@ -69,7 +69,7 @@ pub(crate) fn build_geometry_report(
     has_topology: bool,
     has_unresolved_sub_bodies: bool,
     tessellation_count: usize,
-    model: &crate::native::NativeModel,
+    model: &crate::native::model::NativeModel,
     completion_budget: CompletionBudgetStatus,
     adaptive_geometry_exhausted: bool,
     dialect_losses: &[LossNote],

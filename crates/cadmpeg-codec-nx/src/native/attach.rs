@@ -88,7 +88,8 @@ use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
-use super::{has_complete_saved_toggle_stream, TypedNative};
+use super::toggle::has_complete_saved_toggle_stream;
+use super::TypedNative;
 use cadmpeg_ir::native::catalogue::NotePhase;
 
 pub(crate) fn attach_container_layer(
@@ -9211,9 +9212,12 @@ pub(crate) fn attach_expression_parameters(
             let value = expression.value.and_then(|value| match &expression.unit {
                 crate::native::om::ExpressionUnit::Millimeter
                 | crate::native::om::ExpressionUnit::Inch => {
-                    crate::native::expression_length_in_millimeters(&expression.unit, value.get())
-                        .and_then(Length::new)
-                        .map(ParameterValue::Length)
+                    crate::native::om::expression_length_in_millimeters(
+                        &expression.unit,
+                        value.get(),
+                    )
+                    .and_then(Length::new)
+                    .map(ParameterValue::Length)
                 }
                 crate::native::om::ExpressionUnit::Degree => {
                     Some(ParameterValue::Angle(Angle::new(value.get().to_radians())?))

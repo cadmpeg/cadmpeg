@@ -155,7 +155,7 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
         if content.retains_opaque_payload()
             && !(typed_native == TypedNative::Available
                 && content == EntryContent::SaveToggleInfo
-                && crate::native::has_complete_saved_toggle_stream(&scan.container))
+                && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
         {
             body.losses.push(NxLossCode::ContainerStreamOpaque.note(format!(
                 "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
@@ -270,8 +270,8 @@ fn build_metadata_ir(
             TypedNative::ContainerOnly,
         )?;
     } else {
-        let mut parsed = crate::native::ParsedStreams::parse(scan);
-        let model = crate::native::NativeModel::extract(
+        let mut parsed = crate::native::substrate::ParsedStreams::parse(scan);
+        let model = crate::native::model::NativeModel::extract(
             ctx,
             root,
             &scan.container,

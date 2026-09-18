@@ -3673,8 +3673,8 @@ mod tests {
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = crate::decode::scan(&ctx, root).unwrap();
-        let mut parsed = crate::native::ParsedStreams::parse(&scan);
-        let mut model = super::NativeModel::extract(
+        let mut parsed = crate::native::substrate::ParsedStreams::parse(&scan);
+        let mut model = crate::native::model::NativeModel::extract(
             &ctx,
             root,
             &scan.container,

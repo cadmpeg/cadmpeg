@@ -22,22 +22,14 @@ pub(crate) mod display_jt;
 mod features;
 pub(crate) mod hex;
 pub(crate) mod history;
-mod model;
-mod om;
+pub(crate) mod model;
+pub(crate) mod om;
 mod parasolid;
 mod segments;
 pub(crate) mod structure;
-mod substrate;
-mod toggle;
+pub(crate) mod substrate;
+pub(crate) mod toggle;
 pub(crate) mod vector;
-
-pub(crate) use model::{extract_segment_lineage, terminal_feature_body_ids, NativeModel};
-pub(crate) use om::{
-    canonical_expression_value, evaluate_parameterized_expression,
-    expression_length_in_millimeters, expression_parameter_names,
-};
-pub(crate) use substrate::{topology_streams, ParsedStreams};
-pub(crate) use toggle::has_complete_saved_toggle_stream;
 
 /// Availability of typed native records during container retention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,12 +40,12 @@ pub(crate) enum TypedNative {
     ContainerOnly,
 }
 
-/// Attach a pre-extracted [`NativeModel`] to `ir`: annotations, namespace arenas,
-/// and semantic islands. Build the model with [`NativeModel::extract`].
+/// Attach a pre-extracted [`crate::native::model::NativeModel`] to `ir`: annotations, namespace arenas,
+/// and semantic islands. Build the model with [`crate::native::model::NativeModel::extract`].
 pub(crate) fn attach_annotations(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    model: &NativeModel,
+    model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,

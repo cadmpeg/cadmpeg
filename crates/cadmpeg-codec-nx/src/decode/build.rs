@@ -153,7 +153,7 @@ pub(crate) fn try_decode_geometry(
     let mut stream_unknowns = Vec::new();
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
-    let mut parsed = crate::native::ParsedStreams::parse(scan);
+    let mut parsed = crate::native::substrate::ParsedStreams::parse(scan);
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
     let mut topology_losses: Vec<LossNote> = Vec::new();
     let mut native_losses: Vec<LossNote> = Vec::new();
@@ -186,12 +186,12 @@ pub(crate) fn try_decode_geometry(
     .flatten();
     let terminal_lineage =
         rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected)
-            .then(|| crate::native::extract_segment_lineage(&scan.container, &scan.streams));
+            .then(|| crate::native::model::extract_segment_lineage(&scan.container, &scan.streams));
     let emitted_body_ids = body_node_ids.keys().cloned().collect::<BTreeSet<_>>();
     let terminal_preselection = terminal_lineage
         .as_ref()
         .and_then(|lineage| {
-            crate::native::terminal_feature_body_ids(
+            crate::native::model::terminal_feature_body_ids(
                 &emitted_body_ids,
                 &lineage.bindings,
                 &lineage.statuses,
@@ -1173,7 +1173,7 @@ pub(crate) fn try_decode_geometry(
     )?;
 
     // Extract once: body selection and annotation attachment both read it.
-    let model = crate::native::NativeModel::extract(
+    let model = crate::native::model::NativeModel::extract(
         ctx,
         root,
         &scan.container,
@@ -1636,7 +1636,7 @@ pub(crate) fn select_active_body(
 
 pub(crate) fn select_terminal_feature_bodies(
     ir: &mut CadIr,
-    model: &crate::native::NativeModel,
+    model: &crate::native::model::NativeModel,
 ) -> bool {
     if ir.model.bodies.len() <= 1 {
         return false;
@@ -1650,7 +1650,7 @@ pub(crate) fn select_terminal_feature_bodies(
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
     // retained body images are all final, not that lineage was unresolved.
-    let Some(selected) = crate::native::terminal_feature_body_ids(
+    let Some(selected) = crate::native::model::terminal_feature_body_ids(
         &emitted,
         &model.segments.segment_body_bindings,
         &model.segments.segment_body_lineage_statuses,
