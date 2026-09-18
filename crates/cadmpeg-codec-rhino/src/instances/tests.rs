@@ -196,6 +196,21 @@ fn instance_reference_requires_finite_invertible_affine_payload_and_skips_future
     assert_eq!(parsed.transform, Transform::identity());
 }
 
+/// The refused transform names the first byte of the matrix it read, which
+/// follows the version byte and the definition UUID.
+#[test]
+fn nonfinite_instance_transform_is_refused_at_the_matrix_first_byte() {
+    let mut rows = Transform::identity().rows();
+    rows[1][2] = f64::NAN;
+    let bytes = reference_matrix_bytes(rows);
+    let matrix_offset = 17;
+    let error = parse_reference(&bytes, 0..bytes.len()).expect_err("nonfinite transform");
+    assert_eq!(
+        error,
+        crate::chunks::FramingError::structural(matrix_offset, "instance transform is not finite")
+    );
+}
+
 #[test]
 fn instance_reference_rejects_nil_definition_and_nonfinite_transform() {
     let mut nil = reference_bytes(Transform::identity());

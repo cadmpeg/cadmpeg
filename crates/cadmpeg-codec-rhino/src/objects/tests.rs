@@ -477,6 +477,53 @@ fn future_tagged_attributes_accept_known_prefix_and_suffix() {
     assert_eq!(parsed.name, "future");
 }
 
+/// A tagged numeric item is refused at the value's first byte, which follows
+/// the one-byte item tag.
+#[test]
+fn tagged_attributes_refuse_a_nonfinite_plot_weight_at_its_first_byte() {
+    let bytes = tagged_attributes(&[(8, f64::NAN.to_le_bytes().to_vec())], 0);
+    let value_offset = 22;
+    assert_eq!(
+        &bytes[value_offset..value_offset + 8],
+        f64::NAN.to_le_bytes()
+    );
+    let error = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("nonfinite plot weight");
+    assert_eq!(
+        error,
+        crate::chunks::FramingError::structural(value_offset, "plot weight is not finite")
+    );
+}
+
+/// The obsolete thickness is refused at its own first byte, not at the start of
+/// the attribute body that contains it.
+#[test]
+fn fixed_attributes_refuse_a_nonfinite_obsolete_thickness_at_its_first_byte() {
+    let mut bytes = fixed_attributes(4, 0, Some(true));
+    let value_offset = 33;
+    bytes[value_offset..value_offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+    let error = crate::objects::parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V4,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("nonfinite obsolete thickness");
+    assert_eq!(
+        error,
+        crate::chunks::FramingError::structural(value_offset, "obsolete thickness is not finite")
+    );
+}
+
 #[test]
 fn tagged_attributes_reject_nonfinite_numeric_items() {
     let bytes = tagged_attributes(&[(8, f64::NAN.to_le_bytes().to_vec())], 0);

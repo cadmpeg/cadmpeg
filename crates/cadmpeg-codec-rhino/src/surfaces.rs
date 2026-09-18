@@ -841,6 +841,7 @@ fn read_curve_poles(
     let mut points = Vec::with_capacity(count);
     let mut weights = rational.then(|| Vec::with_capacity(count));
     for _ in 0..count {
+        let pole_offset = reader.position();
         let x = reader.f64()?;
         let y = reader.f64()?;
         let z = if dimension == 3 { reader.f64()? } else { 0.0 };
@@ -849,7 +850,7 @@ fn read_curve_poles(
             .map(|target| reader.f64().map(|weight| (target, weight)))
             .transpose()?;
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
-            return Err(error(reader.position(), "NURBS pole is not finite"));
+            return Err(error(pole_offset, "NURBS pole is not finite"));
         }
         let point = if let Some((target, weight)) = weight {
             if !weight.is_finite() || weight == 0.0 {
@@ -1035,6 +1036,7 @@ fn read_poles(
     let mut points = Vec::with_capacity(count);
     let mut weights = rational.then(|| Vec::with_capacity(count));
     for _ in 0..count {
+        let pole_offset = reader.position();
         let x = reader.f64()?;
         let y = reader.f64()?;
         let z = if dimension == 3 { reader.f64()? } else { 0.0 };
@@ -1043,7 +1045,7 @@ fn read_poles(
             .map(|target| reader.f64().map(|weight| (target, weight)))
             .transpose()?;
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
-            return Err(error(reader.position(), "NURBS pole is not finite"));
+            return Err(error(pole_offset, "NURBS pole is not finite"));
         }
         let point = if let Some((target, weight)) = weight {
             if !weight.is_finite() || weight == 0.0 {
@@ -1056,7 +1058,7 @@ fn read_poles(
         };
         let scaled = [point[0] * scale, point[1] * scale, point[2] * scale];
         if !scaled.iter().all(|value| value.is_finite()) {
-            return Err(error(reader.position(), "scaled NURBS pole is not finite"));
+            return Err(error(pole_offset, "scaled NURBS pole is not finite"));
         }
         points.push(Point3::new(scaled[0], scaled[1], scaled[2]));
     }

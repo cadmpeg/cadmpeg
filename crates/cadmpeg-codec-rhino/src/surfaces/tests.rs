@@ -2,7 +2,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::*;
-use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::test_support::test_dump::{crc_chunk, long_chunk, push_f64, push_i32};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -378,6 +378,39 @@ fn curve_versions_cross_archive_bands_and_consume_tag_gate() {
         assert_eq!(curve.control_points().len(), 6);
         assert_eq!(reader.remaining(), 0);
         assert!(matches!(archive, ArchiveVersion::V5 | ArchiveVersion::V8));
+    }
+}
+
+/// Both pole readers refuse a non-finite pole at the pole's first byte, so the
+/// refusal names the coordinate triple it read and not the byte after it.
+#[test]
+fn a_nonfinite_pole_is_refused_at_the_pole_first_byte() {
+    type PoleReader = fn(
+        &mut BoundedReader<'_>,
+        usize,
+        bool,
+        i32,
+        f64,
+    ) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError>;
+
+    let mut bytes = vec![0xa5, 0xa5, 0xa5];
+    let first_pole = bytes.len();
+    for value in [1.0_f64, 2.0, 3.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let second_pole = bytes.len();
+    for value in [4.0_f64, f64::NAN, 6.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    for read in [read_curve_poles as PoleReader, read_poles as PoleReader] {
+        let mut reader =
+            BoundedReader::new(&bytes, first_pole, bytes.len()).expect("required invariant");
+        let error = read(&mut reader, 2, false, 3, 1.0).expect_err("nonfinite pole");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(FramingError::Structural { offset, ref message })
+                if offset == second_pole && message == "NURBS pole is not finite"
+        ));
     }
 }
 

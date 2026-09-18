@@ -13,7 +13,7 @@ use crate::container::{OpaqueRecord, Record, Table};
 use crate::objects::{
     parse_class_wrapper_with_userdata, read_uuid_list, ClassUserdata, UserdataDescriptor,
 };
-use crate::wire::{uuid, Uuid};
+use crate::wire::{finite, read_finite, uuid, Uuid};
 
 const MAX_STRING_BYTES: usize = 1 << 20;
 const MAX_ARRAY_ITEMS: usize = 1 << 16;
@@ -690,19 +690,10 @@ pub(crate) struct DocumentMetadata {
     pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
-fn finite(reader: &BoundedReader<'_>, value: f64, label: &str) -> Result<f64, FramingError> {
-    value.is_finite().then_some(value).ok_or_else(|| {
-        FramingError::structural(reader.position(), format!("{label} is not finite"))
-    })
-}
-
-fn finite_f64(reader: &mut BoundedReader<'_>, label: &str) -> Result<f64, FramingError> {
-    let value = reader.f64()?;
-    finite(reader, value, label)
-}
-
+/// Refuses a group of `f64` values with a non-finite member at `offset`, the
+/// first byte of the group.
 fn finite_array<const N: usize>(
-    reader: &BoundedReader<'_>,
+    offset: usize,
     values: [f64; N],
     label: &str,
 ) -> Result<[f64; N], FramingError> {
@@ -711,29 +702,29 @@ fn finite_array<const N: usize>(
         .all(|value| value.is_finite())
         .then_some(values)
         .ok_or_else(|| {
-            FramingError::structural(
-                reader.position(),
-                format!("{label} contains a nonfinite value"),
-            )
+            FramingError::structural(offset, format!("{label} contains a nonfinite value"))
         })
 }
 
 /// Reads a finite point.
 pub(crate) fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, FramingError> {
+    let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Point3(finite_array(reader, values, "point")?))
+    Ok(Point3(finite_array(offset, values, "point")?))
 }
 
 /// Reads a finite vector.
 pub(crate) fn vector(reader: &mut BoundedReader<'_>) -> Result<Vector3, FramingError> {
+    let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Vector3(finite_array(reader, values, "vector")?))
+    Ok(Vector3(finite_array(offset, values, "vector")?))
 }
 
 /// Reads a finite interval.
 pub(crate) fn interval(reader: &mut BoundedReader<'_>) -> Result<Interval, FramingError> {
+    let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?];
-    Ok(Interval(finite_array(reader, values, "interval")?))
+    Ok(Interval(finite_array(offset, values, "interval")?))
 }
 
 /// Reads a finite plane without reconstructing its serialized equation.
@@ -742,13 +733,14 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
     let xaxis = vector(reader)?;
     let yaxis = vector(reader)?;
     let zaxis = vector(reader)?;
+    let equation_offset = reader.position();
     let equation = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
     Ok(Plane {
         origin,
         xaxis,
         yaxis,
         zaxis,
-        equation: finite_array(reader, equation, "plane equation")?,
+        equation: finite_array(equation_offset, equation, "plane equation")?,
     })
 }
 
@@ -762,11 +754,12 @@ pub(crate) fn bbox(reader: &mut BoundedReader<'_>) -> Result<BoundingBox, Framin
 
 /// Reads a finite row-major transform.
 pub(crate) fn xform(reader: &mut BoundedReader<'_>) -> Result<Xform, FramingError> {
+    let offset = reader.position();
     let mut values = [0.0; 16];
     for value in &mut values {
         *value = reader.f64()?;
     }
-    Ok(Xform(finite_array(reader, values, "transform")?))
+    Ok(Xform(finite_array(offset, values, "transform")?))
 }
 
 /// Decodes an archive UTF-8 string for later plugin/settings records.
@@ -1094,19 +1087,24 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
         ));
     }
     let unit_value = reader.i32()?;
-    let absolute_raw = reader.f64()?;
-    let absolute = finite(reader, absolute_raw, "absolute tolerance")?;
-    let (relative, angular) = if legacy {
+    let absolute = read_finite(reader, "absolute tolerance")?;
+    // The two remaining tolerances are checked after both are read, so the
+    // refused one does not depend on the version-gated wire order.
+    let (relative, relative_offset, angular, angular_offset) = if legacy {
+        let relative_offset = reader.position();
         let relative = reader.f64()?;
+        let angular_offset = reader.position();
         let angular = reader.f64()?;
-        (relative, angular)
+        (relative, relative_offset, angular, angular_offset)
     } else {
+        let angular_offset = reader.position();
         let angular = reader.f64()?;
+        let relative_offset = reader.position();
         let relative = reader.f64()?;
-        (relative, angular)
+        (relative, relative_offset, angular, angular_offset)
     };
-    let angular = finite(reader, angular, "angular tolerance")?;
-    let relative = finite(reader, relative, "relative tolerance")?;
+    let angular = finite(angular_offset, angular, "angular tolerance")?;
+    let relative = finite(relative_offset, relative, "relative tolerance")?;
     if absolute <= 0.0 {
         return Err(FramingError::structural(
             reader.position(),
@@ -1349,16 +1347,16 @@ pub(crate) fn parse_mesh_parameters<'a>(
     let refine = reader.i32()? != 0;
     let jagged_seams = reader.i32()? != 0;
     let obsolete_weld = reader.i32()?;
-    let tolerance = finite_f64(reader, "mesh tolerance")?;
-    let min_edge_length = finite_f64(reader, "minimum mesh edge length")?;
-    let max_edge_length = finite_f64(reader, "maximum mesh edge length")?;
-    let grid_aspect_ratio = finite_f64(reader, "mesh grid aspect ratio")?;
+    let tolerance = read_finite(reader, "mesh tolerance")?;
+    let min_edge_length = read_finite(reader, "minimum mesh edge length")?;
+    let max_edge_length = read_finite(reader, "maximum mesh edge length")?;
+    let grid_aspect_ratio = read_finite(reader, "mesh grid aspect ratio")?;
     let grid_min_count = reader.i32()?;
     let grid_max_count = reader.i32()?;
-    let grid_angle_radians = finite_f64(reader, "mesh grid angle")?;
-    let grid_amplification = finite_f64(reader, "mesh grid amplification")?;
-    let refine_angle_radians = finite_f64(reader, "mesh refine angle")?;
-    let obsolete_combine_angle = finite_f64(reader, "mesh combine angle")?;
+    let grid_angle_radians = read_finite(reader, "mesh grid angle")?;
+    let grid_amplification = read_finite(reader, "mesh grid amplification")?;
+    let refine_angle_radians = read_finite(reader, "mesh refine angle")?;
+    let obsolete_combine_angle = read_finite(reader, "mesh combine angle")?;
     let face_type = reader.i32()?;
     let texture_range = if version.1 >= 1 {
         Some(reader.i32()? as u32)
@@ -1368,7 +1366,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
     let (custom_settings, relative_tolerance) = if version.1 >= 2 {
         (
             Some(reader.bool()?),
-            Some(finite_f64(reader, "mesh relative tolerance")?),
+            Some(read_finite(reader, "mesh relative tolerance")?),
         )
     } else {
         (None, None)
@@ -1428,7 +1426,7 @@ pub(crate) fn parse_settings_attributes(
             "unsupported settings-attributes version",
         ));
     }
-    finite_f64(&mut reader, "linetype display scale")?;
+    read_finite(&mut reader, "linetype display scale")?;
     color(&mut reader)?;
     for _ in 0..3 {
         reader.i32()?;
@@ -2019,10 +2017,8 @@ fn parse_layer(
     let layer_color = color(&mut reader)?;
     let _obsolete_line_style = reader.i16()?;
     let _obsolete_line_style_index = reader.i16()?;
-    let thickness_raw = reader.f64()?;
-    let _obsolete_thickness = finite(&reader, thickness_raw, "layer thickness")?;
-    let scale_raw = reader.f64()?;
-    let _obsolete_scale = finite(&reader, scale_raw, "layer scale")?;
+    let _obsolete_thickness = read_finite(&mut reader, "layer thickness")?;
+    let _obsolete_scale = read_finite(&mut reader, "layer scale")?;
     let name = utf16(&mut reader)?;
     let visible = if version.1 >= 1 {
         reader.bool_with_writer_version(writer_version)?
@@ -2032,10 +2028,9 @@ fn parse_layer(
     let linetype_index = (version.1 >= 2).then(|| reader.i32()).transpose()?;
     let plot = if version.1 >= 3 {
         let color = color(&mut reader)?;
-        let plot_weight_raw = reader.f64()?;
         Some(LayerPlot {
             color,
-            weight_mm: finite(&reader, plot_weight_raw, "plot weight")?,
+            weight_mm: read_finite(&mut reader, "plot weight")?,
         })
     } else {
         None
@@ -2160,14 +2155,12 @@ fn parse_layer(
             }
             if item == 30 {
                 layer.extension_items.push(item);
-                let value = reader.f64()?;
-                finite(&reader, value, "layer extension value")?;
+                read_finite(&mut reader, "layer extension value")?;
                 item = reader.u8()?;
             }
             if item == 31 {
                 layer.extension_items.push(item);
-                let value = reader.f64()?;
-                finite(&reader, value, "layer extension value")?;
+                read_finite(&mut reader, "layer extension value")?;
                 item = reader.u8()?;
             }
         }

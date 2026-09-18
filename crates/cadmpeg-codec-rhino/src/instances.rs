@@ -1252,6 +1252,7 @@ pub(crate) fn parse_reference(
             "instance reference definition UUID is nil",
         ));
     }
+    let rows_offset = reader.position();
     let mut rows = [[0.0; 4]; 4];
     for row in &mut rows {
         for value in row {
@@ -1266,9 +1267,8 @@ pub(crate) fn parse_reference(
             "instance transform is not affine",
         ));
     }
-    let transform = Transform::affine([rows[0], rows[1], rows[2]]).ok_or_else(|| {
-        FramingError::structural(reader.position(), "instance transform is not finite")
-    })?;
+    let transform = Transform::affine([rows[0], rows[1], rows[2]])
+        .ok_or_else(|| FramingError::structural(rows_offset, "instance transform is not finite"))?;
     let inverse = transform.try_inverse_affine().map_err(|error| {
         FramingError::structural(
             reader.position(),

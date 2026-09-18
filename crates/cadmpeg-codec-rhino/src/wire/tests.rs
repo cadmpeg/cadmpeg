@@ -1,7 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::Uuid;
+use super::{read_finite, Uuid};
+use crate::chunks::{BoundedReader, FramingError};
+
+/// A non-finite value is refused at its own first byte, not after the read.
+#[test]
+fn read_finite_refuses_a_nonfinite_value_at_its_first_byte() {
+    let mut bytes = vec![0xa5, 0xa5, 0xa5];
+    let value_offset = bytes.len();
+    bytes.extend(f64::NAN.to_le_bytes());
+    bytes.extend(1.5_f64.to_le_bytes());
+    let mut reader = BoundedReader::new(&bytes, 3, bytes.len()).expect("bounded reader");
+    let error = read_finite(&mut reader, "witness").expect_err("nonfinite value");
+    assert_eq!(
+        error,
+        FramingError::structural(value_offset, "witness is not finite")
+    );
+
+    let mut reader = BoundedReader::new(&bytes, 11, bytes.len()).expect("bounded reader");
+    assert_eq!(read_finite(&mut reader, "witness"), Ok(1.5));
+}
 
 /// `to_wire` inverts `from_wire` on the mixed-endian group transposition.
 #[test]

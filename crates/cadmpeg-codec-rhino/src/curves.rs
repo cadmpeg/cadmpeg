@@ -1271,9 +1271,10 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     if minor >= 2 {
         let value_count = count(reader, 8)?;
         for _ in 0..value_count {
+            let value_offset = reader.position();
             let value = reader.f64()?;
             if !value.is_finite() {
-                return Err(error(reader.position(), "point-cloud value is not finite"));
+                return Err(error(value_offset, "point-cloud value is not finite"));
             }
         }
         if value_count != 0 && value_count != point_count {
@@ -1790,6 +1791,21 @@ mod tests {
         payload.extend(1_i32.to_le_bytes());
         payload.extend(0.5_f64.to_le_bytes());
         payload
+    }
+
+    /// A refused scalar names its own first byte, not the byte after it.
+    #[test]
+    fn nonfinite_point_cloud_value_is_refused_at_the_value_first_byte() {
+        let mut payload = mismatched_point_cloud_payload();
+        let value_offset = payload.len() - 8;
+        payload[value_offset..].copy_from_slice(&f64::NAN.to_le_bytes());
+        let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
+        let error = read_cloud(&mut reader, 1.0).expect_err("nonfinite point-cloud value");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(FramingError::Structural { offset, ref message })
+                if offset == value_offset && message == "point-cloud value is not finite"
+        ));
     }
 
     /// Every redundant point-cloud channel repair carries the repair code itself.
