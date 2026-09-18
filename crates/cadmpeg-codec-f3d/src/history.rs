@@ -8774,17 +8774,8 @@ fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
 pub(crate) fn historical_topology(
     brep: &cadmpeg_asm::brep::AsmBrep,
 ) -> Option<AsmHistoricalTopology> {
-    fn entity_ref(id: &str) -> Option<i64> {
-        id.rsplit_once('#')?
-            .1
-            .split(':')
-            .next()?
-            .parse::<i64>()
-            .ok()
-    }
-
     fn refs<'a>(ids: impl Iterator<Item = &'a str>) -> Option<Vec<i64>> {
-        ids.map(entity_ref).collect()
+        ids.map(stable_ref).collect()
     }
 
     fn relations<'a>(
@@ -8793,7 +8784,7 @@ pub(crate) fn historical_topology(
         items
             .map(|(owner, members)| {
                 Some(AsmHistoricalRelation {
-                    owner_ref: entity_ref(owner)?,
+                    owner_ref: stable_ref(owner)?,
                     member_refs: refs(members.into_iter())?,
                 })
             })
@@ -8818,7 +8809,7 @@ pub(crate) fn historical_topology(
                 _ => return None,
             };
             Some(crate::history_records::AsmHistoricalSurfaceRadius {
-                surface: entity_ref(surface.id.as_str())?,
+                surface: stable_ref(surface.id.as_str())?,
                 radius: radius.abs(),
             })
         })
@@ -8834,7 +8825,7 @@ pub(crate) fn historical_topology(
         let cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
             continue;
         };
-        let Some(surface) = entity_ref(owner.as_str()) else {
+        let Some(surface) = stable_ref(owner.as_str()) else {
             continue;
         };
         surface_radii.retain(|candidate| candidate.surface != surface);
@@ -8856,7 +8847,7 @@ pub(crate) fn historical_topology(
             let axis = *cylinder_surface.axis();
             let radius = cylinder_surface.radius();
             Some(crate::history_records::AsmHistoricalCylinder {
-                surface: entity_ref(surface.id.as_str())?,
+                surface: stable_ref(surface.id.as_str())?,
                 origin,
                 axis,
                 radius: radius.abs(),
@@ -8875,7 +8866,7 @@ pub(crate) fn historical_topology(
             let origin = *plane_surface.origin();
             let normal = *plane_surface.normal();
             Some(crate::history_records::AsmHistoricalPlane {
-                surface: entity_ref(surface.id.as_str())?,
+                surface: stable_ref(surface.id.as_str())?,
                 origin,
                 normal,
             })
@@ -8906,7 +8897,7 @@ pub(crate) fn historical_topology(
                 _ => return None,
             };
             Some(crate::history_records::AsmHistoricalSurfaceAxis {
-                surface: entity_ref(surface.id.as_str())?,
+                surface: stable_ref(surface.id.as_str())?,
                 origin,
                 direction,
             })
@@ -8954,7 +8945,7 @@ pub(crate) fn historical_topology(
                     _ => return None,
                 };
                 Some(crate::history_records::AsmHistoricalCurveAxis {
-                    curve: entity_ref(curve.id.as_str())?,
+                    curve: stable_ref(curve.id.as_str())?,
                     origin,
                     direction,
                 })
@@ -9037,12 +9028,12 @@ pub(crate) fn historical_topology(
                 let (next, previous) =
                     cadmpeg_ir::topology::coedge_ring_neighbors(&brep.loops, coedge)?;
                 Some(AsmHistoricalCoedge {
-                    coedge: entity_ref(coedge.id.as_str())?,
-                    owner_loop: entity_ref(coedge.owner_loop.as_str())?,
-                    edge: entity_ref(coedge.edge.as_str())?,
-                    next: entity_ref(next.as_str())?,
-                    previous: entity_ref(previous.as_str())?,
-                    radial_next: entity_ref(coedge.radial_next.as_str())?,
+                    coedge: stable_ref(coedge.id.as_str())?,
+                    owner_loop: stable_ref(coedge.owner_loop.as_str())?,
+                    edge: stable_ref(coedge.edge.as_str())?,
+                    next: stable_ref(next.as_str())?,
+                    previous: stable_ref(previous.as_str())?,
+                    radial_next: stable_ref(coedge.radial_next.as_str())?,
                 })
             })
             .collect::<Option<Vec<_>>>()?,
@@ -9051,9 +9042,9 @@ pub(crate) fn historical_topology(
             .iter()
             .map(|edge| {
                 Some(AsmHistoricalEdge {
-                    edge: entity_ref(edge.id.as_str())?,
-                    start_vertex: entity_ref(edge.start.as_str())?,
-                    end_vertex: entity_ref(edge.end.as_str())?,
+                    edge: stable_ref(edge.id.as_str())?,
+                    start_vertex: stable_ref(edge.start.as_str())?,
+                    end_vertex: stable_ref(edge.end.as_str())?,
                 })
             })
             .collect::<Option<Vec<_>>>()?,
@@ -9062,8 +9053,8 @@ pub(crate) fn historical_topology(
             .iter()
             .map(|face| {
                 Some(AsmHistoricalCarrierBinding {
-                    entity: entity_ref(face.id.as_str())?,
-                    carrier: entity_ref(face.surface.as_str())?,
+                    entity: stable_ref(face.id.as_str())?,
+                    carrier: stable_ref(face.surface.as_str())?,
                 })
             })
             .collect::<Option<Vec<_>>>()?,
@@ -9072,9 +9063,9 @@ pub(crate) fn historical_topology(
             .iter()
             .map(|edge| {
                 Some(AsmHistoricalOptionalCarrierBinding {
-                    entity: entity_ref(edge.id.as_str())?,
+                    entity: stable_ref(edge.id.as_str())?,
                     carrier: match &edge.curve() {
-                        Some(curve) => Some(entity_ref(curve.as_str())?),
+                        Some(curve) => Some(stable_ref(curve.as_str())?),
                         None => None,
                     },
                 })
@@ -9085,9 +9076,9 @@ pub(crate) fn historical_topology(
             .iter()
             .map(|coedge| {
                 Some(AsmHistoricalOptionalCarrierBinding {
-                    entity: entity_ref(coedge.id.as_str())?,
+                    entity: stable_ref(coedge.id.as_str())?,
                     carrier: match coedge.pcurves.first() {
-                        Some(use_) => Some(entity_ref(use_.pcurve.as_str())?),
+                        Some(use_) => Some(stable_ref(use_.pcurve.as_str())?),
                         None => None,
                     },
                 })
@@ -9098,8 +9089,8 @@ pub(crate) fn historical_topology(
             .iter()
             .map(|vertex| {
                 Some(AsmHistoricalCarrierBinding {
-                    entity: entity_ref(vertex.id.as_str())?,
-                    carrier: entity_ref(vertex.point.as_str())?,
+                    entity: stable_ref(vertex.id.as_str())?,
+                    carrier: stable_ref(vertex.point.as_str())?,
                 })
             })
             .collect::<Option<Vec<_>>>()?,
@@ -9108,7 +9099,7 @@ pub(crate) fn historical_topology(
             .iter()
             .map(|point| {
                 Some(AsmHistoricalPoint {
-                    point: entity_ref(point.id.as_str())?,
+                    point: stable_ref(point.id.as_str())?,
                     position: point.position,
                 })
             })
