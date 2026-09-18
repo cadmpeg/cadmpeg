@@ -1939,23 +1939,20 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<cadmpeg_ir::SubdSurface>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?
         {
-            let mut placed = true;
             subd.cage
                 .edit_vertices(|vertices| {
                     for vertex in vertices {
-                        match transform.apply_point(vertex.point()) {
-                            Some(moved) => vertex.set_point(moved)?,
-                            None => placed = false,
-                        }
+                        let moved = transform.apply_point(vertex.point()).ok_or_else(|| {
+                            cadmpeg_ir::subd::SubdError::EditRefused(
+                                "instance cage vertex transform produced a non-finite coordinate"
+                                    .to_string(),
+                            )
+                        })?;
+                        vertex.set_point(moved)?;
                     }
                     Ok(())
                 })
                 .map_err(|error| error.to_string())?;
-            if !placed {
-                return Err(
-                    "instance cage vertex transform produced a non-finite coordinate".to_string(),
-                );
-            }
             links.push(subd.id.to_string());
             derived_ids.push(subd.id.to_string());
         }
