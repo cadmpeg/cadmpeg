@@ -111,7 +111,13 @@ pub fn nurbs(data: &[u8]) {
             0x22, 0xf0,
         ]),
     };
-    let _probe = crate::curves::decode(data, class, 2..data.len(), 1.0, selected_archive(data[1]));
+    let _probe = crate::curves::decode(
+        data,
+        class,
+        2..data.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        selected_archive(data[1]),
+    );
 }
 
 /// Exercises compressed-buffer inflation and checksum handling.
@@ -136,7 +142,13 @@ pub fn subd(data: &[u8]) {
         &cadmpeg_ir::identity_namespace!("rhino", "fuzz", "subd"),
         0_usize,
     );
-    let _probe = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
+    let _probe = crate::subd::decode(
+        data,
+        1..data.len(),
+        selected_archive(data[0]),
+        crate::settings::MillimeterScale::IDENTITY,
+        id,
+    );
 }
 
 /// Desktop salvage ceilings for fuzz wrappers.
@@ -165,7 +177,12 @@ pub fn cage(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let _probe = crate::cage::decode(expand, 1..data.len(), 1.0, archive);
+        let _probe = crate::cage::decode(
+            expand,
+            1..data.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+            archive,
+        );
     });
 }
 
@@ -176,7 +193,12 @@ pub fn hatch(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let _probe = crate::hatch::decode(expand, 1..data.len(), 1.0, archive);
+        let _probe = crate::hatch::decode(
+            expand,
+            1..data.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+            archive,
+        );
     });
 }
 

@@ -847,8 +847,14 @@ fn modern_text_style_preserves_identity_after_future_font_and_outer_suffix() {
 #[test]
 fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
     let bytes = future_dimension_style_chunk();
-    let value = parse_dimension_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, 1.0, 321)
-        .expect("dimension style with future minor");
+    let value = parse_dimension_style(
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+        321,
+    )
+    .expect("dimension style with future minor");
     assert_eq!(value.archive_index, Some(7));
     assert_eq!(value.name, "dimension style");
     assert_eq!(value.extension_line_extension_mm, 1.0);
@@ -878,8 +884,14 @@ fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
 #[test]
 fn dimension_style_current_minor_transfers_new_text_controls() {
     let bytes = current_dimension_style_chunk();
-    let value = parse_dimension_style(&bytes, 0..bytes.len(), ArchiveVersion::V8, 1.0, 654)
-        .expect("dimension style with current minor");
+    let value = parse_dimension_style(
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+        654,
+    )
+    .expect("dimension style with current minor");
     assert_eq!(
         value.details.controls()["use_kerning"],
         serde_json::json!(true)
@@ -906,8 +918,13 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         save_context: None,
         payload_range: 0..extra_bytes.len(),
     };
-    let extra = parse_v5_dimension_style_extra(&extra_bytes, &descriptor, ArchiveVersion::V5, 2.0)
-        .expect("V5 dimension-style extra");
+    let extra = parse_v5_dimension_style_extra(
+        &extra_bytes,
+        &descriptor,
+        ArchiveVersion::V5,
+        crate::test_support::millimeter_scale(2.0),
+    )
+    .expect("V5 dimension-style extra");
     assert_eq!(extra.valid_fields, vec![false, true, true]);
     assert_eq!(extra.baseline_spacing_mm, 5.0);
     assert_eq!(extra.mask_color, [11, 22, 33, 44]);
@@ -916,8 +933,14 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         Some(Uuid::from_canonical([0x22; 16]).to_string())
     );
 
-    let value = parse_v5_dimension_style(&base, 0..base.len(), 2.0, 321, Some(extra))
-        .expect("V5 dimension style");
+    let value = parse_v5_dimension_style(
+        &base,
+        0..base.len(),
+        crate::test_support::millimeter_scale(2.0),
+        321,
+        Some(extra),
+    )
+    .expect("V5 dimension style");
     assert_eq!(value.archive_index, Some(7));
     assert_eq!(value.name, "legacy dimension style");
     assert_eq!(value.extension_line_extension_mm, 2.0);
@@ -960,7 +983,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         &minor_zero,
         &minor_zero_descriptor,
         ArchiveVersion::V5,
-        2.0,
+        crate::test_support::millimeter_scale(2.0),
     )
     .expect("V5 dimension-style extra minor zero");
     assert_eq!(minor_zero.mask_color, [255, 255, 255, 0]);
@@ -968,7 +991,14 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
 
     let mut invalid = base;
     invalid[0] = 0x25;
-    assert!(parse_v5_dimension_style(&invalid, 0..invalid.len(), 1.0, 322, None).is_err());
+    assert!(parse_v5_dimension_style(
+        &invalid,
+        0..invalid.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        322,
+        None
+    )
+    .is_err());
 }
 
 #[test]
@@ -1188,7 +1218,14 @@ fn texture_payload(minor: i32, suffix: &[u8]) -> Vec<u8> {
 #[test]
 fn light_scales_spatial_values_but_not_direction_or_angles() {
     let bytes = light_payload(0x1f, 0.8);
-    let light = parse_light(&bytes, 0..bytes.len(), 10.0, 0, None).expect("required invariant");
+    let light = parse_light(
+        &bytes,
+        0..bytes.len(),
+        crate::test_support::millimeter_scale(10.0),
+        0,
+        None,
+    )
+    .expect("required invariant");
     assert_eq!(light.location, [10.0, 20.0, 30.0]);
     assert_eq!(light.direction, [0.0, 0.0, -1.0]);
     assert_eq!(light.length, [40.0, 0.0, 0.0]);
@@ -1200,7 +1237,14 @@ fn light_scales_spatial_values_but_not_direction_or_angles() {
 #[test]
 fn light_preserves_unset_hotspot_for_exponent_interface() {
     let bytes = light_payload(0x12, -1.234_321_012_343_21e308);
-    let light = parse_light(&bytes, 0..bytes.len(), 1.0, 0, None).expect("required invariant");
+    let light = parse_light(
+        &bytes,
+        0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        0,
+        None,
+    )
+    .expect("required invariant");
     assert_eq!(light.spot_angle_degrees, 0.25);
     assert_eq!(light.spot_exponent, 16.0);
     assert_eq!(light.hotspot, -1.234_321_012_343_21e308);

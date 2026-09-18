@@ -9,7 +9,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
-use crate::settings::{point, utf16, vector, xform, Point3, Vector3, Xform};
+use crate::settings::{point, utf16, vector, xform, MillimeterScale, Point3, Vector3, Xform};
 use crate::wire::{uuid, Uuid};
 
 const HISTORY_RECORD: u32 = 0x2000_807b;
@@ -809,7 +809,7 @@ fn extended_geometry_json(
     value: &EmbeddedGeometry,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    scale: f64,
+    scale: MillimeterScale,
     warnings: &mut Diagnostics,
 ) -> Option<String> {
     let data = expand.data();
@@ -987,9 +987,9 @@ fn extended_geometry_json(
         crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch).ok()?;
         let mut plane = hatch.plane;
         for coordinate in &mut plane.origin.0 {
-            *coordinate *= scale;
+            *coordinate *= scale.value();
         }
-        plane.equation[3] *= scale;
+        plane.equation[3] *= scale.value();
         let loops = hatch
             .loops
             .iter()
@@ -1100,7 +1100,7 @@ fn structured_value_properties(
         crate::mesh::MeshExpand<'_>,
         ArchiveVersion,
         Option<i64>,
-        f64,
+        MillimeterScale,
     )>,
     properties: &mut BTreeMap<String, String>,
     sink: &mut GeometrySink<'_>,
@@ -1262,7 +1262,7 @@ pub(crate) fn project(
         crate::mesh::MeshExpand<'_>,
         ArchiveVersion,
         Option<i64>,
-        f64,
+        MillimeterScale,
     )>,
     ir: &mut cadmpeg_ir::document::CadIr,
     warnings: &mut Diagnostics,

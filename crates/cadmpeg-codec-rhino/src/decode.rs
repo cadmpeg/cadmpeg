@@ -31,6 +31,7 @@ use crate::chunks::ArchiveVersion;
 use crate::container::{OpaqueRecord, Scan};
 use crate::loss::RhinoLossCode;
 use crate::objects::{ObjectDescriptor, ObjectRecord, UserdataDescriptor};
+use crate::settings::MillimeterScale;
 
 /// Maximum bytes retained for one Rhino object record.
 pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
@@ -333,7 +334,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Returns the scale that is safe for canonical millimetre geometry.
-    fn neutral_scale(&self) -> Option<f64> {
+    fn neutral_scale(&self) -> Option<MillimeterScale> {
         self.unit_binding().neutral_scale()
     }
 
@@ -646,8 +647,9 @@ impl<'a> DecodeContext<'a> {
                             ) {
                                 Ok(Some(decoded)) => {
                                     proxy_transferred = self.commit_subd_surface(
-                                        source_order, decoded,
-                                        scale != 1.0,
+                                        source_order,
+                                        decoded,
+                                        scale != MillimeterScale::IDENTITY,
                                     );
                                     if proxy_transferred {
                                         self.mark_decoded(source_order);
@@ -2003,7 +2005,11 @@ impl<'a> DecodeContext<'a> {
                 self.mark_decoded(source_order);
             }
             Ok(Some(decoded)) => {
-                if self.commit_subd_surface(source_order, decoded, scale != 1.0) {
+                if self.commit_subd_surface(
+                    source_order,
+                    decoded,
+                    scale != MillimeterScale::IDENTITY,
+                ) {
                     self.mark_decoded(source_order);
                 } else {
                     self.scan_warning(
@@ -3677,7 +3683,7 @@ struct BrepTransferInput<'a> {
     key: &'a str,
     association: &'a SourceObjectAssociation,
     unknown: &'a UnknownId,
-    scale: f64,
+    scale: MillimeterScale,
     mesh_budget: &'a mut crate::mesh::MeshBudget,
 }
 
@@ -3690,7 +3696,7 @@ struct BrepCarrierInput<'a> {
     key: &'a str,
     association: &'a SourceObjectAssociation,
     unknown: &'a UnknownId,
-    scale: f64,
+    scale: MillimeterScale,
     mesh_budget: &'a mut crate::mesh::MeshBudget,
 }
 
@@ -4450,7 +4456,7 @@ pub(crate) fn embedded_brep_json(
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Option<String> {
     let parsed = crate::brep::parse(data, range, archive, writer_version, &[]).ok()?;
     let brep = match parsed {
@@ -4521,9 +4527,9 @@ pub(crate) fn embedded_brep_json(
 /// parameters are knot-domain values and do not scale.
 fn scale_plane_pcurves(
     staged: &mut BrepDraft,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<(), crate::curves::GeometryError> {
-    if scale == 1.0 {
+    if scale == MillimeterScale::IDENTITY {
         return Ok(());
     }
     let plane_surfaces = staged
@@ -4575,8 +4581,8 @@ fn scale_plane_pcurves(
         if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {
             nurbs
                 .edit_control_points(|pole| {
-                    pole.u *= scale;
-                    pole.v *= scale;
+                    pole.u *= scale.value();
+                    pole.v *= scale.value();
                 })
                 .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
         }
@@ -4953,7 +4959,7 @@ fn finite_tolerance(value: f64) -> Option<f64> {
 
 fn scaled_tolerance(
     value: f64,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, crate::curves::GeometryError> {
     if !value.is_finite() || value <= 0.0 {
         return Ok(None);
@@ -5247,13 +5253,14 @@ fn commit_curve_tree(
 /// not an impossible state. `record` names the hatch the plane came from.
 fn hatch_plane_transform(
     plane: &crate::settings::Plane,
-    scale: f64,
+    scale: MillimeterScale,
     record: &str,
 ) -> Result<Transform, cadmpeg_core::CodecError> {
     let origin = plane.origin.0;
     let x = plane.xaxis.0;
     let y = plane.yaxis.0;
     let z = plane.zaxis.0;
+    let scale = scale.value();
     let rows = [
         [x[0] * scale, y[0] * scale, z[0] * scale, origin[0] * scale],
         [x[1] * scale, y[1] * scale, z[1] * scale, origin[1] * scale],

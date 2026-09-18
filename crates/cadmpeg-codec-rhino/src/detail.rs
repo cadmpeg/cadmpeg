@@ -74,7 +74,10 @@ pub(crate) fn decode(
         archive,
         "detail boundary",
     )?;
-    let geometry = crate::surfaces::read_nurbs_curve(&mut boundary, 1.0)?;
+    let geometry = crate::surfaces::read_nurbs_curve(
+        &mut boundary,
+        crate::settings::MillimeterScale::IDENTITY,
+    )?;
     boundary.skip_remaining()?;
     outer.skip(boundary_next - outer.position())?;
     let page_per_model_ratio = if minor >= 1 { outer.f64()? } else { 0.0 };

@@ -281,6 +281,7 @@ impl StandardUnit {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CustomUnit {
     meters_per_unit: f64,
+    millimeters_per_unit: MillimeterScale,
     name: String,
 }
 
@@ -305,15 +306,12 @@ pub(crate) enum UnitSystem {
 
 impl UnitSystem {
     pub(crate) fn custom(meters_per_unit: f64, name: String) -> Option<Self> {
-        let millimeters_per_unit = meters_per_unit * 1000.0;
-        (meters_per_unit.is_finite()
-            && meters_per_unit > 0.0
-            && millimeters_per_unit.is_finite()
-            && millimeters_per_unit > 0.0)
-            .then_some(Self::Custom(CustomUnit {
-                meters_per_unit,
-                name,
-            }))
+        let millimeters_per_unit = MillimeterScale::new(meters_per_unit * 1000.0)?;
+        (meters_per_unit.is_finite() && meters_per_unit > 0.0).then_some(Self::Custom(CustomUnit {
+            meters_per_unit,
+            millimeters_per_unit,
+            name,
+        }))
     }
 
     pub(crate) fn value(&self) -> i32 {
@@ -329,7 +327,7 @@ impl UnitSystem {
         match self {
             Self::None | Self::Unset => None,
             Self::Standard(unit) => Some(unit.millimeters_per_unit()),
-            Self::Custom(unit) => Some(unit.meters_per_unit * 1000.0),
+            Self::Custom(unit) => Some(unit.millimeters_per_unit.value()),
         }
     }
 }
@@ -376,6 +374,15 @@ impl From<StandardUnit> for MillimeterScale {
 }
 
 impl MillimeterScale {
+    /// Lengths that are already millimetres.
+    pub(crate) const IDENTITY: Self = Self(1.0);
+
+    /// Admits a finite positive conversion factor.
+    pub(crate) fn new(millimeters_per_unit: f64) -> Option<Self> {
+        (millimeters_per_unit.is_finite() && millimeters_per_unit > 0.0)
+            .then_some(Self(millimeters_per_unit))
+    }
+
     pub(crate) fn value(self) -> f64 {
         self.0
     }
@@ -408,17 +415,14 @@ impl UnitBinding {
             UnitSystem::None => Self::Native,
             UnitSystem::Unset => Self::Unavailable,
             UnitSystem::Standard(unit) => Self::Millimeters((*unit).into()),
-            // CustomUnit admission checks both the meter and millimeter scales.
-            UnitSystem::Custom(unit) => {
-                Self::Millimeters(MillimeterScale(unit.meters_per_unit * 1000.0))
-            }
+            UnitSystem::Custom(unit) => Self::Millimeters(unit.millimeters_per_unit),
         }
     }
 
     /// Returns the scale that may enter canonical millimetre IR.
-    pub(crate) fn neutral_scale(self) -> Option<f64> {
+    pub(crate) fn neutral_scale(self) -> Option<MillimeterScale> {
         match self {
-            Self::Millimeters(scale) => Some(scale.value()),
+            Self::Millimeters(scale) => Some(scale),
             Self::Native | Self::Unavailable => None,
         }
     }

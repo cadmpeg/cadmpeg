@@ -131,7 +131,7 @@ fn legacy_render_settings_gate_each_v5_suffix() {
         0..legacy_body(100).len(),
         7,
         ArchiveVersion::V5,
-        1.0,
+        crate::settings::MillimeterScale::IDENTITY,
     )
     .expect("legacy version 100 settings");
     assert_eq!(value_100.image_dpi, None);
@@ -140,21 +140,39 @@ fn legacy_render_settings_gate_each_v5_suffix() {
     assert!(!value_100.scale_background_to_fit);
 
     let value_101 = legacy_body(101);
-    let value_101 = render_settings(&value_101, 0..value_101.len(), 7, ArchiveVersion::V5, 1.0)
-        .expect("legacy version 101 settings");
+    let value_101 = render_settings(
+        &value_101,
+        0..value_101.len(),
+        7,
+        ArchiveVersion::V5,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect("legacy version 101 settings");
     assert_eq!(value_101.image_dpi, Some(144.5));
     assert_eq!(value_101.image_unit_system, Some(2));
     assert_eq!(value_101.background_bottom_color, None);
 
     let value_102 = legacy_body(102);
-    let value_102 = render_settings(&value_102, 0..value_102.len(), 7, ArchiveVersion::V5, 1.0)
-        .expect("legacy version 102 settings");
+    let value_102 = render_settings(
+        &value_102,
+        0..value_102.len(),
+        7,
+        ArchiveVersion::V5,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect("legacy version 102 settings");
     assert_eq!(value_102.background_bottom_color, Some([9, 10, 11, 12]));
     assert!(!value_102.scale_background_to_fit);
 
     let value_103 = legacy_body(103);
-    let value_103 = render_settings(&value_103, 0..value_103.len(), 7, ArchiveVersion::V5, 1.0)
-        .expect("legacy version 103 settings");
+    let value_103 = render_settings(
+        &value_103,
+        0..value_103.len(),
+        7,
+        ArchiveVersion::V5,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect("legacy version 103 settings");
     assert!(value_103.scale_background_to_fit);
     assert_eq!(value_103.shadowmap_size_pixels, [2048, 1024]);
 }
@@ -163,8 +181,13 @@ fn legacy_render_settings_gate_each_v5_suffix() {
 fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
     for minor in 0..=5 {
         let bytes = annotation_body(minor);
-        let value = annotation_settings(&bytes, 0..bytes.len(), 19, 2.0)
-            .expect("annotation settings packed version");
+        let value = annotation_settings(
+            &bytes,
+            0..bytes.len(),
+            19,
+            crate::test_support::millimeter_scale(2.0),
+        )
+        .expect("annotation settings packed version");
 
         assert_eq!(value.source_offset, 19);
         assert_eq!(value.dimension_scale, 1.0);
@@ -198,8 +221,13 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
         0x40, 0x30, 0x20, 0x10, 0x60, 0x50, 0x80, 0x70, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0,
         0x01,
     ]);
-    let value = annotation_settings(&bytes, 0..bytes.len(), 19, 1.0)
-        .expect("annotation settings dimension-layer UUID");
+    let value = annotation_settings(
+        &bytes,
+        0..bytes.len(),
+        19,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect("annotation settings dimension-layer UUID");
     assert_eq!(
         value.dimension_layer_uuid.as_deref(),
         Some("10203040-5060-7080-90a0-b0c0d0e0f001")
@@ -209,7 +237,13 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
 #[test]
 fn grid_defaults_accept_future_minor_and_scale_lengths() {
     let bytes = grid_body();
-    let value = grid_defaults(&bytes, 0..bytes.len(), 23, 2.0).expect("grid defaults");
+    let value = grid_defaults(
+        &bytes,
+        0..bytes.len(),
+        23,
+        crate::test_support::millimeter_scale(2.0),
+    )
+    .expect("grid defaults");
 
     assert_eq!(value.source_offset, 23);
     assert_eq!(value.grid_spacing_mm, 5.0);
@@ -223,8 +257,14 @@ fn grid_defaults_accept_future_minor_and_scale_lengths() {
 fn modern_render_settings_consumes_known_prefix_and_future_suffix() {
     let body = modern_body(4);
     let bytes = crc_chunk(ArchiveVersion::V8, ANONYMOUS, &body);
-    let value = render_settings(&bytes, 0..bytes.len(), 11, ArchiveVersion::V8, 1.0)
-        .expect("modern future-minor settings");
+    let value = render_settings(
+        &bytes,
+        0..bytes.len(),
+        11,
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect("modern future-minor settings");
 
     assert_eq!(value.source_offset, 11);
     assert_eq!(value.image_width_pixels, 1234);
@@ -249,8 +289,14 @@ fn modern_render_settings_consumes_known_prefix_and_future_suffix() {
 fn modern_render_settings_rejects_negative_minor() {
     let body = modern_body(-1);
     let bytes = crc_chunk(ArchiveVersion::V8, ANONYMOUS, &body);
-    let error = render_settings(&bytes, 0..bytes.len(), 0, ArchiveVersion::V8, 1.0)
-        .expect_err("negative modern minor");
+    let error = render_settings(
+        &bytes,
+        0..bytes.len(),
+        0,
+        ArchiveVersion::V8,
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect_err("negative modern minor");
     assert!(error
         .to_string()
         .contains("render-settings version is unsupported"));

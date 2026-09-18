@@ -262,7 +262,7 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
         &bytes,
         CLIPPING_PLANE_SURFACE,
         0..bytes.len(),
-        25.4,
+        crate::test_support::millimeter_scale(25.4),
         ArchiveVersion::V8,
         0,
     )
@@ -287,7 +287,7 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
         &invalid,
         CLIPPING_PLANE_SURFACE,
         0..invalid.len(),
-        1.0,
+        MillimeterScale::IDENTITY,
         ArchiveVersion::V8,
         0,
     )
@@ -390,25 +390,18 @@ fn curve_versions_cross_archive_bands_and_consume_tag_gate() {
     for (archive, version) in [(ArchiveVersion::V5, 0x10), (ArchiveVersion::V8, 0x11)] {
         let bytes = curve_payload(version, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        let curve = read_nurbs_curve(&mut reader, 1.0).expect("required invariant");
+        let curve =
+            read_nurbs_curve(&mut reader, MillimeterScale::IDENTITY).expect("required invariant");
         assert_eq!(curve.control_points().len(), 6);
         assert_eq!(reader.remaining(), 0);
         assert!(matches!(archive, ArchiveVersion::V5 | ArchiveVersion::V8));
     }
 }
 
-/// Both pole readers refuse a non-finite pole at the pole's first byte, so the
+/// The pole reader refuses a non-finite pole at the pole's first byte, so the
 /// refusal names the coordinate triple it read and not the byte after it.
 #[test]
 fn a_nonfinite_pole_is_refused_at_the_pole_first_byte() {
-    type PoleReader = fn(
-        &mut BoundedReader<'_>,
-        usize,
-        bool,
-        i32,
-        f64,
-    ) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError>;
-
     let mut bytes = vec![0xa5, 0xa5, 0xa5];
     let first_pole = bytes.len();
     for value in [1.0_f64, 2.0, 3.0] {
@@ -418,16 +411,15 @@ fn a_nonfinite_pole_is_refused_at_the_pole_first_byte() {
     for value in [4.0_f64, f64::NAN, 6.0] {
         bytes.extend(value.to_le_bytes());
     }
-    for read in [read_curve_poles as PoleReader, read_poles as PoleReader] {
-        let mut reader =
-            BoundedReader::new(&bytes, first_pole, bytes.len()).expect("required invariant");
-        let error = read(&mut reader, 2, false, 3, 1.0).expect_err("nonfinite pole");
-        assert!(matches!(
-            error,
-            GeometryError::Malformed(FramingError::Structural { offset, ref message })
-                if offset == second_pole && message == "NURBS pole is not finite"
-        ));
-    }
+    let mut reader =
+        BoundedReader::new(&bytes, first_pole, bytes.len()).expect("required invariant");
+    let error = read_poles(&mut reader, 2, false, 3, MillimeterScale::IDENTITY)
+        .expect_err("nonfinite pole");
+    assert!(matches!(
+        error,
+        GeometryError::Malformed(FramingError::Structural { offset, ref message })
+            if offset == second_pole && message == "NURBS pole is not finite"
+    ));
 }
 
 /// `read_knots` refuses a non-finite knot and a decreasing knot under one text,
@@ -453,18 +445,25 @@ fn an_invalid_knot_is_refused_at_the_knot_first_byte() {
     }
 }
 
-/// `read_curve_poles` refuses a pole that cannot be scaled at the pole's first
-/// byte rather than at the byte after it, matching its twin `read_poles`.
+/// `read_poles` refuses a pole whose scaled coordinate overflows at the pole's
+/// first byte rather than at the byte after it.
 #[test]
 fn an_unscalable_pole_is_refused_at_the_pole_first_byte() {
     let mut bytes = vec![0xa5, 0xa5, 0xa5];
     let first_pole = bytes.len();
-    for value in [1.0_f64, 2.0, 3.0] {
+    for value in [1.0e300_f64, 2.0, 3.0] {
         bytes.extend(value.to_le_bytes());
     }
     let mut reader =
         BoundedReader::new(&bytes, first_pole, bytes.len()).expect("required invariant");
-    let error = read_curve_poles(&mut reader, 1, false, 3, 0.0).expect_err("unscalable pole");
+    let error = read_poles(
+        &mut reader,
+        1,
+        false,
+        3,
+        crate::settings::StandardUnit::LightYears.into(),
+    )
+    .expect_err("unscalable pole");
     assert!(matches!(
         error,
         GeometryError::Malformed(FramingError::Structural { offset, ref message })
@@ -476,13 +475,14 @@ fn an_unscalable_pole_is_refused_at_the_pole_first_byte() {
 fn curve_payload_validates_rational_weights_counts_and_domain() {
     let mut bytes = curve_payload(0x10, true, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let curve = read_nurbs_curve(&mut reader, 2.0).expect("required invariant");
+    let curve = read_nurbs_curve(&mut reader, crate::test_support::millimeter_scale(2.0))
+        .expect("required invariant");
     assert_eq!(curve.control_points()[0].x, 0.0);
     assert_eq!(curve.weights().expect("rational curve")[0], 2.0);
     let weight_offset = 1 + 28 + 48 + 4 + 7 * 8 + 4 + 24;
     bytes[weight_offset..weight_offset + 8].copy_from_slice(&0.0_f64.to_le_bytes());
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    assert!(read_nurbs_curve(&mut reader, 1.0).is_err());
+    assert!(read_nurbs_curve(&mut reader, MillimeterScale::IDENTITY).is_err());
 }
 
 #[test]
@@ -504,7 +504,8 @@ fn c2_nurbs_reads_two_dimensions_without_scaling_uv() {
 fn top_level_nurbs_lifts_a_valid_two_dimensional_curve() {
     let bytes = curve_2d_payload(false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let curve = read_nurbs_curve(&mut reader, 2.0).expect("valid two-dimensional curve");
+    let curve = read_nurbs_curve(&mut reader, crate::test_support::millimeter_scale(2.0))
+        .expect("valid two-dimensional curve");
     assert_eq!(reader.remaining(), 0);
     assert_eq!(curve.control_points()[1], Point3::new(2.0, 4.0, 0.0));
     assert_eq!(
@@ -544,7 +545,8 @@ fn surface_periodicity_is_derived_independently_in_u_and_v() {
     let nonperiodic = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0];
     let bytes = surface_payload(3, 3, 6, 6, false, &periodic, &nonperiodic);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
+    let surface =
+        read_nurbs_surface(&mut reader, MillimeterScale::IDENTITY).expect("required invariant");
     assert!(surface.u_periodic());
     assert!(!surface.v_periodic());
 }
@@ -553,7 +555,8 @@ fn surface_periodicity_is_derived_independently_in_u_and_v() {
 fn surface_bytes_preserve_asymmetric_u_major_rational_poles() {
     let bytes = surface_payload(2, 2, 2, 3, true, &[0.0, 1.0], &[0.0, 1.0, 2.0]);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
+    let surface =
+        read_nurbs_surface(&mut reader, MillimeterScale::IDENTITY).expect("required invariant");
     assert_eq!(surface.poles().into_iter().nth(1).unwrap().y, 1.0 / 2.0);
     assert_eq!(surface.poles().into_iter().nth(3).unwrap().x, 1.0 / 2.0);
     assert_eq!(surface.pole_weights().expect("rational surface")[5], 4.0);
@@ -563,21 +566,23 @@ fn surface_bytes_preserve_asymmetric_u_major_rational_poles() {
 fn surface_bytes_reconstruct_independent_knots_and_reject_count_mismatch() {
     let bytes = surface_payload(2, 2, 3, 2, false, &[0.0, 1.0, 2.0], &[0.0, 1.0]);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
+    let surface =
+        read_nurbs_surface(&mut reader, MillimeterScale::IDENTITY).expect("required invariant");
     assert_eq!(surface.u_knots(), vec![0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(surface.v_knots(), vec![0.0, 0.0, 1.0, 1.0]);
     let mut bad = bytes;
     let count_offset = bad.len() - 6 * 24 - 4;
     bad[count_offset..count_offset + 4].copy_from_slice(&99_i32.to_le_bytes());
     let mut reader = BoundedReader::new(&bad, 0, bad.len()).expect("required invariant");
-    assert!(read_nurbs_surface(&mut reader, 1.0).is_err());
+    assert!(read_nurbs_surface(&mut reader, MillimeterScale::IDENTITY).is_err());
 }
 
 #[test]
 fn surface_reads_a_valid_two_dimensional_lattice_and_lifts_zero_z() {
     let bytes = surface_2d_payload(false);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid two-dimensional surface");
+    let surface = read_nurbs_surface(&mut reader, crate::test_support::millimeter_scale(2.0))
+        .expect("valid two-dimensional surface");
     assert_eq!(reader.remaining(), 0);
     assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
     assert_eq!(
@@ -592,7 +597,8 @@ fn surface_reads_a_valid_two_dimensional_lattice_and_lifts_zero_z() {
 fn surface_reads_a_rational_two_dimensional_lattice() {
     let bytes = surface_2d_payload(true);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid rational surface");
+    let surface = read_nurbs_surface(&mut reader, crate::test_support::millimeter_scale(2.0))
+        .expect("valid rational surface");
     assert_eq!(reader.remaining(), 0);
     assert_eq!(
         surface.poles().into_iter().nth(1).unwrap(),
@@ -610,14 +616,18 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
         let bytes = plane_payload(version, false, false);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
         let plane =
-            read_plane_surface_with_parameterization(&mut reader, 1.0).expect("required invariant");
+            read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+                .expect("required invariant");
         assert_eq!(reader.remaining(), 0);
         assert!(matches!(plane, TypedSurface::Plane { .. }));
     }
     for (bad_frame, bad_range) in [(true, false), (false, true)] {
         let bytes = plane_payload(0x11, bad_frame, bad_range);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(read_plane_surface_with_parameterization(&mut reader, 1.0).is_err());
+        assert!(
+            read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+                .is_err()
+        );
     }
 }
 
@@ -627,7 +637,8 @@ fn plane_parameterization_maps_domain_to_physical_extents() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let TypedSurface::Plane {
         parameterization, ..
-    } = read_plane_surface_with_parameterization(&mut reader, 1.0).expect("plane surface")
+    } = read_plane_surface_with_parameterization(&mut reader, MillimeterScale::IDENTITY)
+        .expect("plane surface")
     else {
         panic!("plane parameterization");
     };
@@ -853,7 +864,14 @@ fn revolution_rejects_versions_axis_intervals_transpose_and_presence() {
     let bad_version = [0x30];
     let mut reader =
         BoundedReader::new(&bad_version, 0, bad_version.len()).expect("required invariant");
-    assert!(super::read_revolution(&bad_version, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+    assert!(super::read_revolution(
+        &bad_version,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0
+    )
+    .is_err());
 
     let valid = revolution_prefix(0x20);
     let axis_end_offset = 1 + 3 * 8;
@@ -877,10 +895,24 @@ fn revolution_rejects_versions_axis_intervals_transpose_and_presence() {
     cases.push(bad_transpose);
     for bytes in cases {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(super::read_revolution(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+        assert!(super::read_revolution(
+            &bytes,
+            &mut reader,
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V5,
+            0
+        )
+        .is_err());
     }
     let mut reader = BoundedReader::new(&valid, 0, valid.len()).expect("required invariant");
-    assert!(super::read_revolution(&valid, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+    assert!(super::read_revolution(
+        &valid,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0
+    )
+    .is_err());
 }
 
 #[test]
@@ -889,7 +921,14 @@ fn sum_surface_accepts_later_minor_version_and_skips_suffix() {
     bytes[0] = 0x11;
     bytes.push(0xaa);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    assert!(super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_ok());
+    assert!(super::read_sum(
+        &bytes,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0
+    )
+    .is_ok());
     assert_eq!(reader.remaining(), 0);
 }
 
@@ -898,8 +937,14 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
     for version in [0x10, 0x20] {
         let bytes = valid_revolution_payload(version);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        let decoded = super::read_revolution(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0)
-            .expect("required invariant");
+        let decoded = super::read_revolution(
+            &bytes,
+            &mut reader,
+            crate::test_support::millimeter_scale(25.4),
+            ArchiveVersion::V5,
+            0,
+        )
+        .expect("required invariant");
         let super::DecodedSurface::Procedural {
             geometry,
             definition,
@@ -948,8 +993,14 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
 fn sum_surface_decodes_ordered_children_and_scales_once() {
     let bytes = valid_sum_payload();
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    let decoded = super::read_sum(&bytes, &mut reader, 25.4, ArchiveVersion::V5, 0)
-        .expect("required invariant");
+    let decoded = super::read_sum(
+        &bytes,
+        &mut reader,
+        crate::test_support::millimeter_scale(25.4),
+        ArchiveVersion::V5,
+        0,
+    )
+    .expect("required invariant");
     let super::DecodedSurface::Procedural {
         geometry,
         definition,
@@ -997,7 +1048,14 @@ fn sum_surface_rejects_nil_child_object() {
         bytes.extend(first);
         bytes.extend(second);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+        assert!(super::read_sum(
+            &bytes,
+            &mut reader,
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V5,
+            0
+        )
+        .is_err());
     }
 }
 

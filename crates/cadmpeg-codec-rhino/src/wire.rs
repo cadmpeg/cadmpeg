@@ -10,6 +10,7 @@ use cadmpeg_ir::math::Vector3;
 
 use crate::chunks::{BoundedReader, FramingError};
 use crate::layout::uuid_wire_form as uuid_wire;
+use crate::settings::MillimeterScale;
 
 /// A vector that must contain exactly a count proven against input.
 #[derive(Debug)]
@@ -177,12 +178,12 @@ pub(crate) fn vector(value: crate::settings::Vector3) -> Vector3 {
     Vector3::new(value.0[0], value.0[1], value.0[2])
 }
 
-/// Multiplies an archive coordinate by a positive finite unit scale.
-pub(crate) fn scaled_coordinate(value: f64, scale: f64) -> Option<f64> {
-    if !value.is_finite() || !scale.is_finite() || scale <= 0.0 {
+/// Multiplies an archive coordinate by a unit scale.
+pub(crate) fn scaled_coordinate(value: f64, scale: MillimeterScale) -> Option<f64> {
+    if !value.is_finite() {
         return None;
     }
-    let result = value * scale;
+    let result = value * scale.value();
     result.is_finite().then_some(result)
 }
 

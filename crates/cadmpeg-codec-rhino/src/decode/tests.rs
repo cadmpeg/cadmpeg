@@ -32,7 +32,8 @@ fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
 /// no offset instead of naming byte 0.
 #[test]
 fn a_brep_staging_refusal_names_no_byte() {
-    let error = scaled_tolerance(1.0, 0.0).expect_err("non-positive scale");
+    let error = scaled_tolerance(f64::MAX, crate::test_support::millimeter_scale(f64::MAX))
+        .expect_err("overflowing scaled tolerance");
     assert!(matches!(
         error,
         crate::curves::GeometryError::Malformed(
@@ -88,8 +89,12 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
     transform_decoded_curve(
         &mut curve,
-        hatch_plane_transform(&plane, 10.0, "rhino hatch record #test")
-            .expect("a finite plane states a transform"),
+        hatch_plane_transform(
+            &plane,
+            crate::test_support::millimeter_scale(10.0),
+            "rhino hatch record #test",
+        )
+        .expect("a finite plane states a transform"),
     )
     .expect("required invariant");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = curve.reported_geometry() else {
@@ -505,7 +510,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
             key: "plane",
             association: &association,
             unknown: &unknown,
-            scale: 25.4,
+            scale: crate::test_support::millimeter_scale(25.4),
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
     })
@@ -602,7 +607,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
             key: "free-vertex",
             association: &association,
             unknown: &unknown,
-            scale: 1.0,
+            scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
     })
@@ -661,7 +666,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
             key: "plane",
             association: &association,
             unknown: &unknown,
-            scale: 1.0,
+            scale: MillimeterScale::IDENTITY,
             mesh_budget: &mut crate::mesh::MeshBudget::new(),
         })
     })
@@ -701,11 +706,12 @@ fn disconnected_incidence_produces_deterministic_shell_groups() {
 #[test]
 fn tolerance_scaling_maps_unset_and_zero_to_none() {
     assert_eq!(
-        scaled_tolerance(0.0, 25.4).expect("required invariant"),
+        scaled_tolerance(0.0, crate::test_support::millimeter_scale(25.4))
+            .expect("required invariant"),
         None
     );
     assert_eq!(
-        scaled_tolerance(0.5, 25.4)
+        scaled_tolerance(0.5, crate::test_support::millimeter_scale(25.4))
             .expect("required invariant")
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(12.7)

@@ -28,6 +28,7 @@ use serde::Serialize;
 use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
+use crate::settings::MillimeterScale;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_RH_POINT: u32 = 0x0010_0001;
@@ -599,7 +600,7 @@ fn child_with_type(
 fn legacy_spline(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<NurbsCurve, CodecError> {
     let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
     let dimension = reader.u8().map_err(malformed)?;
@@ -688,13 +689,17 @@ fn legacy_spline(
             }
             let divisor = if rational == 2 { weight } else { 1.0 };
             control_points.push(Point3::new(
-                x * scale / divisor,
-                y * scale / divisor,
-                z * scale / divisor,
+                x * scale.value() / divisor,
+                y * scale.value() / divisor,
+                z * scale.value() / divisor,
             ));
             weights.push(weight);
         } else {
-            control_points.push(Point3::new(x * scale, y * scale, z * scale));
+            control_points.push(Point3::new(
+                x * scale.value(),
+                y * scale.value(),
+                z * scale.value(),
+            ));
         }
     }
     NurbsCurve::from_lanes(
@@ -711,7 +716,7 @@ fn legacy_spline(
 fn legacy_curve_segments(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<Vec<NurbsCurve>, CodecError> {
     let stuff = child_with_type(data, range, TCODE_LEGACY_CRVSTUFF)?
         .ok_or_else(|| CodecError::Malformed("V1 curve has no curve-stuff chunk".to_string()))?;
@@ -766,7 +771,7 @@ fn legacy_curve_segments(
 fn legacy_curve(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<NurbsCurve, CodecError> {
     let offset = range.start;
     let segments = legacy_curve_segments(data, range, scale)?;
@@ -1218,7 +1223,7 @@ fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBre
 fn v1_direct_record(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
-    document_scale: f64,
+    document_scale: MillimeterScale,
 ) -> Result<V1DirectRecord, CodecError> {
     let payload = match chunk.typecode {
         TCODE_TEXT_BLOCK
@@ -1248,7 +1253,7 @@ fn v1_direct_record(
         source_offset: u64::try_from(chunk.header_start)
             .map_err(|_| CodecError::Malformed("V1 direct record offset overflow".to_string()))?,
         typecode: chunk.typecode,
-        document_scale,
+        document_scale: document_scale.value(),
         payload,
     })
 }
@@ -1256,7 +1261,7 @@ fn v1_direct_record(
 fn legacy_surface(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<NurbsSurface, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_SRF, TCODE_LEGACY_SRFSTUFF)?;
     let mut reader =
@@ -1350,9 +1355,9 @@ fn legacy_surface(
         let divisor = if rational_mode == 2 { weight } else { 1.0 };
         let coordinate = |index: usize| coordinates.get(index).copied().unwrap_or(0.0) / divisor;
         let point = Point3::new(
-            coordinate(0) * scale,
-            coordinate(1) * scale,
-            coordinate(2) * scale,
+            coordinate(0) * scale.value(),
+            coordinate(1) * scale.value(),
+            coordinate(2) * scale.value(),
         );
         if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
             return Err(CodecError::Malformed("invalid V1 surface pole".to_string()));
@@ -1935,7 +1940,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
 fn legacy_trim(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<LegacyTrim, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_TRM, TCODE_LEGACY_TRMSTUFF)?;
     let mut reader =
@@ -1952,10 +1957,10 @@ fn legacy_trim(
     let reversed = reader.i32().map_err(malformed)? != 0;
     let _continuity = reader.i32().map_err(malformed)?;
     let _monotonicity = reader.i32().map_err(malformed)?;
-    let tolerance_3d = reader.f64().map_err(malformed)? * scale;
+    let tolerance_3d = reader.f64().map_err(malformed)? * scale.value();
     let tolerance_2d = reader.f64().map_err(malformed)?;
     let pcurve_wrapper = nested_chunk(data, &mut reader, TCODE_LEGACY_CRV)?;
-    let pcurve = legacy_curve(data, pcurve_wrapper.body(), 1.0)?;
+    let pcurve = legacy_curve(data, pcurve_wrapper.body(), MillimeterScale::IDENTITY)?;
     let curve = if has_edge {
         let curve_wrapper = nested_chunk(data, &mut reader, TCODE_LEGACY_CRV)?;
         Some(legacy_curve(data, curve_wrapper.body(), scale)?)
@@ -1975,7 +1980,7 @@ fn legacy_trim(
 fn legacy_loop(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<LegacyLoop, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF)?;
     let mut reader =
@@ -2007,7 +2012,7 @@ fn legacy_loop(
 fn legacy_face(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<LegacyFace, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_FAC, TCODE_LEGACY_FACSTUFF)?;
     let mut reader =
@@ -2054,7 +2059,7 @@ fn legacy_face(
 fn legacy_brep(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<LegacyBrep, CodecError> {
     if chunk.typecode == TCODE_LEGACY_FAC {
         return Ok(LegacyBrep {
@@ -2089,7 +2094,7 @@ fn legacy_mesh(
     data: &[u8],
     range: std::ops::Range<usize>,
     id: String,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<Tessellation, CodecError> {
     let geometry = child_with_type(data, range, TCODE_COMPRESSED_MESH_GEOMETRY)?
         .ok_or_else(|| CodecError::Malformed("V1 mesh has no compressed geometry".to_string()))?;
@@ -2106,14 +2111,14 @@ fn legacy_mesh(
     let has_normals = reader.i32().map_err(malformed)? != 0;
     let has_uv = reader.i32().map_err(malformed)? != 0;
     let minimum = Point3::new(
-        reader.f64().map_err(malformed)? * scale,
-        reader.f64().map_err(malformed)? * scale,
-        reader.f64().map_err(malformed)? * scale,
+        reader.f64().map_err(malformed)? * scale.value(),
+        reader.f64().map_err(malformed)? * scale.value(),
+        reader.f64().map_err(malformed)? * scale.value(),
     );
     let maximum = Point3::new(
-        reader.f64().map_err(malformed)? * scale,
-        reader.f64().map_err(malformed)? * scale,
-        reader.f64().map_err(malformed)? * scale,
+        reader.f64().map_err(malformed)? * scale.value(),
+        reader.f64().map_err(malformed)? * scale.value(),
+        reader.f64().map_err(malformed)? * scale.value(),
     );
     let step = [
         (maximum.x - minimum.x) / 65535.0,
@@ -2288,7 +2293,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     let mut retained_bytes = 0_usize;
     let mut diagnostics = Vec::new();
     let mut tolerance_losses = Vec::new();
-    let mut scale = 1.0_f64;
+    let mut scale = MillimeterScale::IDENTITY;
     while offset < data.len() {
         let chunk =
             chunk_at(data, offset, data.len(), ArchiveVersion::V1, false).map_err(malformed)?;
@@ -2310,14 +2315,16 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
             }
             let unit = reader.i32().map_err(malformed)?;
             scale = if unit == 0 {
-                1.0
+                MillimeterScale::IDENTITY
             } else {
-                crate::settings::standard_scale(unit).ok_or_else(|| {
-                    CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
-                })?
+                crate::settings::StandardUnit::from_value(unit)
+                    .map(MillimeterScale::from)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
+                    })?
             };
             ir.tolerances.linear = crate::decode::admitted_tolerance(
-                reader.f64().map_err(malformed)? * scale,
+                reader.f64().map_err(malformed)? * scale.value(),
                 CadIr::empty().tolerances.linear,
                 "linear",
                 &mut tolerance_losses,
@@ -2336,9 +2343,9 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(malformed)?;
             let position = Point3::new(
-                reader.f64().map_err(malformed)? * scale,
-                reader.f64().map_err(malformed)? * scale,
-                reader.f64().map_err(malformed)? * scale,
+                reader.f64().map_err(malformed)? * scale.value(),
+                reader.f64().map_err(malformed)? * scale.value(),
+                reader.f64().map_err(malformed)? * scale.value(),
             );
             if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
                 return Err(CodecError::malformed(format_args!(

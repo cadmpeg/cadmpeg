@@ -11,7 +11,7 @@ use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
 use crate::objects::{ClassUserdata, UserdataDescriptor};
-use crate::settings::{utf16, Plane, UnitBinding};
+use crate::settings::{utf16, MillimeterScale, Plane, UnitBinding};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -308,7 +308,11 @@ fn parse_v5_text_extra(
     })
 }
 
-fn scaled_plane(mut plane: Plane, scale: f64, offset: usize) -> Result<Plane, FramingError> {
+fn scaled_plane(
+    mut plane: Plane,
+    scale: MillimeterScale,
+    offset: usize,
+) -> Result<Plane, FramingError> {
     for coordinate in &mut plane.origin.0 {
         *coordinate = scaled_coordinate(*coordinate, scale).ok_or_else(|| {
             FramingError::structural(offset, "scaled annotation plane is invalid")
@@ -323,7 +327,7 @@ fn decode_annotation(
     data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     leader: bool,
 ) -> Result<(crate::dimensions::Annotation, Vec<[f64; 2]>), FramingError> {
     let mut outer = anonymous(data, range.clone(), archive, i32::from(leader))?;
@@ -372,7 +376,7 @@ fn decode_legacy_annotation(
     data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<crate::dimensions::LegacyAnnotation, FramingError> {
     if matches!(
         archive,
@@ -420,7 +424,7 @@ struct V2Text {
 fn decode_v2_annotation(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     class: Uuid,
 ) -> Result<V2AnnotationPayload, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
@@ -467,7 +471,7 @@ fn decode_v2_annotation(
 fn decode_dot(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<TextDotData, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
@@ -522,7 +526,7 @@ fn v2_version(
 
 fn v2_point(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     offset: usize,
     kind: &str,
 ) -> Result<[f64; 3], FramingError> {
@@ -538,7 +542,7 @@ fn v2_point(
 fn decode_v2_text_dot(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<TextDotData, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     v2_version(&mut reader, range.start, "text-dot")?;
@@ -561,7 +565,7 @@ fn decode_v2_text_dot(
 fn decode_v2_annotation_arrow(
     data: &[u8],
     range: std::ops::Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<([f64; 3], [f64; 3]), FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     v2_version(&mut reader, range.start, "annotation-arrow")?;
@@ -1203,7 +1207,7 @@ mod tests {
         let value = decode_v2_annotation(
             &text,
             0..text.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             crate::dimensions::V2_TEXT_OBJECT,
         )
         .expect("V2 text object");
@@ -1226,9 +1230,13 @@ mod tests {
             true,
         );
         leader.extend([0xa5, 0x5a]);
-        let value =
-            decode_v2_annotation(&leader, 0..leader.len(), 2.0, crate::dimensions::V2_LEADER)
-                .expect("V2 leader");
+        let value = decode_v2_annotation(
+            &leader,
+            0..leader.len(),
+            crate::test_support::millimeter_scale(2.0),
+            crate::dimensions::V2_LEADER,
+        )
+        .expect("V2 leader");
         assert_eq!(value.base.points, [[2.0, 4.0], [6.0, 8.0], [10.0, 12.0]]);
         assert!(value.base.user_positioned_text);
         assert!(value.text.is_none());
@@ -1416,7 +1424,12 @@ mod tests {
         bytes.extend(utf16_bytes("Arial"));
         bytes.extend(15_i32.to_le_bytes());
         bytes.extend(utf16_bytes("secondary"));
-        let dot = decode_dot(&bytes, 0..bytes.len(), 10.0).expect("valid text dot");
+        let dot = decode_dot(
+            &bytes,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(10.0),
+        )
+        .expect("valid text dot");
         assert_eq!(dot.center, [10.0, 20.0, 30.0]);
         assert_eq!(dot.primary_text, "primary");
         assert_eq!(dot.secondary_text, "secondary");
@@ -1439,7 +1452,12 @@ mod tests {
         bytes.extend(utf16_bytes("Courier New"));
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend([0xde, 0xad]);
-        let dot = decode_dot(&bytes, 0..bytes.len(), 1.0).expect("valid V1.0 text dot");
+        let dot = decode_dot(
+            &bytes,
+            0..bytes.len(),
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+        .expect("valid V1.0 text dot");
         assert_eq!(dot.center, [12.5, -3.25, 7.75]);
         assert_eq!(dot.height_points, 23);
         assert_eq!(dot.primary_text, "primary");
@@ -1461,7 +1479,12 @@ mod tests {
         }
         bytes.extend(utf16_bytes("V2 dot"));
         bytes.extend([0xd1, 0xce]);
-        let dot = decode_v2_text_dot(&bytes, 0..bytes.len(), 2.0).expect("valid V2 text dot");
+        let dot = decode_v2_text_dot(
+            &bytes,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(2.0),
+        )
+        .expect("valid V2 text dot");
         assert_eq!(dot.center, [2.5, -5.0, 9.5]);
         assert_eq!(dot.primary_text, "V2 dot");
         assert_eq!(dot.height_points, 0);
@@ -1483,8 +1506,12 @@ mod tests {
             }
         }
         bytes.extend([0xa5, 0x5a]);
-        let (tail, head) =
-            decode_v2_annotation_arrow(&bytes, 0..bytes.len(), 10.0).expect("valid V2 arrow");
+        let (tail, head) = decode_v2_annotation_arrow(
+            &bytes,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(10.0),
+        )
+        .expect("valid V2 arrow");
         assert_eq!(tail, [10.0, 20.0, 30.0]);
         assert_eq!(head, [-40.0, 50.0, -60.0]);
     }
@@ -1533,16 +1560,26 @@ mod tests {
     #[test]
     fn modern_text_and_leader_readers_leave_class_data_suffixes_bounded() {
         let text = modern_annotation(false);
-        let (text, points) =
-            decode_annotation(&text, 0..text.len(), ArchiveVersion::V8, 1.0, false)
-                .expect("modern text class-data suffix is bounded");
+        let (text, points) = decode_annotation(
+            &text,
+            0..text.len(),
+            ArchiveVersion::V8,
+            crate::settings::MillimeterScale::IDENTITY,
+            false,
+        )
+        .expect("modern text class-data suffix is bounded");
         assert_eq!(text.rich_text, "rich");
         assert!(points.is_empty());
 
         let leader = modern_annotation(true);
-        let (leader, points) =
-            decode_annotation(&leader, 0..leader.len(), ArchiveVersion::V8, 1.0, true)
-                .expect("modern leader class-data suffix is bounded");
+        let (leader, points) = decode_annotation(
+            &leader,
+            0..leader.len(),
+            ArchiveVersion::V8,
+            crate::settings::MillimeterScale::IDENTITY,
+            true,
+        )
+        .expect("modern leader class-data suffix is bounded");
         assert_eq!(leader.rich_text, "rich");
         assert_eq!(points, [[1.0, 2.0], [3.0, 4.0]]);
     }
@@ -1567,8 +1604,13 @@ mod tests {
         common.extend(12_i32.to_le_bytes());
         let inner = anonymous(3, &common);
         let bytes = anonymous(0, &inner);
-        let value = decode_legacy_annotation(&bytes, 0..bytes.len(), ArchiveVersion::V8, 10.0)
-            .expect("valid legacy leader");
+        let value = decode_legacy_annotation(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V8,
+            crate::test_support::millimeter_scale(10.0),
+        )
+        .expect("valid legacy leader");
         assert_eq!(value.rich_text, "leader");
         assert_eq!(value.user_text, "formula");
         assert_eq!(value.plane.origin.0, [10.0, 35.0, 30.0]);
@@ -1592,8 +1634,13 @@ mod tests {
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend((-1_i32).to_le_bytes());
         bytes.extend(1.5_f64.to_le_bytes());
-        let value = decode_legacy_annotation(&bytes, 0..bytes.len(), ArchiveVersion::V4, 10.0)
-            .expect("valid direct legacy text");
+        let value = decode_legacy_annotation(
+            &bytes,
+            0..bytes.len(),
+            ArchiveVersion::V4,
+            crate::test_support::millimeter_scale(10.0),
+        )
+        .expect("valid direct legacy text");
         assert_eq!(value.rich_text, "legacy");
         assert_eq!(value.user_text, "legacy");
         assert_eq!(value.plane.origin.0, [10.0, 35.0, 30.0]);

@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
-use crate::settings::{plane, utf16, Plane};
+use crate::settings::{plane, utf16, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -192,7 +192,11 @@ pub(crate) fn supported_class(class: Uuid) -> bool {
     )
 }
 
-fn scale_plane(mut value: Plane, scale: f64, offset: usize) -> Result<Plane, FramingError> {
+fn scale_plane(
+    mut value: Plane,
+    scale: MillimeterScale,
+    offset: usize,
+) -> Result<Plane, FramingError> {
     for coordinate in &mut value.origin.0 {
         *coordinate = scaled_coordinate(*coordinate, scale)
             .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?;
@@ -335,7 +339,11 @@ pub(crate) fn annotation(
     })
 }
 
-fn scaled_point(value: [f64; 2], scale: f64, offset: usize) -> Result<[f64; 2], FramingError> {
+fn scaled_point(
+    value: [f64; 2],
+    scale: MillimeterScale,
+    offset: usize,
+) -> Result<[f64; 2], FramingError> {
     Ok([
         scaled_coordinate(value[0], scale)
             .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?,
@@ -366,7 +374,7 @@ pub(crate) struct LegacyAnnotation {
 pub(crate) fn legacy_annotation(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<LegacyAnnotation, FramingError> {
     let (mut annotation, next, minor) = anonymous(data, reader.position(), reader.end(), archive)?;
@@ -381,7 +389,7 @@ pub(crate) fn legacy_annotation(
 /// fields without an anonymous wrapper.
 pub(crate) fn legacy_annotation_direct(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<LegacyAnnotation, FramingError> {
     let version = reader.u8()?;
     if version >> 4 != 1 || version & 0x0f != 0 {
@@ -397,7 +405,7 @@ pub(crate) fn legacy_annotation_direct(
 
 fn legacy_annotation_fields(
     annotation: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     minor: i32,
     direct_legacy: bool,
 ) -> Result<LegacyAnnotation, FramingError> {
@@ -557,7 +565,7 @@ pub(crate) struct V2Annotation {
 /// range owns every subclass field and any future suffix.
 pub(crate) fn v2_annotation_direct(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<V2Annotation, FramingError> {
     let version_offset = reader.position();
     if reader.u8()? >> 4 != 1 {
@@ -646,7 +654,7 @@ fn decode_legacy(
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
     // V2–V4 linear, radial, and angular classes call the common writer
@@ -879,7 +887,7 @@ fn decode_v2(
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<Dimension, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let annotation = v2_annotation_direct(&mut reader, scale)?;
@@ -1029,7 +1037,7 @@ pub(crate) fn decode(
     data: &[u8],
     class: Uuid,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
     if matches!(class, V2_LINEAR | V2_ANGULAR | V2_RADIAL) {
@@ -1255,7 +1263,7 @@ pub(crate) fn apply_userdata(
     data: &[u8],
     userdata: &[UserdataDescriptor],
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     dimension: &mut Dimension,
 ) -> Result<(), FramingError> {
     if let Definition::Angular {
@@ -1838,7 +1846,9 @@ pub(crate) mod tests {
             None,
         );
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded V2 payload");
-        let annotation = v2_annotation_direct(&mut reader, 2.0).expect("V2 common prefix");
+        let annotation =
+            v2_annotation_direct(&mut reader, crate::test_support::millimeter_scale(2.0))
+                .expect("V2 common prefix");
         assert_eq!(annotation.points[0], [2.0, 4.0]);
         assert_eq!(annotation.user_text, "  user <>  ");
         assert_eq!(annotation.default_text, "default");
@@ -1861,7 +1871,7 @@ pub(crate) mod tests {
             &linear_bytes,
             V2_LINEAR,
             0..linear_bytes.len(),
-            2.0,
+            crate::test_support::millimeter_scale(2.0),
             ArchiveVersion::V4,
         )
         .expect("V2 linear dimension");
@@ -1893,7 +1903,7 @@ pub(crate) mod tests {
             &radial_bytes,
             V2_RADIAL,
             0..radial_bytes.len(),
-            2.0,
+            crate::test_support::millimeter_scale(2.0),
             ArchiveVersion::V4,
         )
         .expect("V2 radial dimension");
@@ -1914,7 +1924,7 @@ pub(crate) mod tests {
             &angular_bytes,
             V2_ANGULAR,
             0..angular_bytes.len(),
-            2.0,
+            crate::test_support::millimeter_scale(2.0),
             ArchiveVersion::V4,
         )
         .expect("V2 angular dimension");
@@ -1938,7 +1948,14 @@ pub(crate) mod tests {
             false,
             Some((0.0, 9.5)),
         );
-        assert!(decode(&bytes, V2_ANGULAR, 0..bytes.len(), 1.0, ArchiveVersion::V4,).is_err());
+        assert!(decode(
+            &bytes,
+            V2_ANGULAR,
+            0..bytes.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V4,
+        )
+        .is_err());
     }
 
     #[test]
@@ -1951,7 +1968,14 @@ pub(crate) mod tests {
             false,
             Some((V2_REALLY_BIG_NUMBER.next_up(), 9.5)),
         );
-        assert!(decode(&bytes, V2_ANGULAR, 0..bytes.len(), 1.0, ArchiveVersion::V4,).is_err());
+        assert!(decode(
+            &bytes,
+            V2_ANGULAR,
+            0..bytes.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V4,
+        )
+        .is_err());
     }
 
     #[test]
@@ -1967,7 +1991,14 @@ pub(crate) mod tests {
         let point_offset = 1 + 4 + 16 * 8 + 4;
         bytes[point_offset..point_offset + 8]
             .copy_from_slice(&V2_REALLY_BIG_NUMBER.next_up().to_le_bytes());
-        assert!(decode(&bytes, V2_LINEAR, 0..bytes.len(), 1.0, ArchiveVersion::V4).is_err());
+        assert!(decode(
+            &bytes,
+            V2_LINEAR,
+            0..bytes.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V4
+        )
+        .is_err());
     }
 
     fn payload(annotation_type: i32, family: &[u8]) -> Vec<u8> {
@@ -2097,8 +2128,14 @@ pub(crate) mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let linear_bytes = payload(1, &linear_family);
-        let linear = decode(&linear_bytes, LINEAR, 0..linear_bytes.len(), 10.0, archive)
-            .expect("required invariant");
+        let linear = decode(
+            &linear_bytes,
+            LINEAR,
+            0..linear_bytes.len(),
+            crate::test_support::millimeter_scale(10.0),
+            archive,
+        )
+        .expect("required invariant");
         assert_eq!(linear.measurement, 60.0);
         assert_eq!(linear.horizontal_direction, [1.0, 0.0]);
         let semantic: serde_json::Value =
@@ -2116,13 +2153,25 @@ pub(crate) mod tests {
             .flat_map(f64::to_le_bytes)
             .collect::<Vec<_>>();
         let radial_bytes = payload(3, &radial_family);
-        let radial = decode(&radial_bytes, RADIAL, 0..radial_bytes.len(), 1.0, archive)
-            .expect("required invariant");
+        let radial = decode(
+            &radial_bytes,
+            RADIAL,
+            0..radial_bytes.len(),
+            MillimeterScale::IDENTITY,
+            archive,
+        )
+        .expect("required invariant");
         assert_eq!(radial.measurement, 20.0);
         let outside_bytes =
             dimension_payload_with_arrow_fit(3, &radial_family, [0; 16], &plane(), None, 2);
-        let outside = decode(&outside_bytes, RADIAL, 0..outside_bytes.len(), 1.0, archive)
-            .expect("arrows-outside dimension");
+        let outside = decode(
+            &outside_bytes,
+            RADIAL,
+            0..outside_bytes.len(),
+            MillimeterScale::IDENTITY,
+            archive,
+        )
+        .expect("arrows-outside dimension");
         assert_eq!(outside.arrow_position, -1);
 
         let angular_family = [
@@ -2138,7 +2187,7 @@ pub(crate) mod tests {
             &angular_bytes,
             ANGULAR,
             0..angular_bytes.len(),
-            1.0,
+            MillimeterScale::IDENTITY,
             archive,
         )
         .expect("required invariant");
@@ -2159,7 +2208,7 @@ pub(crate) mod tests {
             &ordinate_bytes,
             ORDINATE,
             0..ordinate_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("required invariant");
@@ -2185,8 +2234,14 @@ pub(crate) mod tests {
 
         let mut modern = payload(1, &family);
         modern.extend([0xa5, 0x5a]);
-        let modern_dimension = decode(&modern, LINEAR, 0..modern.len(), 1.0, archive)
-            .expect("modern class-data suffix is bounded");
+        let modern_dimension = decode(
+            &modern,
+            LINEAR,
+            0..modern.len(),
+            MillimeterScale::IDENTITY,
+            archive,
+        )
+        .expect("modern class-data suffix is bounded");
         assert_eq!(modern_dimension.measurement, 6.0);
 
         let mut legacy = legacy_payload(
@@ -2195,8 +2250,14 @@ pub(crate) mod tests {
             &[],
         );
         legacy.extend([0x3c, 0xc3]);
-        let legacy_dimension = decode(&legacy, V5_LINEAR, 0..legacy.len(), 1.0, archive)
-            .expect("legacy class-data suffix is bounded");
+        let legacy_dimension = decode(
+            &legacy,
+            V5_LINEAR,
+            0..legacy.len(),
+            MillimeterScale::IDENTITY,
+            archive,
+        )
+        .expect("legacy class-data suffix is bounded");
         assert_eq!(legacy_dimension.measurement, 3.0);
     }
 
@@ -2212,7 +2273,7 @@ pub(crate) mod tests {
             &linear_bytes,
             V5_LINEAR,
             0..linear_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("required invariant");
@@ -2238,7 +2299,7 @@ pub(crate) mod tests {
             &radial_bytes,
             V5_RADIAL,
             0..radial_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("required invariant");
@@ -2262,7 +2323,7 @@ pub(crate) mod tests {
             &angular_bytes,
             V5_ANGULAR,
             0..angular_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("required invariant");
@@ -2290,7 +2351,7 @@ pub(crate) mod tests {
             &center_bytes,
             CENTERMARK,
             0..center_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("required invariant");
@@ -2310,7 +2371,7 @@ pub(crate) mod tests {
             &ordinate_bytes,
             V5_ORDINATE,
             0..ordinate_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("required invariant");
@@ -2349,7 +2410,7 @@ pub(crate) mod tests {
             &extension,
             std::slice::from_ref(&descriptor),
             archive,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut radial,
         )
         .expect("required invariant");
@@ -2371,7 +2432,7 @@ pub(crate) mod tests {
             &radial_bytes,
             V5_RADIAL,
             0..radial_bytes.len(),
-            1.0,
+            MillimeterScale::IDENTITY,
             archive,
         )
         .expect("fresh radial baseline");
@@ -2379,7 +2440,7 @@ pub(crate) mod tests {
             &extension,
             std::slice::from_ref(&wrong_item_descriptor),
             archive,
-            1.0,
+            MillimeterScale::IDENTITY,
             &mut wrong_item_radial,
         )
         .expect("wrong dimension item UUID is not a matching extension");
@@ -2406,7 +2467,7 @@ pub(crate) mod tests {
             &angular_extension,
             std::slice::from_ref(&angular_descriptor),
             archive,
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             &mut angular,
         )
         .expect("required invariant");
@@ -2429,7 +2490,7 @@ pub(crate) mod tests {
             &angular_bytes,
             V5_ANGULAR,
             0..angular_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("fresh angular baseline");
@@ -2437,7 +2498,7 @@ pub(crate) mod tests {
             &angular_extension,
             std::slice::from_ref(&wrong_item_descriptor),
             archive,
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             &mut wrong_item_angular,
         )
         .expect("wrong item UUID is not a matching extension");
@@ -2471,7 +2532,7 @@ pub(crate) mod tests {
             &combined,
             &[angular_descriptor, second_descriptor],
             archive,
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             &mut duplicate_angular,
         )
         .expect("first duplicate extension");
@@ -2497,7 +2558,7 @@ pub(crate) mod tests {
             &linear_bytes,
             V5_LINEAR,
             0..linear_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("V4 linear common payload is direct");
@@ -2512,7 +2573,7 @@ pub(crate) mod tests {
             &radial_bytes,
             V5_RADIAL,
             0..radial_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("V4 radial common payload is direct");
@@ -2527,7 +2588,7 @@ pub(crate) mod tests {
             &angular_bytes,
             V5_ANGULAR,
             0..angular_bytes.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("V4 angular common payload and suffix are direct");
@@ -2544,7 +2605,7 @@ pub(crate) mod tests {
             &ordinate_outer,
             V5_ORDINATE,
             0..ordinate_outer.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             archive,
         )
         .expect("V4 ordinate keeps its outer wrapper and direct common child");

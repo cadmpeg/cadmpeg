@@ -11,7 +11,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
-use crate::settings::{bbox, interval, plane, Point3 as NativePoint3};
+use crate::settings::{bbox, interval, plane, MillimeterScale, Point3 as NativePoint3};
 use crate::wire::{vector, Uuid};
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
@@ -306,7 +306,8 @@ mod alias_tests {
         bytes.extend_from_slice(&0_i32.to_le_bytes());
 
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
-        let cloud = read_cloud(&mut reader, 1.0).expect("optional channel is recoverable");
+        let cloud = read_cloud(&mut reader, MillimeterScale::IDENTITY)
+            .expect("optional channel is recoverable");
         assert_eq!(cloud.points.len(), 2);
         assert_eq!(cloud.warnings.len(), 1);
         assert_eq!(reader.remaining(), 0);
@@ -341,7 +342,8 @@ mod alias_tests {
         bytes.extend_from_slice(&12.5_f64.to_le_bytes());
 
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
-        let cloud = read_cloud(&mut reader, 1.0).expect("matching channels are recoverable");
+        let cloud = read_cloud(&mut reader, MillimeterScale::IDENTITY)
+            .expect("matching channels are recoverable");
         assert_eq!(cloud.points, vec![Point3::new(1.0, 2.0, 3.0)]);
         assert!(cloud.warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
@@ -353,7 +355,7 @@ pub(crate) fn decode(
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
     decode_inner(data, class_uuid, range, scale, archive, 0)
@@ -373,7 +375,7 @@ pub(crate) fn decode_inner(
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedGeometry, GeometryError> {
@@ -415,7 +417,7 @@ pub(crate) fn decode_inner(
             let position = read_point(&mut reader, scale)?;
             DecodedGeometry::Point {
                 position,
-                scaled: scale != 1.0,
+                scaled: scale != MillimeterScale::IDENTITY,
             }
         }
         POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
@@ -472,7 +474,7 @@ pub(crate) fn decode_inner(
 pub(crate) fn decode_embedded_curve(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
@@ -529,7 +531,7 @@ pub(crate) fn decode_embedded_curve(
 pub(crate) fn decode_embedded_curve_2d(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
@@ -576,7 +578,7 @@ pub(crate) fn decode_embedded_curve_2d(
 
 fn scale_decoded_curve(
     curve: &mut DecodedCurve,
-    scale: f64,
+    scale: MillimeterScale,
     offset: usize,
 ) -> Result<(), GeometryError> {
     match curve {
@@ -620,7 +622,7 @@ fn scale_decoded_curve(
                     })?,
                     *axis,
                     *ref_direction,
-                    radius * scale,
+                    radius * scale.value(),
                 )
                 .map_err(|message| GeometryError::malformed(offset, message))?;
             }
@@ -667,8 +669,12 @@ fn scale_decoded_curve(
     Ok(())
 }
 
-fn scale_ir_point(value: Point3, scale: f64) -> Option<Point3> {
-    let point = Point3::new(value.x * scale, value.y * scale, value.z * scale);
+fn scale_ir_point(value: Point3, scale: MillimeterScale) -> Option<Point3> {
+    let point = Point3::new(
+        value.x * scale.value(),
+        value.y * scale.value(),
+        value.z * scale.value(),
+    );
     (point.x.is_finite() && point.y.is_finite() && point.z.is_finite()).then_some(point)
 }
 
@@ -1117,7 +1123,7 @@ pub(crate) fn decode_inner_2d(
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
                     &mut reader,
-                    1.0,
+                    MillimeterScale::IDENTITY,
                     Some(2),
                 )?)),
                 Diagnostics::new(),
@@ -1127,14 +1133,15 @@ pub(crate) fn decode_inner_2d(
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_polyline(
                     &mut reader,
-                    1.0,
+                    MillimeterScale::IDENTITY,
                     Some(2),
                 )?)),
                 Diagnostics::new(),
             ),
         },
         ARC => {
-            let (geometry, warnings) = read_arc(&mut reader, 1.0, Some(2), true)?;
+            let (geometry, warnings) =
+                read_arc(&mut reader, MillimeterScale::IDENTITY, Some(2), true)?;
             DecodedGeometry::Curve {
                 curve: DecodedCurve::leaf(geometry, warnings),
             }
@@ -1226,7 +1233,10 @@ pub(crate) fn consume_legacy_polycurve_2d(
     Ok(start..reader.position())
 }
 
-fn read_point(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Point3, GeometryError> {
+fn read_point(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<Point3, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point = native_point(reader)?;
@@ -1234,7 +1244,10 @@ fn read_point(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Point3, Geom
         .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))
 }
 
-fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, GeometryError> {
+fn read_cloud(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<PointCloud, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
@@ -1298,14 +1311,14 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     reader.skip_remaining()?;
     Ok(PointCloud {
         points,
-        scaled: scale != 1.0,
+        scaled: scale != MillimeterScale::IDENTITY,
         warnings,
     })
 }
 
 fn read_line(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     expected_dimension: Option<i32>,
 ) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
@@ -1335,7 +1348,7 @@ fn read_line(
 
 fn read_polyline(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     expected_dimension: Option<i32>,
 ) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
@@ -1391,7 +1404,7 @@ fn read_polyline(
 
 fn read_arc(
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     expected_dimension: Option<i32>,
     force_nurbs: bool,
 ) -> Result<(CurveGeometry, Diagnostics), GeometryError> {
@@ -1450,13 +1463,16 @@ struct Circle {
     radius: f64,
 }
 
-fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, GeometryError> {
+fn read_circle(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<Circle, GeometryError> {
     let native = plane(reader)?;
     let radius = reader.f64()?;
     let zero = native_point(reader)?;
     let half_pi = native_point(reader)?;
     let at_pi = native_point(reader)?;
-    let scaled_radius = radius * scale;
+    let scaled_radius = radius * scale.value();
     if !radius.is_finite() || radius <= 0.0 || !scaled_radius.is_finite() || scaled_radius <= 0.0 {
         return Err(error(reader.position(), "circle radius is invalid"));
     }
@@ -1496,7 +1512,7 @@ fn read_circle(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Circle, Geo
 fn read_polycurve(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
@@ -1565,7 +1581,7 @@ fn read_polycurve(
 pub(crate) fn consume_legacy_polycurve(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Range<usize>, GeometryError> {
     let start = reader.position();
@@ -1689,7 +1705,7 @@ fn native_point(reader: &mut BoundedReader<'_>) -> Result<NativePoint3, FramingE
     crate::settings::point(reader)
 }
 
-fn scale_point(value: NativePoint3, scale: f64) -> Option<Point3> {
+fn scale_point(value: NativePoint3, scale: MillimeterScale) -> Option<Point3> {
     Some(Point3::new(
         crate::wire::scaled_coordinate(value.0[0], scale)?,
         crate::wire::scaled_coordinate(value.0[1], scale)?,
@@ -1794,7 +1810,8 @@ mod tests {
         let value_offset = payload.len() - 8;
         payload[value_offset..].copy_from_slice(&f64::NAN.to_le_bytes());
         let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
-        let error = read_cloud(&mut reader, 1.0).expect_err("nonfinite point-cloud value");
+        let error = read_cloud(&mut reader, MillimeterScale::IDENTITY)
+            .expect_err("nonfinite point-cloud value");
         assert!(matches!(
             error,
             GeometryError::Malformed(FramingError::Structural { offset, ref message })
@@ -1807,7 +1824,7 @@ mod tests {
     fn point_cloud_channel_repairs_carry_the_redundant_field_code() {
         let payload = mismatched_point_cloud_payload();
         let mut reader = BoundedReader::new(&payload, 0, payload.len()).expect("reader");
-        let cloud = read_cloud(&mut reader, 1.0).expect("point cloud");
+        let cloud = read_cloud(&mut reader, MillimeterScale::IDENTITY).expect("point cloud");
         assert_eq!(
             cloud
                 .warnings
@@ -1849,7 +1866,7 @@ mod tests {
             &[],
             CURVE_ON_SURFACE,
             0..0,
-            1.0,
+            MillimeterScale::IDENTITY,
             ArchiveVersion::V8,
             MAX_CURVE_DEPTH + 1,
         )
@@ -1927,7 +1944,8 @@ mod tests {
             }
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve = read_line(&mut reader, 1.0, None).expect("valid line");
+            let curve =
+                read_line(&mut reader, MillimeterScale::IDENTITY, None).expect("valid line");
             assert_eq!(curve.knots(), vec![2.0, 2.0, 5.0, 5.0]);
         }
     }
@@ -1945,7 +1963,8 @@ mod tests {
             bytes.extend(12.0_f64.to_le_bytes());
             bytes.extend(dimension.to_le_bytes());
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-            let curve = read_polyline(&mut reader, 1.0, None).expect("valid polyline");
+            let curve = read_polyline(&mut reader, MillimeterScale::IDENTITY, None)
+                .expect("valid polyline");
             assert_eq!(curve.control_points().len(), 2);
             assert_eq!(curve.knots(), vec![10.0, 10.0, 12.0, 12.0]);
         }
@@ -1965,8 +1984,12 @@ mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             Diagnostics::new(),
         );
-        let error = scale_decoded_curve(&mut decoded, f64::MAX, 17)
-            .expect_err("scaling overflow must reject the NURBS curve");
+        let error = scale_decoded_curve(
+            &mut decoded,
+            crate::test_support::millimeter_scale(f64::MAX),
+            17,
+        )
+        .expect_err("scaling overflow must reject the NURBS curve");
         assert!(error
             .to_string()
             .contains("scaled plane-space curve is invalid"));
@@ -1984,7 +2007,13 @@ mod tests {
     fn cadir_rejects_future_polycurve_major_for_typed_admission() {
         let bytes = [0x20];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
-        let result = read_polycurve(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0);
+        let result = read_polycurve(
+            &bytes,
+            &mut reader,
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V5,
+            0,
+        );
         assert!(matches!(
             result,
             Err(GeometryError::UnsupportedVersion { .. })

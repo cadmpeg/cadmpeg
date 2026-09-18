@@ -13,7 +13,7 @@ use crate::mesh::MeshExpand;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
-use crate::settings::{Plane, Point3, Vector3};
+use crate::settings::{MillimeterScale, Plane, Point3, Vector3};
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
@@ -158,7 +158,7 @@ fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
 pub(crate) fn decode(
     expand: MeshExpand<'_>,
     range: Range<usize>,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Hatch, GeometryError> {
     let data = expand.data();
@@ -308,7 +308,7 @@ pub(crate) fn decode(
 pub(crate) fn apply_userdata(
     data: &[u8],
     userdata: &[UserdataDescriptor],
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
     hatch: &mut Hatch,
 ) -> Result<(), GeometryError> {
@@ -358,7 +358,7 @@ pub(crate) fn apply_userdata(
 fn parse_gradient_userdata(
     data: &[u8],
     extra: &ClassUserdata,
-    scale: f64,
+    scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Gradient, GeometryError> {
     let outer = chunk_at(
@@ -458,7 +458,7 @@ fn parse_gradient_userdata(
 
 fn gradient_point(
     reader: &mut crate::chunks::BoundedReader<'_>,
-    scale: f64,
+    scale: MillimeterScale,
     label: &str,
 ) -> Result<[f64; 3], GeometryError> {
     let offset = reader.position();
@@ -491,7 +491,7 @@ fn parse_userdata(
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
 ) -> Result<[f64; 2], GeometryError> {
     let payload = chunk_at(
         data,
@@ -621,8 +621,13 @@ pub(crate) mod tests {
         payload[0] = 0x11;
         payload.truncate(payload.len() - 16);
         crate::decode::with_expand_bytes(&payload, |expand| {
-            let mut hatch =
-                decode(expand, 0..payload.len(), 1.0, ArchiveVersion::V5).expect("hatch");
+            let mut hatch = decode(
+                expand,
+                0..payload.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V5,
+            )
+            .expect("hatch");
             let mut body = Vec::new();
             body.extend([0; 16]);
             body.extend(2.0_f64.to_le_bytes());
@@ -643,7 +648,7 @@ pub(crate) mod tests {
             apply_userdata(
                 &extra,
                 std::slice::from_ref(&descriptor),
-                10.0,
+                crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V5,
                 &mut hatch,
             )
@@ -657,12 +662,17 @@ pub(crate) mod tests {
                 panic!("expected known userdata");
             };
             *item_uuid = Uuid::nil();
-            let mut wrong_item_hatch =
-                decode(expand, 0..payload.len(), 1.0, ArchiveVersion::V5).expect("hatch");
+            let mut wrong_item_hatch = decode(
+                expand,
+                0..payload.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V5,
+            )
+            .expect("hatch");
             apply_userdata(
                 &extra,
                 std::slice::from_ref(&wrong_item_descriptor),
-                10.0,
+                crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V5,
                 &mut wrong_item_hatch,
             )
@@ -695,7 +705,7 @@ pub(crate) mod tests {
             apply_userdata(
                 &combined,
                 &[descriptor, second_descriptor],
-                10.0,
+                crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V5,
                 &mut hatch,
             )
@@ -708,7 +718,12 @@ pub(crate) mod tests {
     fn decodes_version_two_loop_geometry_and_pattern_state() {
         let payload = version_two_hatch_payload();
         let hatch = crate::decode::with_expand_bytes(&payload, |expand| {
-            decode(expand, 0..payload.len(), 10.0, ArchiveVersion::V8)
+            decode(
+                expand,
+                0..payload.len(),
+                crate::test_support::millimeter_scale(10.0),
+                ArchiveVersion::V8,
+            )
         })
         .expect("required invariant");
         assert_eq!(hatch.pattern_index, 7);
@@ -728,12 +743,17 @@ pub(crate) mod tests {
         let payload = gradient_userdata_payload(1, &[0xaa, 0xbb]);
         let hatch_payload = version_two_hatch_payload();
         crate::decode::with_expand_bytes(&hatch_payload, |expand| {
-            let mut hatch =
-                decode(expand, 0..hatch_payload.len(), 1.0, ArchiveVersion::V8).expect("hatch");
+            let mut hatch = decode(
+                expand,
+                0..hatch_payload.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect("hatch");
             apply_userdata(
                 &payload,
                 &[gradient_descriptor(&payload)],
-                2.0,
+                crate::test_support::millimeter_scale(2.0),
                 ArchiveVersion::V8,
                 &mut hatch,
             )
@@ -761,12 +781,17 @@ pub(crate) mod tests {
         let payload = gradient_userdata_payload(5, &[]);
         let hatch_payload = version_two_hatch_payload();
         crate::decode::with_expand_bytes(&hatch_payload, |expand| {
-            let mut hatch =
-                decode(expand, 0..hatch_payload.len(), 1.0, ArchiveVersion::V8).expect("hatch");
+            let mut hatch = decode(
+                expand,
+                0..hatch_payload.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect("hatch");
             assert!(apply_userdata(
                 &payload,
                 &[gradient_descriptor(&payload)],
-                1.0,
+                MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
                 &mut hatch,
             )
@@ -784,7 +809,7 @@ pub(crate) mod tests {
         assert!(crate::decode::with_expand_bytes(&payload, |expand| decode(
             expand,
             0..payload.len(),
-            10.0,
+            crate::test_support::millimeter_scale(10.0),
             ArchiveVersion::V8
         ))
         .is_err());

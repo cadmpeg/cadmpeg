@@ -16,6 +16,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::objects::ClassUserdata;
+use crate::settings::MillimeterScale;
 
 /// Canonical `ON_SubD` class UUID.
 pub(crate) const ON_SUBD: crate::wire::Uuid = crate::wire::Uuid::from_canonical([
@@ -197,12 +198,9 @@ pub(crate) fn decode(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     id: cadmpeg_ir::ids::SubdId,
 ) -> Result<Option<DecodedSubd>, SubdError> {
-    if !scale.is_finite() || scale <= 0.0 {
-        return Err(malformed(range.start, "invalid SubD unit scale"));
-    }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let mut warnings = Diagnostics::new();
     let has_subdimple = reader.u8()?;
@@ -253,7 +251,7 @@ pub(crate) fn decode_mesh_proxy(
     data: &[u8],
     extra: &ClassUserdata,
     archive: ArchiveVersion,
-    scale: f64,
+    scale: MillimeterScale,
     id: cadmpeg_ir::ids::SubdId,
     fingerprint: MeshProxyFingerprint,
 ) -> Result<Option<DecodedSubd>, SubdError> {
@@ -363,7 +361,7 @@ fn read_subdimple(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     minor: i32,
-    scale: f64,
+    scale: MillimeterScale,
     id: cadmpeg_ir::ids::SubdId,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
     warnings: &mut Diagnostics,
@@ -1147,7 +1145,7 @@ fn resolve_all(
 
 fn materialize(
     level: RawLevel,
-    scale: f64,
+    scale: MillimeterScale,
     id: cadmpeg_ir::ids::SubdId,
 ) -> Result<SubdSurface, SubdError> {
     let vertex_indices = level
