@@ -965,7 +965,12 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     let mut polyline = PolylineCurve::new(parameterized([2.0, 1.0]), 0.0).unwrap();
     let original = polyline.clone();
     assert!(polyline
-        .edit_samples(|samples| samples.edit_points(|point| point.x = f64::NAN))
+        .edit_samples(|samples| {
+            samples.edit_points(|point| {
+                point.x = f64::NAN;
+                Ok(())
+            })
+        })
         .is_err());
     assert_eq!(polyline, original);
     assert!(polyline
@@ -973,6 +978,7 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
             if let PolylineSamples::Parameterized { vertices } = samples {
                 vertices[1].parameter = 2.0;
             }
+            Ok(())
         })
         .is_err());
     assert_eq!(polyline, original);
@@ -1019,6 +1025,40 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     wire["chordal_deflection"] = serde_json::json!(-1.0);
     assert!(serde_json::from_value::<PolygonalSurface>(wire).is_err());
 }
+#[test]
+fn a_refused_sample_edit_keeps_the_prior_samples() {
+    use super::{GeometryLayoutError, PolylineCurve, PolylineSamples};
+
+    let mut polyline = PolylineCurve::new(
+        PolylineSamples::Unparameterized {
+            points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
+                .try_into()
+                .unwrap(),
+        },
+        0.0,
+    )
+    .unwrap();
+    let original = polyline.clone();
+    let mut seen = 0;
+    assert!(polyline
+        .edit_samples(|samples| {
+            samples.edit_points(|point| {
+                seen += 1;
+                if seen == 1 {
+                    point.x = 9.0;
+                    Ok(())
+                } else {
+                    Err(GeometryLayoutError::EditRefused(
+                        "the caller refused this sample".to_string(),
+                    ))
+                }
+            })
+        })
+        .is_err());
+    assert_eq!(seen, 2);
+    assert_eq!(polyline, original);
+}
+
 #[test]
 fn a_refused_polygonal_vertex_edit_keeps_the_prior_vertices() {
     use super::{GeometryLayoutError, PolygonalSurface};

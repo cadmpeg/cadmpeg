@@ -414,18 +414,21 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 })?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
-            let mut placed = true;
             polyline
                 .edit_samples(|samples| {
-                    samples.edit_points(|point| match transform.apply_point(*point) {
-                        Some(moved) => *point = moved,
-                        None => placed = false,
-                    });
+                    samples.edit_points(|point| {
+                        *point = transform.apply_point(*point).ok_or_else(|| {
+                            GeometryLayoutError::EditRefused(
+                                "baked body placement produced a non-finite point".to_string(),
+                            )
+                        })?;
+                        Ok(())
+                    })
                 })
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
-            if !placed {
-                return Err(non_finite_point());
-            }
+                .map_err(|error| match error {
+                    GeometryLayoutError::EditRefused(_) => non_finite_point(),
+                    error => CodecError::malformed(error.to_string()),
+                })?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex();

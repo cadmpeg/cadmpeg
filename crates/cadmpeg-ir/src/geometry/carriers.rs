@@ -1503,14 +1503,28 @@ impl PolylineSamples {
         }
     }
 
-    /// Edit each sample point in place.
-    pub fn edit_points(&mut self, mut edit: impl FnMut(&mut Point3)) {
-        match self {
-            Self::Unparameterized { points } => points.iter_mut().for_each(&mut edit),
-            Self::Parameterized { vertices } => vertices
-                .iter_mut()
-                .for_each(|vertex| edit(&mut vertex.point)),
+    /// Edit each sample point, keeping the prior points on a refusal.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
+    pub fn edit_points(
+        &mut self,
+        mut edit: impl FnMut(&mut Point3) -> Result<(), GeometryLayoutError>,
+    ) -> Result<(), GeometryLayoutError> {
+        let mut candidate = self.clone();
+        match &mut candidate {
+            Self::Unparameterized { points } => {
+                for point in points.iter_mut() {
+                    edit(point)?;
+                }
+            }
+            Self::Parameterized { vertices } => {
+                for vertex in vertices.iter_mut() {
+                    edit(&mut vertex.point)?;
+                }
+            }
         }
+        *self = candidate;
+        Ok(())
     }
 }
 
@@ -1576,12 +1590,14 @@ impl PolylineCurve {
     }
 
     /// Edit the sample rows transactionally.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_samples(
         &mut self,
-        edit: impl FnOnce(&mut PolylineSamples),
+        edit: impl FnOnce(&mut PolylineSamples) -> Result<(), GeometryLayoutError>,
     ) -> Result<(), GeometryLayoutError> {
         let mut candidate = self.samples.clone();
-        edit(&mut candidate);
+        edit(&mut candidate)?;
         *self = Self::new(candidate, self.chordal_deflection)?;
         Ok(())
     }

@@ -7,9 +7,10 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, PcurveNurbs, PolygonalSurface, PolylineCurve,
-    PolylineSamples, PolylineVertex, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, GeometryLayoutError, Pcurve, PcurveGeometry, PcurveNurbs,
+    PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -1892,18 +1893,16 @@ fn place_polyline_samples(
     samples: &mut PolylineSamples,
     transform: Transform,
 ) -> Result<(), CodecError> {
-    let mut placed = true;
-    samples.edit_points(|point| match transform.apply_point(*point) {
-        Some(moved) => *point = moved,
-        None => placed = false,
-    });
-    if placed {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(
-            "placed polyline sample contains a non-finite coordinate",
-        ))
-    }
+    samples
+        .edit_points(|point| {
+            *point = transform.apply_point(*point).ok_or_else(|| {
+                GeometryLayoutError::EditRefused(
+                    "placed polyline sample contains a non-finite coordinate".to_string(),
+                )
+            })?;
+            Ok(())
+        })
+        .map_err(|error| CodecError::malformed(error.to_string()))
 }
 
 fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<Vector3> {

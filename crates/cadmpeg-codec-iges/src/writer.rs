@@ -13,9 +13,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ExportBody, WritePath};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsError, NurbsSurface, Pcurve,
-    PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, GeometryLayoutError, NurbsCurve, NurbsError, NurbsSurface,
+    Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -6267,16 +6267,17 @@ fn apply_rigid_transform(
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
             CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 let mut samples = polyline.samples().clone();
-                let mut placed = true;
-                samples.edit_points(|sample| match transform.apply_point(*sample) {
-                    Some(moved) => *sample = moved,
-                    None => placed = false,
-                });
-                if !placed {
-                    return Err(CodecError::malformed(
-                        "transformed polyline sample has a non-finite coordinate",
-                    ));
-                }
+                samples
+                    .edit_points(|sample| {
+                        *sample = transform.apply_point(*sample).ok_or_else(|| {
+                            GeometryLayoutError::EditRefused(
+                                "transformed polyline sample has a non-finite coordinate"
+                                    .to_string(),
+                            )
+                        })?;
+                        Ok(())
+                    })
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
                 cadmpeg_ir::geometry::PolylineCurve::new(samples, polyline.chordal_deflection())
                     .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?
             }))

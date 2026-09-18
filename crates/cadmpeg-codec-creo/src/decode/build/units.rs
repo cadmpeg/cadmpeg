@@ -1548,7 +1548,10 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             let mut scaled = polyline.clone();
             scaled
                 .edit_samples(|samples| {
-                    samples.edit_points(|point| scale_point3(point, scale));
+                    samples.edit_points(|point| {
+                        scale_point3(point, scale);
+                        Ok(())
+                    })
                 })
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             scaled
