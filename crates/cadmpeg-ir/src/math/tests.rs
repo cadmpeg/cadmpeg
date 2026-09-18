@@ -1,7 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::Vector3;
+use super::{Point3, Vector3};
 
 const EPS_UNIT_RESULT: f64 = 8.0 * f64::EPSILON;
+
+#[test]
+fn point_is_finite_rejects_a_nonfinite_coordinate_in_any_slot() {
+    assert!(Point3::new(1.0, -2.0, 3.0).is_finite());
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(!Point3::new(value, 1.0, 1.0).is_finite());
+        assert!(!Point3::new(1.0, value, 1.0).is_finite());
+        assert!(!Point3::new(1.0, 1.0, value).is_finite());
+    }
+}
+
+#[test]
+fn vector_is_finite_rejects_a_nonfinite_component_in_any_slot() {
+    assert!(Vector3::new(1.0, -2.0, 3.0).is_finite());
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(!Vector3::new(value, 1.0, 1.0).is_finite());
+        assert!(!Vector3::new(1.0, value, 1.0).is_finite());
+        assert!(!Vector3::new(1.0, 1.0, value).is_finite());
+    }
+}
 
 #[test]
 fn unit_vector_preserves_finite_direction_without_squared_length_overflow() {
