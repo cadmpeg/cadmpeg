@@ -473,7 +473,7 @@ fn evaluate_profile_point(
         weights.as_deref(),
         parameter,
     )
-    .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    .filter(Point3::is_finite)
     .ok_or_else(|| error(offset, "extrusion profile cannot be evaluated"))
 }
 
@@ -851,11 +851,7 @@ fn increasing_interval(
 
 fn require_unit(value: Vector3, offset: usize, name: &str) -> Result<(), GeometryError> {
     let length = value.norm();
-    if value.x.is_finite()
-        && value.y.is_finite()
-        && value.z.is_finite()
-        && (length - 1.0).abs() <= UNIT_TOLERANCE
-    {
+    if value.is_finite() && (length - 1.0).abs() <= UNIT_TOLERANCE {
         Ok(())
     } else {
         Err(error(offset, format!("{name} is not unit")))

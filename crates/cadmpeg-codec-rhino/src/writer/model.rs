@@ -400,9 +400,7 @@ impl<'a> WritableModel<'a> {
                         ))
                     })?;
                 if layout == Layout::MultiFace && !used_points.insert(point.id.as_str())
-                    || !point.position.x.is_finite()
-                    || !point.position.y.is_finite()
-                    || !point.position.z.is_finite()
+                    || !point.position.is_finite()
                 {
                     return Err(CodecError::malformed(format_args!(
                         "vertex {} has a shared or invalid point",

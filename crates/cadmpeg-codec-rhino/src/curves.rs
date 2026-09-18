@@ -675,7 +675,7 @@ fn scale_ir_point(value: Point3, scale: MillimeterScale) -> Option<Point3> {
         value.y * scale.value(),
         value.z * scale.value(),
     );
-    (point.x.is_finite() && point.y.is_finite() && point.z.is_finite()).then_some(point)
+    (point.is_finite()).then_some(point)
 }
 
 /// Converts a decoded curve tree to one exact NURBS curve when possible.
