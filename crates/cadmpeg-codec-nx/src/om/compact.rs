@@ -11,6 +11,11 @@ enum Encoding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CompactIndexAtom(Encoding);
 
+/// Reads one wire compact index, naming the field in the rejection message.
+pub(crate) fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAtom, String> {
+    CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))
+}
+
 impl CompactIndexAtom {
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         match bytes.first().copied()? {

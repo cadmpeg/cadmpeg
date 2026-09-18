@@ -5,12 +5,8 @@ use super::{
     DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow, Deserialize, IndexRow,
     LinkedRow, Serialize, TargetRow,
 };
-use crate::om::compact::CompactIndexAtom;
 use crate::om::compact::CompactIndexTarget;
-
-fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAtom, String> {
-    CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))
-}
+use crate::om::compact::{atom, CompactIndexAtom};
 
 // This conversion consumes the input carrier at the typed construction boundary.
 #[allow(clippy::needless_pass_by_value)]
