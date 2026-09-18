@@ -19,7 +19,7 @@ use crate::history::project::{project_feature_model, project_features, FeaturePr
 pub(crate) mod configurations;
 pub(crate) mod features;
 pub(crate) mod parameters;
-mod xml;
+pub(crate) mod xml;
 
 use self::features::sync_neutral_features;
 use self::parameters::rewrite_parameter_expression;

@@ -21,6 +21,7 @@ use cadmpeg_ir::Annotations;
 use crate::SourceRecord;
 
 use crate::container::MARKER;
+use crate::history::write::xml::valid_xml_name;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
@@ -1882,15 +1883,6 @@ pub(crate) fn validate_feature_graph(
         }
     }
     Ok(())
-}
-
-fn valid_xml_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
-        && bytes
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
 }
 
 fn write_feature_xml(
