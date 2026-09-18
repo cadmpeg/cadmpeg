@@ -548,8 +548,8 @@ impl ValidatedRawBrep {
             let vertices = slot_pair(edge.vertices, raw.vertices.len(), "edge vertex")?;
             let trims = slots(&edge.trims, raw.trims.len(), "edge trim")?;
             unique(&edge.trims, "edge trim")?;
-            finite_interval(edge.proxy_domain, "edge proxy domain")?;
-            finite_interval(edge.domain, "edge domain")?;
+            ordered_interval(edge.proxy_domain, "edge proxy domain")?;
+            ordered_interval(edge.domain, "edge domain")?;
             finite_tolerance(edge.tolerance, "edge tolerance")?;
             for trim in &trims {
                 if position(raw.trims[*trim].edge) != Some(index) {
@@ -598,8 +598,8 @@ impl ValidatedRawBrep {
                     "trim/loop reciprocity mismatch",
                 ));
             }
-            finite_interval(trim.proxy_domain, "trim proxy domain")?;
-            finite_interval(trim.domain, "trim domain")?;
+            ordered_interval(trim.proxy_domain, "trim proxy domain")?;
+            ordered_interval(trim.domain, "trim domain")?;
             for tolerance in trim.tolerances.into_iter().chain(trim.legacy_tolerances) {
                 finite_tolerance(tolerance, "trim tolerance")?;
             }
@@ -2706,7 +2706,7 @@ fn unique(values: &[i32], label: &str) -> Result<(), GeometryError> {
 /// `settings::interval`, and the legacy route builds it from polycurve
 /// parameters that `curves::checked_polycurve_parameter` already refused when
 /// non-finite.
-fn finite_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
+fn ordered_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
     let [low, high] = value.0;
     let unset = (low == ON_UNSET_VALUE && high == ON_UNSET_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_POSITIVE_VALUE);
@@ -3543,7 +3543,7 @@ mod tests {
     /// the file locates, so their refusals name no offset instead of byte 0.
     #[test]
     fn an_interval_or_tolerance_refusal_names_no_byte() {
-        let error = finite_interval(Interval([0.0, 0.0]), "interval").expect_err("ordering");
+        let error = ordered_interval(Interval([0.0, 0.0]), "interval").expect_err("ordering");
         assert!(matches!(
             error,
             GeometryError::Malformed(crate::chunks::FramingError::Unpositioned { ref message })
@@ -3566,9 +3566,9 @@ mod tests {
             Interval([ON_UNSET_VALUE, ON_UNSET_POSITIVE_VALUE]),
             Interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE]),
         ] {
-            assert!(finite_interval(value, "interval").is_ok());
+            assert!(ordered_interval(value, "interval").is_ok());
         }
-        assert!(finite_interval(Interval([0.0, 0.0]), "interval").is_err());
+        assert!(ordered_interval(Interval([0.0, 0.0]), "interval").is_err());
     }
 
     /// The one-trim fixture resolved the way validation resolves it.
