@@ -6264,11 +6264,10 @@ fn apply_rigid_transform(
                 })?;
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
-            CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
-                let mut samples = polyline.samples().clone();
-                samples
-                    .edit_points(|sample| {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(mut polyline)) => {
+            polyline
+                .edit_samples(|samples| {
+                    samples.edit_points(|sample| {
                         *sample = transform.apply_point(*sample).ok_or_else(|| {
                             GeometryLayoutError::EditRefused(
                                 "transformed polyline sample has a non-finite coordinate"
@@ -6277,10 +6276,9 @@ fn apply_rigid_transform(
                         })?;
                         Ok(())
                     })
-                    .map_err(|error| CodecError::malformed(error.to_string()))?;
-                cadmpeg_ir::geometry::PolylineCurve::new(samples, polyline.chordal_deflection())
-                    .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?
-            }))
+                })
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline))
         }
         other => {
             return Err(CodecError::NotImplemented(format!(
