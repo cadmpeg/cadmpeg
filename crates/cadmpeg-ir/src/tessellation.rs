@@ -805,10 +805,7 @@ pub struct TessellationChannel {
 }
 
 fn require_finite_vertices(vertices: &[Point3]) -> Result<(), TessellationError> {
-    if vertices
-        .iter()
-        .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-    {
+    if vertices.iter().any(|point| !point.is_finite()) {
         return Err(tessellation_error(
             "vertices contain a non-finite coordinate",
         ));
@@ -817,10 +814,7 @@ fn require_finite_vertices(vertices: &[Point3]) -> Result<(), TessellationError>
 }
 
 fn require_finite_normals(normals: &[Vector3]) -> Result<(), TessellationError> {
-    if normals
-        .iter()
-        .any(|normal| !normal.x.is_finite() || !normal.y.is_finite() || !normal.z.is_finite())
-    {
+    if normals.iter().any(|normal| !normal.is_finite()) {
         return Err(tessellation_error(
             "normals contain a non-finite coordinate",
         ));
@@ -974,10 +968,7 @@ impl Tessellation {
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
         let vertices = mesh.vertices();
-        if vertices
-            .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-        {
+        if vertices.iter().any(|point| !point.is_finite()) {
             return Err(tessellation_error(
                 "vertices contain a non-finite coordinate",
             ));

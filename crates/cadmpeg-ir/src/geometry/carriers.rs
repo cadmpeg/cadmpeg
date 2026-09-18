@@ -669,10 +669,7 @@ fn require_finite_points_3<'a>(
     field: &str,
     points: impl IntoIterator<Item = &'a Point3>,
 ) -> Result<(), NurbsError> {
-    if points
-        .into_iter()
-        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-    {
+    if points.into_iter().all(Point3::is_finite) {
         Ok(())
     } else {
         Err(NurbsError::Structure(format!(
@@ -1269,10 +1266,7 @@ impl PolygonalSurface {
                 "polygonal surface contains an out-of-range triangle index",
             ));
         }
-        if vertices
-            .iter()
-            .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
-        {
+        if vertices.iter().any(|point| !point.is_finite()) {
             return Err(geometry_layout_error("vertices must be finite"));
         }
         if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
@@ -1476,10 +1470,7 @@ impl PolylineCurve {
                 "polyline must contain at least two points",
             ));
         }
-        if samples
-            .points()
-            .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
-        {
+        if samples.points().any(|point| !point.is_finite()) {
             return Err(geometry_layout_error("points must be finite"));
         }
         if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {

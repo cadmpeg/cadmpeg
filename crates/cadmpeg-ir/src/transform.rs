@@ -536,10 +536,7 @@ impl Transform {
 
     /// Applies the inverse-transpose linear transform and normalizes the result.
     pub fn apply_normal(self, normal: Vector3) -> Option<Vector3> {
-        if ![normal.x, normal.y, normal.z]
-            .into_iter()
-            .all(f64::is_finite)
-        {
+        if !normal.is_finite() {
             return None;
         }
         let inverse = self.inverse_linear().ok()?;

@@ -237,9 +237,7 @@ impl DeformableCurveConstruction {
         source_parameter_range: [Option<f64>; 2],
         data: DeformableCurveData,
     ) -> Result<Self, ProceduralGeometryError> {
-        let finite_vector = |vector: &crate::math::Vector3| {
-            vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-        };
+        let finite_vector = |vector: &crate::math::Vector3| vector.is_finite();
         let payload_finite = match &data {
             crate::geometry::DeformableCurveData::VectorField {
                 vectors,
@@ -263,9 +261,7 @@ impl DeformableCurveConstruction {
             } => {
                 leading_vectors.iter().all(finite_vector)
                     && leading_parameter.is_finite()
-                    && [trailing_point.x, trailing_point.y, trailing_point.z]
-                        .into_iter()
-                        .all(f64::is_finite)
+                    && trailing_point.is_finite()
                     && trailing_vectors.iter().all(finite_vector)
                     && frame_parameter.is_finite()
                     && parameters.iter().all(|value| value.is_finite())
@@ -387,16 +383,10 @@ impl OffsetCurveConstruction {
     ) -> Result<Self, ProceduralGeometryError> {
         let side_valid = match &side {
             crate::geometry::OffsetSide::PlaneNormal { normal } => {
-                normal.x.is_finite()
-                    && normal.y.is_finite()
-                    && normal.z.is_finite()
-                    && (normal.norm() - 1.0).abs() <= EPS_OFFSET_PLANE_NORMAL
+                normal.is_finite() && (normal.norm() - 1.0).abs() <= EPS_OFFSET_PLANE_NORMAL
             }
             crate::geometry::OffsetSide::Direction { direction, .. } => {
-                direction.x.is_finite()
-                    && direction.y.is_finite()
-                    && direction.z.is_finite()
-                    && direction.norm() > 0.0
+                direction.is_finite() && direction.norm() > 0.0
             }
         };
         let range_valid = range.as_ref().is_none_or(|range| {

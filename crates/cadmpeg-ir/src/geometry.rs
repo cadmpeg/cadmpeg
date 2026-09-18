@@ -2238,9 +2238,7 @@ struct HelixLineProfileWire {
 impl HelixLineProfile {
     /// Admit parameters that satisfy the helix payload contract.
     pub fn try_new(direction: Vector3) -> Result<Self, &'static str> {
-        if ![direction.x, direction.y, direction.z]
-            .into_iter()
-            .all(f64::is_finite)
+        if !direction.is_finite()
             || direction.x * direction.x + direction.y * direction.y + direction.z * direction.z
                 <= 0.0
         {
@@ -3003,7 +3001,7 @@ impl RollingBallJetStations {
             let site = &station.site;
             if [site.first_limit, site.second_limit, site.center]
                 .iter()
-                .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
+                .any(|point| !point.is_finite())
                 || !site.angle.is_finite()
             {
                 return Err("rolling-ball jet site coordinates and angle must be finite");
@@ -3015,11 +3013,8 @@ impl RollingBallJetStations {
                     derivative.center,
                 ]
                 .iter()
-                .any(|vector| {
-                    ![vector.x, vector.y, vector.z]
-                        .into_iter()
-                        .all(f64::is_finite)
-                }) || !derivative.angle.is_finite()
+                .any(|vector| !vector.is_finite())
+                    || !derivative.angle.is_finite()
                 {
                     return Err("rolling-ball jet site derivatives must be finite");
                 }
@@ -6002,10 +5997,7 @@ impl TolerantIntersectionConstruction {
         if supports[0] == supports[1] {
             return Err("tolerant intersection supports must be distinct");
         }
-        if !endpoints
-            .iter()
-            .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-        {
+        if !endpoints.iter().all(Point3::is_finite) {
             return Err("tolerant intersection endpoints must be finite");
         }
         let tolerance = NonNegativeReal::new(tolerance)

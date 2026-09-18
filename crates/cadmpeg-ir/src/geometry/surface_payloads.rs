@@ -146,8 +146,7 @@ impl TaperSurfaceConstruction {
         taper: TaperSurfaceKind,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let vector_finite =
-            |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
+        let vector_finite = |vector: &Vector3| vector.is_finite();
         let tail_finite = match &taper {
             crate::geometry::TaperSurfaceKind::Standard {}
             | crate::geometry::TaperSurfaceKind::Orthogonal { .. } => true,
@@ -1340,8 +1339,7 @@ impl CompoundLoftSurfacePayload {
         construction: Box<CompoundLoftConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let vector_finite =
-            |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
+        let vector_finite = |vector: &Vector3| vector.is_finite();
         let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
         let tail_valid = match &construction.tail {
             crate::geometry::CompoundLoftTail::Six {
@@ -1427,8 +1425,7 @@ impl ScaledCompoundLoftSurfacePayload {
         construction: Box<ScaledCompoundLoftConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let vector_finite =
-            |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
+        let vector_finite = |vector: &Vector3| vector.is_finite();
         let shape_valid = match &construction.shape {
             crate::geometry::ScaledCompoundLoftShape::Full {} => true,
             crate::geometry::ScaledCompoundLoftShape::None {
@@ -1597,8 +1594,7 @@ impl SkinSurfacePayload {
         construction: Box<SkinSurfaceConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let vector_finite =
-            |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
+        let vector_finite = |vector: &Vector3| vector.is_finite();
         let layout_valid = match &construction.layout {
             crate::geometry::SkinSurfaceLayout::Profiles { profiles, .. } => {
                 profiles.iter().all(|profile| {
@@ -1695,9 +1691,7 @@ impl NetSurfacePayload {
             .iter()
             .chain(construction.discontinuities.iter().flatten())
             .all(|value| value.is_finite())
-            && construction.directions.iter().all(|direction| {
-                direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
-            });
+            && construction.directions.iter().all(Vector3::is_finite);
         if !sections_valid || !formulas_valid || !scalars_valid {
             return Err(ProceduralGeometryError::Payload(
                 "net surface construction payload is invalid",
@@ -1760,12 +1754,8 @@ impl SweepSurfacePayload {
         native: Option<Box<SweepSurfaceConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
         if let Some(construction) = &native {
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
-            let point_finite = |point: &crate::math::Point3| {
-                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-            };
+            let vector_finite = |vector: &Vector3| vector.is_finite();
+            let point_finite = |point: &crate::math::Point3| point.is_finite();
             let formula_valid = |formula: &crate::geometry::LawFormula| {
                 formula
                     .variables()
@@ -1939,16 +1929,13 @@ impl DeformableSurfacePayload {
     pub fn try_new(
         construction: Box<DeformableSurfaceConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let vector_finite =
-            |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
+        let vector_finite = |vector: &Vector3| vector.is_finite();
         let frame_valid = |frame: &crate::geometry::DeformableSurfaceFrame| {
             frame.leading_vectors.iter().all(vector_finite)
                 && frame.secondary_vectors.iter().all(vector_finite)
                 && frame.leading_parameter.is_finite()
                 && frame.secondary_parameter.is_finite()
-                && frame.point.x.is_finite()
-                && frame.point.y.is_finite()
-                && frame.point.z.is_finite()
+                && frame.point.is_finite()
         };
         let data_valid = match &construction.data {
             crate::geometry::DeformableSurfaceData::Full {
@@ -2014,9 +2001,7 @@ impl DeformableSurfacePayload {
             } => {
                 leading_vectors.iter().all(vector_finite)
                     && leading_parameter.is_finite()
-                    && trailing_point.x.is_finite()
-                    && trailing_point.y.is_finite()
-                    && trailing_point.z.is_finite()
+                    && trailing_point.is_finite()
                     && trailing_vectors.iter().all(vector_finite)
                     && frame_parameter.is_finite()
                     && parameters.iter().all(|value| value.is_finite())
@@ -2077,9 +2062,7 @@ impl G2BlendSurfacePayload {
         construction: Box<G2BlendConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let direction_finite = |direction: &Vector3| {
-            direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
-        };
+        let direction_finite = |direction: &Vector3| direction.is_finite();
         let first_shape_valid = match &construction.first_shape {
             crate::geometry::G2BlendFirstShape::Full { .. } => true,
             crate::geometry::G2BlendFirstShape::None {
@@ -2171,11 +2154,10 @@ impl VariableBlendSurfacePayload {
                             (None | Some(_), None) | (None, Some(_)) => true,
                         }
                 });
-        let sides_valid = construction.sides.iter().all(|side| {
-            side.location.x.is_finite()
-                && side.location.y.is_finite()
-                && side.location.z.is_finite()
-        });
+        let sides_valid = construction
+            .sides
+            .iter()
+            .all(|side| side.location.is_finite());
         let values_valid = match &construction.radii {
             crate::geometry::VariableBlendRadii::Single { value } => {
                 variable_blend_value_valid(value)
@@ -2238,11 +2220,8 @@ impl VertexBlendSurfacePayload {
     pub fn try_new(
         construction: Box<VertexBlendConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let point_finite = |point: &crate::math::Point3| {
-            point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-        };
-        let vector_finite =
-            |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
+        let point_finite = |point: &crate::math::Point3| point.is_finite();
+        let vector_finite = |vector: &Vector3| vector.is_finite();
         let boundaries_valid = construction.boundaries.iter().all(|boundary| {
             vector_finite(&boundary.magic)
                 && boundary.fullness.is_finite()
@@ -2351,12 +2330,8 @@ impl BlendSurfacePayload {
         cache: CacheContract<Box<RollingBallConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
         if let Some(construction) = cache.form() {
-            let point_finite = |point: &crate::math::Point3| {
-                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-            };
-            let vector_finite = |vector: &Vector3| {
-                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-            };
+            let point_finite = |point: &crate::math::Point3| point.is_finite();
+            let vector_finite = |vector: &Vector3| vector.is_finite();
             let ranges_valid = [&construction.u_range, &construction.v_range]
                 .iter()
                 .all(|range| {
@@ -2563,12 +2538,8 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
                             .iter()
                             .flatten()
                             .all(|value| value.is_finite())
-                        && point.location.x.is_finite()
-                        && point.location.y.is_finite()
-                        && point.location.z.is_finite()
-                        && point.normal.x.is_finite()
-                        && point.normal.y.is_finite()
-                        && point.normal.z.is_finite()
+                        && point.location.is_finite()
+                        && point.normal.is_finite()
                 })
         }
     }
@@ -2583,20 +2554,13 @@ fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool 
         | crate::geometry::LawExpression::Integer { .. } => true,
         crate::geometry::LawExpression::Text { .. } => true,
         crate::geometry::LawExpression::Double { value } => value.is_finite(),
-        crate::geometry::LawExpression::Point { value } => {
-            value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
-        }
-        crate::geometry::LawExpression::Vector { value } => {
-            value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
-        }
+        crate::geometry::LawExpression::Point { value } => value.is_finite(),
+        crate::geometry::LawExpression::Vector { value } => value.is_finite(),
         crate::geometry::LawExpression::Transform { scalars, .. } => {
             scalars.iter().all(|value| value.is_finite())
         }
         crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
-            scale.is_finite()
-                && vectors
-                    .iter()
-                    .all(|value| value.x.is_finite() && value.y.is_finite() && value.z.is_finite())
+            scale.is_finite() && vectors.iter().all(Vector3::is_finite)
         }
         crate::geometry::LawExpression::Edge { parameters, .. } => {
             parameters.iter().all(|value| value.is_finite())
@@ -2606,12 +2570,7 @@ fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool 
             controls,
             point,
             ..
-        } => {
-            knots.iter().chain(controls).all(|value| value.is_finite())
-                && point.x.is_finite()
-                && point.y.is_finite()
-                && point.z.is_finite()
-        }
+        } => knots.iter().chain(controls).all(|value| value.is_finite()) && point.is_finite(),
         crate::geometry::LawExpression::Algebraic { operands, .. } => {
             operands.iter().all(|operand| law_valid(operand, depth + 1))
         }
