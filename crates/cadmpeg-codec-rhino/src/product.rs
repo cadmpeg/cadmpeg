@@ -11,7 +11,7 @@ use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
 use crate::container::Scan;
-use crate::instances::{DefinitionKind, LinkSource, UnitDetail};
+use crate::instances::{hex, DefinitionKind, LinkSource, UnitDetail};
 use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
@@ -108,16 +108,6 @@ fn definition_id(id: Uuid) -> String {
 
 fn external_id(id: Uuid) -> String {
     format!("rhino:product:external#{id}")
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut value = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        value.push(char::from(DIGITS[usize::from(byte >> 4)]));
-        value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
-    }
-    value
 }
 
 fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalReferenceRecord> {
