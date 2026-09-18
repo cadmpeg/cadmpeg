@@ -4,7 +4,7 @@
 use cadmpeg_ir::codec::{Codec, Confidence};
 use std::io::Cursor;
 
-use crate::test_support::text_sphere_stream;
+use crate::test_support::test_streams::text_sphere_stream;
 use crate::SatCodec;
 
 #[test]
