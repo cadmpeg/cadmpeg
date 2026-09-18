@@ -306,6 +306,29 @@ impl<'a> View<'a> {
         })
     }
 
+    /// Takes `count` bytes as an exactly contained child window, advancing only
+    /// on success.
+    ///
+    /// This is [`View::take`] for a reader that needs the taken bytes as a
+    /// bounded window rather than a slice: the same `split_at_checked` states
+    /// the one refusal, and the cursor moves only when the split holds. The
+    /// child window is those bytes in this view's own space, so
+    /// [`View::start`] of the result is the position the take began at,
+    /// [`View::end`] is the position it reached, and [`View::location`] of the
+    /// result is that beginning. No bound is recomputed against the parent and
+    /// no sum is formed, so the operation is total wherever the take is.
+    pub fn take_child(&mut self, count: usize) -> Option<View<'a>> {
+        let start = self.position();
+        let window = self.take(count)?;
+        Some(View {
+            window,
+            unread: window,
+            space: self.space,
+            start,
+            end: self.position(),
+        })
+    }
+
     /// Proves a declared element count could fit in the unread bytes.
     pub fn counted(self, count: u64, min_element_size: usize) -> Option<BoundedCount> {
         bounded_len(count, min_element_size, self.remaining()).map(BoundedCount)
@@ -364,6 +387,17 @@ impl<'a> View<'a> {
     pub fn req_take(&mut self, count: usize) -> Result<&'a [u8], ParseError> {
         match self.take(count) {
             Some(bytes) => Ok(bytes),
+            None => Err(self.eof(u64_from_index(count))),
+        }
+    }
+
+    /// Required-read mirror of [`View::take_child`].
+    ///
+    /// States the same located truncation as [`View::req_take`] for the same
+    /// count, and leaves the view unmoved when it does.
+    pub fn req_take_child(&mut self, count: usize) -> Result<View<'a>, ParseError> {
+        match self.take_child(count) {
+            Some(view) => Ok(view),
             None => Err(self.eof(u64_from_index(count))),
         }
     }
@@ -474,7 +508,7 @@ impl View<'_> {
 mod tests {
     use super::{
         bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount,
-        View,
+        ParseError, ParseErrorKind, SourceLocation, View,
     };
     use crate::decode::space::SpaceId;
 
@@ -601,6 +635,107 @@ mod tests {
         assert_eq!(view.read_len(), 0);
         assert_eq!(view.remaining(), 5);
         assert_eq!(view.window(), payload.get(2..7).expect("fixture range"));
+    }
+
+    /// The window's placement and its cursor, as one comparable value: start,
+    /// end, position and remaining.
+    fn bounds(view: View<'_>) -> (usize, usize, usize, usize) {
+        (view.start(), view.end(), view.position(), view.remaining())
+    }
+
+    /// The taken bytes are the child window, placed at the positions the take
+    /// moved between, and a zero-length take states the empty window there.
+    #[test]
+    fn take_child_states_the_taken_range_as_a_window() {
+        let payload = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        let mut view = View::over_space(&payload, SpaceId::ROOT);
+        assert_eq!(view.seek(2), Some(()));
+        assert_eq!(view.take_child(3).map(View::window), payload.get(2..5));
+        assert_eq!(view.position(), 5, "the take advanced by its own count");
+        assert_eq!(view.remaining(), 3);
+        assert_eq!(view.seek(2), Some(()));
+        assert_eq!(
+            view.take_child(3).map(bounds),
+            Some((2, 5, 2, 3)),
+            "the window is the taken range and its cursor is at the start"
+        );
+        assert_eq!(
+            view.take_child(3).map(|window| window.location().offset),
+            Some(u64_from_index(5)),
+            "the result's location is the position the take began at"
+        );
+        assert_eq!(view.position(), 8);
+        assert_eq!(view.take_child(0).map(bounds), Some((8, 8, 8, 0)));
+        assert_eq!(view.take_child(0).map(View::window), payload.get(8..8));
+        assert_eq!(view.position(), 8, "a zero-length take does not advance");
+        assert_eq!(
+            view.req_take_child(0).map(bounds),
+            Ok((8, 8, 8, 0)),
+            "the required mirror takes the empty window at the end"
+        );
+    }
+
+    /// A taken window is an ordinary view of the same space: it carves children
+    /// and takes further windows at the space's own positions.
+    #[test]
+    fn a_taken_window_carves_its_own_children() {
+        let payload = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        let mut view = View::over_space(&payload, SpaceId::ROOT);
+        assert_eq!(view.skip(1), Some(()));
+        let outer = view.take_child(6);
+        assert_eq!(outer.map(bounds), Some((1, 7, 1, 6)));
+        assert_eq!(
+            outer.map(|window| window.child(3, 6).map(bounds)),
+            Some(Some((3, 6, 3, 3))),
+            "a child of a taken window states the space's own bounds"
+        );
+        assert_eq!(
+            outer.map(|mut window| {
+                window.skip(2)?;
+                window.take_child(3).map(View::window)
+            }),
+            Some(payload.get(3..6)),
+            "a taken window of a taken window is the same bytes"
+        );
+        assert_eq!(
+            outer.map(|window| window.child(0, 6).map(bounds)),
+            Some(None),
+            "a lower bound under the taken window is refused"
+        );
+    }
+
+    /// The count is bounded by the unread bytes, exactly as in `take`, and the
+    /// required mirror states the located truncation `req_take` states.
+    #[test]
+    fn a_take_child_past_the_window_leaves_the_view_unmoved() {
+        let payload = [0u8; 8];
+        let mut view = View::over_space(&payload, SpaceId::ROOT);
+        assert_eq!(view.seek(6), Some(()));
+        assert_eq!(view.take_child(3).map(bounds), None);
+        assert_eq!(
+            view.position(),
+            6,
+            "a refused take does not move the cursor"
+        );
+        assert_eq!(view.remaining(), 2);
+        assert_eq!(
+            view.req_take_child(3).map(bounds),
+            Err(ParseError {
+                location: SourceLocation {
+                    space: SpaceId::ROOT,
+                    offset: 6,
+                },
+                kind: ParseErrorKind::UnexpectedEof { needed: 3 },
+                operation: "required_read",
+            })
+        );
+        assert_eq!(view.position(), 6);
+        assert_eq!(
+            view.req_take_child(3).map(bounds).err(),
+            view.req_take(3).err(),
+            "the same located truncation the required take states"
+        );
+        assert_eq!(view.take_child(2).map(bounds), Some((6, 8, 6, 2)));
     }
 
     #[test]
