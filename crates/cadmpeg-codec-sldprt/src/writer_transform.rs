@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsError, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::tessellation::TessellationError;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -148,17 +149,20 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     )
                 })?,
             };
-            let mut placed = true;
-            mesh.edit_vertices(|point| match transform.apply_point(*point) {
-                Some(moved) => *point = moved,
-                None => placed = false,
+            mesh.edit_vertices(|point| {
+                *point = transform.apply_point(*point).ok_or_else(|| {
+                    TessellationError::EditRefused(
+                        "baked body placement produced a non-finite point".to_string(),
+                    )
+                })?;
+                Ok(())
             })
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
+            .map_err(|error| match error {
+                TessellationError::EditRefused(_) => non_finite_point(),
+                error => {
+                    CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
+                }
             })?;
-            if !placed {
-                return Err(non_finite_point());
-            }
             if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
                 let mut placed = true;
                 mesh.edit_normals(|normal| match transform.apply_vector(*normal) {
