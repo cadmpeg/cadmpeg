@@ -1769,7 +1769,7 @@ fn texture_array_closes_after_class_items_and_future_suffix() {
 
 #[test]
 fn texture_mapping_reads_nested_primitive_class_wrapper() {
-    let mut body = crate::test_support::MESH_CLASS.to_vec();
+    let mut body = crate::test_support::test_archive::MESH_CLASS.to_vec();
     body.extend(6_u32.to_le_bytes());
     body.extend(1_u32.to_le_bytes());
     for index in 0..16 {
@@ -1781,7 +1781,7 @@ fn texture_mapping_reads_nested_primitive_class_wrapper() {
     body.extend(utf16("custom mesh mapping"));
     body.extend(crate::test_support::test_dump::class_wrapper(
         ArchiveVersion::V8,
-        crate::test_support::MESH_CLASS,
+        crate::test_support::test_archive::MESH_CLASS,
         &[],
     ));
     body.extend(0_u32.to_le_bytes());
@@ -1795,7 +1795,7 @@ fn texture_mapping_reads_nested_primitive_class_wrapper() {
     assert_eq!(mapping.mapping_type, 6);
     assert_eq!(
         mapping.primitive_class_uuid,
-        Some(Uuid::from_wire(crate::test_support::MESH_CLASS).to_string())
+        Some(Uuid::from_wire(crate::test_support::test_archive::MESH_CLASS).to_string())
     );
 }
 

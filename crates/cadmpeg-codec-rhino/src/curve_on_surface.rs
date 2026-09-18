@@ -121,7 +121,7 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{
+    use crate::test_support::test_archive::{
         class_wrapper, line_payload, polyline_payload, LINE_CLASS, POLYLINE_CLASS,
     };
     use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};

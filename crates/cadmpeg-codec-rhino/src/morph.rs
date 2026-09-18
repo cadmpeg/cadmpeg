@@ -663,7 +663,7 @@ pub(crate) fn project(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::crc_chunk;
+    use crate::test_support::test_archive::crc_chunk;
 
     fn anonymous(major: i32, minor: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = major.to_le_bytes().to_vec();

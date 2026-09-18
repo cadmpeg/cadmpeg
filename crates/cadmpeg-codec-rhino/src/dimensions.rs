@@ -1733,7 +1733,7 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_cor
 pub(crate) mod tests {
     use super::*;
     use crate::objects::ClassUserdata;
-    use crate::test_support::crc_chunk;
+    use crate::test_support::test_archive::crc_chunk;
 
     #[test]
     fn angular_measurement_uses_counterclockwise_extension_sweep() {

@@ -3,7 +3,6 @@
 
 use super::{assert_valid, decode};
 use crate::chunks::ArchiveVersion;
-use crate::test_support as support;
 
 fn render_settings_record(archive: ArchiveVersion) -> Vec<u8> {
     let mut body = Vec::new();
@@ -16,7 +15,9 @@ fn render_settings_record(archive: ArchiveVersion) -> Vec<u8> {
     body.extend(2_i32.to_le_bytes());
     body.extend([5, 6, 7, 8]);
     body.extend([9, 10, 11, 12]);
-    body.extend(support::test_dump::utf16_bytes("background.png"));
+    body.extend(crate::test_support::test_dump::utf16_bytes(
+        "background.png",
+    ));
     body.extend([1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0]);
     body.extend(3_i32.to_le_bytes());
     body.extend(2_i32.to_le_bytes());
@@ -24,8 +25,8 @@ fn render_settings_record(archive: ArchiveVersion) -> Vec<u8> {
     body.extend(1024_i32.to_le_bytes());
     body.extend(1.25_f64.to_le_bytes());
     body.extend([0xaa, 0xbb]);
-    let child = support::test_dump::anonymous_chunk(archive, 0, &body);
-    support::test_dump::crc_chunk_excluding(
+    let child = crate::test_support::test_dump::anonymous_chunk(archive, 0, &body);
+    crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x2000_803d,
         &child,
@@ -45,7 +46,7 @@ fn render_userdata_record(archive: ArchiveVersion) -> Vec<u8> {
         [0xde, 0xad].as_slice(),
     ]
     .concat();
-    let userdata = support::test_dump::class_userdata_v2_with_direct_payload(
+    let userdata = crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         crate::objects::USER_STRING_LIST.to_wire(),
         application,
@@ -53,12 +54,12 @@ fn render_userdata_record(archive: ArchiveVersion) -> Vec<u8> {
         202_608_010,
         &payload,
     );
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
     let class_end_len = class_end.len();
     let body = [userdata, class_end].concat();
     let userdata_range = 0..body.len() - class_end_len;
     let class_end_range = body.len() - class_end_len..body.len();
-    support::test_dump::crc_chunk_excluding(
+    crate::test_support::test_dump::crc_chunk_excluding(
         archive,
         0x2000_8136,
         &body,
@@ -71,20 +72,20 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
     let archive = ArchiveVersion::V8;
     let render = render_settings_record(archive);
     let userdata = render_userdata_record(archive);
-    let bytes = support::test_dump::minimal_document(
+    let bytes = crate::test_support::test_dump::minimal_document(
         "80",
         &[
-            support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+            crate::test_support::test_dump::table(
                 archive,
                 0x1000_0015,
                 &[
-                    support::test_dump::units_record(archive, 2),
+                    crate::test_support::test_dump::units_record(archive, 2),
                     render,
                     userdata.clone(),
                 ],
             ),
-            support::test_dump::table(archive, 0x1000_0013, &[]),
+            crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
     let result = decode(bytes);
@@ -112,15 +113,15 @@ fn document_length_render_settings_are_retained_without_a_physical_binding() {
     for unit in [Some(0), Some(255), None] {
         let render = render_settings_record(archive);
         let settings = unit
-            .map(|value| vec![support::test_dump::units_record(archive, value)])
+            .map(|value| vec![crate::test_support::test_dump::units_record(archive, value)])
             .unwrap_or_default();
         let records = [settings, vec![render.clone()]].concat();
-        let bytes = support::test_dump::minimal_document(
+        let bytes = crate::test_support::test_dump::minimal_document(
             "80",
             &[
-                support::test_dump::table(archive, 0x1000_0014, &[]),
-                support::test_dump::table(archive, 0x1000_0015, &records),
-                support::test_dump::table(archive, 0x1000_0013, &[]),
+                crate::test_support::test_dump::table(archive, 0x1000_0014, &[]),
+                crate::test_support::test_dump::table(archive, 0x1000_0015, &records),
+                crate::test_support::test_dump::table(archive, 0x1000_0013, &[]),
             ],
         );
         let result = decode(bytes);

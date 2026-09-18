@@ -16,7 +16,7 @@ use crate::layout::endoffile_record_wide as eof_wide;
 use crate::layout::file_header;
 use crate::layout::long_chunk_header_narrow as long_narrow;
 use crate::layout::long_chunk_header_wide as long_wide;
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{eof, header, long_chunk};
 use crate::{RhinoCodec, MAGIC};
 
 #[test]

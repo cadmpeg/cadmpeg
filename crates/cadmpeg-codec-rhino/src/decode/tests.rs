@@ -3,7 +3,10 @@
 
 use super::*;
 use crate::loss::Diagnostics;
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{
+    minimal_document, object_record, object_record_with_payload, point_payload, scan_with_objects,
+    set_test_units, table, POINT_CLASS, REV_SURFACE_CLASS,
+};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1421,15 +1424,15 @@ fn missing_stamp_carries_brep_typed_loss_codes() {
             .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
             .expect("synthesized 3DM archive should decode")
     };
-    let solid_brep = crate::test_support::object_record(
+    let solid_brep = crate::test_support::test_archive::object_record(
         0x10,
-        crate::test_support::BREP_CLASS,
-        &crate::test_support::solid_flagged_brep_payload(1),
+        crate::test_support::test_archive::BREP_CLASS,
+        &crate::test_support::test_archive::solid_flagged_brep_payload(1),
     );
 
-    let unstamped = decode_archive(crate::test_support::archive(std::slice::from_ref(
-        &solid_brep,
-    )));
+    let unstamped = decode_archive(crate::test_support::test_archive::archive(
+        std::slice::from_ref(&solid_brep),
+    ));
     assert_eq!(unstamped.ir().model.bodies.len(), 1);
     // The stored flag is trusted, though the three edges carry one trim each.
     assert_eq!(unstamped.ir().model.bodies[0].kind, BodyKind::Solid);
@@ -1453,7 +1456,7 @@ fn missing_stamp_carries_brep_typed_loss_codes() {
     // A stamp older than both cutoffs keeps the same record layout readable and
     // vouches for the reading, so the body is gauged as a sheet and nothing is
     // charged. Any newer stamp would also change the edge and trim layout.
-    let stamped = decode_archive(crate::test_support::archive_writer(
+    let stamped = decode_archive(crate::test_support::test_archive::archive_writer(
         "50",
         200_206_170,
         &[solid_brep],

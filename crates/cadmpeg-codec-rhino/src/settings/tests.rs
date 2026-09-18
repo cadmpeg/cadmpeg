@@ -5,7 +5,10 @@ use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::loss::Diagnostics;
 use crate::objects::ClassUserdata;
 use crate::settings;
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{
+    anonymous_chunk, class_userdata_with_payload, crc_chunk, crc_chunk_excluding, long_chunk,
+    metadata_record, short_chunk, utf16_bytes, uuid_bytes,
+};
 use crate::wire::Uuid;
 
 /// Header and checksum bytes surrounding a fixture table body.

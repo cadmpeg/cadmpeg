@@ -7,7 +7,13 @@ use cadmpeg_ir::report::Severity;
 use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::objects::{AttributeState, ObjectRecord, IDEF_OBJECT_MODE};
 use crate::settings;
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{
+    anonymous_chunk, class_userdata_v1_with_direct_payload, class_userdata_v2_with_direct_payload,
+    crc_chunk, descriptor, fixed_attributes, long_chunk, mesh_parameters, minimal_document,
+    object_record, object_record_with_attribute_userdata, object_record_with_payload,
+    object_record_with_unknown_trailer, object_record_without_end, point_payload, set_test_units,
+    short_chunk, table, tagged_attributes, utf16_bytes, uuid_bytes, POINT_CLASS,
+};
 use crate::wire::Uuid;
 
 #[test]

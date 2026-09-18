@@ -3,7 +3,7 @@
 
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
-use crate::test_support as support;
+use crate::test_support::test_archive as support;
 use crate::wire::Uuid;
 
 const OPENNURBS5_APPLICATION: Uuid = Uuid::from_canonical([
@@ -39,24 +39,24 @@ fn legacy_linear_payload(archive: ArchiveVersion) -> Vec<u8> {
         annotation.extend(point[0].to_le_bytes());
         annotation.extend(point[1].to_le_bytes());
     }
-    annotation.extend(support::test_dump::utf16_bytes("<>"));
+    annotation.extend(crate::test_support::test_dump::utf16_bytes("<>"));
     annotation.extend(1_i32.to_le_bytes());
     annotation.extend(4_i32.to_le_bytes());
     annotation.extend(1.5_f64.to_le_bytes());
     annotation.extend(0_i32.to_le_bytes());
     annotation.push(1);
-    annotation.extend(support::test_dump::utf16_bytes("formula"));
+    annotation.extend(crate::test_support::test_dump::utf16_bytes("formula"));
     annotation.extend((-1_i32).to_le_bytes());
     annotation.extend(17_i32.to_le_bytes());
-    let annotation = support::test_dump::anonymous_chunk(archive, 3, &annotation);
-    support::test_dump::anonymous_chunk(archive, 0, &annotation)
+    let annotation = crate::test_support::test_dump::anonymous_chunk(archive, 3, &annotation);
+    crate::test_support::test_dump::anonymous_chunk(archive, 0, &annotation)
 }
 
 fn anonymous_major(archive: ArchiveVersion, major: i32, minor: i32, body: &[u8]) -> Vec<u8> {
     let mut payload = major.to_le_bytes().to_vec();
     payload.extend(minor.to_le_bytes());
     payload.extend(body);
-    support::test_dump::crc_chunk(archive, 0x4000_8000, &payload)
+    crate::test_support::test_dump::crc_chunk(archive, 0x4000_8000, &payload)
 }
 
 fn dimension_extension_payload(archive: ArchiveVersion, major: i32, malformed: bool) -> Vec<u8> {
@@ -74,7 +74,7 @@ fn dimension_extension_payload(archive: ArchiveVersion, major: i32, malformed: b
 }
 
 fn userdata(archive: ArchiveVersion, major: i32, malformed: bool) -> Vec<u8> {
-    support::test_dump::class_userdata_v2_with_direct_payload(
+    crate::test_support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         crate::dimensions::V5_DIM_EXTRA.to_wire(),
         OPENNURBS5_APPLICATION.to_wire(),
@@ -85,21 +85,24 @@ fn userdata(archive: ArchiveVersion, major: i32, malformed: bool) -> Vec<u8> {
 }
 
 fn dimension_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
-    let object_type = support::test_dump::short_chunk(archive, 0x8200_0071, 0x200);
+    let object_type = crate::test_support::test_dump::short_chunk(archive, 0x8200_0071, 0x200);
     let class_uuid_wire = crate::dimensions::V5_LINEAR.to_wire();
     let mut uuid_body = class_uuid_wire.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid_wire).to_le_bytes());
-    let class_uuid = support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data =
-        support::test_dump::crc_chunk(archive, 0x0002_fffc, &legacy_linear_payload(archive));
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
-    let class = support::test_dump::long_chunk(
+    let class_uuid = crate::test_support::test_dump::long_chunk(archive, 0x0002_fffb, &uuid_body);
+    let class_data = crate::test_support::test_dump::crc_chunk(
+        archive,
+        0x0002_fffc,
+        &legacy_linear_payload(archive),
+    );
+    let class_end = crate::test_support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    let class = crate::test_support::test_dump::long_chunk(
         archive,
         0x0002_7ffa,
         &[class_uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
-    let object_end = support::test_dump::short_chunk(archive, 0x8200_007f, 0);
-    support::test_dump::nested_crc_chunk(
+    let object_end = crate::test_support::test_dump::short_chunk(archive, 0x8200_007f, 0);
+    crate::test_support::test_dump::nested_crc_chunk(
         archive,
         0x2000_8070 | TCODE_CRC,
         &[object_type, class, object_end].concat(),

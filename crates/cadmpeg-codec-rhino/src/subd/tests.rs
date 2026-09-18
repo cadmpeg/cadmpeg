@@ -4,7 +4,9 @@
 use super::*;
 use crate::loss::Diagnostics;
 use crate::objects::ClassUserdata;
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{
+    minimal_document, object_record_with_payload, set_test_units, table,
+};
 use cadmpeg_ir::report::Severity;
 
 #[derive(Clone, Copy)]

@@ -17,7 +17,16 @@ use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{ArchiveVersion, BoundedReader};
-use crate::test_support::test_dump::*;
+use crate::test_support::test_dump::{
+    anonymous_chunk, circle_payload, class_userdata, class_userdata_v2_with_direct_payload,
+    class_userdata_with_anonymous_payload, class_userdata_with_payload, definition_record,
+    definition_record_with_userdata, document_with_definitions, file_reference,
+    instance_reference_payload, mesh_payload, nurbs_curve_payload, object_record_with_payload,
+    point_payload, scan_with_objects, set_identity, set_test_units, transform, utf16_bytes,
+    v5_definition_payload, v5_definition_payload_with_paths, v6_definition_payload,
+    ARC_CURVE_CLASS, INSTANCE_REFERENCE_CLASS, MESH_CLASS, NURBS_CURVE_CLASS, POINT_CLASS,
+    REV_SURFACE_CLASS, SUBD_CLASS,
+};
 use crate::wire::Uuid;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
@@ -1191,7 +1200,7 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
         archive,
         0x20,
         MESH_CLASS,
-        &crate::test_support::mesh_payload(3, 0, false, false),
+        &crate::test_support::test_archive::mesh_payload(3, 0, false, false),
     );
     let reference = object_record_with_payload(
         archive,
