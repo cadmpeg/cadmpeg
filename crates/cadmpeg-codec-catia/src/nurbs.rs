@@ -26,7 +26,7 @@ fn finite_point2(point: Point2) -> bool {
     [point.u, point.v].into_iter().all(f64::is_finite)
 }
 
-fn finite_point3(point: Point3) -> bool {
+pub(crate) fn finite_point3(point: Point3) -> bool {
     [point.x, point.y, point.z].into_iter().all(f64::is_finite)
 }
 

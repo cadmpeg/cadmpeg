@@ -74,6 +74,22 @@ use std::sync::Arc;
 
 mod coordinate_assignment;
 
+fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+    use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
+}
+
+fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+    use_.edge
+        .checked_mul(2)?
+        .checked_add(usize::from(!reversed))
+}
+
+fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
+    use_.edge
+        .checked_mul(2)?
+        .checked_add(usize::from(if end { !reversed } else { reversed }))
+}
+
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 /// Caps the optional exact-state memo without turning it into a search refusal.
 pub(crate) const MAX_SELECTION_STATE_MEMO_ENTRIES: usize = 4_096;
@@ -1524,16 +1540,6 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
     ) -> bool {
-        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
-        }
-
-        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge
-                .checked_mul(2)?
-                .checked_add(usize::from(!reversed))
-        }
-
         #[derive(Clone)]
         struct State {
             boundary_index: usize,
@@ -1633,16 +1639,6 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
         const MAX_ORIENTED_OPTIONS: usize = 4_096;
-
-        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
-        }
-
-        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge
-                .checked_mul(2)?
-                .checked_add(usize::from(!reversed))
-        }
 
         fn boundary_options(
             quotient: MeshQuotient,
@@ -1791,16 +1787,6 @@ impl MeshQuotient {
         limit: usize,
         budget: Option<&WorkBudget<'_>>,
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
-        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
-        }
-
-        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge
-                .checked_mul(2)?
-                .checked_add(usize::from(!reversed))
-        }
-
         #[allow(clippy::too_many_arguments)]
         fn walk(
             boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
@@ -2116,16 +2102,6 @@ impl MeshQuotient {
         limit: usize,
         budget: Option<&WorkBudget<'_>>,
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
-        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
-        }
-
-        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge
-                .checked_mul(2)?
-                .checked_add(usize::from(!reversed))
-        }
-
         if limit == 0
             || assignment.boundaries.len() != direction_options.first().map_or(0, Vec::len)
         {
@@ -2192,16 +2168,6 @@ impl MeshQuotient {
         edge_orientations: &[Option<bool>],
         budget: Option<&WorkBudget<'_>>,
     ) -> Option<Vec<Vec<bool>>> {
-        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
-        }
-
-        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
-            use_.edge
-                .checked_mul(2)?
-                .checked_add(usize::from(!reversed))
-        }
-
         if assignment.boundaries.len() != label_directions.len()
             || label_directions
                 .iter()
@@ -2973,12 +2939,6 @@ fn common_supported_corner_equations(
     assignments: &[MeshFaceBoundaryAssignment],
     budget: &WorkBudget<'_>,
 ) -> Option<HashSet<[usize; 2]>> {
-    fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
-        use_.edge
-            .checked_mul(2)?
-            .checked_add(usize::from(if end { !reversed } else { reversed }))
-    }
-
     fn compatible(quotient: &MeshQuotient, left: usize, right: usize) -> bool {
         let left = quotient.union.root(left);
         let right = quotient.union.root(right);
@@ -3907,12 +3867,6 @@ pub(crate) fn possible_face_choices_with_limit(
     face_equations: &[Vec<[usize; 2]>],
     limit: usize,
 ) -> Option<Vec<Vec<Vec<[usize; 2]>>>> {
-    fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
-        use_.edge
-            .checked_mul(2)?
-            .checked_add(usize::from(if end { !reversed } else { reversed }))
-    }
-
     let budget = WorkBudget::new(limit);
     let choices = faces
         .iter()

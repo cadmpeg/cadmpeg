@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use crate::nurbs::finite_point3;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -62,10 +63,6 @@ const ZERO_ENTITY_WIRE_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
     None => panic!("zero-entity point tolerance must be positive and finite"),
 };
 
-fn finite_point(point: Point3) -> bool {
-    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-}
-
 fn closed_wire_loop_members<'a>(
     run: &'a crate::families::zero_entity::records::ZeroEntitySupportRun,
     loop_record: &'a crate::families::zero_entity::records::ZeroEntityLoop,
@@ -107,7 +104,7 @@ fn closed_wire_loop_members<'a>(
     let members = members?;
     if members.iter().any(|member| {
         let [start, end] = member.endpoints;
-        !finite_point(start) || !finite_point(end)
+        !finite_point3(start) || !finite_point3(end)
     }) {
         return None;
     }

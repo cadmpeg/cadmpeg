@@ -4,13 +4,13 @@
 //! class-`0xc8` planes, `0xff` edge-use records, and cylinder/cone/torus
 //! analytic surface carriers.
 
+use crate::families::freeform::rolling_ball_derivative;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
-    RollingBallJetSite, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetSite,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::math::Vector3;
 
 use crate::families::e5::graph::Sign;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
@@ -531,8 +531,8 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
                 second_limit,
                 center,
                 angle,
-                first_derivative: d8_derivative(first),
-                second_derivative: d8_derivative(second),
+                first_derivative: rolling_ball_derivative(first),
+                second_derivative: rolling_ball_derivative(second),
             },
         )
         .zip(knots)
@@ -561,15 +561,6 @@ fn read_d8_channel_rows(view: &mut View<'_>, station_count_u64: u64) -> Option<V
         }
         Some(row)
     })
-}
-
-fn d8_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
-    RollingBallJetDerivative {
-        first_limit: Vector3::new(values[0], values[1], values[2]),
-        second_limit: Vector3::new(values[3], values[4], values[5]),
-        center: Vector3::new(values[6], values[7], values[8]),
-        angle: values[9],
-    }
 }
 
 fn d8_distance(left: Point3, right: Point3) -> f64 {

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
+use crate::object_graph::extent_contains;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
@@ -8529,19 +8530,6 @@ fn zero_entity_vertex_owner(
     (incidence.logical_end == owner.byte_offset && owner.tag == [0x5d, 0x06]).then_some(owner)
 }
 
-fn contains_extent(
-    owner_start: usize,
-    owner_len: usize,
-    candidate_start: usize,
-    candidate_len: usize,
-) -> bool {
-    owner_start < candidate_start
-        && owner_start
-            .checked_add(owner_len)
-            .zip(candidate_start.checked_add(candidate_len))
-            .is_some_and(|(owner_end, candidate_end)| candidate_end <= owner_end)
-}
-
 fn extents_overlap(first_start: u64, first_len: u64, second_start: u64, second_len: u64) -> bool {
     first_start
         .checked_add(first_len)
@@ -8796,19 +8784,19 @@ impl CatiaNative {
         let mut parsed_value_blocks = value_block::parse(bytes);
         parsed_value_blocks.retain(|block| {
             !parsed_object_graphs.iter().any(|graph| {
-                contains_extent(graph.pos, graph.total_len, block.pos, block.total_len())
+                extent_contains(graph.pos, graph.total_len, block.pos, block.total_len())
             })
         });
         parsed_object_graphs.retain(|graph| {
             !parsed_value_blocks.iter().any(|block| {
-                contains_extent(block.pos, block.total_len(), graph.pos, graph.total_len)
+                extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len)
             })
         });
         parsed_catalogs.retain(|catalog| {
             !parsed_object_graphs.iter().any(|graph| {
-                contains_extent(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
+                extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
             }) && !parsed_value_blocks.iter().any(|block| {
-                contains_extent(block.pos, block.total_len(), catalog.pos, catalog.total_len)
+                extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
             })
         });
         let catalogs: Vec<CatiaCatalog> = parsed_catalogs
