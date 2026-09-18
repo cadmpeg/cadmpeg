@@ -16,7 +16,7 @@ use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, Geo
 use crate::settings::{
     bbox, interval, plane, point, vector as native_vector, Plane, Point3 as NativePoint3,
 };
-use crate::wire::Uuid;
+use crate::wire::{vector, Uuid};
 
 const EPS_SURFACE_DEGENERATE: f64 = 1.0e-10;
 
@@ -1194,10 +1194,6 @@ fn scale_native_point(value: NativePoint3, scale: f64) -> Option<Point3> {
         crate::wire::scaled_coordinate(value.0[1], scale)?,
         crate::wire::scaled_coordinate(value.0[2], scale)?,
     ))
-}
-
-fn vector(value: crate::settings::Vector3) -> Vector3 {
-    Vector3::new(value.0[0], value.0[1], value.0[2])
 }
 
 fn close(a: Vector3, b: Vector3) -> bool {
