@@ -1,29 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion and revolution surface and B-rep transfer from resolved sketches.
 
-mod circular;
-mod extent;
-mod extrusion_brep;
-mod nurbs;
+pub(super) mod circular;
+pub(super) mod extent;
+pub(super) mod extrusion_brep;
+pub(super) mod nurbs;
 pub(super) mod pcurves;
-mod planes;
+pub(super) mod planes;
 pub(super) mod profiles;
-mod revolution_brep;
-mod surfaces;
-
-#[allow(clippy::wildcard_imports)]
-pub(super) use circular::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use extent::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use extrusion_brep::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use nurbs::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use planes::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use profiles::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use revolution_brep::*;
-#[allow(clippy::wildcard_imports)]
-pub(super) use surfaces::*;
+pub(super) mod revolution_brep;
+pub(super) mod surfaces;

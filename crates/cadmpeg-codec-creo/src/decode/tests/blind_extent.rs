@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::analytic::equations::PlaneEquation;
-use crate::decode::sweep::{
-    blind_extrusion_from_carriers, generated_cap_plane_extent, generated_rectilinear_plane_extent,
-    ordered_parallel_cap_extent, ExtrusionCarrierSpan,
+use crate::decode::sweep::extent::{
+    blind_extrusion_from_carriers, generated_rectilinear_plane_extent, ExtrusionCarrierSpan,
 };
+use crate::decode::sweep::planes::{generated_cap_plane_extent, ordered_parallel_cap_extent};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};

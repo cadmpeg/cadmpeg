@@ -26,11 +26,12 @@ use crate::decode::holes::drilled::{
 use crate::decode::holes::placement::ExtrusionSpan;
 use crate::decode::sketch::equations_coordinate::approximately_equal;
 use crate::decode::surfaces::cylinders::rowless_round_cylinder_pairs;
+use crate::decode::sweep::nurbs::extruded_nurbs_surface;
 use crate::decode::sweep::profiles::ProfileEntity;
-use crate::decode::sweep::{
-    circular_pcurve, extruded_nurbs_surface, extrusion_cap_pcurve, extrusion_profile_signed_area,
-    extrusion_side_uvs, ordered_extrusion_profiles, oriented_arc_parameterization,
-    oriented_full_turn_angles, point_on_profile_arc, profile_arc, resolved_sketch_profiles,
+use crate::decode::sweep::profiles::{
+    circular_pcurve, extrusion_cap_pcurve, extrusion_profile_signed_area, extrusion_side_uvs,
+    ordered_extrusion_profiles, oriented_arc_parameterization, oriented_full_turn_angles,
+    point_on_profile_arc, profile_arc, resolved_sketch_profiles,
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;

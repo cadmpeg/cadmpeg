@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: generated NURBS sweep extent carrier reconciliation.
 
-use crate::decode::sweep::generated_nurbs_translation_extent;
+use crate::decode::sweep::extent::generated_nurbs_translation_extent;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};

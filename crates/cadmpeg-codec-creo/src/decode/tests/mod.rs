@@ -8,7 +8,8 @@ use crate::decode::sketch::radii::{
     section_axis_line_carrier_with_points, section_segment_intersection_carrier_with_missing_line,
 };
 use crate::decode::sketch_transfer::skamp_constraints::section_skamp_constraints_for_geometry;
-use crate::decode::sweep::{extruded_geometry_surface, placed_section_geometry_curve};
+use crate::decode::sweep::nurbs::extruded_geometry_surface;
+use crate::decode::sweep::surfaces::placed_section_geometry_curve;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::{SketchConstraint, SketchGeometry, SketchId};

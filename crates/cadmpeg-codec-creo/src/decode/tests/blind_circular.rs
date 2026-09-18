@@ -20,10 +20,12 @@ use crate::decode::holes::sweep::{
 use crate::decode::surfaces::cylinders::{
     reference_cap_bound_round_frame, reference_circle_pair_cylinder_frame,
 };
-use crate::decode::sweep::{
-    agreed_generated_cylinder_extent, bounded_cylinder_span, directed_blind_extrusion_span,
-    generated_bounded_cylinder_extent, resolved_feature_extrusion_span,
-    unique_available_positional_cylinder_frame_records,
+use crate::decode::sweep::extent::{
+    bounded_cylinder_span, directed_blind_extrusion_span, generated_bounded_cylinder_extent,
+    resolved_feature_extrusion_span,
+};
+use crate::decode::sweep::planes::{
+    agreed_generated_cylinder_extent, unique_available_positional_cylinder_frame_records,
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;

@@ -23,7 +23,7 @@ use crate::decode::sketch_transfer::recipe::{
     resolved_feature_schema_class_from_classes, row_feature_schema_classes,
     unique_feature_revolution_extent,
 };
-use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation_span};
+use crate::decode::sweep::extent::{generated_nurbs_translation_extent, nurbs_translation_span};
 use crate::decode::uniqueness::{
     unique_feature_section_transform, unique_owned_feature_definition,
 };

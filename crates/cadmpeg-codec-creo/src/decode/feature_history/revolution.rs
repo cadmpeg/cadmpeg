@@ -9,9 +9,10 @@ use super::super::sketch::geometry::{
 use super::super::sketch::radii::trim_segment_id;
 use super::super::sketch::skamp::complete_section_segment_rows;
 use super::super::sketch_ids::model_sketch_id;
-use super::super::sweep::{
-    connected_sketch_profile_vertices, extruded_section_line, revolved_nurbs_surface,
-    revolved_section_circle, revolved_section_surface,
+use super::super::sweep::profiles::connected_sketch_profile_vertices;
+use super::super::sweep::surfaces::{
+    extruded_section_line, revolved_nurbs_surface, revolved_section_circle,
+    revolved_section_surface,
 };
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,

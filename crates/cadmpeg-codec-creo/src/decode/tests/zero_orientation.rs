@@ -32,13 +32,14 @@ use crate::decode::surfaces::nurbs_boundaries::{
     cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots, nurbs_plane_boundary_curve,
     shared_extrusion_generator_curve,
 };
+use crate::decode::sweep::nurbs::{
+    bspline_basis, bspline_basis_derivative, interpolation_spline_surface, placed_section_nurbs,
+    saved_spline_nurbs, saved_spline_sketch_geometry,
+};
 use crate::decode::sweep::pcurves::{
     revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface,
 };
-use crate::decode::sweep::{
-    bspline_basis, bspline_basis_derivative, interpolation_spline_surface, placed_section_nurbs,
-    revolved_nurbs_surface, saved_spline_nurbs, saved_spline_sketch_geometry,
-};
+use crate::decode::sweep::surfaces::revolved_nurbs_surface;
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
