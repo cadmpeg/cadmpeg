@@ -1037,8 +1037,8 @@ pub(crate) fn entity_primary_end_for_global_table(
         (402, 21) => Some(new_dimensioned_geometry_primary_end(record)),
         (404, 0 | 1) => Some(drawing_primary_end(record, entry.form)),
         (406, 1 | 14) => Some(counted_primary_end(record)),
-        (406, 2) => Some(region_restriction_primary_end(record)),
-        (406, 3) => Some(level_function_primary_end(record)),
+        (406, 2) => Some(property_primary_end(record, 3, 5)),
+        (406, 3) => Some(property_primary_end(record, 2, 4)),
         (406, 4) => Some(fixed_primary_end(record, 4)),
         (406, 5) => Some(fixed_primary_end(record, 7)),
         (406, 6) => Some(fixed_primary_end(record, 7)),
@@ -1046,21 +1046,21 @@ pub(crate) fn entity_primary_end_for_global_table(
         (406, 18..=21) => Some(fixed_primary_end(record, 3)),
         (406, 22) => Some(fixed_primary_end(record, 11)),
         (406, 23) => Some(fixed_primary_end(record, 4)),
-        (406, 8) => Some(pin_number_primary_end(record)),
-        (406, 9) => Some(part_number_primary_end(record)),
-        (406, 10) => Some(hierarchy_primary_end(record)),
+        (406, 8) => Some(property_primary_end(record, 1, 3)),
+        (406, 9) => Some(property_primary_end(record, 4, 6)),
+        (406, 10) => Some(property_primary_end(record, 6, 8)),
         (406, 11) => Some(tabular_data_primary_end(record)),
         (406, 12) => Some(external_reference_file_list_primary_end(record)),
         (406, 13) => Some(nominal_size_primary_end(record)),
-        (406, 15) => Some(name_property_primary_end(record)),
-        (406, 16 | 17 | 33) => Some(drawing_property_primary_end(record)),
+        (406, 15) => Some(property_primary_end(record, 1, 3)),
+        (406, 16 | 17 | 33) => Some(property_primary_end(record, 2, 4)),
         (406, 24) => Some(level_to_lep_layer_map_primary_end(record)),
         (406, 25) => Some(lep_artwork_stackup_primary_end(record)),
-        (406, 26) => Some(lep_drilled_hole_primary_end(record)),
-        (406, 28) => Some(dimension_units_primary_end(record)),
-        (406, 29) => Some(dimension_tolerance_primary_end(record)),
-        (406, 31) => Some(basic_dimension_primary_end(record)),
-        (406, 32) => Some(drawing_sheet_approval_primary_end(record)),
+        (406, 26) => Some(property_primary_end(record, 3, 5)),
+        (406, 28) => Some(property_primary_end(record, 6, 8)),
+        (406, 29) => Some(property_primary_end(record, 8, 10)),
+        (406, 31) => Some(property_primary_end(record, 8, 10)),
+        (406, 32) => Some(property_primary_end(record, 3, 5)),
         (406, 36) => Some(closure_primary_end(record)),
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
@@ -1125,7 +1125,7 @@ pub(crate) fn entity_primary_end_for_global_table(
         (410, 1) => Some(fixed_primary_end(record, 23)),
         (416, 0 | 2 | 4) => Some(fixed_primary_end(record, 3)),
         (416, 1 | 3) => Some(fixed_primary_end(record, 2)),
-        (106, form) if copious_expected_interpretation(form).is_some() => {
+        (106, form) if crate::entities::copious::expected_interpretation(form).is_some() => {
             Some(copious_primary_end(record, form))
         }
         (110, 0..=2) => Some(7),
@@ -1210,6 +1210,21 @@ fn counted_primary_end(record: &ParameterRecord) -> usize {
         .filter(|count| *count > 0)
         .and_then(|count| count.checked_add(2))
         .unwrap_or(record.tokens.len())
+}
+
+/// Primary parameter end of an Entity 406 property whose property count is
+/// fixed by its form. `property_count` is the documented Parameter 1 value and
+/// `primary_end` the token index the primary parameters end at.
+fn property_primary_end(
+    record: &ParameterRecord,
+    property_count: i64,
+    primary_end: usize,
+) -> usize {
+    if record.integer(1) == Some(property_count) && record.tokens.len() >= primary_end {
+        primary_end
+    } else {
+        record.tokens.len()
+    }
 }
 
 fn fixed_primary_end(record: &ParameterRecord, end: usize) -> usize {
@@ -1569,67 +1584,11 @@ fn external_reference_index_primary_end(record: &ParameterRecord) -> usize {
         .unwrap_or(record.tokens.len())
 }
 
-fn region_restriction_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(3) && record.tokens.len() >= 5 {
-        5
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn level_function_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(2) && record.tokens.len() >= 4 {
-        4
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn pin_number_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(1) && record.tokens.len() >= 3 {
-        3
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn part_number_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(4) && record.tokens.len() >= 6 {
-        6
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn hierarchy_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(6) && record.tokens.len() >= 8 {
-        8
-    } else {
-        record.tokens.len()
-    }
-}
-
 fn nominal_size_primary_end(record: &ParameterRecord) -> usize {
     match record.integer(1) {
         Some(2) if record.tokens.len() >= 4 => 4,
         Some(3) if record.tokens.len() >= 5 => 5,
         _ => record.tokens.len(),
-    }
-}
-
-fn name_property_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(1) && record.tokens.len() >= 3 {
-        3
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn drawing_property_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(2) && record.tokens.len() >= 4 {
-        4
-    } else {
-        record.tokens.len()
     }
 }
 
@@ -1672,46 +1631,6 @@ fn lep_artwork_stackup_primary_end(record: &ParameterRecord) -> usize {
         return record.tokens.len();
     }
     end
-}
-
-fn lep_drilled_hole_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(3) && record.tokens.len() >= 5 {
-        5
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn dimension_units_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(6) && record.tokens.len() >= 8 {
-        8
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn dimension_tolerance_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(8) && record.tokens.len() >= 10 {
-        10
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn basic_dimension_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(8) && record.tokens.len() >= 10 {
-        10
-    } else {
-        record.tokens.len()
-    }
-}
-
-fn drawing_sheet_approval_primary_end(record: &ParameterRecord) -> usize {
-    if record.integer(1) == Some(3) && record.tokens.len() >= 5 {
-        5
-    } else {
-        record.tokens.len()
-    }
 }
 
 fn closure_primary_end(record: &ParameterRecord) -> usize {
@@ -2410,17 +2329,9 @@ fn trimmed_surface_primary_end(record: &ParameterRecord) -> usize {
         .unwrap_or(record.tokens.len())
 }
 
-fn copious_expected_interpretation(form: i64) -> Option<i64> {
-    match form {
-        1 | 11 | 20 | 21 | 31..=38 | 40 | 63 => Some(1),
-        2 | 12 => Some(2),
-        3 | 13 => Some(3),
-        _ => None,
-    }
-}
-
 fn copious_primary_end(record: &ParameterRecord, form: i64) -> usize {
-    let Some(expected_interpretation) = copious_expected_interpretation(form) else {
+    let Some(expected_interpretation) = crate::entities::copious::expected_interpretation(form)
+    else {
         return record.tokens.len();
     };
     let Some(interpretation) = record.integer(1) else {

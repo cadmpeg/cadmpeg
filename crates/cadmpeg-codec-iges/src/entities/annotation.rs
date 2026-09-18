@@ -6,6 +6,7 @@ use super::presentation::{
     general_note_font_valid_for_global_table, new_general_note_charset_valid,
     new_general_note_font_valid,
 };
+use super::{mirror_flag_valid, vertical_text_flag_valid};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
@@ -142,14 +143,6 @@ fn justification_valid(value: i64) -> bool {
 }
 
 fn fixed_or_variable_valid(value: i64) -> bool {
-    matches!(value, 0..=1)
-}
-
-fn mirror_flag_valid(value: i64) -> bool {
-    matches!(value, 0..=2)
-}
-
-fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
