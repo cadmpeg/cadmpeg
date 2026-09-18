@@ -2,6 +2,8 @@
 
 use std::io::Write as _;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
@@ -417,38 +419,38 @@ fn primary_envelope_fixture_with_carrier_and_failures(
 
 fn database_fixture(schema: u32) -> Vec<u8> {
     let mut bytes = vec![0x21; 16];
-    put_u32_vec(&mut bytes, schema);
+    push_u32(&mut bytes, schema);
     push_version(&mut bytes, 24);
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     push_version(&mut bytes, 25);
     bytes.extend_from_slice(&18_u64.to_le_bytes());
-    push_utf16_vec(&mut bytes, "synthetic primary document");
+    push_utf16(&mut bytes, "synthetic primary document");
     bytes
 }
 
 fn registry_fixture() -> Vec<u8> {
     let mut bytes = Vec::new();
-    put_u32_vec(&mut bytes, 1);
-    push_utf16_vec(&mut bytes, "PmBRepSegment");
+    push_u32(&mut bytes, 1);
+    push_utf16(&mut bytes, "PmBRepSegment");
     bytes.extend_from_slice(&[0x5a; 16]);
     bytes.extend_from_slice(&[0x20; 16]);
-    put_u32_vec(&mut bytes, 3);
-    put_u32_vec(&mut bytes, 1);
+    push_u32(&mut bytes, 3);
+    push_u32(&mut bytes, 1);
     for value in 4..9 {
-        put_u32_vec(&mut bytes, value);
+        push_u32(&mut bytes, value);
     }
-    put_u32_vec(&mut bytes, 9);
-    push_utf16_vec(&mut bytes, "PmBrepSegmentType");
-    put_u32_vec(&mut bytes, 10);
-    put_u32_vec(&mut bytes, 11);
+    push_u32(&mut bytes, 9);
+    push_utf16(&mut bytes, "PmBrepSegmentType");
+    push_u32(&mut bytes, 10);
+    push_u32(&mut bytes, 11);
     push_version(&mut bytes, 18);
-    put_u32_vec(&mut bytes, 12);
+    push_u32(&mut bytes, 12);
     bytes.extend_from_slice(&[0x20; 16]);
     bytes.extend_from_slice(&[0x30; 9]);
     bytes.extend_from_slice(&[0x5a; 16]);
-    put_u32_vec(&mut bytes, 13);
-    put_u32_vec(&mut bytes, 2);
-    put_u32_vec(&mut bytes, 14);
+    push_u32(&mut bytes, 13);
+    push_u32(&mut bytes, 2);
+    push_u32(&mut bytes, 14);
     bytes.extend_from_slice(&(-1_i16).to_le_bytes());
     bytes.extend_from_slice(&2_i16.to_le_bytes());
     for value in 15_u16..21 {
@@ -457,9 +459,9 @@ fn registry_fixture() -> Vec<u8> {
     bytes.extend_from_slice(&21_u16.to_le_bytes());
     bytes.extend_from_slice(&22_u16.to_le_bytes());
     bytes.extend_from_slice(&23_u16.to_le_bytes());
-    put_u32_vec(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
     bytes.extend_from_slice(&[0x61; 16]);
-    put_u32_vec(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
     bytes
 }
 
@@ -473,7 +475,7 @@ fn meta_stream_fixture(payload_len: usize, declarations: EnvelopeDeclarations) -
     push_bytes_vec(&mut bytes, declarations.meta_marker.as_bytes());
     bytes.extend_from_slice(&declarations.meta_version.to_le_bytes());
     bytes.extend_from_slice(&[1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0]);
-    push_utf16_vec(&mut bytes, "PmBRepSegment");
+    push_utf16(&mut bytes, "PmBRepSegment");
     bytes.extend_from_slice(&[0x5a; 16]);
     bytes.extend_from_slice(
         &[5_u32, 6, 7]
@@ -504,20 +506,20 @@ fn meta_table_body(payload_len: usize) -> Vec<u8> {
     push_counted_section(&mut body, &[0x8000_0000 | payload_len as u32], 4);
     push_counted_section(&mut body, &[], 10);
     push_counted_section(&mut body, &[], 28);
-    put_u32_vec(&mut body, 1);
+    push_u32(&mut body, 1);
     body.extend_from_slice(&type_id);
     body.extend_from_slice(&1_u16.to_le_bytes());
-    put_u32_vec(&mut body, 2);
+    push_u32(&mut body, 2);
     body.extend_from_slice(&3_u16.to_le_bytes());
-    put_u32_vec(&mut body, 4);
-    put_u32_vec(&mut body, 32);
+    push_u32(&mut body, 4);
+    push_u32(&mut body, 32);
     let payloads = [0_usize, 0, 0, 0, 0, 0, 0x48];
     let discriminators = [u32::MAX, 0, 0, 0, 0, 0, 18];
-    put_u32_vec(&mut body, discriminators[0]);
+    push_u32(&mut body, discriminators[0]);
     body.resize(body.len() + payloads[0], 0);
     for index in 1..payloads.len() {
-        put_u32_vec(&mut body, payloads[index - 1] as u32 + 4);
-        put_u32_vec(&mut body, discriminators[index]);
+        push_u32(&mut body, payloads[index - 1] as u32 + 4);
+        push_u32(&mut body, discriminators[index]);
         body.resize(body.len() + payloads[index], 0);
     }
     body.extend_from_slice(&[0x77; 16]);
@@ -709,31 +711,59 @@ fn directory_node(
 }
 
 fn push_counted_section(bytes: &mut Vec<u8>, values: &[u32], item_size: usize) {
-    put_u32_vec(bytes, values.len() as u32);
+    push_u32(bytes, values.len() as u32);
     for value in values {
-        put_u32_vec(bytes, *value);
+        push_u32(bytes, *value);
         bytes.resize(bytes.len() + item_size - 4, 0);
     }
-    put_u32_vec(bytes, (4 + values.len() * item_size) as u32);
+    push_u32(bytes, (4 + values.len() * item_size) as u32);
 }
 
 fn push_bytes_vec(bytes: &mut Vec<u8>, value: &[u8]) {
-    put_u32_vec(bytes, value.len() as u32);
+    push_u32(bytes, value.len() as u32);
     bytes.extend_from_slice(value);
 }
 
-fn push_utf16_vec(bytes: &mut Vec<u8>, value: &str) {
+/// Append a UTF-16LE string: a `u32` code-unit count, then the units.
+pub(crate) fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
     let units = value.encode_utf16().collect::<Vec<_>>();
-    put_u32_vec(bytes, units.len() as u32);
+    push_u32(bytes, units.len() as u32);
     for unit in units {
-        bytes.extend_from_slice(&unit.to_le_bytes());
+        push_u16(bytes, unit);
     }
 }
 
-fn push_version(bytes: &mut Vec<u8>, major: u8) {
+/// Append an eight-byte version stamp carrying `major` in its third byte.
+pub(crate) fn push_version(bytes: &mut Vec<u8>, major: u8) {
     bytes.extend_from_slice(&[1, 2, major, 4, 5, 6, 7, 8]);
 }
 
-fn put_u32_vec(bytes: &mut Vec<u8>, value: u32) {
+/// Append a little-endian `u16`.
+pub(crate) fn push_u16(bytes: &mut Vec<u8>, value: u16) {
     bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+/// Append a little-endian `u32`.
+pub(crate) fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+/// Build a `PmDc` entity content header for `index`.
+pub(crate) fn content(index: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&index.to_le_bytes()[..2]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&0x0002_0200u32.to_le_bytes());
+    bytes.extend_from_slice(&0x8000_0003u32.to_le_bytes());
+    bytes.extend_from_slice(&index.to_le_bytes());
+    bytes
+}
+
+/// Run `parser` over `bytes` in a default-policy decode context.
+pub(crate) fn parse<T>(bytes: &[u8], parser: impl FnOnce(&DecodeContext<'_>, View<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("view");
+    parser(&ctx, source)
 }

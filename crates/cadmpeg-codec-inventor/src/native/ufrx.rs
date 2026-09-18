@@ -788,6 +788,7 @@ impl UfrxRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::test_wire::{refusal, states_the_key};
 
     #[test]
     fn external_reference_requires_path_or_nonzero_document_id() {
@@ -1038,26 +1039,6 @@ mod tests {
                 .expect("valid test fixture");
             assert!(UfrxRecord::read(&namespace).is_err());
         }
-    }
-
-    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-        let mut wire = serde_json::json!({});
-        wire[key] = serde_json::Value::Null;
-        let Err(refused) = serde_json::from_value::<T>(wire) else {
-            panic!("{key}: null was admitted")
-        };
-        refused.to_string()
-    }
-
-    fn states_the_key(key: &str, message: &str) {
-        assert!(
-            message.starts_with(&format!("{key}: ")),
-            "the refusal of a null {key} states {message}"
-        );
-        assert!(
-            message.contains("it does not state null"),
-            "the refusal of a null {key} states {message}"
-        );
     }
 
     /// A top-level optional key on a UFRX record names itself in its refusal.

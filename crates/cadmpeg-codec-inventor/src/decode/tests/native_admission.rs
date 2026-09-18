@@ -14,6 +14,7 @@ use crate::native::{AssemblyPlacementRecordWire, StructuralIssueRecord};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
+use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
 
 #[test]
@@ -282,60 +283,47 @@ fn external_references_stream() -> Vec<u8> {
     for value in [
         11, 23, 31, 19, 12, 18, 1, 2, 4, 2, 1, 3, 1, 2, 6, 2, 2, 5, 0, 1, 2, 0, 0, 0, 0,
     ] {
-        u16_le(&mut bytes, value);
+        push_u16(&mut bytes, value);
     }
     bytes.extend_from_slice(&[0; 32]);
-    utf16(&mut bytes, "");
+    push_utf16(&mut bytes, "");
     bytes.extend_from_slice(&[0; 48]);
-    u32_le(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
     bytes.extend_from_slice(&[0; 16]);
-    utf16(&mut bytes, "assembly.iam");
-    u16_le(&mut bytes, 0);
-    u32_le(&mut bytes, 0);
-    u32_le(&mut bytes, 0);
+    push_utf16(&mut bytes, "assembly.iam");
+    push_u16(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
     bytes.extend_from_slice(&[0; 4]);
-    utf16(&mut bytes, "Default");
+    push_utf16(&mut bytes, "Default");
     bytes.extend_from_slice(&[0; 4]);
-    u16_le(&mut bytes, 0);
-    u32_le(&mut bytes, 3);
-    u16_le(&mut bytes, 0);
-    u16_le(&mut bytes, 1);
-    u32_le(&mut bytes, 1);
-    u32_le(&mut bytes, 0);
-    u32_le(&mut bytes, 0);
-    u32_le(&mut bytes, 2);
-    utf16(&mut bytes, "References");
-    u32_le(&mut bytes, 0);
+    push_u16(&mut bytes, 0);
+    push_u32(&mut bytes, 3);
+    push_u16(&mut bytes, 0);
+    push_u16(&mut bytes, 1);
+    push_u32(&mut bytes, 1);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 2);
+    push_utf16(&mut bytes, "References");
+    push_u32(&mut bytes, 0);
     for (path, id) in [("", 7), ("part.ipt", 8)] {
-        utf16(&mut bytes, path);
+        push_utf16(&mut bytes, path);
         bytes.extend_from_slice(&(-1_i32).to_le_bytes());
-        utf16(&mut bytes, "");
-        u16_le(&mut bytes, 0);
-        utf16(&mut bytes, "");
-        u32_le(&mut bytes, 0);
-        u16_le(&mut bytes, 0);
-        u16_le(&mut bytes, 0);
+        push_utf16(&mut bytes, "");
+        push_u16(&mut bytes, 0);
+        push_utf16(&mut bytes, "");
+        push_u32(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
         bytes.extend_from_slice(&[0; 32]);
         for value in [id, 0, 12, 4] {
-            u32_le(&mut bytes, value);
+            push_u32(&mut bytes, value);
         }
     }
-    u32_le(&mut bytes, 0);
-    u32_le(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
+    push_u32(&mut bytes, 0);
     bytes
-}
-
-fn u16_le(bytes: &mut Vec<u8>, value: u16) {
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-fn u32_le(bytes: &mut Vec<u8>, value: u32) {
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-fn utf16(bytes: &mut Vec<u8>, value: &str) {
-    u32_le(bytes, value.encode_utf16().count() as u32);
-    for unit in value.encode_utf16() {
-        u16_le(bytes, unit);
-    }
 }
 
 #[test]

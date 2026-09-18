@@ -100,6 +100,7 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
 #[cfg(test)]
 mod tests {
     use super::{RecordIssue, RecordIssueFamily};
+    use crate::test_support::test_wire::{refusal, states_the_key};
 
     #[test]
     fn each_family_preserves_its_legacy_wire_and_rejects_mixed_fields() {
@@ -170,26 +171,6 @@ mod tests {
             }
             assert!(serde_json::from_value::<RecordIssue>(expected).is_err());
         }
-    }
-
-    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-        let mut wire = serde_json::json!({});
-        wire[key] = serde_json::Value::Null;
-        let Err(refused) = serde_json::from_value::<T>(wire) else {
-            panic!("{key}: null was admitted")
-        };
-        refused.to_string()
-    }
-
-    fn states_the_key(key: &str, message: &str) {
-        assert!(
-            message.starts_with(&format!("{key}: ")),
-            "the refusal of a null {key} states {message}"
-        );
-        assert!(
-            message.contains("it does not state null"),
-            "the refusal of a null {key} states {message}"
-        );
     }
 
     /// A top-level optional key on a record issue names itself in its refusal.

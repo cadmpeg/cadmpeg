@@ -442,6 +442,9 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::test_fixtures::push_u32;
+    use crate::test_support::test_fixtures::push_utf16;
+    use crate::test_support::test_fixtures::push_version;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::*;
@@ -684,21 +687,5 @@ mod tests {
         push_u32(&mut bytes, 1);
         bytes.extend_from_slice(&[0x62; 16]);
         bytes
-    }
-
-    fn push_version(bytes: &mut Vec<u8>, major: u8) {
-        bytes.extend_from_slice(&[1, 2, major, 4, 5, 6, 7, 8]);
-    }
-
-    fn push_utf16(bytes: &mut Vec<u8>, value: &str) {
-        let units = value.encode_utf16().collect::<Vec<_>>();
-        push_u32(bytes, units.len() as u32);
-        for unit in units {
-            bytes.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-
-    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
-        bytes.extend_from_slice(&value.to_le_bytes());
     }
 }
