@@ -3187,8 +3187,7 @@ fn helix_differential(
         (inverse_revolution, pitch),
     ]);
     let acceleration = vector_sum(&[(-radial_scale, radial), (2.0 * scale_first, radial_first)]);
-    let finite_vector = |vector: Vector3| vector.is_finite();
-    (point.is_finite() && finite_vector(tangent) && finite_vector(acceleration)).then_some(
+    (point.is_finite() && tangent.is_finite() && acceleration.is_finite()).then_some(
         ModelCurveDifferential {
             point,
             tangent,
@@ -6393,14 +6392,12 @@ fn model_sum_surface_partials(
 }
 
 fn surface_second_partials_are_finite(partials: SurfaceSecondPartials) -> bool {
-    let finite_point = |point: Point3| point.is_finite();
-    let finite_vector = |vector: Vector3| vector.is_finite();
-    finite_point(partials.point)
-        && finite_vector(partials.du)
-        && finite_vector(partials.dv)
-        && finite_vector(partials.duu)
-        && finite_vector(partials.duv)
-        && finite_vector(partials.dvv)
+    partials.point.is_finite()
+        && partials.du.is_finite()
+        && partials.dv.is_finite()
+        && partials.duu.is_finite()
+        && partials.duv.is_finite()
+        && partials.dvv.is_finite()
 }
 
 fn model_surface_point_with_budget_solved(

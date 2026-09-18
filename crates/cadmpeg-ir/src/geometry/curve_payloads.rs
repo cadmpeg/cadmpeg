@@ -237,13 +237,12 @@ impl DeformableCurveConstruction {
         source_parameter_range: [Option<f64>; 2],
         data: DeformableCurveData,
     ) -> Result<Self, ProceduralGeometryError> {
-        let finite_vector = |vector: &crate::math::Vector3| vector.is_finite();
         let payload_finite = match &data {
             crate::geometry::DeformableCurveData::VectorField {
                 vectors,
                 parameter_pairs,
             } => {
-                vectors.iter().all(finite_vector)
+                vectors.iter().all(crate::math::Vector3::is_finite)
                     && parameter_pairs
                         .iter()
                         .flatten()
@@ -259,10 +258,10 @@ impl DeformableCurveConstruction {
                 trailing_parameter,
                 ..
             } => {
-                leading_vectors.iter().all(finite_vector)
+                leading_vectors.iter().all(crate::math::Vector3::is_finite)
                     && leading_parameter.is_finite()
                     && trailing_point.is_finite()
-                    && trailing_vectors.iter().all(finite_vector)
+                    && trailing_vectors.iter().all(crate::math::Vector3::is_finite)
                     && frame_parameter.is_finite()
                     && parameters.iter().all(|value| value.is_finite())
                     && trailing_parameter.is_finite()
