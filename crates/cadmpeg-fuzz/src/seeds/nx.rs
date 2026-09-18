@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Siemens NX PRT seed builders.
 
+use std::io::Write;
+
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
 
 pub const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
@@ -76,4 +80,34 @@ pub fn assembly_prt() -> Vec<u8> {
     f.extend_from_slice(name);
     f.extend_from_slice(&[0u8; 16]);
     f
+}
+
+pub fn zlib_compress(raw: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut e = ZlibEncoder::new(Vec::new(), Compression::new(1));
+    e.write_all(raw)?;
+    e.finish()
+}
+
+pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
+    let mut f = Vec::new();
+    f.extend_from_slice(MAGIC);
+    f.push(0x06);
+    f.extend_from_slice(&[0x11, 0x22, 0x33]);
+    f.extend_from_slice(&[0, 0, 0, 0]);
+    f.push(0x00);
+    f.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+    f.extend_from_slice(&[0, 0]);
+
+    f.extend_from_slice(b"HEADER");
+    let name = b"/Root/UG_PART/UG_PART";
+    f.extend_from_slice(&(name.len() as u32).to_le_bytes());
+    f.extend_from_slice(name);
+
+    let blob = zlib_compress(&partition_stream()?)?;
+    let dir_end = f.len() + 16;
+    let blob_off = dir_end as u64;
+    f.extend_from_slice(&blob_off.to_le_bytes());
+    f.extend_from_slice(&(blob.len() as u64).to_le_bytes());
+    f.extend_from_slice(&blob);
+    Ok(f)
 }

@@ -3,12 +3,9 @@
 //! SolidWorks, CATIA, Creo, and NX. Existing F3D seeds remain unchanged.
 
 use std::fs;
-use std::io::Write;
 
 use cadmpeg_fuzz::seed_paths::seed_dir;
 use cadmpeg_fuzz::seeds;
-use flate2::write::DeflateEncoder;
-use flate2::Compression;
 
 type SeedError = Box<dyn std::error::Error>;
 
@@ -41,18 +38,18 @@ fn generate_sldprt_seeds() -> Result<(), SeedError> {
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
         ("just_header", seeds::sldprt::outer_header()),
-        ("synthetic_sldprt", sldprt::synthetic_sldprt()?),
+        ("synthetic_sldprt", seeds::sldprt::synthetic_sldprt()?),
         (
             "triangle_body",
-            sldprt::sldprt_with_body(&seeds::sldprt::triangle_body())?,
+            seeds::sldprt::sldprt_with_body(&seeds::sldprt::triangle_body())?,
         ),
         (
             "triangle_overlapping_point",
-            sldprt::sldprt_with_body(&sldprt::triangle_body_with_overlapping_point())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::triangle_body_with_overlapping_point())?,
         ),
         (
             "closed_cylinder",
-            sldprt::sldprt_with_body(&seeds::sldprt::closed_cylinder_body())?,
+            seeds::sldprt::sldprt_with_body(&seeds::sldprt::closed_cylinder_body())?,
         ),
         (
             "with_material",
@@ -72,27 +69,27 @@ fn generate_sldprt_seeds() -> Result<(), SeedError> {
         ),
         (
             "sheet_body",
-            sldprt::sldprt_with_body(&sldprt::sheet_body())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::sheet_body())?,
         ),
         (
             "two_owned_triangles",
-            sldprt::sldprt_with_body(&sldprt::two_owned_triangles())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::two_owned_triangles())?,
         ),
         (
             "with_nurbs_curve",
-            sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_curve())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_curve())?,
         ),
         (
             "with_nurbs_surface",
-            sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_surface())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::triangle_with_nurbs_surface())?,
         ),
         (
             "face_on_untyped_surface",
-            sldprt::sldprt_with_body(&sldprt::face_on_untyped_surface())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::face_on_untyped_surface())?,
         ),
         (
             "with_line_curve",
-            sldprt::sldprt_with_body(&sldprt::triangle_with_line_curve())?,
+            seeds::sldprt::sldprt_with_body(&sldprt::triangle_with_line_curve())?,
         ),
     ];
 
@@ -104,65 +101,11 @@ fn generate_sldprt_seeds() -> Result<(), SeedError> {
 }
 
 mod sldprt {
-    use super::*;
     use cadmpeg_fuzz::seeds::sldprt::{
-        be16, be32, bef64, bridge, coedge, crc32, edge_use, loop_head, make_cache_cell,
-        make_directory_entry, outer_header, parasolid_payload, plane_carrier, swap_name,
-        triangle_body, vertex_use, world_point, MARKER,
+        be16, be32, bef64, bridge, coedge, edge_use, loop_head, make_block, outer_header,
+        parasolid_with_body, plane_carrier, sldprt_with_body, triangle_body, vertex_use,
+        world_point,
     };
-
-    fn raw_deflate(data: &[u8]) -> std::io::Result<Vec<u8>> {
-        let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
-        enc.write_all(data)?;
-        enc.finish()
-    }
-    fn make_block(type_id: u32, section: &str, payload: &[u8]) -> std::io::Result<Vec<u8>> {
-        let comp = raw_deflate(payload)?;
-        let preamble = swap_name(section);
-        let mut b = Vec::new();
-        b.extend_from_slice(&MARKER);
-        b.extend_from_slice(&type_id.to_le_bytes());
-        b.extend_from_slice(&crc32(payload).to_le_bytes());
-        b.extend_from_slice(&(comp.len() as u32).to_le_bytes());
-        b.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-        b.extend_from_slice(&(preamble.len() as u32).to_le_bytes());
-        b.extend_from_slice(&preamble);
-        b.extend_from_slice(&comp);
-        Ok(b)
-    }
-
-    fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> {
-        let mut b = parasolid_payload(description, schema);
-        b.extend_from_slice(body);
-        b
-    }
-
-    pub fn synthetic_sldprt() -> std::io::Result<Vec<u8>> {
-        let mut f = outer_header();
-        f.extend_from_slice(&make_block(
-            0x10,
-            "PreviewPNG",
-            &[0x89, b'P', b'N', b'G', 1, 2, 3, 4],
-        )?);
-        f.extend_from_slice(&make_block(
-            0x20,
-            "Contents/Config-0-Partition",
-            &parasolid_payload("partition body", "SCH_SW_33103_11000"),
-        )?);
-        f.extend_from_slice(&make_cache_cell(90, "Contents/DisplayLists"));
-        f.extend_from_slice(&make_directory_entry(0x30, 2, "[Content_Types].xml"));
-        Ok(f)
-    }
-
-    pub fn sldprt_with_body(body: &[u8]) -> std::io::Result<Vec<u8>> {
-        let mut f = outer_header();
-        f.extend_from_slice(&make_block(
-            0x20,
-            "Contents/Config-0-Partition",
-            &parasolid_with_body("partition body", "SCH_SW_33103_11000", body),
-        )?);
-        Ok(f)
-    }
 
     pub fn sldprt_with_body_and_material(
         body: &[u8],
@@ -747,7 +690,7 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         ("empty", vec![]),
         ("just_magic", seeds::nx::just_magic()),
-        ("single_part", nx::single_part_prt()?),
+        ("single_part", seeds::nx::single_part_prt()?),
         ("assembly", seeds::nx::assembly_prt()),
         ("topology_part", nx::topology_part_prt()?),
         ("bspline_part", nx::bspline_part_prt()?),
@@ -762,10 +705,7 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
 
 mod nx {
     use cadmpeg_core::CodecError;
-    use cadmpeg_fuzz::seeds::nx::{partition_stream, put_f64, put_vec3, record, MAGIC};
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
-    use std::io::Write;
+    use cadmpeg_fuzz::seeds::nx::{put_f64, put_vec3, record, single_part_prt, zlib_compress};
 
     fn put_ref(rec: &mut [u8], at: usize, value: u16) {
         rec[at..at + 2].copy_from_slice(&value.to_be_bytes());
@@ -940,36 +880,6 @@ mod nx {
             s.extend(array);
         }
         Ok(s)
-    }
-
-    fn zlib_compress(raw: &[u8]) -> std::io::Result<Vec<u8>> {
-        let mut e = ZlibEncoder::new(Vec::new(), Compression::new(1));
-        e.write_all(raw)?;
-        e.finish()
-    }
-
-    pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
-        let mut f = Vec::new();
-        f.extend_from_slice(MAGIC);
-        f.push(0x06);
-        f.extend_from_slice(&[0x11, 0x22, 0x33]);
-        f.extend_from_slice(&[0, 0, 0, 0]);
-        f.push(0x00);
-        f.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-        f.extend_from_slice(&[0, 0]);
-
-        f.extend_from_slice(b"HEADER");
-        let name = b"/Root/UG_PART/UG_PART";
-        f.extend_from_slice(&(name.len() as u32).to_le_bytes());
-        f.extend_from_slice(name);
-
-        let blob = zlib_compress(&partition_stream()?)?;
-        let dir_end = f.len() + 16;
-        let blob_off = dir_end as u64;
-        f.extend_from_slice(&blob_off.to_le_bytes());
-        f.extend_from_slice(&(blob.len() as u64).to_le_bytes());
-        f.extend_from_slice(&blob);
-        Ok(f)
     }
 
     pub fn topology_part_prt() -> Result<Vec<u8>, CodecError> {
