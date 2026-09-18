@@ -41,17 +41,9 @@ pub(crate) enum AnnotationKind {
     SectionedArea,
 }
 
-fn finite_point(point: Point3) -> bool {
-    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-}
-
-fn finite_vector(vector: Vector3) -> bool {
-    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-}
-
 fn normalized(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
-    (finite_vector(vector) && norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
+    (vector.is_finite() && norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
 }
 
 fn sectioned_area_pattern_plane(
@@ -67,7 +59,7 @@ fn sectioned_area_pattern_plane(
     let normal = transform
         .apply_normal(Vector3::new(0.0, 0.0, 1.0))
         .and_then(normalized)?;
-    finite_point(point).then_some((point, normal))
+    point.is_finite().then_some((point, normal))
 }
 
 fn sectioned_area_curves_coplanar(
