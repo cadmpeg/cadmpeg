@@ -598,7 +598,10 @@ mod tests {
     fn detects_changes_in_all_document_dimensions() {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
-        right.model.points[0].position.x += 1.0;
+        let moved = right.model.points[0].position();
+        right.model.points[0]
+            .set_position(crate::math::Point3::new(moved.x + 1.0, moved.y, moved.z))
+            .expect("a finite position is a point");
         right.model.loops.pop();
         right.model.coedges.pop();
 
@@ -654,7 +657,7 @@ mod tests {
         ir.model
             .points
             .iter()
-            .position(|point| point.position.x.abs() >= 1.0)
+            .position(|point| point.position().x.abs() >= 1.0)
             .expect("the cube fixture places points away from the origin")
     }
 
@@ -665,14 +668,17 @@ mod tests {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
-        let before = right.model.points[index].position.x;
+        let before = right.model.points[index].position().x;
         let after = f64::from_bits(before.to_bits() + 1);
         assert_ne!(
             before.to_bits(),
             after.to_bits(),
             "the coordinate must move, or this test proves nothing"
         );
-        right.model.points[index].position.x = after;
+        let moved = right.model.points[index].position();
+        right.model.points[index]
+            .set_position(crate::math::Point3::new(after, moved.y, moved.z))
+            .expect("a finite position is a point");
 
         assert_ne!(
             serde_json::to_value(&left.model.points).unwrap(),
@@ -707,8 +713,14 @@ mod tests {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
-        let point = &mut right.model.points[index].position;
-        point.x = point.x.mul_add(1.0e-6, point.x);
+        let point = right.model.points[index].position();
+        right.model.points[index]
+            .set_position(crate::math::Point3::new(
+                point.x.mul_add(1.0e-6, point.x),
+                point.y,
+                point.z,
+            ))
+            .expect("a finite position is a point");
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());

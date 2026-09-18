@@ -194,7 +194,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         .model
         .points
         .iter()
-        .map(|point| (point.id.clone(), point.position))
+        .map(|point| (point.id.clone(), point.position()))
         .collect::<HashMap<_, _>>();
     let vertex_positions = ir
         .model
@@ -467,11 +467,9 @@ mod consolidated_revolution_binding_tests {
         for (index, position) in positions.into_iter().enumerate() {
             let point = PointId::mint(format!("catia:test:point#point%23{index}"))
                 .expect("identity grammar");
-            ir.model.points.push(Point {
-                id: point.clone(),
-                position,
-                source_object: None,
-            });
+            ir.model.points.push(
+                Point::new(point.clone(), position, None).expect("a finite position is a point"),
+            );
             ir.model.vertices.push(Vertex {
                 id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
                     .expect("identity grammar"),
@@ -2188,13 +2186,16 @@ fn try_decode_standard_population(
             "vertex_05_08_01",
             Exactness::ByteExact,
         );
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position: *p,
-            source_object: vertex_roster
-                .as_ref()
-                .map(|roster| cgm_source("vertex", roster[i])),
-        });
+        ir.model.points.push(
+            Point::new(
+                point_id.clone(),
+                *p,
+                vertex_roster
+                    .as_ref()
+                    .map(|roster| cgm_source("vertex", roster[i])),
+            )
+            .ok()?,
+        );
         let vertex_id = VertexId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
             i,
@@ -3755,7 +3756,7 @@ fn standard_limit_curve_bindings(
                 .filter_map(|(point, value)| {
                     standard_limit_curve_point_parameter(
                         curve,
-                        value.position,
+                        value.position(),
                         VERTEX_MATCH_TOLERANCE,
                     )
                     .map(|parameter| (point, parameter))
@@ -3776,7 +3777,7 @@ fn standard_limit_curve_bindings(
                 .iter()
                 .copied()
                 .filter(|(point, _)| {
-                    let position = ir.model.points[*point].position;
+                    let position = ir.model.points[*point].position();
                     support.faces.iter().all(|face| {
                         face_surface(ir, bindings, surface_indices, *face).is_some_and(|surface| {
                             matches!(
@@ -3923,9 +3924,9 @@ fn attach_standard_topology(
         .iter()
         .map(|point| {
             [
-                point.position.x as f32,
-                point.position.y as f32,
-                point.position.z as f32,
+                point.position().x as f32,
+                point.position().y as f32,
+                point.position().z as f32,
             ]
         })
         .collect::<Vec<_>>();
@@ -3985,7 +3986,7 @@ fn attach_standard_topology(
                             .enumerate()
                             .filter_map(|(index, point)| {
                                 point_on_standard_face(
-                                    point.position,
+                                    point.position(),
                                     surface,
                                     face_bounds.as_ref().and_then(|bounds| bounds[face]),
                                 )
@@ -4215,7 +4216,7 @@ fn attach_standard_topology(
                             pair.iter().all(|point| {
                                 ir.model.points.get(*point).is_some_and(|point| {
                                     point_on_standard_face(
-                                        point.position,
+                                        point.position(),
                                         &surface.geometry,
                                         face_bounds.as_ref().and_then(|bounds| bounds[*face]),
                                     )
@@ -4318,7 +4319,7 @@ fn attach_standard_topology(
                     pair.iter().all(|point| {
                         ir.model.points.get(*point).is_some_and(|point| {
                             point_on_standard_face(
-                                point.position,
+                                point.position(),
                                 &surface.geometry,
                                 face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
                             )
@@ -4346,7 +4347,12 @@ fn attach_standard_topology(
         .is_some_and(|domains| domains.iter().any(|domain| !domain.is_empty()));
     let endpoint_pair_on_incident_faces = |edge: usize, pair: [usize; 2]| {
         pair.iter().all(|point| {
-            let Some(position) = ir.model.points.get(*point).map(|point| point.position) else {
+            let Some(position) = ir
+                .model
+                .points
+                .get(*point)
+                .map(cadmpeg_ir::topology::Point::position)
+            else {
                 return false;
             };
             supports[edge].faces.iter().all(|face| {
@@ -4375,10 +4381,20 @@ fn attach_standard_topology(
             }
             let unfiltered = pairs.clone();
             pairs.retain(|pair| {
-                let Some(start) = ir.model.points.get(pair[0]).map(|point| point.position) else {
+                let Some(start) = ir
+                    .model
+                    .points
+                    .get(pair[0])
+                    .map(cadmpeg_ir::topology::Point::position)
+                else {
                     return false;
                 };
-                let Some(end) = ir.model.points.get(pair[1]).map(|point| point.position) else {
+                let Some(end) = ir
+                    .model
+                    .points
+                    .get(pair[1])
+                    .map(cadmpeg_ir::topology::Point::position)
+                else {
                     return false;
                 };
                 support.faces.iter().all(|&face| {
@@ -4755,7 +4771,12 @@ fn attach_standard_topology(
                     .copied()
                     .unwrap_or(false);
             }
-            let Some(position) = ir.model.points.get(point).map(|point| point.position) else {
+            let Some(position) = ir
+                .model
+                .points
+                .get(point)
+                .map(cadmpeg_ir::topology::Point::position)
+            else {
                 return false;
             };
             face_surface(ir, bindings, &surface_indices, face).is_some_and(|surface| {
@@ -4772,7 +4793,7 @@ fn attach_standard_topology(
             .model
             .points
             .iter()
-            .map(|point| point.position)
+            .map(cadmpeg_ir::topology::Point::position)
             .collect::<Vec<_>>();
         let mut solver_deferred_edges = deferred_port_edges.clone();
         if let Some(ports) = missing_edge::edge_port_identities(spine) {
@@ -5110,9 +5131,9 @@ fn validate_standard_topology(
             .iter()
             .zip(&ir.model.points)
             .all(|(stored, point)| {
-                stored[0] == point.position.x
-                    && stored[1] == point.position.y
-                    && stored[2] == point.position.z
+                stored[0] == point.position().x
+                    && stored[1] == point.position().y
+                    && stored[2] == point.position().z
             })
     {
         return None;
@@ -5203,7 +5224,7 @@ fn standard_face_loops(
                     .iter()
                     .map(|coedge| {
                         let point_index = *point_assignment.get(coedge.start_vertex)?;
-                        Some(ir.model.points.get(point_index)?.position)
+                        Some(ir.model.points.get(point_index)?.position())
                     })
                     .collect::<Option<Vec<_>>>()?,
             ))
@@ -5349,8 +5370,8 @@ fn emit_standard_topology(
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
                 let logical_vertices = edge_vertices[edge_use.edge_row];
-                let start = ir.model.points[point_assignment[logical_vertices[0]]].position;
-                let end = ir.model.points[point_assignment[logical_vertices[1]]].position;
+                let start = ir.model.points[point_assignment[logical_vertices[0]]].position();
+                let end = ir.model.points[point_assignment[logical_vertices[1]]].position();
                 let edge_curve = ir.model.edges[edge_use.edge_row]
                     .curve()
                     .as_ref()
@@ -5540,7 +5561,7 @@ pub(crate) fn standard_native_support_endpoint_pair(
                 .copied()
                 .filter(|point| {
                     points.get(*point).is_some_and(|point| {
-                        point.position.distance_squared(expected).sqrt() <= VERTEX_MATCH_TOLERANCE
+                        point.position().distance_squared(expected).sqrt() <= VERTEX_MATCH_TOLERANCE
                     })
                 })
                 .collect::<Vec<_>>();
@@ -5585,8 +5606,14 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         let include_full_circle_seams = count == 2
             && if let [start, end] = candidates[edge].as_slice() {
                 if let (Some(start), Some(end)) = (
-                    ir.model.points.get(*start).map(|point| point.position),
-                    ir.model.points.get(*end).map(|point| point.position),
+                    ir.model
+                        .points
+                        .get(*start)
+                        .map(cadmpeg_ir::topology::Point::position),
+                    ir.model
+                        .points
+                        .get(*end)
+                        .map(cadmpeg_ir::topology::Point::position),
                 ) {
                     let midpoint = Point3::new(
                         (start.x + end.x) * 0.5,
@@ -5660,8 +5687,8 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         let mut pairs = Vec::new();
         for (left, &start) in points.iter().enumerate() {
             for &end_index in &points[left + 1..] {
-                let start_point = ir.model.points.get(start)?.position;
-                let end_point = ir.model.points.get(end_index)?.position;
+                let start_point = ir.model.points.get(start)?.position();
+                let end_point = ir.model.points.get(end_index)?.position();
                 let segment = Vector3::new(
                     end_point.x - start_point.x,
                     end_point.y - start_point.y,
@@ -5821,10 +5848,11 @@ pub(crate) fn standard_circle_endpoint_candidates(
         .iter()
         .enumerate()
         .filter_map(|(index, point)| {
-            let on_circle = (point.position.distance_squared(center).sqrt() - radius).abs() <= 1e-3;
+            let on_circle =
+                (point.position().distance_squared(center).sqrt() - radius).abs() <= 1e-3;
             let incident = faces.is_none_or(|faces| {
                 faces.into_iter().all(|(surface, bounds)| {
-                    point_on_standard_face(point.position, surface, bounds)
+                    point_on_standard_face(point.position(), surface, bounds)
                 })
             });
             (on_circle && incident).then_some(index)
@@ -6116,7 +6144,7 @@ pub(crate) fn unique_native_identity_points(
                 .enumerate()
                 .filter_map(|(index, point)| {
                     (point
-                        .position
+                        .position()
                         .distance_squared(Point3::new(
                             vertex.point[0],
                             vertex.point[1],
@@ -6295,7 +6323,7 @@ pub(crate) fn standard_face_point_membership(
                 alloc_filled(ir.model.points.len(), false, "catia_face_point_membership").ok()?;
             for (point, candidate) in ir.model.points.iter().enumerate() {
                 membership[point] =
-                    point_on_standard_face(candidate.position, &surface.geometry, bounds);
+                    point_on_standard_face(candidate.position(), &surface.geometry, bounds);
             }
             Some(membership)
         })
@@ -6455,10 +6483,16 @@ fn standard_nurbs_line_pair_on_face(
     ) {
         return true;
     }
-    let Some(start) = points.get(pair[0]).map(|point| point.position) else {
+    let Some(start) = points
+        .get(pair[0])
+        .map(cadmpeg_ir::topology::Point::position)
+    else {
         return false;
     };
-    let Some(end) = points.get(pair[1]).map(|point| point.position) else {
+    let Some(end) = points
+        .get(pair[1])
+        .map(cadmpeg_ir::topology::Point::position)
+    else {
         return false;
     };
     NURBS_LINE_FACE_SAMPLES.iter().all(|fraction| {
@@ -7048,7 +7082,7 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
         .model
         .points
         .iter()
-        .map(|point| (point.id.clone(), point.position))
+        .map(|point| (point.id.clone(), point.position()))
         .collect::<HashMap<_, _>>();
     let vertex_positions = ir
         .model
@@ -7649,8 +7683,8 @@ pub(crate) fn standard_spline_line(
     let [Some(left), Some(right)] = surfaces else {
         return None;
     };
-    let start = ir.model.points.get(points[0])?.position;
-    let end = ir.model.points.get(points[1])?.position;
+    let start = ir.model.points.get(points[0])?.position();
+    let end = ir.model.points.get(points[1])?.position();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
         || !point_on_surface(end, &left.geometry)
@@ -7766,8 +7800,8 @@ fn standard_spline_circle(
     }
     let section_center = sphere_center.translated(axis, -signed_distance);
     let section_radius = section_radius_squared.sqrt();
-    let start = ir.model.points.get(points[0])?.position;
-    let end = ir.model.points.get(points[1])?.position;
+    let start = ir.model.points.get(points[0])?.position();
+    let end = ir.model.points.get(points[1])?.position();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
         || !point_on_surface(end, &left.geometry)
@@ -7856,8 +7890,8 @@ fn standard_spline_cylinder_plane(
         return None;
     }
     let center = cylinder_origin.translated(cylinder_axis, axis_parameter);
-    let start = ir.model.points.get(points[0])?.position;
-    let end = ir.model.points.get(points[1])?.position;
+    let start = ir.model.points.get(points[0])?.position();
+    let end = ir.model.points.get(points[1])?.position();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
         || !point_on_surface(end, &left.geometry)
@@ -7989,8 +8023,8 @@ fn standard_spline_perpendicular_cylinders(
         (first_center.y + second_center.y) * 0.5,
         (first_center.z + second_center.z) * 0.5,
     );
-    let start = ir.model.points.get(points[0])?.position;
-    let end = ir.model.points.get(points[1])?.position;
+    let start = ir.model.points.get(points[0])?.position();
+    let end = ir.model.points.get(points[1])?.position();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
         || !point_on_surface(end, &left.geometry)
@@ -8209,8 +8243,8 @@ pub(crate) fn build_standard_edge_curve(
 ) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
-            let start = ir.model.points[points[0]].position;
-            let end = ir.model.points[points[1]].position;
+            let start = ir.model.points[points[0]].position();
+            let end = ir.model.points[points[1]].position();
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
             let length = delta.x.hypot(delta.y).hypot(delta.z);
             if !length.is_finite() || length == 0.0 {
@@ -8230,8 +8264,8 @@ pub(crate) fn build_standard_edge_curve(
             )
         }
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
-            let start = ir.model.points[points[0]].position;
-            let end = ir.model.points[points[1]].position;
+            let start = ir.model.points[points[0]].position();
+            let end = ir.model.points[points[1]].position();
             let mut axes: Vec<Vector3> = support
                 .faces
                 .iter()
@@ -8416,8 +8450,8 @@ pub(crate) fn build_standard_edge_curve(
         )
     {
         let endpoints = [
-            ir.model.points[points[0]].position,
-            ir.model.points[points[1]].position,
+            ir.model.points[points[0]].position(),
+            ir.model.points[points[1]].position(),
         ];
         if let Some(witness) = native_support.and_then(standard_native_support_witness) {
             param_range = standard_oriented_analytic_curve_parameter_range(
@@ -8730,10 +8764,20 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
         else {
             continue;
         };
-        let Some(start) = ir.model.points.get(pair[0]).map(|point| point.position) else {
+        let Some(start) = ir
+            .model
+            .points
+            .get(pair[0])
+            .map(cadmpeg_ir::topology::Point::position)
+        else {
             return false;
         };
-        let Some(end) = ir.model.points.get(pair[1]).map(|point| point.position) else {
+        let Some(end) = ir
+            .model
+            .points
+            .get(pair[1])
+            .map(cadmpeg_ir::topology::Point::position)
+        else {
             return false;
         };
         let axes = support
@@ -8815,7 +8859,7 @@ impl StandardLinePairConstraint {
     ) -> Self {
         let points = points
             .iter()
-            .map(|point| point.position)
+            .map(cadmpeg_ir::topology::Point::position)
             .collect::<Vec<_>>();
         let edge_roles = supports
             .iter()
@@ -9041,7 +9085,7 @@ pub(crate) fn standard_line_pair_solution_is_simple(
 ) -> bool {
     let point_positions = points
         .iter()
-        .map(|point| point.position)
+        .map(cadmpeg_ir::topology::Point::position)
         .collect::<Vec<_>>();
     let segments = supports
         .iter()

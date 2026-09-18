@@ -3298,9 +3298,9 @@ fn cylindrical_bore_face_spans(
                 .filter_map(|vertex| points.get(&vertex.point))
                 .map(|point| {
                     Vector3::new(
-                        point.position.x - origin.x,
-                        point.position.y - origin.y,
-                        point.position.z - origin.z,
+                        point.position().x - origin.x,
+                        point.position().y - origin.y,
+                        point.position().z - origin.z,
                     )
                     .dot(axis)
                 });

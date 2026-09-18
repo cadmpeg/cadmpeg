@@ -281,7 +281,7 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
         .model
         .points
         .iter()
-        .map(|point| (point.id.as_str(), point.position))
+        .map(|point| (point.id.as_str(), point.position()))
         .collect::<HashMap<_, _>>();
     ir.model
         .vertices

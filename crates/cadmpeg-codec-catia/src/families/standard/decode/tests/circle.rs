@@ -29,10 +29,13 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         ]
         .into_iter()
         .enumerate()
-        .map(|(index, position)| Point {
-            id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
+        .map(|(index, position)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point")
         }),
     );
     let sphere_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(

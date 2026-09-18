@@ -105,7 +105,7 @@ pub fn write_semantic(
             .model
             .points
             .iter()
-            .any(|point| !point.position.is_finite())
+            .any(|point| !point.position().is_finite())
     {
         return Err(CodecError::NotImplemented(
             "F3D point regeneration requires the unchanged point-id set and finite coordinates"
@@ -424,7 +424,7 @@ pub fn write_semantic(
         .model
         .points
         .iter()
-        .map(|point| (point.id.as_str().to_owned(), point.position))
+        .map(|point| (point.id.as_str().to_owned(), point.position()))
         .collect::<BTreeMap<_, _>>();
     let lines = target
         .model

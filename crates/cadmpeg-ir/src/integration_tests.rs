@@ -74,16 +74,17 @@ fn source_association_is_a_free_carrier_root() {
 }
 
 fn point(id: &str) -> Point {
-    Point {
-        id: PointId::mint(id.to_owned()).expect("valid identity"),
-        position: Point3 {
+    Point::new(
+        PointId::mint(id.to_owned()).expect("valid identity"),
+        Point3 {
             x: 0.0,
             y: 0.0,
             z: 0.0,
         },
         // Free points are reachable only via source association (or a vertex).
-        source_object: Some(free_carrier(id)),
-    }
+        Some(free_carrier(id)),
+    )
+    .expect("a finite position is a point")
 }
 
 fn ir_strategy() -> impl Strategy<Value = CadIr> {

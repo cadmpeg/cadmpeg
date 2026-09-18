@@ -118,7 +118,7 @@ fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
             .iter()
             .find(|point| point.id == vertex.point)
             .unwrap()
-            .position
+            .position()
     });
     assert_eq!(
         positions[0],
@@ -171,7 +171,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         .find(|point| point.id == vertex.point)
         .unwrap();
     assert_eq!(
-        [point.position.x, point.position.y, point.position.z],
+        [point.position().x, point.position().y, point.position().z],
         [1500.0, 2000.0, 0.0]
     );
     assert!(
@@ -382,7 +382,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .find(|point| point.id == vertex.point)
         .unwrap();
     assert_eq!(
-        [point.position.x, point.position.y, point.position.z],
+        [point.position().x, point.position().y, point.position().z],
         [0.0, 0.0, 1000.0]
     );
 }
@@ -433,7 +433,7 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
         .expect("sphere seam pole point");
 
     assert_eq!(
-        point.position,
+        point.position(),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
     );
 }

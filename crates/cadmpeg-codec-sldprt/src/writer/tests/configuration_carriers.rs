@@ -742,7 +742,7 @@ fn encoder_bakes_rigid_body_transform() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None).unwrap());
-    let original_point = ir.model.points[0].position;
+    let original_point = ir.model.points[0].position();
     let original_normal = ir
         .model
         .surfaces
@@ -785,9 +785,9 @@ fn encoder_bakes_rigid_body_transform() {
         .unwrap();
 
     assert!(decoded.ir().model.points.iter().any(|point| {
-        (point.position.x - expected_point.x).abs() < 1.0e-9
-            && (point.position.y - expected_point.y).abs() < 1.0e-9
-            && (point.position.z - expected_point.z).abs() < 1.0e-9
+        (point.position().x - expected_point.x).abs() < 1.0e-9
+            && (point.position().y - expected_point.y).abs() < 1.0e-9
+            && (point.position().z - expected_point.z).abs() < 1.0e-9
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
@@ -812,7 +812,14 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-    result.ir_mut().model.points[0].position.x += 1.0;
+    let moved = result.ir_mut().model.points[0].position();
+    result.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point");
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut encoded)
         .unwrap();
@@ -825,7 +832,7 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .model
         .points
         .iter()
-        .any(|point| point.position.x == 1.0));
+        .any(|point| point.position().x == 1.0));
 }
 
 #[test]
@@ -837,7 +844,14 @@ fn semantic_writer_uses_schema_specific_face_families() {
         )
         .unwrap();
     let mut solid = cadmpeg_test_support::EditableDecodeResult::from(solid);
-    solid.ir_mut().model.points[0].position.z += 1.0;
+    let moved = solid.ir_mut().model.points[0].position();
+    solid.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point");
     let mut solid_bytes = Vec::new();
     crate::test_support::plan_inherited_write(
         solid.ir(),
@@ -858,7 +872,14 @@ fn semantic_writer_uses_schema_specific_face_families() {
         )
         .unwrap();
     let mut sheet = cadmpeg_test_support::EditableDecodeResult::from(sheet);
-    sheet.ir_mut().model.points[0].position.z += 1.0;
+    let moved = sheet.ir_mut().model.points[0].position();
+    sheet.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point");
     let mut sheet_bytes = Vec::new();
     crate::test_support::plan_inherited_write(
         sheet.ir(),
@@ -899,7 +920,14 @@ fn semantic_writer_preserves_outer_header() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[0].position.z += 1.0;
+    let moved = decoded.ir_mut().model.points[0].position();
+    decoded.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point");
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -974,7 +1002,14 @@ fn semantic_writer_preserves_sheet_body_classification() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[0].position.z += 1.0;
+    let moved = decoded.ir_mut().model.points[0].position();
+    decoded.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point");
     let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
@@ -1193,7 +1228,10 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[0].position.x = 50.8;
+    let moved = decoded.ir_mut().model.points[0].position();
+    decoded.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(50.8, moved.y, moved.z))
+        .expect("a finite position is a point");
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1211,7 +1249,7 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
         .model
         .points
         .iter()
-        .any(|point| (point.position.x - 50.8).abs() < 1e-5));
+        .any(|point| (point.position().x - 50.8).abs() < 1e-5));
 }
 
 #[test]
@@ -1228,7 +1266,14 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[0].position.z += 1.0;
+    let moved = decoded.ir_mut().model.points[0].position();
+    decoded.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point");
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1354,7 +1399,14 @@ fn semantic_writer_preserves_unbound_material_definition() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[0].position.z += 1.0;
+    let moved = decoded.ir_mut().model.points[0].position();
+    decoded.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point");
     let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
@@ -1434,7 +1486,14 @@ fn semantic_writer_preserves_face_appearance() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[0].position.z += 1.0;
+    let moved = decoded.ir_mut().model.points[0].position();
+    decoded.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point");
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(

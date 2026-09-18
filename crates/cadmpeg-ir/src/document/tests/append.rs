@@ -9,11 +9,14 @@ use crate::topology::Point;
 
 fn staged_document() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point {
-        id: "test:append:point#new".try_into().unwrap(),
-        position: Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    ir.model.points.push(
+        Point::new(
+            "test:append:point#new".try_into().unwrap(),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     ir.model.assets.push(Asset {
         id: "test:append:asset#new".try_into().unwrap(),
         name: None,

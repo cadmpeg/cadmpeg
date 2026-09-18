@@ -40,10 +40,13 @@ fn exchange(entity: &str) -> Vec<u8> {
 
 fn ir() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.points.extend((0..ENTITY_COUNT).map(|index| Point {
-        source_object: None,
-        id: PointId::mint(format!("test:bench:point#{index}")).expect("identity grammar"),
-        position: Point3::new(index as f64, 2.0, 3.0),
+    ir.model.points.extend((0..ENTITY_COUNT).map(|index| {
+        Point::new(
+            PointId::mint(format!("test:bench:point#{index}")).expect("identity grammar"),
+            Point3::new(index as f64, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point")
     }));
     ir
 }

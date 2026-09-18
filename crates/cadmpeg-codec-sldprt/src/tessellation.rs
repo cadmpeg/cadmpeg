@@ -824,7 +824,7 @@ pub(crate) fn assign_unique_surface_owners(
     let points = model
         .points
         .iter()
-        .map(|point| (&point.id, point.position))
+        .map(|point| (&point.id, point.position()))
         .collect::<HashMap<_, _>>();
     let curves = model
         .curves

@@ -37,16 +37,18 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#open-point").expect("identity grammar"),
-            position: Point3::new(1.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#closed-point").expect("identity grammar"),
+            Point3::new(0.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#open-point").expect("identity grammar"),
+            Point3::new(1.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {

@@ -1558,9 +1558,9 @@ fn encode_source_less_edges_vertices_points(
         native_point(
             records,
             [
-                point.position.x / LEN_TO_MM,
-                point.position.y / LEN_TO_MM,
-                point.position.z / LEN_TO_MM,
+                point.position().x / LEN_TO_MM,
+                point.position().y / LEN_TO_MM,
+                point.position().z / LEN_TO_MM,
             ],
         );
         records.push(0x11);

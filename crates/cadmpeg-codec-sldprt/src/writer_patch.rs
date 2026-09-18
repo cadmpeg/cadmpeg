@@ -166,7 +166,7 @@ fn validate_changed_annotations(
     for point in &ir.model.points {
         if points
             .get(&point.id)
-            .is_some_and(|old| old.position != point.position)
+            .is_some_and(|old| old.position() != point.position())
         {
             annotation_offset(annotations, &point.id, section)?;
         }
@@ -384,7 +384,7 @@ fn patch_points(
         .collect::<HashMap<_, _>>();
     for old in &native.points {
         let new = current[&old.id];
-        if new.position == old.position {
+        if new.position() == old.position() {
             continue;
         }
         let offset = raw_annotation_offset(annotations, &old.id).ok()?;
@@ -395,14 +395,14 @@ fn patch_points(
             .find(|point| point.offset == offset)?;
         let values = body_start.checked_add(point.xyz_offset)?;
         let old_xyz_m = [
-            old.position.x * 0.001,
-            old.position.y * 0.001,
-            old.position.z * 0.001,
+            old.position().x * 0.001,
+            old.position().y * 0.001,
+            old.position().z * 0.001,
         ];
         let new_xyz_m = [
-            new.position.x * scale,
-            new.position.y * scale,
-            new.position.z * scale,
+            new.position().x * scale,
+            new.position().y * scale,
+            new.position().z * scale,
         ];
         if !crate::brep::topology::patch_point_values(payload, values, old_xyz_m, new_xyz_m) {
             return None;

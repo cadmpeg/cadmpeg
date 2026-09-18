@@ -188,7 +188,7 @@ fn complete_object_rendering_reports_nested_crc_without_losing_geometry_or_sourc
             for ir in [decoded.ir(), &reread] {
                 assert_eq!(ir.model.points.len(), 1, "{archive:?}/{corrupt}");
                 assert_eq!(
-                    ir.model.points[0].position,
+                    ir.model.points[0].position(),
                     cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                 );
             }

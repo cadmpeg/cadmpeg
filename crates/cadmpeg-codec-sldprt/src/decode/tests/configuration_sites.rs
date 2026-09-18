@@ -155,7 +155,14 @@ fn decode_synthesizes_sparse_partition_configuration() {
     );
 
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.points[0].position.x += 1.0;
+    let moved = edited.model.points[0].position();
+    edited.model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point");
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut written).unwrap();
     let scan = container::scan_bytes(&written);
@@ -181,13 +188,13 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .model
         .points
         .iter()
-        .any(|point| point.position.x == 0.0));
+        .any(|point| point.position().x == 0.0));
     assert!(result
         .ir()
         .model
         .points
         .iter()
-        .any(|point| point.position.x == 10_000.0));
+        .any(|point| point.position().x == 10_000.0));
     let ids: std::collections::HashSet<_> = result
         .ir()
         .model
@@ -275,7 +282,7 @@ fn decode_uses_the_active_configuration_source_site() {
     assert_eq!(active_points.len(), 3);
     assert!(active_points
         .iter()
-        .all(|point| point.position.x >= 10_000.0));
+        .all(|point| point.position().x >= 10_000.0));
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
         "Contents/Config-1-Partition"

@@ -35,7 +35,7 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
             .points
             .iter()
             .find(|item| item.id == *point_id)
-            .map(|item| item.position)
+            .map(cadmpeg_ir::topology::Point::position)
     };
     let mut result = None;
     for edge in ir

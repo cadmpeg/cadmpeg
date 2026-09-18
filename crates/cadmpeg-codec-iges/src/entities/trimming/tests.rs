@@ -396,26 +396,30 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         },
     ];
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
-            position: Point3::new(10.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
-            position: Point3::new(11.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
-            position: Point3::new(2.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
+            Point3::new(10.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
+            Point3::new(11.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
+            Point3::new(0.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
+            Point3::new(2.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {

@@ -204,11 +204,14 @@ fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
 #[test]
 fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point {
-        id: PointId::mint("cadir:model:point#honesty").expect("identity grammar"),
-        source_object: None,
-        position: Point3::new(1.0, 2.0, 3.0),
-    });
+    ir.model.points.push(
+        Point::new(
+            PointId::mint("cadir:model:point#honesty").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
 
     for version in IgesVersion::ALL {
         let plan = IgesCodec

@@ -76,6 +76,8 @@ fn boundary_parameter_loss(entry: &DirectoryEntry, message: impl Into<String>) -
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BoundaryVertexClusterError {
     NonTransitive,
+    /// A clustered representative is not a finite position.
+    NonFinitePosition,
 }
 
 #[derive(Debug, PartialEq)]
@@ -207,11 +209,10 @@ fn create_boundary_vertices(
         let point_id = crate::ids::point(&stem.slot(boundary).slot(index));
         sequences.record_point(&point_id, stem);
         let vertex_id = crate::ids::vertex(&stem.slot(boundary).slot(index));
-        candidate.model_mut().points.push(Point {
-            source_object: None,
-            id: point_id.clone(),
-            position: cluster.representative,
-        });
+        candidate.model_mut().points.push(
+            Point::new(point_id.clone(), cluster.representative, None)
+                .map_err(|_| BoundaryVertexClusterError::NonFinitePosition)?,
+        );
         candidate.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
@@ -238,7 +239,9 @@ fn create_boundary_vertices(
 
 fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
     let point_id = &index.vertices(id.as_str())?.point;
-    index.points(point_id.as_str()).map(|point| point.position)
+    index
+        .points(point_id.as_str())
+        .map(cadmpeg_ir::topology::Point::position)
 }
 
 pub(super) struct PcurveSupport<'a> {
@@ -2213,6 +2216,14 @@ pub(super) fn project(
                     losses.push(entity_loss(
                         entry,
                         "boundary endpoint tolerance neighborhoods are non-transitive",
+                    ));
+                    valid = false;
+                    break;
+                }
+                Err(BoundaryVertexClusterError::NonFinitePosition) => {
+                    losses.push(entity_loss(
+                        entry,
+                        "a boundary vertex position states a non-finite coordinate",
                     ));
                     valid = false;
                     break;

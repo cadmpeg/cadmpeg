@@ -140,11 +140,10 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
 
     // Points + vertices.
     for (i, (x, y, z)) in corners.iter().enumerate() {
-        ir.model.points.push(Point {
-            id: cube_id!(PointId, "point", i),
-            position: Point3::new(*x, *y, *z),
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(cube_id!(PointId, "point", i), Point3::new(*x, *y, *z), None)
+                .map_err(ExampleError::Geometry)?,
+        );
         ir.model.vertices.push(Vertex {
             id: cube_id!(VertexId, "vertex", i),
             point: cube_id!(PointId, "point", i),

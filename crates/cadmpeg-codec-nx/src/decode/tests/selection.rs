@@ -655,7 +655,7 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.1)
     );
-    assert_eq!(result.ir().model.points[0].position.x, 10.0);
+    assert_eq!(result.ir().model.points[0].position().x, 10.0);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 

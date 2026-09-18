@@ -437,21 +437,25 @@ impl<'a> DecodeContext<'a> {
 
     #[cfg(test)]
     pub(crate) fn reject_duplicate_entity_candidate(&mut self) -> String {
-        self.ir.model.points.push(Point {
-            id: "rhino:test:point#duplicate"
-                .try_into()
-                .expect("valid identity"),
-            position: Point3::new(1.0, 2.0, 3.0),
-            source_object: None,
-        });
-        let result = self.validate_candidate(|candidate, _annotations| {
-            let point = Point {
-                id: "rhino:test:point#duplicate"
+        self.ir.model.points.push(
+            Point::new(
+                "rhino:test:point#duplicate"
                     .try_into()
                     .expect("valid identity"),
-                position: Point3::new(0.0, 0.0, 0.0),
-                source_object: None,
-            };
+                Point3::new(1.0, 2.0, 3.0),
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
+        let result = self.validate_candidate(|candidate, _annotations| {
+            let point = Point::new(
+                "rhino:test:point#duplicate"
+                    .try_into()
+                    .expect("valid identity"),
+                Point3::new(0.0, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point");
             candidate.model.points.push(point);
         });
         result.expect_err("duplicate entity ID must fail validation")
@@ -1881,7 +1885,8 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Point>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing points".to_string())?
         {
-            point.position = placed_point(transform, point.position)?;
+            let placed = placed_point(transform, point.position())?;
+            point.set_position(placed).map_err(ToString::to_string)?;
             derived_ids.push(point.id.to_string());
         }
         for curve in before
@@ -2543,11 +2548,11 @@ impl<'a> DecodeContext<'a> {
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
                     key.clone(),
                 );
-                self.ir.model.points.push(Point {
-                    id: point_id.clone(),
-                    position,
-                    source_object: Some(association.clone()),
-                });
+                let Ok(point) = Point::new(point_id.clone(), position, Some(association.clone()))
+                else {
+                    return false;
+                };
+                self.ir.model.points.push(point);
                 self.ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id.clone(),
@@ -2618,11 +2623,12 @@ impl<'a> DecodeContext<'a> {
                         &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
                         vertex_key,
                     );
-                    self.ir.model.points.push(Point {
-                        id: point_id.clone(),
-                        position,
-                        source_object: Some(association.clone()),
-                    });
+                    let Ok(point) =
+                        Point::new(point_id.clone(), position, Some(association.clone()))
+                    else {
+                        return false;
+                    };
+                    self.ir.model.points.push(point);
                     self.ir.model.vertices.push(Vertex {
                         id: vertex_id.clone(),
                         point: point_id,
@@ -3551,11 +3557,10 @@ fn stage_extrusion_caps(
             let carrier =
                 cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(parameter_range))
                     .map_err(|error| format!("extrusion cap staging: {error}"))?;
-            ir.model.points.push(Point {
-                id: point_id.clone(),
-                position: endpoint,
-                source_object: Some(association.clone()),
-            });
+            ir.model.points.push(
+                Point::new(point_id.clone(), endpoint, Some(association.clone()))
+                    .map_err(|error| format!("extrusion cap staging: {error}"))?,
+            );
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id.clone(),
@@ -4082,27 +4087,30 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 .then(cadmpeg_ir::identity_key!(".slot-"))
                 .then(index),
         );
-        staged.draft.model_mut().points.push(Point {
-            id: point_id.clone(),
-            position: Point3::new(
-                crate::wire::scaled_coordinate(vertex.point.0[0], scale).ok_or_else(|| {
-                    crate::curves::GeometryError::unpositioned(
-                        "scaled Brep vertex coordinate is invalid",
-                    )
-                })?,
-                crate::wire::scaled_coordinate(vertex.point.0[1], scale).ok_or_else(|| {
-                    crate::curves::GeometryError::unpositioned(
-                        "scaled Brep vertex coordinate is invalid",
-                    )
-                })?,
-                crate::wire::scaled_coordinate(vertex.point.0[2], scale).ok_or_else(|| {
-                    crate::curves::GeometryError::unpositioned(
-                        "scaled Brep vertex coordinate is invalid",
-                    )
-                })?,
-            ),
-            source_object: Some(association.clone()),
-        });
+        staged.draft.model_mut().points.push(
+            Point::new(
+                point_id.clone(),
+                Point3::new(
+                    crate::wire::scaled_coordinate(vertex.point.0[0], scale).ok_or_else(|| {
+                        crate::curves::GeometryError::unpositioned(
+                            "scaled Brep vertex coordinate is invalid",
+                        )
+                    })?,
+                    crate::wire::scaled_coordinate(vertex.point.0[1], scale).ok_or_else(|| {
+                        crate::curves::GeometryError::unpositioned(
+                            "scaled Brep vertex coordinate is invalid",
+                        )
+                    })?,
+                    crate::wire::scaled_coordinate(vertex.point.0[2], scale).ok_or_else(|| {
+                        crate::curves::GeometryError::unpositioned(
+                            "scaled Brep vertex coordinate is invalid",
+                        )
+                    })?,
+                ),
+                Some(association.clone()),
+            )
+            .map_err(crate::curves::GeometryError::unpositioned)?,
+        );
         staged.draft.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,

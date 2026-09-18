@@ -657,11 +657,12 @@ mod tests {
     use crate::topology::{Point, Vertex};
 
     fn point(id: &str) -> Point {
-        Point {
-            id: PointId::mint(id).expect("valid identity"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        }
+        Point::new(
+            PointId::mint(id).expect("valid identity"),
+            Point3::new(0.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point")
     }
 
     fn point_draft(id: &str) -> ModelDraft {

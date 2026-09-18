@@ -35,11 +35,14 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
@@ -146,10 +149,13 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         ]
         .into_iter()
         .enumerate()
-        .map(|(index, position)| Point {
-            id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
+        .map(|(index, position)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point")
         }),
     );
     let sphere_id =
@@ -230,10 +236,13 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         ]
         .into_iter()
         .enumerate()
-        .map(|(index, position)| Point {
-            id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
+        .map(|(index, position)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point")
         }),
     );
     let cylinder_id =
@@ -325,11 +334,14 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         [Point3::new(2.0, 0.0, 2.0), Point3::new(-2.0, 0.0, -2.0)]
             .into_iter()
             .enumerate()
-            .map(|(index, position)| Point {
-                id: PointId::mint(format!("catia:test:point#point-{index}"))
-                    .expect("identity grammar"),
-                position,
-                source_object: None,
+            .map(|(index, position)| {
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point-{index}"))
+                        .expect("identity grammar"),
+                    position,
+                    None,
+                )
+                .expect("a finite position is a point")
             }),
     );
     let first_id =
@@ -419,11 +431,14 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
             .into_iter()
             .enumerate()
-            .map(|(index, position)| Point {
-                id: PointId::mint(format!("catia:test:point#point-{index}"))
-                    .expect("identity grammar"),
-                position,
-                source_object: None,
+            .map(|(index, position)| {
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point-{index}"))
+                        .expect("identity grammar"),
+                    position,
+                    None,
+                )
+                .expect("a finite position is a point")
             }),
     );
     let support = StandardCurveSupport {
@@ -537,17 +552,17 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
             geometry,
             source_object: None,
         });
-        ir.model.points.extend(
-            points
-                .into_iter()
-                .enumerate()
-                .map(|(index, position)| Point {
-                    id: PointId::mint(format!("catia:test:point#point-{index}"))
+        ir.model
+            .points
+            .extend(points.into_iter().enumerate().map(|(index, position)| {
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
                     position,
-                    source_object: None,
-                }),
-        );
+                    None,
+                )
+                .expect("a finite position is a point")
+            }));
         standard_spline_line(
             &ir,
             &[(

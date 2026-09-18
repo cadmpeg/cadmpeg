@@ -1128,11 +1128,14 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
     let mut ir = CadIr::empty();
     assert!(!has_transferred_geometry(&ir));
 
-    ir.model.points.push(Point {
-        id: PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
-        position: Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    ir.model.points.push(
+        Point::new(
+            PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     assert!(has_transferred_geometry(&ir));
 }
 

@@ -401,7 +401,7 @@ fn decode_retains_topology_owned_point_at_origin() {
     assert_eq!(result.ir().model.bodies[0].transform, None);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position(),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
 }
@@ -648,7 +648,7 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     assert!(!nurbs.periodic());
     assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), Some(0.01));
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
@@ -755,7 +755,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
     // Point coordinate is scaled metres → millimetres, byte-exact.
-    let p = &result.ir().model.points[0].position;
+    let p = &result.ir().model.points[0].position();
     assert!((p.x - 62.5).abs() < 1.0e-6 && (p.z - 12.7).abs() < 1.0e-6);
 
     // One plane, one cylinder decoded.

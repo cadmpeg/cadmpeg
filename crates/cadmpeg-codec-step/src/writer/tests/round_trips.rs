@@ -251,7 +251,8 @@ fn align_sheet_edge_to_pcurve(
             .iter_mut()
             .find(|point| point.id == point_id)
             .expect("sheet edge point")
-            .position = position;
+            .set_position(position)
+            .expect("a finite position is a point");
     }
     Ok(())
 }

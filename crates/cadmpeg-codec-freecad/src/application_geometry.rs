@@ -185,15 +185,16 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
     let points = (0..count)
         .map(|index| {
             let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
-            Ok(Point {
-                id: PointId::compose(
+            Point::new(
+                PointId::compose(
                     &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
                     crate::native::model_key(&property.id, index.to_string())
                         .map_err(CodecError::malformed)?,
                 ),
-                position: transform_point(transform, position)?,
-                source_object: Some(source_object.clone()),
-            })
+                transform_point(transform, position)?,
+                Some(source_object.clone()),
+            )
+            .map_err(CodecError::malformed)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     reader.finish("point-cloud payload")?;
@@ -447,11 +448,11 @@ pub(crate) mod tests {
         );
         assert_eq!(result.ir().model.points.len(), 2);
         assert_eq!(
-            result.ir().model.points[0].position,
+            result.ir().model.points[0].position(),
             cadmpeg_ir::math::Point3::new(11.0, 22.0, 33.0)
         );
         assert_eq!(
-            result.ir().model.points[1].position,
+            result.ir().model.points[1].position(),
             cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
         );
         assert!(result.report().geometry_transferred());

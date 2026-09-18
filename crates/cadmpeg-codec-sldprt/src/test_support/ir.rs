@@ -125,7 +125,14 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
         }
     }
     for point in &mut ir.model.points {
-        point.position.x += dx;
+        let moved = point.position();
+        point
+            .set_position(cadmpeg_ir::math::Point3::new(
+                moved.x + dx,
+                moved.y,
+                moved.z,
+            ))
+            .expect("a finite position is a point");
     }
     for curve in &mut ir.model.curves {
         translate_curve_x(&mut curve.geometry, dx);
@@ -258,7 +265,9 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
     use cadmpeg_ir::math::Point3;
     let shift = |p: &Point3| Point3::new(p.x + t[0], p.y + t[1], p.z + t[2]);
     for point in &mut ir.model.points {
-        point.position = shift(&point.position);
+        point
+            .set_position(shift(&point.position()))
+            .expect("a finite translation keeps a finite position");
     }
     for curve in &mut ir.model.curves {
         if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = &mut curve.geometry {
@@ -318,7 +327,7 @@ pub(crate) fn sorted_point_positions(ir: &cadmpeg_ir::CadIr) -> Vec<[f64; 3]> {
         .model
         .points
         .iter()
-        .map(|point| [point.position.x, point.position.y, point.position.z])
+        .map(|point| [point.position().x, point.position().y, point.position().z])
         .collect();
     positions.sort_by(|a, b| a.partial_cmp(b).unwrap());
     positions

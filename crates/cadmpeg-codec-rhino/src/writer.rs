@@ -146,7 +146,7 @@ pub(crate) fn write_seekable(
         .iter()
         .filter(|point| !plan.topology_points.contains(point.id.as_str()))
     {
-        let position = point.position;
+        let position = point.position();
         let mut payload = vec![0x10];
         payload.extend(position.x.to_le_bytes());
         payload.extend(position.y.to_le_bytes());
@@ -602,7 +602,10 @@ fn prepare_write(
         )));
     }
     if i32::try_from(model.points.len()).is_err()
-        || model.points.iter().any(|point| !point.position.is_finite())
+        || model
+            .points
+            .iter()
+            .any(|point| !point.position().is_finite())
     {
         return Err(CodecError::Malformed(
             "point arena exceeds native counts or contains non-finite coordinates".into(),
@@ -1687,7 +1690,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                     point.id.as_str()
                 )));
             }
-            group.push(point.position);
+            group.push(point.position());
         }
         groups.push(PointGroup {
             points: group,

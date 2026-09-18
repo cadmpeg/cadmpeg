@@ -176,11 +176,14 @@ fn document_pipeline_composes_definitions_history_identity_attributes_and_settin
 #[test]
 fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topology() {
     let mut point_ir = cadmpeg_ir::CadIr::empty();
-    point_ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
-        position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
-        source_object: None,
-    });
+    point_ir.model.points.push(
+        cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
+            cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     for version in [
         crate::RhinoArchiveVersion::V5,
         crate::RhinoArchiveVersion::V6,
@@ -193,8 +196,8 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
             .unwrap();
         let result = decode(bytes);
         assert_eq!(
-            result.ir().model.points[0].position,
-            point_ir.model.points[0].position
+            result.ir().model.points[0].position(),
+            point_ir.model.points[0].position()
         );
         assert_valid(&result);
     }
@@ -1858,12 +1861,15 @@ fn opennurbs_object_walk_and_transfer_floor() {
             _ => unreachable!("supported writer version table"),
         };
         let mut point_ir = cadmpeg_ir::CadIr::empty();
-        point_ir.model.points.push(cadmpeg_ir::topology::Point {
-            id: cadmpeg_ir::ids::PointId::mint("integration:writer:point#0")
-                .expect("identity grammar"),
-            position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
-            source_object: None,
-        });
+        point_ir.model.points.push(
+            cadmpeg_ir::topology::Point::new(
+                cadmpeg_ir::ids::PointId::mint("integration:writer:point#0")
+                    .expect("identity grammar"),
+                cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
         let mut bytes = Vec::new();
         crate::test_support::plan_at(archive_version, &point_ir)
             .and_then(|plan| plan.write_to(&mut bytes))

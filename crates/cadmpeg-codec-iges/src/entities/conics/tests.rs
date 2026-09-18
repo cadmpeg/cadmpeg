@@ -245,17 +245,17 @@ fn decode_retains_declared_conic_endpoints_after_carrier_validation() {
         .model
         .points
         .iter()
-        .find(|point| point.position.x > 2.0)
+        .find(|point| point.position().x > 2.0)
         .expect("decoded start endpoint");
     let end = result
         .ir()
         .model
         .points
         .iter()
-        .find(|point| point.position.y > 1.0)
+        .find(|point| point.position().y > 1.0)
         .expect("decoded terminate endpoint");
-    assert!((start.position.x - 2.0005).abs() < EPS_ENDPOINT_STORAGE);
-    assert!((end.position.y - 1.0005).abs() < EPS_ENDPOINT_STORAGE);
+    assert!((start.position().x - 2.0005).abs() < EPS_ENDPOINT_STORAGE);
+    assert!((end.position().y - 1.0005).abs() < EPS_ENDPOINT_STORAGE);
     let range = result.ir().model.edges[0]
         .param_range()
         .expect("fixture has a bounded conic range");
@@ -264,10 +264,10 @@ fn decode_retains_declared_conic_endpoints_after_carrier_validation() {
         .expect("coefficient-defined carrier evaluates at its start");
     let evaluated_end = cadmpeg_ir::eval::curve_point(geometry, range[1])
         .expect("coefficient-defined carrier evaluates at its end");
-    assert!(start.position.distance(evaluated_start) > 0.0);
-    assert!(end.position.distance(evaluated_end) > 0.0);
-    assert!(start.position.distance(evaluated_start) < 0.001);
-    assert!(end.position.distance(evaluated_end) < 0.001);
+    assert!(start.position().distance(evaluated_start) > 0.0);
+    assert!(end.position().distance(evaluated_end) > 0.0);
+    assert!(start.position().distance(evaluated_start) < 0.001);
+    assert!(end.position().distance(evaluated_end) < 0.001);
 }
 
 #[test]

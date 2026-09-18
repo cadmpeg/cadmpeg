@@ -39,7 +39,7 @@ fn point_file() -> Vec<u8> {
 
 fn decoded_position(result: &cadmpeg_ir::codec::DecodeResult) -> [f64; 3] {
     let point = &result.ir().model.points[0];
-    [point.position.x, point.position.y, point.position.z]
+    [point.position().x, point.position().y, point.position().z]
 }
 
 /// Drop every line terminator, leaving one uninterrupted 80-column stride.

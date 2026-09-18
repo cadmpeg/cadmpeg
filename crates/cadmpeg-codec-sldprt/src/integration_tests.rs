@@ -227,8 +227,8 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
         .expect("semantic SLDPRT write");
     let round_trip = decode(bytes);
     assert_eq!(
-        round_trip.ir().model.points[0].position.x,
-        edited.model.points[0].position.x
+        round_trip.ir().model.points[0].position().x,
+        edited.model.points[0].position().x
     );
     assert!(!round_trip.ir().model.features.is_empty());
     assert_valid(&round_trip);
@@ -414,7 +414,14 @@ fn the_patch_path_names_the_preserved_dialect() {
         "the patch lane needs an editable point"
     );
     let mut edited = result.ir().clone();
-    edited.model.points[0].position.x += 1.0;
+    let moved = edited.model.points[0].position();
+    edited.model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point");
 
     let plan = SldprtCodec
         .plan(

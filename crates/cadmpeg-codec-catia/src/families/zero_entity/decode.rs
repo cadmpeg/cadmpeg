@@ -321,11 +321,10 @@ fn transfer_closed_wire_loops(
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .derived(&vertex_id, "point")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
-                ir.model.points.push(Point {
-                    id: point_id.clone(),
-                    position: start,
-                    source_object: None,
-                });
+                ir.model.points.push(
+                    Point::new(point_id.clone(), start, None)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                );
                 ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,

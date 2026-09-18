@@ -1323,7 +1323,7 @@ Co 1001000 +2 1 +2 3 *
                 .iter()
                 .find(|point| point.id == vertex.point)
                 .expect("required invariant")
-                .position
+                .position()
         })
         .collect::<Vec<_>>();
     positions.sort_by(|left, right| left.x.total_cmp(&right.x));

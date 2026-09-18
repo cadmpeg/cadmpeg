@@ -431,14 +431,14 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .find(|vertex| vertex.id == edge.start)
             .and_then(|vertex| model.points.iter().find(|point| point.id == vertex.point))
             .expect("edge start point")
-            .position;
+            .position();
         let end = model
             .vertices
             .iter()
             .find(|vertex| vertex.id == edge.end)
             .and_then(|vertex| model.points.iter().find(|point| point.id == vertex.point))
             .expect("edge end point")
-            .position;
+            .position();
         assert_eq!(origin, start);
         let evaluated = [
             origin.x + direction.x * end_parameter,

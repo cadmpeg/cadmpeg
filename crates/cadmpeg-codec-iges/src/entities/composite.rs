@@ -239,7 +239,7 @@ impl CompositeIndex {
         }
         let mut points = BTreeMap::new();
         for point in &ir.model.points {
-            points.entry(point.id.clone()).or_insert(point.position);
+            points.entry(point.id.clone()).or_insert(point.position());
         }
         let mut vertex_points = BTreeMap::<VertexId, Point3>::new();
         for vertex in &ir.model.vertices {
@@ -289,7 +289,7 @@ fn point_for_vertex(ir: &CadIr, id: &VertexId, index: Option<&CompositeIndex>) -
         .points
         .iter()
         .find(|candidate| candidate.id == *point)
-        .map(|candidate| candidate.position)
+        .map(cadmpeg_ir::topology::Point::position)
 }
 
 fn composite_edge_endpoints_agree(
@@ -1672,16 +1672,8 @@ fn project_native_composite(
     let curve_id = crate::ids::curve(&stem);
     let edge_id = crate::ids::edge(&stem);
     ir.model.points.extend([
-        Point {
-            source_object: None,
-            id: start_point.clone(),
-            position: start,
-        },
-        Point {
-            source_object: None,
-            id: end_point.clone(),
-            position: end,
-        },
+        Point::new(start_point.clone(), start, None).ok()?,
+        Point::new(end_point.clone(), end, None).ok()?,
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -2130,16 +2122,10 @@ fn project_with_type_130_policy(
         let curve_id = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
-            Point {
-                source_object: None,
-                id: start_point.clone(),
-                position: start,
-            },
-            Point {
-                source_object: None,
-                id: end_point.clone(),
-                position: end,
-            },
+            Point::new(start_point.clone(), start, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            Point::new(end_point.clone(), end, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         ]);
         ir.model.vertices.extend([
             Vertex {

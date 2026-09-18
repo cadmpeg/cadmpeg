@@ -230,7 +230,10 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[1].position.x = 1_250.0;
+    let moved = decoded.ir_mut().model.points[1].position();
+    decoded.ir_mut().model.points[1]
+        .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
+        .expect("a finite position is a point");
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -243,7 +246,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir().model.points[1].position.x, 1_250.0);
+    assert_eq!(regenerated.ir().model.points[1].position().x, 1_250.0);
     assert!(matches!(
         regenerated.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
@@ -291,7 +294,10 @@ fn native_patch_requires_point_provenance_annotation() {
         .annotations
         .provenance
         .contains_key(&point_id));
-    decoded.ir_mut().model.points[1].position.x = 1_250.0;
+    let moved = decoded.ir_mut().model.points[1].position();
+    decoded.ir_mut().model.points[1]
+        .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
+        .expect("a finite position is a point");
     decoded
         .source_fidelity_mut()
         .annotations
@@ -631,7 +637,10 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .iter()
         .any(|link| link.as_str() == curve.id.as_str()));
 
-    decoded.ir_mut().model.points[1].position.x = 1_500.0;
+    let moved = decoded.ir_mut().model.points[1].position();
+    decoded.ir_mut().model.points[1]
+        .set_position(cadmpeg_ir::math::Point3::new(1_500.0, moved.y, moved.z))
+        .expect("a finite position is a point");
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -643,7 +652,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir().model.points[1].position.x, 1_500.0);
+    assert_eq!(regenerated.ir().model.points[1].position().x, 1_500.0);
     assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
@@ -703,7 +712,10 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.points[1].position.x = 1_250.0;
+    let moved = decoded.ir_mut().model.points[1].position();
+    decoded.ir_mut().model.points[1]
+        .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
+        .expect("a finite position is a point");
 
     // The retained baseline carries a deltas site beside the partition the
     // patch route edits. Both sites join the baseline decode.

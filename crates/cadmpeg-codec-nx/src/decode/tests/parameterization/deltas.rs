@@ -108,9 +108,9 @@ fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position.x, 12.5);
-    assert_eq!(result.ir().model.points[0].position.y, -2.0);
-    assert_eq!(result.ir().model.points[0].position.z, 4.0);
+    assert_eq!(result.ir().model.points[0].position().x, 12.5);
+    assert_eq!(result.ir().model.points[0].position().y, -2.0);
+    assert_eq!(result.ir().model.points[0].position().z, 4.0);
 }
 
 #[test]
@@ -125,9 +125,9 @@ fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position.x, 12.5);
-    assert_eq!(result.ir().model.points[0].position.y, -2.0);
-    assert_eq!(result.ir().model.points[0].position.z, 4.0);
+    assert_eq!(result.ir().model.points[0].position().x, 12.5);
+    assert_eq!(result.ir().model.points[0].position().y, -2.0);
+    assert_eq!(result.ir().model.points[0].position().z, 4.0);
 }
 
 #[test]

@@ -22,7 +22,7 @@ fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
         .points
         .iter()
         .find(|point| point.id == id)
-        .map(|point| point.position)
+        .map(cadmpeg_ir::topology::Point::position)
 }
 
 #[allow(clippy::many_single_char_names)]

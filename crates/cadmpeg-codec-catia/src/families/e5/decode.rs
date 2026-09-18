@@ -134,11 +134,9 @@ pub(crate) fn try_decode_e5(
             "vertex_05_08_01",
             Exactness::ByteExact,
         );
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position: *point,
-            source_object: None,
-        });
+        ir.model
+            .points
+            .push(Point::new(point_id.clone(), *point, None).ok()?);
         let vertex_id =
             VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index);
         annotate(
@@ -1114,7 +1112,7 @@ pub(crate) fn transfer_e5_topology(
         .vertex_refs
         .iter()
         .zip(&ir.model.points)
-        .map(|(reference, point)| (*reference, point.position))
+        .map(|(reference, point)| (*reference, point.position()))
         .collect();
 
     let Some(boundary) = plan_e5_boundary(topology, &surface_for_ref, &point_for_ref, refusal)
@@ -3785,18 +3783,18 @@ mod route_tests {
         };
         let mut ir = CadIr::empty();
         ir.model.points.extend([
-            Point {
-                id: PointId::mint("catia:test:point#point-10".to_string())
-                    .expect("identity grammar"),
-                position: Point3::new(0.0, 0.0, 0.0),
-                source_object: None,
-            },
-            Point {
-                id: PointId::mint("catia:test:point#point-11".to_string())
-                    .expect("identity grammar"),
-                position: Point3::new(1.0, 0.0, 0.0),
-                source_object: None,
-            },
+            Point::new(
+                PointId::mint("catia:test:point#point-10".to_string()).expect("identity grammar"),
+                Point3::new(0.0, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point"),
+            Point::new(
+                PointId::mint("catia:test:point#point-11".to_string()).expect("identity grammar"),
+                Point3::new(1.0, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point"),
         ]);
         ir.model.vertices.extend([
             Vertex {

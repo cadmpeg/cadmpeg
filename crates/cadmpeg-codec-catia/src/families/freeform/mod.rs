@@ -1039,18 +1039,13 @@ fn attach_standalone_wires(
                 Exactness::Derived,
             );
         }
-        ir.model.points.extend([
-            Point {
-                id: point_ids[1].clone(),
-                position: end,
-                source_object: None,
-            },
-            Point {
-                id: point_ids[0].clone(),
-                position: start,
-                source_object: None,
-            },
-        ]);
+        let (Ok(end_point), Ok(start_point)) = (
+            Point::new(point_ids[1].clone(), end, None),
+            Point::new(point_ids[0].clone(), start, None),
+        ) else {
+            return false;
+        };
+        ir.model.points.extend([end_point, start_point]);
         ir.model.vertices.extend([
             Vertex {
                 id: vertex_ids[1].clone(),
@@ -1783,7 +1778,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .model
         .points
         .iter()
-        .map(|point| (point.id.clone(), point.position))
+        .map(|point| (point.id.clone(), point.position()))
         .collect::<HashMap<_, _>>();
     let vertex_positions = ir
         .model
@@ -3194,8 +3189,8 @@ mod tests {
             ir.model.shells[0].wire_edges(),
             [ir.model.edges[0].id.clone()]
         );
-        assert_eq!(ir.model.points[1].position, Point3::new(2.0, 3.0, 5.0));
-        assert_eq!(ir.model.points[0].position, Point3::new(7.0, 11.0, 13.0));
+        assert_eq!(ir.model.points[1].position(), Point3::new(2.0, 3.0, 5.0));
+        assert_eq!(ir.model.points[0].position(), Point3::new(7.0, 11.0, 13.0));
         ir.finalize();
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -3249,8 +3244,8 @@ mod tests {
         let expected_start = Point3::new(1.0, -0.4, -0.2);
         let expected_end = Point3::new(1.0, 7.4, 10.2);
         for (actual, expected) in [
-            (ir.model.points[1].position, expected_start),
-            (ir.model.points[0].position, expected_end),
+            (ir.model.points[1].position(), expected_start),
+            (ir.model.points[0].position(), expected_end),
         ] {
             assert!((actual.x - expected.x).abs() < 1.0e-12);
             assert!((actual.y - expected.y).abs() < 1.0e-12);
@@ -3546,12 +3541,15 @@ mod tests {
             .expect("valid cylinder fixture");
 
         for (index, position) in points.into_iter().enumerate() {
-            ir.model.points.push(Point {
-                id: PointId::mint(format!("catia:test:point#point%23{index}"))
-                    .expect("identity grammar"),
-                position,
-                source_object: None,
-            });
+            ir.model.points.push(
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point%23{index}"))
+                        .expect("identity grammar"),
+                    position,
+                    None,
+                )
+                .expect("a finite position is a point"),
+            );
             ir.model.vertices.push(Vertex {
                 id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
                     .expect("identity grammar"),
@@ -3878,12 +3876,15 @@ mod tests {
 
         let mut ir = CadIr::empty();
         for (index, position) in points.into_iter().enumerate() {
-            ir.model.points.push(Point {
-                id: PointId::mint(format!("catia:test:point#point%23{index}"))
-                    .expect("identity grammar"),
-                position,
-                source_object: None,
-            });
+            ir.model.points.push(
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point%23{index}"))
+                        .expect("identity grammar"),
+                    position,
+                    None,
+                )
+                .expect("a finite position is a point"),
+            );
             ir.model.vertices.push(Vertex {
                 id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
                     .expect("identity grammar"),

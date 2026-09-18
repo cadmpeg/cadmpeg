@@ -2529,7 +2529,7 @@ pub(crate) fn brep_body(
         be16(&mut out, points[&point.id]);
         be32(&mut out, 0);
         out.extend_from_slice(&[0; 8]);
-        for value in [point.position.x, point.position.y, point.position.z] {
+        for value in [point.position().x, point.position().y, point.position().z] {
             bef64(&mut out, value * length_scale);
         }
     }

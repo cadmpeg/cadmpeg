@@ -1683,7 +1683,7 @@ mod tests {
             "binary"
         );
         assert_eq!(result.ir().model.points.len(), 1);
-        let point = &result.ir().model.points[0].position;
+        let point = &result.ir().model.points[0].position();
         assert!((point.x - 1.0).abs() < EPS_POINT);
         assert!((point.y - 2.0).abs() < EPS_POINT);
         assert!((point.z - 3.0).abs() < EPS_POINT);

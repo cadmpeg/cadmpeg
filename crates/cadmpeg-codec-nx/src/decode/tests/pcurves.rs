@@ -316,11 +316,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     let point = PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
     let vertex =
         VertexId::mint("test:model:entity#nx:test:closed-vertex").expect("identity grammar");
-    ir.model.points.push(Point {
-        id: point.clone(),
-        position: Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-        source_object: None,
-    });
+    ir.model.points.push(
+        Point::new(point.clone(), Point3::new(3.0_f64.sqrt(), 0.0, 1.0), None)
+            .expect("a finite position is a point"),
+    );
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
         point,
@@ -718,16 +717,10 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: start_point.clone(),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: end_point.clone(),
-            position: Point3::new(1.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(start_point.clone(), Point3::new(0.0, 0.0, 0.0), None)
+            .expect("a finite position is a point"),
+        Point::new(end_point.clone(), Point3::new(1.0, 0.0, 0.0), None)
+            .expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -1157,11 +1150,14 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         VertexId::mint("nx:test:vertex#1").expect("identity grammar"),
     ];
     for index in 0..2 {
-        ir.model.points.push(Point {
-            id: points[index].clone(),
-            position: Point3::new(0.005 + 9.99 * index as f64, 0.0, 0.0),
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                points[index].clone(),
+                Point3::new(0.005 + 9.99 * index as f64, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
         ir.model.vertices.push(Vertex {
             id: vertices[index].clone(),
             point: points[index].clone(),
@@ -1369,7 +1365,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         Point3::new(uv.u, uv.v, 0.0)
     });
     for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
-        point.position = position;
+        point
+            .set_position(position)
+            .expect("a finite position is a point");
     }
     ir.model.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::TolerantIntersection {
@@ -1573,16 +1571,10 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");
     let end_point = PointId::mint("nx:test:point#1").expect("identity grammar");
     ir.model.points.extend([
-        Point {
-            id: start_point.clone(),
-            position: Point3::new(0.0, 0.0, 1.0),
-            source_object: None,
-        },
-        Point {
-            id: end_point.clone(),
-            position: Point3::new(1.0, 0.005, 1.0),
-            source_object: None,
-        },
+        Point::new(start_point.clone(), Point3::new(0.0, 0.0, 1.0), None)
+            .expect("a finite position is a point"),
+        Point::new(end_point.clone(), Point3::new(1.0, 0.005, 1.0), None)
+            .expect("a finite position is a point"),
     ]);
     let start = VertexId::mint("nx:test:vertex#0").expect("identity grammar");
     let end = VertexId::mint("nx:test:vertex#1").expect("identity grammar");

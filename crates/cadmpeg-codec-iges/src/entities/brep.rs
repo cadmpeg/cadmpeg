@@ -115,26 +115,21 @@ fn topology_vertex(
     list: u32,
     index: usize,
     sequences: &mut super::geometry::SourceSequences,
-) -> VertexId {
-    vertex_ids
-        .entry((list, index))
-        .or_insert_with(|| {
-            let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
-            sequences.record_point(&point_id, stem);
-            let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
-            candidate.model_mut().points.push(Point {
-                source_object: None,
-                id: point_id.clone(),
-                position: vertex_lists[&list][index],
-            });
-            candidate.model_mut().vertices.push(Vertex {
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: None,
-            });
-            vertex_id
-        })
-        .clone()
+) -> Option<VertexId> {
+    if let Some(existing) = vertex_ids.get(&(list, index)) {
+        return Some(existing.clone());
+    }
+    let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
+    let point = Point::new(point_id.clone(), vertex_lists[&list][index], None).ok()?;
+    sequences.record_point(&point_id, stem);
+    let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
+    candidate.model_mut().points.push(point);
+    candidate.model_mut().vertices.push(Vertex {
+        id: vertex_id.clone(),
+        point: point_id,
+        tolerance: None,
+    });
+    Some(vertex_ids.entry((list, index)).or_insert(vertex_id).clone())
 }
 
 fn source_edge_for_vertices<'a>(
@@ -842,7 +837,7 @@ pub(super) fn project(
                             else {
                                 continue;
                             };
-                            let vertex = topology_vertex(
+                            let Some(vertex) = topology_vertex(
                                 &mut candidate,
                                 &mut vertex_ids,
                                 &vertex_lists,
@@ -850,7 +845,9 @@ pub(super) fn project(
                                 *vertex_list,
                                 *vertex_index,
                                 sequences,
-                            );
+                            ) else {
+                                continue;
+                            };
                             let after = if coedge_ids.is_empty() {
                                 None
                             } else {
@@ -911,10 +908,12 @@ pub(super) fn project(
                             continue;
                         };
                         let edge_definition = edge_lists[edge_list][*edge_index];
-                        for (list, index) in [
+                        let placed = [
                             (edge_definition.start_list, edge_definition.start_index),
                             (edge_definition.end_list, edge_definition.end_index),
-                        ] {
+                        ]
+                        .into_iter()
+                        .fold(true, |placed, (list, index)| {
                             topology_vertex(
                                 &mut candidate,
                                 &mut vertex_ids,
@@ -923,7 +922,17 @@ pub(super) fn project(
                                 list,
                                 index,
                                 sequences,
-                            );
+                            )
+                            .is_some()
+                                && placed
+                        });
+                        if !placed {
+                            losses.push(entity_loss(
+                                entry,
+                                "an edge vertex position states a non-finite coordinate",
+                            ));
+                            valid = false;
+                            break;
                         }
                         let edge_key = (*edge_list, *edge_index);
                         let natural_start =

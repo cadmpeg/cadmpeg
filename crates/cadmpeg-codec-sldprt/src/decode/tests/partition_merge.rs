@@ -47,7 +47,7 @@ fn decode_merges_partition_and_deltas_records() {
         .model
         .points
         .iter()
-        .any(|point| point.position.x == 2000.0));
+        .any(|point| point.position().x == 2000.0));
 }
 
 #[test]
@@ -395,7 +395,7 @@ fn deltas_full_record_overrides_partition_record() {
         .find(|point| point.id.as_str().ends_with("#60"))
         .expect("overridden point");
 
-    assert_eq!(point.position.x, 2000.0);
+    assert_eq!(point.position().x, 2000.0);
 }
 
 #[test]
@@ -437,7 +437,7 @@ fn unselected_deltas_bridges_do_not_enter_partition_membership() {
         .model
         .points
         .iter()
-        .all(|point| point.position.x != 10_000.0));
+        .all(|point| point.position().x != 10_000.0));
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
@@ -490,7 +490,10 @@ fn deltas_point_index_does_not_replace_partition_coordinates() {
         .iter()
         .find(|point| point.id.as_str().ends_with("#60"))
         .unwrap();
-    assert_eq!(point.position, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(
+        point.position(),
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+    );
 }
 
 #[test]
