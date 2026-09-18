@@ -159,7 +159,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 Ok(())
             })
             .map_err(|error| match error {
-                TessellationError::EditRefused(_) => non_finite_point(),
+                TessellationError::EditRefused(message) => CodecError::malformed(message),
                 error @ TessellationError::Admission(_) => {
                     CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
                 }
@@ -174,7 +174,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     Ok(())
                 })
                 .map_err(|error| match error {
-                    TessellationError::EditRefused(_) => non_finite_vector(),
+                    TessellationError::EditRefused(message) => CodecError::malformed(message),
                     error @ TessellationError::Admission(_) => CodecError::malformed(format_args!(
                         "invalid transformed tessellation: {error}"
                     )),
@@ -317,7 +317,7 @@ fn transform_surface(
                     Ok(())
                 })
                 .map_err(|error| match error {
-                    NurbsError::EditRefused(_) => non_finite_point(),
+                    NurbsError::EditRefused(message) => CodecError::malformed(message),
                     error => {
                         CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
                     }
@@ -336,7 +336,7 @@ fn transform_surface(
                     Ok(())
                 })
                 .map_err(|error| match error {
-                    GeometryLayoutError::EditRefused(_) => non_finite_point(),
+                    GeometryLayoutError::EditRefused(message) => CodecError::malformed(message),
                     error @ GeometryLayoutError::Layout(_) => {
                         CodecError::malformed(error.to_string())
                     }
@@ -409,7 +409,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                     Ok(())
                 })
                 .map_err(|error| match error {
-                    NurbsError::EditRefused(_) => non_finite_point(),
+                    NurbsError::EditRefused(message) => CodecError::malformed(message),
                     error => {
                         CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
                     }
@@ -428,7 +428,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                     })
                 })
                 .map_err(|error| match error {
-                    GeometryLayoutError::EditRefused(_) => non_finite_point(),
+                    GeometryLayoutError::EditRefused(message) => CodecError::malformed(message),
                     error @ GeometryLayoutError::Layout(_) => {
                         CodecError::malformed(error.to_string())
                     }
