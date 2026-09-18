@@ -127,11 +127,7 @@ impl SourceChartData {
         if points.len() < 2 {
             return Err("points: at least two points required");
         }
-        if !points.iter().all(|point| {
-            [point.x, point.y, point.z]
-                .iter()
-                .all(|value| value.is_finite())
-        }) {
+        if !points.iter().all(Point3::is_finite) {
             return Err("points: coordinates must be finite");
         }
         Ok(())
