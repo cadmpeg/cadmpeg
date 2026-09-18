@@ -437,6 +437,25 @@ fn an_invalid_knot_is_refused_at_the_knot_first_byte() {
     }
 }
 
+/// `read_curve_poles` refuses a pole that cannot be scaled at the pole's first
+/// byte rather than at the byte after it, matching its twin `read_poles`.
+#[test]
+fn an_unscalable_pole_is_refused_at_the_pole_first_byte() {
+    let mut bytes = vec![0xa5, 0xa5, 0xa5];
+    let first_pole = bytes.len();
+    for value in [1.0_f64, 2.0, 3.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let mut reader =
+        BoundedReader::new(&bytes, first_pole, bytes.len()).expect("required invariant");
+    let error = read_curve_poles(&mut reader, 1, false, 3, 0.0).expect_err("unscalable pole");
+    assert!(matches!(
+        error,
+        GeometryError::Malformed(FramingError::Structural { offset, ref message })
+            if offset == first_pole && message == "scaled NURBS pole is invalid"
+    ));
+}
+
 #[test]
 fn curve_payload_validates_rational_weights_counts_and_domain() {
     let mut bytes = curve_payload(0x10, true, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
