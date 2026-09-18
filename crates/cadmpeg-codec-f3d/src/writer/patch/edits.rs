@@ -27,7 +27,7 @@ use super::{
 };
 use crate::native::F3dNative;
 use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
-use crate::writer::primitives::{finite_point, finite_vector, normalized_face_sense_to_native};
+use crate::writer::primitives::normalized_face_sense_to_native;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 /// The base-type GUID text and its location, when the entry stores the field.
@@ -2554,7 +2554,7 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
             end,
             direction,
             normal,
-        } => finite_point(*start) && finite_point(*end) && orthonormal_pair(*direction, *normal),
+        } => start.is_finite() && end.is_finite() && orthonormal_pair(*direction, *normal),
         SketchCurveGeometry::Arc {
             center,
             normal,
@@ -2563,7 +2563,7 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
             start_angle,
             end_angle,
         } => {
-            finite_point(*center)
+            center.is_finite()
                 && orthonormal_pair(*normal, *reference_direction)
                 && radius.is_finite()
                 && *radius > 0.0
@@ -2587,7 +2587,7 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
                 && poles
                     .weights()
                     .all(|weight| weight.is_finite() && *weight > 0.0)
-                && poles.points().all(|point| finite_point(*point))
+                && poles.points().all(Point3::is_finite)
         }
     }
 }
@@ -3069,8 +3069,8 @@ pub(crate) fn validate_curve_edits(
             {
                 let origin = line_curve.origin();
                 let direction = line_curve.direction();
-                finite_point(*origin)
-                    && finite_vector(*direction)
+                origin.is_finite()
+                    && direction.is_finite()
                     && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
             }
             Some(SolvedCurveGeometry::Circle(circle_curve))
@@ -3080,7 +3080,7 @@ pub(crate) fn validate_curve_edits(
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
                 let radius = circle_curve.radius();
-                finite_point(*center)
+                center.is_finite()
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && radius > 0.0
@@ -3093,7 +3093,7 @@ pub(crate) fn validate_curve_edits(
                 let major_direction = ellipse_curve.major_direction();
                 let major_radius = ellipse_curve.major_radius();
                 let minor_radius = ellipse_curve.minor_radius();
-                finite_point(*center)
+                center.is_finite()
                     && orthonormal_pair(*axis, *major_direction)
                     && major_radius.is_finite()
                     && minor_radius.is_finite()
@@ -3105,7 +3105,7 @@ pub(crate) fn validate_curve_edits(
                 if { matches!(before, Some(SolvedCurveGeometry::Degenerate(_))) } =>
             {
                 let point = degenerate_curve.point();
-                finite_point(*point)
+                point.is_finite()
             }
             Some(SolvedCurveGeometry::Nurbs(after)) => {
                 let Some(SolvedCurveGeometry::Nurbs(before)) = before else {
@@ -3120,7 +3120,11 @@ pub(crate) fn validate_curve_edits(
                     && valid_edited_curve_structure(before, after)
                     && before.weights().is_some() == after.weights().is_some()
                     && before.control_points().len() == after.control_points().len()
-                    && after.control_points().iter().copied().all(finite_point)
+                    && after
+                        .control_points()
+                        .iter()
+                        .copied()
+                        .all(|point| point.is_finite())
                     && after.weights().is_none_or(|weights| {
                         weights
                             .iter()
@@ -3283,7 +3287,7 @@ pub(crate) fn validate_surface_edits(
                 let origin = plane_surface.origin();
                 let normal = plane_surface.normal();
                 let u_axis = plane_surface.u_axis();
-                finite_point(*origin) && orthonormal_pair(*normal, *u_axis)
+                origin.is_finite() && orthonormal_pair(*normal, *u_axis)
             }
             Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Sphere(_))) } =>
@@ -3292,7 +3296,7 @@ pub(crate) fn validate_surface_edits(
                 let axis = sphere_surface.axis();
                 let ref_direction = sphere_surface.ref_direction();
                 let radius = sphere_surface.radius();
-                finite_point(*center)
+                center.is_finite()
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && radius != 0.0
@@ -3305,7 +3309,7 @@ pub(crate) fn validate_surface_edits(
                 let ref_direction = torus_surface.ref_direction();
                 let major_radius = torus_surface.major_radius();
                 let minor_radius = torus_surface.minor_radius();
-                finite_point(*center)
+                center.is_finite()
                     && orthonormal_pair(*axis, *ref_direction)
                     && major_radius.is_finite()
                     && minor_radius.is_finite()
@@ -3319,7 +3323,7 @@ pub(crate) fn validate_surface_edits(
                 let axis = cylinder_surface.axis();
                 let ref_direction = cylinder_surface.ref_direction();
                 let radius = cylinder_surface.radius();
-                finite_point(*origin)
+                origin.is_finite()
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && radius != 0.0
@@ -3333,7 +3337,7 @@ pub(crate) fn validate_surface_edits(
                 let radius = cone_surface.radius();
                 let ratio = cone_surface.ratio();
                 let half_angle = cone_surface.half_angle();
-                finite_point(*origin)
+                origin.is_finite()
                     && orthonormal_pair(*axis, *ref_direction)
                     && radius.is_finite()
                     && radius != 0.0
@@ -3366,7 +3370,7 @@ pub(crate) fn validate_surface_edits(
                     && before.u_count() == after.u_count()
                     && before.v_count() == after.v_count()
                     && before.weights().is_some() == after.weights().is_some()
-                    && after.poles().into_iter().all(finite_point)
+                    && after.poles().into_iter().all(|point| point.is_finite())
                     && after.pole_weights().is_none_or(|weights| {
                         weights
                             .into_iter()
@@ -3446,7 +3450,7 @@ pub(crate) fn validate_procedural_surface_edits(
                             "F3D extrusion interval must be finite and ordered: {id}"
                         )));
                     }
-                    if !finite_vector(*after_direction) || after_direction.norm() == 0.0 {
+                    if !after_direction.is_finite() || after_direction.norm() == 0.0 {
                         return Err(CodecError::malformed(format_args!(
                             "F3D extrusion direction must be finite and nonzero: {id}"
                         )));
