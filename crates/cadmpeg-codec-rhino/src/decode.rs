@@ -1910,17 +1910,16 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Tessellation>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
         {
-            let mut placed = true;
-            mesh.edit_vertices(|vertex| match transform.apply_point(*vertex) {
-                Some(moved) => *vertex = moved,
-                None => placed = false,
+            mesh.edit_vertices(|vertex| {
+                *vertex = transform.apply_point(*vertex).ok_or_else(|| {
+                    cadmpeg_ir::tessellation::TessellationError::EditRefused(
+                        "instance mesh vertex transform produced a non-finite coordinate"
+                            .to_string(),
+                    )
+                })?;
+                Ok(())
             })
             .map_err(|error| error.to_string())?;
-            if !placed {
-                return Err(
-                    "instance mesh vertex transform produced a non-finite coordinate".to_string(),
-                );
-            }
             if !mesh.vertex_normals().is_empty() {
                 let mut singular = false;
                 mesh.edit_normals(|value| match transform.apply_normal(*value) {

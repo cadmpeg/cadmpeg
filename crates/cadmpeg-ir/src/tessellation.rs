@@ -576,28 +576,42 @@ impl TessellationMesh {
         }
     }
 
-    /// Edit every vertex position in place.
-    pub fn edit_positions(&mut self, mut edit: impl FnMut(&mut Point3)) {
-        match self {
+    /// Edit every vertex position, keeping the prior positions on a refusal.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
+    pub fn edit_positions(
+        &mut self,
+        mut edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
+    ) -> Result<(), TessellationError> {
+        let mut candidate = self.clone();
+        match &mut candidate {
             Self::List { vertices, .. } | Self::CornerShadedList { vertices, .. } => {
-                vertices.iter_mut().for_each(&mut edit);
+                for vertex in vertices.iter_mut() {
+                    edit(vertex)?;
+                }
             }
-            Self::ShadedList { vertices, .. } => vertices
-                .iter_mut()
-                .for_each(|vertex| edit(&mut vertex.position)),
-            Self::Strips { strips } => strips
-                .as_mut_slice()
-                .iter_mut()
-                .for_each(|strip| strip.vertices_mut().iter_mut().for_each(&mut edit)),
+            Self::ShadedList { vertices, .. } => {
+                for vertex in vertices.iter_mut() {
+                    edit(&mut vertex.position)?;
+                }
+            }
+            Self::Strips { strips } => {
+                for strip in strips.as_mut_slice().iter_mut() {
+                    for vertex in strip.vertices_mut().iter_mut() {
+                        edit(vertex)?;
+                    }
+                }
+            }
             Self::ShadedStrips { strips } => {
-                strips.as_mut_slice().iter_mut().for_each(|strip| {
-                    strip
-                        .vertices_mut()
-                        .iter_mut()
-                        .for_each(|vertex| edit(&mut vertex.position));
-                });
+                for strip in strips.as_mut_slice().iter_mut() {
+                    for vertex in strip.vertices_mut().iter_mut() {
+                        edit(&mut vertex.position)?;
+                    }
+                }
             }
         }
+        *self = candidate;
+        Ok(())
     }
 
     /// Edit every shading normal in place; absent when the mesh carries none.
@@ -1018,12 +1032,14 @@ impl Tessellation {
     }
 
     /// Atomically edit vertex positions while preserving finite coordinates.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_vertices(
         &mut self,
-        edit: impl FnMut(&mut Point3),
+        edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
     ) -> Result<(), TessellationError> {
         let mut mesh = self.mesh.clone();
-        mesh.edit_positions(edit);
+        mesh.edit_positions(edit)?;
         require_finite_vertices(&mesh.vertices())?;
         self.mesh = mesh;
         Ok(())

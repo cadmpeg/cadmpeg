@@ -635,7 +635,10 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 2.0;
     decoded.ir_mut().model.tessellations[0]
-        .edit_vertices(|vertex| vertex.z = 125.0)
+        .edit_vertices(|vertex| {
+            vertex.z = 125.0;
+            Ok(())
+        })
         .unwrap();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
@@ -719,7 +722,10 @@ fn semantic_writer_preserves_display_list_geometry() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
     decoded.ir_mut().model.tessellations[0]
-        .edit_vertices(|vertex| vertex.z = 250.0)
+        .edit_vertices(|vertex| {
+            vertex.z = 250.0;
+            Ok(())
+        })
         .unwrap();
 
     let mut encoded = Vec::new();
@@ -751,7 +757,10 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.tessellations[0]
-        .edit_vertices(|vertex| vertex.x = f64::MAX)
+        .edit_vertices(|vertex| {
+            vertex.x = f64::MAX;
+            Ok(())
+        })
         .unwrap();
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),

@@ -126,7 +126,10 @@ pub(super) fn normalize_model_lengths(
     }
     for tessellation in &mut ir.model.tessellations {
         tessellation
-            .edit_vertices(|vertex| scale_point3(vertex, length_scale_mm))
+            .edit_vertices(|vertex| {
+                scale_point3(vertex, length_scale_mm);
+                Ok(())
+            })
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
             })?;
