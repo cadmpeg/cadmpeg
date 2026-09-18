@@ -6,9 +6,8 @@
     clippy::uninlined_format_args,
     clippy::wildcard_imports
 )]
-use crate::design::test_support::dump::{
-    exact_component_insert_construction, DesignParameterScope, IndexedRecordOffsets,
-};
+use super::exact_component_insert_construction;
+use crate::design::test_support::dump::{DesignParameterScope, IndexedRecordOffsets};
 
 #[test]
 fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
