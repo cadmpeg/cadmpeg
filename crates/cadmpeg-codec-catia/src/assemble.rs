@@ -279,13 +279,11 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     pcurve_origin: Point2,
     pcurve_direction: Point2,
 ) -> Option<[f64; 2]> {
-    let finite_point = |point: Point3| point.is_finite();
-    let finite_vector = |vector: Vector3| vector.is_finite();
-    if !finite_point(center)
-        || !finite_point(start)
-        || !finite_point(end)
-        || !finite_vector(axis)
-        || !finite_vector(ref_direction)
+    if !center.is_finite()
+        || !start.is_finite()
+        || !end.is_finite()
+        || !axis.is_finite()
+        || !ref_direction.is_finite()
         || !pcurve_origin.u.is_finite()
         || !pcurve_origin.v.is_finite()
         || !pcurve_direction.u.is_finite()
@@ -296,7 +294,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         return None;
     }
     let tangent = axis.cross(ref_direction);
-    if !finite_vector(tangent)
+    if !tangent.is_finite()
         || tangent.x.hypot(tangent.y).hypot(tangent.z) == 0.0
         || ref_direction
             .x
@@ -335,7 +333,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         return None;
     }
     let surface_midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
-    if !finite_point(surface_midpoint) {
+    if !surface_midpoint.is_finite() {
         return None;
     }
     let candidates = [short_end, long_end]
@@ -353,7 +351,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
                 center.z
                     + radius * (parameter.cos() * ref_direction.z + parameter.sin() * tangent.z),
             );
-            if !finite_point(circle_midpoint) {
+            if !circle_midpoint.is_finite() {
                 return false;
             }
             let distance_squared = circle_midpoint.distance_squared(surface_midpoint);
