@@ -3,6 +3,7 @@
 //! per boundary component.
 
 use super::sketch::IndexedRecordOffsets;
+use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
 use cadmpeg_core::decode::View;
 
@@ -66,11 +67,4 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
         scale,
         model_reference,
     })
-}
-
-fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
-    if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
-        return None;
-    }
-    View::u32_le_at(bytes, at + 1)
 }
