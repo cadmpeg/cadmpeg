@@ -19,7 +19,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::records::{
     feature::scope::DesignScopePayload, topology::extrude_selection::DesignOperandRole,
 };
-use crate::test_support::*;
+use crate::test_support::{f3d_native_mut, f3d_with_smbh_and_protein, synthetic_geometry_smbh};
 use crate::F3dCodec;
 
 fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {

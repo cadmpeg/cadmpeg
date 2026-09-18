@@ -3,7 +3,10 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::*;
+use crate::test_support::{
+    generated_curve_block, generated_pcurve_block, generated_surface_block, synthetic_mixed_smbh,
+    t_dbl, t_end, t_ident, t_long, t_ref, t_subident,
+};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 pub(crate) fn push_revision_surface_tail(surface: &mut Vec<u8>) {

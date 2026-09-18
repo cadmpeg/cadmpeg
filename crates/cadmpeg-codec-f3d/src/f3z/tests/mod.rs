@@ -18,7 +18,6 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::*;
 use crate::{F3dCodec, F3dLossCode};
 
 use crate::records::sketch_placement::DesignSketchPlacement;

@@ -11,7 +11,9 @@ use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
 
-use crate::test_support::*;
+use crate::test_support::{
+    design_metastream_with_records, lp_ascii, with_scan, write_synthetic_manifests,
+};
 
 #[test]
 fn component_naming_space_binds_component_entity_to_context_uuid() {

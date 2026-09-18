@@ -6,7 +6,10 @@ use std::io::{Cursor, Read, Write};
 
 use zip::CompressionMethod;
 
-use crate::test_support::*;
+use crate::test_support::{
+    cross_document_reference, design_metastream_with_records, local_reference, synthetic_smbh,
+    write_synthetic_manifests,
+};
 
 /// A `RedirectionsStream.dat` body with one self design entry plus one design
 /// and one XREF reference per `(relative_path, role)` pair.

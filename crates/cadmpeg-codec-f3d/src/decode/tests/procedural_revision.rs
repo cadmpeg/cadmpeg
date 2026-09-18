@@ -9,21 +9,31 @@
     clippy::semicolon_if_nothing_returned,
     clippy::trivially_copy_pass_by_ref
 )]
-use cadmpeg_ir::geometry::CurveGeometry;
 
-use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
-use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::*;
+use crate::test_support::{
+    append_generated_variable_blend_side, assert_parameterized_tail,
+    assert_revision_surface_round_trip, f3d_with_smbh, generated_curve_block,
+    generated_form_two_par_int_cur, generated_pcurve_block, generated_surface_block,
+    push_optional_value_quartet, push_parameterized_revision_surface_tail, push_revision_cl_scale,
+    push_revision_surface_tail, push_tagged_i64, push_u8_string, synthetic_cyl_spl_sur_smbh,
+    synthetic_geometry_smbh, synthetic_partial_rb_blend_spl_sur_smbh,
+    synthetic_rational_cyl_spl_sur_smbh, synthetic_rb_blend_spl_sur_smbh,
+    synthetic_ref_cyl_spl_sur_smbh, synthetic_revision_ref_directrix_cyl_spl_sur_smbh,
+    synthetic_revision_surface_smbh, synthetic_variable_blend_smbh_with_selector,
+    synthetic_versioned_cyl_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh,
+    synthetic_vertex_blend_smbh, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident,
+    t_u16_string, t_vec, with_legacy_subtype, write_synthetic_manifests, TestEncode,
+};
 use crate::F3dCodec;
-use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 #[test]
 fn generated_revision_exact_surface_round_trips() {

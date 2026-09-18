@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::*;
+use crate::test_support::{push_u8_string, t_dbl};
 
 /// Build a synthetic ASM `BinaryFile8` BREP stream: a spec-shaped header
 /// followed by a couple of filler records and a `delta_state` history marker.

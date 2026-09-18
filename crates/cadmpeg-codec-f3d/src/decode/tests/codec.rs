@@ -23,7 +23,13 @@ use zip::CompressionMethod;
 
 use crate::container;
 use crate::loss::F3dLossCode;
-use crate::test_support::*;
+use crate::test_support::{
+    bf4_header_prefix, f3d_native, f3d_with_smbh, push_u8_string, smbh_header_prefix,
+    synthetic_f3d, synthetic_geometry_bf4_nurbs_smbh, synthetic_geometry_bf4_smbh,
+    synthetic_geometry_bf4_smbh_with_arc_sense, synthetic_geometry_smbh,
+    synthetic_geometry_with_history_smbh, synthetic_multi_asset_f3d, synthetic_smbh, t_end,
+    t_ident, update_f3d_native, with_scan,
+};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

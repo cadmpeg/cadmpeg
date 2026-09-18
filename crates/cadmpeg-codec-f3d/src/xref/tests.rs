@@ -18,7 +18,11 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::*;
+use crate::test_support::{
+    cross_document_reference, design_metastream_with_records, f3d_native,
+    f3d_with_redirections_json, f3d_without_brep, local_reference, redirections_json,
+    write_synthetic_manifests, XREF_ROLE,
+};
 use crate::F3dCodec;
 
 use super::OccurrencePlacement;

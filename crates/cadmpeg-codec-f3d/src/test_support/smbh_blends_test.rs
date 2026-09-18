@@ -3,7 +3,13 @@
 
 use cadmpeg_asm::asm_header;
 
-use crate::test_support::*;
+use crate::test_support::{
+    append_revision_surface_tail_discontinuities, append_revision_surface_tail_head,
+    generated_curve_block, generated_pcurve_block, generated_rational_surface_block,
+    generated_surface_block, push_tagged_i64, push_u8_string, synthetic_cyl_spl_sur_smbh,
+    synthetic_mixed_smbh, synthetic_versioned_cyl_spl_sur_smbh, t_dbl, t_end, t_ident, t_long,
+    t_pos, t_ref, t_subident, t_vec,
+};
 
 pub(crate) fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
     push_u8_string(bytes, label);

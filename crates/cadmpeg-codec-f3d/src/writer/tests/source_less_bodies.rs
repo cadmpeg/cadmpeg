@@ -18,7 +18,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::{
+    f3d_native, f3d_native_mut, f3d_with_smbh, synthetic_geometry_with_history_smbh,
+};
 use crate::F3dCodec;
 
 #[test]

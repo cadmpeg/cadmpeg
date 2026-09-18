@@ -19,7 +19,14 @@ use std::io::{Cursor, Read};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::{
+    expected_revision_surface_tail_discontinuities,
+    expected_revision_surface_tail_parameterization, f3d_native, f3d_native_mut, f3d_with_smbh,
+    synthetic_cacheless_cyl_spl_sur_smbh, synthetic_cyl_spl_sur_smbh, synthetic_geometry_smbh,
+    synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
+    synthetic_mixed_smbh, synthetic_rb_blend_spl_sur_smbh, synthetic_versioned_cyl_spl_sur_smbh,
+    synthetic_versioned_cyl_spl_sur_with_tail_smbh, TestEncode,
+};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 

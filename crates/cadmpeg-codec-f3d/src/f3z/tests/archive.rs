@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::test_support::{
+    f3d_with_smbh, f3d_without_brep, f3d_without_brep_with_xref_placement, f3z_archive,
+    f3z_archive_with_design_description, synthetic_geometry_smbh, synthetic_mixed_smbh, XREF_ROLE,
+};
 
 #[test]
 fn f3z_archive_merges_identity_occurrences() {

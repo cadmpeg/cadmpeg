@@ -17,7 +17,22 @@ use std::io::{Cursor, Read};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::{
+    f3d_with_smbh, push_tagged_i64, synthetic_exact_spl_sur_smbh,
+    synthetic_exact_spl_sur_with_decoy_sense_smbh,
+    synthetic_geometry_with_analytic_offset_supports_smbh,
+    synthetic_geometry_with_cacheless_helix_curve_smbh,
+    synthetic_geometry_with_compound_curve_smbh, synthetic_geometry_with_decoy_curve_sense_smbh,
+    synthetic_geometry_with_embedded_offset_supports_smbh,
+    synthetic_geometry_with_exact_curve_smbh, synthetic_geometry_with_helix_curve_smbh,
+    synthetic_geometry_with_law_curve_smbh, synthetic_geometry_with_procedural_curve_smbh,
+    synthetic_geometry_with_projection_smbh, synthetic_geometry_with_silhouette_smbh,
+    synthetic_geometry_with_spring_smbh, synthetic_geometry_with_subset_curve_smbh,
+    synthetic_geometry_with_surface_curve_smbh, synthetic_geometry_with_surface_intersection_smbh,
+    synthetic_geometry_with_surface_offset_smbh,
+    synthetic_geometry_with_two_sided_offset_curve_smbh,
+    synthetic_geometry_with_vector_offset_curve_smbh, t_dbl, with_legacy_subtype,
+};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

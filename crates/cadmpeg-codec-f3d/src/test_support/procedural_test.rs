@@ -2,7 +2,9 @@
 //! Procedural-surface payload helpers for synthetic SMBH tests.
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::*;
+use crate::test_support::{
+    generated_curve_block, generated_surface_block, push_tagged_i64, t_dbl, t_ident, t_long,
+};
 
 pub(crate) fn push_optional_value_quartet(surface: &mut Vec<u8>) {
     for value in [1.0, 0.0, 1.0, 0.0] {
