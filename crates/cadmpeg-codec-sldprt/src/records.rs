@@ -1997,6 +1997,8 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
     #[test]
     fn native_operand_wire_rejects_reserved_tags() {
         for tag in [0x0000, 0xffff, 0x80d6, 0x80e1] {
@@ -2376,26 +2378,6 @@ mod tests {
         assert!(SketchInputKind::Relation(SketchRelationKind::Horizontal).owns_constraint());
         assert!(SketchInputKind::from_native_code(86).owns_constraint());
         assert!(!SketchInputKind::Point.owns_constraint());
-    }
-
-    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-        let mut wire = serde_json::json!({});
-        wire[key] = serde_json::Value::Null;
-        let Err(refused) = serde_json::from_value::<T>(wire) else {
-            panic!("{key}: null was admitted")
-        };
-        refused.to_string()
-    }
-
-    fn states_the_key(key: &str, message: &str) {
-        assert!(
-            message.starts_with(&format!("{key}: ")),
-            "the refusal of a null {key} states {message}"
-        );
-        assert!(
-            message.contains("it does not state null"),
-            "the refusal of a null {key} states {message}"
-        );
     }
 
     /// Every flattened record reader names the key it refuses.
