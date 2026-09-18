@@ -4569,12 +4569,12 @@ fn nurbs_homogeneous_controls(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Optio
         .enumerate()
         .map(|(index, point)| {
             let weight = curve.weights().map_or(1.0, |weights| weights[index]);
-            (point.x.is_finite()
-                && point.y.is_finite()
-                && point.z.is_finite()
-                && weight.is_finite()
-                && weight > 0.0)
-                .then_some([point.x * weight, point.y * weight, point.z * weight, weight])
+            (point.is_finite() && weight.is_finite() && weight > 0.0).then_some([
+                point.x * weight,
+                point.y * weight,
+                point.z * weight,
+                weight,
+            ])
         })
         .collect()
 }

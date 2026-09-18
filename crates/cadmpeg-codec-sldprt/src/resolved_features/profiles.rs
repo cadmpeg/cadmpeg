@@ -2442,9 +2442,7 @@ fn transform_sketch_block_point(
     let delta = transformed.vector_from(frame.origin);
     (delta.dot(frame.normal).abs()
         <= TOLERANCE * (1.0 + frame.origin.distance(Point3::new(0.0, 0.0, 0.0)))
-        && transformed.x.is_finite()
-        && transformed.y.is_finite()
-        && transformed.z.is_finite())
+        && transformed.is_finite())
     .then(|| {
         Point2::new(
             delta.dot(frame.u_axis),

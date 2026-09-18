@@ -1874,11 +1874,7 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
     let mut points = points.to_vec();
     points.sort_by_key(|point| [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()]);
     points.dedup();
-    if points.len() < 3
-        || points
-            .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-    {
+    if points.len() < 3 || points.iter().any(|point| !point.is_finite()) {
         return None;
     }
     let displacement = |point: Point3| {

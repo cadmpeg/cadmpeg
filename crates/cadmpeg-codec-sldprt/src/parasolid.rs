@@ -357,7 +357,7 @@ pub(crate) fn mesh_polyline_from_header(
                 View::f64_be_at(xyz, 8)?,
                 View::f64_be_at(xyz, 16)?,
             );
-            if ![point.x, point.y, point.z].into_iter().all(f64::is_finite) {
+            if !point.is_finite() {
                 points.clear();
                 break;
             }

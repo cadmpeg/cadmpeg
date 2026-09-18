@@ -589,8 +589,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     position,
                     direction,
                 }] => {
-                    if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite()
-                    {
+                    if !position.is_finite() {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has a non-finite hole position",
                             feature.id

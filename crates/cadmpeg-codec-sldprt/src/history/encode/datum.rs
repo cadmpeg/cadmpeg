@@ -189,10 +189,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if ![origin.x, origin.y, origin.z]
-                .iter()
-                .all(|value| value.is_finite())
-            {
+            if !origin.is_finite() {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite reference-axis origin",
                     feature.id
@@ -225,10 +222,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if ![position.x, position.y, position.z]
-                .iter()
-                .all(|value| value.is_finite())
-            {
+            if !position.is_finite() {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported reference-point semantics",
                     feature.id
