@@ -36,9 +36,7 @@ pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
 }
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
-    n.poles()
-        .iter()
-        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    n.poles().iter().all(Point3::is_finite)
         && n.pole_weights().is_none_or(|weights| {
             weights
                 .iter()

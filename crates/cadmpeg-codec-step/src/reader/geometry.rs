@@ -4028,10 +4028,7 @@ pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Poin
                         values[1].number()? * scale,
                         values[2].number()? * scale,
                     );
-                    [point.x, point.y, point.z]
-                        .iter()
-                        .all(|coordinate| coordinate.is_finite())
-                        .then_some(point)
+                    point.is_finite().then_some(point)
                 })
                 .collect::<Option<Vec<_>>>()
                 .filter(|vertices| !vertices.is_empty())
@@ -4048,10 +4045,7 @@ fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -
         values[1].number()? * scale,
         values[2].number()? * scale,
     );
-    [point.x, point.y, point.z]
-        .iter()
-        .all(|coordinate| coordinate.is_finite())
-        .then_some(point)
+    point.is_finite().then_some(point)
 }
 
 fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> Option<Point3> {
@@ -4075,10 +4069,7 @@ fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> O
         values[1].number()? * scale,
         values[2].number()? * scale,
     );
-    [point.x, point.y, point.z]
-        .iter()
-        .all(|coordinate| coordinate.is_finite())
-        .then_some(point)
+    point.is_finite().then_some(point)
 }
 
 fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Point2> {
@@ -5165,10 +5156,7 @@ fn numbers(value: &Value) -> Option<Vec<f64>> {
 }
 
 pub(super) fn normalize(vector: Vector3) -> Option<Vector3> {
-    if ![vector.x, vector.y, vector.z]
-        .into_iter()
-        .all(f64::is_finite)
-    {
+    if !vector.is_finite() {
         return None;
     }
     let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
