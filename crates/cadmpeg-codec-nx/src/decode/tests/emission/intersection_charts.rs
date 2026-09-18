@@ -1,4 +1,21 @@
-use super::*;
+use crate::decode::pcurves::attach_tolerant_edge_intersections;
+use crate::decode::tests::emission::EPS_TOPOLOGY_TOLERANCE;
+use crate::decode::tests::emission::TOLERANT_INTERSECTION_FIT;
+use crate::test_support::partnered_trimmed_topology_partition_stream;
+use crate::test_support::put_ref;
+use cadmpeg_ir::geometry::BlendCrossSection;
+use cadmpeg_ir::geometry::BlendRadiusLaw;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::PcurveGeometry;
+use cadmpeg_ir::geometry::PcurveNurbs;
+use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Vector3;
+
 use cadmpeg_ir::annotations::StreamHandle;
 
 #[test]

@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::decode::pcurves::{orient_tolerant_intersection_pcurve, reverse_pcurve_over_range};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::PcurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 
-use super::*;
+use crate::decode::pcurves::{orient_tolerant_intersection_pcurve, reverse_pcurve_over_range};
 
 #[test]
 fn reversed_nurbs_pcurve_preserves_the_selected_interval() {

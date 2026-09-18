@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::decode::feature_completeness::{
-    combine_definition_is_incomplete, incomplete_expression_parameters,
-};
+use crate::decode::feature_completeness::incomplete_expression_parameters;
 use crate::native::attach::attach_active_configuration_feature_states;
 use crate::native::attach::attach_active_configuration_parameter_values;
 use crate::native::attach::attach_block_dimension_parameter_consumers;
@@ -50,7 +48,7 @@ use cadmpeg_ir::math::Point2;
 use crate::native::om::display_color::{
     DisplayColorFrame, RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
 };
-use crate::om::column_row::{LinkedRow, TargetRow};
+use crate::om::column_row::TargetRow;
 use crate::om::compact::CompactIndexAtom;
 
 #[test]

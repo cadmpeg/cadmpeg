@@ -1,4 +1,39 @@
-use super::*;
+use crate::decode::feature_completeness;
+use crate::evaluation::evaluate_saved_body_census;
+use crate::evaluation::tests::body_neutral_feature;
+use crate::evaluation::tests::body_preserving_feature;
+use crate::evaluation::tests::complete_block_ir;
+use crate::evaluation::tests::complete_extrude_feature;
+use crate::evaluation::tests::complete_hole;
+use crate::evaluation::tests::model_body;
+use crate::evaluation::BodyCensusEvaluation;
+use crate::evaluation::FeatureBoundary;
+use crate::evaluation::UnsupportedBodyCensusReason;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::BodySelection;
+use cadmpeg_ir::features::BodyTrimSide;
+use cadmpeg_ir::features::BooleanOp;
+use cadmpeg_ir::features::ChamferGroup;
+use cadmpeg_ir::features::ChamferSpec;
+use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::FilletGroup;
+use cadmpeg_ir::features::PathRef;
+use cadmpeg_ir::features::RadiusSpec;
+use cadmpeg_ir::features::SurfaceExtension;
+use cadmpeg_ir::features::ThickenSide;
+use cadmpeg_ir::features::TrimRegion;
+use cadmpeg_ir::features::UnresolvedFamily;
+use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Length;
+use std::collections::BTreeMap;
+
 use cadmpeg_ir::features::FeatureOperation;
 
 #[test]

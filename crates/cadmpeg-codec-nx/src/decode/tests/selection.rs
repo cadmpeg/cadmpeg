@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::tests::options_in;
+
 use crate::decode::build::{rmfastload_allows_terminal_lineage, topology_body_node_ids};
 use crate::decode::feature_completeness::output_free_local_body_construction;
 use crate::decode::report::append_design_intent_losses;
@@ -22,8 +24,6 @@ use cadmpeg_ir::Exactness;
 
 use crate::test_support::*;
 use crate::NxCodec;
-
-use super::*;
 
 #[test]
 fn decode_emits_both_intersection_support_pcurves() {

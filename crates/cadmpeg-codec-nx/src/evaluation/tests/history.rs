@@ -1,4 +1,36 @@
-use super::*;
+use crate::decode::feature_completeness;
+use crate::evaluation::evaluate_saved_body_census;
+use crate::evaluation::tests::attach_complete_active_configuration;
+use crate::evaluation::tests::body_neutral_feature;
+use crate::evaluation::tests::body_preserving_feature;
+use crate::evaluation::tests::complete_block_ir;
+use crate::evaluation::tests::complete_extrude_feature;
+use crate::evaluation::tests::complete_hole;
+use crate::evaluation::tests::model_body;
+use crate::evaluation::BodyCensusEvaluation;
+use crate::evaluation::FeatureBoundary;
+use crate::evaluation::UnsupportedBodyCensusReason;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::BodyRetentionMode;
+use cadmpeg_ir::features::BodySelection;
+use cadmpeg_ir::features::BooleanOp;
+use cadmpeg_ir::features::CurveProjectionDirection;
+use cadmpeg_ir::features::CurveProjectionDirectionState;
+use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::PathRef;
+use cadmpeg_ir::features::RevolveConstruction;
+use cadmpeg_ir::features::RibConstruction;
+use cadmpeg_ir::features::RibDraft;
+use cadmpeg_ir::features::SweepMode;
+use cadmpeg_ir::features::SweepSection;
+use cadmpeg_ir::features::UnresolvedFamily;
+use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::math::Point3;
+use std::collections::BTreeMap;
+
 use cadmpeg_ir::features::FeatureOperation;
 
 #[test]

@@ -1,7 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::framing::node_kind::NodeKind;
+use crate::test_support::blend_surface_topology_partition_stream;
+use crate::test_support::charted_intersection_curve_topology_partition_stream;
+use crate::test_support::circle_topology_partition_stream;
+use crate::test_support::cone_topology_partition_stream;
+use crate::test_support::cylinder_topology_partition_stream;
+use crate::test_support::deltas_blend_surface_partition_stream;
+use crate::test_support::deltas_circle_partition_stream;
+use crate::test_support::deltas_cone_partition_stream;
+use crate::test_support::deltas_cylinder_partition_stream;
+use crate::test_support::deltas_edge_partition_stream;
+use crate::test_support::deltas_ellipse_partition_stream;
+use crate::test_support::deltas_face_vertex_partition_stream;
+use crate::test_support::deltas_fin_partition_stream;
+use crate::test_support::deltas_line_partition_stream;
+use crate::test_support::deltas_loop_partition_stream;
+use crate::test_support::deltas_offset_surface_partition_stream;
+use crate::test_support::deltas_plane_partition_stream;
+use crate::test_support::deltas_point_partition_stream;
+use crate::test_support::deltas_shell_partition_stream;
+use crate::test_support::deltas_sphere_partition_stream;
+use crate::test_support::deltas_surface_curve_partition_stream;
+use crate::test_support::deltas_torus_partition_stream;
+use crate::test_support::deltas_trimmed_curve_partition_stream;
+use crate::test_support::ellipse_topology_partition_stream;
+use crate::test_support::ext11_charted_intersection_curve_stream;
+use crate::test_support::offset_surface_topology_partition_stream;
+use crate::test_support::prt_with_ext11_intersection;
+use crate::test_support::prt_with_partition;
+use crate::test_support::prt_with_streams;
+use crate::test_support::sphere_topology_partition_stream;
+use crate::test_support::status_framed_deltas_stream;
+use crate::test_support::surface_curve_topology_partition_stream;
+use crate::test_support::topology_partition_stream;
+use crate::test_support::torus_topology_partition_stream;
+use crate::test_support::trimmed_topology_partition_stream;
+use crate::test_support::variable_status_framed_deltas_stream;
+use crate::test_support::DELTAS_PREAMBLE;
+use crate::NxCodec;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::BlendRadiusLaw;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Vector3;
+use std::io::Cursor;
 
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 

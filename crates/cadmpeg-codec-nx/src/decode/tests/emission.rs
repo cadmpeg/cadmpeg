@@ -9,18 +9,14 @@ use crate::decode::blend::analytic_surface_offset;
 use crate::decode::build::{
     ordered_curve_candidates, ordered_point_candidates, ordered_surface_candidates,
 };
-use crate::decode::pcurves::attach_tolerant_edge_intersections;
 
 use crate::framing::node_kind::NodeKind;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};

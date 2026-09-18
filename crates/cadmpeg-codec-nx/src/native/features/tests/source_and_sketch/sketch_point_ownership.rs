@@ -1,4 +1,5 @@
-use super::*;
+use crate::test_support::shifted_f64_bytes;
+
 use crate::native::features::feature_sketch_fixed_points;
 use crate::native::features::feature_sketch_named_point_block_uses;
 use crate::native::features::feature_sketch_payload_named_records;

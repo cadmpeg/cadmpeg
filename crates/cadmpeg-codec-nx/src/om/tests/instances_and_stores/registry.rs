@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::test_support::indexed_om_section;
+use crate::test_support::shifted_f64_bytes;
+
 use crate::om::color_tables;
 use crate::om::expression_declaration_name;
 use crate::om::indexed_sections;

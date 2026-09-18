@@ -1,4 +1,5 @@
-use super::*;
+use crate::decode::feature_completeness::combine_definition_is_incomplete;
+
 use crate::native::attach::attach_initial_segment_bodies;
 use crate::native::attach::boolean_feature_definition;
 use crate::native::attach::boolean_participant_writer;

@@ -1,5 +1,15 @@
-use super::*;
+use crate::container;
 use crate::om::reference_value::{DirectReference, RecordReference};
+use crate::test_support::assembly_with_external_paths;
+use crate::test_support::partition_stream;
+use crate::test_support::prt_with_named_payloads;
+use crate::test_support::prt_with_two_bodies_and_rmfastload;
+use crate::test_support::rmfastload_prt;
+use crate::test_support::zlib_compress;
+use crate::NxCodec;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use std::io::Cursor;
 
 #[test]
 fn decode_retains_strict_tiff_material_texture_assets() {

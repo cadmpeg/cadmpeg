@@ -1,8 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::decode::jpeg::jpeg_dimensions;
-
-use super::*;
+use crate::test_support::partition_stream;
+use crate::test_support::prt_with_indexed_om_section;
+use crate::test_support::prt_with_named_payloads;
+use crate::test_support::topology_partition_stream;
+use crate::test_support::zlib_compress;
+use crate::NxCodec;
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::report::LossKind;
+use cadmpeg_ir::report::LossTaxonomy;
+use std::io::Cursor;
 
 #[test]
 fn inspect_reports_bounded_nx_object_model_entities() {
