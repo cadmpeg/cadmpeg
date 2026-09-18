@@ -10,7 +10,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
-use crate::test_support::BinaryFixtureKind;
+use crate::test_support::test_streams::BinaryFixtureKind;
 use crate::SatCodec;
 
 const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-sat golden";
@@ -30,15 +30,15 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
     vec![
         (
             "text_sphere".to_string(),
-            crate::test_support::text_sphere_stream(1.0),
+            crate::test_support::test_streams::text_sphere_stream(1.0),
         ),
         (
             "binary_asm".to_string(),
-            crate::test_support::binary_sphere_stream(BinaryFixtureKind::Asm),
+            crate::test_support::test_streams::binary_sphere_stream(BinaryFixtureKind::Asm),
         ),
         (
             "binary_acis".to_string(),
-            crate::test_support::binary_sphere_stream(BinaryFixtureKind::Acis),
+            crate::test_support::test_streams::binary_sphere_stream(BinaryFixtureKind::Acis),
         ),
     ]
 }

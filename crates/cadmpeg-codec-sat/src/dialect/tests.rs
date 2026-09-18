@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::loss::SatLossCode;
-use crate::test_support::{
+use crate::test_support::test_streams::{
     acis_text_sphere_stream, binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
     UNVERIFIED_SAVE_FORMAT,
 };
