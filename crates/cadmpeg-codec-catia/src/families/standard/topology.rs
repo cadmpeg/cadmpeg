@@ -10,7 +10,7 @@ use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::missing_edge::{
     standard_mesh_boundary_assignments, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
 };
-use crate::solve::UnionFind;
+use crate::solve::union_find::UnionFind;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
 use std::collections::{BTreeMap, HashMap, HashSet};

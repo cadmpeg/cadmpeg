@@ -30,7 +30,7 @@ use crate::assemble::{
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
-use crate::solve::UnionFind;
+use crate::solve::union_find::UnionFind;
 
 const EPS_E5_DECODE_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_E5_DECODE_POSITION: f64 = 1.0e-8;

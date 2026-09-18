@@ -12,7 +12,7 @@ use crate::layout::fbb_face_row as fbb_row;
 use crate::solve::incidence::reconstruct_incidence_candidates;
 use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::missing_edge::{expand_deferred_edge_port_components, motif_port_points};
-use crate::solve::UnionFind;
+use crate::solve::union_find::UnionFind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
