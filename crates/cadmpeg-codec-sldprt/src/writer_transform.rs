@@ -388,18 +388,21 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let mut placed = true;
             nurbs
-                .edit_control_points(|point| match transform.apply_point(*point) {
-                    Some(moved) => *point = moved,
-                    None => placed = false,
+                .edit_control_points(|point| {
+                    *point = transform.apply_point(*point).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "baked body placement produced a non-finite point".to_string(),
+                        )
+                    })?;
+                    Ok(())
                 })
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+                .map_err(|error| match error {
+                    NurbsError::EditRefused(_) => non_finite_point(),
+                    error => {
+                        CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+                    }
                 })?;
-            if !placed {
-                return Err(non_finite_point());
-            }
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
             let mut placed = true;

@@ -1590,6 +1590,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
                 point.x = 1.1;
             }
             scaled_index += 1;
+            Ok(())
         })
         .unwrap();
     assert_eq!(

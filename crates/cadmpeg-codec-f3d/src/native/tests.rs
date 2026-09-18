@@ -421,6 +421,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
                 point.x += 1.0;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     let expected = nurbs.clone();

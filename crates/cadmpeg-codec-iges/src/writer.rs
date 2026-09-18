@@ -13,8 +13,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ExportBody, WritePath};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsError, NurbsSurface, Pcurve,
+    PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -6244,22 +6245,22 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
-            let mut placed = true;
             nurbs
-                .edit_control_points(
-                    |control_point| match transform.apply_point(*control_point) {
-                        Some(moved) => *control_point = moved,
-                        None => placed = false,
-                    },
-                )
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("transformed NURBS curve: {error}"))
+                .edit_control_points(|control_point| {
+                    *control_point = transform.apply_point(*control_point).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "transformed NURBS curve control point has a non-finite coordinate"
+                                .to_string(),
+                        )
+                    })?;
+                    Ok(())
+                })
+                .map_err(|error| match error {
+                    NurbsError::EditRefused(message) => CodecError::malformed(message),
+                    error => {
+                        CodecError::malformed(format_args!("transformed NURBS curve: {error}"))
+                    }
                 })?;
-            if !placed {
-                return Err(CodecError::malformed(
-                    "transformed NURBS curve control point has a non-finite coordinate",
-                ));
-            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {

@@ -731,6 +731,7 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     let mut end = start.clone();
     end.edit_control_points(|point| {
         point.z = 7.0;
+        Ok(())
     })
     .expect("valid test curve edit");
     let plain =

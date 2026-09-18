@@ -1669,6 +1669,7 @@ pub(super) fn project(
             && placed_directrix
                 .edit_control_points(|point| {
                     *point = transform.point(*point);
+                    Ok(())
                 })
                 .is_err()
         {
@@ -2091,6 +2092,7 @@ pub(super) fn project(
             if placed_generatrix
                 .edit_control_points(|point| {
                     *point = transform.point(*point);
+                    Ok(())
                 })
                 .is_err()
             {

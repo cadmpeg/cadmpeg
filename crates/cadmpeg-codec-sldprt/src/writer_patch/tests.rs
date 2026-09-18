@@ -132,6 +132,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                     point.y = 1_500.0;
                 }
                 pole_index += 1;
+                Ok(())
             })
             .unwrap();
         curve.edit_knots(|knots| knots[3..].fill(2.0)).unwrap();

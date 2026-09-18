@@ -1532,6 +1532,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             curve
                 .edit_control_points(|point| {
                     scale_point3(point, scale);
+                    Ok(())
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(
@@ -1871,6 +1872,7 @@ fn scale_spatial_sketch_geometry(
             curve
                 .edit_control_points(|point| {
                     scale_point3(point, scale);
+                    Ok(())
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(

@@ -605,6 +605,7 @@ fn scale_decoded_curve(
                         if let Some(value) = scaled.next() {
                             *point = value;
                         }
+                        Ok(())
                     })
                     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
@@ -1059,6 +1060,7 @@ pub(crate) fn join_nurbs_segments(
                         *point = midpoint;
                         first = false;
                     }
+                    Ok(())
                 })
                 .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
         }

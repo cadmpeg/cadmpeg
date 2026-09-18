@@ -1352,9 +1352,11 @@ impl std::ops::Deref for SpatialSketchNurbsCurve {
 
 impl SpatialSketchNurbsCurve {
     /// Atomically edit control points and preserve finite coordinates.
+    ///
+    /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_control_points(
         &mut self,
-        edit: impl FnMut(&mut Point3),
+        edit: impl FnMut(&mut Point3) -> Result<(), crate::geometry::NurbsError>,
     ) -> Result<(), crate::geometry::NurbsError> {
         self.0.edit_control_points(edit)
     }

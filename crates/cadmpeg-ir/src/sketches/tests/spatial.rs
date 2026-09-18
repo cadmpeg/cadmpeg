@@ -673,6 +673,7 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
             if std::mem::take(&mut first) {
                 point.x = f64::NAN;
             }
+            Ok(())
         })
         .is_err());
     assert_eq!(curve, before);
@@ -683,6 +684,32 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         serde_json::from_value::<SpatialSketchGeometry>(wire).unwrap(),
         geometry
     );
+}
+
+#[test]
+fn a_refused_spatial_sketch_pole_edit_keeps_the_prior_poles() {
+    use crate::geometry::{NurbsCurve, NurbsError};
+    use crate::sketches::SpatialSketchNurbsCurve;
+
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, 2.0]),
+        false,
+    )
+    .unwrap();
+    let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
+    let before = curve.clone();
+    let refusal = curve.edit_control_points(|point| {
+        point.z = 9.0;
+        Err(NurbsError::EditRefused("caller refused this pole".into()))
+    });
+    assert_eq!(
+        refusal,
+        Err(NurbsError::EditRefused("caller refused this pole".into()))
+    );
+    assert_eq!(curve, before);
 }
 
 #[test]
