@@ -4,6 +4,7 @@
 use super::geometry::{
     admit, entity_loss, resolve_transform, source_object, Affine, ProjectionOutcome,
 };
+use super::pointer;
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -14,13 +15,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
-
-fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
-    record.integer(index).and_then(|value| {
-        let sequence = u32::try_from(value).ok()?;
-        (sequence % 2 == 1).then_some(sequence)
-    })
-}
 
 fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
     let id = crate::ids::point(&crate::ids::Stem::directory(sequence));

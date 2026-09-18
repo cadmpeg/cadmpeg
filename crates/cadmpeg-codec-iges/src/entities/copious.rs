@@ -2,9 +2,9 @@
 //! Copious point, linear-path, and presentation tuple projection.
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
+use super::presentation_loss;
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
-use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -40,7 +40,7 @@ impl CopiousProjectionOutcome {
     }
 }
 
-fn expected_interpretation(form: i64) -> Option<i64> {
+pub(crate) fn expected_interpretation(form: i64) -> Option<i64> {
     match form {
         1 | 11 | 20 | 21 | 31..=38 | 40 | 63 => Some(1),
         2 | 12 => Some(2),
@@ -55,17 +55,6 @@ fn presentation_form(form: i64) -> bool {
 
 fn presentation_use_flag_valid(form: i64, use_flag: Option<UseFlag>) -> bool {
     !presentation_form(form) || use_flag == Some(UseFlag::Annotation)
-}
-
-fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
-    IgesLossCode::DisplayDataNotProjected
-        .note(format!(
-            "IGES entity type {} form {} display data was not projected: {}",
-            entry.entity_type,
-            entry.form,
-            message.into()
-        ))
-        .with_provenance(entry.loss_provenance())
 }
 
 fn points_coincident(left: Point3, right: Point3, resolution: f64) -> bool {

@@ -2,14 +2,13 @@
 //! Directory display attributes and color definitions.
 
 use super::geometry::ProjectionOutcome;
+use super::{mirror_flag_valid, presentation_loss, vertical_text_flag_valid};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
-use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -17,17 +16,6 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone, Copy)]
 struct TextFontDefinition {
     supersedes: Option<u32>,
-}
-
-fn loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
-    IgesLossCode::DisplayDataNotProjected
-        .note(format!(
-            "IGES entity type {} form {} display data was not projected: {}",
-            entry.entity_type,
-            entry.form,
-            message.into()
-        ))
-        .with_provenance(entry.loss_provenance())
 }
 
 fn standard_color(number: i64) -> Option<Color> {
@@ -96,14 +84,6 @@ pub(super) fn new_general_note_charset_valid(
 ) -> bool {
     matches!(value, 1 | 1001 | 1002 | 1003 | 2001 | 3001)
         || text_font_definition_pointer_valid(value, entries)
-}
-
-fn mirror_flag_valid(value: i64) -> bool {
-    matches!(value, 0..=2)
-}
-
-fn vertical_text_flag_valid(value: i64) -> bool {
-    matches!(value, 0..=1)
 }
 
 fn line_font_definition_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
@@ -267,7 +247,7 @@ pub(super) fn project(
         if target_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
-            losses.push(loss(
+            losses.push(presentation_loss(
                 entry,
                 "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid",
             ));
@@ -279,7 +259,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(loss(entry, "Parameter Data record is missing"));
+            losses.push(presentation_loss(entry, "Parameter Data record is missing"));
             continue;
         };
         let parameter_end = record.parameter_end();
@@ -307,7 +287,7 @@ pub(super) fn project(
         if directory_valid && fields_valid {
             decoded.insert(entry.sequence);
         } else {
-            losses.push(loss(
+            losses.push(presentation_loss(
                 entry,
                 "text-template metrics, font, orientation, placement, or Directory fields are invalid",
             ));
@@ -319,7 +299,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && entry.form == 1)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(loss(entry, "Parameter Data record is missing"));
+            losses.push(presentation_loss(entry, "Parameter Data record is missing"));
             continue;
         };
         let levels = record
@@ -334,7 +314,7 @@ pub(super) fn project(
         {
             decoded.insert(entry.sequence);
         } else {
-            losses.push(loss(
+            losses.push(presentation_loss(
                 entry,
                 "definition-level count, value, or uniqueness is invalid",
             ));
@@ -346,11 +326,11 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(loss(entry, "Parameter Data record is missing"));
+            losses.push(presentation_loss(entry, "Parameter Data record is missing"));
             continue;
         };
         if !line_font_definition_directory_valid(entry, global.global_table()) {
-            losses.push(loss(
+            losses.push(presentation_loss(
                 entry,
                 "line-font definition use flag or fallback pattern is invalid",
             ));
@@ -395,7 +375,10 @@ pub(super) fn project(
         if valid {
             decoded.insert(entry.sequence);
         } else {
-            losses.push(loss(entry, "line-font definition parameters are invalid"));
+            losses.push(presentation_loss(
+                entry,
+                "line-font definition parameters are invalid",
+            ));
         }
     }
 
@@ -404,7 +387,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(loss(entry, "Parameter Data record is missing"));
+            losses.push(presentation_loss(entry, "Parameter Data record is missing"));
             continue;
         };
         let Some(components) = (1..=3)
@@ -415,7 +398,10 @@ pub(super) fn project(
             })
             .collect::<Option<Vec<_>>>()
         else {
-            losses.push(loss(entry, "RGB percentage is outside 0 through 100"));
+            losses.push(presentation_loss(
+                entry,
+                "RGB percentage is outside 0 through 100",
+            ));
             continue;
         };
         let name = match record.value(4) {
@@ -431,7 +417,10 @@ pub(super) fn project(
             Some(
                 crate::parameter::TokenValue::Integer(_) | crate::parameter::TokenValue::Real(_),
             ) => {
-                losses.push(loss(entry, "optional color name is not a string"));
+                losses.push(presentation_loss(
+                    entry,
+                    "optional color name is not a string",
+                ));
                 continue;
             }
         };
@@ -439,7 +428,10 @@ pub(super) fn project(
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition)
             && matches!(entry.color, 0..=8);
         if !directory_valid {
-            losses.push(loss(entry, "color definition Directory fields are invalid"));
+            losses.push(presentation_loss(
+                entry,
+                "color definition Directory fields are invalid",
+            ));
             continue;
         }
         let Some(color) = Color::new(
@@ -448,7 +440,7 @@ pub(super) fn project(
             (components[2] / 100.0) as f32,
             1.0,
         ) else {
-            losses.push(loss(
+            losses.push(presentation_loss(
                 entry,
                 "color definition components are outside [0, 100]",
             ));
@@ -490,7 +482,7 @@ pub(super) fn project(
         entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
     }) {
         if resolve(entry.color).is_none() {
-            losses.push(loss(
+            losses.push(presentation_loss(
                 entry,
                 "Directory color number or definition pointer is invalid",
             ));
@@ -504,7 +496,7 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 406 || target.form != 1)
         }) {
-            losses.push(loss(
+            losses.push(presentation_loss(
                 entry,
                 "negative Directory level does not reference a decoded Definition Levels property",
             ));
@@ -514,7 +506,7 @@ pub(super) fn project(
         entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())
     }) {
         if !global.line_weight_number_is_valid(entry.line_weight) {
-            losses.push(loss(
+            losses.push(presentation_loss(
                 entry,
                 "line-weight number is outside the Global gradation range",
             ));

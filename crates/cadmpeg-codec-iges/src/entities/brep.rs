@@ -3,6 +3,7 @@
 
 use super::evaluation;
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
+use super::pointer;
 use super::trimming::pcurve_geometry;
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
@@ -97,13 +98,6 @@ fn compose_sense(left: Sense, right: Sense) -> Sense {
     } else {
         Sense::Reversed
     }
-}
-
-fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
-    record.integer(index).and_then(|value| {
-        let sequence = u32::try_from(value).ok()?;
-        (sequence % 2 == 1).then_some(sequence)
-    })
 }
 
 fn list_index(record: &ParameterRecord, index: usize) -> Option<usize> {

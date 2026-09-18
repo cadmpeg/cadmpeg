@@ -6,6 +6,7 @@
 //! supported neutral profile and refuses unsupported models or native records.
 
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
+use crate::entities::{affine_parameter_map, line_directrix};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
@@ -3319,47 +3320,6 @@ fn oriented_curve_entity(
     Ok(entity)
 }
 
-fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
-    fn is_line(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
-        if depth > 256 {
-            return false;
-        }
-        match geometry {
-            SolvedCurveGeometry::Line(_) => true,
-            SolvedCurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
-            _ => false,
-        }
-    }
-
-    ir.model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *curve_id)
-        .is_some_and(|curve| {
-            curve
-                .geometry
-                .solved()
-                .is_some_and(|geometry| is_line(geometry, 0))
-        })
-}
-
-fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
-    let source_width = source[1] - source[0];
-    let target_width = target[1] - target[0];
-    if !source
-        .iter()
-        .chain(target.iter())
-        .all(|value| value.is_finite())
-        || source_width <= 0.0
-        || target_width <= 0.0
-    {
-        return None;
-    }
-    let scale = target_width / source_width;
-    let offset = target[0] - source[0] * scale;
-    (scale.is_finite() && offset.is_finite()).then_some((scale, offset))
-}
-
 fn procedural_pcurve_source_map(
     ir: &CadIr,
     surface_id: &SurfaceId,
@@ -6079,7 +6039,7 @@ fn encode_nurbs(
     let normal = plane_normal.unwrap_or(Vector3::new(0.0, 0.0, 0.0));
     for value in [normal.x, normal.y, normal.z] {
         parameters.push(',');
-        parameters.push_str(&unit_normal_number(value));
+        parameters.push_str(&number(value));
     }
     parameters.push(';');
     let status = if label == "PCURVE" {
@@ -6835,14 +6795,6 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> 
 }
 
 fn number(value: f64) -> String {
-    if value == 0.0 {
-        "0".into()
-    } else {
-        format!("{value:.16e}").replace('e', "D")
-    }
-}
-
-fn unit_normal_number(value: f64) -> String {
     if value == 0.0 {
         "0".into()
     } else {

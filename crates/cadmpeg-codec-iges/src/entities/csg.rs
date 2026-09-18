@@ -5,6 +5,7 @@ use super::geometry::{
     declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform,
     ProjectionOutcome,
 };
+use super::pointer;
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -19,13 +20,6 @@ fn vector_or(record: &ParameterRecord, start: usize, default: Vector3) -> Option
         record.number_or(start + 1, default.y)?,
         record.number_or(start + 2, default.z)?,
     ))
-}
-
-fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
-    record.integer(index).and_then(|value| {
-        let sequence = u32::try_from(value).ok()?;
-        (sequence % 2 == 1).then_some(sequence)
-    })
 }
 
 fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {

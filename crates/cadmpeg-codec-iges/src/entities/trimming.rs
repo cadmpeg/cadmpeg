@@ -8,6 +8,7 @@ use super::geometry::{
     planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
     BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
+use super::{affine_parameter_map, line_directrix, pointer};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -81,13 +82,6 @@ enum BoundaryVertexClusterError {
 struct BoundaryVertexCluster {
     representative: Point3,
     members: Vec<usize>,
-}
-
-fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
-    record.integer(index).and_then(|value| {
-        let sequence = u32::try_from(value).ok()?;
-        (sequence % 2 == 1).then_some(sequence)
-    })
 }
 
 fn close(left: Point3, right: Point3, tolerance: f64) -> bool {
@@ -411,47 +405,6 @@ pub(super) fn pcurve_geometry(
         },
         range,
     )))
-}
-
-fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
-    fn is_line(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
-        if depth > 256 {
-            return false;
-        }
-        match geometry {
-            SolvedCurveGeometry::Line(_) => true,
-            SolvedCurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
-            _ => false,
-        }
-    }
-
-    ir.model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *curve_id)
-        .is_some_and(|curve| {
-            curve
-                .geometry
-                .solved()
-                .is_some_and(|geometry| is_line(geometry, 0))
-        })
-}
-
-fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
-    let source_width = source[1] - source[0];
-    let target_width = target[1] - target[0];
-    if !source
-        .iter()
-        .chain(target.iter())
-        .all(|value| value.is_finite())
-        || source_width <= 0.0
-        || target_width <= 0.0
-    {
-        return None;
-    }
-    let scale = target_width / source_width;
-    let offset = target[0] - source[0] * scale;
-    (scale.is_finite() && offset.is_finite()).then_some((scale, offset))
 }
 
 fn procedural_pcurve_parameter_map(
