@@ -160,7 +160,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             })
             .map_err(|error| match error {
                 TessellationError::EditRefused(_) => non_finite_point(),
-                error => {
+                error @ TessellationError::Admission(_) => {
                     CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
                 }
             })?;
@@ -175,7 +175,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 })
                 .map_err(|error| match error {
                     TessellationError::EditRefused(_) => non_finite_vector(),
-                    error => CodecError::malformed(format_args!(
+                    error @ TessellationError::Admission(_) => CodecError::malformed(format_args!(
                         "invalid transformed tessellation: {error}"
                     )),
                 })?;
@@ -337,7 +337,9 @@ fn transform_surface(
                 })
                 .map_err(|error| match error {
                     GeometryLayoutError::EditRefused(_) => non_finite_point(),
-                    error => CodecError::malformed(error.to_string()),
+                    error @ GeometryLayoutError::Layout(_) => {
+                        CodecError::malformed(error.to_string())
+                    }
                 })?;
         }
         SurfaceGeometry::Procedural { .. }
@@ -427,7 +429,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 })
                 .map_err(|error| match error {
                     GeometryLayoutError::EditRefused(_) => non_finite_point(),
-                    error => CodecError::malformed(error.to_string()),
+                    error @ GeometryLayoutError::Layout(_) => {
+                        CodecError::malformed(error.to_string())
+                    }
                 })?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
