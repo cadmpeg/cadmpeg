@@ -7,7 +7,7 @@ use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 
 use crate::container::ContainerScan;
 
-use super::feature_history::owned_section_feature_id;
+use super::feature_history::outputs::owned_section_feature_id;
 use super::native_records::{CreoSketchBucketHeader, CreoSketchTableHeader, CreoSketchTableKind};
 
 pub(crate) fn feature_definition_has_sketch_design(

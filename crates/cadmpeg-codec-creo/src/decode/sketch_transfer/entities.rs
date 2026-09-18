@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section sketch entity emission and placed section curves.
 
-use super::super::feature_history::{
+use super::super::feature_history::link::{
     section_entity_is_generated_profile, section_generated_profile_surface_kinds,
 };
 use super::super::native::annotate;

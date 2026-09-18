@@ -14,9 +14,11 @@ use super::super::sweep::{
 use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
-use super::{
-    feature_allows_linear_extrusion, ordered_analytic_surface_id_for_feature,
-    ordered_family_surface_bindings_for_feature, profile_segment_ids, revolution_axis_for_transfer,
+use super::axes::revolution_axis_for_transfer;
+use super::draft::feature_allows_linear_extrusion;
+use super::link::{
+    ordered_analytic_surface_id_for_feature, ordered_family_surface_bindings_for_feature,
+    profile_segment_ids,
 };
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;

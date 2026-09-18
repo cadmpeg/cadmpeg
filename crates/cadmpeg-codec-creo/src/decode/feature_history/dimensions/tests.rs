@@ -9,7 +9,9 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::AnnotationBuilder;
 
-use super::super::{planned_feature_dimension_parameter_ids, transfer_feature_dimensions};
+use super::super::dimensions::{
+    planned_feature_dimension_parameter_ids, transfer_feature_dimensions,
+};
 
 #[test]
 fn dimension_transfer_rejects_duplicate_owner_feature_ids() {

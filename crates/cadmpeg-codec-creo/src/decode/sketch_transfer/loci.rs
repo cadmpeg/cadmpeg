@@ -3,7 +3,7 @@
 
 use crate::decode::sketch::axis::SectionAxis;
 
-use super::super::feature_history::feature_skamp_table_complete;
+use super::super::feature_history::dimensions::feature_skamp_table_complete;
 use super::super::sketch::{
     resolved_section_points, section_skamp_incidence_point,
     section_skamp_selected_point_id_with_ordinary_segment, unique_decoded_section_segment,

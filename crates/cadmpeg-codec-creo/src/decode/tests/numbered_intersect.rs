@@ -6,14 +6,22 @@ use crate::vecmath::normalize;
 
 use super::parameter_slot;
 use crate::decode::build::report::has_transferred_geometry;
-use crate::decode::feature_history::{
-    add_surface_prototype_feature_dependencies, feature_edge_selection,
-    feature_entity_dependencies, feature_generated_dependencies,
-    feature_output_surface_dependencies, feature_result_edge_ids, feature_result_surface_ids,
-    feature_result_topology, generated_curve_edge_refs, generated_surface_face_refs,
-    geometry_generator_features, knit_class_100_operand_entity_ids, knit_operand_surface_ids,
-    model_feature_ids, native_feature_dependency_ids, profile_segment_ids, reconciled_dependencies,
-    surface_merge_entity_dependencies, surface_merge_quilt_ids, GeometryGeneratorFeature,
+use crate::decode::feature_history::axes::{
+    geometry_generator_features, model_feature_ids, GeometryGeneratorFeature,
+};
+use crate::decode::feature_history::dependencies::{
+    add_surface_prototype_feature_dependencies, feature_entity_dependencies,
+    feature_generated_dependencies, feature_output_surface_dependencies,
+    native_feature_dependency_ids, reconciled_dependencies, surface_merge_entity_dependencies,
+    surface_merge_quilt_ids,
+};
+use crate::decode::feature_history::knit::{
+    feature_result_surface_ids, feature_result_topology, generated_surface_face_refs,
+    knit_class_100_operand_entity_ids, knit_operand_surface_ids,
+};
+use crate::decode::feature_history::link::profile_segment_ids;
+use crate::decode::feature_history::selections::{
+    feature_edge_selection, feature_result_edge_ids, generated_curve_edge_refs,
 };
 use crate::decode::holes::placement::{cylinder_from_complementary_outline_bounds, hole_placement};
 use crate::decode::holes::sweep::extrusion_extent_and_direction;

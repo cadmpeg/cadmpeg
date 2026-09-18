@@ -3,12 +3,13 @@
 
 use super::parameter_slot;
 use crate::decode::analytic::equations::PlaneEquation;
-use crate::decode::feature_history::{
+use crate::decode::feature_history::draft::schema_feature_definition;
+use crate::decode::feature_history::link::section_entity_is_generated_profile;
+use crate::decode::feature_history::round::{
     coordinate_pair_proves_torus_radii, differing_positive_lengths,
     five_coordinate_envelope_proves_torus_radii, outline_has_unique_radius_delta,
     paired_five_coordinate_sphere_center, parallel_support_radius, round_constant_radius,
-    round_observed_radii, round_placed_cylinder_radii, round_support_radius,
-    schema_feature_definition, section_entity_is_generated_profile, slot_fillet_cylinder,
+    round_observed_radii, round_placed_cylinder_radii, round_support_radius, slot_fillet_cylinder,
     unique_positive_length,
 };
 use crate::decode::holes::placement::ExtrusionSpan;

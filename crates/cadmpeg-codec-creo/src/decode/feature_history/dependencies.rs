@@ -2,7 +2,7 @@
 //! Feature dependency graphs, affected ids, and link reconciliation.
 
 use super::super::surfaces::unique_surface_prototype_associations;
-use super::surface_transition_dependencies;
+use super::knit::surface_transition_dependencies;
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::current_feature_recipe_parent;
 use cadmpeg_ir::document::CadIr;

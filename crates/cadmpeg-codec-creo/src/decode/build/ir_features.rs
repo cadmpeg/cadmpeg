@@ -15,14 +15,23 @@ use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
 
 use super::super::curve_expressions::transfer_curve_expression_features;
-use super::super::feature_history::{
-    datum_plane_feature_definition, emit_feature_result_topologies, feature_dependencies,
+use super::super::feature_history::axes::geometry_generator_features;
+use super::super::feature_history::dependencies::{
+    feature_dependencies, reconcile_feature_links, surface_prototype_feature_dependencies,
+};
+use super::super::feature_history::dimensions::transfer_feature_dimensions;
+use super::super::feature_history::draft::{
+    datum_plane_feature_definition, schema_feature_definition, unbounded_feature_plane_definition,
+};
+use super::super::feature_history::knit::emit_feature_result_topologies;
+use super::super::feature_history::link::link_feature_sketch_history;
+use super::super::feature_history::named::{
+    named_feature_definition, named_or_referenced_feature_definition,
+    retain_native_feature_parameters,
+};
+use super::super::feature_history::outputs::{
     feature_output_bodies, feature_parameters, feature_reference_name, feature_source_properties,
-    geometry_generator_features, link_feature_sketch_history, named_feature_definition,
-    named_or_referenced_feature_definition, reconcile_feature_links,
-    retain_native_feature_parameters, schema_feature_definition, schema_operation_kind,
-    surface_prototype_feature_dependencies, transfer_feature_dimensions,
-    unbounded_feature_plane_definition,
+    schema_operation_kind,
 };
 use super::super::native::annotate;
 use super::super::sketch_ids::owning_feature_definition_ref;

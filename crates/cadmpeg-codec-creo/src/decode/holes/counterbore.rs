@@ -14,9 +14,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
 
-use super::super::feature_history::{
-    feature_dimension_table_complete, unique_surface_parameter_record,
-};
+use super::super::feature_history::dimensions::feature_dimension_table_complete;
+use super::super::feature_history::round::unique_surface_parameter_record;
 use super::super::sketch::approximately_equal;
 use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;

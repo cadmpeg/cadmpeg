@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature edge selection and generated result-edge identity.
 
-use super::{
+use super::axes::model_feature_ids;
+use super::dependencies::{
     agreed_feature_affected_ids, agreed_feature_replay_edge_ids,
-    agreed_feature_replay_geometry_ids, has_feature_affected_ids, model_feature_ids,
+    agreed_feature_replay_geometry_ids, has_feature_affected_ids,
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;

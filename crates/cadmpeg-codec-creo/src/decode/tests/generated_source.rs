@@ -5,11 +5,11 @@ use super::{
     class_911_surface_row, simple_drilled_recipe_surface_rows, simple_drilled_recipe_table,
 };
 use crate::decode::analytic::carriers::rowless_round_face_orientations;
-use crate::decode::feature_history::{
+use crate::decode::feature_history::draft::schema_feature_definition;
+use crate::decode::feature_history::link::{
     analytic_surface_id_for_feature, generated_surface_id_for_feature,
     ordered_analytic_surface_id_for_feature, ordered_family_surface_bindings_for_feature,
-    schema_feature_definition, section_entity_is_generated_profile,
-    section_generated_profile_surface_kinds,
+    section_entity_is_generated_profile, section_generated_profile_surface_kinds,
 };
 use crate::decode::holes::counterbore::{
     counterbore_axis_placement_from_sources, counterbore_cylinder_sources,

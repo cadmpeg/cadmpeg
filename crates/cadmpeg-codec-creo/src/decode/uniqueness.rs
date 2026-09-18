@@ -6,7 +6,7 @@ use cadmpeg_ir::features::ProfileRef;
 
 use crate::container::ContainerScan;
 
-use super::feature_history::section_profile_ref;
+use super::feature_history::axes::section_profile_ref;
 use super::sketch_ids::feature_sketch_record_id_in_scan;
 
 pub(crate) fn exactly_one<T>(mut iter: impl Iterator<Item = T>) -> Option<T> {

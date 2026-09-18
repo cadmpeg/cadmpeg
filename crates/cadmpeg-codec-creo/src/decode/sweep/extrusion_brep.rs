@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved extrusion B-rep transfer.
 
-use super::super::feature_history::{
-    feature_allows_additive_linear_extrusion, generated_profile_entry_is_admissible,
-};
+use super::super::feature_history::draft::feature_allows_additive_linear_extrusion;
+use super::super::feature_history::link::generated_profile_entry_is_admissible;
 use super::super::native::annotate;
 use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;

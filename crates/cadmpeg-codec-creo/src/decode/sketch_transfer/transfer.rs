@@ -2,10 +2,11 @@
 //! Sketch arena transfer from feature section tables.
 
 use super::super::coverage::SketchSegmentTransferCoverage;
-use super::super::feature_history::{
-    owned_section_feature_id, planned_feature_dimension_parameter_ids,
+use super::super::feature_history::dimensions::planned_feature_dimension_parameter_ids;
+use super::super::feature_history::link::{
     section_entity_is_generated_profile, section_generated_profile_surface_kinds,
 };
+use super::super::feature_history::outputs::owned_section_feature_id;
 use super::super::native::annotate;
 use super::super::sketch::{
     resolved_section_coordinates, resolved_section_radii, resolved_section_reference_line_geometry,

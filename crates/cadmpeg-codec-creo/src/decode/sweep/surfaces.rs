@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section surface and curve construction and extrusion surface transfer.
 
-use super::super::feature_history::{
-    analytic_surface_id_for_feature, feature_allows_linear_extrusion,
-    generated_surface_id_for_feature, surface_kind_for_geometry,
+use super::super::feature_history::draft::feature_allows_linear_extrusion;
+use super::super::feature_history::link::{
+    analytic_surface_id_for_feature, generated_surface_id_for_feature, surface_kind_for_geometry,
 };
 use super::super::native::annotate;
 use super::super::sketch::{

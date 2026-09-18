@@ -2,10 +2,10 @@
 //! Tests: generated nurbs.
 
 use super::section_axis_line_carrier;
-use crate::decode::feature_history::{
-    agreed_feature_affected_ids, agreed_feature_geometry_ids, agreed_feature_replay_edge_ids,
-    agreed_feature_replay_geometry_ids,
+use crate::decode::feature_history::dependencies::{
+    agreed_feature_affected_ids, agreed_feature_replay_edge_ids, agreed_feature_replay_geometry_ids,
 };
+use crate::decode::feature_history::selections::agreed_feature_geometry_ids;
 use crate::decode::sketch::{
     intersect_section_line_arc, intersect_section_lines, intersect_tangent_section_arcs,
     resolved_section_coordinates, resolved_section_points, resolved_section_radii,

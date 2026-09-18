@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::decode::feature_history::section_profile_ref;
+use crate::decode::feature_history::axes::section_profile_ref;
 use crate::decode::holes::placement::{
     cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines, hole_extent_and_direction,
     hole_placement,

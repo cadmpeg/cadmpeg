@@ -2,15 +2,20 @@
 //! Tests: interpolation spline.
 
 use crate::decode::analytic::equations::PlaneEquation;
-use crate::decode::feature_history::{
-    class_942_boundary_surface_entity_graph, draft_neutral_plane_selection,
-    feature_allows_linear_extrusion, feature_is_sheet_extrusion, feature_surface_transitions,
-    filled_surface_feature_definition, named_feature_definition, new_sheet_output_surface_id,
-    numbered_feature_name_has_family, preceding_features_establish_body,
-    reference_named_feature_definition, schema_feature_definition,
+use crate::decode::feature_history::draft::{
+    class_942_boundary_surface_entity_graph, feature_allows_linear_extrusion,
+    feature_is_sheet_extrusion, numbered_feature_name_has_family,
+    preceding_features_establish_body, schema_feature_definition,
     section_sweep_allows_linear_extrusion, section_sweep_boolean_operation,
-    surface_transition_dependencies, sweep_output_kind, thicken_plane_offset,
 };
+use crate::decode::feature_history::knit::{
+    draft_neutral_plane_selection, feature_surface_transitions, filled_surface_feature_definition,
+    surface_transition_dependencies, thicken_plane_offset,
+};
+use crate::decode::feature_history::named::{
+    named_feature_definition, reference_named_feature_definition,
+};
+use crate::decode::feature_history::outputs::{new_sheet_output_surface_id, sweep_output_kind};
 use crate::decode::holes::placement::ExtrusionSpan;
 use crate::decode::holes::sweep::extrusion_extent_and_direction;
 use crate::decode::sketch_transfer::recipe::{
