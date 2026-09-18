@@ -46,5 +46,22 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+/// Refuse a point carrier whose position is not a finite coordinate triple.
+///
+/// `Point3` is a plain carrier and `Point::position` is a public field, so no
+/// constructor stands between a decoder and a non-finite position.
+pub(super) fn check_point_positions(ir: &CadIr, findings: &mut Vec<Finding>) {
+    for point in &ir.model.points {
+        if !point.position.is_finite() {
+            findings.push(Finding {
+                check: Check::GeometricConsistency,
+                severity: Severity::Error,
+                message: "point position contains a non-finite coordinate".into(),
+                entity: Some(point.id.to_string()),
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
