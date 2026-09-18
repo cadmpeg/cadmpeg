@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native embedded-cylinder ownership and support bindings.
 
-use crate::test_support::*;
+use crate::test_support::test_a5_bound::{
+    a5_native_edge_run_stream, a5_native_edge_run_stream_with_support,
+};
+use crate::test_support::test_b2::{
+    b2_embedded_cylinder_stream, b2_embedded_cylinder_stream_with_object_id, b2_group_stream,
+};
 
 #[test]
 fn embedded_cylinders_keep_group_identity_after_empty_groups() {

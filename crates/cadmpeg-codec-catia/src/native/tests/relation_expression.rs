@@ -7,7 +7,12 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_formula::{
+    standard_catpart_with_opened_parser_version_relation_expression,
+    standard_catpart_with_parser_version_relation_expression,
+    standard_catpart_with_relation_expression, standard_catpart_with_relation_expression_signature,
+    standard_catpart_with_unprefixed_parser_version_relation_expression,
+};
 use crate::CatiaCodec;
 
 #[test]

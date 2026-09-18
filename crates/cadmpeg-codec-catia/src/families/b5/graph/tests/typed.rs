@@ -7,7 +7,13 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_b2::b2_sphere_stream;
+use crate::test_support::test_b5::{
+    append_b5_record, b5_closed_triangle_stream, b5_linear_pcurve_payload, b5_object_ref,
+    b5_plane_payload,
+};
+use crate::test_support::test_bytes::le_f64;
+use crate::test_support::test_container::object_main_catpart;
 use crate::CatiaCodec;
 
 #[test]

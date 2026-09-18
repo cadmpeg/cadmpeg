@@ -12,7 +12,15 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::report::{LossCategory, Severity};
 
-use crate::test_support::*;
+use crate::test_support::test_a5a8::{a8_catpart, inner_no_directory_a8_catpart};
+use crate::test_support::test_annotations::assert_every_entity_has_v1_annotation;
+use crate::test_support::test_container::{
+    fbb_only_catpart, fbb_only_quad_catpart, fbb_only_quad_unmatched_edge_catpart,
+    standard_catpart, tetrahedron_topology_catpart, zero_entity_catpart,
+    zero_entity_cylinder_catpart, zero_entity_cylinder_parametric_support_catpart,
+};
+use crate::test_support::test_e5::e5_catpart;
+use crate::test_support::test_topology::fbb_only_quad_unmatched_edge_topology_stream;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 

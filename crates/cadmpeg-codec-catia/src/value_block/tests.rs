@@ -4,7 +4,7 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 use super::*;
-use crate::test_support::{catalog_stream, value_block_stream};
+use crate::test_support::test_object_graph::{catalog_stream, value_block_stream};
 
 #[test]
 fn typed_payloads_hide_embedded_schema_marker_bytes() {

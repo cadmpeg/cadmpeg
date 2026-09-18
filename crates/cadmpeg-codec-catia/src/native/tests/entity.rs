@@ -9,7 +9,22 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::Annotations;
 
-use crate::test_support::*;
+use crate::test_support::test_bytes::be32;
+use crate::test_support::test_container::standard_catpart;
+use crate::test_support::test_formula::{
+    standard_catpart_with_definition_chain_type, standard_catpart_with_definition_chain_value,
+    standard_catpart_with_definition_value, standard_catpart_with_formula_relation,
+    standard_catpart_with_parameter_value, standard_catpart_with_two_definition_chain_values,
+    standard_catpart_with_unassigned_definition_chain_value,
+};
+use crate::test_support::test_object_graph::{
+    catalog_stream, entity_backed_object_graph, entity_table_record_with_definition_and_value,
+    entity_table_record_with_value, inline_object_graph_record, object_graph_from_records,
+    object_graph_record, standard_catpart_with_crossing_entity_value_packet,
+    standard_catpart_with_entity_value_schema_selection,
+    standard_catpart_with_numeric_entity_value_pair,
+    standard_catpart_with_repeated_reference_schema_selection,
+};
 use crate::CatiaCodec;
 
 #[test]

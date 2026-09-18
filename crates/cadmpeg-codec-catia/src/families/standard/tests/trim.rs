@@ -530,8 +530,8 @@ fn standard_face_population_rejects_equal_largest_fbb_runs() {
 
 #[test]
 fn standard_face_population_withholds_multiple_complete_fbb_groups() {
-    let mut bytes = crate::test_support::standard_quad_topology_stream();
-    bytes.extend(crate::test_support::standard_quad_topology_stream());
+    let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
+    bytes.extend(crate::test_support::test_topology::standard_quad_topology_stream());
 
     let groups = standard_fbb_groups(&bytes);
     assert_eq!(groups.len(), 2);
@@ -551,9 +551,9 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
 
 #[test]
 fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
-    let mut bytes = crate::test_support::fbb_only_quad_topology_stream();
+    let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
     bytes.push(0);
-    bytes.extend(crate::test_support::fbb_only_quad_topology_stream());
+    bytes.extend(crate::test_support::test_topology::fbb_only_quad_topology_stream());
 
     let layouts = fbb_population_layouts(&bytes);
     assert_eq!(layouts.len(), 2);
@@ -564,7 +564,7 @@ fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
 
 #[test]
 fn fbb_population_spine_retains_the_preceding_trim_chain() {
-    let bytes = crate::test_support::fbb_only_quad_topology_stream();
+    let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
     let layouts = fbb_population_layouts(&bytes);
     let [layout] = layouts.as_slice() else {
         panic!("one source-closed FBB population");
@@ -583,7 +583,7 @@ fn fbb_population_spine_retains_the_preceding_trim_chain() {
 
 #[test]
 fn standard_helpers_share_the_source_closed_face_population() {
-    let mut bytes = crate::test_support::standard_quad_topology_stream();
+    let mut bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xaa, 0xbb, 0xcc, 0xdd]);
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0x11, 0x22, 0x33, 0x44]);
 

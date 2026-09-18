@@ -5,7 +5,21 @@
 
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-use crate::test_support::*;
+use crate::test_support::test_a5a8::a5_surface_stream;
+use crate::test_support::test_b2::{
+    b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
+    b2_adjacent_secondary_face_owner_stream, b2_all_compact_owner_packet_stream, b2_circle_stream,
+    b2_class5b5c_stream, b2_cone_face_stream, b2_cone_stream, b2_construction_use_stream,
+    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
+    b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_group_stream,
+    b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
+    b2_offset_support_stream, b2_owner_chart_stream, b2_owner_chart_stream_with_extended_bridge,
+    b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
+    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
+    b2_revolution_stream, b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
+    b2_width_coded_owner_chart_stream, b2_width_coded_owner_packet_stream,
+    b2_width_coded_owner_with_allocation_stream, b3_cylinder_stream, b3_offset_support_stream,
+};
 
 #[test]
 fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
@@ -108,7 +122,7 @@ fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
         0x40,
     ]);
     for value in values {
-        stream.extend_from_slice(&crate::test_support::le_f64(value));
+        stream.extend_from_slice(&crate::test_support::test_bytes::le_f64(value));
     }
 
     let carriers = crate::families::b2::records::b2_plane_carriers(&stream);

@@ -1,22 +1,12 @@
 use crate::families::b2::tests::b2_nurbs_curve_stream;
 use crate::families::b2::tests::b2_spatial_circle_stream;
-use crate::test_support::b2_adjacent_face_counted_owner_stream;
-use crate::test_support::b2_adjacent_face_owner_stream;
-use crate::test_support::b2_class5b5c_stream;
-use crate::test_support::b2_cone_stream;
-use crate::test_support::b2_construction_use_stream;
-use crate::test_support::b2_counted_61_stream;
-use crate::test_support::b2_cylinder_stream;
-use crate::test_support::b2_face_node_5f_stream;
-use crate::test_support::b2_line_profile_stream;
-use crate::test_support::b2_long_61_stream;
-use crate::test_support::b2_owner_packet_stream;
-use crate::test_support::b2_parameter_point_stream;
-use crate::test_support::b2_reference_list_stream;
-use crate::test_support::b2_resolved_revolution_stream;
-use crate::test_support::b2_sphere_stream;
-use crate::test_support::b2_torus_stream;
-use crate::test_support::b2_width_coded_owner_packet_stream;
+use crate::test_support::test_b2::{
+    b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream, b2_class5b5c_stream,
+    b2_cone_stream, b2_construction_use_stream, b2_counted_61_stream, b2_cylinder_stream,
+    b2_face_node_5f_stream, b2_line_profile_stream, b2_long_61_stream, b2_owner_packet_stream,
+    b2_parameter_point_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
+    b2_sphere_stream, b2_torus_stream, b2_width_coded_owner_packet_stream,
+};
 
 #[test]
 fn indexed_analytic_carrier_decoders_match_one_shot_wrappers() {

@@ -2,7 +2,8 @@
 //! a5/a6/a8-family synthetic stream and CATPart builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{compact_uint_bytes, le_f64, object_main_catpart};
+use crate::test_support::test_bytes::{compact_uint_bytes, le_f64};
+use crate::test_support::test_container::object_main_catpart;
 
 pub(crate) fn a8_surface_stream() -> Vec<u8> {
     let mut payload = Vec::new();

@@ -4,7 +4,7 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 use super::*;
-use crate::test_support::catalog_stream;
+use crate::test_support::test_object_graph::catalog_stream;
 
 #[test]
 fn catalog_accepts_utf8_and_expression_line_feeds() {

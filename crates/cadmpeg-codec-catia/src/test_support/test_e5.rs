@@ -2,8 +2,9 @@
 //! e5-family synthetic stream and CATPart builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{be32, descriptor, le_f32, le_f64};
 use crate::container::{DIR_MAGIC, OUTER_MAGIC};
+use crate::test_support::test_bytes::{be32, le_f32, le_f64};
+use crate::test_support::test_container::descriptor;
 
 pub(crate) fn e5_circle_stream() -> Vec<u8> {
     let mut record = vec![0u8; 113];

@@ -822,7 +822,7 @@ mod tests {
 
     #[test]
     fn d8_record_decodes_the_quintic_rolling_ball_jet() {
-        let bytes = crate::test_support::e5_d8_rolling_ball_stream();
+        let bytes = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
 
         let jets = e5_rolling_ball_jets(&bytes);
         assert_eq!(jets.len(), 1);
@@ -858,7 +858,7 @@ mod tests {
 
     #[test]
     fn d8_record_rejects_wrong_tail_marker() {
-        let mut payload = crate::test_support::e5_d8_rolling_ball_stream();
+        let mut payload = crate::test_support::test_e5::e5_d8_rolling_ball_stream();
         let last = payload.len() - 3;
         payload[last] = 0;
         assert!(e5_rolling_ball_jets(&payload).is_empty());

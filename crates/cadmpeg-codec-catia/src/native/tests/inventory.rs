@@ -7,7 +7,16 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_bytes::be32;
+use crate::test_support::test_container::{
+    external_reference_segment, grouped_surface_alias_stream, outer_container_catpart,
+    standard_catpart, summary_preview_segment, surface_alias_stream,
+};
+use crate::test_support::test_object_graph::{
+    catalog_stream, object_graph_from_records, object_graph_record, object_graph_stream,
+    outer_container_object_graph_catpart, standard_catpart_with_catalog,
+    standard_catpart_with_object_graph, standard_catpart_with_value_block, value_block_stream,
+};
 use crate::CatiaCodec;
 
 #[test]

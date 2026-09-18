@@ -4,11 +4,11 @@
 #![allow(clippy::unwrap_used)]
 use crate::container::{DIR_MAGIC, OUTER_MAGIC};
 
-use super::test_topology::{
+use crate::test_support::test_bytes::{be32, be_f32, le_f32, le_f64};
+use crate::test_support::test_topology::{
     fbb_only_quad_surface_stream, fbb_only_quad_topology_stream,
     fbb_only_quad_unmatched_edge_topology_stream,
 };
-use super::{be32, be_f32, le_f32, le_f64};
 
 pub(crate) fn summary_preview_segment() -> Vec<u8> {
     let mut bytes = b"FINJPL  \x01\x01\x00\x03\x00\x00\x00\x15\x00CATSummaryInformation".to_vec();

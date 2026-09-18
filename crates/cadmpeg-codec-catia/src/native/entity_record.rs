@@ -735,9 +735,9 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
 mod tests {
     use super::*;
     use crate::native::{CatiaEntityReference, CatiaNative};
-    use crate::test_support::{
+    use crate::test_support::test_formula::standard_catpart_with_formula_relation;
+    use crate::test_support::test_object_graph::{
         object_graph_record, sequential_entity_backed_object_graph,
-        standard_catpart_with_formula_relation,
     };
 
     #[test]

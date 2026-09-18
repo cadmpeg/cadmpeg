@@ -8,7 +8,12 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 
-use crate::test_support::*;
+use crate::test_support::test_formula::{
+    standard_catpart_with_formula_chain, standard_catpart_with_formula_relation,
+    standard_catpart_with_typed_formula_inputs,
+    standard_catpart_with_typed_formula_inputs_and_object_payload,
+    standard_catpart_with_typed_formula_relation, FormulaChainCase,
+};
 use crate::CatiaCodec;
 
 #[test]

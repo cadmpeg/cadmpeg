@@ -4,7 +4,13 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 use super::{HeadOwner, ObjectRecord};
-use crate::test_support::*;
+use crate::test_support::test_container::surface_alias_stream;
+use crate::test_support::test_object_graph::{
+    catalog_stream, entity_table_record, inline_object_graph_record,
+    object_graph_ambiguous_3c_stream, object_graph_bulk_table_stream, object_graph_from_records,
+    object_graph_record, object_graph_stream, object_graph_vm_stream,
+    sequential_entity_backed_object_graph, value_block_stream,
+};
 
 fn owner_ref(record: &ObjectRecord) -> Option<u32> {
     match record.roles().owner {

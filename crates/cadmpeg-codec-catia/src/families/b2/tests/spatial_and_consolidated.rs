@@ -1,8 +1,8 @@
 use crate::families::b2::tests::b2_spatial_circle_stream;
-use crate::test_support::a5_surface_stream;
-use crate::test_support::b2_edge_node_stream;
-use crate::test_support::b2_embedded_cylinder_stream;
-use crate::test_support::inner_no_directory_b2_catpart;
+use crate::test_support::test_a5a8::a5_surface_stream;
+use crate::test_support::test_b2::{
+    b2_edge_node_stream, b2_embedded_cylinder_stream, inner_no_directory_b2_catpart,
+};
 use crate::variant::Variant;
 use crate::CatiaCodec;
 use cadmpeg_ir::codec::Codec;
