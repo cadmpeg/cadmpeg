@@ -1,14 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
 
+use super::curve_entity;
+use super::ensure_version_support;
+use super::face_loop_order;
+use super::face_outer_loop;
+use super::generated_global;
+use super::generated_minimum_resolution;
+use super::generation_timestamp;
+use super::hyperbola_point;
+use super::isoparametric_flag;
+use super::number;
+use super::oriented_curve_entity;
+use super::orthonormal_pair;
+use super::surface_entities;
+use super::validate_arc_sweep;
+use super::CurveSpan;
+use super::RevolutionSweep;
+use super::FRAME_REPAIR_DOT_LIMIT;
+use super::WRITER_ENDPOINT_RELATIVE_TOLERANCE;
+use super::WRITER_NATIVE_FILE_NAME;
+use super::WRITER_SENDER_PRODUCT;
+use super::WRITER_UNITS_NAME;
+use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::Loop;
+use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::topology::{Edge, PcurveUse, Point, Vertex};
 use cadmpeg_ir::CadIr;
+use std::f64::consts::TAU;
 use std::io::Cursor;
+use std::time::UNIX_EPOCH;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::{

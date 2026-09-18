@@ -4,12 +4,18 @@
 use super::{accepts_non_manifold_write_loss, accepts_procedural_reduction_loss};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs,
-    PcurveNurbsPoles, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::NurbsSurface;
+use cadmpeg_ir::geometry::Pcurve;
+use cadmpeg_ir::geometry::PcurveGeometry;
+use cadmpeg_ir::geometry::PcurveNurbs;
+use cadmpeg_ir::geometry::PcurveNurbsPoles;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,

@@ -1,4 +1,16 @@
-use super::*;
+use super::directory_target;
+use super::integer_parameter_record;
+use super::token_parameter_record;
+use crate::global::GlobalTable;
+use crate::parameter::analyze_trailing_pointer_groups;
+use crate::parameter::analyze_trailing_pointer_groups_for_global_table;
+use crate::parameter::entity_primary_end;
+use crate::parameter::entity_primary_end_for_global_table;
+use crate::parameter::structural_pointer_group_candidates;
+use crate::parameter::ParameterRecord;
+use crate::parameter::Token;
+use crate::parameter::TokenValue;
+use std::collections::BTreeMap;
 
 #[test]
 fn type406_form27_complete_counted_span_keeps_boundary_with_invalid_value_type() {

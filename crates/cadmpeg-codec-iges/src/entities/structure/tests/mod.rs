@@ -6,15 +6,12 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::{
-    flow_join_target_valid, functional_level_identifier_valid, line_font_property_code_valid,
-    network_connectivity_valid, signal_string_geometry_target,
-    subfigure_definition_directory_fields_valid,
-};
-use crate::global::GlobalTable;
+use super::flow_join_target_valid;
+use super::functional_level_identifier_valid;
+use super::line_font_property_code_valid;
+use super::signal_string_geometry_target;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;

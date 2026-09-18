@@ -1,5 +1,21 @@
-use super::*;
+use crate::test_support::explicit_void_solid_file;
+use crate::IgesCodec;
+use crate::IgesVersion;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::NurbsCurve;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::CadIr;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
 
 #[test]
 fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {

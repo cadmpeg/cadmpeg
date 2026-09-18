@@ -2,22 +2,12 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
-use std::collections::BTreeMap;
-use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
-
-use super::{
-    analyze_trailing_pointer_groups, analyze_trailing_pointer_groups_for_global_table,
-    analyze_trailing_pointer_groups_with_records, entity_primary_end,
-    entity_primary_end_for_global_table, entity_primary_end_with_records, groups_for_candidate,
-    structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
-};
+use super::ParameterRecord;
+use super::Token;
+use super::TokenValue;
 use crate::card::{scan, Section};
-use crate::global::GlobalTable;
-use crate::loss::IgesLossCode;
 use crate::test_support::*;
-use crate::IgesCodec;
 
 mod advanced_entity_boundaries;
 mod curve_surface_boundaries;

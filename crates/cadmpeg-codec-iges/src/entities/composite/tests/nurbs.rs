@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::entities::composite::bounded_nurbs_for_curve_with_tolerance;
+use crate::entities::composite::concatenate_nurbs;
+use crate::entities::composite::elevate_nurbs_to_degree;
+use crate::entities::curve_conversion::circular_arc_nurbs;
+use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::NurbsCurve;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::EdgeId;
+use cadmpeg_ir::ids::PointId;
+use cadmpeg_ir::ids::VertexId;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::Edge;
+use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::topology::Vertex;
+use cadmpeg_ir::CadIr;
 
 #[test]
 fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {

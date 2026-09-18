@@ -2,10 +2,24 @@
 //! Resolution of a write request against the source: the synthesis catalog, the
 //! preservation path, and the two refusals.
 
-use super::*;
+use crate::loss::IgesLossCode;
+use crate::test_support::plan_at;
+use crate::test_support::point_file_with_global;
+use crate::IgesCodec;
+use crate::IgesVersion;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::ids::PointId;
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::FidelityResolution;
+use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::CadIr;
+use cadmpeg_ir::Codec;
+use std::io::Cursor;
 
 /// The global of [`point_file`] with field 23 set to `flag`.
 fn point_file_at_version_flag(flag: u8) -> Vec<u8> {
