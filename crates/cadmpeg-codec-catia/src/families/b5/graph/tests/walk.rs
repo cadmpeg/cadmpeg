@@ -1,5 +1,5 @@
 use super::super::*;
-use super::*;
+use crate::families::b5::graph::tests::object_stream_pcurve;
 
 #[test]
 fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {

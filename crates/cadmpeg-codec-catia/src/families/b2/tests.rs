@@ -3,14 +3,9 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use std::io::Cursor;
-
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::test_support::*;
-use crate::variant::Variant;
-use crate::CatiaCodec;
 
 #[test]
 fn b_family_pcurve_parser_reads_six_channel_uv_jet() {

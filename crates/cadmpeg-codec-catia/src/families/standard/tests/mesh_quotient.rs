@@ -1,5 +1,32 @@
-use super::*;
+use crate::families::standard::tests::repeated_domain;
+use crate::families::standard::topology::reconstruct_incidence;
+use crate::families::standard::topology::solve_boundary_orientation_constraints;
+use crate::families::standard::topology::Boundary;
+use crate::families::standard::topology::CoedgeUse;
+use crate::families::standard::topology::EdgeBoundaryLayout;
+use crate::families::standard::topology::EdgeRow;
+use crate::families::standard::topology::FaceTopology;
+use crate::families::standard::topology::StandardTopology;
+use crate::solve::mesh_quotient::deduplicate_mesh_quotient_assignments;
+use crate::solve::mesh_quotient::initial_mesh_quotient;
+use crate::solve::mesh_quotient::mesh_assignment_can_merge;
+use crate::solve::mesh_quotient::possible_face_choices;
+use crate::solve::mesh_quotient::possible_face_choices_with_limit;
+use crate::solve::mesh_quotient::possible_face_equations;
+use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::MeshSelectionSearch;
 use crate::solve::mesh_quotient::SearchOutcome;
+use crate::solve::mesh_quotient::MAX_FACE_EQUATION_CACHE_ENTRIES;
+use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
+use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
+use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
+use crate::solve::missing_edge::MeshFaceBoundaryDomain;
+use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::topology::BodyKind;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::Arc;
 
 #[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {

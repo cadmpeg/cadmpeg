@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reference-plane owner transfer tests.
 
-use super::*;
+use crate::design_feature::tests::design_object;
+use crate::design_feature::tests::native_operation_object;
+use crate::design_feature::tests::object_record;
+use crate::design_feature::transfer_design_features;
+use crate::native::CatiaNative;
+use crate::native::CatiaObjectGraph;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::features::UnresolvedFamily;
+use std::collections::HashSet;
 
 #[test]
 fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {

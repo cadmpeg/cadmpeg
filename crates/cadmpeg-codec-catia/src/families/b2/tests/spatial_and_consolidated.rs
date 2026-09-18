@@ -1,4 +1,15 @@
-use super::*;
+use crate::families::b2::tests::b2_spatial_circle_stream;
+use crate::test_support::a5_surface_stream;
+use crate::test_support::b2_edge_node_stream;
+use crate::test_support::b2_embedded_cylinder_stream;
+use crate::test_support::inner_no_directory_b2_catpart;
+use crate::variant::Variant;
+use crate::CatiaCodec;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use std::io::Cursor;
 
 #[test]
 fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {

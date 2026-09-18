@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Range source-property transfer tests.
 
-use super::*;
-
+use crate::design_feature::tests::entity_record;
+use crate::design_feature::tests::native_operation_object;
+use crate::design_feature::tests::object_record;
+use crate::design_feature::transfer_design_features;
 use crate::entity_table::{RangeInterval, RangeIntervalPrefix, RangeIntervalSlot};
+use crate::native::CatiaNative;
+use crate::native::CatiaObjectGraph;
 use crate::native::{
     CatiaEntitySchemaValue, CatiaRangeInterval, CatiaRangeNominal, CatiaRangeNominalFraming,
 };
+use cadmpeg_ir::document::CadIr;
+use std::collections::HashSet;
 
 #[test]
 fn transfers_exact_range_fields_as_unresolved_operation_properties() {

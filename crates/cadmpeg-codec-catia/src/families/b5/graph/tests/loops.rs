@@ -1,5 +1,8 @@
 use super::super::*;
-use super::*;
+use crate::families::b5::graph::tests::extended_loop_metadata;
+use crate::families::b5::graph::tests::test_loop_members;
+use crate::families::b5::graph::tests::test_loop_metadata;
+use crate::families::b5::graph::tests::test_pcurve;
 
 #[test]
 fn unit_preserves_tiny_finite_direction() {
