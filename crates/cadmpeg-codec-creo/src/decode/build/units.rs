@@ -1419,6 +1419,7 @@ fn scale_surface_geometry(
             surface
                 .edit_control_points(|point| {
                     scale_point3(point, scale);
+                    Ok(())
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(

@@ -349,6 +349,7 @@ fn flat_test_nurbs_surface() -> NurbsSurface {
     surface
         .edit_control_points(|point| {
             point.z = 0.0;
+            Ok(())
         })
         .unwrap();
     surface

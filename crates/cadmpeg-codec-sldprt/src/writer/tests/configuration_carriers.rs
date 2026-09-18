@@ -1314,6 +1314,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
                     pole.z += 500.0;
                 }
                 pole_index += 1;
+                Ok(())
             })
             .unwrap();
         let expected_surface = surface.clone();

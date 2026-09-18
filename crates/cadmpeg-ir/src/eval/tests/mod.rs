@@ -469,6 +469,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
                 point.z = 1.0;
             }
             visited += 1;
+            Ok(())
         })
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];

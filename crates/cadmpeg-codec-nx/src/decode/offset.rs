@@ -2367,6 +2367,7 @@ mod tests {
                     pole.z += 1.0;
                 }
                 pole_index += 1;
+                Ok(())
             })
             .expect("finite offset-support test pole edit");
         let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));

@@ -1088,6 +1088,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
                 pole.z = -3.25;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     nurbs
@@ -1648,6 +1649,7 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
                 pole.z = 4.0;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     nurbs

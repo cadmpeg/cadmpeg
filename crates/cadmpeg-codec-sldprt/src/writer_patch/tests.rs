@@ -48,6 +48,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
             pole.z = 750.0;
         }
         pole_index += 1;
+        Ok(())
     })
     .unwrap();
     new.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
@@ -152,6 +153,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                     pole.z = 750.0;
                 }
                 pole_index += 1;
+                Ok(())
             })
             .unwrap();
         surface.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();

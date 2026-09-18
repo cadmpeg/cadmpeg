@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, NurbsError, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
@@ -299,18 +299,21 @@ fn transform_surface(
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            let mut placed = true;
             nurbs
-                .edit_control_points(|point| match transform.apply_point(*point) {
-                    Some(moved) => *point = moved,
-                    None => placed = false,
+                .edit_control_points(|point| {
+                    *point = transform.apply_point(*point).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "baked body placement produced a non-finite point".to_string(),
+                        )
+                    })?;
+                    Ok(())
                 })
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+                .map_err(|error| match error {
+                    NurbsError::EditRefused(_) => non_finite_point(),
+                    error => {
+                        CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
+                    }
                 })?;
-            if !placed {
-                return Err(non_finite_point());
-            }
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {
             let mut placed = true;
