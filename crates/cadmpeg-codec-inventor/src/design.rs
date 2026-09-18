@@ -14,25 +14,30 @@ use cadmpeg_ir::{
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    type_id_string, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference,
+    inventor_id, type_id_string, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference,
 };
 use crate::record_identity::{Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
-const EXPRESSION_VALUE_TYPE: [u8; 16] = id(0xf8a7_7a04);
-const EXPRESSION_REFERENCE_TYPE: [u8; 16] = id(0xf8a7_7a05);
-const EXPRESSION_ADD_TYPE: [u8; 16] = id(0xf8a7_7a06);
-const EXPRESSION_SUBTRACT_TYPE: [u8; 16] = id(0xf8a7_7a07);
-const EXPRESSION_MULTIPLY_TYPE: [u8; 16] = id(0xf8a7_7a08);
-const EXPRESSION_DIVIDE_TYPE: [u8; 16] = id(0xf8a7_7a09);
-const EXPRESSION_MODULO_TYPE: [u8; 16] = id(0xf8a7_7a0a);
-const EXPRESSION_POWER_TYPE: [u8; 16] = id(0xf8a7_7a0b);
-const EXPRESSION_NEGATE_TYPE: [u8; 16] = id(0xf8a7_7a0c);
-const EXPRESSION_POWER_IDENTITY_TYPE: [u8; 16] = id(0xf8a7_7a0d);
-const UNIT_TYPE: [u8; 16] = id(0xf8a7_79fd);
+const EXPRESSION_VALUE_TYPE: [u8; 16] = expression_id(0xf8a7_7a04);
+const EXPRESSION_REFERENCE_TYPE: [u8; 16] = expression_id(0xf8a7_7a05);
+const EXPRESSION_ADD_TYPE: [u8; 16] = expression_id(0xf8a7_7a06);
+const EXPRESSION_SUBTRACT_TYPE: [u8; 16] = expression_id(0xf8a7_7a07);
+const EXPRESSION_MULTIPLY_TYPE: [u8; 16] = expression_id(0xf8a7_7a08);
+const EXPRESSION_DIVIDE_TYPE: [u8; 16] = expression_id(0xf8a7_7a09);
+const EXPRESSION_MODULO_TYPE: [u8; 16] = expression_id(0xf8a7_7a0a);
+const EXPRESSION_POWER_TYPE: [u8; 16] = expression_id(0xf8a7_7a0b);
+const EXPRESSION_NEGATE_TYPE: [u8; 16] = expression_id(0xf8a7_7a0c);
+const EXPRESSION_POWER_IDENTITY_TYPE: [u8; 16] = expression_id(0xf8a7_7a0d);
+const UNIT_TYPE: [u8; 16] = expression_id(0xf8a7_79fd);
 
-const fn id(time_low: u32) -> [u8; 16] {
+/// Builds an expression or unit type identifier from the `time_low` field of
+/// its GUID.
+///
+/// The remaining 12 identifier bytes are `d2118f09c0005a9a2378d04f`, where
+/// [`inventor_id`] builds `d011f8d10008cabc0663dc09`.
+const fn expression_id(time_low: u32) -> [u8; 16] {
     let first = time_low.to_le_bytes();
     [
         first[0], first[1], first[2], first[3], 0xd2, 0x11, 0x8f, 0x09, 0xc0, 0x00, 0x5a, 0x9a,
@@ -40,15 +45,13 @@ const fn id(time_low: u32) -> [u8; 16] {
     ]
 }
 
-const PARAMETER_FULL_TYPE: [u8; 16] = [
-    0x26, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63, 0xdc, 0x09,
-];
+const PARAMETER_FULL_TYPE: [u8; 16] = inventor_id(0x9087_4d26);
 const MILLIMETRE_TYPE: [u8; 16] = [
     0xbc, 0x20, 0x41, 0x62, 0xd2, 0x11, 0x9b, 0x0b, 0x60, 0x00, 0x6a, 0xb7, 0x60, 0xfe, 0xc3, 0xb0,
 ];
-const METRE_TYPE: [u8; 16] = id(0xf8a7_79f5);
-const INCH_TYPE: [u8; 16] = id(0xf8a7_79f6);
-const FOOT_TYPE: [u8; 16] = id(0xf8a7_79f7);
+const METRE_TYPE: [u8; 16] = expression_id(0xf8a7_79f5);
+const INCH_TYPE: [u8; 16] = expression_id(0xf8a7_79f6);
+const FOOT_TYPE: [u8; 16] = expression_id(0xf8a7_79f7);
 const RADIAN_TYPE: [u8; 16] = [
     0xf2, 0xcd, 0x30, 0x5c, 0xd2, 0x11, 0x3f, 0x0d, 0x60, 0x00, 0x6a, 0xb7, 0x60, 0xfe, 0xc3, 0xb0,
 ];
