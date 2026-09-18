@@ -4,7 +4,8 @@
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{exactly_one, unique_feature_definition_for_transform};
 use super::dependencies::feature_generated_dependencies;
-use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
+use super::draft::feature_is_sheet_extrusion;
+use super::selections::{agreed_feature_geometry_ids, feature_edge_selection};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
     current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,

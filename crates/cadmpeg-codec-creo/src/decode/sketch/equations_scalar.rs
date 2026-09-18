@@ -6,7 +6,7 @@ use super::axis::SectionAxis;
 use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::feature_history::{
+use super::super::feature_history::dimensions::{
     feature_dimension_table_complete, feature_relation_table_complete,
 };
 use super::coordinates::resolved_section_coordinates;

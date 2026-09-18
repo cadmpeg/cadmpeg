@@ -13,10 +13,12 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::feature_history::{
+use super::super::feature_history::dependencies::{
     agreed_feature_affected_ids, agreed_feature_replay_geometry_ids, has_feature_affected_ids,
-    round_constant_radius, round_support_envelope_cylinder, section_sweep_allows_linear_extrusion,
-    slot_fillet_cylinder,
+};
+use super::super::feature_history::draft::section_sweep_allows_linear_extrusion;
+use super::super::feature_history::round::{
+    round_constant_radius, round_support_envelope_cylinder, slot_fillet_cylinder,
 };
 use super::super::holes::counterbore::{
     counterbore_dimension_tuple_matches_radius, counterbore_dimensions,

@@ -2,13 +2,14 @@
 //! Named and referenced feature definitions.
 
 use super::super::uniqueness::unique_feature_profile_ref;
-use super::{
-    feature_reference_name, feature_revolution_axis_for_transfer,
-    filled_surface_feature_definition, knit_surface_feature_definition,
+use super::axes::feature_revolution_axis_for_transfer;
+use super::draft::{
     linear_extrusion_extent_and_direction, numbered_feature_name_has_family,
     preceding_features_establish_body, schema_feature_definition, section_sweep_boolean_operation,
-    sweep_output_kind, sweep_solid, thicken_feature_definition,
+    thicken_feature_definition,
 };
+use super::knit::{filled_surface_feature_definition, knit_surface_feature_definition};
+use super::outputs::{feature_reference_name, sweep_output_kind, sweep_solid};
 use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;

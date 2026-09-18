@@ -11,7 +11,7 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 
-use super::super::feature_history::{
+use super::super::feature_history::dimensions::{
     feature_dimension_table_complete, feature_relation_table_complete,
 };
 use super::coordinates::{resolved_section_coordinates, resolved_section_points};

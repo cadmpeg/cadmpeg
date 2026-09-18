@@ -10,10 +10,12 @@ use crate::decode::analytic::equations::{
 };
 use crate::decode::analytic::planes::solve_carriers;
 use crate::decode::build::report::has_transferred_geometry;
-use crate::decode::feature_history::{
-    full_turn_revolution_carrier_axis, named_feature_definition,
-    named_or_referenced_feature_definition, resolved_revolution_axis, revolution_axis_for_transfer,
-    schema_feature_definition,
+use crate::decode::feature_history::axes::{
+    full_turn_revolution_carrier_axis, resolved_revolution_axis, revolution_axis_for_transfer,
+};
+use crate::decode::feature_history::draft::schema_feature_definition;
+use crate::decode::feature_history::named::{
+    named_feature_definition, named_or_referenced_feature_definition,
 };
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,

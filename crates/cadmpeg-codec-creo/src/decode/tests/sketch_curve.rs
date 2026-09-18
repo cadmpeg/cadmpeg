@@ -2,10 +2,12 @@
 //! Tests: sketch curve.
 
 use super::{extruded_segment_surface, placed_section_curve_geometry};
-use crate::decode::feature_history::{
-    evaluated_sweep_body_kind, evaluated_sweep_output_bodies, feature_dimension_display,
-    feature_dimension_parameter_id, feature_dimension_parameter_layout,
+use crate::decode::feature_history::dimensions::{
+    feature_dimension_display, feature_dimension_parameter_id, feature_dimension_parameter_layout,
     feature_dimension_parameter_row_id, resolved_feature_dimension_parameter,
+};
+use crate::decode::feature_history::outputs::{
+    evaluated_sweep_body_kind, evaluated_sweep_output_bodies,
 };
 use crate::decode::sketch::{resolved_section_radii, section_circle_geometry};
 use crate::decode::sketch_transfer::constraints::{

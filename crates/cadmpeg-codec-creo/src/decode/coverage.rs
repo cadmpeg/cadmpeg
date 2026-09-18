@@ -11,7 +11,7 @@ use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinitionInput};
 
 use crate::container::ContainerScan;
 
-use super::feature_history::surface_kind_for_geometry;
+use super::feature_history::link::surface_kind_for_geometry;
 use super::records::CreoSurfaceNamedParameterRecord;
 
 pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {

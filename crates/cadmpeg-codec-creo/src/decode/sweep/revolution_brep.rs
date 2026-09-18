@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved revolution B-rep transfer.
 
-use super::super::feature_history::revolution_axis_for_transfer;
+use super::super::feature_history::axes::revolution_axis_for_transfer;
 use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{

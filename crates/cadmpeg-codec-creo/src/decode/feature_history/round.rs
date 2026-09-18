@@ -3,7 +3,7 @@
 
 use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associations};
 use super::super::uniqueness::exactly_one;
-use super::agreed_feature_geometry_ids;
+use super::selections::agreed_feature_geometry_ids;
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::{
     circular_cone, solve_planes, ConeEquation, CylinderEquation, PlaneEquation,

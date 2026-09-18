@@ -3,10 +3,12 @@
 
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
-use super::{
-    feature_result_edge_ids, model_feature_ids, preceding_feature_entity_producers,
-    surface_merge_quilt_ids, surface_merge_quilt_state_offset, unique_positive_length,
+use super::axes::model_feature_ids;
+use super::dependencies::{
+    preceding_feature_entity_producers, surface_merge_quilt_ids, surface_merge_quilt_state_offset,
 };
+use super::round::unique_positive_length;
+use super::selections::feature_result_edge_ids;
 use crate::container::ContainerScan;
 use crate::decode::analytic::equations::PlaneEquation;
 use crate::vecmath::dot;

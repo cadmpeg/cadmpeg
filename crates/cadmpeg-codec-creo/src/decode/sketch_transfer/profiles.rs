@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved profile chains and solver-only section entities.
 
-use super::super::feature_history::feature_skamp_table_complete;
+use super::super::feature_history::dimensions::feature_skamp_table_complete;
 use super::super::sketch::{trim_segment_id, unique_decoded_section_segment};
 use super::super::sketch_ids::sketch_entity_id;
 use super::super::uniqueness::exactly_one;

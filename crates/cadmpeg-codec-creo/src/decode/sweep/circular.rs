@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Circular extrusion B-rep transfer.
 
-use super::super::feature_history::feature_allows_additive_linear_extrusion;
+use super::super::feature_history::draft::feature_allows_additive_linear_extrusion;
 use super::super::holes::sweep::circular_sweep_geometry;
 use super::super::sketch::section_point_in_model;
 use super::super::sketch_ids::model_sketch_id;

@@ -6,7 +6,7 @@ use crate::decode::sketch::axis::SectionAxis;
 use crate::decode::sketch::equations_scalar::SectionScalarVariable;
 use crate::feature::definitions::SolverSubtable;
 
-use super::super::feature_history::{
+use super::super::feature_history::dimensions::{
     feature_relation_table_complete, resolved_feature_dimension_parameter,
 };
 use super::super::sketch::{

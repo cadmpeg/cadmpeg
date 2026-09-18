@@ -5,7 +5,7 @@ use super::axis::SectionAxis;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::feature_history::feature_relation_table_complete;
+use super::super::feature_history::dimensions::feature_relation_table_complete;
 use super::equations_coordinate::{
     approximately_equal, section_equal_length_coordinate_values,
     section_equation_equal_length_constraints, section_equation_point_on_line_constraints,

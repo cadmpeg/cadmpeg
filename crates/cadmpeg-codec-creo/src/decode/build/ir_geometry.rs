@@ -12,8 +12,10 @@ use crate::feature::definitions::SolverSubtable;
 use super::super::coverage::{
     curve_transfer_coverage, design_constraint_transfer_coverage, surface_transfer_coverage,
 };
-use super::super::feature_history::{
+use super::super::feature_history::dimensions::{
     feature_relation_table_expected_rows, feature_relation_table_missing_rows,
+};
+use super::super::feature_history::revolution::{
     transfer_resolved_extrusion_vertex_orbit_curves, transfer_resolved_revolution_surfaces,
     transfer_resolved_revolution_vertex_orbit_curves,
 };

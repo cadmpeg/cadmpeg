@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
 
 use crate::container::ContainerScan;
 
-use super::super::feature_history::replayed_torus_minor_radius;
+use super::super::feature_history::round::replayed_torus_minor_radius;
 use super::ir::{
     angular_termination_has_unresolved_operands, body_selection_has_unresolved_operands,
     face_selection_has_unresolved_operands, linear_termination_has_unresolved_operands,

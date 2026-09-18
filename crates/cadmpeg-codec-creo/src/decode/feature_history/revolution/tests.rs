@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::transfer_resolved_revolution_surfaces;
+use super::super::revolution::transfer_resolved_revolution_surfaces;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;

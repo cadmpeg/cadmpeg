@@ -24,7 +24,7 @@ use super::coverage::{
 };
 use super::curve_expressions::curve_expression_record_id;
 use super::expanded::{affected_kind, extent_source, half_edge_ref};
-use super::feature_history::replayed_torus_minor_radius;
+use super::feature_history::round::replayed_torus_minor_radius;
 use super::native_records::{
     CreoConeHalfAngleOverride, CreoCurveExpressionAssignment, CreoCurveExpressionEquation,
     CreoCurveExpressionLine, CreoCurveExpressionLocalSystem, CreoCurveExpressionSolveBlock,

@@ -25,18 +25,25 @@ use super::super::uniqueness::{
     unique_feature_datum_plane, unique_feature_definition_for_transform,
     unique_feature_profile_ref, unique_feature_section_transform, unique_owned_feature_definition,
 };
-use super::{
-    chamfer_constant_distance, differing_positive_lengths, draft_neutral_plane_selection,
-    extrude_feature_definition_with_profile, feature_edge_selection, feature_parameters,
-    feature_reference_name, feature_result_surface_ids_by_feature,
-    feature_revolution_axis_for_transfer, feature_surface_transitions,
-    filled_surface_feature_definition, generated_surface_face_refs,
-    knit_surface_feature_definition, model_feature_ids, named_or_referenced_feature_definition,
-    reference_named_feature_definition, round_constant_radius, round_observed_radii,
-    round_placed_cylinder_radii, schema_operation_kind, section_definition_for_history_feature,
-    section_profile_ref, sweep_output_kind, sweep_solid, thicken_plane_offset,
-    unresolved_extrude_extent,
+use super::axes::{feature_revolution_axis_for_transfer, model_feature_ids, section_profile_ref};
+use super::knit::{
+    draft_neutral_plane_selection, feature_result_surface_ids_by_feature,
+    feature_surface_transitions, filled_surface_feature_definition, generated_surface_face_refs,
+    knit_surface_feature_definition, thicken_plane_offset,
 };
+use super::named::{
+    extrude_feature_definition_with_profile, named_or_referenced_feature_definition,
+    reference_named_feature_definition, unresolved_extrude_extent,
+};
+use super::outputs::{
+    feature_parameters, feature_reference_name, schema_operation_kind,
+    section_definition_for_history_feature, sweep_output_kind, sweep_solid,
+};
+use super::round::{
+    chamfer_constant_distance, differing_positive_lengths, round_constant_radius,
+    round_observed_radii, round_placed_cylinder_radii,
+};
+use super::selections::feature_edge_selection;
 use crate::container::ContainerScan;
 use crate::decode::analytic::planes::{
     placed_plane_surfaces, placed_planes, reconciled_model_plane,

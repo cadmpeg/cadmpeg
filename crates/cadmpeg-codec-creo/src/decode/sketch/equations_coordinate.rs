@@ -7,7 +7,7 @@ use crate::feature::definitions::VariableType;
 use cadmpeg_core::decode::alloc_filled;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::feature_history::feature_dimension_table_complete;
+use super::super::feature_history::dimensions::feature_dimension_table_complete;
 use super::equations_scalar::{
     reconcile_equation_value, section_equation_scalar_equality_values, SectionScalarVariable,
 };
