@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::annotations::Annotations;
+use crate::document::CadIr;
+use crate::draft::tests::point;
+use crate::draft::tests::point_draft;
+use crate::draft::DraftError;
+use crate::report::TransferLedger;
+
 use crate::provenance::Exactness;
 use crate::report::{LossNote, TransferOutcome};
 

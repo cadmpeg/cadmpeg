@@ -1,5 +1,14 @@
-use super::super::*;
-use super::*;
+use crate::examples::unit_cube;
+use crate::geometry::CurveGeometry;
+use crate::geometry::PolylineSamples;
+use crate::geometry::PolylineVertex;
+use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::SolvedSurfaceGeometry;
+use crate::geometry::SurfaceGeometry;
+use crate::math::Point3;
+use crate::math::Vector3;
+use crate::report::Check;
+use crate::validate::validate_neutral;
 
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {

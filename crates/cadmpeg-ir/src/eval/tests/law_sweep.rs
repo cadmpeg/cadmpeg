@@ -1,6 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::eval::model_surface_partials_by_id;
+use crate::eval::model_surface_point_by_id;
+use crate::eval::scalar_sweep_law_differential;
+use crate::eval::tests::bilinear_surface;
+use crate::geometry::Curve;
+use crate::geometry::CurveGeometry;
+use crate::geometry::LawExpression;
+use crate::geometry::LawFormula;
+use crate::geometry::NurbsCurve;
+use crate::geometry::ProceduralSurface;
+use crate::geometry::ProceduralSurfaceDefinition;
+use crate::geometry::RevisionSurfaceParameterization;
+use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::SolvedSurfaceGeometry;
+use crate::geometry::Surface;
+use crate::geometry::SurfaceGeometry;
+use crate::geometry::SweepRevisionForm;
+use crate::geometry::SweepSurfaceConstruction;
+use crate::geometry::SweepSurfaceLayout;
+use crate::ids::CurveId;
+use crate::ids::ProceduralSurfaceId;
+use crate::ids::SurfaceId;
+use crate::math::Point3;
+use crate::math::Vector3;
+use crate::CadIr;
 
 #[test]
 fn cacheless_law_differential_applies_algebraic_product_rule() {
