@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::{
+use crate::test_support::test_topology::{
     compact_standard_triangle_topology_stream, standard_quad_topology_stream,
 };
 
@@ -359,7 +359,7 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
 
 #[test]
 fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
-    let mut bytes = crate::test_support::fbb_only_quad_topology_stream();
+    let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
     let first_row = bytes
         .windows(5)
         .position(|window| window == [0x01, 0x01, 0x02, 0x02, 0x03])

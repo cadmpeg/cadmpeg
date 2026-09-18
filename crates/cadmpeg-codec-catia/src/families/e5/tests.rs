@@ -9,7 +9,13 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-use crate::test_support::*;
+use crate::test_support::test_bytes::{le_f32, le_f64};
+use crate::test_support::test_container::object_main_catpart;
+use crate::test_support::test_e5::{
+    append_e5_record, e5_catpart, e5_circle_stream, e5_d8_rolling_ball_stream, e5_plane_stream,
+    e5_plane_stream_with_transform_scalars, e5_torus_stream, e5_torus_topology_stream,
+    e5_uv_line_payload,
+};
 use crate::variant::Variant;
 use crate::CatiaCodec;
 

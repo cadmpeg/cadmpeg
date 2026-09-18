@@ -9,7 +9,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::modeling_graph_scope;
 use crate::native::{CatiaObjectGraph, CatiaOuterContainerBinding};
-use crate::test_support::*;
+use crate::test_support::test_container::standard_catpart;
+use crate::test_support::test_formula::standard_catpart_with_two_selector_value;
+use crate::test_support::test_object_graph::outer_container_object_graph_catpart;
 use crate::CatiaCodec;
 
 fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {

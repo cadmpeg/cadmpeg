@@ -15,7 +15,12 @@ use crate::native::{
 };
 use crate::object_graph::HeadToken;
 use crate::object_graph::ObjectPayload;
-use crate::test_support::*;
+use crate::test_support::test_formula::standard_catpart_with_definition_value;
+use crate::test_support::test_object_graph::{
+    catalog_stream, entity_backed_object_graph, object_graph_from_records, object_graph_record,
+    standard_catpart_with_design_class, standard_catpart_with_visualization_values_only,
+    value_block_stream,
+};
 use crate::CatiaCodec;
 
 mod definitions;

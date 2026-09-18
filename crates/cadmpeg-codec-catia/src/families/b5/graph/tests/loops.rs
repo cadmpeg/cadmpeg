@@ -1,8 +1,24 @@
-use super::super::*;
+use crate::families::b5::graph::controls::{B5FramingControl, B5VertexIncidenceControl};
 use crate::families::b5::graph::tests::extended_loop_metadata;
 use crate::families::b5::graph::tests::test_loop_members;
 use crate::families::b5::graph::tests::test_loop_metadata;
 use crate::families::b5::graph::tests::test_pcurve;
+use crate::families::b5::graph::vertex_refs::B5VertexRef;
+use crate::families::b5::graph::{
+    bind_edge_vertices, bind_native_vertices, canonical_point, canonical_surface_id,
+    counted_references, distance_squared, edge_support_pcurve_references, evaluate_pcurve,
+    face_surface_references, incidence_vertex_coordinates, lift_parameter_incidence,
+    loop_chain_closes, loop_metadata, loop_references, loop_references_and_metadata,
+    merge_pcurve_candidate, merge_surface_candidate, parameter_incidence, parse_face,
+    parse_face_record, parse_loop, parse_pcurve, pcurve_endpoints, pcurve_nurbs_knots,
+    pcurve_parameter_domain, point_index, resolve_surface_aliases, resolve_targeted_surface,
+    sphere_great_circle_point, surface_alias_carrier, unit, B5FaceRecord, B5IncidenceLane,
+    B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension, B5OpaquePcurve,
+    B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization, B5Record,
+    B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
+};
+use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[test]
 fn unit_preserves_tiny_finite_direction() {
@@ -165,7 +181,7 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
 
 #[test]
 fn pcurve_requires_one_complete_clamped_bezier_frame() {
-    let payload = crate::test_support::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
+    let payload = crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
     let record = |payload| B5Record {
         offset: 0,
         family: 0xb5,
@@ -227,7 +243,7 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
 
 #[test]
 fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
-    let payload = crate::test_support::b5_linear_pcurve_payload_with_knots(
+    let payload = crate::test_support::test_b5::b5_linear_pcurve_payload_with_knots(
         7,
         [10.0, 20.0],
         [0.0, 0.0],

@@ -11,7 +11,24 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::native::owner_chart::{
     CatiaOwnerChartAddress, CatiaOwnerChartBridge, CatiaOwnerChartCarrier, CatiaOwnerChartSideAxis,
 };
-use crate::test_support::*;
+use crate::test_support::test_a5_bound::{
+    a5_native_edge_run_stream, a5_sphere_bound_edge_stream, a5_torus_bound_edge_stream,
+};
+use crate::test_support::test_a5a8::{a5_native_edge_identity_stream, a5_pcurve_stream};
+use crate::test_support::test_b2::{
+    b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream, b2_circle_stream,
+    b2_class5b5c_stream, b2_cone_face_parameter_point_stream, b2_cone_face_stream, b2_cone_stream,
+    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
+    b2_fixed_owner_boundary_cycle_stream, b2_fixed_owner_boundary_face_node_cycle_stream,
+    b2_group_stream, b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
+    b2_owner_chart_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
+    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
+    b2_sphere_stream, b2_torus_stream, b2_width_coded_owner_with_allocation_stream,
+};
+use crate::test_support::test_bytes::{be32, le_f64};
+use crate::test_support::test_container::{
+    grouped_surface_alias_stream, standard_catpart, surface_alias_stream,
+};
 use crate::CatiaCodec;
 
 #[test]

@@ -2,7 +2,8 @@
 //! Object-graph, entity-table, catalog, and value-block CATPart builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{be32, outer_container_catpart, standard_catpart};
+use crate::test_support::test_bytes::be32;
+use crate::test_support::test_container::{outer_container_catpart, standard_catpart};
 
 pub(crate) fn outer_container_object_graph_catpart() -> (Vec<u8>, u64) {
     outer_container_catpart(&object_graph_stream())

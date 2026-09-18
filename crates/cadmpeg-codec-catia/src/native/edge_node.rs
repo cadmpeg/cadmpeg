@@ -343,7 +343,7 @@ pub(super) fn consolidated_vertex_identities(
 #[cfg(test)]
 mod tests {
     use crate::native::CatiaNative;
-    use crate::test_support::a5_native_edge_run_stream;
+    use crate::test_support::test_a5_bound::a5_native_edge_run_stream;
 
     #[test]
     fn vertex_wire_join_preserves_ids_and_rejects_conflicting_ids() {

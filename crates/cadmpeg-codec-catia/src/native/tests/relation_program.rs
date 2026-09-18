@@ -9,7 +9,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::Annotations;
 
-use crate::test_support::*;
+use crate::test_support::test_formula::{
+    standard_catpart_with_formula_relation, standard_catpart_with_lead54_relation_program_instance,
+    standard_catpart_with_lead54_relation_program_instance_class,
+    standard_catpart_with_relation_program_instance,
+    standard_catpart_with_relation_program_instance_class,
+};
 use crate::CatiaCodec;
 
 #[test]

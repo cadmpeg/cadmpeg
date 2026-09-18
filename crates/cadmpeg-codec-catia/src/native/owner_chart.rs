@@ -485,10 +485,10 @@ mod tests {
     #[test]
     fn bridge_wire_checks_framing_and_variable_controls() {
         for bytes in [
-            crate::test_support::b2_owner_chart_stream(0x28),
-            crate::test_support::b2_owner_chart_stream(0x2b),
-            crate::test_support::b2_owner_chart_stream(0x32),
-            crate::test_support::b2_owner_chart_stream_with_extended_bridge(),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x2b),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x32),
+            crate::test_support::test_b2::b2_owner_chart_stream_with_extended_bridge(),
         ] {
             let native = crate::native::CatiaNative::decode(&bytes);
             let relation = native.consolidated_owner_packets[0]
@@ -512,8 +512,9 @@ mod tests {
 
     #[test]
     fn bridge_wire_rejects_invalid_construction_radius() {
-        let native =
-            crate::native::CatiaNative::decode(&crate::test_support::b2_owner_chart_stream(0x28));
+        let native = crate::native::CatiaNative::decode(
+            &crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+        );
         let relation = native.consolidated_owner_packets[0]
             .owner_chart()
             .expect("supported owner chart");
@@ -538,8 +539,9 @@ mod tests {
 
     #[test]
     fn bridge_preserves_independent_middle_control_bytes() {
-        let native =
-            crate::native::CatiaNative::decode(&crate::test_support::b2_owner_chart_stream(0x28));
+        let native = crate::native::CatiaNative::decode(
+            &crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+        );
         let relation = native.consolidated_owner_packets[0]
             .owner_chart()
             .expect("source-closed owner chart");
@@ -562,7 +564,7 @@ mod tests {
     #[test]
     fn relation_wire_checks_the_carrier_derived_axis() {
         for carrier_class in [0x28, 0x2b, 0x32] {
-            let bytes = crate::test_support::b2_owner_chart_stream(carrier_class);
+            let bytes = crate::test_support::test_b2::b2_owner_chart_stream(carrier_class);
             let native = crate::native::CatiaNative::decode(&bytes);
             let relation = native.consolidated_owner_packets[0]
                 .owner_chart()

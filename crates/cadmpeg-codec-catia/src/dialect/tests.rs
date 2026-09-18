@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::container;
-use crate::test_support::{outer_body_catpart, summary_preview_segment};
+use crate::test_support::test_container::{outer_body_catpart, summary_preview_segment};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

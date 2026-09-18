@@ -5,6 +5,9 @@ use super::super::super::graph::{
 };
 use crate::families::b5::transfer::tests::test_loop_members;
 use crate::families::b5::transfer::tests::test_loop_metadata;
+use crate::families::b5::transfer::{
+    build_plan, resolved_surface_carrier_in_graph, transfer, CurvePlan, ResolvedPcurveSurface,
+};
 const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
 use super::super::edges::merge_curve_plan;
@@ -15,7 +18,6 @@ use super::super::pcurves::{
     sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
 use super::super::surfaces::revolution_surface;
-use super::super::*;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::surface_point;

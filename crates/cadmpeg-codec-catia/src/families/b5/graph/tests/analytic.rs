@@ -1,5 +1,15 @@
-use super::super::*;
 use crate::families::b5::graph::tests::object_stream_pcurve;
+use crate::families::b5::graph::{
+    analytic_offset_magnitude_agrees, counted_cardinality, evaluate_pcurve,
+    is_referenced_geometry_class, parse_circle_pcurve, parse_class_1a_pcurve,
+    parse_extrusion_surface, parse_line_pcurve, parse_offset_surface, parse_opaque_pcurve,
+    parse_profile, parse_sphere_great_circle_pcurve, parse_surface, surface_alias_target,
+    B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface, B5OpaquePcurve, B5Pcurve,
+    B5PcurveParameterization, B5Profile, B5Record, B5SphereGreatCirclePcurve, B5Surface,
+};
+use crate::wire;
+use cadmpeg_ir::geometry::NurbsSurface;
+use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn circle_pcurve_rejects_unbounded_subdivision_counts() {

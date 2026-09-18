@@ -8,7 +8,11 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::CatiaLossCode;
-use crate::test_support::*;
+use crate::test_support::test_b5::{
+    append_b5_record, b5_closed_triangle_stream, b5_closed_triangle_stream_over_edges,
+    b5_closed_triangle_stream_with_native_vertex_chain, b5_object_ref,
+};
+use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 

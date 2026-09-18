@@ -3,11 +3,13 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::{
-    a8_surface_stream, append_b5_record, b5_analytic_line_pcurve_payload,
-    b5_closed_triangle_stream, b5_isoparametric_line_pcurve_payload, b5_linear_pcurve_payload,
-    b5_plane_payload, b5_transverse_isoparametric_line_pcurve_payload, le_f32, le_f64,
+use crate::test_support::test_a5a8::a8_surface_stream;
+use crate::test_support::test_b5::{
+    append_b5_record, b5_analytic_line_pcurve_payload, b5_closed_triangle_stream,
+    b5_isoparametric_line_pcurve_payload, b5_linear_pcurve_payload, b5_plane_payload,
+    b5_transverse_isoparametric_line_pcurve_payload,
 };
+use crate::test_support::test_bytes::{le_f32, le_f64};
 
 #[test]
 fn b5_frame_walk_ignores_markers_inside_payloads() {

@@ -10,10 +10,11 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::test_support::{
-    append_e5_record, external_reference_segment, finjpl_stream, outer_body_catpart,
-    outer_directory_catpart, standard_catpart, summary_preview_segment,
+use crate::test_support::test_container::{
+    external_reference_segment, finjpl_stream, outer_body_catpart, outer_directory_catpart,
+    standard_catpart, summary_preview_segment,
 };
+use crate::test_support::test_e5::append_e5_record;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 

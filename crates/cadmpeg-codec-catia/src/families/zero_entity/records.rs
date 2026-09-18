@@ -2221,7 +2221,7 @@ mod tests {
         assert_eq!(singleton.support_slots().collect::<Vec<_>>(), [u32::MAX]);
     }
 
-    use crate::test_support::{
+    use crate::test_support::test_zero_entity::{
         zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
         zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
     };

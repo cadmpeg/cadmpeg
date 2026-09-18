@@ -9,7 +9,23 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::native::edge_definition::CatiaConsolidatedEdgeDefinition;
-use crate::test_support::*;
+use crate::test_support::test_a5_bound::{
+    a5_circle_bound_edge_stream, a5_cone_bound_edge_stream, a5_cylinder_bound_edge_stream,
+    a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream,
+    a5_nurbs_pair_bound_edge_stream, a5_topology_edge_run_stream, a5_torus_bound_edge_stream,
+};
+use crate::test_support::test_a5a8::{
+    a5_native_edge_identity_stream, a5_pcurve_stream, a6_pcurve_stream,
+};
+use crate::test_support::test_b2::{
+    b2_circle_stream, b2_cylinder_stream, b2_edge_block_stream, b2_edge_parameter_stream_for,
+    b2_embedded_cylinder_stream_with_object_id, b2_fixed_owner_boundary_cycle_stream,
+    b2_line_profile_stream, b2_plane_carrier_stream, b2_resolved_revolution_stream,
+    b2_topology_edge_run_stream, b3_cylinder_stream,
+};
+use crate::test_support::test_b5::append_b5_record;
+use crate::test_support::test_bytes::{be32, le_f32};
+use crate::test_support::test_container::{standard_catpart, standard_catpart_from_streams};
 use crate::CatiaCodec;
 
 #[test]
@@ -430,7 +446,7 @@ fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
     use crate::families::consolidated::records::ConsolidatedSupportBinding;
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
-        &crate::test_support::a5_sphere_bound_edge_stream(),
+        &crate::test_support::test_a5_bound::a5_sphere_bound_edge_stream(),
     );
     assert!(blocks[0]
         .supports
@@ -444,8 +460,8 @@ fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
 
 #[test]
 fn a5_edge_binding_rejects_duplicate_sphere_endpoint_lifts() {
-    let mut bytes = crate::test_support::a5_sphere_bound_edge_stream();
-    bytes.extend_from_slice(&crate::test_support::b2_sphere_stream());
+    let mut bytes = crate::test_support::test_a5_bound::a5_sphere_bound_edge_stream();
+    bytes.extend_from_slice(&crate::test_support::test_b2::b2_sphere_stream());
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
     assert_eq!(blocks[0].supports, [None, None]);
@@ -454,7 +470,7 @@ fn a5_edge_binding_rejects_duplicate_sphere_endpoint_lifts() {
 #[test]
 fn a5_edge_binding_rejects_duplicate_torus_endpoint_lifts() {
     let mut bytes = a5_torus_bound_edge_stream();
-    bytes.extend_from_slice(&crate::test_support::b2_torus_stream());
+    bytes.extend_from_slice(&crate::test_support::test_b2::b2_torus_stream());
 
     let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
     assert_eq!(blocks[0].supports, [None, None]);

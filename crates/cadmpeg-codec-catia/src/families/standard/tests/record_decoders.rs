@@ -8,10 +8,12 @@ use crate::families::standard::records::{
     StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds, StandardSurfacePopulation,
     StandardSurfaceRecord, SurfacePrefix,
 };
-use crate::test_support::{
-    a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
+use crate::test_support::test_a5a8::{a8_freeform_curve_stream, a8_surface_stream};
+use crate::test_support::test_b5::{append_b5_record, b5_closed_triangle_stream};
+use crate::test_support::test_bytes::{le_f32, le_f64};
+use crate::test_support::test_topology::{
     compact_standard_triangle_topology_stream, fbb_mixed_boundary_topology_stream,
-    fbb_only_quad_topology_stream, le_f32, le_f64, standard_quad_topology_stream,
+    fbb_only_quad_topology_stream, standard_quad_topology_stream,
 };
 
 #[test]

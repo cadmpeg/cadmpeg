@@ -7,7 +7,9 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::test_formula::{
+    standard_catpart_with_parameter_value, standard_catpart_with_two_selector_value,
+};
 use crate::CatiaCodec;
 
 #[test]

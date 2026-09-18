@@ -9,7 +9,16 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-use crate::test_support::*;
+use crate::container::OUTER_MAGIC;
+use crate::test_support::test_bytes::be32;
+use crate::test_support::test_container::{
+    standard_catpart, zero_entity_catpart, zero_entity_cylinder_catpart,
+    zero_entity_cylinder_parametric_support_catpart, zero_entity_nurbs_catpart,
+};
+use crate::test_support::test_zero_entity::{
+    zero_entity_face_loop_support_stream, zero_entity_face_support_stream,
+    zero_entity_ownership_stream, zero_entity_support_stream, zero_entity_topology_stream,
+};
 use crate::variant::Variant;
 use crate::CatiaCodec;
 

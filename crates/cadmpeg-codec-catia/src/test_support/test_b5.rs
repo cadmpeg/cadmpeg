@@ -2,7 +2,8 @@
 //! b5-family synthetic topology stream builders.
 
 #![allow(clippy::unwrap_used)]
-use super::{a8_surface_stream, a8_surface_tail, le_f32, le_f64};
+use crate::test_support::test_a5a8::{a8_surface_stream, a8_surface_tail};
+use crate::test_support::test_bytes::{le_f32, le_f64};
 
 pub(crate) fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
     bytes.extend_from_slice(&[0xb5, 0x03, class, payload.len() as u8]);

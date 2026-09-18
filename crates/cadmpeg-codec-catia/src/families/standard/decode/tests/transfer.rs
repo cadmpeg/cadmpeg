@@ -13,7 +13,20 @@ use cadmpeg_ir::geometry::{
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::test_support::*;
+use crate::test_support::test_a5_bound::{a5_native_edge_run_stream, a5_nurbs_bound_edge_stream};
+use crate::test_support::test_a5a8::{
+    a5_freeform_curve_stream, a5_guide_curve_stream, a5_native_edge_identity_stream,
+    a5_pcurve_stream, a5_pcurve_stream_with_uv, a5_surface_stream,
+};
+use crate::test_support::test_b2::{
+    b2_cone_stream, b2_construction_use_stream_for, b2_cylinder_stream,
+    b2_edge_parameter_stream_for, b2_offset_support_stream_for,
+};
+use crate::test_support::test_bytes::{be32, be_f32, le_f64};
+use crate::test_support::test_container::{
+    fbb_only_catpart, main_stream, standard_catpart, standard_catpart_from_streams, surf_stream,
+    tetrahedron_topology_catpart,
+};
 use crate::variant::Variant;
 use crate::CatiaCodec;
 

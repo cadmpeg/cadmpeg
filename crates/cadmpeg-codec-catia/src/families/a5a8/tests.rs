@@ -11,7 +11,20 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::Point3;
 
-use crate::test_support::*;
+use crate::test_support::test_a5a8::{
+    a5_freeform_curve_stream, a5_freeform_curve_stream_with_count, a5_guide_curve_stream,
+    a5_guide_curve_stream_with_count, a5_pcurve_stream, a5_pcurve_stream_with_count,
+    a5_rational_surface_stream, a5_surface_extrapolated_short_tail, a5_surface_extrapolated_tail,
+    a5_surface_short_tail, a5_surface_stream, a5_surface_stream_with_tail, a5_surface_tail,
+    a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream, a8_catpart,
+    a8_elided_surface_stream, a8_freeform_curve_stream, a8_freeform_curve_stream_with_count,
+    a8_inline_tail_surface_stream, a8_pcurve_stream, a8_pcurve_stream_with_count,
+    a8_rational_surface_stream, a8_surface_stream, a8_surface_stream_with_u_count, a8_surface_tail,
+    inner_no_directory_a8_catpart,
+};
+use crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain;
+use crate::test_support::test_bytes::le_f64;
+use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
