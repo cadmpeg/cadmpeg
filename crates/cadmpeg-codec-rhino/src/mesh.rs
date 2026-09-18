@@ -1461,19 +1461,23 @@ fn push_chunk_checksum_warning(
 
 fn parse_f32_points(bytes: &[u8]) -> Result<Vec<[f32; 3]>, GeometryError> {
     if !bytes.len().is_multiple_of(12) {
-        return Err(error(0, "invalid f32 point channel length"));
+        return Err(GeometryError::unpositioned(
+            "invalid f32 point channel length",
+        ));
     }
     let mut view = View::over_retained(bytes);
     let points = view
         .read_counted((bytes.len() / 12) as u64, 12, |view| {
             Some([view.f32_le()?, view.f32_le()?, view.f32_le()?])
         })
-        .ok_or_else(|| error(0, "invalid f32 point channel length"))?;
+        .ok_or_else(|| GeometryError::unpositioned("invalid f32 point channel length"))?;
     if points
         .iter()
         .any(|point| point.iter().any(|value| !value.is_finite()))
     {
-        return Err(error(0, "f32 point channel contains nonfinite values"));
+        return Err(GeometryError::unpositioned(
+            "f32 point channel contains nonfinite values",
+        ));
     }
     Ok(points)
 }
@@ -1487,13 +1491,15 @@ fn parse_f32_vectors(bytes: &[u8]) -> Result<Vec<Vector3>, GeometryError> {
 
 fn parse_f64_points(bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
     if !bytes.len().is_multiple_of(24) {
-        return Err(error(0, "invalid f64 point channel length"));
+        return Err(GeometryError::unpositioned(
+            "invalid f64 point channel length",
+        ));
     }
     let mut view = View::over_retained(bytes);
     view.read_counted((bytes.len() / 24) as u64, 24, |view| {
         Some([view.f64_le()?, view.f64_le()?, view.f64_le()?])
     })
-    .ok_or_else(|| error(0, "invalid f64 point channel length"))
+    .ok_or_else(|| GeometryError::unpositioned("invalid f64 point channel length"))
 }
 
 fn synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
@@ -1522,7 +1528,7 @@ fn channel(kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChann
         0,
         data,
     )
-    .map_err(|error| GeometryError::malformed(0, format!("invalid mesh channel: {error}")))
+    .map_err(|error| GeometryError::unpositioned(format!("invalid mesh channel: {error}")))
 }
 
 fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
@@ -1576,6 +1582,22 @@ mod tests {
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root view");
         f(MeshExpand::new(&ctx, root))
+    }
+
+    /// A vertex channel's length is a fact of the detached payload, not of any
+    /// byte of the file, so its refusal names no offset instead of byte 0.
+    #[test]
+    fn a_point_channel_refusal_names_no_byte() {
+        let error = parse_f32_points(&[0_u8; 5]).expect_err("channel length");
+        assert!(matches!(
+            error,
+            GeometryError::Malformed(FramingError::Unpositioned { ref message })
+                if message == "invalid f32 point channel length"
+        ));
+        assert_eq!(
+            error.to_string(),
+            "framing error: invalid f32 point channel length"
+        );
     }
 
     /// Like [`with_expand`], but under a caller-supplied policy.

@@ -163,6 +163,11 @@ impl GeometryError {
         Self::Malformed(FramingError::structural(offset, message))
     }
 
+    /// Refuses a derived or already-decoded value that has no byte position.
+    pub(crate) fn unpositioned(message: impl Into<String>) -> Self {
+        Self::Malformed(FramingError::unpositioned(message))
+    }
+
     pub(crate) fn unsupported(offset: usize, message: impl Into<String>) -> Self {
         Self::UnsupportedVersion {
             offset,
