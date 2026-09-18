@@ -1136,6 +1136,7 @@ fn generated_projected_brep_c2_curve(
                 .edit_control_points(|point| {
                     let uv = plane_uv(*point, origin, u_axis, v_axis);
                     *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                    Ok(())
                 })
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             if sense == Sense::Reversed {

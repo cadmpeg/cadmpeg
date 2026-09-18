@@ -519,6 +519,7 @@ fn transform_nurbs(
             if let Some(value) = transformed.next() {
                 *point = value;
             }
+            Ok(())
         })
         .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     Ok(result)
@@ -1378,6 +1379,7 @@ pub(crate) mod tests {
                     point.z = 1.0;
                 }
                 index += 1;
+                Ok(())
             })
             .expect("valid test curve edit");
         assert!(exact_orientation(&off_plane, 0).is_err());

@@ -1298,6 +1298,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
                     point.y += 250.0;
                 }
                 pole_index += 1;
+                Ok(())
             })
             .unwrap();
         let expected_curve = curve.clone();

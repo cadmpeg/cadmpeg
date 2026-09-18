@@ -435,6 +435,7 @@ pub(in super::super) fn placed_section_nurbs(
         .edit_control_points(|point| {
             let model = section_xyz_in_model(transform, [point.x, point.y, point.z]);
             *point = Point3::new(model[0], model[1], model[2]);
+            Ok(())
         })
         .ok()?;
     Some(placed)
@@ -452,6 +453,7 @@ pub(in super::super) fn translated_nurbs_curve(
                 point.y + translation[1],
                 point.z + translation[2],
             );
+            Ok(())
         })
         .ok()?;
     Some(translated)

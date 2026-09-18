@@ -5347,18 +5347,17 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
     );
     curve.geometry = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
-            let mut placed = true;
             nurbs
-                .edit_control_points(|pole| match transform.apply_point(*pole) {
-                    Some(moved) => *pole = moved,
-                    None => placed = false,
+                .edit_control_points(|pole| {
+                    *pole = transform.apply_point(*pole).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "instance control point transform produced a non-finite coordinate"
+                                .to_string(),
+                        )
+                    })?;
+                    Ok(())
                 })
                 .map_err(|error| error.to_string())?;
-            if !placed {
-                return Err(
-                    "instance control point transform produced a non-finite coordinate".to_string(),
-                );
-            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -5368,18 +5367,17 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             );
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
-            let mut placed = true;
             nurbs
-                .edit_control_points(|pole| match transform.apply_point(*pole) {
-                    Some(moved) => *pole = moved,
-                    None => placed = false,
+                .edit_control_points(|pole| {
+                    *pole = transform.apply_point(*pole).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "instance control point transform produced a non-finite coordinate"
+                                .to_string(),
+                        )
+                    })?;
+                    Ok(())
                 })
                 .map_err(|error| error.to_string())?;
-            if !placed {
-                return Err(
-                    "instance control point transform produced a non-finite coordinate".to_string(),
-                );
-            }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {

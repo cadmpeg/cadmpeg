@@ -203,6 +203,7 @@ fn decode_retains_generated_helix_construction() {
                 point.z = -2.0;
             }
             pole_index += 1;
+            Ok(())
         })
         .unwrap();
     *solved_cache = SolvedCurveGeometry::Nurbs(edited_cache);

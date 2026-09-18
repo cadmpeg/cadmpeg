@@ -1618,6 +1618,7 @@ fn anchor_analytic_nurbs_endpoint_poles(
                 *point = end;
             }
             visited += 1;
+            Ok(())
         })
         .ok()?;
     Some(())
