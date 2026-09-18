@@ -111,7 +111,7 @@ fn project_brep(
     let points = brep
         .points
         .iter()
-        .map(|point| (&point.id, point.position))
+        .map(|point| (&point.id, point.position()))
         .collect::<HashMap<_, _>>();
     let curves = brep
         .curves

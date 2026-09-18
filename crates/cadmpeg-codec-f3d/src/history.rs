@@ -9090,7 +9090,7 @@ pub(crate) fn historical_topology(
             .map(|point| {
                 Some(AsmHistoricalPoint {
                     point: stable_ref(point.id.as_str())?,
-                    position: point.position,
+                    position: point.position(),
                 })
             })
             .collect::<Option<Vec<_>>>()?,

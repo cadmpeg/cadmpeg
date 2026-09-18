@@ -333,11 +333,10 @@ pub(super) fn project(
                 let vertex = crate::ids::vertex(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                 );
-                ir.model.points.push(Point {
-                    source_object: None,
-                    id: point.clone(),
-                    position,
-                });
+                ir.model.points.push(
+                    Point::new(point.clone(), position, None)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                );
                 ir.model.vertices.push(Vertex {
                     id: vertex.clone(),
                     point,
@@ -402,22 +401,20 @@ pub(super) fn project(
         };
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
-        ir.model.points.push(Point {
-            source_object: None,
-            id: start_point.clone(),
-            position: start,
-        });
+        ir.model.points.push(
+            Point::new(start_point.clone(), start, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         ir.model.vertices.push(Vertex {
             id: start_vertex.clone(),
             point: start_point,
             tolerance: topology_tolerance,
         });
         if entry.form != 63 {
-            ir.model.points.push(Point {
-                source_object: None,
-                id: end_point.clone(),
-                position: end,
-            });
+            ir.model.points.push(
+                Point::new(end_point.clone(), end, None)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            );
             ir.model.vertices.push(Vertex {
                 id: end_vertex.clone(),
                 point: end_point,

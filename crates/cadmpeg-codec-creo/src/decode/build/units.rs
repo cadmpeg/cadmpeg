@@ -71,7 +71,7 @@ pub(super) fn normalize_model_lengths(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for point in &mut ir.model.points {
-        scale_point3(&mut point.position, length_scale_mm);
+        scale_point3(&mut point.position(), length_scale_mm);
     }
     for face in &mut ir.model.faces {
         scale_tolerance(&mut face.tolerance, length_scale_mm)?;

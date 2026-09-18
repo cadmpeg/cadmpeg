@@ -1369,19 +1369,22 @@ impl<'a> Builder<'a> {
                 vertex_use.shape
             )));
         };
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position,
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Fcstd,
-                object_id: self.source_object.clone(),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        ir.model.points.push(
+            Point::new(
+                point_id.clone(),
+                position,
+                Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Fcstd,
+                    object_id: self.source_object.clone(),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,

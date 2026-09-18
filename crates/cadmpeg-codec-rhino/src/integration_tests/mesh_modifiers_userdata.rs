@@ -121,7 +121,7 @@ fn modifier_userdata(archive: ArchiveVersion, label: &str, version: i32, xml: &s
 fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position(),
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
     let presentation =

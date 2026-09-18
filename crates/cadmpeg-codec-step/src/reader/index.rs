@@ -51,7 +51,7 @@ impl CarrierIndex {
                             id,
                             PointCarrier {
                                 index: PointIndex(index),
-                                position: point.position,
+                                position: point.position(),
                             },
                         )
                     })

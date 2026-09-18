@@ -27,11 +27,14 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 #[test]
 fn source_less_points_round_trip_across_target_versions() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point {
-        id: PointId::mint("rhino:test:point#a").expect("identity grammar"),
-        position: Point3::new(1.25, -2.5, 3.75),
-        source_object: None,
-    });
+    ir.model.points.push(
+        Point::new(
+            PointId::mint("rhino:test:point#a").expect("identity grammar"),
+            Point3::new(1.25, -2.5, 3.75),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
 
     for (version, value) in [
         (RhinoArchiveVersion::V5, "50"),
@@ -58,7 +61,7 @@ fn source_less_points_round_trip_across_target_versions() {
             .expect("required invariant");
         assert_eq!(decoded.ir().model.points.len(), 1);
         assert_eq!(
-            decoded.ir().model.points[0].position,
+            decoded.ir().model.points[0].position(),
             Point3::new(1.25, -2.5, 3.75)
         );
     }
@@ -69,11 +72,14 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
         cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive finite tolerance");
-    ir.model.points.push(Point {
-        id: PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
-        position: Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    ir.model.points.push(
+        Point::new(
+            PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
 
     let mut bytes = Vec::new();
     RhinoCodec
@@ -588,11 +594,14 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
             point: point.clone(),
             tolerance: None,
         });
-        ir.model.points.push(cadmpeg_ir::topology::Point {
-            id: point,
-            position: Point3::new(index as f64, index as f64 + 2.0, 3.0),
-            source_object: None,
-        });
+        ir.model.points.push(
+            cadmpeg_ir::topology::Point::new(
+                point,
+                Point3::new(index as f64, index as f64 + 2.0, 3.0),
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     let mut bytes = Vec::new();
     RhinoCodec
@@ -619,11 +628,14 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
 #[test]
 fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point {
-        id: PointId::mint("cadir:model:point#retained").expect("identity grammar"),
-        position: Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    source.model.points.push(
+        Point::new(
+            PointId::mint("cadir:model:point#retained").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
@@ -637,7 +649,9 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
         .expect("required invariant");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(decoded.ir().native.namespace("rhino").is_some());
-    decoded.ir_mut().model.points[0].position = Point3::new(4.0, 5.0, 6.0);
+    decoded.ir_mut().model.points[0]
+        .set_position(Point3::new(4.0, 5.0, 6.0))
+        .expect("a finite position is a point");
 
     let mut output = Vec::new();
     RhinoCodec
@@ -651,7 +665,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("required invariant");
     assert_eq!(
-        rewritten.ir().model.points[0].position,
+        rewritten.ir().model.points[0].position(),
         Point3::new(4.0, 5.0, 6.0)
     );
 }
@@ -659,11 +673,14 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
 #[test]
 fn unsupported_retained_native_records_are_refused_before_output() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point {
-        id: PointId::mint("cadir:model:point#retained").expect("identity grammar"),
-        position: Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    source.model.points.push(
+        Point::new(
+            PointId::mint("cadir:model:point#retained").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(

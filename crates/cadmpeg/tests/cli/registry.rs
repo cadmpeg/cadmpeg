@@ -97,11 +97,14 @@ fn every_write_target_dialects_lists_is_a_to_value() {
     let listed = String::from_utf8(listing.stdout).unwrap();
 
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId::mint("cadir:model:point#listing").expect("identity grammar"),
-        position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    ir.model.points.push(
+        cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::mint("cadir:model:point#listing").expect("identity grammar"),
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let input = fixture(dir.path(), "point.cadir.json", &ir);
 
     let targets = listed

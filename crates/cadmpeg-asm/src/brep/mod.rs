@@ -573,7 +573,7 @@ pub fn decode_with_header(
         format,
     )?;
     emit_pcurves(&mut out, records, &mut carriers, &reach, format)?;
-    emit_points(&mut out, records, &reach, format);
+    emit_points(&mut out, records, &reach, format)?;
     emit_vertices(&mut out, records, &by_index, &reach, format)?;
     emit_edges(
         &mut out,

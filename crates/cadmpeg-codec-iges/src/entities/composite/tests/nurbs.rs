@@ -104,16 +104,8 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: start_id.clone(),
-            position: start,
-            source_object: None,
-        },
-        Point {
-            id: end_id.clone(),
-            position: declared_end,
-            source_object: None,
-        },
+        Point::new(start_id.clone(), start, None).expect("a finite position is a point"),
+        Point::new(end_id.clone(), declared_end, None).expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {

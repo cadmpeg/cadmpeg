@@ -242,7 +242,9 @@ pub(super) fn emit_topology(
         .points
         .iter()
         .fold(BTreeMap::new(), |mut positions, point| {
-            positions.entry(point.id.clone()).or_insert(point.position);
+            positions
+                .entry(point.id.clone())
+                .or_insert(point.position());
             positions
         });
     let mut vertices = BTreeMap::new();
@@ -1127,11 +1129,9 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         .note(&vertex, source_stream, edge.pos as u64)
         .tag("CLOSED_EDGE_VERTEX");
     annotations.exactness(&vertex, Exactness::Inferred);
-    ir.model.points.push(Point {
-        id: point.clone(),
-        position,
-        source_object: None,
-    });
+    ir.model
+        .points
+        .push(Point::new(point.clone(), position, None).ok()?);
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
         point,
@@ -1215,7 +1215,7 @@ pub(crate) fn orient_edge_range_with_budget(
             .iter()
             .find(|candidate| candidate.id == vertex.point)?;
         Some((
-            point.position,
+            point.position(),
             vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
         ))
     };

@@ -862,9 +862,9 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
                     .is_some_and(|source| source.object_id == id)
             })
             .unwrap_or_else(|| panic!("missing APLL point {id}"));
-        assert!((point.position.x - expected.0).abs() < EPS_APLL_POINT);
-        assert!((point.position.y - expected.1).abs() < EPS_APLL_POINT);
-        assert!((point.position.z - expected.2).abs() < EPS_APLL_POINT);
+        assert!((point.position().x - expected.0).abs() < EPS_APLL_POINT);
+        assert!((point.position().y - expected.1).abs() < EPS_APLL_POINT);
+        assert!((point.position().z - expected.2).abs() < EPS_APLL_POINT);
     }
     let named_point = decoded
         .ir()

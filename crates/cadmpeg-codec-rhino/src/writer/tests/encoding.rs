@@ -54,11 +54,14 @@ fn object_attribute_items_are_written_in_ascending_order() {
 #[test]
 fn nonempty_user_string_presentation_is_refused_before_output() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point {
-        id: PointId::mint("cadir:model:point#user-strings").expect("identity grammar"),
-        position: Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    source.model.points.push(
+        Point::new(
+            PointId::mint("cadir:model:point#user-strings").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
@@ -104,11 +107,14 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
 #[test]
 fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point {
-        id: PointId::mint("cadir:model:point#mesh-modifiers").expect("identity grammar"),
-        position: Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    source.model.points.push(
+        Point::new(
+            PointId::mint("cadir:model:point#mesh-modifiers").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
@@ -154,11 +160,14 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
 #[test]
 fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
     let mut source = CadIr::empty();
-    source.model.points.push(Point {
-        id: PointId::mint("cadir:model:point#layer-settings").expect("identity grammar"),
-        position: Point3::new(1.0, 2.0, 3.0),
-        source_object: None,
-    });
+    source.model.points.push(
+        Point::new(
+            PointId::mint("cadir:model:point#layer-settings").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 3.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(

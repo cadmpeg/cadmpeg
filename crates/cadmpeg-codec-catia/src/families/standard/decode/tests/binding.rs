@@ -320,16 +320,18 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
 #[test]
 fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
     let points = [
-        Point {
-            id: PointId::mint("catia:test:point#on".to_string()).expect("identity grammar"),
-            position: Point3::new(3.0, 4.0, 7.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#off".to_string()).expect("identity grammar"),
-            position: Point3::new(3.0, 4.01, 7.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("catia:test:point#on".to_string()).expect("identity grammar"),
+            Point3::new(3.0, 4.0, 7.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("catia:test:point#off".to_string()).expect("identity grammar"),
+            Point3::new(3.0, 4.01, 7.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ];
     assert_eq!(
         standard_circle_endpoint_candidates(&points, Point3::new(0.0, 0.0, 7.0), 5.0, None,),
@@ -340,17 +342,19 @@ fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
 #[test]
 fn standard_circle_endpoint_domain_requires_both_face_carriers() {
     let points = [
-        Point {
-            id: PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
-            position: Point3::new(3.0, 4.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#other-occurrence".to_string())
+        Point::new(
+            PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
+            Point3::new(3.0, 4.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("catia:test:point#other-occurrence".to_string())
                 .expect("identity grammar"),
-            position: Point3::new(3.0, -4.0, 0.0),
-            source_object: None,
-        },
+            Point3::new(3.0, -4.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ];
     let left = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
@@ -375,17 +379,19 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
 #[test]
 fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
     let points = [
-        Point {
-            id: PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
-            position: Point3::new(3.0, 4.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#other-occurrence".to_string())
+        Point::new(
+            PointId::mint("catia:test:point#incident".to_string()).expect("identity grammar"),
+            Point3::new(3.0, 4.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("catia:test:point#other-occurrence".to_string())
                 .expect("identity grammar"),
-            position: Point3::new(3.0, -4.0, 0.0),
-            source_object: None,
-        },
+            Point3::new(3.0, -4.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ];
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let bounds = crate::families::standard::records::StandardFaceBounds {
@@ -458,16 +464,18 @@ fn complete_mesh_endpoint_quotient_overrides_table_local_ports() {
 #[test]
 fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
     let points = [
-        Point {
-            id: PointId::mint("catia:test:point#a".to_string()).expect("identity grammar"),
-            position: Point3::new(1.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#b".to_string()).expect("identity grammar"),
-            position: Point3::new(1.01, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("catia:test:point#a".to_string()).expect("identity grammar"),
+            Point3::new(1.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("catia:test:point#b".to_string()).expect("identity grammar"),
+            Point3::new(1.01, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ];
     let tolerances = [(2usize, 0.02)].into_iter().collect();
     let vertices = [B5LogicalVertex {
@@ -726,16 +734,18 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
 fn cached_face_point_membership_matches_the_source_predicate() {
     let mut ir = CadIr::empty();
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-            position: Point3::new(1.0, 2.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("catia:test:point#point-1").expect("identity grammar"),
-            position: Point3::new(1.0, 2.0, 1.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("catia:test:point#point-0").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("catia:test:point#point-1").expect("identity grammar"),
+            Point3::new(1.0, 2.0, 1.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ]);
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
@@ -760,7 +770,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     assert!(membership[0].iter().enumerate().all(|(point, cached)| {
         *cached
             == point_on_standard_face(
-                ir.model.points[point].position,
+                ir.model.points[point].position(),
                 &ir.model.surfaces[0].geometry,
                 None,
             )
@@ -837,16 +847,18 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
     for reversed in [false, true] {
         let mut ir = CadIr::empty();
         ir.model.points.extend([
-            Point {
-                id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-                position: Point3::new(0.0, 0.0, 0.0),
-                source_object: None,
-            },
-            Point {
-                id: PointId::mint("catia:test:point#point-1").expect("identity grammar"),
-                position: Point3::new(1.0, 0.0, 0.0),
-                source_object: None,
-            },
+            Point::new(
+                PointId::mint("catia:test:point#point-0").expect("identity grammar"),
+                Point3::new(0.0, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point"),
+            Point::new(
+                PointId::mint("catia:test:point#point-1").expect("identity grammar"),
+                Point3::new(1.0, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point"),
         ]);
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
@@ -1100,11 +1112,14 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
 #[test]
 fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point {
-        id: PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-        position: Point3::new(2.0, 0.0, 0.0),
-        source_object: None,
-    });
+    ir.model.points.push(
+        Point::new(
+            PointId::mint("catia:test:point#point-0").expect("identity grammar"),
+            Point3::new(2.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),

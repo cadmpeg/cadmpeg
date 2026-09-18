@@ -170,26 +170,30 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
-            position: Point3::new(10.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
-            position: Point3::new(11.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
-            position: Point3::new(2.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
+            Point3::new(10.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
+            Point3::new(11.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
+            Point3::new(0.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
+            Point3::new(2.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -377,7 +381,7 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .iter()
         .find(|point| point.id.as_str() == "iges:model:point#D3:end")
         .expect("placed line offset end point");
-    assert!(end.position.distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(end.position().distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -423,7 +427,7 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .iter()
         .find(|point| point.id.as_str() == "iges:model:point#D3:start")
         .expect("reflected offset start point");
-    assert!(start.position.distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(start.position().distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -461,7 +465,10 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
                 .find(|point| point.id == vertex.point)
         })
         .expect("offset start point");
-    assert_eq!(start.position, cadmpeg_ir::math::Point3::new(0.0, 1.5, 0.0));
+    assert_eq!(
+        start.position(),
+        cadmpeg_ir::math::Point3::new(0.0, 1.5, 0.0)
+    );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

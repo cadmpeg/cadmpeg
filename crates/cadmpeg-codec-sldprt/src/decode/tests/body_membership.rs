@@ -55,7 +55,7 @@ fn decode_builds_valid_topology_and_plane() {
         .model
         .points
         .iter()
-        .map(|p| p.position.x)
+        .map(|p| p.position().x)
         .collect();
     assert!(xs.contains(&1000.0));
 

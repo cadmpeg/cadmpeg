@@ -557,10 +557,13 @@ fn standard_line_interval_constraint_rejects_partial_collinear_overlap() {
     let points = [0.0, 1.0, 2.0, 3.0]
         .into_iter()
         .enumerate()
-        .map(|(index, x)| Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position: Point3::new(x, 0.0, 0.0),
-            source_object: None,
+        .map(|(index, x)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                Point3::new(x, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point")
         })
         .collect::<Vec<_>>();
     let supports = (0..3)
@@ -767,10 +770,13 @@ fn cached_standard_line_pair_preference_matches_the_geometry_rule() {
     let points = [0.0, 1.0, 2.0, 3.0]
         .into_iter()
         .enumerate()
-        .map(|(index, x)| Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position: Point3::new(x, 0.0, 0.0),
-            source_object: None,
+        .map(|(index, x)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                Point3::new(x, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point")
         })
         .collect::<Vec<_>>();
     let supports = (0..3)
@@ -834,11 +840,14 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
             .into_iter()
             .enumerate()
-            .map(|(index, position)| Point {
-                id: PointId::mint(format!("catia:test:point#point-{index}"))
-                    .expect("identity grammar"),
-                position,
-                source_object: None,
+            .map(|(index, position)| {
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point-{index}"))
+                        .expect("identity grammar"),
+                    position,
+                    None,
+                )
+                .expect("a finite position is a point")
             }),
     );
     let support = StandardCurveSupport {
@@ -913,10 +922,13 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     let mut points = [Point3::new(1.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)]
         .into_iter()
         .enumerate()
-        .map(|(index, position)| Point {
-            id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
+        .map(|(index, position)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point")
         })
         .collect::<Vec<_>>();
     let pcurve = PcurveGeometry::Line(
@@ -994,12 +1006,15 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         Some([0, 1])
     );
 
-    points.push(Point {
-        id: PointId::mint("catia:test:point#ambiguous-start".to_string())
-            .expect("identity grammar"),
-        position: Point3::new(1.0, 0.0, 0.0),
-        source_object: None,
-    });
+    points.push(
+        Point::new(
+            PointId::mint("catia:test:point#ambiguous-start".to_string())
+                .expect("identity grammar"),
+            Point3::new(1.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     assert_eq!(
         standard_native_support_endpoint_pair(&native, &points, &[0, 1, 2], None),
         None
@@ -1045,11 +1060,14 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
             .into_iter()
             .enumerate()
-            .map(|(index, position)| Point {
-                id: PointId::mint(format!("catia:test:point#point-{index}"))
-                    .expect("identity grammar"),
-                position,
-                source_object: None,
+            .map(|(index, position)| {
+                Point::new(
+                    PointId::mint(format!("catia:test:point#point-{index}"))
+                        .expect("identity grammar"),
+                    position,
+                    None,
+                )
+                .expect("a finite position is a point")
             }),
     );
     let surface_id =
@@ -1149,11 +1167,14 @@ fn standard_line_edge_uses_distance_parameterization() {
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     let support = StandardCurveSupport {
         pos: 12,
@@ -1184,11 +1205,14 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     let support = StandardCurveSupport {
         pos: 12,
@@ -1331,11 +1355,14 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
 
     let mut ir = CadIr::empty();
     for (index, position) in [start, end].into_iter().enumerate() {
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     let support = StandardCurveSupport {
         pos: 12,
@@ -1395,11 +1422,14 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
 fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     let mut ir = CadIr::empty();
     for index in 0..138 {
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position: Point3::new(index as f64, 0.0, 0.0),
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                Point3::new(index as f64, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
@@ -1463,11 +1493,14 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
     .into_iter()
     .enumerate()
     {
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     for (index, normal) in [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 1.0, 0.0)]
         .into_iter()
@@ -1531,11 +1564,14 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
@@ -1604,11 +1640,14 @@ fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() 
     .into_iter()
     .enumerate()
     {
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            position,
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+                position,
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {

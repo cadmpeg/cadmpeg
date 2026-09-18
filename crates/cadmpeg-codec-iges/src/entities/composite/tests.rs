@@ -565,16 +565,18 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#start-point").expect("identity grammar"),
-            position: Point3::new(0.001, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#end-point").expect("identity grammar"),
-            position: Point3::new(1.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#start-point").expect("identity grammar"),
+            Point3::new(0.001, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#end-point").expect("identity grammar"),
+            Point3::new(1.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -603,7 +605,9 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
             .is_none()
     );
 
-    ir.model.points[0].position = Point3::new(0.000_999, 0.0, 0.0);
+    ir.model.points[0]
+        .set_position(Point3::new(0.000_999, 0.0, 0.0))
+        .expect("a finite position is a point");
     assert!(
         bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
             .expect("carrier lanes pair")
@@ -651,16 +655,18 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#base-start-point").expect("identity grammar"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#base-end-point").expect("identity grammar"),
-            position: Point3::new(1.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#base-start-point").expect("identity grammar"),
+            Point3::new(0.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#base-end-point").expect("identity grammar"),
+            Point3::new(1.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -739,26 +745,30 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
-            position: Point3::new(10.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
-            position: Point3::new(11.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
-            position: Point3::new(2.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
+            Point3::new(10.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
+            Point3::new(11.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
+            Point3::new(0.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
+            Point3::new(2.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -843,16 +853,14 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         let end_vertex =
             VertexId::mint(format!("test:model:vertex#end-{index}")).expect("identity grammar");
         ir.model.points.extend([
-            Point {
-                id: start_point.clone(),
-                position: Point3::new(index as f64, 0.0, 0.0),
-                source_object: None,
-            },
-            Point {
-                id: end_point.clone(),
-                position: Point3::new(end, 0.0, 0.0),
-                source_object: None,
-            },
+            Point::new(
+                start_point.clone(),
+                Point3::new(index as f64, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point"),
+            Point::new(end_point.clone(), Point3::new(end, 0.0, 0.0), None)
+                .expect("a finite position is a point"),
         ]);
         ir.model.vertices.extend([
             Vertex {
@@ -904,16 +912,18 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         });
     }
     ir.model.points.extend([
-        Point {
-            id: PointId::mint("test:model:point#start-point").expect("identity grammar"),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
-        },
-        Point {
-            id: PointId::mint("test:model:point#end-point").expect("identity grammar"),
-            position: Point3::new(2.0, 0.0, 0.0),
-            source_object: None,
-        },
+        Point::new(
+            PointId::mint("test:model:point#start-point").expect("identity grammar"),
+            Point3::new(0.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+        Point::new(
+            PointId::mint("test:model:point#end-point").expect("identity grammar"),
+            Point3::new(2.0, 0.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
     ]);
     ir.model.vertices.extend([
         Vertex {

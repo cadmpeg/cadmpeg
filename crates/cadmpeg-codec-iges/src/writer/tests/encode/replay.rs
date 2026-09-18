@@ -139,11 +139,14 @@ fn a_synthesized_export_states_the_target_it_wrote() {
         (IgesVersion::V5_3, "iges:5.3-fixed-ascii"),
     ] {
         let mut ir = CadIr::empty();
-        ir.model.points.push(Point {
-            id: PointId::mint(format!("test:model:point#{id}")).expect("identity grammar"),
-            source_object: None,
-            position: Point3::new(1.0, 2.0, 3.0),
-        });
+        ir.model.points.push(
+            Point::new(
+                PointId::mint(format!("test:model:point#{id}")).expect("identity grammar"),
+                Point3::new(1.0, 2.0, 3.0),
+                None,
+            )
+            .expect("a finite position is a point"),
+        );
         let plan = IgesCodec
             .plan(
                 EncodeInput::new(&ir, None),
@@ -162,11 +165,14 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
     let mut edited = decoded.ir().clone();
-    edited.model.points.push(Point {
-        id: PointId::mint("test:model:point#edited").expect("identity grammar"),
-        source_object: None,
-        position: Point3::new(7.0, 8.0, 9.0),
-    });
+    edited.model.points.push(
+        Point::new(
+            PointId::mint("test:model:point#edited").expect("identity grammar"),
+            Point3::new(7.0, 8.0, 9.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let plan = IgesCodec
         .plan(
             EncodeInput::new(&edited, Some(decoded.source_fidelity())),

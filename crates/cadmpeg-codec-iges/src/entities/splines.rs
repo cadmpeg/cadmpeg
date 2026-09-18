@@ -186,16 +186,8 @@ fn add_edge(
     let curve = crate::ids::curve(&stem);
     let edge = crate::ids::edge(&stem);
     ir.model.points.extend([
-        Point {
-            source_object: None,
-            id: start_point.clone(),
-            position: start,
-        },
-        Point {
-            source_object: None,
-            id: end_point.clone(),
-            position: end,
-        },
+        Point::new(start_point.clone(), start, None).ok()?,
+        Point::new(end_point.clone(), end, None).ok()?,
     ]);
     ir.model.vertices.extend([
         Vertex {

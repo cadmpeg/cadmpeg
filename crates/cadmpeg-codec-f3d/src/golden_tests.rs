@@ -454,7 +454,14 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         return None;
     }
     let mut edited = result.ir().clone();
-    edited.model.points[0].position.x += 1.0;
+    let moved = edited.model.points[0].position();
+    edited.model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point");
     let mut out = Vec::new();
     Some(
         match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out)
@@ -829,7 +836,14 @@ fn an_edit_survives_the_patch_writer() {
                 let Some(point) = ir.model.points.first_mut() else {
                     return false;
                 };
-                point.position.x += MUTATION_MM;
+                let moved = point.position();
+                point
+                    .set_position(cadmpeg_ir::math::Point3::new(
+                        moved.x + MUTATION_MM,
+                        moved.y,
+                        moved.z,
+                    ))
+                    .expect("a finite position is a point");
                 true
             },
             |outcome| match outcome {
@@ -837,8 +851,8 @@ fn an_edit_survives_the_patch_writer() {
                     let round_trip = decode_result(bytes).unwrap_or_else(|error| {
                         panic!("fixture `{name}`: patched output does not decode: {error}")
                     });
-                    let moved = edited.model.points[0].position.x;
-                    let returned = round_trip.ir().model.points[0].position.x;
+                    let moved = edited.model.points[0].position().x;
+                    let returned = round_trip.ir().model.points[0].position().x;
                     assert!(
                         (returned - moved).abs() <= 1.0e-9,
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \

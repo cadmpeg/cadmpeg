@@ -155,26 +155,3 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
-
-#[test]
-fn point_position_must_be_finite() {
-    use crate::report::{Check, Severity};
-
-    let mut ir = unit_cube().expect("valid unit cube fixture");
-    let entity = ir.model.points[0].id.to_string();
-    ir.model.points[0].position = Point3::new(f64::INFINITY, 0.0, 0.0);
-    let report = validate_neutral(&ir, Vec::new());
-    assert_eq!(
-        report
-            .findings
-            .iter()
-            .filter(|finding| finding.check == Check::GeometricConsistency
-                && finding.severity == Severity::Error
-                && finding.entity.as_deref() == Some(entity.as_str())
-                && finding
-                    .message
-                    .contains("point position contains a non-finite coordinate"))
-            .count(),
-        1
-    );
-}

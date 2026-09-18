@@ -287,8 +287,8 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            ensure_finite_point(point.position, point.id.as_str())?;
-            entities.push(point_entity(point.position));
+            ensure_finite_point(point.position(), point.id.as_str())?;
+            entities.push(point_entity(point.position()));
         }
         entities
     };
@@ -1783,8 +1783,8 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
         {
             continue;
         }
-        ensure_finite_point(point.position, point.id.as_str())?;
-        entities.push(point_entity(point.position));
+        ensure_finite_point(point.position(), point.id.as_str())?;
+        entities.push(point_entity(point.position()));
     }
     Ok(entities)
 }
@@ -2226,8 +2226,8 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
         {
             continue;
         }
-        ensure_finite_point(point.position, point.id.as_str())?;
-        entities.push(point_entity(point.position));
+        ensure_finite_point(point.position(), point.id.as_str())?;
+        entities.push(point_entity(point.position()));
     }
     Ok(entities)
 }
@@ -5212,7 +5212,7 @@ fn point_position(ir: &CadIr, point_id: &PointId) -> Result<Point3, CodecError> 
         .points
         .iter()
         .find(|point| point.id == *point_id)
-        .map(|point| point.position)
+        .map(cadmpeg_ir::topology::Point::position)
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "IGES topology references missing point {point_id}"
@@ -5232,7 +5232,7 @@ fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<Point3> {
         .points
         .iter()
         .find(|point| point.id == point_id)
-        .map(|point| point.position)
+        .map(cadmpeg_ir::topology::Point::position)
 }
 
 #[derive(Clone, Copy)]

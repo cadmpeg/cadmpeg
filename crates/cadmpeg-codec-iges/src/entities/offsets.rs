@@ -183,7 +183,7 @@ fn source_parameter_range(
             .points
             .iter()
             .find(|item| item.id == point_id)
-            .map(|point| point.position)
+            .map(cadmpeg_ir::topology::Point::position)
     };
     let candidates = ir
         .model
@@ -883,18 +883,17 @@ pub(super) fn project(
                 }),
             });
         }
-        ir.model.points.extend([
-            Point {
-                source_object: None,
-                id: start_point.clone(),
-                position: start_position,
-            },
-            Point {
-                source_object: None,
-                id: end_point.clone(),
-                position: end_position,
-            },
-        ]);
+        let (Ok(start_carrier), Ok(end_carrier)) = (
+            Point::new(start_point.clone(), start_position, None),
+            Point::new(end_point.clone(), end_position, None),
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "offset curve endpoint states a non-finite coordinate",
+            ));
+            continue;
+        };
+        ir.model.points.extend([start_carrier, end_carrier]);
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),

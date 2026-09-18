@@ -372,16 +372,19 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
         .map(|n| 1.0f64 - f64::from(n) * f64::EPSILON / 2.0)
         .collect();
     for (point, value) in ir.model.points.iter_mut().zip(edge_values.iter().cycle()) {
-        point.position.x = *value;
+        let moved = point.position();
+        point
+            .set_position(Point3::new(*value, moved.y, moved.z))
+            .expect("a finite position is a point");
     }
     let json = ir.to_canonical_json().unwrap();
     let parsed = crate::CadIr::from_json(&json).unwrap();
     for (before, after) in ir.model.points.iter().zip(&parsed.model.points) {
         assert_eq!(
-            before.position.x.to_bits(),
-            after.position.x.to_bits(),
+            before.position().x.to_bits(),
+            after.position().x.to_bits(),
             "JSON round-trip changed {} by at least one ULP",
-            before.position.x
+            before.position().x
         );
     }
 }
@@ -566,28 +569,6 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("states no regeneration parent"), "{error}");
-}
-
-#[test]
-fn a_document_holding_a_non_finite_coordinate_has_no_canonical_json() {
-    let finite = unit_cube().expect("valid unit cube fixture");
-    let text = finite
-        .to_canonical_json()
-        .expect("a finite document writes");
-    assert!(text.contains("\"x\": 0.0") || text.contains("\"x\": 1.0"));
-
-    let mut non_finite = unit_cube().expect("valid unit cube fixture");
-    non_finite.model.points[0].position = Point3::new(f64::NAN, 0.0, 0.0);
-    assert!(matches!(
-        non_finite.to_canonical_json(),
-        Err(crate::hash::finite_json::CanonicalJsonError::NonFinite { .. })
-    ));
-
-    non_finite.model.points[0].position = Point3::new(1.0, 0.0, 0.0);
-    let text = non_finite
-        .to_canonical_json()
-        .expect("a finite document writes");
-    assert!(!text.contains("\"x\": null"));
 }
 
 /// The live document route reads `feature.name` through

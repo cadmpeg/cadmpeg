@@ -1545,16 +1545,10 @@ pub(crate) fn project_geometry(
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
-            Point {
-                source_object: None,
-                id: start_point.clone(),
-                position: start,
-            },
-            Point {
-                source_object: None,
-                id: end_point.clone(),
-                position: end,
-            },
+            Point::new(start_point.clone(), start, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            Point::new(end_point.clone(), end, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         ]);
         ir.model.vertices.extend([
             Vertex {
@@ -1631,11 +1625,10 @@ pub(crate) fn project_geometry(
         }
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
-        ir.model.points.push(Point {
-            source_object: None,
-            id: point.clone(),
-            position,
-        });
+        ir.model.points.push(
+            Point::new(point.clone(), position, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
@@ -1719,11 +1712,10 @@ pub(crate) fn project_geometry(
         }
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
-        ir.model.points.push(Point {
-            source_object: None,
-            id: point.clone(),
-            position,
-        });
+        ir.model.points.push(
+            Point::new(point.clone(), position, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
@@ -1813,16 +1805,10 @@ pub(crate) fn project_geometry(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
-            Point {
-                source_object: None,
-                id: start_point.clone(),
-                position: start,
-            },
-            Point {
-                source_object: None,
-                id: end_point.clone(),
-                position: end,
-            },
+            Point::new(start_point.clone(), start, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            Point::new(end_point.clone(), end, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         ]);
         ir.model.vertices.extend([
             Vertex {
@@ -2162,16 +2148,10 @@ pub(crate) fn project_geometry(
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
-            Point {
-                source_object: None,
-                id: start_point.clone(),
-                position: start,
-            },
-            Point {
-                source_object: None,
-                id: end_point.clone(),
-                position: end,
-            },
+            Point::new(start_point.clone(), start, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            Point::new(end_point.clone(), end, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         ]);
         ir.model.vertices.extend([
             Vertex {

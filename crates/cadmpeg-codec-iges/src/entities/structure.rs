@@ -1355,7 +1355,7 @@ fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> 
     let vertex = index.vertices(vertex.as_str())?;
     index
         .points(vertex.point.as_str())
-        .map(|point| point.position)
+        .map(cadmpeg_ir::topology::Point::position)
 }
 
 fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {

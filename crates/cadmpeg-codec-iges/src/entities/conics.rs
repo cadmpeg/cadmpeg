@@ -53,16 +53,9 @@ fn add_bounded_curve(
     let curve = crate::ids::curve(&stem);
     let edge = crate::ids::edge(&stem);
     ir.model.points.extend([
-        Point {
-            source_object: None,
-            id: start_point.clone(),
-            position: start,
-        },
-        Point {
-            source_object: None,
-            id: end_point.clone(),
-            position: end,
-        },
+        Point::new(start_point.clone(), start, None)
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        Point::new(end_point.clone(), end, None).map_err(cadmpeg_core::CodecError::malformed)?,
     ]);
     ir.model.vertices.extend([
         Vertex {

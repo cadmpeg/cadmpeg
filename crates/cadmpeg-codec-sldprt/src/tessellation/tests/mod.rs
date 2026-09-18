@@ -215,11 +215,9 @@ fn add_face(
             .expect("identity grammar");
         let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
             .expect("identity grammar");
-        model.points.push(Point {
-            id: point_id.clone(),
-            position: corner,
-            source_object: None,
-        });
+        model.points.push(
+            Point::new(point_id.clone(), corner, None).expect("a finite position is a point"),
+        );
         model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
@@ -411,11 +409,9 @@ fn add_cylindrical_patch_face(
                 .expect("identity grammar");
             let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
                 .expect("identity grammar");
-            model.points.push(Point {
-                id: point_id.clone(),
-                position: *point,
-                source_object: None,
-            });
+            model.points.push(
+                Point::new(point_id.clone(), *point, None).expect("a finite position is a point"),
+            );
             model.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,

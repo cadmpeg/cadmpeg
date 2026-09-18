@@ -278,7 +278,14 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     assert_eq!(replayed, source);
 
     let mut point_edited = decoded.ir().clone();
-    point_edited.model.points[0].position.x += 12.5;
+    let moved = point_edited.model.points[0].position();
+    point_edited.model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x + 12.5,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point");
     let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
         &mut point_edited.model.surfaces[0].geometry
     else {
@@ -303,8 +310,8 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().model.points[0].position,
-        point_edited.model.points[0].position
+        round_trip.ir().model.points[0].position(),
+        point_edited.model.points[0].position()
     );
     assert_eq!(
         round_trip.ir().model.surfaces[0].geometry,
@@ -1155,11 +1162,14 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
     let point_id = PointId::mint("generated:test:point#3").expect("identity grammar");
-    source_less.model.points.push(cadmpeg_ir::topology::Point {
-        id: point_id.clone(),
-        position: cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
-        source_object: None,
-    });
+    source_less.model.points.push(
+        cadmpeg_ir::topology::Point::new(
+            point_id.clone(),
+            cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
+            None,
+        )
+        .expect("a finite position is a point"),
+    );
     let vertex_id = VertexId::mint("generated:test:vertex#3").expect("identity grammar");
     source_less
         .model
@@ -1219,13 +1229,13 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             .model
             .points
             .iter()
-            .map(|point| point.position)
+            .map(cadmpeg_ir::topology::Point::position)
             .collect::<Vec<_>>(),
         source_less
             .model
             .points
             .iter()
-            .map(|point| point.position)
+            .map(cadmpeg_ir::topology::Point::position)
             .collect::<Vec<_>>()
     );
 }
@@ -1258,7 +1268,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
                     .find(|point| point.id == vertex.point)
             })
             .unwrap()
-            .position;
+            .position();
         let end = source_less
             .model
             .vertices
@@ -1272,7 +1282,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
                     .find(|point| point.id == vertex.point)
             })
             .unwrap()
-            .position;
+            .position();
         let delta =
             cadmpeg_ir::math::Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
         let length = delta.norm();
@@ -1634,11 +1644,10 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             point: points[index].clone(),
             tolerance: None,
         });
-        source_less.model.points.push(Point {
-            id: points[index].clone(),
-            position: Point3::new(-5.0, 0.0, z),
-            source_object: None,
-        });
+        source_less.model.points.push(
+            Point::new(points[index].clone(), Point3::new(-5.0, 0.0, z), None)
+                .expect("a finite position is a point"),
+        );
     }
     source_less.finalize();
 

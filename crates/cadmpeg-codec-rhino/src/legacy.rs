@@ -1679,11 +1679,10 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
             legacy_identity_key(format!("{suffix}.slot-{index}"))?,
         );
-        model.points.push(Point {
-            id: point_id.clone(),
-            position,
-            source_object: None,
-        });
+        model.points.push(
+            Point::new(point_id.clone(), position, None)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
@@ -2374,11 +2373,10 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
                 suffix_key,
             );
-            ir.model.points.push(Point {
-                id: point_id.clone(),
-                position,
-                source_object: None,
-            });
+            ir.model.points.push(
+                Point::new(point_id.clone(), position, None)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            );
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
@@ -2501,16 +2499,10 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                             source_object: None,
                         });
                         ir.model.points.extend([
-                            Point {
-                                id: start_point.clone(),
-                                position: start,
-                                source_object: None,
-                            },
-                            Point {
-                                id: end_point.clone(),
-                                position: end,
-                                source_object: None,
-                            },
+                            Point::new(start_point.clone(), start, None)
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                            Point::new(end_point.clone(), end, None)
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
                         ]);
                         ir.model.vertices.extend([
                             Vertex {
@@ -3165,7 +3157,7 @@ mod tests {
         );
         assert_eq!(result.ir().model.points.len(), 2);
         assert_eq!(
-            result.ir().model.points[0].position,
+            result.ir().model.points[0].position(),
             Point3::new(1.0, 2.0, 3.0)
         );
         assert!(result.report().geometry_transferred());

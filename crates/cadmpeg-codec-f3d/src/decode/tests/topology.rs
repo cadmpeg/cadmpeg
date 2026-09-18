@@ -99,7 +99,7 @@ fn decode_builds_valid_topology_and_geometry() {
         .model
         .points
         .iter()
-        .map(|p| p.position.x)
+        .map(|p| p.position().x)
         .collect();
     assert!(xs.contains(&10.0));
 
@@ -220,7 +220,7 @@ fn decode_transfers_isolated_vertex_wire_topology() {
     assert_eq!(result.ir().model.vertices.len(), 1);
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
     assert!(f3d_native(result.ir()).vertex_ownerships.is_empty());
@@ -516,7 +516,7 @@ fn generated_source_less_writes_wire_body_topology() {
         .model
         .points
         .iter()
-        .map(|point| point.position)
+        .map(cadmpeg_ir::topology::Point::position)
         .collect::<Vec<_>>();
 
     let mut encoded = Vec::new();
@@ -544,7 +544,7 @@ fn generated_source_less_writes_wire_body_topology() {
             .model
             .points
             .iter()
-            .map(|point| point.position)
+            .map(cadmpeg_ir::topology::Point::position)
             .collect::<Vec<_>>(),
         expected_points
     );
@@ -590,7 +590,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
     assert!(round_trip.ir().model.edges.is_empty());
     assert_eq!(round_trip.ir().model.vertices.len(), 1);
     assert_eq!(
-        round_trip.ir().model.points[0].position,
+        round_trip.ir().model.points[0].position(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
     assert!(f3d_native(round_trip.ir()).vertex_ownerships.is_empty());

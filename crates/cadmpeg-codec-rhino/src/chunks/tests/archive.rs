@@ -68,7 +68,7 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
 
     assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position(),
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
     assert_eq!(result.ir().model.curves.len(), 1);
@@ -124,7 +124,7 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
 
         assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
         assert_eq!(
-            result.ir().model.points[0].position,
+            result.ir().model.points[0].position(),
             cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
         );
         assert!(result
@@ -337,11 +337,11 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
 
     assert_eq!(result.ir().model.points.len(), 3);
     assert_eq!(
-        result.ir().model.points[0].position,
+        result.ir().model.points[0].position(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
     assert_eq!(
-        result.ir().model.points[2].position,
+        result.ir().model.points[2].position(),
         cadmpeg_ir::math::Point3::new(7.0, 8.0, 9.0)
     );
     assert_eq!(result.ir().model.curves.len(), 7);

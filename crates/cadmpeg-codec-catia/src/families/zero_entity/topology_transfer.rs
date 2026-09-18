@@ -437,11 +437,9 @@ pub(crate) fn transfer_closed_face_topology(
             Exactness::Inferred,
         );
         annotations.derived(&point_ids[index], "position").ok()?;
-        ir.model.points.push(Point {
-            id: point_ids[index].clone(),
-            position: locus.representative_point,
-            source_object: None,
-        });
+        ir.model
+            .points
+            .push(Point::new(point_ids[index].clone(), locus.representative_point, None).ok()?);
         annotate(
             annotations,
             &vertex_ids[index],

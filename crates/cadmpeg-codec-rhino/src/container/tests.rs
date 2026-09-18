@@ -220,7 +220,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
         .expect("V2 class-record decode");
     assert_eq!(decoded.ir().model.points.len(), 1, "{:?}", decoded.report());
     assert_eq!(
-        decoded.ir().model.points[0].position,
+        decoded.ir().model.points[0].position(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }

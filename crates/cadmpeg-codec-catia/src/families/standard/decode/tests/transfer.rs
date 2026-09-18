@@ -177,7 +177,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .model
         .points
         .iter()
-        .any(|p| (p.position.x - 10.0).abs() < 1.0e-6));
+        .any(|p| (p.position().x - 10.0).abs() < 1.0e-6));
 
     // Cylinder and tag-bridged plane carriers are decoded from their stored
     // parameters.

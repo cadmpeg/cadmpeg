@@ -1430,24 +1430,27 @@ pub(in super::super) fn transfer_native_brep(
             "topological_vertex_point",
             Exactness::Derived,
         );
-        ir.model.points.push(Point {
-            id: point_id,
-            position: Point3::new(position[0], position[1], position[2]),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "topology:vertex#{vertex_id}"
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        ir.model.points.push(
+            Point::new(
+                point_id,
+                Point3::new(position[0], position[1], position[2]),
+                Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "topology:vertex#{vertex_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
     }
     diagnostics.body_count_mismatch =
         !body_components.is_empty() && selected_body_count != Some(body_components.len());

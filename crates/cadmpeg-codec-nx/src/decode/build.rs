@@ -320,11 +320,10 @@ pub(crate) fn try_decode_geometry(
             annotations
                 .derived(&pid, "position")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            ir.model.points.push(Point {
-                id: pid.clone(),
-                position,
-                source_object: None,
-            });
+            ir.model.points.push(
+                Point::new(pid.clone(), position, None)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            );
             ir.model.vertices.push(Vertex {
                 id: vid.clone(),
                 point: pid.clone(),

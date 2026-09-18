@@ -77,7 +77,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .model
         .points
         .iter()
-        .map(|point| (point.id.as_str(), point.position))
+        .map(|point| (point.id.as_str(), point.position()))
         .collect::<HashMap<_, _>>();
     let vertices = ir
         .model
@@ -512,13 +512,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let Some(position) = points.get(&id).copied() else {
             continue;
         };
-        ir.model.points.push(Point {
-            source_object: apll_point_names
+        let Ok(point) = Point::new(
+            PointId::from(ids::data(kind!("point"), id)),
+            position,
+            apll_point_names
                 .get(&id)
                 .map(|name| super::step_source_association(id, name.clone())),
-            id: PointId::from(ids::data(kind!("point"), id)),
-            position,
-        });
+        ) else {
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "point carrier #{id} states a non-finite coordinate and was not transferred"
+            )));
+            continue;
+        };
+        ir.model.points.push(point);
     }
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {

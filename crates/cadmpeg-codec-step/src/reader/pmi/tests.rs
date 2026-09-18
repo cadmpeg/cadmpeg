@@ -1551,9 +1551,9 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#50")
         .expect("isolated PMI point");
-    assert!((point.position.x - 1.0).abs() < EPS_POINT_COORDINATE);
-    assert!((point.position.y - 2.0).abs() < EPS_POINT_COORDINATE);
-    assert!((point.position.z - 3.0).abs() < EPS_POINT_COORDINATE);
+    assert!((point.position().x - 1.0).abs() < EPS_POINT_COORDINATE);
+    assert!((point.position().y - 2.0).abs() < EPS_POINT_COORDINATE);
+    assert!((point.position().z - 3.0).abs() < EPS_POINT_COORDINATE);
     let curve_dimension = result
         .ir()
         .model

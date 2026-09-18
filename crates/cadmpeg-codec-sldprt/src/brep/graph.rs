@@ -1479,11 +1479,14 @@ fn decode_graph(
             .note(id_point(a), &source_stream, rec.offset as u64)
             .tag("00_1d");
         let [x, y, z] = rec.xyz_m;
-        out.points.push(Point {
-            id: id_point(a),
-            position: cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
-            source_object: None,
-        });
+        out.points.push(
+            Point::new(
+                id_point(a),
+                cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
+                None,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
     }
 
     // Vertices.
@@ -1543,11 +1546,10 @@ fn decode_graph(
                 .note(&vertex_id, &source_stream, 0)
                 .tag("derived_closed_circle_seam");
             annotations.exactness(&vertex_id, Exactness::Derived);
-            out.points.push(Point {
-                id: point_id.clone(),
-                position,
-                source_object: None,
-            });
+            out.points.push(
+                Point::new(point_id.clone(), position, None)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            );
             out.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
@@ -2815,7 +2817,8 @@ fn derive_cylindrical_pcurves(
         .iter()
         .filter_map(|vertex| points.get(&vertex.point).map(|point| (&vertex.id, *point)))
         .collect();
-    let position = |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
+    let position =
+        |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position());
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -3770,7 +3773,7 @@ fn derive_nurbs_isoparametric_pcurves(
         };
         let endpoints = [edge.start.clone(), edge.end.clone()].map(|vertex_id| {
             let vertex = vertices.get(&vertex_id)?;
-            Some(points.get(&vertex.point)?.position)
+            Some(points.get(&vertex.point)?.position())
         });
         let endpoints = match endpoints {
             [Some(start), Some(end)] => Some([start, end]),
@@ -5435,7 +5438,9 @@ fn synthesize_cylinder_seams(
                 continue;
             };
             if let Some(point) = out.points.iter_mut().find(|point| point.id == point_id) {
-                point.position = position;
+                point
+                    .set_position(position)
+                    .map_err(|refusal| cadmpeg_core::CodecError::Malformed(refusal.into()))?;
             }
         }
         let direction = cadmpeg_ir::math::Vector3::new(pb.x - pa.x, pb.y - pa.y, pb.z - pa.z);
@@ -5572,7 +5577,7 @@ fn synthesize_sphere_seams(
             out.points
                 .iter()
                 .find(|point| point.id == vertex.point)
-                .map(|point| (&vertex.id, point.position))
+                .map(|point| (&vertex.id, point.position()))
         })
         .collect::<HashMap<_, _>>();
     let mut existing = Vec::new();
@@ -5654,7 +5659,9 @@ fn synthesize_sphere_seams(
                 continue;
             };
             if let Some(vertex_point) = out.points.iter_mut().find(|item| item.id == point_id) {
-                vertex_point.position = point;
+                vertex_point
+                    .set_position(point)
+                    .map_err(|refusal| cadmpeg_core::CodecError::Malformed(refusal.into()))?;
             }
         }
         let curve_id = CurveId::compose(
@@ -5790,33 +5797,35 @@ fn synthesize_sphere_seams(
             seam_face_key.clone(),
         );
         let pcurve_id = PcurveId::compose(&pcurve_namespace(), seam_face_key.clone());
-        let pole_vertex = pole_vertex.unwrap_or_else(|| {
-            let point_id = PointId::compose(
-                &cadmpeg_ir::identity_namespace!("sldprt", "brep", "point"),
-                seam_face_key.clone(),
-            );
-            let vertex_id = VertexId::compose(
-                &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
-                seam_face_key.clone(),
-            );
-            for id in [point_id.as_str(), vertex_id.as_str()] {
-                annotations
-                    .note(id, source_stream, 0)
-                    .tag("derived_sphere_seam");
-                annotations.exactness(id, Exactness::Derived);
+        let pole_vertex = match pole_vertex {
+            Some(vertex) => vertex,
+            None => {
+                let point_id = PointId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "point"),
+                    seam_face_key.clone(),
+                );
+                let vertex_id = VertexId::compose(
+                    &cadmpeg_ir::identity_namespace!("sldprt", "brep", "vertex"),
+                    seam_face_key.clone(),
+                );
+                for id in [point_id.as_str(), vertex_id.as_str()] {
+                    annotations
+                        .note(id, source_stream, 0)
+                        .tag("derived_sphere_seam");
+                    annotations.exactness(id, Exactness::Derived);
+                }
+                out.points.push(
+                    Point::new(point_id.clone(), seam_point, None)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                );
+                out.vertices.push(Vertex {
+                    id: vertex_id.clone(),
+                    point: point_id,
+                    tolerance: None,
+                });
+                vertex_id
             }
-            out.points.push(Point {
-                id: point_id.clone(),
-                position: seam_point,
-                source_object: None,
-            });
-            out.vertices.push(Vertex {
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: None,
-            });
-            vertex_id
-        });
+        };
         for id in [
             curve_id.as_str(),
             edge_id.as_str(),
@@ -7242,16 +7251,18 @@ mod tests {
                 },
             ],
             points: vec![
-                Point {
-                    id: start_point,
-                    position: cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
-                    source_object: None,
-                },
-                Point {
-                    id: end_point,
-                    position: cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
-                    source_object: None,
-                },
+                Point::new(
+                    start_point,
+                    cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    None,
+                )
+                .expect("a finite position is a point"),
+                Point::new(
+                    end_point,
+                    cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    None,
+                )
+                .expect("a finite position is a point"),
             ],
             ..Default::default()
         };

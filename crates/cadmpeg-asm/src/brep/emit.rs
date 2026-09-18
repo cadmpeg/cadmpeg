@@ -3929,7 +3929,7 @@ pub(crate) fn emit_points(
     records: &[Record],
     reach: &Reachable,
     format: IdFormat,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         points: kept_points,
         ..
@@ -3939,14 +3939,15 @@ pub(crate) fn emit_points(
         if r.head() == "point" && kept_points.contains(&i) {
             let c = collect_carrier(r);
             if let Some(p) = c.positions.first() {
-                out.points.push(Point {
-                    id: <PointId>::from(id(format, i)),
-                    position: scale_point(*p),
-                    source_object: None,
-                });
+                out.points.push(
+                    Point::new(<PointId>::from(id(format, i)), scale_point(*p), None)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                );
             }
         }
     }
+
+    Ok(())
 }
 
 /// Emit reachable vertices with their tolerant tails and ownership records.

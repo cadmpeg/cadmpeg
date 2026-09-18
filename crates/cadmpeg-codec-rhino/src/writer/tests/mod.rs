@@ -179,11 +179,10 @@ pub(super) fn polygon_sheet(points: &[Point3]) -> CadIr {
         );
         let length = delta.norm();
         let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
-        ir.model.points.push(Point {
-            id: point_ids[index].clone(),
-            position: points[index],
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(point_ids[index].clone(), points[index], None)
+                .expect("a finite position is a point"),
+        );
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
@@ -285,11 +284,10 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
             next.z - points[index].z,
         );
         let length = delta.norm();
-        ir.model.points.push(Point {
-            id: point_ids[index].clone(),
-            position: points[index],
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(point_ids[index].clone(), points[index], None)
+                .expect("a finite position is a point"),
+        );
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
@@ -465,11 +463,10 @@ pub(super) fn adjacent_quad_sheet() -> CadIr {
         ),
     });
     for index in 0..positions.len() {
-        ir.model.points.push(Point {
-            id: point_ids[index].clone(),
-            position: positions[index],
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(point_ids[index].clone(), positions[index], None)
+                .expect("a finite position is a point"),
+        );
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
@@ -641,11 +638,10 @@ fn planar_tetrahedron() -> CadIr {
         .unwrap(),
     );
     for index in 0..4 {
-        ir.model.points.push(Point {
-            id: point_ids[index].clone(),
-            position: positions[index],
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(point_ids[index].clone(), positions[index], None)
+                .expect("a finite position is a point"),
+        );
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
@@ -1015,7 +1011,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)
-                .map(|point| point.position)
+                .map(cadmpeg_ir::topology::Point::position)
         };
         let start = vertex_point(start).expect("fixture start");
         let end = vertex_point(end).expect("fixture end");

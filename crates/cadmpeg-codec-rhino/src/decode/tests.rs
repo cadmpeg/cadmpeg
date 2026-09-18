@@ -533,7 +533,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         ),
         (1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 1)
     );
-    assert_eq!(model.points[1].position.x, 25.4);
+    assert_eq!(model.points[1].position().x, 25.4);
     assert_eq!(
         model.vertices[0]
             .tolerance
@@ -1033,13 +1033,14 @@ fn candidate_rejections_distinguish_admission_from_validation() {
             matches!(admission, Err(CandidateError::Admission(message)) if message == "admission")
         );
         let validation = context.validate_candidate_fallible(|candidate, _| {
-            let point = Point {
-                id: "rhino:test:point#duplicate"
+            let point = Point::new(
+                "rhino:test:point#duplicate"
                     .try_into()
                     .expect("point identity"),
-                position: Point3::new(0.0, 0.0, 0.0),
-                source_object: None,
-            };
+                Point3::new(0.0, 0.0, 0.0),
+                None,
+            )
+            .expect("a finite position is a point");
             candidate.model.points.extend([point.clone(), point]);
             Ok(())
         });
@@ -1082,11 +1083,12 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                 if admission_failure {
                     return Err("source admission refusal".into());
                 }
-                let point = Point {
-                    id: "rhino:test:point#duplicate".try_into().unwrap(),
-                    position: Point3::new(0.0, 0.0, 0.0),
-                    source_object: None,
-                };
+                let point = Point::new(
+                    "rhino:test:point#duplicate".try_into().unwrap(),
+                    Point3::new(0.0, 0.0, 0.0),
+                    None,
+                )
+                .expect("a finite position is a point");
                 candidate.model.points.extend([point.clone(), point]);
                 Ok(())
             });
@@ -1123,18 +1125,22 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
     let scan = scan_with_objects(&[]);
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand);
-        let point = |key| Point {
-            id: format!("rhino:test:point#{key}").try_into().unwrap(),
-            position: Point3::new(0.0, 0.0, 0.0),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Rhino,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}")).unwrap(),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
+        let point = |key| {
+            Point::new(
+                format!("rhino:test:point#{key}").try_into().unwrap(),
+                Point3::new(0.0, 0.0, 0.0),
+                Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Rhino,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
+                        .unwrap(),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            )
+            .expect("a finite position is a point")
         };
         context.ir.model.points.push(point("z"));
         let checkpoint = ModelCheckpoint::capture(&context.ir.model);
@@ -1364,7 +1370,7 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
             .collect::<Vec<_>>();
         assert_eq!(matching.len(), 1);
         assert_eq!(
-            matching[0].position,
+            matching[0].position(),
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         );
     });

@@ -6,7 +6,7 @@
 //! edges, coedges, and vertices reference surface, curve, pcurve, and point
 //! carriers by typed ID.
 
-use crate::features::{BodySelectionError, NonEmptyMembers};
+use crate::features::{BodySelectionError, FinitePoint3, NonEmptyMembers};
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SurfaceId, VertexId,
@@ -1164,12 +1164,12 @@ pub struct Vertex {
 /// A position carrier for a vertex.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "PointWire")]
 pub struct Point {
     /// Arena id.
     pub id: PointId,
     /// Coordinates in the document's length unit.
-    pub position: Point3,
+    position: FinitePoint3,
     /// Source object carrying this free point, when known.
     #[serde(
         default,
@@ -1177,6 +1177,53 @@ pub struct Point {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PointWire {
+    id: PointId,
+    position: Point3,
+    #[serde(default, deserialize_with = "deserialize_source_object")]
+    source_object: Option<crate::provenance::SourceObjectAssociation>,
+}
+
+impl Point {
+    /// Admit a position carrier whose coordinates are finite.
+    pub fn new(
+        id: PointId,
+        position: Point3,
+        source_object: Option<crate::provenance::SourceObjectAssociation>,
+    ) -> Result<Self, &'static str> {
+        let position =
+            FinitePoint3::new(position).ok_or("point position coordinates must be finite")?;
+        Ok(Self {
+            id,
+            position,
+            source_object,
+        })
+    }
+
+    /// Return the coordinates in the document's length unit.
+    #[must_use]
+    pub const fn position(&self) -> Point3 {
+        self.position.get()
+    }
+
+    /// Replace the coordinates, refusing a non-finite position.
+    pub fn set_position(&mut self, position: Point3) -> Result<(), &'static str> {
+        self.position =
+            FinitePoint3::new(position).ok_or("point position coordinates must be finite")?;
+        Ok(())
+    }
+}
+
+impl TryFrom<PointWire> for Point {
+    type Error = &'static str;
+    fn try_from(wire: PointWire) -> Result<Self, Self::Error> {
+        Self::new(wire.id, wire.position, wire.source_object)
+    }
 }
 
 cadmpeg_core::named_optional_field!(
@@ -1793,6 +1840,64 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("boundary_role"), "{error}");
+    }
+
+    #[test]
+    fn a_point_position_must_be_finite() {
+        use super::Point;
+        use crate::ids::PointId;
+        use crate::math::Point3;
+
+        let id = PointId::mint("t:model:point#0").expect("identity grammar");
+        for coordinates in [
+            Point3::new(f64::NAN, 0.0, 0.0),
+            Point3::new(0.0, f64::INFINITY, 0.0),
+            Point3::new(0.0, 0.0, f64::NEG_INFINITY),
+        ] {
+            assert_eq!(
+                Point::new(id.clone(), coordinates, None),
+                Err("point position coordinates must be finite")
+            );
+        }
+        let point =
+            Point::new(id, Point3::new(1.0, 2.0, 3.0), None).expect("a finite position is a point");
+        assert_eq!(point.position(), Point3::new(1.0, 2.0, 3.0));
+    }
+
+    #[test]
+    fn a_read_point_position_must_be_finite() {
+        use super::{Point, PointWire};
+        use crate::ids::PointId;
+        use crate::math::Point3;
+
+        // Reading a point is `PointWire` followed by this conversion, so the
+        // conversion is where a wire position that is not finite is refused.
+        // JSON itself states no infinity: `1e400` is out of range for the
+        // number it would be read into, and the parser refuses it first.
+        assert_eq!(
+            Point::try_from(PointWire {
+                id: PointId::mint("t:model:point#0").expect("identity grammar"),
+                position: Point3::new(f64::INFINITY, 0.0, 0.0),
+                source_object: None,
+            }),
+            Err("point position coordinates must be finite")
+        );
+
+        // The serialized shape is unchanged: the same keys read back, and an
+        // unknown key is still refused.
+        let point = serde_json::from_str::<Point>(
+            r#"{"id":"t:model:point#0","position":{"x":1.0,"y":2.0,"z":3.0}}"#,
+        )
+        .expect("a finite position reads");
+        assert_eq!(point.position(), Point3::new(1.0, 2.0, 3.0));
+        assert_eq!(
+            serde_json::to_string(&point).expect("a point writes"),
+            r#"{"id":"t:model:point#0","position":{"x":1.0,"y":2.0,"z":3.0}}"#
+        );
+        assert!(serde_json::from_str::<Point>(
+            r#"{"id":"t:model:point#0","position":{"x":1.0,"y":2.0,"z":3.0},"extra":1}"#
+        )
+        .is_err());
     }
 }
 

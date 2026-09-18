@@ -92,7 +92,9 @@ fn vertex_point_positions(ir: &CadIr) -> BTreeMap<VertexId, Point3> {
         .points
         .iter()
         .fold(BTreeMap::new(), |mut positions, point| {
-            positions.entry(point.id.clone()).or_insert(point.position);
+            positions
+                .entry(point.id.clone())
+                .or_insert(point.position());
             positions
         });
     ir.model
@@ -3439,7 +3441,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             }
             let endpoint = |vertex_id: &VertexId| {
                 let point_id = &model_index.vertices(vertex_id.as_str())?.point;
-                Some(model_index.points(point_id.as_str())?.position)
+                Some(model_index.points(point_id.as_str())?.position())
             };
             let (Some(start), Some(end)) = (endpoint(&edge.start), endpoint(&edge.end)) else {
                 continue;
@@ -3705,7 +3707,7 @@ pub(crate) fn pcurve_edge_endpoint_contract_with_index(
     let vertex = |id: &VertexId| {
         let vertex = index.vertices(id.as_str())?;
         let point = index.points(vertex.point.as_str())?;
-        Some((point.position, vertex.tolerance))
+        Some((point.position(), vertex.tolerance))
     };
     let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
         (vertex(&edge.start), vertex(&edge.end))

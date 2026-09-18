@@ -159,7 +159,7 @@ pub(super) fn sketch_brep(
                 origin,
                 u_axis,
                 v_axis,
-            );
+            )?;
             let end_vertex = sketch_vertex(
                 &mut ir,
                 &mut vertex_by_position,
@@ -168,7 +168,7 @@ pub(super) fn sketch_brep(
                 origin,
                 u_axis,
                 v_axis,
-            );
+            )?;
             let start_3d = lift_point(generated.start, origin, u_axis, v_axis);
             let end_3d = lift_point(generated.end, origin, u_axis, v_axis);
             let delta = Vector3::new(
@@ -274,11 +274,14 @@ pub(super) fn sketch_brep(
                 .colon(cadmpeg_ir::identity_key!("free-vertex"))
                 .colon(ordinal),
         );
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position: lift_point(position, origin, u_axis, v_axis),
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                point_id.clone(),
+                lift_point(position, origin, u_axis, v_axis),
+                None,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
@@ -513,14 +516,14 @@ fn sketch_vertex(
     origin: Point3,
     u_axis: Vector3,
     v_axis: Vector3,
-) -> VertexId {
+) -> Result<VertexId, cadmpeg_core::CodecError> {
     if let Some((_, id)) = vertices.iter().find(|((u, v), _)| {
         same_sketch_point(
             Point2::new(f64::from_bits(*u), f64::from_bits(*v)),
             position,
         )
     }) {
-        return id.clone();
+        return Ok(id.clone());
     }
     let key = (position.u.to_bits(), position.v.to_bits());
     let ordinal = vertices.len();
@@ -538,18 +541,21 @@ fn sketch_vertex(
             .colon(cadmpeg_ir::identity_key!("vertex"))
             .colon(ordinal),
     );
-    ir.model.points.push(Point {
-        id: point_id.clone(),
-        position: lift_point(position, origin, u_axis, v_axis),
-        source_object: None,
-    });
+    ir.model.points.push(
+        Point::new(
+            point_id.clone(),
+            lift_point(position, origin, u_axis, v_axis),
+            None,
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?,
+    );
     ir.model.vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
     });
     vertices.insert(key, vertex_id.clone());
-    vertex_id
+    Ok(vertex_id)
 }
 
 pub(super) fn same_sketch_point(left: Point2, right: Point2) -> bool {

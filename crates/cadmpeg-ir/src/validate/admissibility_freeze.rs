@@ -9,13 +9,24 @@ use crate::ids::{PointId, RegionId, ShellId, VertexId};
 use crate::topology::{Point, Shell, Vertex};
 use crate::CadIr;
 
+/// Failure while assembling a frozen admissibility fixture.
+#[derive(Debug, thiserror::Error)]
+pub enum FixtureError {
+    /// An identity component or key was not admissible.
+    #[error(transparent)]
+    Identity(#[from] crate::ids::IdentityError),
+    /// A topological carrier rejected its payload.
+    #[error("fixture geometry is invalid: {0}")]
+    Geometry(&'static str),
+}
+
 /// Empty document: accepted by every current production gate.
 pub fn accepted_empty() -> CadIr {
     CadIr::empty()
 }
 
 /// Vertex → missing point: rejected (`ReferentialIntegrity`).
-pub fn rejected_missing_point(prefix: &str) -> Result<CadIr, crate::ids::IdentityError> {
+pub fn rejected_missing_point(prefix: &str) -> Result<CadIr, FixtureError> {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
         id: VertexId::mint(format!("{prefix}:vertex#0"))?,
@@ -26,15 +37,14 @@ pub fn rejected_missing_point(prefix: &str) -> Result<CadIr, crate::ids::Identit
 }
 
 /// Shell → missing region: rejected (`ReferentialIntegrity` / topology).
-pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, crate::ids::IdentityError> {
+pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
     let mut ir = CadIr::empty();
     let point = PointId::mint(format!("{prefix}:point#0"))?;
     let vertex = VertexId::mint(format!("{prefix}:vertex#0"))?;
-    ir.model.points.push(Point {
-        id: point.clone(),
-        position: crate::math::Point3::new(0.0, 0.0, 0.0),
-        source_object: None,
-    });
+    ir.model.points.push(
+        Point::new(point.clone(), crate::math::Point3::new(0.0, 0.0, 0.0), None)
+            .map_err(FixtureError::Geometry)?,
+    );
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
         point,

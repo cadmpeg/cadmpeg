@@ -179,8 +179,15 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated BinaryFile4 decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.points[0].position.x += 2.5;
-    let expected = edited.model.points[0].position;
+    let moved = edited.model.points[0].position();
+    edited.model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x + 2.5,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point");
+    let expected = edited.model.points[0].position();
     let edge = edited
         .model
         .edges
@@ -204,7 +211,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 decode");
-    assert_eq!(round_trip.ir().model.points[0].position, expected);
+    assert_eq!(round_trip.ir().model.points[0].position(), expected);
     assert_eq!(
         round_trip
             .ir()

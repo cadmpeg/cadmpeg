@@ -518,7 +518,18 @@ impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary);
 impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve);
 impl_entity_schema!(crate::topology::Edge, Edge, id; id, carrier, start, end, tolerance);
 impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance);
-impl_entity_schema!(crate::topology::Point, Point, id; id, position, source_object);
+impl EntitySchema for crate::topology::Point {
+    const KIND: EntityKind = EntityKind::Point;
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
+    }
+}
 impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);
 impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, source_object);
 impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, cage, source_object);

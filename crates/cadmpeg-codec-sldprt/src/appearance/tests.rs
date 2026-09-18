@@ -339,7 +339,14 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
         .iter()
         .all(|body| body.color.is_none() && body.name.is_none()));
 
-    result.ir_mut().model.points[0].position.z += 1.0;
+    let moved = result.ir_mut().model.points[0].position();
+    result.ir_mut().model.points[0]
+        .set_position(cadmpeg_ir::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point");
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut encoded)
         .unwrap();

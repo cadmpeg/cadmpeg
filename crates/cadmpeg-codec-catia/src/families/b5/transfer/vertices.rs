@@ -88,11 +88,14 @@ pub(super) fn emit_vertices(
             "05_08_01_vertex",
             Exactness::ByteExact,
         );
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
-            source_object: None,
-        });
+        ir.model.points.push(
+            Point::new(
+                point_id.clone(),
+                Point3::new(coordinates[0], coordinates[1], coordinates[2]),
+                None,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         let vertex_id = VertexId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             index,
@@ -129,11 +132,14 @@ pub(super) fn emit_vertices(
             "5d_logical_vertex",
             Exactness::Derived,
         );
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position: Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
-            source_object: Some(cgm_source("vertex", vertex.object_id)),
-        });
+        ir.model.points.push(
+            Point::new(
+                point_id.clone(),
+                Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
+                Some(cgm_source("vertex", vertex.object_id)),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         let vertex_id = VertexId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             index,

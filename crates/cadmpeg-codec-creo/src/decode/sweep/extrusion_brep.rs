@@ -317,15 +317,18 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             .colon(index)
                             .colon(&side_key)
                     );
-                    ir.model.points.push(Point {
-                        id: point_id.clone(),
-                        position: Point3::new(
-                            position[0] + offset * transform.normal()[0],
-                            position[1] + offset * transform.normal()[1],
-                            position[2] + offset * transform.normal()[2],
-                        ),
-                        source_object: None,
-                    });
+                    ir.model.points.push(
+                        Point::new(
+                            point_id.clone(),
+                            Point3::new(
+                                position[0] + offset * transform.normal()[0],
+                                position[1] + offset * transform.normal()[1],
+                                position[2] + offset * transform.normal()[2],
+                            ),
+                            None,
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    );
                     ir.model.vertices.push(Vertex {
                         id: vertex_id.clone(),
                         point: point_id,
