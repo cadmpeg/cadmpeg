@@ -1,8 +1,11 @@
 //! Tests for the current four-link profile-point carrier.
 
 use super::super::super::SKETCH_MARKER;
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets;
+use crate::resolved_features::markers::linked_profile_point;
+use crate::resolved_features::markers::marker_coordinates;
+use crate::resolved_features::markers::sketch_input_entities;
 
 #[test]
 fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {

@@ -2,19 +2,33 @@
 //! Parameter alias, equation, and configuration-index tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
 use super::design_configuration;
 use super::feature;
 use super::feature_input_lane;
 use super::native_configuration;
 use super::native_with_configuration_lanes;
 use super::with_configuration_id;
+use crate::history::configuration_lane_assignments;
+use crate::history::expression_identifiers;
+use crate::history::incomplete_history_reference_features;
+use crate::history::parameter_aliases;
+use crate::history::parameters_with_unevaluable_expressions;
+use crate::history::project_features;
+use crate::history::project_parameters;
+use crate::history::rewrite_parameter_expression;
+use crate::history::sync_neutral_configurations;
+use crate::history::unquoted_expression_identifier;
+use crate::history::ParameterAliases;
+use crate::records::FeatureContent;
+use crate::records::FeatureHistory;
 use crate::records::FeatureSource;
 use cadmpeg_ir::features::DesignParameter;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::features::ParameterValue;
 use cadmpeg_ir::scalar::Length;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 #[test]

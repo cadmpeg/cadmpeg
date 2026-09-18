@@ -2,7 +2,10 @@
 //! Configuration snapshot design-completeness tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::decode::append_design_losses;
+use crate::decode::complete_resolved_configuration_parameter_snapshots;
+use crate::decode::snapshot_active_configuration;
+use crate::decode::sync_active_configuration_resolutions;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;

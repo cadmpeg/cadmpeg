@@ -6,7 +6,18 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::add_solidworks_version;
+use crate::test_support::entity51;
+use crate::test_support::make_block;
+use crate::test_support::outer_header;
+use crate::test_support::owned_triangle;
+use crate::test_support::parasolid_with_body;
+use crate::test_support::resolved_feature_classes_with_ids;
+use crate::test_support::resolved_features_payload;
+use crate::test_support::resolved_features_payload_with_names;
+use crate::test_support::sldprt_native;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::triangle_body;
 use crate::SldprtCodec;
 
 const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;

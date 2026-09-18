@@ -2,7 +2,7 @@
 //! Typed-feature design-completeness audits.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::decode::append_design_losses;
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;

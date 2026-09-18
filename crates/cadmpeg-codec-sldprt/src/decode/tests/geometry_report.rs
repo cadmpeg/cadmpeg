@@ -2,8 +2,12 @@
 //! Geometry-report and native-relation design-loss tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
 use crate::container::ContainerScan;
+use crate::decode::append_design_losses;
+use crate::decode::multiply_projected_sketch_relation_records;
+use crate::decode::unbound_feature_input_operation_objects;
+use crate::decode::unprojected_sketch_relation_records;
+use crate::decode::Brep;
 use crate::native::SldprtNative;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;

@@ -6,7 +6,29 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::bounded_curve_wrapper;
+use crate::test_support::bridge;
+use crate::test_support::circle_carrier;
+use crate::test_support::closed_cylinder_body;
+use crate::test_support::coedge;
+use crate::test_support::cone_carrier;
+use crate::test_support::cylinder_carrier;
+use crate::test_support::edge_use;
+use crate::test_support::ellipse_carrier;
+use crate::test_support::line_carrier;
+use crate::test_support::linear_nurbs_curve_carrier;
+use crate::test_support::loop_head;
+use crate::test_support::nurbs_surface_carrier;
+use crate::test_support::plane_carrier;
+use crate::test_support::rational_linear_nurbs_curve_carrier;
+use crate::test_support::rational_nurbs_surface_carrier;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::sphere_existing_seam_body;
+use crate::test_support::sphere_patch_body;
+use crate::test_support::torus_carrier;
+use crate::test_support::triangle_body;
+use crate::test_support::vertex_use;
+use crate::test_support::world_point;
 use crate::SldprtCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

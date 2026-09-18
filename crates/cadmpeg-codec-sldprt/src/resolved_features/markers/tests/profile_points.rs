@@ -1,10 +1,31 @@
 //! Indexed and linked profile-point marker tests.
 
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
-use super::super::*;
 use crate::layout::legacy_140_single_incidence_profile_point as point_140;
 use crate::layout::legacy_144_single_incidence_profile_point as point_144;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::markers::compact_geometry_locus_point_coordinates;
+use crate::resolved_features::markers::compact_legacy_code_two_profile_point_coordinates;
+use crate::resolved_features::markers::compact_legacy_embedded_geometry_coordinates;
+use crate::resolved_features::markers::compact_legacy_linked_profile_point_coordinates;
+use crate::resolved_features::markers::current_geometry_locus_profile_vertex;
+use crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets;
+use crate::resolved_features::markers::extended_four_link_profile_point_coordinates;
+use crate::resolved_features::markers::extended_geometry_locus_single_link_point;
+use crate::resolved_features::markers::extended_profile_point_coordinates;
+use crate::resolved_features::markers::geometry_locus_profile_vertex;
+use crate::resolved_features::markers::inline_arc_coordinates;
+use crate::resolved_features::markers::legacy_140_profile_point_variant_coordinates;
+use crate::resolved_features::markers::legacy_144_profile_point_variant_coordinates;
+use crate::resolved_features::markers::legacy_declared_handle_coordinates;
+use crate::resolved_features::markers::legacy_extended_linked_profile_point_coordinates;
+use crate::resolved_features::markers::legacy_linked_coordinates;
+use crate::resolved_features::markers::legacy_single_incidence_profile_point_coordinates;
+use crate::resolved_features::markers::marker_coordinates;
+use crate::resolved_features::markers::packed_legacy_linked_profile_point_coordinates;
+use crate::resolved_features::markers::shifted_geometry_handle_coordinates;
+use crate::resolved_features::markers::sketch_input_entities;
+use crate::resolved_features::markers::terminal_extended_profile_point_coordinates;
 
 const EPS_POINT_COORDINATE: f64 = 1e-12;
 

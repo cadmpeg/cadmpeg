@@ -46,9 +46,14 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::LossTaxonomy;
 
-use crate::test_support::*;
 use crate::SldprtCodec;
 
+use crate::test_support::display_list_payload;
+use crate::test_support::extended_display_list_payload;
+use crate::test_support::make_block;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::sldprt_with_body_and_display_list;
+use crate::test_support::triangle_body;
 use cadmpeg_ir::geometry::{Curve, NurbsSurface, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,

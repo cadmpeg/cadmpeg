@@ -10,8 +10,29 @@ use super::super::super::typed_relations::{
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::super::*;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchRelationKind};
+use crate::resolved_features::endpoints::compact_indexed_curve_endpoint_indices;
+use crate::resolved_features::endpoints::coordinate_roster_arc_center;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::current_long_full_circle_radial_index;
+use crate::resolved_features::endpoints::current_wide_arc_direct_markers;
+use crate::resolved_features::endpoints::equal_index_coordinate_roster_full_circle;
+use crate::resolved_features::endpoints::extended_geometry_locus_construction_line_endpoint_indices;
+use crate::resolved_features::endpoints::extended_profile_terminal_102_indexed_arc;
+use crate::resolved_features::endpoints::extended_wide_construction_line_roster_indices;
+use crate::resolved_features::endpoints::indexed_arc_uses_coordinate_center;
+use crate::resolved_features::endpoints::legacy_compact_direct_endpoint_markers;
+use crate::resolved_features::endpoints::legacy_compact_profile_line;
+use crate::resolved_features::endpoints::legacy_direct_compact_selected_axis_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_long_profile_line_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_state_five_curve_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_terminal_profile_endpoint_offset;
+use crate::resolved_features::endpoints::legacy_undetailed_profile_line;
+use crate::resolved_features::endpoints::legacy_unlocated_geometry_handle;
+use crate::resolved_features::endpoints::marker_is_selected_construction_line;
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::wide_direct_line_endpoint_markers;
+use crate::resolved_features::endpoints::wide_indexed_curve_endpoint_indices;
 
 #[test]
 fn legacy_long_profile_line_uses_point_object_ids() {

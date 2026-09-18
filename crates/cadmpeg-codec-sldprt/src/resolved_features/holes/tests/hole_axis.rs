@@ -14,7 +14,17 @@ use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 
 use super::super::super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::super::super::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
-use super::super::*;
+use crate::resolved_features::holes::bore_carrier_placements;
+use crate::resolved_features::holes::cylindrical_support_normal;
+use crate::resolved_features::holes::feature_input_sketch_frame;
+use crate::resolved_features::holes::hole_axis_key;
+use crate::resolved_features::holes::partition_seeded_hole_axes;
+use crate::resolved_features::holes::plane_owned_bore_placements;
+use crate::resolved_features::holes::project_generated_hole_axes;
+use crate::resolved_features::holes::project_hole_topology_axes;
+use crate::resolved_features::holes::project_topological_hole_constructions;
+use crate::resolved_features::holes::seeded_drilled_bore_candidates;
+use crate::resolved_features::holes::HoleTopology;
 
 #[test]
 fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {

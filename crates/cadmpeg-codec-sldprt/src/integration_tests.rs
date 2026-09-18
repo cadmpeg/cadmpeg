@@ -3,7 +3,6 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use crate::test_support::*;
 use std::io::Cursor;
 
 use crate::writer::tests::semantic_writer_rejects_subds;
@@ -12,6 +11,32 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
+use crate::test_support::closed_cylinder_body;
+use crate::test_support::encode_decode_result;
+use crate::test_support::make_block;
+use crate::test_support::owned_triangle;
+use crate::test_support::pmi_semantic_payload;
+use crate::test_support::prefixed_edge_triangle_body;
+use crate::test_support::sldprt_native;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::sldprt_with_body_and_display_list;
+use crate::test_support::sldprt_with_body_and_envelope;
+use crate::test_support::sldprt_with_body_and_history;
+use crate::test_support::sldprt_with_body_and_material;
+use crate::test_support::sldprt_with_colliding_sites;
+use crate::test_support::sldprt_with_nested_arc_sketch;
+use crate::test_support::sldprt_with_nested_circular_sketch;
+use crate::test_support::sldprt_with_nested_nurbs_sketches;
+use crate::test_support::sldprt_with_nested_sketch_profiles;
+use crate::test_support::sldprt_with_partition_and_deltas;
+use crate::test_support::sldprt_with_tagged_compact_relation_scalar;
+use crate::test_support::source_less_cube;
+use crate::test_support::sphere_patch_body;
+use crate::test_support::synthetic_sldprt;
+use crate::test_support::translate_model_x;
+use crate::test_support::triangle_body;
+use crate::test_support::triangle_body_with_overlapping_point;
+use crate::test_support::tripled_triangle_body;
 use crate::SldprtCodec;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {

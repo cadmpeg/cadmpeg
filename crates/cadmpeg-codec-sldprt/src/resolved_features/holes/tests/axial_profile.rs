@@ -11,8 +11,12 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
-use super::super::*;
 use crate::records::FeatureSource;
+use crate::resolved_features::holes::direct_hole_position_feature;
+use crate::resolved_features::holes::profiled_hole_construction;
+use crate::resolved_features::holes::profiled_hole_construction_with_evidence;
+use crate::resolved_features::holes::project_profiled_hole_constructions;
+use crate::resolved_features::holes::ProfileEvidence;
 
 #[test]
 fn axial_profile_resolves_counterbore_roles() {

@@ -9,7 +9,13 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::encode_decode;
+use crate::test_support::encode_decode_result;
+use crate::test_support::sldprt_with_body_and_history;
+use crate::test_support::sorted_point_positions;
+use crate::test_support::source_less_cube;
+use crate::test_support::translate_model;
+use crate::test_support::triangle_body;
 use crate::SldprtCodec;
 
 #[test]

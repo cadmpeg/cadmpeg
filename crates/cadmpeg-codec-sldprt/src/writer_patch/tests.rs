@@ -7,7 +7,26 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
-use crate::test_support::*;
+use crate::test_support::bridge;
+use crate::test_support::coedge;
+use crate::test_support::compact_counted_nurbs_surface_carrier;
+use crate::test_support::edge_use;
+use crate::test_support::line_carrier;
+use crate::test_support::loop_head;
+use crate::test_support::make_block;
+use crate::test_support::make_cache_cell;
+use crate::test_support::make_directory_entry;
+use crate::test_support::nurbs_curve_carrier;
+use crate::test_support::nurbs_surface_carrier_with_terminal_knot_slot;
+use crate::test_support::parasolid_with_body;
+use crate::test_support::sldprt_native;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::sldprt_with_body_and_history;
+use crate::test_support::triangle_body;
+use crate::test_support::update_sldprt_native;
+use crate::test_support::vertex_use;
+use crate::test_support::world_point;
+use crate::test_support::DIRTY_TERMINAL_KNOT;
 use crate::SldprtCodec;
 
 #[test]

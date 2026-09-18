@@ -1,8 +1,28 @@
 //! Evaluated-geometry matching and locus-fallback tests.
 
-use super::super::*;
 use super::marker;
 use crate::records::{SketchInputKind, SketchInputLink, SketchRelationKind};
+use crate::resolved_features::relation_loci::resolved_marker_locus;
+use crate::resolved_features::relation_loci::single_marker_line_entity;
+use crate::resolved_features::relation_loci::unique_profile_axis_distance_locus;
+use crate::resolved_features::relation_loci::unique_profile_axis_distance_pair;
+use crate::resolved_features::relation_loci::unique_profile_distance_loci_pair;
+use crate::resolved_features::relation_loci::unique_profile_line_angle_entity;
+use crate::resolved_features::relation_loci::unique_profile_line_angle_pair;
+use crate::resolved_features::relation_loci::unique_profile_line_distance_entity;
+use crate::resolved_features::relation_loci::unique_profile_line_distance_pair;
+use crate::resolved_features::relation_loci::unique_profile_line_point_locus;
+use crate::resolved_features::relation_loci::unique_profile_point_line_entity;
+use crate::resolved_features::relation_loci::unique_profile_point_line_pair;
+use crate::resolved_features::relation_loci::unique_repaired_profile_line_angle_pair;
+use crate::resolved_features::relation_loci::unique_repaired_profile_line_distance_pair;
+use crate::resolved_features::relation_loci::unique_repaired_profile_point_line_pair;
+use crate::resolved_features::transforms::marker_entities;
+use crate::resolved_features::transforms::ProfileAxis;
+use crate::resolved_features::typed_relations::binary_relation_matches_evaluated_geometry;
+use crate::resolved_features::typed_relations::marker_relation_is_inactive;
+use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
+use crate::resolved_features::typed_relations::unique_axis_aligned_linked_loci;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,

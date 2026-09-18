@@ -6,7 +6,13 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::make_block;
+use crate::test_support::resolved_features_payload_with_names;
+use crate::test_support::sldprt_native;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::sldprt_with_body_and_resolved_features;
+use crate::test_support::triangle_body;
+use crate::test_support::update_sldprt_native;
 use crate::SldprtCodec;
 
 #[test]

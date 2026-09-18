@@ -1,8 +1,11 @@
 //! Inline profile-curve marker tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
-use super::super::*;
 use crate::records::SketchInputKind;
+use crate::resolved_features::markers::compact_legacy_142_profile_curve_coordinates;
+use crate::resolved_features::markers::inline_arc_coordinates;
+use crate::resolved_features::markers::marker_coordinates;
+use crate::resolved_features::markers::sketch_input_entities;
 
 fn compact_legacy_142_profile_curve_payload(
     tag: [u8; 2],

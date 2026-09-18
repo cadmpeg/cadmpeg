@@ -2,8 +2,16 @@
 //! Offset and coincident reference-plane frame projection tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
 use super::feature;
+use crate::history::bind_offset_plane_references;
+use crate::history::order_features_for_regeneration;
+use crate::history::project_features;
+use crate::history::project_offset_plane;
+use crate::history::resolve_offset_plane_face_selection;
+use crate::history::resolve_planar_face_selection;
+use crate::history::FaceSelectionContext;
+use crate::history::SurfaceSelectionFaceBindings;
+use crate::records::FeatureHistory;
 use cadmpeg_ir::features::DatumPlaneReference;
 use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
@@ -16,6 +24,8 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::topology::Face;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 #[test]
 fn offset_plane_frame_resolves_one_preceding_parallel_plane() {

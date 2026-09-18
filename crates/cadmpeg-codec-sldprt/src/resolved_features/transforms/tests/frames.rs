@@ -1,6 +1,5 @@
 //! Sketch-frame, dimensioned-circle, and nested-profile tests.
 
-use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureSource;
@@ -11,7 +10,23 @@ use crate::records::{
     FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use crate::resolved_features::dimensions::project_dimensioned_sketch_geometry;
+use crate::resolved_features::profiles::bind_sketch_profiles;
+use crate::resolved_features::profiles::nested_profile_contains_declared_circular_carriers;
+use crate::resolved_features::projections::type_display_relation_parameters;
 use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
+use crate::resolved_features::relation_geometry::implicit_circle_marker;
+use crate::resolved_features::relation_geometry::owned_relation_parameters;
+use crate::resolved_features::relation_geometry::relation_parameter_by_display_name;
+use crate::resolved_features::relation_loci::typed_relation_definition;
+use crate::resolved_features::relation_records::bind_circle_dimension_centers;
+use crate::resolved_features::relation_records::bind_detached_relation_drivers;
+use crate::resolved_features::transforms::marker_transforms_with_frame_fallback;
+use crate::resolved_features::transforms::sketch_frame_marker_transform;
+use crate::resolved_features::transforms::Axes;
+use crate::resolved_features::transforms::MarkerTransform;
+use crate::resolved_features::transforms::ProfileAxis;
+use crate::resolved_features::transforms::Sign;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,

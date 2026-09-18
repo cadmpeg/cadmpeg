@@ -7,7 +7,15 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
-use crate::test_support::*;
+use crate::test_support::entity51;
+use crate::test_support::make_block;
+use crate::test_support::owned_triangle;
+use crate::test_support::resolved_feature_classes_with_ids;
+use crate::test_support::sldprt_native;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::sldprt_with_body_and_history;
+use crate::test_support::triangle_body;
+use crate::test_support::update_sldprt_native;
 use crate::SldprtCodec;
 
 #[test]

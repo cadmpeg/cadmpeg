@@ -1,12 +1,19 @@
 //! Relation link identity and inactive-constraint tests.
 
-use super::super::*;
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
+use crate::resolved_features::endpoints::inferred_point_coordinates_by_index;
+use crate::resolved_features::relation_loci::relation_operand_loci;
+use crate::resolved_features::typed_relations::legacy_terminal_profile_indexed_endpoints;
+use crate::resolved_features::typed_relations::marker_owns_constraint;
+use crate::resolved_features::typed_relations::marker_relation_is_inactive;
+use crate::resolved_features::typed_relations::relation_owner_markers;
+use crate::resolved_features::typed_relations::typed_marker_relation_definition;
+use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::{

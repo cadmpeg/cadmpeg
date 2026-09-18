@@ -2,8 +2,30 @@
 
 use super::super::super::markers::{marker_coordinates, sketch_input_entities};
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind};
+use crate::resolved_features::endpoints::alternate_current_indexed_curve_endpoint_indices;
+use crate::resolved_features::endpoints::alternate_current_selected_axis_endpoint_indices;
+use crate::resolved_features::endpoints::auxiliary_profile_record;
+use crate::resolved_features::endpoints::compact_complete_marker_roster_pair;
+use crate::resolved_features::endpoints::compact_curve_endpoint_indices;
+use crate::resolved_features::endpoints::compact_indexed_curve_raw_endpoint_indices;
+use crate::resolved_features::endpoints::compact_legacy_90_geometry_line_roster_indices;
+use crate::resolved_features::endpoints::compact_legacy_code_one_line_endpoint_indices;
+use crate::resolved_features::endpoints::compact_legacy_curve_endpoint_indices;
+use crate::resolved_features::endpoints::compact_legacy_selected_axis_endpoint_indices;
+use crate::resolved_features::endpoints::compact_legacy_short_role_one_curve_endpoint_indices;
+use crate::resolved_features::endpoints::compact_legacy_short_role_two_curve_endpoint_indices;
+use crate::resolved_features::endpoints::coordinate_roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::current_referenced_compact_curve_uses_marker_roster;
+use crate::resolved_features::endpoints::direct_indexed_curve_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_state_five_curve_endpoint_indices;
+use crate::resolved_features::endpoints::marker_is_selected_construction_line;
+use crate::resolved_features::endpoints::output_curve_endpoint_markers;
+use crate::resolved_features::endpoints::packed_legacy_curve_endpoint_indices;
+use crate::resolved_features::endpoints::relation_reference_curve_record;
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
+use crate::resolved_features::typed_relations::marker_curve_endpoint_markers;
 use std::collections::HashMap;
 
 #[test]

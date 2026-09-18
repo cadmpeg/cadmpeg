@@ -2,7 +2,9 @@
 //! Configuration partition identity and coherence tests.
 #![allow(clippy::unwrap_used)]
 
-use super::super::*;
+use crate::decode::append_design_losses;
+use crate::decode::assign_configuration_bodies;
+use crate::decode::mark_active_configuration;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{

@@ -2,9 +2,9 @@
 
 use super::super::super::typed_relations::marker_curve_endpoint_markers;
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
-use super::super::*;
 use crate::layout::current_extended_zero_tail_92_profile_curve as zero_tail_92;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::endpoints::current_extended_zero_tail_92_profile_curve;
 use std::collections::HashMap;
 
 #[test]

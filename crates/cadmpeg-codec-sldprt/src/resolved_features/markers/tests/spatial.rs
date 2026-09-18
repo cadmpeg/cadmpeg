@@ -4,7 +4,6 @@ use super::super::super::selections::coordinate_marker_local_links;
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::super::*;
 use crate::layout::{
     compact_current_spatial_marker_point as compact_spatial,
     wide_spatial_marker_coordinate_prefix as wide_spatial,
@@ -16,6 +15,18 @@ use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
     SketchInputKind, SketchRelationKind,
 };
+use crate::resolved_features::markers::additional_linked_profile_point_coordinates;
+use crate::resolved_features::markers::compact_legacy_profile_vertex;
+use crate::resolved_features::markers::linked_profile_point;
+use crate::resolved_features::markers::marker_coordinates;
+use crate::resolved_features::markers::marker_local_id;
+use crate::resolved_features::markers::marker_object_index;
+use crate::resolved_features::markers::marker_spatial_coordinates;
+use crate::resolved_features::markers::reference_cells;
+use crate::resolved_features::markers::relation_bindings;
+use crate::resolved_features::markers::relation_bindings_scoped;
+use crate::resolved_features::markers::sketch_input_entities;
+use crate::resolved_features::markers::spatial_sketches;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;

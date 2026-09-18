@@ -8,8 +8,24 @@ use super::super::super::typed_relations::{
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind};
+use crate::resolved_features::endpoints::compact_indexed_curve_endpoint_indices;
+use crate::resolved_features::endpoints::coordinate_roster_arc_center;
+use crate::resolved_features::endpoints::coordinate_roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::current_direct_92_profile_line_endpoint_indices;
+use crate::resolved_features::endpoints::current_identity_linked_wide_curve_uses_one_based_roster;
+use crate::resolved_features::endpoints::direct_indexed_curve_endpoint_indices;
+use crate::resolved_features::endpoints::extended_compact_endpoint_markers;
+use crate::resolved_features::endpoints::extended_declared_inline_line_endpoints;
+use crate::resolved_features::endpoints::extended_direct_object_line_endpoint_ids;
+use crate::resolved_features::endpoints::extended_identity_inline_line_endpoints;
+use crate::resolved_features::endpoints::extended_linked_inline_line_endpoints;
+use crate::resolved_features::endpoints::extended_tagged_indexed_curve_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_state_five_curve_endpoint_indices;
+use crate::resolved_features::endpoints::legacy_undetailed_profile_line;
+use crate::resolved_features::endpoints::marker_is_selected_construction_line;
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
+use crate::resolved_features::endpoints::wide_indexed_curve_endpoint_indices;
 use std::collections::HashMap;
 
 #[test]

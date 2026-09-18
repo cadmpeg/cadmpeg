@@ -1,8 +1,8 @@
 //! Construction-line endpoint resolution tests.
 
 use super::super::super::LEGACY_SKETCH_MARKER;
-use super::super::*;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
 
 #[test]
 fn compact_84_construction_line_prefers_points_and_accepts_one_curve_marker() {

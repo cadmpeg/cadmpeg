@@ -6,7 +6,15 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::*;
+use crate::test_support::make_block;
+use crate::test_support::outer_header;
+use crate::test_support::owned_triangle;
+use crate::test_support::parasolid_with_body;
+use crate::test_support::resolved_features_payload_with_names;
+use crate::test_support::sldprt_with_body;
+use crate::test_support::sldprt_with_partition_and_deltas;
+use crate::test_support::synthetic_sldprt;
+use crate::test_support::triangle_body;
 use crate::SldprtCodec;
 
 fn direct_extrusion_operation_payload() -> Vec<u8> {
