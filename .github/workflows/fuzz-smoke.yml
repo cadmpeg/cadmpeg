@@ -69,6 +69,13 @@ jobs:
           CARGO_BUILD_JOBS: "1"
         run: cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
 
+      # The seed tree is generator output. A drifted seed means the
+      # generators and the checked-in bytes disagree, so the campaign below
+      # starts from inputs nothing reproduces. The generators are plain
+      # binaries and build on the pinned stable toolchain.
+      - name: Check the seed tree reproduces from its generators
+        run: python3 scripts/check-fuzz-seeds.py
+
       - name: Run each fuzz target briefly
         run: |
           # cargo-fuzz lists every [[bin]], including seed generators under

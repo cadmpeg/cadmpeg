@@ -152,8 +152,9 @@ Generators resolve that tree (and the FCStd donated fixture) from
 `CARGO_MANIFEST_DIR`, so the current working directory does not change the
 output path.
 
-Every file in the tree outside the seven `fcstd_*` directories is synthesized
-by the generators under `src/bin/` from literals in their own source. Those
+Every file in the tree outside the seven `fcstd_*` directories is written from
+literals in the source of the generators under `src/bin/`, or is a
+hand-authored parser input in the same form. Those
 files contain no bytes carved from CAD application output, vendor samples,
 customer files, or other third-party CAD files. They are parser inputs, not
 public CAD corpus files. JSON seeds, malformed inputs, empty inputs, and
@@ -162,8 +163,8 @@ truncated inputs are not CAD container files. `generate_fcstd_seeds` fills the
 out of that fixture. Public CAD fixtures enter the repository only through the
 [corpus donation process](../../corpus/README.md).
 
-The checked-in tree is the output of seven generators, run from the repository
-root in this order:
+Most of the checked-in tree is the output of seven generators, run from the
+repository root in this order:
 
 ```sh
 cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_seeds
@@ -179,12 +180,23 @@ The order fixes the container targets that more than one generator writes.
 Running the sequence again writes the same bytes. `generate_fcstd_seeds`
 rewrites the `fcstd_*` seeds from the donated fixture and writes nothing else.
 
+The focused STEP, IGES, SAT, `f3d_writer`, `fcstd_write` and
+`decode_pipeline_mutated` seeds are hand-authored: they were written or reduced
+by hand and committed, and no generator writes them.
+
 `scripts/check-fuzz-seeds.py` builds the seven generators, runs that sequence
 into a temporary tree outside the repository, and compares it with the
-checked-in tree file by file. It exits 1 and names every differing, missing, or
+checked-in tree file by file. Every seed the run writes must match the
+checked-in bytes; the hand-authored seeds are listed one by one in the script's
+`AUTHORED` tuple, and the check fails when a listed seed is absent from the
+tree, when a listed seed turns out to be generator output, and when a
+checked-in seed is neither. It exits 1 and names every differing, missing, or
 extra path. The `CADMPEG_FUZZ_SEED_ROOT` environment variable it sets redirects
 `seed_dir` to that temporary tree; unset, the generators write
 `crates/cadmpeg-fuzz/seeds`. The nightly fuzz smoke job runs the check.
+
+Promoting a reduced crash artifact into `seeds/<target>/` adds a line to
+`AUTHORED`.
 
 `generate_all_seeds` writes container and IR seeds, then derives deterministic
 truncation, byte-flip, and oversized-length mutants. `generate_submodule_seeds`
