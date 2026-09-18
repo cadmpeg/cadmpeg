@@ -240,6 +240,7 @@ impl TryFrom<TerminalFrameWire> for FeatureOperationTerminalFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     const COMMON: &str = r#"{"id":"common","operation_record":"record","ordinal":0,"indices":[0,4097,0],"raw_indices":[[0],[144,1],[128,0]],"marker":[1,3,2],"state":[1,2,3,0,1,86,169,7],"legacy_inactive_modules":false,"modifies_parasolid_data":true,"split_tracking_data":[86,169],"group_count":7,"local_ordinal":1,"raw_local_ordinal":[1],"object_index":null,"raw_object_index":[255],"byte_len":20,"source_offset":100,"index_source_offsets":[100,101,103],"state_source_offset":108,"local_ordinal_source_offset":116,"object_index_source_offset":118}"#;
 
@@ -320,26 +321,6 @@ mod tests {
                     .contains("object_index_source_offset")
             );
         }
-    }
-
-    fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-        let mut wire = serde_json::json!({});
-        wire[key] = serde_json::Value::Null;
-        let Err(refused) = serde_json::from_value::<T>(wire) else {
-            panic!("{key}: null was admitted")
-        };
-        refused.to_string()
-    }
-
-    fn states_the_key(key: &str, message: &str) {
-        assert!(
-            message.starts_with(&format!("{key}: ")),
-            "the refusal of a null {key} states {message}"
-        );
-        assert!(
-            message.contains("it does not state null"),
-            "the refusal of a null {key} states {message}"
-        );
     }
 
     /// A top-level optional key on a frame wire names itself in its refusal.
