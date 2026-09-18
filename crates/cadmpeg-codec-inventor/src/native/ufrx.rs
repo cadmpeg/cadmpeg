@@ -788,7 +788,7 @@ impl UfrxRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::test_wire::{refusal, states_the_key};
+    use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
     fn external_reference_requires_path_or_nonzero_document_id() {

@@ -100,7 +100,7 @@ impl TryFrom<RecordIssueWire> for RecordIssue {
 #[cfg(test)]
 mod tests {
     use super::{RecordIssue, RecordIssueFamily};
-    use crate::test_support::test_wire::{refusal, states_the_key};
+    use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
     fn each_family_preserves_its_legacy_wire_and_rejects_mixed_fields() {
