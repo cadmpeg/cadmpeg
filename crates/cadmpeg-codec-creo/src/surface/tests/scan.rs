@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::assert_unknown_visible_surface;
+use crate::test_support::build_prt;
+use crate::test_support::push_generated_scalar;
+use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
 use crate::surface::TorusRadius2Encoding;
-use crate::test_support::*;
 use crate::CreoCodec;
 
 #[test]

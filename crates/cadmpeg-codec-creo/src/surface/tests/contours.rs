@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::surface::contour_records;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::super::*;
 use crate::container;
 use crate::test_support::build_prt;
 use crate::CreoCodec;

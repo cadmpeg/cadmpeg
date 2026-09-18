@@ -6,12 +6,14 @@
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::build_prt;
+use crate::test_support::push_generated_plane_row;
+use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 const EPS_FULL_TURN_REVOLUTION: f64 = 1.0e-12;

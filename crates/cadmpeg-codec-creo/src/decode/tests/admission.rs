@@ -5,6 +5,13 @@
 //! exercising the `#UGC:2` framing, the `#\n#<name>\n` section-boundary rule, the
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
+use crate::test_support::allfeatur_row;
+use crate::test_support::assert_annotation;
+use crate::test_support::build_prt;
+use crate::test_support::build_toc_section_prt;
+use crate::test_support::jpeg_payload;
+use crate::test_support::unix_compress_literals;
+use crate::test_support::visibgeom_payload;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
 use cadmpeg_core::container::ContainerRole;
@@ -16,7 +23,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 #[test]

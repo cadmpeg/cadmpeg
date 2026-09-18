@@ -2,6 +2,12 @@
 //! End-to-end contracts over synthesized Creo PSB byte images.
 #![allow(clippy::unwrap_used)]
 
+use crate::test_support::build_prt;
+use crate::test_support::jpeg_payload;
+use crate::test_support::push_generated_plane_row;
+use crate::test_support::push_generated_topology_row;
+use crate::test_support::push_named_analytic_prototype;
+use crate::test_support::visibgeom_payload;
 use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
@@ -12,7 +18,6 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
-use crate::test_support::*;
 use crate::CreoCodec;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {

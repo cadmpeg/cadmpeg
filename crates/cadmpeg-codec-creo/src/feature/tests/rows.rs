@@ -1,11 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::feature::definitions::dimension_unit;
+use crate::feature::definitions::DimensionUnit;
+use crate::feature::entity::entity_graph;
+use crate::feature::entity::read_entries;
+use crate::feature::rows::choice_fields;
+use crate::feature::rows::choices;
+use crate::feature::rows::geometry_tables;
+use crate::feature::rows::loop_history_entries;
+use crate::feature::rows::loop_history_roster;
+use crate::feature::rows::replay_affected_ids;
+use crate::feature::rows::round_replay_scalars;
+use crate::feature::rows::rows;
+use crate::feature::rows::surface_merge_replay_affected_ids;
+use crate::feature::rows::AffectedIdKind;
+use crate::feature::rows::FeatureAffectedIds;
+use crate::feature::rows::FeatureChoice;
+use crate::feature::rows::FeatureLoopHistoryBoundary;
+use crate::feature::rows::FeatureRow;
+use crate::feature::rows::FeatureRowBody;
+use crate::feature::rows::ReplayExtentSource;
 use std::collections::BTreeSet;
 
-use super::super::definitions::*;
-use super::super::entity::*;
-use super::super::rows::*;
 use crate::psb;
 
 #[test]

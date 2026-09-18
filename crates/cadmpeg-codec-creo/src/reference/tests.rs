@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use crate::test_support::assert_annotation;
+use crate::test_support::build_prt;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
@@ -8,7 +10,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self};
-use crate::test_support::*;
 use crate::CreoCodec;
 
 use super::*;
