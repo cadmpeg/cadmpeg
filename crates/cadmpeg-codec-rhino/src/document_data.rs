@@ -11,7 +11,7 @@ use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::objects::{parse_userdata, UserdataDescriptor};
 use crate::settings::{utf16, UnitBinding};
-use crate::wire::{scaled_coordinate, Uuid};
+use crate::wire::{flag_i32, scaled_coordinate, Uuid};
 
 const SETTINGS_TABLE: u32 = 0x1000_0015;
 const ANNOTATION_SETTINGS: u32 = 0x2000_8034;
@@ -187,10 +187,6 @@ fn length(reader: &mut BoundedReader<'_>, scale: f64) -> Result<f64, FramingErro
     scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
         FramingError::structural(reader.position(), "scaled setting length is invalid")
     })
-}
-
-fn flag_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {
-    Ok(reader.i32()? != 0)
 }
 
 fn annotation_settings(

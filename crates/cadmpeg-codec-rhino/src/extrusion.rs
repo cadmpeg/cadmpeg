@@ -130,14 +130,14 @@ pub(crate) fn decode(
             "extrusion path trim is outside the line interval",
         ));
     }
-    let up = ir_vector(vector(&mut reader)?);
+    let up = crate::wire::vector(vector(&mut reader)?);
     let miter_present = [
         reader.bool_with_writer_version(writer_version)?,
         reader.bool_with_writer_version(writer_version)?,
     ];
     let miter_normals = [
-        ir_vector(vector(&mut reader)?),
-        ir_vector(vector(&mut reader)?),
+        crate::wire::vector(vector(&mut reader)?),
+        crate::wire::vector(vector(&mut reader)?),
     ];
     let path_domain =
         increasing_interval(interval(&mut reader)?.0, reader.position(), "path domain")?;
@@ -888,10 +888,6 @@ fn scaled_point(value: crate::settings::Point3, scale: f64) -> Option<Point3> {
         crate::wire::scaled_coordinate(value.0[1], scale)?,
         crate::wire::scaled_coordinate(value.0[2], scale)?,
     ))
-}
-
-fn ir_vector(value: crate::settings::Vector3) -> Vector3 {
-    Vector3::new(value.0[0], value.0[1], value.0[2])
 }
 
 fn local_to_world_vector(
