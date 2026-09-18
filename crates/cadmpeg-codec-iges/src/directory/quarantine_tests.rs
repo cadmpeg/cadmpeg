@@ -4,33 +4,19 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
-use cadmpeg_ir::report::{DecodeReport, TransferDisposition};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::TransferDisposition;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::card;
 use crate::test_support::test_owned::{
     owned_test_file, owned_test_file_with_global, OwnedTestEntity,
 };
+use crate::test_support::{code_count, decode, strict_options};
 use crate::IgesCodec;
 
 /// Zero-based index of the level field inside the first Directory card.
 const LEVEL_FIELD: usize = 4;
-
-fn strict_options() -> DecodeOptions {
-    let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    options
-}
-
-fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
-    report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == code.kind())
-        .count()
-}
 
 fn two_point_file() -> Vec<u8> {
     owned_test_file(&[
@@ -89,12 +75,6 @@ fn corrupt_field(bytes: &[u8], card_index: usize, field: usize, value: [u8; 8]) 
     let start = directory_card_offset(bytes, card_index) + field * 8;
     corrupted[start..start + 8].copy_from_slice(&value);
     corrupted
-}
-
-fn decode(bytes: Vec<u8>) -> DecodeResult {
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap()
 }
 
 #[test]

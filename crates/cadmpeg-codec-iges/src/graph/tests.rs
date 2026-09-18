@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 
 use super::ReferenceOrigin;
-use crate::directory::{DirectoryEntry, SourceStatus};
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -14,39 +13,17 @@ use super::{
     MAX_POINTER_SEQUENCE,
 };
 use crate::loss::IgesLossCode;
+use crate::test_support::directory_target;
 use crate::test_support::test_cards::{
     card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
 };
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 
-fn directory_entry(sequence: u32, entity_type: i64) -> DirectoryEntry {
-    DirectoryEntry {
-        source_offset: 0,
-        sequence,
-        entity_type,
-        parameter_start: 1,
-        structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
-        transform: 0,
-        label_display: 0,
-        status: SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
-        parameter_line_count: 1,
-        form: 0,
-        reserved: [[b' '; 8]; 2],
-        label: [b' '; 8],
-        subscript: 0,
-    }
-}
-
 #[test]
 fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
     let maximum = u32::try_from(MAX_POINTER_SEQUENCE).unwrap();
-    let directory = [directory_entry(maximum, 116)];
+    let directory = [directory_target(maximum, 116)];
     let resolver = ParameterResolver::new(&directory);
 
     assert_eq!(
@@ -110,7 +87,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
 
 #[test]
 fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
-    let directory = [directory_entry(1, 116)];
+    let directory = [directory_target(1, 116)];
     let resolver = ParameterResolver::new(&directory);
     assert_eq!(
         resolver.resolve(
@@ -152,16 +129,16 @@ fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
 #[test]
 fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
     let maximum = u32::try_from(MAX_POINTER_SEQUENCE).unwrap();
-    let mut source = directory_entry(1, 116);
+    let mut source = directory_target(1, 116);
     source.transform = i64::from(maximum);
-    let graph = build(&[source, directory_entry(maximum, 124)]);
+    let graph = build(&[source, directory_target(maximum, 124)]);
     let edge = graph[&1]
         .iter()
         .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
     assert_eq!(edge.resolution, Resolution::Resolved(maximum));
 
-    let mut source = directory_entry(1, 116);
+    let mut source = directory_target(1, 116);
     source.transform = i64::from(maximum) + 1;
     let graph = build(&[source]);
     let edge = graph[&1]
@@ -263,7 +240,7 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
 
 #[test]
 fn zero_pointer_absence_creates_no_reference_edge() {
-    let directory = [directory_entry(1, 116)];
+    let directory = [directory_target(1, 116)];
     let mut graph = build(&directory);
     assert!(graph[&1].is_empty());
     let resolver = ParameterResolver::new(&directory);

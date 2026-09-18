@@ -1,4 +1,3 @@
-use super::directory_target;
 use super::integer_parameter_record;
 use super::token_parameter_record;
 use crate::parameter::analyze_trailing_pointer_groups;
@@ -10,6 +9,7 @@ use crate::parameter::structural_pointer_group_candidates;
 use crate::parameter::ParameterRecord;
 use crate::parameter::Token;
 use crate::parameter::TokenValue;
+use crate::test_support::directory_target;
 use std::collections::BTreeMap;
 
 #[test]

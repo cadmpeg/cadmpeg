@@ -4,9 +4,10 @@
 use super::*;
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
+use crate::test_support::{global_with_version_flag, only_match};
 use crate::IgesCodec;
 use crate::IgesVersion;
-use cadmpeg_core::dialect::{Admission, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::Admission;
 use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -340,23 +341,6 @@ fn compressed_ascii_rejects_redundant_directory_specifiers() {
     assert!(error.to_string().contains("Directory field 2 is redundant"));
 }
 
-/// A 26-field Global record carrying `version_flag` in field 23.
-fn compressed_global_with_version_flag(version_flag: &str) -> Vec<u8> {
-    format!(
-        "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,\
-         2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,{version_flag},0,0H,0H;"
-    )
-    .into_bytes()
-}
-
-/// The one dialect match of a report or summary.
-fn only_match(dialects: Option<&DialectLayers>) -> &DialectMatch {
-    let layers = dialects.expect("IGES reports dialect layers");
-    assert_eq!(layers.iter().count(), 1, "{dialects:#?}");
-    assert_eq!(layers.primary().format(), "iges");
-    layers.primary()
-}
-
 #[test]
 fn compressed_ascii_classifies_into_its_own_representation_row() {
     // The registry states Compressed ASCII at IGES 5.3, so a compressed file at
@@ -388,7 +372,7 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
     // The registry declines to invent Compressed ASCII rows below IGES 4.0: the
     // IGES 3.0 specification would witness them. A compressed file at flag 4
     // therefore satisfies no row, which is the totality row's whole purpose.
-    let source = compressed_points_file_with_global(&compressed_global_with_version_flag("4"));
+    let source = compressed_points_file_with_global(&global_with_version_flag("4"));
     let decoded = IgesCodec
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();

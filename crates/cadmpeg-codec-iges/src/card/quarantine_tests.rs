@@ -4,23 +4,17 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::{CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES};
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+use crate::test_support::{decode, strict_options};
 use crate::IgesCodec;
 
 /// Authored coordinates of the single Type 116 point in every fixture here.
 const COORDINATES: [f64; 3] = [11.5, -3.25, 7.0];
-
-fn strict_options() -> DecodeOptions {
-    let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    options
-}
 
 fn framing_losses(report: &DecodeReport) -> usize {
     report
@@ -41,12 +35,6 @@ fn point_file() -> Vec<u8> {
             COORDINATES[0], COORDINATES[1], COORDINATES[2]
         ),
     }])
-}
-
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap()
 }
 
 fn decoded_position(result: &cadmpeg_ir::codec::DecodeResult) -> [f64; 3] {

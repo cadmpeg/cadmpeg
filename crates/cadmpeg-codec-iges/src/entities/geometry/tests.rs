@@ -32,6 +32,29 @@ use crate::IgesCodec;
 
 const EPS_RADIUS_COMPARISON: f64 = 1.0e-12;
 
+fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
+    crate::directory::DirectoryEntry {
+        source_offset: 0,
+        sequence,
+        entity_type: 124,
+        parameter_start: 0,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform,
+        label_display: 0,
+        status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 0,
+        form: 0,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    }
+}
+
 #[test]
 fn point_display_symbol_targets_follow_the_declared_dialect() {
     assert!(super::point_display_symbol_type_allowed(
@@ -502,29 +525,6 @@ fn type125_form0_without_defining_entity_reports_display_loss() {
 
 #[test]
 fn transform_depth_overflow_is_a_structured_resource_refusal() {
-    fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
-        crate::directory::DirectoryEntry {
-            source_offset: 0,
-            sequence,
-            entity_type: 124,
-            parameter_start: 0,
-            structure: 0,
-            line_font: 0,
-            level: 0,
-            view: 0,
-            transform,
-            label_display: 0,
-            status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
-            line_weight: 0,
-            color: 0,
-            parameter_line_count: 0,
-            form: 0,
-            reserved: [[b' '; 8]; 2],
-            label: [b' '; 8],
-            subscript: 0,
-        }
-    }
-
     let transform_count = 65_u32;
     let mut directory = (0..transform_count)
         .map(|index| {
@@ -1213,29 +1213,6 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
 
 #[test]
 fn transform_translation_overflow_after_inch_scaling_is_rejected() {
-    fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
-        crate::directory::DirectoryEntry {
-            source_offset: 0,
-            sequence,
-            entity_type: 124,
-            parameter_start: 0,
-            structure: 0,
-            line_font: 0,
-            level: 0,
-            view: 0,
-            transform,
-            label_display: 0,
-            status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
-            line_weight: 0,
-            color: 0,
-            parameter_line_count: 0,
-            form: 0,
-            reserved: [[b' '; 8]; 2],
-            label: [b' '; 8],
-            subscript: 0,
-        }
-    }
-
     use crate::parameter::{ParameterRecord, Token, TokenValue};
     use std::collections::{BTreeMap, BTreeSet};
     let entry = transform_entry(1, 0);

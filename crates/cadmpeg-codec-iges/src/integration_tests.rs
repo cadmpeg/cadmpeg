@@ -6,6 +6,7 @@ use super::*;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
+use crate::test_support::detect_and_decode;
 use crate::test_support::test_curves_and_surfaces::{
     circular_arc_file, conic_arc_file, copious_data_file, direction_file,
     function_offset_line_file, line_file, linear_offset_line_file,
@@ -44,13 +45,6 @@ use crate::test_support::test_surface_fixtures::{
     placed_surface_of_revolution_file, ruled_surface_file, surface_of_revolution_file,
     tabulated_cylinder_file,
 };
-
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized IGES stream should decode")
-}
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -295,7 +289,7 @@ fn decode_matrix(
                 .filter(|entry| entry.entity_type == subject_type)
                 .map(|entry| entry.sequence)
                 .collect::<Vec<_>>();
-            let result = decode(bytes);
+            let result = detect_and_decode(bytes);
             let subject_output_count = arena_ids(&result, expected_arena)
                 .into_iter()
                 .filter(|identity| {
@@ -417,7 +411,7 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
 #[test]
 fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let result = decode(owned_test_file_with_global(
+    let result = detect_and_decode(owned_test_file_with_global(
         &[
             OwnedTestEntity {
                 entity_type: 110,
@@ -571,7 +565,7 @@ fn surface_pipeline_composes_nurbs_power_patches_sweeps_revolution_offsets_and_t
 
 #[test]
 fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
-    let result = decode(bounded_plane_with_significance_gap_file());
+    let result = detect_and_decode(bounded_plane_with_significance_gap_file());
     let records = &result
         .ir()
         .native

@@ -1,8 +1,9 @@
-use super::{directory_target, integer_parameter_record, token_parameter_record};
+use super::{integer_parameter_record, token_parameter_record};
 use crate::parameter::{
     analyze_trailing_pointer_groups, entity_primary_end, groups_for_candidate,
     structural_pointer_group_candidates, TokenValue,
 };
+use crate::test_support::directory_target;
 use std::collections::BTreeMap;
 #[test]
 fn type132_fixed_primary_boundary_follows_fourteen_fields() {

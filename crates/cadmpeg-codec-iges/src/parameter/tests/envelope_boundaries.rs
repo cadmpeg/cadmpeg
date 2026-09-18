@@ -1,9 +1,10 @@
-use super::{directory_target, token_parameter_record};
+use super::token_parameter_record;
 use crate::loss::IgesLossCode;
 use crate::parameter::{
     analyze_trailing_pointer_groups, entity_primary_end, entity_primary_end_with_records,
     ParameterRecord, Token, TokenValue,
 };
+use crate::test_support::directory_target;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 use cadmpeg_ir::codec::DecodeOptions;
