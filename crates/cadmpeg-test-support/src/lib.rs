@@ -11,6 +11,7 @@ use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
 
 pub mod golden;
+pub mod refusal;
 pub mod roundtrip;
 pub mod unknown_keys;
 
