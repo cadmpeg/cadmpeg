@@ -40,6 +40,11 @@ impl Point3 {
         Point3 { x, y, z }
     }
 
+    /// Whether every coordinate is finite.
+    pub const fn is_finite(&self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
+    }
+
     /// Euclidean distance to another point.
     pub fn distance(self, other: Point3) -> f64 {
         self.distance_squared(other).sqrt()
@@ -96,6 +101,11 @@ impl Vector3 {
     /// Construct a vector.
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Vector3 { x, y, z }
+    }
+
+    /// Whether every component is finite.
+    pub const fn is_finite(&self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
     }
 
     /// Euclidean length.

@@ -49,10 +49,6 @@ fn require_finite_point(field: &str, point: Point3) -> Result<(), SubdError> {
     Ok(())
 }
 
-fn finite_vector(vector: Vector3) -> bool {
-    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
-}
-
 /// A subdivision cage with valid local topology and numeric payloads.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -282,13 +278,12 @@ impl SubdPlaneFrame {
         second_axis: Vector3,
     ) -> Result<Self, SubdError> {
         require_finite_point("origin", origin)?;
-        if !finite_vector(first_axis) || (first_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
+        if !first_axis.is_finite() || (first_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
             return Err(SubdError(
                 "first_axis must be finite and unit length".into(),
             ));
         }
-        if !finite_vector(second_axis) || (second_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME
-        {
+        if !second_axis.is_finite() || (second_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
             return Err(SubdError(
                 "second_axis must be finite and unit length".into(),
             ));
