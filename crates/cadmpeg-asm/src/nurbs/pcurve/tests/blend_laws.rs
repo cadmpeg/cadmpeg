@@ -1,7 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::kernel_header::RefWidth;
+use crate::nurbs::blend::decode_rolling_ball_curve;
+use crate::nurbs::blend::decode_rolling_ball_side;
+use crate::nurbs::blend::decode_rolling_ball_surface;
+use crate::nurbs::pcurve::tests::curve_block;
+use crate::nurbs::pcurve::tests::push_f64;
+use crate::nurbs::pcurve::tests::push_ident;
+use crate::nurbs::pcurve::tests::push_int;
+use crate::nurbs::pcurve::tests::push_position;
+use crate::nurbs::pcurve::tests::push_string;
+use crate::nurbs::pcurve::tests::push_vector;
+use crate::nurbs::pcurve::tests::rolling_ball_side;
+use crate::nurbs::pcurve::tests::surface_block;
+use crate::nurbs::pcurve::tests::variable_blend_side;
+use crate::nurbs::proc_curve::rolling_ball_patch_layout;
+use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
+use crate::nurbs::proc_surface::EmbeddedLawExpression;
+use crate::nurbs::subtypes::SubtypeTables;
+use crate::nurbs::toks::lex_test_span;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::RollingBallSupportCurve;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {

@@ -1,7 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
 use crate::kernel_header::RefWidth;
+use crate::nurbs::pcurve::tests::curve_block;
+use crate::nurbs::pcurve::tests::curve_block_with_endpoint;
+use crate::nurbs::pcurve::tests::pcurve_block;
+use crate::nurbs::pcurve::tests::push_f64;
+use crate::nurbs::pcurve::tests::push_ident;
+use crate::nurbs::pcurve::tests::push_int;
+use crate::nurbs::pcurve::tests::push_position;
+use crate::nurbs::pcurve::tests::push_string;
+use crate::nurbs::pcurve::tests::push_vector;
+use crate::nurbs::pcurve::tests::surface_block;
+use crate::nurbs::pcurve::tests::surface_block_with_x_offset;
+use crate::nurbs::proc_curve::intersection_patch_layout;
+use crate::nurbs::proc_curve::projection_patch_layout;
+use crate::nurbs::proc_curve::silhouette_patch_layout;
+use crate::nurbs::proc_curve::spring_patch_layout;
+use crate::nurbs::proc_curve::surface_curve_patch_layout;
+use crate::nurbs::proc_curve::surface_offset_patch_layout;
+use crate::nurbs::proc_curve::three_surface_patch_layout;
+use crate::nurbs::proc_curve::EmbeddedSurfaceCurve;
+use crate::nurbs::proc_curve::ProjectionTailPatchLayout;
+use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
+use crate::nurbs::toks::lex_test_span;
+use crate::nurbs::toks::test_table;
+use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn offset_surface_uses_direct_support_fields_then_cache() {

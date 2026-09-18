@@ -2,29 +2,7 @@
 
 use super::{decode_pcurve_cache, final_pcurve_patch_layout, pcurve_fit_tolerance};
 use crate::kernel_header::RefWidth;
-use crate::nurbs::blend::{
-    decode_rolling_ball_curve, decode_rolling_ball_side, decode_rolling_ball_surface,
-};
-use crate::nurbs::core::{
-    curve_cache, decode_curve_cache, decode_surface_cache, final_curve_patch_layout,
-    final_surface_patch_layout, first_curve_patch_layout, surface_cache, surface_patch_layout_at,
-};
-use crate::nurbs::proc_curve::{
-    compound_patch_layout, extrusion_patch_layout, helix_patch_layout, intersection_patch_layout,
-    procedural_curve_resolving_refs, projection_patch_layout, rolling_ball_patch_layout,
-    silhouette_patch_layout, spring_patch_layout, subset_patch_layout, surface_curve_patch_layout,
-    surface_offset_patch_layout, three_surface_patch_layout, vector_offset_patch_layout,
-    EmbeddedSurfaceCurve, ProjectionTailPatchLayout,
-};
-use crate::nurbs::proc_surface::{DecodedProceduralSurfaceDefinition, EmbeddedLawExpression};
 use crate::nurbs::reader::NUBS_MARKER;
-use crate::nurbs::subtypes::SubtypeTables;
-use crate::nurbs::toks::{lex_test_span, test_table};
-use cadmpeg_ir::geometry::RollingBallSupportCurve;
-use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-};
-use cadmpeg_ir::math::{Point3, Vector3};
 
 fn push_int(out: &mut Vec<u8>, tag: u8, value: i64, int_width: RefWidth) {
     out.push(tag);

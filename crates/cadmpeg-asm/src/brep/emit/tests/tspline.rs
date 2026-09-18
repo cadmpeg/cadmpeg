@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::brep::emit::emit_carrier_surface;
+use crate::brep::AsmBrep;
+use crate::brep::Carriers;
+use crate::brep::Reachable;
+use crate::nurbs;
+use crate::sab::Record;
+use crate::sab::Token;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 
 fn record(revision: bool, ranges: [f64; 4], subtransform: Vec<Token>, knot: f64) -> Record {
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("t_spl_sur".into())];
