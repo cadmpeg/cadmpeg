@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use cadmpeg_core::CodecError;
 
 use crate::native::{
-    sole_named_property, AttachmentRecord, LinkTarget, ObjectRecord, PropertyRecord,
+    malformed, sole_named_property, AttachmentRecord, LinkTarget, ObjectRecord, PropertyRecord,
 };
 
 const MAP_MODE_NAMES: &[&str] = &[
@@ -229,10 +229,6 @@ fn map_mode_value(property: &PropertyRecord) -> Result<MapModeIndex, CodecError>
     })?;
     MapModeIndex::try_from(index.as_str())
         .map_err(|error| malformed(format!("attachment property {}: {error}", property.id)))
-}
-
-fn malformed(message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(message.into())
 }
 
 const IDENTITY: [[f64; 4]; 4] = [

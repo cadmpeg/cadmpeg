@@ -9,7 +9,7 @@ use std::num::NonZeroUsize;
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
-    parse_bool, ContainerNode, CopyOnChangePolicy as NativeCopyOnChangePolicy,
+    malformed, parse_bool, ContainerNode, CopyOnChangePolicy as NativeCopyOnChangePolicy,
     LinkArrayCardinality, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord,
     PropertyRecord,
 };
@@ -1117,10 +1117,6 @@ fn bool_list(properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, Co
     // belongs to element zero. The raw XML remains on the property record;
     // this projection follows the element order used by the other carriers.
     Ok(encoded.bytes().rev().map(|byte| byte == b'1').collect())
-}
-
-fn malformed(message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(message.into())
 }
 
 pub(crate) fn placement_matrix(

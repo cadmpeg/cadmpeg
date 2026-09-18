@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 
 use crate::dialect::FcstdDialect;
 use crate::native::{
-    DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord, PropertyFamily,
-    PropertyRecord, ValueRecord,
+    malformed, DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord,
+    PropertyFamily, PropertyRecord, ValueRecord,
 };
 
 const MAX_OBJECTS: usize = 1_000_000;
@@ -945,10 +945,6 @@ fn unique_section<'a, 'input>(
 
 fn object_id(name: &str) -> String {
     crate::native::native_id("object", name)
-}
-
-fn malformed(message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(message.into())
 }
 
 fn extension_id(owner: &str, name: &str, order: usize) -> String {

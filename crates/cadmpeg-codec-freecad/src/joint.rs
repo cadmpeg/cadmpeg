@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
-use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
+use crate::native::{malformed, sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
@@ -575,10 +575,6 @@ fn placement(
         return Ok(None);
     };
     crate::product::placement_matrix(property)
-}
-
-fn malformed(message: impl Into<String>) -> CodecError {
-    CodecError::Malformed(message.into())
 }
 
 #[cfg(test)]
