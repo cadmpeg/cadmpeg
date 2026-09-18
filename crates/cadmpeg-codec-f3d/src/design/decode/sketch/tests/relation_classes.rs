@@ -12,14 +12,7 @@ use crate::design::decode::sketch::{
     SketchRelationClass, SketchRelationMaskWidth,
 };
 use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
-
-/// One present reference: the presence byte, the u64 target, and the
-/// `cross_document` and same-segment flags.
-fn push_reference(out: &mut Vec<u8>, target: u32) {
-    out.push(1);
-    out.extend_from_slice(&u64::from(target).to_le_bytes());
-    out.extend_from_slice(&[0u8; 2]);
-}
+use crate::test_support::push_reference_u64;
 
 /// One absent reference.
 fn push_absent_reference(out: &mut Vec<u8>) {
@@ -48,12 +41,12 @@ fn relation_record(
             .to_le_bytes(),
     );
     for (reference, ordinal) in members {
-        push_reference(&mut out, *reference);
+        push_reference_u64(&mut out, u64::from(*reference));
         out.extend_from_slice(&ordinal.to_le_bytes());
     }
     out.push(0);
     out.extend_from_slice(class_members);
-    push_reference(&mut out, owner);
+    push_reference_u64(&mut out, u64::from(owner));
     out.extend_from_slice(&mask.to_le_bytes());
     out.extend_from_slice(
         &u32::try_from(returns.len())
@@ -61,7 +54,7 @@ fn relation_record(
             .to_le_bytes(),
     );
     for reference in returns {
-        push_reference(&mut out, *reference);
+        push_reference_u64(&mut out, u64::from(*reference));
     }
     out.push(0);
     out
@@ -76,7 +69,7 @@ fn legacy_relation_record(owner: u32, mask: u32, returns: &[u32]) -> Vec<u8> {
     out.extend_from_slice(&[0u8; 8]);
     out.push(0);
     out.push(0);
-    push_reference(&mut out, owner);
+    push_reference_u64(&mut out, u64::from(owner));
     out.extend_from_slice(&mask.to_le_bytes());
     out.extend_from_slice(
         &u32::try_from(returns.len())
@@ -84,7 +77,7 @@ fn legacy_relation_record(owner: u32, mask: u32, returns: &[u32]) -> Vec<u8> {
             .to_le_bytes(),
     );
     for reference in returns {
-        push_reference(&mut out, *reference);
+        push_reference_u64(&mut out, u64::from(*reference));
     }
     out.push(0);
     out
@@ -105,18 +98,18 @@ fn push_direction_clause(
     distance_parameter: u32,
 ) {
     out.extend_from_slice(&count.to_le_bytes());
-    push_reference(out, count_parameter);
+    push_reference_u64(out, u64::from(count_parameter));
     for axis in direction {
         out.extend_from_slice(&axis.to_le_bytes());
     }
     out.extend_from_slice(&distance.to_le_bytes());
-    push_reference(out, distance_parameter);
+    push_reference_u64(out, u64::from(distance_parameter));
 }
 
 /// A glyph run: the text reference, the character count, and one block of
 /// `u32 16` and a row-major 4x4 transform.
 fn push_glyph_run(out: &mut Vec<u8>, text: u32, translation: f64) {
-    push_reference(out, text);
+    push_reference_u64(out, u64::from(text));
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&16u32.to_le_bytes());
     for row in 0..4 {
@@ -266,8 +259,8 @@ fn tangent_relation_reads_its_three_flags() {
 #[test]
 fn circular_pattern_relation_reads_its_parameters_and_tables() {
     let mut class_members = Vec::new();
-    push_reference(&mut class_members, 336);
-    push_reference(&mut class_members, 333);
+    push_reference_u64(&mut class_members, 336);
+    push_reference_u64(&mut class_members, 333);
     class_members.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
     class_members.extend_from_slice(&3u32.to_le_bytes());
     class_members.extend_from_slice(&empty_pattern_tables());
@@ -333,7 +326,7 @@ fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
 fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clauses() {
     let mut class_members = vec![1, 0, 0];
     class_members.extend_from_slice(&1u32.to_le_bytes());
-    push_reference(&mut class_members, 900);
+    push_reference_u64(&mut class_members, 900);
     class_members.extend_from_slice(&empty_pattern_tables());
     push_direction_clause(&mut class_members, 3, 464, [1.0, 0.0, 0.0], 3.0, 470);
     push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.5, 473);
@@ -488,7 +481,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
     class_members.extend_from_slice(&900u64.to_le_bytes());
     class_members.extend_from_slice(&[0, 1]);
     class_members.extend_from_slice(&2u32.to_le_bytes());
-    push_reference(&mut class_members, 901);
+    push_reference_u64(&mut class_members, 901);
     class_members.extend_from_slice(&empty_pattern_tables());
 
     class_members.extend_from_slice(&0u32.to_le_bytes());
@@ -499,7 +492,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
     class_members.extend_from_slice(&0.0f64.to_le_bytes());
     class_members.extend_from_slice(&0.0f64.to_le_bytes());
     class_members.extend_from_slice(&0.0f64.to_le_bytes());
-    push_reference(&mut class_members, 470);
+    push_reference_u64(&mut class_members, 470);
 
     push_direction_clause(&mut class_members, 1, 467, [1.0, 0.0, 0.0], 0.5, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
@@ -532,7 +525,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
 fn text_frame_relation_reads_its_two_references() {
     let mut class_members = Vec::new();
     push_absent_reference(&mut class_members);
-    push_reference(&mut class_members, 2394);
+    push_reference_u64(&mut class_members, 2394);
     let record = relation_record(
         &[(2394, 0), (2403, 0)],
         &class_members,
@@ -559,8 +552,8 @@ fn text_frame_relation_reads_its_two_references() {
     );
 
     let mut both = Vec::new();
-    push_reference(&mut both, 2404);
-    push_reference(&mut both, 2394);
+    push_reference_u64(&mut both, 2404);
+    push_reference_u64(&mut both, 2394);
     let record = relation_record(
         &[(2394, 0), (2403, 0)],
         &both,

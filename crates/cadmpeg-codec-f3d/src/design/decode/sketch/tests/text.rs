@@ -724,11 +724,6 @@ fn sketch_text_record(
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());
     };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        let encoded = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
-        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
-    };
     push_ascii(&mut bytes, "329");
     bytes.extend_from_slice(&304u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 5]);
@@ -744,7 +739,7 @@ fn sketch_text_record(
     for component in [0.25f32, 0.5, 0.75, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
-    push_utf16(&mut bytes, "Arial");
+    lp_utf16(&mut bytes, "Arial");
     bytes.push(0);
     bytes.extend_from_slice(&1.0f64.to_le_bytes());
     if let Some(reference) = slots[0] {
@@ -753,7 +748,7 @@ fn sketch_text_record(
     }
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 3]);
-    push_utf16(&mut bytes, "path text");
+    lp_utf16(&mut bytes, "path text");
     if let Some(reference) = slots[1] {
         push_reference(&mut bytes, reference);
         bytes.extend_from_slice(&[0; 6]);
@@ -789,11 +784,6 @@ fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());
     };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        let encoded = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
-        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
-    };
     let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
         push_reference(bytes, reference);
         bytes.extend_from_slice(&[0; 6]);
@@ -813,13 +803,13 @@ fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
     for component in [0.0f32, 0.0, 0.0, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
-    push_utf16(&mut bytes, "Arial");
+    lp_utf16(&mut bytes, "Arial");
     bytes.push(0);
     bytes.extend_from_slice(&0.6f64.to_le_bytes());
     push_padded_reference(&mut bytes, 319);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 3]);
-    push_utf16(&mut bytes, "B6 Probe 47");
+    lp_utf16(&mut bytes, "B6 Probe 47");
     push_padded_reference(&mut bytes, 322);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.push(0);
@@ -887,11 +877,6 @@ fn txt_tag_sketch_text_record_at_with_rotation(
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());
     };
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        let encoded = value.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
-        bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
-    };
     let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
         push_reference(bytes, reference);
         bytes.extend_from_slice(&[0; 6]);
@@ -919,13 +904,13 @@ fn txt_tag_sketch_text_record_at_with_rotation(
     for component in [0.0f32, 0.3, 1.0, 1.0] {
         bytes.extend_from_slice(&component.to_le_bytes());
     }
-    push_utf16(&mut bytes, "Arial");
+    lp_utf16(&mut bytes, "Arial");
     bytes.extend_from_slice(&0.5f64.to_le_bytes());
     bytes.extend_from_slice(&[0; 2]);
     bytes.extend_from_slice(&anchor.0.to_le_bytes());
     bytes.extend_from_slice(&anchor.1.to_le_bytes());
     bytes.extend_from_slice(&vec![0u8; if class_version < 4 { 10 } else { 11 }]);
-    push_utf16(&mut bytes, "sketch text");
+    lp_utf16(&mut bytes, "sketch text");
     bytes.extend_from_slice(&(run.len() as u32).to_le_bytes());
     for reference in run {
         push_padded_reference(&mut bytes, *reference);
