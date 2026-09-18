@@ -11,6 +11,26 @@ use cadmpeg_fuzz::seed_paths::seed_dir;
 const EPS_SEED_GEOMETRY_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_SEED_GEOMETRY_DEGENERATE: f64 = 1.0e-10;
 
+/// A compound-file FAT slot is one 32-bit sector number.
+const SLOT_BYTES: usize = 4;
+
+/// One chunk of zero padding, extended from repeatedly to reach any length.
+const ZERO_PAD: [u8; 64] = [0; 64];
+
+fn slot_offset(index: usize) -> usize {
+    index * SLOT_BYTES
+}
+
+/// Append `count` zero bytes.
+fn pad_zeros(bytes: &mut Vec<u8>, count: usize) {
+    let mut remaining = count;
+    while remaining > 0 {
+        let step = remaining.min(ZERO_PAD.len());
+        bytes.extend_from_slice(&ZERO_PAD[..step]);
+        remaining -= step;
+    }
+}
+
 type SeedError = Box<dyn std::error::Error>;
 
 fn main() -> Result<(), SeedError> {
@@ -503,7 +523,8 @@ fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     push_u32(&mut bulk, 0);
     push_u32(&mut bulk, 0);
     push_u32(&mut bulk, u32::MAX);
-    bulk.resize(metadata_body.len(), 0);
+    let bulk_padding = metadata_body.len().saturating_sub(bulk.len());
+    pad_zeros(&mut bulk, bulk_padding);
     records.extend_from_slice(&bulk);
     write_seed("seeds/inventor_rse_records", "minimal", &records)?;
 
@@ -594,9 +615,45 @@ fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
         entry.fill(0);
         entry[68..80].fill(0xff);
     }
-    directory_entry(directory, 0, "Root Entry", 5, FREE, FREE, 1, 1, 64);
-    directory_entry(directory, 1, "RSeStorage", 1, FREE, FREE, 2, END, 0);
-    directory_entry(directory, 2, "RSeSegInfo", 2, FREE, FREE, FREE, 0, 16);
+    directory_entry(
+        directory,
+        0,
+        DirectoryEntry {
+            name: "Root Entry",
+            object_type: 5,
+            left: FREE,
+            right: FREE,
+            child: 1,
+            start_sector: 1,
+            size: 64,
+        },
+    );
+    directory_entry(
+        directory,
+        1,
+        DirectoryEntry {
+            name: "RSeStorage",
+            object_type: 1,
+            left: FREE,
+            right: FREE,
+            child: 2,
+            start_sector: END,
+            size: 0,
+        },
+    );
+    directory_entry(
+        directory,
+        2,
+        DirectoryEntry {
+            name: "RSeSegInfo",
+            object_type: 2,
+            left: FREE,
+            right: FREE,
+            child: FREE,
+            start_sector: 0,
+            size: 16,
+        },
+    );
 
     let root_mini = sector_mut(&mut file, SECTOR, 1);
     root_mini[..16].copy_from_slice(&synthetic_registry_seed());
@@ -607,9 +664,9 @@ fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
     let fat = sector_mut(&mut file, SECTOR, 11);
     fat.fill(0xff);
     put_u32(fat, 0, END);
-    put_u32(fat, 1 * 4, END);
-    put_u32(fat, 10 * 4, END);
-    put_u32(fat, 11 * 4, FAT);
+    put_u32(fat, slot_offset(1), END);
+    put_u32(fat, slot_offset(10), END);
+    put_u32(fat, slot_offset(11), FAT);
     Ok(file)
 }
 
@@ -655,11 +712,11 @@ fn synthetic_meta_table_body() -> Vec<u8> {
     let payloads = [0_usize, 0, 0, 0, 0, 0, 72];
     let counts = [u32::MAX, 0, 0, 0, 0, 0, 18];
     push_u32(&mut body, counts[0]);
-    body.resize(body.len() + payloads[0], 0);
+    pad_zeros(&mut body, payloads[0]);
     for index in 1..payloads.len() {
         push_u32(&mut body, (payloads[index - 1] + 4) as u32);
         push_u32(&mut body, counts[index]);
-        body.resize(body.len() + payloads[index], 0);
+        pad_zeros(&mut body, payloads[index]);
     }
     body.extend_from_slice(&[0x77; 16]);
     body
@@ -684,7 +741,7 @@ fn push_counted(bytes: &mut Vec<u8>, values: &[u32], item_size: usize) {
     for value in values {
         push_u32(bytes, *value);
     }
-    bytes.resize(bytes.len() + values.len() * (item_size - 4), 0);
+    pad_zeros(bytes, values.len() * (item_size - SLOT_BYTES));
     push_u32(bytes, (4 + values.len() * item_size) as u32);
 }
 
@@ -726,17 +783,27 @@ fn sector_mut(file: &mut [u8], sector_size: usize, id: usize) -> &mut [u8] {
     &mut file[start..start + sector_size]
 }
 
-fn directory_entry(
-    directory: &mut [u8],
-    index: usize,
-    name: &str,
+/// The fields of one compound-file directory entry.
+struct DirectoryEntry<'a> {
+    name: &'a str,
     object_type: u8,
     left: u32,
     right: u32,
     child: u32,
     start_sector: u32,
     size: u64,
-) {
+}
+
+fn directory_entry(directory: &mut [u8], index: usize, fields: DirectoryEntry<'_>) {
+    let DirectoryEntry {
+        name,
+        object_type,
+        left,
+        right,
+        child,
+        start_sector,
+        size,
+    } = fields;
     let offset = index * 128;
     let entry = &mut directory[offset..offset + 128];
     entry.fill(0);

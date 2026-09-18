@@ -554,7 +554,7 @@ mod catia {
         f[..8].copy_from_slice(OUTER_MAGIC);
         let record = f.len();
         f.extend_from_slice(&[0xa9, 0x03, 0x34, 0xc8]);
-        f.resize(record + 4 + 300, 0);
+        f.extend_from_slice(&[0u8; 300]);
         let write_f64 = |f: &mut [u8], at: usize, value: f64| {
             f[record + at..record + at + 8].copy_from_slice(&le_f64(value));
         };

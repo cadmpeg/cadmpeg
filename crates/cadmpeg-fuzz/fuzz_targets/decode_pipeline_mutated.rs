@@ -43,7 +43,7 @@ fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {
         }
     }
 
-    if seed % 3 == 0 && mutated.len() > 10 {
+    if seed.is_multiple_of(3) && mutated.len() > 10 {
         let truncate_at = (seed as usize % (mutated.len() - 10)) + 10;
         mutated.truncate(truncate_at);
     }

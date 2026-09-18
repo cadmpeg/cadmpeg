@@ -2,7 +2,7 @@
 //! Generate focused FCStd fuzz seeds from the public CC0 corpus.
 
 use std::fs;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use cadmpeg_fuzz::seed_paths::{crate_root, seed_dir};
 
@@ -56,7 +56,7 @@ fn archive_entry(bytes: &[u8], name: &str) -> Result<Vec<u8>, Box<dyn std::error
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
     let mut entry = archive.by_name(name)?;
     let mut output = Vec::new();
-    entry.read_to_end(&mut output)?;
+    std::io::copy(&mut entry, &mut output)?;
     Ok(output)
 }
 
