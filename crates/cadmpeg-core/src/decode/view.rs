@@ -140,7 +140,7 @@ pub struct View<'a> {
 
 impl<'a> View<'a> {
     /// Creates a full-window view over an entire space buffer.
-    pub(crate) fn over_space(bytes: &'a [u8], space: SpaceId) -> View<'a> {
+    pub(super) fn over_space(bytes: &'a [u8], space: SpaceId) -> View<'a> {
         View {
             window: bytes,
             unread: bytes,
@@ -160,7 +160,7 @@ impl<'a> View<'a> {
     }
 
     /// Returns the space this view navigates.
-    pub(crate) fn space(self) -> SpaceId {
+    pub(super) fn space(self) -> SpaceId {
         self.space
     }
 
