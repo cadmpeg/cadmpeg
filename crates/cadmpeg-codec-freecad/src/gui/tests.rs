@@ -456,6 +456,40 @@ fn keeps_registered_non_presentation_properties_native() {
 }
 
 #[test]
+fn refuses_a_transparency_percentage_outside_its_domain() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    for percent in ["150", "-50"] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="2">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3424269311"/></Property>
+<Property name="Transparency" type="App::PropertyPercent"><Integer value="{percent}"/></Property>
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("a transparency percentage outside [0, 100] is refused");
+        assert!(
+            matches!(
+                &error,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
+                    if message.contains("GUI color components must be in [0, 1]")
+            ),
+            "transparency {percent} must be refused by the color domain"
+        );
+    }
+}
+
+#[test]
 fn retains_topology_color_count_mismatches_and_reports_losses() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
