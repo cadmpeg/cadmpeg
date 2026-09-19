@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
 mod query_support;

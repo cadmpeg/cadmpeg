@@ -5,10 +5,10 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::*;
+use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
 
 #[test]
 fn garbage_reports_supported_formats() {

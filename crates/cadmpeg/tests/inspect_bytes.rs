@@ -10,7 +10,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt, PredicateBoxExt};
 use tempfile::tempdir;
 
 mod support;

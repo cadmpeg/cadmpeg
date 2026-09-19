@@ -6,7 +6,7 @@
 use std::fs;
 
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
 mod query_support;

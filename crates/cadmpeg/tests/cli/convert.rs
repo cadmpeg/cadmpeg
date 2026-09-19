@@ -7,10 +7,10 @@ use std::io::Cursor;
 use assert_cmd::Command;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::*;
+use crate::support::{fixture, geometryless_creo, sldprt_cube};
 
 #[test]
 fn convert_stdout_contains_only_json_artifact() {
