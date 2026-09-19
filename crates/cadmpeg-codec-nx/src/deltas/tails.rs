@@ -157,7 +157,7 @@ impl TermUseNumericTail {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::NumericTailValues;
 
     #[test]
     fn tail_values_require_the_selected_finite_cardinality() {

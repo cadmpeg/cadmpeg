@@ -934,9 +934,21 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        canonical_sha256, capability_gates, has_effective_color, is_external_assembly_loss,
+        neutral_rederivation_evidence, rederivation_boundary_counts, DecodeStatus, EntityCounts,
+        FixtureEvidence, RederivationBoundary, RederivationBoundaryCount, VerificationStatus,
+        EXTERNAL_ASSEMBLY_LOSS_CODE, NX_LOSS_NAMESPACE,
+    };
+    use cadmpeg_codec_nx::FeatureBoundary;
+    use cadmpeg_codec_nx::UnsupportedBodyCensusReason;
+    use cadmpeg_ir::appearance::AppearanceTarget;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::report::LossCategory;
+    use cadmpeg_ir::topology::Color;
+    use cadmpeg_ir::CadIr;
+    use std::collections::BTreeMap;
 
     fn fixture() -> FixtureEvidence {
         FixtureEvidence {

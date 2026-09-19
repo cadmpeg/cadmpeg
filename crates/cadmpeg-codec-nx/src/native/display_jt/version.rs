@@ -68,7 +68,7 @@ fn decimal(bytes: impl Iterator<Item = u8>) -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::JtVersionField;
 
     #[test]
     fn exact_version_text_preserves_numeric_spelling_and_padding() {

@@ -273,7 +273,16 @@ pub(crate) fn active_feature_closure(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        active_feature_closure, ActiveFeatureClosureRejection, BodyWriterHistory,
+        NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+    };
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::FeatureId;
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
 

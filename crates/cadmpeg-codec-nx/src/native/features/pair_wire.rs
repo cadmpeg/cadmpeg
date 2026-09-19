@@ -191,7 +191,9 @@ impl From<FeatureSketchPayloadMixedPair> for FeatureSketchPayloadMixedPairWire {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::FeatureSketchPayloadFixedPair;
+    use super::super::PairPosition;
+    use super::super::SketchScaledAtom;
     use crate::om::scalar_pair::SketchPairForm;
 
     #[test]

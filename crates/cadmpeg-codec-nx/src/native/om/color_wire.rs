@@ -144,7 +144,9 @@ impl From<PartColorDefinition> for PartColorDefinitionWire {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::ColorComponent;
+    use super::super::PartColorDefinition;
+    use super::super::PartColorTable;
 
     #[test]
     fn palette_definition_keeps_wire_and_rejects_derived_field_mismatches() {

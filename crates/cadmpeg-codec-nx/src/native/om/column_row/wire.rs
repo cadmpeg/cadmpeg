@@ -360,7 +360,9 @@ impl From<DataBlockTargetIndexRow> for DataBlockTargetIndexRowWire {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::DataBlockIndexRow;
+    use super::super::DataBlockLinkedIndexRow;
+    use super::super::DataBlockTargetIndexRow;
     use crate::test_support::test_wire::check_wire;
 
     #[test]

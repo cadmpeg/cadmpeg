@@ -93,7 +93,8 @@ impl TryFrom<MemberWire> for RmFastLoadObjectId {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::RmFastLoadObjectId;
+    use super::super::RmFastLoadObjectIdTable;
 
     #[test]
     fn membership_keeps_wire_order_and_rejects_inconsistent_words() {

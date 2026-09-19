@@ -4821,7 +4821,9 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use super::*;
+    use super::super::hex::Sha256Hex;
+    use super::{DisplayJtMaterialAttribute, DisplayJtPartitionBounds};
+    use cadmpeg_ir::topology::Color;
 
     const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
 

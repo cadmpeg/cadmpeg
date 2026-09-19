@@ -205,7 +205,11 @@ impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::DataBlockAbrReferenceLane;
+    use super::super::DataBlockCountedIndexLane;
+    use crate::om::compact::CompactIndexAtom;
+    use crate::om::compact::CompactIndexTarget;
+    use crate::om::compact_lane::AbrLane;
 
     #[test]
     fn counted_wire_rejects_each_inconsistent_derived_position() {

@@ -90,7 +90,7 @@ impl TryFrom<FeatureOperationBodyScalarTripleWire> for FeatureOperationBodyScala
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::FeatureOperationBodyScalarTriple;
 
     #[test]
     fn scalar_triple_wire_requires_contiguous_positions_and_complete_span() {

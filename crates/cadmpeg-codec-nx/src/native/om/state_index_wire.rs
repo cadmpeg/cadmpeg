@@ -287,9 +287,12 @@ impl OmRollForwardStateRowWire {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::OmAuditTrailRow;
+    use super::super::OmOperationStateCounter;
+    use super::{OmOperationStateSlotWire, OmRollForwardStateRowWire};
     use crate::native::om::state_status::OmOperationStateStatus;
     use crate::om::state_status::StateStatusPayload;
+    use serde::Serialize;
 
     fn preserves_wire<T: Serialize + serde::de::DeserializeOwned>(json: &str) {
         let value: T = serde_json::from_str(json).unwrap();

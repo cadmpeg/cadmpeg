@@ -94,7 +94,7 @@ impl SupportUvValues {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{SupportUvPacking, SupportUvValues};
 
     #[test]
     fn packing_requires_complete_finite_tuples() {

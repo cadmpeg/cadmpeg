@@ -2308,7 +2308,21 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::geometry_work::GeometryWorkBudget;
+    use super::{
+        ordered_support_uv_seed_candidates, support_uv_lane_geometry_work_limit,
+        support_uv_lane_matches_surface_with_budget,
+        unseeded_nurbs_surface_parameters_with_index_and_budget, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
+        MAX_SUPPORT_UV_SAMPLES,
+    };
+    use crate::intersection::SupportUvLane;
+    use cadmpeg_core::decode::WorkBudget;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::Point3;
 
     #[test]
     fn linear_offset_continuation_precedes_unvalidated_serialized_seeds() {

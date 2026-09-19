@@ -60,7 +60,8 @@ impl JoinedPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::JoinedPayload;
+    use std::collections::BTreeMap;
 
     #[test]
     fn source_locations_follow_fragment_boundaries_and_skip_empty_blocks() {
