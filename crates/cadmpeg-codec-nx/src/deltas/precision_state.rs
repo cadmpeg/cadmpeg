@@ -10,7 +10,7 @@ pub(crate) struct PrecisionState {
     translation: [f64; 3],
 }
 impl PrecisionState {
-    pub(crate) fn new(
+    pub(super) fn new(
         xmt: u32,
         references: [u32; 3],
         transform: [f64; 13],
@@ -43,10 +43,10 @@ impl PrecisionState {
     pub(crate) fn xmt(&self) -> u32 {
         self.xmt
     }
-    pub(crate) fn references(&self) -> [u32; 3] {
+    pub(super) fn references(&self) -> [u32; 3] {
         [2, self.xmt + 1, 1]
     }
-    pub(crate) fn transform(&self) -> [f64; 13] {
+    pub(super) fn transform(&self) -> [f64; 13] {
         let [x, y, z] = self.translation;
         [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, x, y, z, 1.0]
     }

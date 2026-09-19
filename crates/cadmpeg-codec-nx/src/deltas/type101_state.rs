@@ -20,7 +20,7 @@ pub(crate) struct Type101State {
     terminal_value: u64,
 }
 impl Type101State {
-    pub(crate) fn new(
+    pub(super) fn new(
         references: [u32; 4],
         anchor_reference: Option<u32>,
         state_words: [u32; 3],
@@ -46,13 +46,13 @@ impl Type101State {
             terminal_value,
         })
     }
-    pub(crate) fn prefix_state(&self) -> [u8; 3] {
+    pub(super) fn prefix_state(&self) -> [u8; 3] {
         match self.form {
             Form::Populated => [3, 4, 1],
             Form::Empty => [1, 1, 0],
         }
     }
-    pub(crate) fn state_words(&self) -> [u32; 3] {
+    pub(super) fn state_words(&self) -> [u32; 3] {
         match self.form {
             Form::Populated => [19, 9, self.last_word],
             Form::Empty => [0, 0, self.last_word],

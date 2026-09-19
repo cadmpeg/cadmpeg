@@ -65,7 +65,7 @@ const SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART: usize = 8;
 /// Completion work scales with the chart census so a valid model is not
 /// truncated at an arbitrary candidate prefix. The ceiling remains in place
 /// for unusually large or adversarial inputs.
-pub(super) const MAX_SUPPORT_UV_COMPLETION_SAMPLES: usize = 65_536;
+const MAX_SUPPORT_UV_COMPLETION_SAMPLES: usize = 65_536;
 
 /// Geometry work reserved for one support-UV sample before the lane slice is
 /// capped. A lane is admitted as a whole, so one difficult carrier cannot
@@ -87,7 +87,7 @@ pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
         )
 }
 
-pub(super) type SupportUvBudget<'a> = WorkBudget<'a>;
+type SupportUvBudget<'a> = WorkBudget<'a>;
 
 pub(super) fn support_uv_budget_exhausted(budget: &SupportUvBudget<'_>) -> bool {
     budget.exhausted() || budget.remaining() == 0
@@ -108,7 +108,7 @@ pub(super) fn new_support_uv_budget() -> SupportUvBudget<'static> {
     WorkBudget::new(MAX_SUPPORT_UV_SAMPLES)
 }
 
-pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
+pub(super) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
     parameters
         .first()
         .into_iter()
@@ -121,7 +121,7 @@ pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
 // Keep the object-map, serialized lanes, and shared geometry budget explicit:
 // this function decides which native lane can be admitted to which support.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn assign_ext11_support_uv_with_index(
+pub(super) fn assign_ext11_support_uv_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     supports: [Option<NonNullXmt>; 2],
@@ -147,7 +147,7 @@ pub(crate) fn assign_ext11_support_uv_with_index(
 // Keep the object-map, serialized lanes, and shared geometry budget explicit:
 // validation must preserve the same support identity proof as assignment.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn validate_serialized_support_uv_with_index(
+pub(super) fn validate_serialized_support_uv_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     supports: [Option<NonNullXmt>; 2],
@@ -172,7 +172,7 @@ pub(crate) fn validate_serialized_support_uv_with_index(
     })
 }
 
-pub(crate) fn support_uv_lane_matches_surface_with_budget(
+fn support_uv_lane_matches_surface_with_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     points: &[Point3],
@@ -243,7 +243,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
     )
 }
 
-pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
+fn assign_ext11_support_uv_to_surfaces_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
@@ -308,9 +308,9 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces_with_index(
 /// sources are useful as seeds for coupled completion, but only EXT11 lanes
 /// participate in EXT11 assignment.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct SerializedSupportUv {
-    pub(crate) values: SupportUv,
-    pub(crate) ext11: SupportUv,
+pub(super) struct SerializedSupportUv {
+    pub(super) values: SupportUv,
+    pub(super) ext11: SupportUv,
 }
 
 #[cfg(test)]
@@ -342,7 +342,7 @@ impl SerializedSupportUv {
     }
 }
 
-pub(crate) type PendingExt11SupportUv = (
+type PendingExt11SupportUv = (
     ProceduralCurveId,
     crate::intersection::chart_samples::ChartSamples,
     f64,
@@ -353,7 +353,7 @@ pub(crate) type PendingExt11SupportUv = (
 /// The lane samples and the intersection parameter range use the same ordered
 /// parameter domain, so its first and last model-space samples are the
 /// pcurve's endpoint witnesses.
-pub(crate) fn validated_support_uv_endpoint_witnesses(
+pub(super) fn validated_support_uv_endpoint_witnesses(
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
@@ -407,11 +407,11 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
     witnesses
 }
 
-pub(crate) fn missing_support_parameter(value: f64) -> bool {
+pub(super) fn missing_support_parameter(value: f64) -> bool {
     value.to_bits() == MISSING_TOLERANCE.to_bits()
 }
 
-pub(crate) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> bool {
+pub(super) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> bool {
     match pcurve {
         None => true,
         Some(PcurveGeometry::Nurbs { nurbs }) => nurbs.control_points().iter().any(|point| {
@@ -431,10 +431,7 @@ pub(crate) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> boo
     }
 }
 
-pub(crate) fn pcurve_control_point_seed(
-    pcurve: Option<&PcurveGeometry>,
-    index: usize,
-) -> Option<Point2> {
+fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> Option<Point2> {
     let PcurveGeometry::Nurbs { nurbs } = pcurve? else {
         return None;
     };
@@ -565,7 +562,7 @@ pub(crate) fn complete_ext11_support_uv(
     complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget)
 }
 
-pub(crate) fn complete_ext11_support_uv_with_budget(
+pub(super) fn complete_ext11_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -763,12 +760,12 @@ pub(crate) fn invalidate_inconsistent_support_uv(
 
 /// Invalidate support lanes that disagree with their surface and retain
 /// endpoint witnesses only for lanes whose complete sample set was evaluated.
-pub(crate) struct SupportUvValidationResult {
-    pub(crate) endpoint_witnesses: EndpointWitnesses,
-    pub(crate) lane_geometry_exhausted: bool,
+pub(in crate::decode) struct SupportUvValidationResult {
+    pub(super) endpoint_witnesses: EndpointWitnesses,
+    pub(super) lane_geometry_exhausted: bool,
 }
 
-pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
@@ -907,7 +904,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     }
 }
 
-pub(crate) fn pending_support_lanes_requiring_completion(
+fn pending_support_lanes_requiring_completion(
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> usize {
@@ -1490,7 +1487,7 @@ pub(super) fn blend_spine_cache_fit_tolerance(
     blend_spine_cache_fit_tolerance_with_index(&index, surface, fit_tolerance)
 }
 
-pub(crate) fn blend_spine_cache_fit_tolerance_with_index(
+pub(super) fn blend_spine_cache_fit_tolerance_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     fit_tolerance: f64,
@@ -1811,7 +1808,7 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
     .expect("the coupled support-uv wave pairs its lanes");
 }
 
-pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
+pub(super) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
     let replacements = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         ir.model
@@ -1876,7 +1873,7 @@ pub(crate) fn parameterization_equivalent_surfaces(
     parameterization_equivalent_surfaces_with_index(&index, first, second)
 }
 
-pub(crate) fn parameterization_equivalent_surfaces_with_index(
+pub(super) fn parameterization_equivalent_surfaces_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     first: &SurfaceId,
     second: &SurfaceId,
@@ -1941,12 +1938,12 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
 
 /// One stream's ownership and provenance context for deferred intersection-chart
 /// attachment.
-pub(crate) struct IntersectionCompletionSource<'a> {
-    pub(crate) scope: crate::decode::ids::IdScope,
-    pub(crate) graph: &'a Graph,
-    pub(crate) source_stream: StreamHandle,
-    pub(crate) coedge_start: usize,
-    pub(crate) procedural_start: usize,
+pub(super) struct IntersectionCompletionSource<'a> {
+    pub(super) scope: crate::decode::ids::IdScope,
+    pub(super) graph: &'a Graph,
+    pub(super) source_stream: StreamHandle,
+    pub(super) coedge_start: usize,
+    pub(super) procedural_start: usize,
 }
 
 fn stream_owns_id(id: &str, prefix: &str) -> bool {
@@ -1957,7 +1954,7 @@ fn stream_owns_id(id: &str, prefix: &str) -> bool {
 /// Attach charts for one stream without rescanning coedges emitted by an earlier
 /// phase.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
+pub(super) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     ir: &mut CadIr,
     graph: &Graph,
     scope: &crate::decode::ids::IdScope,
@@ -1987,7 +1984,7 @@ pub(crate) fn attach_completed_intersection_pcurves_for_stream_with_budget(
 
 /// Re-run chart attachment over the complete model after all stream-owned
 /// topology and intersection contexts exist.
-pub(crate) fn attach_completed_intersection_pcurves_for_model_with_budget(
+pub(super) fn attach_completed_intersection_pcurves_for_model_with_budget(
     ir: &mut CadIr,
     sources: &[IntersectionCompletionSource<'_>],
     annotations: &mut AnnotationBuilder,

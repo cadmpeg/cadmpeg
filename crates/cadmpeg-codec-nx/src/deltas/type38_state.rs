@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum IntersectionMarker {
+pub(super) enum IntersectionMarker {
     Type2b,
     Type2d,
 }
@@ -30,12 +30,12 @@ impl From<IntersectionMarker> for u8 {
     }
 }
 #[derive(Clone, Copy)]
-pub(crate) enum ReferenceLaneForm {
+pub(super) enum ReferenceLaneForm {
     TwoLinks,
     OneLink,
 }
 impl ReferenceLaneForm {
-    pub(crate) fn counts(self) -> (usize, usize) {
+    pub(super) fn counts(self) -> (usize, usize) {
         match self {
             Self::TwoLinks => (2, 3),
             Self::OneLink => (1, 4),
@@ -73,7 +73,7 @@ impl Type38State {
     // This conversion consumes the input carrier at the typed construction boundary.
     // The constructor checks the complete source row and its coupled fields together.
     #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
-    pub(crate) fn new(
+    pub(super) fn new(
         xmt: NonNullXmt,
         node_id: u32,
         leading_references: [u32; 5],
@@ -185,7 +185,7 @@ impl Type38State {
             _ => [1; 5],
         }
     }
-    pub(crate) fn linked_references(&self) -> Vec<u32> {
+    pub(super) fn linked_references(&self) -> Vec<u32> {
         match self.lanes {
             Lanes::Descending { linked, .. }
             | Lanes::Prior { linked }
@@ -193,7 +193,7 @@ impl Type38State {
             Lanes::One { linked, .. } => vec![linked.into()],
         }
     }
-    pub(crate) fn state_references(&self) -> Vec<u32> {
+    pub(super) fn state_references(&self) -> Vec<u32> {
         match &self.lanes {
             Lanes::Descending { .. } => {
                 let xmt = u32::from(self.xmt);
@@ -217,7 +217,7 @@ impl Type38State {
             }
         }
     }
-    pub(crate) fn numeric_values(&self) -> Option<TermUseValues> {
+    pub(super) fn numeric_values(&self) -> Option<TermUseValues> {
         match self.lanes {
             Lanes::Descending { numeric, .. } => numeric,
             _ => None,

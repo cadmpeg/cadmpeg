@@ -17,7 +17,7 @@ pub(crate) struct AttdefSlots {
     null_count: u32,
 }
 impl AttdefState {
-    pub(crate) fn new(
+    pub(super) fn new(
         xmt: u32,
         slot_count: u32,
         active_count: u32,
@@ -28,19 +28,19 @@ impl AttdefState {
             slots: AttdefSlots::new(slot_count, active_count, references)?,
         })
     }
-    pub(crate) fn xmt(&self) -> u32 {
+    pub(super) fn xmt(&self) -> u32 {
         self.xmt.into()
     }
-    pub(crate) fn active_count(&self) -> u32 {
+    pub(super) fn active_count(&self) -> u32 {
         self.slots.active_count()
     }
-    pub(crate) fn slot_count(&self) -> u32 {
+    pub(super) fn slot_count(&self) -> u32 {
         self.slots.slot_count()
     }
-    pub(crate) fn references(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(super) fn references(&self) -> impl Iterator<Item = u32> + '_ {
         self.slots.references()
     }
-    pub(crate) fn into_slots(self) -> AttdefSlots {
+    pub(super) fn into_slots(self) -> AttdefSlots {
         self.slots
     }
 }
@@ -71,7 +71,7 @@ impl AttdefSlots {
             null_count: slot_count - active_count,
         })
     }
-    pub(crate) fn from_delta_references(references: Vec<u32>) -> Result<Self, &'static str> {
+    pub(super) fn from_delta_references(references: Vec<u32>) -> Result<Self, &'static str> {
         let mut references = references.into_iter();
         if references.next() != Some(1) {
             return Err("references: ATTDEF_LIST must start with null");
@@ -93,7 +93,7 @@ impl AttdefSlots {
     }
     // This iterator emits null references lazily; it performs no count-sized allocation.
     #[allow(clippy::disallowed_methods)]
-    pub(crate) fn references(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(super) fn references(&self) -> impl Iterator<Item = u32> + '_ {
         self.active
             .iter()
             .copied()

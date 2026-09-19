@@ -10,7 +10,7 @@ use crate::printable_string::PrintableString;
 pub(crate) struct StateMessageText<S>(PrintableString<S>);
 
 impl<S: AsRef<str>> StateMessageText<S> {
-    pub(crate) fn new(text: S) -> Result<Self, &'static str> {
+    pub(super) fn new(text: S) -> Result<Self, &'static str> {
         let text =
             PrintableString::new(text).map_err(|_| "text: must be nonempty printable ASCII")?;
         if text.as_str().len() > usize::from(u8::MAX) - 2 {
@@ -19,7 +19,7 @@ impl<S: AsRef<str>> StateMessageText<S> {
         Ok(Self(text))
     }
 
-    pub(crate) fn declared_length(&self) -> u8 {
+    pub(super) fn declared_length(&self) -> u8 {
         self.0.as_str().len() as u8 + 2
     }
 
@@ -29,7 +29,7 @@ impl<S: AsRef<str>> StateMessageText<S> {
 }
 
 impl StateMessageText<&str> {
-    pub(crate) fn into_owned(self) -> StateMessageText<String> {
+    pub(super) fn into_owned(self) -> StateMessageText<String> {
         StateMessageText(self.0.into_owned())
     }
 }
