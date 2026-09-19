@@ -293,12 +293,7 @@ fn main(){
  println!("SLDPRT distinct parallel hole count: {:?}",sld_holes::carrier_placements([(Point3::new(1e12,0.,0.),Vector3::new(0.,0.,1.)),(Point3::new(2e12,0.,0.),Vector3::new(0.,0.,1.))]).map(|v|v.len()));
  let encoded=(3072u64<<51).to_be_bytes();let mut reader=iges_real::BitReader{bytes:&encoded,byte:0,bit:0};println!("IGES binary real expected 2^1023={}: {:?}",2f64.powi(1023),reader.read_real(12,51));
  println!("Protein texture conversion finite 1e308 inches -> mm = {}",1e308f64*25.4);
- let text=b"23200 0 2 2 
-16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 24 Fri Jul 17 14:46:47 2026 
-1 1e-06 1.0e-10 
-audit-integer 9007199254740993 9223372036854775808 #
-End-of-ASM-data 
-";
+ let text=b"23200 0 2 2 \n16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 24 Fri Jul 17 14:46:47 2026 \n1 1e-06 1.0e-10 \naudit-integer 9007199254740993 9223372036854775808 #\nEnd-of-ASM-data \n";
  println!("ASM full SAT parser: {:?}",cadmpeg_asm::sat::parse(text).map(|v|v.records));
  let transform=Transform::affine([[1.,1.,-1.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.]]).unwrap();
  println!("IR apply finite cancellation point: {:?}",transform.apply_point(Point3::new(f64::MAX,f64::MAX,f64::MAX)));
