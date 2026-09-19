@@ -135,6 +135,10 @@ strip = "symbols"
 # already behaved that way; only the flag's location changes here.
 warnings = { level = "deny", priority = -100 }
 missing_docs = "warn"
+# `unreachable_pub` is allow-by-default, so the blanket `warnings` deny above does
+# not reach it. A `pub` item that no `pub mod`/`pub use` chain carries to the crate
+# root is not public API; it spells more reach than any reader needs.
+unreachable_pub = "deny"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
