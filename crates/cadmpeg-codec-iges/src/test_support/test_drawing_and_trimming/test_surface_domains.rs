@@ -1,4 +1,7 @@
-use super::*;
+use crate::test_support::test_cards::{
+    card, directory_card, fixed_ascii_with_global, global_card_count, parameter_card,
+};
+use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
 pub(crate) fn asymmetric_parameter_domain_surface_file() -> Vec<u8> {
     owned_test_file(&[OwnedTestEntity {

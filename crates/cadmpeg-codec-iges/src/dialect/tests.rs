@@ -4,13 +4,20 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    classify, dialect_id, dialect_loss, fixed_ascii_id, DECLARED_REPRESENTATION,
+    DECLARED_VERSION_FLAG, DECLARED_VERSION_FLAG_DECLARATION, FORMAT, IGES_UNKNOWN,
+};
 use crate::loss::IgesLossCode;
+use crate::representation::Representation;
 use crate::test_support::test_cards::fixed_ascii_with_global;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::test_support::{detect_and_decode, global_with_version_flag, only_match};
+use crate::version::VersionFlag;
 use crate::IgesCodec;
+use crate::IgesVersion;
 use cadmpeg_core::dialect::Admission;
+use cadmpeg_core::dialect::DialectId;
 use cadmpeg_ir::codec::Codec;
 use std::io::Cursor;
 
