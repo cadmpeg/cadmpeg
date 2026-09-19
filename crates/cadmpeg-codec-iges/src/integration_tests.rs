@@ -2,8 +2,9 @@
 //! End-to-end contracts over synthesized IGES card streams.
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::IgesCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use std::io::Cursor;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::detect_and_decode;

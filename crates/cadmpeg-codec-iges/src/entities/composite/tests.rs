@@ -32,7 +32,14 @@ use crate::test_support::test_owned::{
 };
 use crate::IgesCodec;
 
-use super::*;
+use super::{
+    bounded_nurbs_for_curve, bounded_nurbs_for_curve_with_tolerance, close_with_tolerance,
+    composite_child_type_allowed, composite_line_font_valid, composite_logical_connector_use_valid,
+    composite_minimum_child_count, composite_use_flag_valid, concatenate_nurbs,
+    elevate_nurbs_to_degree, reverse_nurbs, trim_nurbs_to_interval, CompositeIndex,
+};
+use crate::global::GlobalTable;
+use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveTransition};
 
 fn test_nurbs(
     degree: u32,

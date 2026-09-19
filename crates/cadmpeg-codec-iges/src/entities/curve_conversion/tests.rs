@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::{
+    angularly_equal, elliptical_arc_nurbs, parabolic_arc_nurbs, quarter_turn_spans,
+    ANGULAR_TOLERANCE,
+};
 use cadmpeg_ir::eval::nurbs_curve_point;
 use cadmpeg_ir::math::{Point3, Vector3};
 
