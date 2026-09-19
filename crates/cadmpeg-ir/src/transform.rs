@@ -666,7 +666,8 @@ impl Transform {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Transform, Transform2, TransformError};
+    use crate::math::{Point3, Vector3};
 
     mod numeric;
 

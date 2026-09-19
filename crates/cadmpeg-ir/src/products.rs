@@ -526,7 +526,12 @@ pub struct AssemblyGraph<'a> {
 mod tests {
     mod joints;
     mod occurrences;
-    use super::*;
+    use super::{
+        AssemblyGraph, AssemblyGraphError, CopyOnChange, CopyOnChangePolicy, ExternalDocument,
+        JointLimits, JointOperand, LinkState, Occurrence, OccurrenceParent, PrototypeReference,
+    };
+    use crate::ids::{OccurrenceId, ProductDefinitionId};
+    use crate::transform::Transform;
 
     #[test]
     fn a_blank_selection_id_has_no_wire_spelling() {

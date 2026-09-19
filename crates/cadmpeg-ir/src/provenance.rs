@@ -652,7 +652,9 @@ pub enum Exactness {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[cfg(feature = "schema")]
+    use super::StreamName;
+    use super::{CodecFormat, SourceObjectAssociation, SourceProvenance};
 
     #[cfg(feature = "schema")]
     #[test]

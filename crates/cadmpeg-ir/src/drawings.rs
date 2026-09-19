@@ -128,7 +128,7 @@ cadmpeg_core::named_optional_field!(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Drawing, DrawingId};
 
     #[test]
     fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {

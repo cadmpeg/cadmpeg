@@ -358,7 +358,8 @@ mod tests {
         );
     }
 
-    use super::*;
+    use super::{CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetId};
+    use crate::features::{FeatureId, ParameterId};
 
     #[test]
     fn spreadsheet_round_trip_preserves_b2_address() {

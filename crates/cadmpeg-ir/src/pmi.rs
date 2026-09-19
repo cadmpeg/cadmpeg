@@ -477,8 +477,14 @@ crate::units::named_field!(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::num::NonZeroU32;
+
+    use super::{
+        DatumReference, DatumReferences, DimensionKind, DimensionTolerance, GeometricToleranceKind,
+        PmiAnnotation, PmiDefinition, PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
+    };
     use crate::document::CadIr;
+    use crate::ids::PmiId;
     use crate::report::Check;
     use crate::validate::validate_neutral;
 

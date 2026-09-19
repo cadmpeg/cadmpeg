@@ -339,7 +339,7 @@ fn collect_goldens(directory: &Path, found: &mut Vec<PathBuf>) -> Result<(), Str
 
 #[cfg(test)]
 mod scanner_tests {
-    use super::*;
+    use super::collect_goldens;
 
     #[test]
     fn golden_collector_reports_a_missing_root() {

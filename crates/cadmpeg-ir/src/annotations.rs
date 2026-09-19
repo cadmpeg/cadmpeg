@@ -513,7 +513,14 @@ impl ProvenanceNote<'_> {
 mod tests {
     mod identity_merges;
 
-    use super::*;
+    use std::collections::BTreeMap;
+
+    #[cfg(feature = "schema")]
+    use super::NonEmptyMap;
+    use super::{
+        AnnotationBuilder, Annotations, ExactnessNote, FieldName, Inexactness, StreamHandle,
+    };
+    use crate::provenance::Exactness;
 
     #[cfg(feature = "schema")]
     #[test]
