@@ -24,7 +24,7 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("sat") {
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`SatLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SatLossCode {
+pub(crate) enum SatLossCode {
     /// The stream framed but decoded no surfaces, points, or faces.
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
@@ -38,7 +38,7 @@ pub enum SatLossCode {
 
 impl SatLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [SatLossCode] = &[
+    const ALL: &'static [SatLossCode] = &[
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
         Self::HeaderToleranceUnresolved,
@@ -47,7 +47,7 @@ impl SatLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
@@ -58,7 +58,7 @@ impl SatLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
             Self::GeometryProceduralSurfaceUntyped
@@ -78,7 +78,7 @@ impl SatLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
     }
 
@@ -87,7 +87,7 @@ impl SatLossCode {
     /// The structured code is `sat/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
