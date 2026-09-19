@@ -12,42 +12,42 @@ use std::collections::{HashMap, HashSet};
 /// One complete ordered schema-configuration chain formed by exact `configrow` links.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ChainWire", into = "ChainWire")]
-pub struct CatiaSchemaConfigurationRowChain {
+pub(crate) struct CatiaSchemaConfigurationRowChain {
     /// Stable identity derived from the graph and stored class identity.
-    pub id: String,
+    pub(super) id: String,
     /// Object graph containing every row link.
-    pub object_graph: String,
+    pub(super) object_graph: String,
     /// Successor incidences in chain order from the root row.
     links: Vec<CatiaSchemaConfigurationRowChainLink>,
     /// Target of the final row successor.
-    pub terminal: CatiaEntityReference,
+    pub(crate) terminal: CatiaEntityReference,
 }
 
 /// One ordered edge in a complete schema-configuration-row successor chain.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CatiaSchemaConfigurationRowChainLink {
+pub(crate) struct CatiaSchemaConfigurationRowChainLink {
     /// Row entity carrying the successor occurrence.
-    pub row: CatiaEntityReference,
+    pub(super) row: CatiaEntityReference,
     /// Byte offset of the successor atom within the row object's payload.
-    pub successor_payload_offset: u64,
+    pub(super) successor_payload_offset: u64,
     /// Same-graph entities strictly between the row and successor.
     ///
     /// Absent when the successor does not follow the row in source order.
-    pub intervening_entities: Option<Vec<CatiaEntityReference>>,
+    pub(crate) intervening_entities: Option<Vec<CatiaEntityReference>>,
 }
 
 impl CatiaSchemaConfigurationRowChain {
-    pub fn links(&self) -> &[CatiaSchemaConfigurationRowChainLink] {
+    pub(crate) fn links(&self) -> &[CatiaSchemaConfigurationRowChainLink] {
         &self.links
     }
 
     #[cfg(test)]
-    pub fn links_mut(&mut self) -> &mut [CatiaSchemaConfigurationRowChainLink] {
+    pub(super) fn links_mut(&mut self) -> &mut [CatiaSchemaConfigurationRowChainLink] {
         &mut self.links
     }
 
     #[cfg(test)]
-    pub fn successor(&self, index: usize) -> Option<&CatiaEntityReference> {
+    pub(super) fn successor(&self, index: usize) -> Option<&CatiaEntityReference> {
         self.links.get(index)?;
         Some(
             self.links

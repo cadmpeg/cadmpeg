@@ -3,7 +3,7 @@ use cadmpeg_ir::geometry::knots_strictly_increasing;
 
 /// Distinct finite increasing knots paired with their multiplicities.
 #[derive(Debug, Clone, PartialEq)]
-pub struct A8KnotLane {
+pub(super) struct A8KnotLane {
     distinct: Vec<f64>,
     multiplicities: Vec<u32>,
 }

@@ -9,7 +9,7 @@
 
 /// Recognized `CATPart` storage families and fallback classifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Variant {
+pub(crate) enum Variant {
     /// Nested `V5_CFV2` with a `30 04 04 ff` FBB spine followed by the standard
     /// `10 24 04 ff ff 00 00 00` edge-table delimiter. The standard route
     /// decodes its geometry.
@@ -34,7 +34,7 @@ pub enum Variant {
 
 impl Variant {
     /// A one-line human description for container notes.
-    pub fn description(self) -> &'static str {
+    pub(crate) fn description(self) -> &'static str {
         match self {
             Variant::StandardNested => {
                 "standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry \

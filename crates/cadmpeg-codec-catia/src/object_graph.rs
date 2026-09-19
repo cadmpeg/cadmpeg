@@ -10,29 +10,29 @@ use crate::{catalog, entity_table, value_block};
 
 /// One decoded outer object graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ObjectGraph {
+pub(crate) struct ObjectGraph {
     /// Offset of the selected `7C08` root.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Root total length, including its six-byte header.
-    pub total_len: usize,
+    pub(crate) total_len: usize,
     /// Byte offset of the immediately associated `7C02` schema catalog.
-    pub catalog_pos: Option<usize>,
+    pub(crate) catalog_pos: Option<usize>,
     /// Consecutive `7C09` records.
-    pub records: Vec<ObjectRecord>,
+    pub(crate) records: Vec<ObjectRecord>,
 }
 
 /// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
-pub struct ObjectRecord {
+pub(crate) struct ObjectRecord {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Record total length, including its six-byte header.
-    pub total_len: usize,
+    pub(crate) total_len: usize,
     /// First head byte.
-    pub lead: u8,
+    pub(crate) lead: u8,
     /// Inline body or nested head and payload.
-    pub body: ObjectRecordBody,
+    body: ObjectRecordBody,
 }
 
 // Serialized role fields are retained for wire compatibility and checked once on input.
@@ -100,7 +100,7 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 /// Inline or nested body of one `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ObjectRecordBodyWire", into = "ObjectRecordBodyWire")]
-pub enum ObjectRecordBody {
+enum ObjectRecordBody {
     /// Complete alternate inline body when the record has no nested `7C0A`.
     Inline(Vec<u8>),
     /// Nested head tokens and `7C0A` payload.
@@ -171,21 +171,21 @@ impl ObjectRecord {
         head_roles(self.lead, self.head())
     }
 
-    pub fn inline_body(&self) -> Option<&[u8]> {
+    pub(crate) fn inline_body(&self) -> Option<&[u8]> {
         match &self.body {
             ObjectRecordBody::Inline(bytes) => Some(bytes),
             ObjectRecordBody::Nested { .. } => None,
         }
     }
 
-    pub fn head(&self) -> &[HeadToken] {
+    pub(crate) fn head(&self) -> &[HeadToken] {
         match &self.body {
             ObjectRecordBody::Inline(_) => &[],
             ObjectRecordBody::Nested { head, .. } => head,
         }
     }
 
-    pub fn payload(&self) -> &ObjectPayload {
+    pub(crate) fn payload(&self) -> &ObjectPayload {
         match &self.body {
             ObjectRecordBody::Inline(_) => {
                 static EMPTY: ObjectPayload = ObjectPayload {
@@ -199,14 +199,14 @@ impl ObjectRecord {
     }
 
     #[cfg(test)]
-    pub fn subtype(&self) -> PayloadSubtype {
+    fn subtype(&self) -> PayloadSubtype {
         classify(&self.payload().fields)
     }
 }
 
 /// Token in a `7C09` record head.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HeadToken {
+pub(crate) enum HeadToken {
     /// Initial head lead.
     Lead(u8),
     /// `0x01` field separator.
@@ -221,31 +221,31 @@ pub enum HeadToken {
 
 /// Decoded `7C0A` tagged-atom payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ObjectPayload {
+pub(crate) struct ObjectPayload {
     /// Payload size in bytes.
-    pub size: usize,
+    pub(crate) size: usize,
     /// Decoded fields in serialization order.
-    pub fields: Vec<PayloadField>,
+    pub(crate) fields: Vec<PayloadField>,
 }
 
 /// One counted reference suffix whose reference prefix is serialized twice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RepeatedReferenceSuffix {
+pub(crate) struct RepeatedReferenceSuffix {
     /// Schema-selection production in the payload prefix before this suffix.
-    pub schema_preamble: Option<ReferenceSchemaPreamble>,
+    pub(crate) schema_preamble: Option<ReferenceSchemaPreamble>,
     /// Ordered entity identities serialized in both vectors.
-    pub repeated_references: Vec<u32>,
+    pub(crate) repeated_references: Vec<u32>,
     /// Final reference in the first counted vector.
-    pub terminal_reference: u32,
+    pub(crate) terminal_reference: u32,
     /// Byte offset of the first count atom within the payload.
-    pub first_count_offset: usize,
+    first_count_offset: usize,
     /// Byte offset of the repeated count atom within the payload.
-    pub repeated_count_offset: usize,
+    repeated_count_offset: usize,
 }
 
 /// Schema reference carried by a repeated-reference payload preamble.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ReferenceSchemaPreamble {
+pub(crate) enum ReferenceSchemaPreamble {
     /// `<59-byte blob> <5:atom> <46:atom> <schema-ref:atom>`.
     BlobThenSchema {
         /// Per-file schema-catalog ordinal.
@@ -264,7 +264,7 @@ pub enum ReferenceSchemaPreamble {
 
 /// Item within a count-prefixed `0x3b` list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ListItem {
+pub(crate) enum ListItem {
     /// Referenced object ordinal.
     Reference {
         /// Referenced ordinal.
@@ -283,19 +283,19 @@ pub enum ListItem {
 
 /// One allocation row in a `0x3c` bulk table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BulkTableRow {
+pub(crate) struct BulkTableRow {
     /// Row identity encoded by the compact, paged, or escaped atom form.
-    pub row_id: u32,
+    row_id: u32,
     /// Fixed-width little-endian allocation handle.
-    pub handle: u32,
+    handle: u32,
     /// Byte offset of the row's `0x81` tag within the payload.
-    pub offset: usize,
+    offset: usize,
 }
 
 /// One schema-free field in a `7C0A` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PayloadFieldWire", into = "PayloadFieldWire")]
-pub enum PayloadField {
+pub(crate) enum PayloadField {
     /// Untagged atom.
     Atom {
         /// Decoded atom value.
@@ -478,7 +478,7 @@ impl TryFrom<PayloadFieldWire> for PayloadField {
 
 /// Structural role of a decoded payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PayloadSubtype {
+pub(crate) enum PayloadSubtype {
     /// Contains a sane bulk-table header.
     BulkTable,
     /// Contains at least two scalar/atom/atom triplets.
@@ -497,7 +497,7 @@ pub enum PayloadSubtype {
 
 /// Classification of the four-byte word preceding a surface-alias marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AliasLead {
+pub(crate) enum AliasLead {
     /// Low byte `0x01`: ordinary surface-support storage.
     SurfaceSupportStorage,
     /// Exact value `0x8e`: E5-linked surface storage.
@@ -512,7 +512,7 @@ pub enum AliasLead {
 
 impl AliasLead {
     /// Classification of a stored alias lead word.
-    pub fn from_raw(raw: u32) -> Self {
+    pub(crate) fn from_raw(raw: u32) -> Self {
         if raw & 0xff == 1 {
             Self::SurfaceSupportStorage
         } else {
@@ -528,63 +528,63 @@ impl AliasLead {
 
 /// Group-allocation header attached to an outer surface-alias row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AliasGroupMembership {
+pub(crate) struct AliasGroupMembership {
     /// `ObjectModeler` node prototype.
-    pub prototype: u32,
+    pub(crate) prototype: u32,
     /// Identity shared by the nodes in one alias group.
-    pub group_id: u32,
+    pub(crate) group_id: u32,
     /// Four-byte allocation slot beginning in F1's third byte.
-    pub target_slot: u32,
+    pub(crate) target_slot: u32,
     /// Complete bounded storage prefix between the group header and alias marker.
     #[serde(with = "cadmpeg_ir::bytes")]
-    pub storage_prefix: Vec<u8>,
+    pub(crate) storage_prefix: Vec<u8>,
 }
 
 /// Fixed 20-byte core of an outer `01 00 04 00` surface-alias row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SurfaceAlias {
+pub(crate) struct SurfaceAlias {
     /// Marker byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Byte offset of the row frame. The marker sits at
     /// `outer_alias_row::MARKER` inside the row, and a row is admitted only
     /// when that many bytes precede the marker, so this offset is inside the
     /// image and never aliases the file head.
-    pub row_pos: usize,
+    row_pos: usize,
     /// Complete preceding word.
-    pub lead_raw: u32,
+    pub(crate) lead_raw: u32,
     /// Complete stored tag word.
-    pub tag_raw: u32,
+    pub(crate) tag_raw: u32,
     /// Single-byte row flag.
-    pub flag: u8,
+    pub(crate) flag: u8,
     /// Three-byte F1 field.
-    pub f1: [u8; 3],
+    pub(crate) f1: [u8; 3],
     /// First trailing fixed-width field.
-    pub f2: u32,
+    pub(crate) f2: u32,
     /// Second trailing fixed-width field.
-    pub f3: u32,
+    pub(crate) f3: u32,
     /// Group-allocation header immediately preceding this alias core.
-    pub group: Option<AliasGroupMembership>,
+    pub(crate) group: Option<AliasGroupMembership>,
 }
 
 impl SurfaceAlias {
     /// Classification of the stored alias lead word.
-    pub fn lead(&self) -> AliasLead {
+    fn lead(&self) -> AliasLead {
         AliasLead::from_raw(self.lead_raw)
     }
     /// Low 24 bits of the stored tag word.
-    pub fn tag(&self) -> u32 {
+    fn tag(&self) -> u32 {
         self.tag_raw & 0x00ff_ffff
     }
     /// Entity-table ordinal from the F1 field.
     #[cfg(test)]
-    pub fn entity_record_ordinal(&self) -> u8 {
+    fn entity_record_ordinal(&self) -> u8 {
         self.f1[2]
     }
 }
 
 /// Decode fixed surface-alias row cores from an outer body.
 #[must_use]
-pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
+pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
     const MARKER: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
     data.windows(MARKER.len())
         .enumerate()
@@ -770,7 +770,7 @@ pub(crate) fn is_alias_group_storage_prefix(storage: &[u8]) -> bool {
 
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
 #[must_use]
-pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
+pub(crate) fn parse(data: &[u8]) -> Option<ObjectGraph> {
     parse_all(data)
         .into_iter()
         .max_by_key(|graph| graph.records.len())
@@ -778,7 +778,7 @@ pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
 
 /// Parse every length-closed `7C08` object graph in source order.
 #[must_use]
-pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
+pub(crate) fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
     parse_all_with_paired_roots(data, &std::collections::HashMap::new())
 }
 

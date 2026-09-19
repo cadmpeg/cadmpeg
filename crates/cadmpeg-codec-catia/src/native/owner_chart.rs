@@ -12,7 +12,7 @@ use super::CatiaAllocationReferenceEncoding;
 /// consolidated owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CatiaOwnerChartSideAxis {
+pub(crate) enum CatiaOwnerChartSideAxis {
     /// First surface parameter.
     FirstParameter,
     /// Second surface parameter.
@@ -22,7 +22,7 @@ pub enum CatiaOwnerChartSideAxis {
 /// Family-and-class carrier production that opens an owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CatiaOwnerChartCarrier {
+pub(super) enum CatiaOwnerChartCarrier {
     /// B-family class-`0x28` cylinder carrier.
     B28,
     /// B-family class-`0x2b` torus carrier.
@@ -33,24 +33,24 @@ pub enum CatiaOwnerChartCarrier {
 
 /// Outer alias row selected by a unique width-coded support tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CatiaOwnerChartAliasBinding {
+pub(super) struct CatiaOwnerChartAliasBinding {
     row: NonBlankString,
     canonical_tag: Option<u32>,
 }
 
 impl CatiaOwnerChartAliasBinding {
     /// Binds a non-empty outer alias row to its optional canonical surface tag.
-    pub fn new(row: NonBlankString, canonical_tag: Option<u32>) -> Self {
+    pub(super) fn new(row: NonBlankString, canonical_tag: Option<u32>) -> Self {
         Self { row, canonical_tag }
     }
 
     /// Returns the exact outer alias row.
-    pub fn row(&self) -> &str {
+    pub(super) fn row(&self) -> &str {
         self.row.as_str()
     }
 
     /// Returns the canonical persistent surface tag selected through the row.
-    pub fn canonical_tag(&self) -> Option<u32> {
+    pub(super) fn canonical_tag(&self) -> Option<u32> {
         self.canonical_tag
     }
 }
@@ -61,16 +61,16 @@ impl CatiaOwnerChartAliasBinding {
     try_from = "CatiaOwnerChartBridgeReferenceWire",
     into = "CatiaOwnerChartBridgeReferenceWire"
 )]
-pub struct CatiaOwnerChartBridgeReference {
+pub(super) struct CatiaOwnerChartBridgeReference {
     /// Decoded allocation-local value.
-    pub value: u32,
+    pub(super) value: u32,
     /// Addressing form and its optional width-coded alias binding.
-    pub address: CatiaOwnerChartAddress,
+    pub(super) address: CatiaOwnerChartAddress,
 }
 
 /// Addressing form of an owner-chart reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CatiaOwnerChartAddress {
+pub(super) enum CatiaOwnerChartAddress {
     /// Backward framed-record distance.
     BackwardDistance,
     /// Ordinal in the immediately owned allocation.
@@ -88,7 +88,7 @@ pub enum CatiaOwnerChartAddress {
 }
 
 impl CatiaOwnerChartBridgeReference {
-    pub fn new(value: u32, encoding: CatiaAllocationReferenceEncoding) -> Self {
+    pub(super) fn new(value: u32, encoding: CatiaAllocationReferenceEncoding) -> Self {
         let address = match encoding {
             CatiaAllocationReferenceEncoding::BackwardDistance => {
                 CatiaOwnerChartAddress::BackwardDistance
@@ -104,7 +104,7 @@ impl CatiaOwnerChartBridgeReference {
         Self { value, address }
     }
 
-    pub fn encoding(&self) -> CatiaAllocationReferenceEncoding {
+    pub(super) fn encoding(&self) -> CatiaAllocationReferenceEncoding {
         match self.address {
             CatiaOwnerChartAddress::BackwardDistance => {
                 CatiaAllocationReferenceEncoding::BackwardDistance
@@ -120,7 +120,7 @@ impl CatiaOwnerChartBridgeReference {
     }
 
     #[cfg(test)]
-    pub fn alias(&self) -> Option<&CatiaOwnerChartAliasBinding> {
+    pub(super) fn alias(&self) -> Option<&CatiaOwnerChartAliasBinding> {
         match &self.address {
             CatiaOwnerChartAddress::WidthCoded { alias } => alias.as_ref(),
             _ => None,
@@ -193,7 +193,7 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
 
 /// Middle construction control in a five-reference owner-chart bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CatiaOwnerChartMiddleControl {
+pub(crate) enum CatiaOwnerChartMiddleControl {
     /// Control byte `0x03`.
     Control03,
     /// Control byte `0x05`.
@@ -209,7 +209,7 @@ impl CatiaOwnerChartMiddleControl {
         }
     }
 
-    pub(crate) fn as_byte(self) -> u8 {
+    fn as_byte(self) -> u8 {
         match self {
             Self::Control03 => 0x03,
             Self::Control05 => 0x05,
@@ -219,7 +219,7 @@ impl CatiaOwnerChartMiddleControl {
 
 /// Terminal construction control in a five-reference owner-chart bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CatiaOwnerChartTerminalControl {
+pub(crate) enum CatiaOwnerChartTerminalControl {
     /// Control byte `0x01`.
     Control01,
     /// Control byte `0x05`.
@@ -235,7 +235,7 @@ impl CatiaOwnerChartTerminalControl {
         }
     }
 
-    pub(crate) fn as_byte(self) -> u8 {
+    fn as_byte(self) -> u8 {
         match self {
             Self::Control01 => 0x01,
             Self::Control05 => 0x05,
@@ -245,7 +245,7 @@ impl CatiaOwnerChartTerminalControl {
 
 /// Structurally complete class-`0x37` owner-chart bridge.
 #[derive(Debug, Clone, PartialEq)]
-pub enum CatiaOwnerChartBridge {
+pub(super) enum CatiaOwnerChartBridge {
     /// Five-reference supported-surface construction.
     SupportedSurface {
         /// Record byte offset.
@@ -416,19 +416,19 @@ impl CatiaOwnerChartBridgeWire {
     try_from = "CatiaOwnerChartRelationWire",
     into = "CatiaOwnerChartRelationWire"
 )]
-pub struct CatiaOwnerChartRelation {
+pub(crate) struct CatiaOwnerChartRelation {
     /// Carrier record byte offset.
-    pub carrier_byte_offset: u64,
+    pub(super) carrier_byte_offset: u64,
     /// Family-and-class carrier production.
-    pub carrier: CatiaOwnerChartCarrier,
+    pub(super) carrier: CatiaOwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
-    pub bridge: CatiaOwnerChartBridge,
+    pub(super) bridge: CatiaOwnerChartBridge,
     /// Byte offsets of selectors `0x05`, `0x09`, `0x0d`, and `0x11`.
-    pub parameter_point_byte_offsets: [u64; 4],
+    pub(super) parameter_point_byte_offsets: [u64; 4],
 }
 
 impl CatiaOwnerChartRelation {
-    pub fn side_axis(&self) -> CatiaOwnerChartSideAxis {
+    pub(crate) fn side_axis(&self) -> CatiaOwnerChartSideAxis {
         match self.carrier {
             CatiaOwnerChartCarrier::B28 => CatiaOwnerChartSideAxis::FirstParameter,
             CatiaOwnerChartCarrier::B2b | CatiaOwnerChartCarrier::A32 => {

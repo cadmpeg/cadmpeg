@@ -92,12 +92,12 @@ fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<us
 
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 /// Caps the optional exact-state memo without turning it into a search refusal.
-pub(crate) const MAX_SELECTION_STATE_MEMO_ENTRIES: usize = 4_096;
+const MAX_SELECTION_STATE_MEMO_ENTRIES: usize = 4_096;
 /// Bounds reuse of deterministic endpoint-resolution results across incidence
 /// assignments without retaining an unbounded set of complete topologies.
-pub(crate) const MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES: usize = 256;
-pub(crate) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
-pub(crate) const MAX_FACE_DOMAIN_ASSIGNMENTS: usize = 4_096;
+const MAX_ENDPOINT_RESOLUTION_MEMO_ENTRIES: usize = 256;
+pub(super) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
+const MAX_FACE_DOMAIN_ASSIGNMENTS: usize = 4_096;
 /// Bounds one complete mesh-constraint phase, including exhaustive endpoint
 /// orientation selection. The decode session applies its own global work cap.
 pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
@@ -105,7 +105,7 @@ pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
 /// bounded phases and each uses the complete mesh-constraint allowance.
 pub(crate) const MAX_MESH_TOPOLOGY_OPERATIONS: usize =
     MAX_MESH_CONSTRAINT_OPERATIONS.saturating_mul(2);
-pub(crate) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
+pub(super) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeshCandidateRejection {
@@ -125,8 +125,7 @@ pub(crate) enum MeshEndpointIncidenceRejection {
 }
 
 /// Coordinate root closure with unclassified failures.
-pub(crate) type CoordinateRootClosure =
-    MeshSolve<HashMap<usize, usize>, MeshCandidateFailure<(), (), ()>>;
+type CoordinateRootClosure = MeshSolve<HashMap<usize, usize>, MeshCandidateFailure<(), (), ()>>;
 
 enum PointAssignmentOutcome {
     Complete(Vec<HashMap<usize, usize>>),
@@ -193,19 +192,19 @@ impl<T> SearchOutcome<T> {
         matches!(self, Self::Ambiguous | Self::Exhausted)
     }
 
-    pub(crate) fn exhaust(&mut self) {
+    pub(super) fn exhaust(&mut self) {
         if !self.is_closed() {
             *self = Self::Exhausted;
         }
     }
 
-    pub(crate) fn mark_ambiguous(&mut self) {
+    fn mark_ambiguous(&mut self) {
         if !self.is_closed() {
             *self = Self::Ambiguous;
         }
     }
 
-    pub(crate) fn record_solved(&mut self, candidate: T, equivalent: impl FnOnce(&T, &T) -> bool) {
+    pub(super) fn record_solved(&mut self, candidate: T, equivalent: impl FnOnce(&T, &T) -> bool) {
         match self {
             Self::Solved(previous) if !equivalent(previous, &candidate) => {
                 *self = Self::Ambiguous;
@@ -217,8 +216,7 @@ impl<T> SearchOutcome<T> {
 }
 
 /// Selected face domains, topology, and endpoint assignment.
-pub(crate) type MeshFaceDomainCandidateSolve =
-    MeshSolve<(Vec<[usize; 2]>, StandardTopology, Vec<usize>)>;
+type MeshFaceDomainCandidateSolve = MeshSolve<(Vec<[usize; 2]>, StandardTopology, Vec<usize>)>;
 
 #[derive(Clone, Copy)]
 pub(crate) enum MeshFaceAssignmentCandidates<'a> {
@@ -856,7 +854,7 @@ impl MeshCoordinateRootDomains {
         })
     }
 
-    pub(crate) fn refine_candidates(
+    pub(super) fn refine_candidates(
         &self,
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
@@ -1005,7 +1003,7 @@ impl MeshQuotient {
         }
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.domains.len()
     }
 
@@ -1057,7 +1055,7 @@ impl MeshQuotient {
         )
     }
 
-    pub(crate) fn signature_work(&mut self) -> usize {
+    pub(super) fn signature_work(&mut self) -> usize {
         let mut work = 0usize;
         for node in 0..self.union.len() {
             if self.union.find(node) == node {
@@ -1081,7 +1079,7 @@ impl MeshQuotient {
         (root_count, domain_cardinality)
     }
 
-    pub(crate) fn signature(&mut self) -> Vec<(Vec<usize>, Vec<usize>)> {
+    pub(super) fn signature(&mut self) -> Vec<(Vec<usize>, Vec<usize>)> {
         let mut components = Vec::new();
         for node in 0..self.union.len() {
             if self.union.find(node) != node {
@@ -1464,7 +1462,7 @@ impl MeshQuotient {
         .into_option()
     }
 
-    pub(crate) fn coordinate_root_closure_outcome_for_incidence(
+    pub(super) fn coordinate_root_closure_outcome_for_incidence(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -1488,7 +1486,7 @@ impl MeshQuotient {
         )
     }
 
-    pub(crate) fn coordinate_root_closure_outcome(
+    fn coordinate_root_closure_outcome(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -3673,8 +3671,8 @@ pub(crate) fn propagate_common_boundary_components(
 
 type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
 type MeshFaceDirectionOptions = Vec<Vec<Vec<bool>>>;
-pub(crate) type MeshEndpointPair = (usize, [usize; 2]);
-pub(crate) type MeshEndpointSolutionFilter<'a> = &'a dyn Fn(&[MeshEndpointPair]) -> bool;
+pub(super) type MeshEndpointPair = (usize, [usize; 2]);
+pub(super) type MeshEndpointSolutionFilter<'a> = &'a dyn Fn(&[MeshEndpointPair]) -> bool;
 type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -> bool;
 
 /// Evaluation-order constraints on mesh endpoint assignment.
@@ -3702,11 +3700,11 @@ impl<'a> AssignmentOrder<'a> {
         }
     }
 
-    pub(crate) fn predecessors(self) -> Option<&'a [Option<usize>]> {
+    pub(super) fn predecessors(self) -> Option<&'a [Option<usize>]> {
         self.predecessors
     }
 
-    pub(crate) fn dependencies(self) -> Option<&'a [Vec<usize>]> {
+    pub(super) fn dependencies(self) -> Option<&'a [Vec<usize>]> {
         self.dependencies
     }
 }
@@ -3719,7 +3717,7 @@ pub(crate) struct MeshPartialEndpointConstraint<'a> {
     pub(crate) valid: MeshPartialEndpointSolutionFilter<'a>,
 }
 type MeshFaceEndpointConfiguration = Vec<MeshEndpointPair>;
-pub(crate) type MeshFaceEndpointConfigurations = Vec<MeshFaceEndpointConfiguration>;
+pub(super) type MeshFaceEndpointConfigurations = Vec<MeshFaceEndpointConfiguration>;
 type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
 type MeshSelectionStateSignature = (
     bool,
@@ -3999,7 +3997,7 @@ pub(crate) fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBou
     }
 }
 
-pub(crate) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
+pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     assignment: &MeshFaceBoundaryAssignment,
     budget: Option<&WorkBudget<'_>>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
@@ -4663,8 +4661,8 @@ fn endpoint_configuration_directions(
 
 #[derive(Clone)]
 pub(crate) struct MeshEndpointRelationChoice {
-    pub(crate) id: usize,
-    pub(crate) selection: MeshEndpointRelationSelection,
+    pub(super) id: usize,
+    pub(super) selection: MeshEndpointRelationSelection,
 }
 /// Enumerated endpoint relation or deferred enumeration.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -4678,7 +4676,7 @@ pub(crate) enum MeshEndpointRelationSelection {
 
 impl MeshEndpointRelationSelection {
     /// Explicit edge constraints of this selection.
-    pub(crate) fn edge_pairs(&self) -> &[(usize, [usize; 2])] {
+    pub(super) fn edge_pairs(&self) -> &[(usize, [usize; 2])] {
         match self {
             Self::Enumerated { edge_pairs, .. } => edge_pairs,
             Self::Deferred => &[],
@@ -4693,7 +4691,7 @@ impl MeshEndpointRelationSelection {
     }
 
     /// Selection with canonical assignment and endpoint ordering.
-    pub(crate) fn normalized(&self) -> Self {
+    pub(super) fn normalized(&self) -> Self {
         match self {
             Self::Enumerated {
                 assignments,
@@ -4718,7 +4716,7 @@ impl MeshEndpointRelationSelection {
 }
 
 type MeshEndpointRelationSelections = Vec<Vec<usize>>;
-pub(crate) type MeshEndpointRelationStateSignature = (
+pub(super) type MeshEndpointRelationStateSignature = (
     Vec<Option<[usize; 2]>>,
     Vec<Vec<MeshEndpointRelationSelection>>,
 );
@@ -6885,7 +6883,7 @@ impl MeshSelectionSearch<'_> {
         self.search_with_limit(quotient, MAX_MESH_CONSTRAINT_OPERATIONS);
     }
 
-    pub(crate) fn search_with_budget(
+    fn search_with_budget(
         &mut self,
         quotient: &MeshQuotient,
         budget: &WorkBudget<'_>,
@@ -7662,7 +7660,7 @@ pub(crate) fn mesh_edge_points_compatible(
 /// quotient before binding the quotient bijectively to coordinate rows.
 #[cfg(test)]
 #[must_use]
-pub fn parse_standard_mesh_endpoint_candidates(
+pub(super) fn parse_standard_mesh_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],

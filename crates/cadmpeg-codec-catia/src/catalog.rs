@@ -7,30 +7,30 @@ const PREFIX: [&str; 4] = ["CATCatalogManager", "catalogManager", "catalogLinks"
 
 /// One exact `7C02` string catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Catalog {
+pub(crate) struct Catalog {
     /// Byte offset of the `7C02` marker.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Total framed byte length.
-    pub total_len: usize,
+    pub(crate) total_len: usize,
     /// Catalog entries in serialized order.
-    pub entries: Vec<CatalogEntry>,
+    pub(crate) entries: Vec<CatalogEntry>,
 }
 
 /// One inclusive-length ASCII catalog entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CatalogEntry {
+pub(crate) struct CatalogEntry {
     /// Zero-based serialized entry ordinal.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the inclusive length field.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Decoded UTF-8 value. Schema expressions can contain line feeds and
     /// non-ASCII unit symbols.
-    pub value: String,
+    pub(crate) value: String,
 }
 
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
 #[must_use]
-pub fn parse(bytes: &[u8]) -> Vec<Catalog> {
+pub(crate) fn parse(bytes: &[u8]) -> Vec<Catalog> {
     let mut catalogs = Vec::<Catalog>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, bytes) {

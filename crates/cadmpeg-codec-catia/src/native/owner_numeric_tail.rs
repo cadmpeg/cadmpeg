@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
     try_from = "CatiaOwnerNumericTailWire",
     into = "CatiaOwnerNumericTailWire"
 )]
-pub struct CatiaOwnerNumericTail {
+pub(crate) struct CatiaOwnerNumericTail {
     header: [u8; 5],
     lower: [f64; 2],
     upper: [f64; 2],
@@ -19,7 +19,7 @@ pub struct CatiaOwnerNumericTail {
 impl CatiaOwnerNumericTail {
     /// Builds a numeric tail whose binary64 box and binary32 bounds are finite
     /// and strictly increasing along every axis.
-    pub fn new(
+    pub(crate) fn new(
         header: [u8; 5],
         lower: [f64; 2],
         upper: [f64; 2],
@@ -42,23 +42,23 @@ impl CatiaOwnerNumericTail {
 
     /// Returns the five-byte class-specific header.
     #[cfg(test)]
-    pub fn header(&self) -> [u8; 5] {
+    pub(crate) fn header(&self) -> [u8; 5] {
         self.header
     }
 
     /// Returns the lower coordinate pair of the binary64 box.
-    pub fn lower(&self) -> [f64; 2] {
+    pub(crate) fn lower(&self) -> [f64; 2] {
         self.lower
     }
 
     /// Returns the upper coordinate pair of the binary64 box.
-    pub fn upper(&self) -> [f64; 2] {
+    pub(crate) fn upper(&self) -> [f64; 2] {
         self.upper
     }
 
     /// Returns the three binary32 bounds in serialization order. In an
     /// all-compact owner these are the model-space X, Y, and Z bounds.
-    pub fn bounds(&self) -> [[f32; 2]; 3] {
+    pub(crate) fn bounds(&self) -> [[f32; 2]; 3] {
         self.bounds
     }
 }

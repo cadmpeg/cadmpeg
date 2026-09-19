@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// Complete production selected by the entity value and suffix frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CatiaEntityValueProduction {
+pub(crate) enum CatiaEntityValueProduction {
     RelationExpression(CatiaRelationExpression),
     ParameterValue(CatiaParameterValue),
     ConstraintRange(CatiaConstraintRange),
@@ -24,7 +24,7 @@ pub enum CatiaEntityValueProduction {
 
 /// Complete production of the paired object payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CatiaEntityObjectProduction {
+pub(crate) enum CatiaEntityObjectProduction {
     RelationProgramInstance(CatiaRelationProgramInstance),
     SchemaConfigurationRecord(CatiaSchemaConfigurationRecord),
     SchemaConfigurationRowLink(CatiaSchemaConfigurationRowLink),
@@ -33,7 +33,7 @@ pub enum CatiaEntityObjectProduction {
 
 /// Inline or nested body of one `7C05` entity-table record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CatiaEntityRecordBody {
+pub(crate) enum CatiaEntityRecordBody {
     /// Complete alternate inline body, including its lead byte.
     Inline(Vec<u8>),
     /// Nested `7C06` definition and `7C07` value frames.
@@ -51,7 +51,7 @@ pub enum CatiaEntityRecordBody {
 
 /// Exclusive occupant of an entity-record suffix.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CatiaEntityRecordSuffix {
+pub(crate) enum CatiaEntityRecordSuffix {
     /// Complete typed value production.
     Value(CatiaEntitySuffixValue),
     /// Complete non-value framing.
@@ -61,44 +61,44 @@ pub enum CatiaEntityRecordSuffix {
 /// One `7C05` entity-table record paired with a `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "CatiaEntityRecordWire", into = "CatiaEntityRecordWire")]
-pub struct CatiaEntityRecord {
+pub(crate) struct CatiaEntityRecord {
     /// Globally unique entity-record identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Object graph whose record occupies the same table position.
-    pub object_graph: String,
+    pub(crate) object_graph: String,
     /// Positionally paired `7C09` object record.
-    pub object_record: String,
+    pub(crate) object_record: String,
     /// Stable serialized order within the table run.
-    pub ordinal: u64,
+    pub(crate) ordinal: u64,
     /// Byte offset of the `7C05` marker.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Byte between the `7C05` length and nested `7C06` marker.
-    pub lead: u8,
+    pub(crate) lead: u8,
     /// Inline body or nested definition/value frames.
-    pub body: CatiaEntityRecordBody,
+    pub(crate) body: CatiaEntityRecordBody,
     /// Definition selectors resolved against the containing graph's source schema.
-    pub definition_schema_selections: Vec<CatiaDefinitionSchemaSelection>,
+    pub(crate) definition_schema_selections: Vec<CatiaDefinitionSchemaSelection>,
     /// Stored identity used by object-record owner and payload references.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Value selectors resolved against the containing graph's source schema.
-    pub value_schema_selections: Vec<CatiaEntityValueSchemaSelection>,
+    pub(crate) value_schema_selections: Vec<CatiaEntityValueSchemaSelection>,
     /// Mutually exclusive production of the paired object payload.
-    pub object_production: Option<CatiaEntityObjectProduction>,
+    pub(crate) object_production: Option<CatiaEntityObjectProduction>,
     /// Exclusive value/suffix production; the independent Range interval remains separate.
-    pub value_production: Option<CatiaEntityValueProduction>,
+    pub(crate) value_production: Option<CatiaEntityValueProduction>,
     /// Complete source-schema `Range` interval production.
-    pub range_interval: Option<CatiaRangeInterval>,
+    pub(crate) range_interval: Option<CatiaRangeInterval>,
     /// Complete reference signature when the entire `7C07` payload has that production.
-    pub reference_signature: Option<CatiaReferenceSignature>,
+    pub(crate) reference_signature: Option<CatiaReferenceSignature>,
     /// Exclusive suffix occupant.
-    pub suffix: Option<CatiaEntityRecordSuffix>,
+    pub(crate) suffix: Option<CatiaEntityRecordSuffix>,
     /// Fixed-width suffix selector resolved through the containing graph's catalog.
-    pub suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
+    pub(crate) suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
 }
 
 impl CatiaEntityRecordBody {
     #[cfg(test)]
-    pub fn empty_nested() -> Self {
+    pub(crate) fn empty_nested() -> Self {
         Self::Nested {
             definition_prefix: Vec::new(),
             definition_suffix: Vec::new(),
@@ -110,7 +110,7 @@ impl CatiaEntityRecordBody {
 
 impl CatiaEntityRecord {
     /// Total framed byte length.
-    pub fn byte_len(&self) -> u64 {
+    pub(super) fn byte_len(&self) -> u64 {
         match &self.body {
             CatiaEntityRecordBody::Inline(bytes) => 6 + bytes.len() as u64,
             CatiaEntityRecordBody::Nested {
@@ -127,15 +127,15 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub fn value_packets(&self) -> Vec<entity_table::EntityValuePacket> {
+    pub(crate) fn value_packets(&self) -> Vec<entity_table::EntityValuePacket> {
         entity_table::value_packets(self.value_payload(), &self.value_fields())
     }
 
-    pub fn numeric_pair(&self) -> Option<entity_table::NumericPair> {
+    pub(crate) fn numeric_pair(&self) -> Option<entity_table::NumericPair> {
         entity_table::parse_numeric_pair(self.value_payload())
     }
 
-    pub fn relation_expression(&self) -> Option<&CatiaRelationExpression> {
+    pub(crate) fn relation_expression(&self) -> Option<&CatiaRelationExpression> {
         match &self.value_production {
             Some(CatiaEntityValueProduction::RelationExpression(value)) => Some(value),
             _ => None,
@@ -143,14 +143,14 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn relation_expression_mut(&mut self) -> Option<&mut CatiaRelationExpression> {
+    pub(super) fn relation_expression_mut(&mut self) -> Option<&mut CatiaRelationExpression> {
         match &mut self.value_production {
             Some(CatiaEntityValueProduction::RelationExpression(value)) => Some(value),
             _ => None,
         }
     }
 
-    pub fn parameter_value(&self) -> Option<&CatiaParameterValue> {
+    pub(crate) fn parameter_value(&self) -> Option<&CatiaParameterValue> {
         match &self.value_production {
             Some(CatiaEntityValueProduction::ParameterValue(value)) => Some(value),
             _ => None,
@@ -158,14 +158,14 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn parameter_value_mut(&mut self) -> Option<&mut CatiaParameterValue> {
+    pub(super) fn parameter_value_mut(&mut self) -> Option<&mut CatiaParameterValue> {
         match &mut self.value_production {
             Some(CatiaEntityValueProduction::ParameterValue(value)) => Some(value),
             _ => None,
         }
     }
 
-    pub fn constraint_range(&self) -> Option<&CatiaConstraintRange> {
+    pub(crate) fn constraint_range(&self) -> Option<&CatiaConstraintRange> {
         match &self.value_production {
             Some(CatiaEntityValueProduction::ConstraintRange(value)) => Some(value),
             _ => None,
@@ -173,14 +173,14 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn constraint_range_mut(&mut self) -> Option<&mut CatiaConstraintRange> {
+    pub(crate) fn constraint_range_mut(&mut self) -> Option<&mut CatiaConstraintRange> {
         match &mut self.value_production {
             Some(CatiaEntityValueProduction::ConstraintRange(value)) => Some(value),
             _ => None,
         }
     }
 
-    pub fn definition_value(&self) -> Option<&CatiaDefinitionValue> {
+    pub(crate) fn definition_value(&self) -> Option<&CatiaDefinitionValue> {
         match &self.value_production {
             Some(CatiaEntityValueProduction::DefinitionValue(value)) => Some(value),
             _ => None,
@@ -188,14 +188,14 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn definition_value_mut(&mut self) -> Option<&mut CatiaDefinitionValue> {
+    pub(crate) fn definition_value_mut(&mut self) -> Option<&mut CatiaDefinitionValue> {
         match &mut self.value_production {
             Some(CatiaEntityValueProduction::DefinitionValue(value)) => Some(value),
             _ => None,
         }
     }
 
-    pub fn definition_chain_value(&self) -> Option<&CatiaDefinitionChainValue> {
+    pub(crate) fn definition_chain_value(&self) -> Option<&CatiaDefinitionChainValue> {
         match &self.value_production {
             Some(CatiaEntityValueProduction::DefinitionChainValue(value)) => Some(value),
             _ => None,
@@ -203,14 +203,14 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn definition_chain_value_mut(&mut self) -> Option<&mut CatiaDefinitionChainValue> {
+    pub(super) fn definition_chain_value_mut(&mut self) -> Option<&mut CatiaDefinitionChainValue> {
         match &mut self.value_production {
             Some(CatiaEntityValueProduction::DefinitionChainValue(value)) => Some(value),
             _ => None,
         }
     }
 
-    pub fn relation_program_instance(&self) -> Option<&CatiaRelationProgramInstance> {
+    pub(crate) fn relation_program_instance(&self) -> Option<&CatiaRelationProgramInstance> {
         match &self.object_production {
             Some(CatiaEntityObjectProduction::RelationProgramInstance(value)) => Some(value),
             _ => None,
@@ -218,14 +218,16 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn relation_program_instance_mut(&mut self) -> Option<&mut CatiaRelationProgramInstance> {
+    pub(super) fn relation_program_instance_mut(
+        &mut self,
+    ) -> Option<&mut CatiaRelationProgramInstance> {
         match &mut self.object_production {
             Some(CatiaEntityObjectProduction::RelationProgramInstance(value)) => Some(value),
             _ => None,
         }
     }
 
-    pub fn schema_configuration_record(&self) -> Option<&CatiaSchemaConfigurationRecord> {
+    pub(crate) fn schema_configuration_record(&self) -> Option<&CatiaSchemaConfigurationRecord> {
         match &self.object_production {
             Some(CatiaEntityObjectProduction::SchemaConfigurationRecord(value)) => Some(value),
             _ => None,
@@ -233,7 +235,7 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn schema_configuration_record_mut(
+    pub(super) fn schema_configuration_record_mut(
         &mut self,
     ) -> Option<&mut CatiaSchemaConfigurationRecord> {
         match &mut self.object_production {
@@ -242,7 +244,7 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub fn schema_configuration_row_link(&self) -> Option<&CatiaSchemaConfigurationRowLink> {
+    pub(crate) fn schema_configuration_row_link(&self) -> Option<&CatiaSchemaConfigurationRowLink> {
         match &self.object_production {
             Some(CatiaEntityObjectProduction::SchemaConfigurationRowLink(value)) => Some(value),
             _ => None,
@@ -250,7 +252,7 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn schema_configuration_row_link_mut(
+    pub(super) fn schema_configuration_row_link_mut(
         &mut self,
     ) -> Option<&mut CatiaSchemaConfigurationRowLink> {
         match &mut self.object_production {
@@ -259,7 +261,7 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub fn formula_relation(&self) -> Option<&CatiaFormulaRelation> {
+    pub(crate) fn formula_relation(&self) -> Option<&CatiaFormulaRelation> {
         match &self.object_production {
             Some(CatiaEntityObjectProduction::FormulaRelation(value)) => Some(value),
             _ => None,
@@ -267,7 +269,7 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn formula_relation_mut(&mut self) -> Option<&mut CatiaFormulaRelation> {
+    pub(super) fn formula_relation_mut(&mut self) -> Option<&mut CatiaFormulaRelation> {
         match &mut self.object_production {
             Some(CatiaEntityObjectProduction::FormulaRelation(value)) => Some(value),
             _ => None,
@@ -275,14 +277,14 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn inline_body(&self) -> Option<&[u8]> {
+    pub(super) fn inline_body(&self) -> Option<&[u8]> {
         match &self.body {
             CatiaEntityRecordBody::Inline(bytes) => Some(bytes),
             CatiaEntityRecordBody::Nested { .. } => None,
         }
     }
 
-    pub fn definition_prefix(&self) -> &[u8] {
+    pub(super) fn definition_prefix(&self) -> &[u8] {
         match &self.body {
             CatiaEntityRecordBody::Inline(_) => &[],
             CatiaEntityRecordBody::Nested {
@@ -292,7 +294,7 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn definition_suffix(&self) -> &[u8] {
+    pub(super) fn definition_suffix(&self) -> &[u8] {
         match &self.body {
             CatiaEntityRecordBody::Inline(_) => &[],
             CatiaEntityRecordBody::Nested {
@@ -301,25 +303,25 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub fn value_payload(&self) -> &[u8] {
+    pub(super) fn value_payload(&self) -> &[u8] {
         match &self.body {
             CatiaEntityRecordBody::Inline(_) => &[],
             CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload,
         }
     }
 
-    pub fn value_fields(&self) -> Vec<value_block::ValueField> {
+    pub(crate) fn value_fields(&self) -> Vec<value_block::ValueField> {
         value_block::tokenize(self.value_payload())
     }
 
-    pub fn record_suffix(&self) -> &[u8] {
+    pub(super) fn record_suffix(&self) -> &[u8] {
         match &self.body {
             CatiaEntityRecordBody::Inline(_) => &[],
             CatiaEntityRecordBody::Nested { record_suffix, .. } => record_suffix,
         }
     }
 
-    pub fn suffix_value(&self) -> Option<&CatiaEntitySuffixValue> {
+    pub(crate) fn suffix_value(&self) -> Option<&CatiaEntitySuffixValue> {
         match &self.suffix {
             Some(CatiaEntityRecordSuffix::Value(value)) => Some(value),
             _ => None,
@@ -327,21 +329,21 @@ impl CatiaEntityRecord {
     }
 
     #[cfg(test)]
-    pub fn suffix_value_mut(&mut self) -> Option<&mut CatiaEntitySuffixValue> {
+    pub(super) fn suffix_value_mut(&mut self) -> Option<&mut CatiaEntitySuffixValue> {
         match &mut self.suffix {
             Some(CatiaEntityRecordSuffix::Value(value)) => Some(value),
             _ => None,
         }
     }
 
-    pub fn suffix_framing(&self) -> Option<&CatiaEntitySuffixFraming> {
+    pub(crate) fn suffix_framing(&self) -> Option<&CatiaEntitySuffixFraming> {
         match &self.suffix {
             Some(CatiaEntityRecordSuffix::Framing(framing)) => Some(framing),
             _ => None,
         }
     }
 
-    pub fn set_suffix_from_bytes(&mut self, suffix: &[u8]) {
+    pub(super) fn set_suffix_from_bytes(&mut self, suffix: &[u8]) {
         self.suffix = match (entity_suffix_value(suffix), entity_suffix_framing(suffix)) {
             (Some(value), _) => Some(CatiaEntityRecordSuffix::Value(value)),
             (None, Some(framing)) => Some(CatiaEntityRecordSuffix::Framing(framing)),

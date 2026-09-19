@@ -42,15 +42,15 @@ const B2_GROUP_SEPARATOR_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
 #[derive(Debug, Clone)]
-pub struct B2OffsetSupport {
+pub(crate) struct B2OffsetSupport {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Referenced carrier-surface identifier.
-    pub support_id: u32,
+    pub(in crate::families) support_id: u32,
     /// Signed normal offset distance in millimetres.
-    pub distance: f64,
+    pub(in crate::families) distance: f64,
     /// Carrier UV sub-domain `[u0, v0, u1, v1]`.
-    pub domain: [f64; 4],
+    pub(in crate::families) domain: [f64; 4],
 }
 
 fn valid_offset_domain([u0, v0, u1, v1]: [f64; 4]) -> bool {
@@ -59,22 +59,22 @@ fn valid_offset_domain([u0, v0, u1, v1]: [f64; 4]) -> bool {
 
 /// Parameter-space data stored in a `b2/b3/b4 03 18` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2ParameterPoint {
+pub(crate) struct B2ParameterPoint {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Exclusive end of the complete framed record.
-    pub end: usize,
+    pub(crate) end: usize,
     /// First byte of the two-byte class-specific prefix.
-    pub prefix: B2ParameterPointPrefix,
+    pub(crate) prefix: B2ParameterPointPrefix,
     /// Second byte of the two-byte class-specific prefix.
-    pub control: u8,
+    pub(crate) control: u8,
     /// Layout-specific finite scalar lane.
-    pub payload: B2ParameterPointPayload,
+    pub(crate) payload: B2ParameterPointPayload,
 }
 
 /// Closed set of class-`0x18` parameter-point prefixes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B2ParameterPointPrefix {
+pub(crate) enum B2ParameterPointPrefix {
     Sel05,
     Sel09,
     Sel0d,
@@ -104,7 +104,7 @@ impl B2ParameterPointPrefix {
 
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
 #[derive(Debug, Clone, PartialEq)]
-pub enum B2ParameterPointPayload {
+pub(crate) enum B2ParameterPointPayload {
     /// One retained scalar after two zero tuple fields are elided (`L=0x0a`).
     Scalar {
         /// Stored scalar.
@@ -146,7 +146,7 @@ impl B2ParameterPointPayload {
 /// The selector chooses the scalar layout. The trailing lanes are retained as
 /// source scalars until their parameter-bound roles are established.
 #[derive(Debug, Clone, PartialEq)]
-pub enum B2PlaneCarrierPayload {
+pub(crate) enum B2PlaneCarrierPayload {
     /// Two-coordinate point, two-coordinate direction, and three tail scalars.
     PointDirection2 {
         /// In-plane point with the host-implied third coordinate omitted.
@@ -197,81 +197,81 @@ impl B2PlaneCarrierPayload {
 
 /// One complete consolidated `b2/b3/b4 03 27` plane-carrier record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2PlaneCarrier {
+pub(crate) struct B2PlaneCarrier {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Exclusive end of the complete framed record.
-    pub end: usize,
+    pub(crate) end: usize,
     /// Header-token width in bytes.
-    pub width: ConsolidatedFrameWidth,
+    pub(crate) width: ConsolidatedFrameWidth,
     /// Independent frame flag.
-    pub flag: ConsolidatedFrameFlag,
+    pub(crate) flag: ConsolidatedFrameFlag,
     /// Width-coded frame header token.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
     /// Selector-specific finite scalar payload.
-    pub payload: B2PlaneCarrierPayload,
+    pub(crate) payload: B2PlaneCarrierPayload,
 }
 
 /// Persistent-tag reference list stored in a `b2/b3/b4 03 37` record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B2ReferenceList {
+pub(crate) struct B2ReferenceList {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Compact persistent-tag references in serialization order.
-    pub references: Vec<u32>,
+    pub(crate) references: Vec<u32>,
 }
 
 /// Nine-reference owner packet stored in a `b2/b3/b4 03 62` record with a
 /// structurally decoded numeric tail.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2OwnerPacket {
+pub(crate) struct B2OwnerPacket {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Zero-based bounded record-source ordinal.
-    pub source_index: usize,
+    pub(crate) source_index: usize,
     /// Width-coded header token.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
     /// Reference grammar selected by the complete fixed-nine reference lane.
-    pub reference_encoding: B2OwnerReferenceEncoding,
+    pub(crate) reference_encoding: B2OwnerReferenceEncoding,
     /// Nine compact persistent identities following the `0x89` count.
-    pub references: [u32; 9],
+    pub(crate) references: [u32; 9],
     /// Exact wire addressing form of each identity in source order.
-    pub identity_encodings: [B2OwnerIdentityEncoding; 9],
+    pub(crate) identity_encodings: [B2OwnerIdentityEncoding; 9],
     /// Fixed-width class-specific numeric tail.
-    pub numeric_tail: CatiaOwnerNumericTail,
+    pub(crate) numeric_tail: CatiaOwnerNumericTail,
 }
 
 /// One fixed-nine owner identity resolved by its backward-distance token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct B2OwnerIdentityTarget {
+pub(crate) struct B2OwnerIdentityTarget {
     /// Owning class-`0x62` packet offset.
-    pub owner_pos: usize,
+    pub(crate) owner_pos: usize,
     /// Zero-based bounded record-source ordinal.
-    pub source_index: usize,
+    pub(crate) source_index: usize,
     /// Zero-based identity slot in the fixed-nine packet.
-    pub slot: u8,
+    pub(crate) slot: u8,
     /// Decoded backward distance.
-    pub distance: u32,
+    pub(crate) distance: u32,
     /// Selected class-`0x5d` or class-`0x5e` record offset.
-    pub target_pos: usize,
+    pub(crate) target_pos: usize,
     /// Selected record class.
-    pub target_class: crate::native::CatiaOwnerIdentityClass,
+    pub(crate) target_class: crate::native::CatiaOwnerIdentityClass,
 }
 
 /// One fixed-nine identity that resolves to a closed owner-boundary edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct B2OwnerBoundaryEdge {
     /// Identity slot in the fixed-nine packet.
-    pub slot: u8,
+    pub(crate) slot: u8,
     /// Resolved class-`0x5e` edge-record offset.
-    pub target_pos: usize,
+    pub(crate) target_pos: usize,
     /// Resolved class-`0x5d` endpoint-record offsets, in edge order.
-    pub endpoint_records: [usize; 2],
+    pub(crate) endpoint_records: [usize; 2],
 }
 
 /// Carrier production that opens a fixed owner chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B2OwnerChartCarrier {
+pub(crate) enum B2OwnerChartCarrier {
     /// B-family class-`0x28` cylinder carrier.
     B28,
     /// B-family class-`0x2b` torus carrier.
@@ -282,16 +282,16 @@ pub enum B2OwnerChartCarrier {
 
 /// One allocation-local reference in a class-`0x37` owner-chart bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct B2OwnerChartBridgeReference {
+pub(crate) struct B2OwnerChartBridgeReference {
     /// Decoded allocation-local value.
-    pub value: u32,
+    pub(crate) value: u32,
     /// Wire addressing form retained from the allocation-reference token.
-    pub encoding: AllocationReferenceEncoding,
+    pub(crate) encoding: AllocationReferenceEncoding,
 }
 
 /// Structurally complete class-`0x37` owner-chart bridge.
 #[derive(Debug, Clone, PartialEq)]
-pub enum B2OwnerChartBridge {
+pub(crate) enum B2OwnerChartBridge {
     /// Five-reference supported-surface construction.
     SupportedSurface {
         /// Record byte offset.
@@ -323,47 +323,47 @@ pub enum B2OwnerChartBridge {
 /// The relation is admitted only when the four ordered class-`0x18` records
 /// reproduce the owner's complete parameter rectangle.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2OwnerChart {
+pub(crate) struct B2OwnerChart {
     /// Fixed-nine owner packet offset.
-    pub owner_pos: usize,
+    pub(crate) owner_pos: usize,
     /// Zero-based bounded record-source ordinal.
-    pub source_index: usize,
+    pub(crate) source_index: usize,
     /// Carrier record offset.
-    pub carrier_pos: usize,
+    pub(crate) carrier_pos: usize,
     /// Family-and-class carrier production.
-    pub carrier: B2OwnerChartCarrier,
+    pub(crate) carrier: B2OwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
-    pub bridge: B2OwnerChartBridge,
+    pub(crate) bridge: B2OwnerChartBridge,
     parameter_points: [usize; 4],
 }
 
 impl B2OwnerChart {
     /// Parameter point offsets in selector-prefix order.
-    pub fn parameter_point_offsets(&self) -> [usize; 4] {
+    pub(crate) fn parameter_point_offsets(&self) -> [usize; 4] {
         self.parameter_points
     }
 }
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B2CountedOwner {
+pub(crate) struct B2CountedOwner {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Zero-based bounded record-source ordinal.
-    pub source_index: usize,
+    pub(crate) source_index: usize,
     /// Width-coded header token.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
     /// Persistent identities selected by the leading `0x80+n` count.
-    pub references: Vec<u32>,
+    pub(crate) references: Vec<u32>,
     /// Addressing form of each count-selected reference.
-    pub reference_encodings: Vec<AllocationReferenceEncoding>,
+    pub(in crate::families) reference_encodings: Vec<AllocationReferenceEncoding>,
     /// Nonempty class-specific bytes after the reference lane.
-    pub tail: Vec<u8>,
+    pub(crate) tail: Vec<u8>,
 }
 
 /// Reference dialect used by a nine-reference class-`0x62` owner packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B2OwnerReferenceEncoding {
+pub(crate) enum B2OwnerReferenceEncoding {
     /// Strong identities use `0x0a <u16le>` and weak identities use compact integers.
     TaggedU16Strong,
     /// Strong identities use width-coded compact integers and weak identities
@@ -375,7 +375,7 @@ pub enum B2OwnerReferenceEncoding {
 
 /// Wire addressing form of one identity in a fixed-nine owner packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B2OwnerIdentityEncoding {
+pub(crate) enum B2OwnerIdentityEncoding {
     /// One token from the allocation-reference grammar.
     Allocation(AllocationReferenceEncoding),
     /// Raw one-byte weak identity in the width-coded alternating dialect.
@@ -384,32 +384,32 @@ pub enum B2OwnerIdentityEncoding {
 
 /// Count-prefixed class-`0x61` reference record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B2Counted61 {
+pub(crate) struct B2Counted61 {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Width-coded header token.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
     /// Compact values selected by the leading `0x80+n` count.
-    pub references: Vec<u32>,
+    pub(crate) references: Vec<u32>,
     /// Remaining class-specific bytes, including the terminal `0x03`.
-    pub tail: Vec<u8>,
+    pub(crate) tail: Vec<u8>,
 }
 
 /// Long-form class-`0x61` record with a monotone u16 member lane.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2Long61 {
+pub(crate) struct B2Long61 {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Width-coded header token.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
     /// Eight opaque bytes preceding the `0x06` list marker.
-    pub prefix: [u8; 8],
+    pub(crate) prefix: [u8; 8],
     /// Strictly increasing little-endian u16 values.
-    pub members: Vec<u16>,
+    pub(crate) members: Vec<u16>,
     /// Five `0x0a <u16le>` persistent identities after delimiter `0xfe`.
-    pub references: [u16; 5],
+    pub(crate) references: [u16; 5],
     /// Finite scalar preceding the terminal byte.
-    pub scalar: f64,
+    pub(crate) scalar: f64,
 }
 
 /// Structurally complete consolidated class-`0x5b` or class-`0x5c` record.
@@ -417,20 +417,20 @@ pub struct B2Long61 {
 /// The complete payload is retained as an opaque body. No field role is
 /// assigned until a source-closed relation establishes one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B2Class5b5cRecord {
+pub(crate) struct B2Class5b5cRecord {
     /// Framed record.
-    pub frame: ConsolidatedRawFrame,
+    pub(crate) frame: ConsolidatedRawFrame,
     /// Zero-based bounded record-source ordinal.
-    pub source_index: usize,
+    pub(crate) source_index: usize,
     /// Logical offset within the bounded record source.
-    pub source_offset: usize,
+    pub(crate) source_offset: usize,
     /// Record class.
-    pub class: crate::native::class5b5c::CatiaClass5b5c,
+    pub(crate) class: crate::native::class5b5c::CatiaClass5b5c,
 }
 
 /// Target encoding of a structurally complete class-`0x5f` node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B2FaceNode5fTargetEncoding {
+pub(crate) enum B2FaceNode5fTargetEncoding {
     /// Width-coded compact target.
     Compact,
     /// Strong persistent target encoded as `0x0a <u16le>`.
@@ -439,19 +439,19 @@ pub enum B2FaceNode5fTargetEncoding {
 
 /// Structurally complete class-`0x5f` node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct B2FaceNode5f {
+pub(crate) struct B2FaceNode5f {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Complete framed-record byte length.
-    pub byte_len: usize,
+    byte_len: usize,
     /// Width-coded header token.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
     /// Target encoding selected after the `0x82` lead.
-    pub target_encoding: B2FaceNode5fTargetEncoding,
+    pub(crate) target_encoding: B2FaceNode5fTargetEncoding,
     /// Persistent target between the `0x82` lead and the terminal pair.
-    pub target: u32,
+    pub(crate) target: u32,
     /// Two terminal bytes that exhaust the complete payload.
-    pub terminal: [u8; 2],
+    pub(crate) terminal: [u8; 2],
 }
 
 /// Derived adjacent class-`0x5f` node and class-`0x62` packet relation.
@@ -459,41 +459,41 @@ pub struct B2FaceNode5f {
 /// This relation retains source adjacency and the successor identity. It does
 /// not assign a higher-level object or allocation role to either record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2AdjacentFaceOwner {
+pub(crate) struct B2AdjacentFaceOwner {
     /// Class-`0x5f` node immediately preceding the class-`0x62` packet.
-    pub face_node: B2FaceNode5f,
+    pub(crate) face_node: B2FaceNode5f,
     /// Nine-reference owner packet.
-    pub owner: B2OwnerPacket,
+    pub(crate) owner: B2OwnerPacket,
 }
 
 /// Derived adjacent class-`0x5f` node and count-framed class-`0x62` packet
 /// relation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B2AdjacentFaceCountedOwner {
+pub(crate) struct B2AdjacentFaceCountedOwner {
     /// Class-`0x5f` node immediately preceding the class-`0x62` packet.
-    pub face_node: B2FaceNode5f,
+    pub(crate) face_node: B2FaceNode5f,
     /// Count-framed owner packet.
-    pub owner: B2CountedOwner,
+    pub(crate) owner: B2CountedOwner,
 }
 
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2ConeFace {
+pub(crate) struct B2ConeFace {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Exclusive end of the complete framed record.
-    pub end: usize,
+    pub(crate) end: usize,
     /// Complete reference-and-control program preceding the scalars.
-    pub program: Vec<u8>,
+    pub(crate) program: Vec<u8>,
     /// Stored angular chart scale.
-    pub angular_scale: f64,
+    pub(crate) angular_scale: f64,
     /// Cone half-angle in radians.
-    pub half_angle: f64,
+    pub(crate) half_angle: f64,
 }
 
 /// Settled terminal sense code in a class-`0x06` consolidated use record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B2UseSense {
+pub(crate) enum B2UseSense {
     /// Terminal byte `0x84`.
     Sense84,
     /// Terminal byte `0x88`.
@@ -502,7 +502,7 @@ pub enum B2UseSense {
 
 /// Closed payload grammar of a class-`0x06` consolidated use record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum B2UsePayload {
+enum B2UsePayload {
     /// Compact references and a terminal sense that exhaust the payload.
     Closed {
         sense: B2UseSense,
@@ -516,24 +516,24 @@ pub enum B2UsePayload {
 
 /// Byte-level metadata from a class-`0x06` consolidated use record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B2UseMetadata {
+pub(crate) struct B2UseMetadata {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Complete payload bytes.
-    pub payload: Vec<u8>,
+    pub(super) payload: Vec<u8>,
     /// Closed payload grammar.
-    pub kind: B2UsePayload,
+    kind: B2UsePayload,
 }
 
 impl B2UseMetadata {
-    pub fn sense(&self) -> Option<B2UseSense> {
+    pub(crate) fn sense(&self) -> Option<B2UseSense> {
         match self.kind {
             B2UsePayload::Closed { sense, .. } | B2UsePayload::SenseOnly(sense) => Some(sense),
             B2UsePayload::Opaque => None,
         }
     }
 
-    pub fn references(&self) -> Option<&[u32]> {
+    pub(crate) fn references(&self) -> Option<&[u32]> {
         match &self.kind {
             B2UsePayload::Closed { references, .. } => Some(references.as_slice()),
             B2UsePayload::SenseOnly(_) | B2UsePayload::Opaque => None,
@@ -544,7 +544,7 @@ impl B2UseMetadata {
 /// Byte-level metadata from a class-`0x5e` consolidated record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
-pub struct B2EdgeMetadata {
+pub(in crate::families::b2) struct B2EdgeMetadata {
     /// Record byte offset.
     pub pos: usize,
     /// Complete payload bytes.
@@ -555,40 +555,40 @@ pub struct B2EdgeMetadata {
 
 /// Structurally decoded width-coded class-`0x5e` edge node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct B2EdgeNode {
+pub(crate) struct B2EdgeNode {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Width-coded header token following the payload length.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
     /// Allocation-local curve-support reference terminating the use chain.
-    pub curve_ref: u32,
+    pub(crate) curve_ref: u32,
     /// Native start-vertex identity.
-    pub start_vertex_ref: u32,
+    pub(crate) start_vertex_ref: u32,
     /// Native end-vertex identity.
-    pub end_vertex_ref: u32,
+    pub(crate) end_vertex_ref: u32,
     /// Allocation-local start-parameter selector.
-    pub start_parameter_ref: u32,
+    pub(crate) start_parameter_ref: u32,
     /// Allocation-local end-parameter selector.
-    pub end_parameter_ref: u32,
+    pub(crate) end_parameter_ref: u32,
     /// Addressing forms of the five references in payload order.
-    pub reference_encodings: [AllocationReferenceEncoding; 5],
+    pub(crate) reference_encodings: [AllocationReferenceEncoding; 5],
     /// Decoded value of the one-byte terminal allocation reference.
-    pub terminal_value: u32,
+    pub(crate) terminal_value: u32,
     /// Wire addressing form of the terminal allocation reference.
-    pub terminal_encoding: AllocationReferenceEncoding,
+    pub(crate) terminal_encoding: AllocationReferenceEncoding,
     /// Terminal byte following the five references.
-    pub tail: u8,
+    pub(crate) tail: u8,
 }
 
 /// Decode class-`0x06` payloads and their settled terminal sense codes.
 #[must_use]
 #[cfg(test)]
-pub fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
+pub(in crate::families) fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
     let records = consolidated_records(data);
     b2_use_metadata_from_records(data, &records)
 }
 
-pub(crate) fn b2_use_metadata_from_records(
+pub(in crate::families) fn b2_use_metadata_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2UseMetadata> {
@@ -632,7 +632,7 @@ pub(crate) fn b2_use_metadata_from_records(
 /// Decode class-`0x5e` payloads and their `0x0a <u16le>` reference tokens.
 #[must_use]
 #[cfg(test)]
-pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
+pub(super) fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
     b_family_frames(data, 0x5e)
         .into_iter()
         .map(|frame| {
@@ -665,7 +665,7 @@ pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
 /// allocation-local references and one terminal byte.
 #[must_use]
 #[cfg(test)]
-pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
+pub(in crate::families) fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
     let records = consolidated_records(data);
     b2_edge_nodes_from_records(data, &records)
 }
@@ -727,7 +727,7 @@ pub(crate) fn b2_edge_nodes_from_records(
 
 /// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
 #[must_use]
-pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
+pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
     let mut faces = Vec::new();
     for pos in 0..data.len().saturating_sub(5) {
         let Some(width) = data[pos]
@@ -786,7 +786,7 @@ pub fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
 #[must_use]
 #[cfg(test)]
-pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
+pub(super) fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     let records = consolidated_records(data);
     b2_reference_lists_from_records(data, &records)
 }
@@ -822,7 +822,7 @@ pub(crate) fn b2_reference_lists_from_records(
 /// reference lane and leaves a nonempty class-specific tail.
 #[must_use]
 #[cfg(test)]
-pub fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
+pub(super) fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
     let records = consolidated_records(data);
     b2_counted_owners_from_records(data, &records)
 }
@@ -864,7 +864,7 @@ pub(crate) fn b2_counted_owners_from_records(
 /// tail consume the complete frame.
 #[must_use]
 #[cfg(test)]
-pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
+pub(super) fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
     let records = consolidated_records(data);
     b2_owner_packets_from_records(data, &records)
 }
@@ -970,7 +970,7 @@ pub(crate) fn b2_owner_identity_targets_from_records(
 /// one simple four-edge cycle. The endpoint records remain allocation-local;
 /// this predicate does not assign a face or promote the records to a global
 /// identity namespace.
-pub(crate) fn b2_closed_owner_boundary_edges(
+pub(in crate::families) fn b2_closed_owner_boundary_edges(
     targets: &[B2OwnerIdentityTarget],
     endpoint_records: &HashMap<usize, [usize; 2]>,
 ) -> Option<[B2OwnerBoundaryEdge; 4]> {
@@ -1333,7 +1333,7 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
 /// returned.
 #[must_use]
 #[cfg(test)]
-pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
+pub(super) fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     let records = consolidated_records(data);
     b2_counted_61_from_records(data, &records)
 }
@@ -1371,7 +1371,7 @@ pub(crate) fn b2_counted_61_from_records(
 /// monotone member-list boundary without searching for delimiter bytes.
 #[must_use]
 #[cfg(test)]
-pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
+pub(super) fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     let records = consolidated_records(data);
     b2_long_61_from_records(data, &records)
 }
@@ -1436,7 +1436,7 @@ pub(crate) fn b2_long_61_from_records(
 /// opaque until a source-closed field relation is established.
 #[must_use]
 #[cfg(test)]
-pub fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
+pub(super) fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
     let records = consolidated_records(data);
     b2_class5b5c_records_from_records(data, &records)
 }
@@ -1466,12 +1466,12 @@ pub(crate) fn b2_class5b5c_records_from_records(
 /// Decode structurally complete class-`0x5f` nodes.
 #[must_use]
 #[cfg(test)]
-pub fn b2_face_nodes_5f(data: &[u8]) -> Vec<B2FaceNode5f> {
+pub(super) fn b2_face_nodes_5f(data: &[u8]) -> Vec<B2FaceNode5f> {
     let records = consolidated_records(data);
     b2_face_nodes_5f_from_records(data, &records)
 }
 
-pub(crate) fn b2_face_nodes_5f_from_records(
+pub(in crate::families) fn b2_face_nodes_5f_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2FaceNode5f> {
@@ -1511,7 +1511,7 @@ pub(crate) fn b2_face_nodes_5f_from_records(
 /// target.
 #[must_use]
 #[cfg(test)]
-pub fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
+pub(super) fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
     let records = consolidated_records(data);
     b2_adjacent_face_owners_from_records(data, &records)
 }
@@ -1552,7 +1552,7 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
 /// final identity is the checked successor of the node target.
 #[must_use]
 #[cfg(test)]
-pub fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
+pub(super) fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
     let records = consolidated_records(data);
     b2_adjacent_face_counted_owners_from_records(data, &records)
 }
@@ -1591,7 +1591,7 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
 /// Decode width-coded `b2/b3/b4 03 18` parameter-space records.
 #[must_use]
 #[cfg(test)]
-pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
+pub(super) fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
     let records = consolidated_records(data);
     b2_parameter_points_from_records(data, &records)
 }
@@ -1653,7 +1653,7 @@ pub(crate) fn b2_parameter_points_from_records(
 /// Decode complete consolidated class-`0x27` plane-carrier records.
 #[must_use]
 #[cfg(test)]
-pub fn b2_plane_carriers(data: &[u8]) -> Vec<B2PlaneCarrier> {
+pub(crate) fn b2_plane_carriers(data: &[u8]) -> Vec<B2PlaneCarrier> {
     let records = consolidated_records(data);
     b2_plane_carriers_from_records(data, &records)
 }
@@ -1717,7 +1717,7 @@ pub(crate) fn b2_plane_carriers_from_records(
 /// the direction-bearing layouts establish the positive in-plane axis and the
 /// host Z direction establishes the second axis. The directionless `ec` layout
 /// remains a retained native record until its axis rule is resolved.
-pub(crate) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeometry> {
+pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeometry> {
     let (point, direction, tail) = match &carrier.payload {
         B2PlaneCarrierPayload::PointDirection2 {
             point,
@@ -1754,7 +1754,7 @@ pub(crate) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeome
 }
 
 /// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.
-pub(crate) fn b2_class25_descriptors_from_records(
+pub(in crate::families) fn b2_class25_descriptors_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2Class25Descriptor> {
@@ -1784,26 +1784,26 @@ pub(crate) fn b2_class25_descriptors_from_records(
 
 /// Shared-edge parameter range stored in a `b2 03 23` packet.
 #[derive(Debug, Clone)]
-pub struct B2EdgeParameters {
+pub(crate) struct B2EdgeParameters {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Native shared-edge parameter range.
-    pub range: [f64; 2],
+    pub(crate) range: [f64; 2],
     /// Shared-edge geometric tolerance.
-    pub tolerance: f64,
+    pub(crate) tolerance: f64,
 }
 
 /// Typed class-`0x18` descriptor immediately preceding a class-`0x25` edge.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2Class25Descriptor {
+pub(crate) struct B2Class25Descriptor {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Width-coded allocation identity.
-    pub record_id: u32,
+    pub(crate) record_id: u32,
     /// Descriptor control byte (`0x02` or `0x0a`).
-    pub control: u8,
+    pub(crate) control: u8,
     /// Complete finite scalar lane containing two or three values.
-    pub values: Vec<f64>,
+    pub(crate) values: Vec<f64>,
 }
 
 fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
@@ -1815,7 +1815,7 @@ fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
     range[0] - tolerance <= value && value <= range[1] + tolerance
 }
 
-pub(crate) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
+pub(in crate::families) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
     if !parameter_in_closed_range(uv[1], cone.slant_range.get()) {
         return None;
     }
@@ -1835,7 +1835,10 @@ pub(crate) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
     ))
 }
 
-pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<Point3> {
+pub(in crate::families) fn b2_cylinder_point(
+    cylinder: &B2Cylinder,
+    uv: [f64; 2],
+) -> Option<Point3> {
     if !parameter_in_closed_range(uv[0], cylinder.u_range.get())
         || !parameter_in_closed_range(uv[1], cylinder.v_range.get())
     {
@@ -1859,80 +1862,80 @@ pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<P
     ))
 }
 
-pub(crate) fn point_distance(a: Point3, b: Point3) -> f64 {
+pub(in crate::families) fn point_distance(a: Point3, b: Point3) -> f64 {
     ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
 }
 
 /// Arc-length circle support stored in a `b2 03 19` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2Circle {
+pub(crate) struct B2Circle {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Payload-layout discriminator.
-    pub layout: crate::native::CatiaCircleLayout,
+    pub(crate) layout: crate::native::CatiaCircleLayout,
     /// Compact persistent record identifier.
-    pub record_id: u32,
+    pub(crate) record_id: u32,
     /// Frame token following the record length.
-    pub frame_token: u8,
+    pub(crate) frame_token: u8,
     /// Two center coordinates in the host-implied carrier plane.
-    pub center_pair: [f64; 2],
+    pub(crate) center_pair: [f64; 2],
     /// Circle radius in millimetres.
-    pub radius: PositiveFinite,
+    pub(crate) radius: PositiveFinite,
     /// Arc-length parameter interval.
-    pub range: OrderedInterval,
+    pub(crate) range: OrderedInterval,
     /// Length-valued angular chart shift.
-    pub chart_shift: f64,
+    pub(crate) chart_shift: f64,
 }
 
 #[cfg(test)]
 impl B2Circle {
     /// Whether the interval spans one complete circumference.
-    pub fn full_circle(&self) -> bool {
+    pub(super) fn full_circle(&self) -> bool {
         circle_range_is_full_turn(self.radius.get(), self.range.get())
     }
 }
 
 /// One clamped rational NURBS curve stored in a `b2 03 16` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2NurbsCurve {
+pub(crate) struct B2NurbsCurve {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Width-coded record token.
-    pub header_token: u32,
+    pub(in crate::families) header_token: u32,
     /// Exact neutral rational curve.
-    pub geometry: NurbsCurve,
+    pub(in crate::families) geometry: NurbsCurve,
 }
 
 /// One spatial circle carrier stored in a `b2 03 0f` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2SpatialCircle {
+pub(crate) struct B2SpatialCircle {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Width-coded record token.
-    pub header_token: u32,
+    pub(in crate::families) header_token: u32,
     /// Circle centre.
-    pub center: Point3,
+    pub(in crate::families) center: Point3,
     /// Unit circle-plane normal.
-    pub axis: ExactNormUnitVector3,
+    pub(in crate::families) axis: ExactNormUnitVector3,
     /// Unit radial reference direction.
-    pub ref_direction: ExactNormUnitVector3,
+    pub(in crate::families) ref_direction: ExactNormUnitVector3,
     /// Positive radius in millimetres.
-    pub radius: PositiveFinite,
+    pub(in crate::families) radius: PositiveFinite,
     /// Stored arc-length interval.
-    pub range: OrderedInterval,
+    pub(in crate::families) range: OrderedInterval,
     /// Stored chart shift.
-    pub chart_shift: f64,
+    pub(in crate::families) chart_shift: f64,
 }
 
 /// Decode length-closed `b2/b3/b4 03 0f` spatial circles.
 #[must_use]
 #[cfg(test)]
-pub fn b2_spatial_circles(data: &[u8]) -> Vec<B2SpatialCircle> {
+pub(super) fn b2_spatial_circles(data: &[u8]) -> Vec<B2SpatialCircle> {
     let records = consolidated_records(data);
     b2_spatial_circles_from_records(data, &records)
 }
 
-pub(crate) fn b2_spatial_circles_from_records(
+pub(in crate::families) fn b2_spatial_circles_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2SpatialCircle> {
@@ -1986,12 +1989,12 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
 /// knot limits occur twice and the second pair must reproduce the first pair.
 #[must_use]
 #[cfg(test)]
-pub fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
+pub(super) fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
     let records = consolidated_records(data);
     b2_nurbs_curves_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
 
-pub(crate) fn b2_nurbs_curves_from_records(
+pub(in crate::families) fn b2_nurbs_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -2080,28 +2083,28 @@ fn parse_b2_nurbs_curve(
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
 #[derive(Debug, Clone)]
-pub struct B2Cylinder {
+pub(crate) struct B2Cylinder {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Cylinder-axis origin.
-    pub origin: [f64; 3],
+    pub(crate) origin: [f64; 3],
     /// Cylinder-axis unit direction.
-    pub axis: RelaxedHypotUnitVector3,
+    pub(crate) axis: RelaxedHypotUnitVector3,
     /// Unit direction from which the circumferential parameter is measured.
-    pub reference_direction: RelaxedHypotUnitVector3,
+    pub(crate) reference_direction: RelaxedHypotUnitVector3,
     /// Cylinder radius.
-    pub radius: PositiveFinite,
+    pub(crate) radius: PositiveFinite,
     /// Arc-length circumferential range.
-    pub u_range: OrderedInterval,
+    pub(crate) u_range: OrderedInterval,
     /// Axial range.
-    pub v_range: OrderedInterval,
+    pub(crate) v_range: OrderedInterval,
     /// Layout-specific frame data.
-    pub layout: B2CylinderLayout,
+    pub(crate) layout: B2CylinderLayout,
 }
 
 /// Layout of a consolidated `B:28` cylinder chart.
 #[derive(Debug, Clone, PartialEq)]
-pub enum B2CylinderLayout {
+pub(crate) enum B2CylinderLayout {
     /// Layout `0x5a` with a stored frame token.
     Full5a { frame_token: u8 },
     /// Layout `0x52` with a fixed X-axis frame.
@@ -2124,7 +2127,7 @@ impl B2Cylinder {
             .then(|| cylinder_range_origin(self.radius.get(), self.u_range.get()))
     }
 
-    pub(crate) fn surface_geometry(&self) -> Option<SurfaceGeometry> {
+    pub(in crate::families) fn surface_geometry(&self) -> Option<SurfaceGeometry> {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::CylinderSurface::try_new(
                 Point3::from(self.origin),
@@ -2139,172 +2142,172 @@ impl B2Cylinder {
 
 /// Slant-coordinate cone chart stored in a `b2 03 29` record.
 #[derive(Debug, Clone)]
-pub struct B2Cone {
+pub(crate) struct B2Cone {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Cone apex.
-    pub apex: [f64; 3],
+    pub(crate) apex: [f64; 3],
     /// First transverse unit direction.
-    pub t1: RelaxedUnitVector3,
+    pub(crate) t1: RelaxedUnitVector3,
     /// Second transverse unit direction.
-    pub t2: RelaxedUnitVector3,
+    pub(crate) t2: RelaxedUnitVector3,
     /// Cone-axis unit direction.
-    pub axis: RelaxedUnitVector3,
+    pub(crate) axis: RelaxedUnitVector3,
     /// Cone half-angle in radians.
-    pub half_angle: f64,
+    pub(crate) half_angle: f64,
     /// Reference radius of the conical surface, independent of the active chart ranges.
-    pub reference_radius: f64,
+    pub(crate) reference_radius: f64,
     /// Active azimuth interval.
-    pub angular_range: [f64; 2],
+    pub(crate) angular_range: [f64; 2],
     /// Native slant-coordinate range.
-    pub slant_range: OrderedInterval,
+    pub(crate) slant_range: OrderedInterval,
     /// Divisor mapping the stored U coordinate to azimuth.
-    pub angular_scale: PositiveFinite,
+    pub(crate) angular_scale: PositiveFinite,
     /// Full-turn azimuth chart domain.
-    pub angular_domain: [f64; 2],
+    pub(crate) angular_domain: [f64; 2],
 }
 
 /// Axis-and-profile surface of revolution stored in a `b2 03 2d` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2Revolution {
+pub(crate) struct B2Revolution {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Reference-token dialect.
-    pub reference_token: crate::native::CatiaRevolutionReferenceToken,
+    pub(crate) reference_token: crate::native::CatiaRevolutionReferenceToken,
     /// Stored profile allocation identity.
-    pub profile_allocation_id: u16,
+    pub(crate) profile_allocation_id: u16,
     /// Axis-frame origin.
-    pub origin: [f64; 3],
+    pub(crate) origin: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: ExactUnitVector3,
+    pub(crate) direction_x: ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: ExactUnitVector3,
+    pub(crate) direction_y: ExactUnitVector3,
     /// Revolution-axis direction.
-    pub axis: ExactUnitVector3,
+    pub(crate) axis: ExactUnitVector3,
     /// Stored angular parameter interval.
-    pub angular_range: [f64; 2],
+    pub(crate) angular_range: [f64; 2],
     /// Stored profile parameter interval.
-    pub profile_range: OrderedInterval,
+    pub(crate) profile_range: OrderedInterval,
     /// Positive angular chart scale.
-    pub angular_scale: PositiveFinite,
+    pub(crate) angular_scale: PositiveFinite,
 }
 
 /// One revolution record whose profile interval identifies exactly one
 /// consolidated circle record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2ResolvedRevolution {
+pub(crate) struct B2ResolvedRevolution {
     /// Ordinal among all decoded revolution records.
-    pub revolution_index: usize,
+    pub(in crate::families) revolution_index: usize,
     /// Surface-of-revolution record.
-    pub revolution: B2Revolution,
+    pub(crate) revolution: B2Revolution,
     /// Unique profile circle with the same stored parameter interval.
-    pub profile: B2Circle,
+    pub(crate) profile: B2Circle,
 }
 
 /// Metric line profile stored in a `b2/b3/b4 03 0e` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2LineProfile {
+pub(crate) struct B2LineProfile {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Stored line origin.
-    pub origin: [f64; 3],
+    pub(crate) origin: [f64; 3],
     /// Unit line direction.
-    pub direction: ExactUnitVector3,
+    pub(crate) direction: ExactUnitVector3,
     /// Increasing stored parameter interval.
-    pub range: OrderedInterval,
+    pub(crate) range: OrderedInterval,
 }
 
 /// Radius-scaled sphere chart stored in a `b2 03 2a` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2Sphere {
+pub(crate) struct B2Sphere {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Sphere centre.
-    pub center: [f64; 3],
+    pub(crate) center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: ExactHypotUnitVector3,
+    pub(crate) direction_x: ExactHypotUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: ExactHypotUnitVector3,
+    pub(crate) direction_y: ExactHypotUnitVector3,
     /// Sphere-axis unit direction.
-    pub axis: ExactHypotUnitVector3,
+    pub(crate) axis: ExactHypotUnitVector3,
     /// Sphere radius.
-    pub radius: PositiveFinite,
+    pub(crate) radius: PositiveFinite,
     /// Active azimuth interval.
-    pub azimuth_range: [f64; 2],
+    pub(crate) azimuth_range: [f64; 2],
     /// Active latitude interval.
-    pub latitude_range: [f64; 2],
+    pub(crate) latitude_range: [f64; 2],
 }
 
 /// Doubly periodic torus chart stored in a `b2 03 2b` record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2Torus {
+pub(crate) struct B2Torus {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Torus centre.
-    pub center: [f64; 3],
+    pub(crate) center: [f64; 3],
     /// First transverse unit direction.
-    pub direction_x: ExactUnitVector3,
+    pub(crate) direction_x: ExactUnitVector3,
     /// Second transverse unit direction.
-    pub direction_y: ExactUnitVector3,
+    pub(crate) direction_y: ExactUnitVector3,
     /// Torus-axis unit direction.
-    pub axis: ExactUnitVector3,
+    pub(crate) axis: ExactUnitVector3,
     /// Major radius.
-    pub major_radius: PositiveFinite,
+    pub(crate) major_radius: PositiveFinite,
     /// Minor radius.
-    pub minor_radius: PositiveFinite,
+    pub(crate) minor_radius: PositiveFinite,
     /// Active major-angle interval.
-    pub major_angular_range: [f64; 2],
+    pub(crate) major_angular_range: [f64; 2],
     /// Full-turn major-angle chart domain.
-    pub major_angular_domain: [f64; 2],
+    pub(crate) major_angular_domain: [f64; 2],
     /// Active minor-angle interval.
-    pub minor_angular_range: [f64; 2],
+    pub(crate) minor_angular_range: [f64; 2],
     /// Full-turn minor-angle chart domain.
-    pub minor_angular_domain: [f64; 2],
+    pub(crate) minor_angular_domain: [f64; 2],
     /// Scale from major angle to stored U parameter.
-    pub major_scale: PositiveFinite,
+    pub(crate) major_scale: PositiveFinite,
     /// Scale from minor angle to stored V parameter.
-    pub minor_scale: PositiveFinite,
+    pub(crate) minor_scale: PositiveFinite,
 }
 
 /// Constant `b2 03 65` separator preceding a typed group opener.
 #[derive(Debug, Clone)]
 #[cfg(test)]
-pub struct B2GroupSeparator {
+pub(in crate::families::b2) struct B2GroupSeparator {
     /// Consolidated-frame header token.
     pub token: u32,
 }
 
 /// Typed group opener stored in a `b2 03 60` record.
 #[derive(Debug, Clone)]
-pub struct B2Group {
+pub(crate) struct B2Group {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Compact group-type code; type `3` opens a cylinder chain.
-    pub group_type: u32,
+    pub(crate) group_type: u32,
 }
 
 /// Cylinder frame following a type-3 `b2 03 60` group opener.
 #[derive(Debug, Clone)]
-pub struct B2EmbeddedCylinder {
+pub(crate) struct B2EmbeddedCylinder {
     /// Group-opener byte offset.
-    pub wrapper_pos: usize,
+    pub(in crate::families) wrapper_pos: usize,
     /// Embedded frame byte offset, including its varying pre-byte.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Compact embedded object identifier.
-    pub object_id: u32,
+    pub(crate) object_id: u32,
     /// Decoded `0x5a` cylinder frame.
-    pub cylinder: B2Cylinder,
+    pub(crate) cylinder: B2Cylinder,
 }
 
 /// Decode `0x5a` cylinder frames following type-3 `b2 03 60` group openers.
 #[must_use]
 #[cfg(test)]
-pub fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
+pub(super) fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
     let records = consolidated_records(data);
     b2_embedded_cylinders_from_records(data, &records)
 }
 
-pub(crate) fn b2_embedded_cylinders_from_records(
+pub(in crate::families) fn b2_embedded_cylinders_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2EmbeddedCylinder> {
@@ -2433,7 +2436,7 @@ fn b2_construction_offset_supports_from_records(
 /// Decode `b2 03 29` analytic cone charts.
 #[must_use]
 #[cfg(test)]
-pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
+pub(super) fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
     let records = consolidated_records(data);
     b2_cones_from_records(data, &records)
 }
@@ -2510,7 +2513,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
 /// Decode `b2 03 2d` axis-and-profile surfaces of revolution.
 #[must_use]
 #[cfg(test)]
-pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
+pub(super) fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
     let records = consolidated_records(data);
     b2_revolutions_from_records(data, &records)
 }
@@ -2607,7 +2610,7 @@ pub(crate) fn b2_revolutions_from_records(
 /// unique stored parameter interval when no identity target is present.
 #[must_use]
 #[cfg(test)]
-pub fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
+pub(super) fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
     let records = consolidated_records(data);
     b2_resolved_revolutions_from_records(data, &records)
 }
@@ -2660,7 +2663,7 @@ pub(crate) fn b2_resolved_revolutions_from_records(
 /// Decode exact B-family metric line profiles.
 #[must_use]
 #[cfg(test)]
-pub fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
+pub(super) fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
     let records = consolidated_records(data);
     b2_line_profiles_from_records(data, &records)
 }
@@ -2692,7 +2695,7 @@ pub(crate) fn b2_line_profiles_from_records(
 /// Decode `b2 03 2b` doubly periodic torus charts.
 #[must_use]
 #[cfg(test)]
-pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
+pub(super) fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
     let records = consolidated_records(data);
     b2_tori_from_records(data, &records)
 }
@@ -2767,7 +2770,7 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
 /// Decode `b2 03 2a` radius-scaled sphere charts.
 #[must_use]
 #[cfg(test)]
-pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
+pub(super) fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
     let records = consolidated_records(data);
     b2_spheres_from_records(data, &records)
 }
@@ -2834,7 +2837,7 @@ pub(crate) fn b2_spheres_from_records(
 /// Decode constant `b2 03 65` group separators.
 #[must_use]
 #[cfg(test)]
-pub fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
+pub(super) fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
     b_family_frames(data, 0x65)
         .into_iter()
         .filter(|frame| {
@@ -2849,12 +2852,12 @@ pub fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
 /// Decode `b2 03 60` typed group openers.
 #[must_use]
 #[cfg(test)]
-pub fn b2_groups(data: &[u8]) -> Vec<B2Group> {
+pub(super) fn b2_groups(data: &[u8]) -> Vec<B2Group> {
     let records = consolidated_records(data);
     b2_groups_from_records(data, &records)
 }
 
-pub(crate) fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Group> {
+fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Group> {
     b_family_frames_from_records(records, 0x60)
         .into_iter()
         .filter_map(|frame| {
@@ -2873,7 +2876,7 @@ pub(crate) fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]
 
 /// Convert a decoded B2 slant-coordinate cone chart to its equivalent IR carrier.
 #[must_use]
-pub fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeometry> {
+pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeometry> {
     let slant = cone.slant_range.lower();
     let axial = slant * cone.half_angle.cos();
     let axis = cone.axis.get();
@@ -2896,7 +2899,7 @@ pub fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeometry> {
 
 /// Build the exact neutral carrier of a validated radius-scaled sphere chart.
 #[must_use]
-pub fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
+pub(in crate::families) fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
@@ -2910,7 +2913,7 @@ pub fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
 
 /// Build the exact neutral carrier of a validated doubly periodic torus chart.
 #[must_use]
-pub fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
+pub(in crate::families) fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::TorusSurface::try_new(
             Point3::new(torus.center[0], torus.center[1], torus.center[2]),
@@ -2926,7 +2929,7 @@ pub fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
 /// Decode standalone `b2 03 28` analytic cylinder supports.
 #[must_use]
 #[cfg(test)]
-pub fn b2_cylinders(data: &[u8]) -> Vec<B2Cylinder> {
+pub(in crate::families) fn b2_cylinders(data: &[u8]) -> Vec<B2Cylinder> {
     let records = consolidated_records(data);
     b2_cylinders_from_records(data, &records)
 }
@@ -3063,7 +3066,7 @@ pub(crate) fn cylinder_range_origin(radius: f64, u_range: [f64; 2]) -> f64 {
 /// Decode `b2 03 19` arc-length circle supports.
 #[must_use]
 #[cfg(test)]
-pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
+pub(super) fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
     let records = consolidated_records(data);
     b2_circles_from_records(data, &records)
 }
@@ -3137,12 +3140,12 @@ pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> 
 /// Decode structurally repeated `b2 03 23` edge-range packets.
 #[must_use]
 #[cfg(test)]
-pub fn b2_edge_parameters(data: &[u8]) -> Vec<B2EdgeParameters> {
+pub(super) fn b2_edge_parameters(data: &[u8]) -> Vec<B2EdgeParameters> {
     let records = consolidated_records(data);
     b2_edge_parameters_from_records(data, &records)
 }
 
-pub(crate) fn b2_edge_parameters_from_records(
+pub(in crate::families) fn b2_edge_parameters_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2EdgeParameters> {
@@ -3177,12 +3180,12 @@ pub(crate) fn b2_edge_parameters_from_records(
 /// Decode `b2 03 31` offset-surface constructors.
 #[must_use]
 #[cfg(test)]
-pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
+pub(super) fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
     let records = consolidated_records(data);
     b2_offset_supports_from_records(data, &records)
 }
 
-pub(crate) fn b2_offset_supports_from_records(
+pub(in crate::families) fn b2_offset_supports_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2OffsetSupport> {
@@ -3222,7 +3225,7 @@ pub(crate) fn b2_offset_supports_from_records(
 /// parameter domain contains the offset box and whose V-knot lane contains both
 /// serialized V limits.
 #[must_use]
-pub fn offset_support_carriers(
+pub(in crate::families) fn offset_support_carriers(
     offsets: &[B2OffsetSupport],
     carriers: &[FreeformSurface],
 ) -> Vec<Option<usize>> {
@@ -3272,7 +3275,7 @@ pub fn offset_support_carriers(
 /// Decode width-coded `b2/b3/b4 03 20` consolidated UV jets.
 #[must_use]
 #[cfg(test)]
-pub fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
+pub(super) fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
     b2_pcurves_from_records(data, &records)
 }

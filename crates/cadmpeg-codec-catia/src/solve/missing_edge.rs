@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// complete handle sequence even when full topology reconstruction is not yet
 /// possible.
 #[must_use]
-pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
+pub(crate) fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
     let face_run = selected_standard_run(bytes)?;
     let after_faces = face_run.after_faces();
     parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
@@ -258,15 +258,15 @@ fn compressed_visualization_point_bindings(
     (scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings)
 }
 
-pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_edge_port_identities_with_namespace(bytes, false)
 }
 
-pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     fbb_edge_port_identities_with_namespace(bytes, false)
 }
 
-pub(crate) fn standard_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+pub(super) fn standard_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_edge_port_identities_with_namespace(bytes, true)
 }
 
@@ -281,11 +281,11 @@ pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
 
 /// Select endpoint identities from every row's terminal handles in the
 /// file-global trim-handle namespace.
-pub(crate) fn global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+fn global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_global_edge_port_identities(bytes).or_else(|| fbb_global_edge_port_identities(bytes))
 }
 
-pub(crate) fn solver_ports(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
+pub(super) fn solver_ports(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
     if global {
         global_edge_port_identities(bytes)
     } else {
@@ -332,7 +332,7 @@ pub(crate) fn expand_deferred_edge_port_components(
 /// The returned component identifiers are compact and stable within this
 /// result; they are not coordinate-row indices.
 #[must_use]
-pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let analysis = standard_mesh_analysis(bytes)?;
     let local_ports = global_edge_port_identities(bytes)?;
     mesh_edge_ports(&analysis, &local_ports)
@@ -397,19 +397,19 @@ fn mesh_edge_ports(
 
 /// One exact occurrence of a physical edge row on a trim-mesh boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MeshEdgeRun {
+pub(crate) struct MeshEdgeRun {
     /// Physical edge-row ordinal.
-    pub edge: usize,
+    pub(crate) edge: usize,
     /// Positional face ordinal.
-    pub face: usize,
+    pub(crate) face: usize,
     /// Boundary-cycle ordinal within the face.
-    pub cycle: usize,
+    pub(crate) cycle: usize,
     /// First covered boundary-segment index in cycle traversal order.
-    pub start: usize,
+    pub(crate) start: usize,
     /// Number of consecutive boundary segments covered by this occurrence.
-    pub segment_count: usize,
+    pub(crate) segment_count: usize,
     /// Whether cycle traversal follows the row's handle sequence in reverse.
-    pub reversed: bool,
+    pub(crate) reversed: bool,
 }
 
 impl MeshEdgeRun {
@@ -532,7 +532,7 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
 /// sequence and cover one fewer segment than handles. A result exists only
 /// when exactly one trim-handle width parses the complete face chain.
 #[must_use]
-pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
+pub(crate) fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
     let analysis = standard_mesh_analysis(bytes)?;
     Some(mesh_edge_runs(&analysis))
 }
@@ -1003,7 +1003,7 @@ where
 {
     const MAX_STATES: usize = 4_096;
 
-    pub(crate) fn search<F>(
+    fn search<F>(
         branches: &[(usize, FaceOptions)],
         at: usize,
         assignment: &mut [[usize; 2]],
@@ -1251,24 +1251,24 @@ pub(crate) fn resolve_edge_faces_from_runs(
 
 /// One uncovered run in a trim-mesh boundary cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MeshBoundaryGap {
+pub(super) struct MeshBoundaryGap {
     /// Boundary-cycle ordinal within the face.
-    pub cycle: usize,
+    cycle: usize,
     /// First uncovered boundary-segment index.
-    pub start: usize,
+    start: usize,
     /// Number of consecutive uncovered boundary segments.
-    pub length: usize,
+    pub(super) length: usize,
 }
 
 /// Exact matched and unmatched physical-edge coverage for one trim face.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MeshFaceCoverage {
+pub(crate) struct MeshFaceCoverage {
     /// Positional face ordinal.
-    pub face: usize,
+    pub(super) face: usize,
     /// Maximal uncovered runs after matching every serialized edge interior.
-    pub gaps: Vec<MeshBoundaryGap>,
+    pub(super) gaps: Vec<MeshBoundaryGap>,
     /// Incident physical-edge rows with no interior occurrence on this face.
-    pub missing_edges: Vec<usize>,
+    pub(super) missing_edges: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1279,7 +1279,7 @@ enum MeshFaceAssignmentDomain {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct StandardMeshBoundaryContext {
+pub(super) struct StandardMeshBoundaryContext {
     analysis: Arc<StandardMeshAnalysis>,
     coverage: Vec<MeshFaceCoverage>,
     edge_ports: Vec<[u32; 2]>,
@@ -1288,11 +1288,11 @@ pub(crate) struct StandardMeshBoundaryContext {
 }
 
 impl StandardMeshBoundaryContext {
-    pub(crate) fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
+    pub(super) fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
         Self::parse_ports(bytes, edge_faces, false)
     }
 
-    pub(crate) fn parse_ports(
+    pub(super) fn parse_ports(
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
         global_handle_ports: bool,
@@ -1335,17 +1335,17 @@ impl StandardMeshBoundaryContext {
 /// trim-boundary gap. Domains contain only placements participating in a
 /// complete end-to-end partition of every gap on the face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct MeshEdgePlacementCandidate {
+pub(crate) struct MeshEdgePlacementCandidate {
     /// Physical edge-row ordinal.
-    pub edge: usize,
+    pub(super) edge: usize,
     /// Positional face ordinal.
-    pub face: usize,
+    face: usize,
     /// Boundary-cycle ordinal within the face.
-    pub cycle: usize,
+    cycle: usize,
     /// First covered boundary-segment index.
-    pub start: usize,
+    start: usize,
     /// Number of consecutive boundary segments covered by the edge.
-    pub segment_count: usize,
+    pub(super) segment_count: usize,
 }
 
 impl MeshEdgePlacementCandidate {
@@ -1358,24 +1358,24 @@ impl MeshEdgePlacementCandidate {
 /// pairs allowed by its two currently bound trim corners. An absent domain
 /// means that at least one corner has no exact point binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MeshEdgePlacementEndpointCandidate {
+pub(in crate::solve) struct MeshEdgePlacementEndpointCandidate {
     /// Span-consistent placement in its face boundary.
-    pub placement: MeshEdgePlacementCandidate,
+    placement: MeshEdgePlacementCandidate,
     /// Unordered logical-point pairs allowed at the placement corners.
-    pub endpoint_pairs: Option<Vec<[usize; 2]>>,
+    pub(super) endpoint_pairs: Option<Vec<[usize; 2]>>,
 }
 
 /// One physical-edge use in a complete candidate trim boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MeshBoundaryEdgeCandidate {
+pub(crate) struct MeshBoundaryEdgeCandidate {
     /// Physical edge-row ordinal.
-    pub edge: usize,
+    pub(crate) edge: usize,
     /// Boundary-segment index at which the use begins.
-    pub start: usize,
+    pub(crate) start: usize,
     /// Boundary-segment index immediately after the use.
-    pub end: usize,
+    pub(crate) end: usize,
     /// Stored-row direction when an interior handle sequence fixes it.
-    pub reversed: Option<bool>,
+    pub(crate) reversed: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1400,9 +1400,9 @@ pub(crate) struct MeshDeferredBoundaryCycle {
 /// One complete choice of all unmatched placements on a face, expressed as
 /// ordered physical-edge uses for each serialized trim cycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MeshFaceBoundaryAssignment {
+pub(crate) struct MeshFaceBoundaryAssignment {
     /// Trim cycles in serialized cycle order.
-    pub boundaries: Vec<Vec<MeshBoundaryEdgeCandidate>>,
+    pub(crate) boundaries: Vec<Vec<MeshBoundaryEdgeCandidate>>,
 }
 
 /// Recover exact face-local mesh coverage without assigning unmatched edge rows
@@ -1410,7 +1410,7 @@ pub struct MeshFaceBoundaryAssignment {
 /// matched interior occurs on one of its two serialized incident faces.
 #[must_use]
 #[cfg(test)]
-pub fn standard_mesh_face_coverage(
+pub(super) fn standard_mesh_face_coverage(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Option<Vec<MeshFaceCoverage>> {
@@ -2409,7 +2409,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     ))
 }
 
-pub(crate) fn standard_mesh_missing_edge_assignments(
+pub(super) fn standard_mesh_missing_edge_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
@@ -2438,7 +2438,7 @@ pub(crate) fn standard_mesh_missing_edge_assignments(
 /// matched to the boundary.
 #[cfg(test)]
 #[must_use]
-pub fn standard_mesh_missing_edge_placements(
+pub(super) fn standard_mesh_missing_edge_placements(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
@@ -2468,7 +2468,7 @@ pub(crate) fn standard_mesh_boundary_assignments(
     standard_mesh_boundary_assignments_from_context(&context, edge_candidates)
 }
 
-pub(crate) fn standard_mesh_boundary_assignments_from_context(
+pub(super) fn standard_mesh_boundary_assignments_from_context(
     context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
@@ -2482,7 +2482,7 @@ pub(crate) fn standard_mesh_boundary_assignments_from_context(
         .collect()
 }
 
-pub(crate) fn standard_mesh_boundary_domains_from_context(
+pub(super) fn standard_mesh_boundary_domains_from_context(
     context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     defer_validation: bool,
@@ -2603,7 +2603,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
 /// each ordered edge use into its abstract logical-corner quotient.
 #[cfg(test)]
 #[must_use]
-pub fn parse_standard_mesh_selection(
+pub(super) fn parse_standard_mesh_selection(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     selected_assignments: &[usize],
@@ -2756,7 +2756,7 @@ fn boundary_endpoint_support(
 /// A pair survives only when each incident face retains a complete assignment
 /// whose ordered cycles admit a closed head-to-tail traversal using that pair.
 #[must_use]
-pub fn standard_mesh_prune_endpoint_candidates(
+pub(crate) fn standard_mesh_prune_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -2967,7 +2967,7 @@ fn standard_mesh_assignment_corner_points(
 /// assignment. Assignment and placement order are unchanged from the serialized
 /// face and edge order.
 #[must_use]
-pub fn standard_mesh_missing_edge_endpoint_assignments(
+pub(super) fn standard_mesh_missing_edge_endpoint_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
@@ -3027,7 +3027,7 @@ pub fn standard_mesh_missing_edge_endpoint_assignments(
 /// domains across correlated face assignments. A face assignment is removed as
 /// a unit when any of its placements has no compatible endpoint pair.
 #[must_use]
-pub fn standard_mesh_pruned_missing_edge_endpoint_assignments(
+pub(super) fn standard_mesh_pruned_missing_edge_endpoint_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
@@ -3129,7 +3129,7 @@ pub fn standard_mesh_pruned_missing_edge_endpoint_assignments(
 /// edge-row ordered; pair orientation is ignored in the returned domains
 /// because a missing placement has not yet selected its traversal direction.
 #[must_use]
-pub fn standard_mesh_placement_endpoint_pairs(
+pub(crate) fn standard_mesh_placement_endpoint_pairs(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
@@ -3191,7 +3191,7 @@ fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usiz
 /// edge endpoint pairs. The result is rejected atomically when any port mapping
 /// contradicts a resolved pair.
 #[must_use]
-pub fn propagate_edge_port_points(
+pub(crate) fn propagate_edge_port_points(
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
 ) -> Option<Vec<Option<[usize; 2]>>> {
@@ -3207,7 +3207,7 @@ pub fn propagate_edge_port_points(
 /// seed is the only valid way to orient a port component whose resolved rows
 /// all carry the same unordered pair.
 #[must_use]
-pub fn propagate_edge_port_points_with_ordered_seeds(
+pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
@@ -3371,7 +3371,7 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
 /// port identities. Rows without a port pair retain their independent seed or
 /// candidate, but cannot participate in port propagation.
 #[must_use]
-pub fn propagate_partial_edge_port_points_with_ordered_seeds(
+pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
     edge_ports: &[Option<[u32; 2]>],
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
@@ -3510,7 +3510,7 @@ impl PortCandidateSearch<'_> {
         }
     }
 
-    pub(crate) fn search(&mut self) {
+    fn search(&mut self) {
         // Native-port binding precedes geometric incidence fallback but can
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
@@ -3590,7 +3590,7 @@ impl PortCandidateSearch<'_> {
 /// Bind native edge endpoint identities to coordinate rows while respecting
 /// every edge's geometrically admissible unordered endpoint pairs.
 #[must_use]
-pub fn bind_edge_port_candidates(
+pub(crate) fn bind_edge_port_candidates(
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
 ) -> Option<Vec<[usize; 2]>> {
@@ -3603,7 +3603,7 @@ pub fn bind_edge_port_candidates(
 /// unordered endpoint pairs and is returned only when port equality admits
 /// exactly one such assignment.
 #[must_use]
-pub fn unique_mesh_edge_port_candidate_pairs(
+pub(crate) fn unique_mesh_edge_port_candidate_pairs(
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
 ) -> Option<Vec<[usize; 2]>> {
@@ -3618,7 +3618,7 @@ pub fn unique_mesh_edge_port_candidate_pairs(
 /// an open face domain. Deferred rows contribute neither candidate support nor
 /// connectivity to this search and remain unresolved in the result.
 #[must_use]
-pub fn unique_mesh_edge_port_candidate_pairs_with_deferred(
+pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
     deferred_edges: &[bool],

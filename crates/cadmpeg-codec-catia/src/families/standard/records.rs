@@ -27,18 +27,18 @@ const F32_UNIT_NORM2_ROUNDING_TOLERANCE: f64 = 4.0 * (f32::EPSILON as f64);
 /// The standard-nested plane bounds record. Its three-byte tag is the bridge to
 /// the matching `SurfacicReps` plane marker.
 #[derive(Debug, Clone)]
-pub struct PlaneParams {
+pub(super) struct PlaneParams {
     /// The little-endian u24 carrier tag.
-    pub target: u32,
+    pub(super) target: u32,
     /// Bounding-sphere center, which lies on the plane and fixes its origin.
-    pub origin: Point3,
+    pub(super) origin: Point3,
     /// Unit plane normal from the positionally paired trim packet.
-    pub normal: Vector3,
+    pub(super) normal: Vector3,
 }
 
 /// An analytic surface marker kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnalyticSurfaceKind {
+pub(super) enum AnalyticSurfaceKind {
     /// A plane carrier.
     Plane,
     /// A cylinder carrier.
@@ -52,7 +52,7 @@ pub enum AnalyticSurfaceKind {
 }
 
 impl AnalyticSurfaceKind {
-    pub(crate) fn from_marker(marker: u8) -> Option<Self> {
+    pub(super) fn from_marker(marker: u8) -> Option<Self> {
         match marker {
             0x32 => Some(Self::Plane),
             0x33 => Some(Self::Cylinder),
@@ -62,7 +62,7 @@ impl AnalyticSurfaceKind {
             _ => None,
         }
     }
-    pub(crate) const fn marker(self) -> u8 {
+    pub(super) const fn marker(self) -> u8 {
         match self {
             Self::Plane => 0x32,
             Self::Cylinder => 0x33,
@@ -71,7 +71,7 @@ impl AnalyticSurfaceKind {
             Self::Torus => 0x38,
         }
     }
-    pub(crate) const fn prebyte(self) -> u8 {
+    const fn prebyte(self) -> u8 {
         match self {
             Self::Plane => 0x02,
             Self::Cylinder => 0x1a,
@@ -80,7 +80,7 @@ impl AnalyticSurfaceKind {
             Self::Torus => 0x1e,
         }
     }
-    pub(crate) const fn record_len(self) -> usize {
+    const fn record_len(self) -> usize {
         match self {
             Self::Plane => analytic_plane::LEN,
             Self::Cylinder => analytic_cylinder::LEN,
@@ -89,7 +89,7 @@ impl AnalyticSurfaceKind {
             Self::Torus => analytic_torus::LEN,
         }
     }
-    pub(crate) const fn sign_offset(self) -> usize {
+    const fn sign_offset(self) -> usize {
         match self {
             Self::Plane => analytic_plane::SIGN,
             Self::Cylinder => analytic_cylinder::SIGN,
@@ -98,7 +98,7 @@ impl AnalyticSurfaceKind {
             Self::Torus => analytic_torus::SIGN,
         }
     }
-    pub(crate) const fn bounds_offset(self) -> usize {
+    const fn bounds_offset(self) -> usize {
         match self {
             Self::Plane => 3,
             Self::Cylinder => 27,
@@ -111,18 +111,18 @@ impl AnalyticSurfaceKind {
 
 /// A located per-face analytic surface record.
 #[derive(Debug, Clone)]
-pub struct SurfacePrefix {
+pub(crate) struct SurfacePrefix {
     /// Offset of the `00 33 <kind>` signature within the BREP stream.
-    pub pos: usize,
+    pub(super) pos: usize,
     /// The little-endian u24 tag that identifies this carrier.
-    pub target: u32,
+    pub(super) target: u32,
     /// The kind byte (`0x32`..=`0x38`).
-    pub kind: AnalyticSurfaceKind,
+    pub(super) kind: AnalyticSurfaceKind,
 }
 
 /// One face-local record in the standard `SurfacicReps` surface roster.
 #[derive(Debug, Clone)]
-pub enum StandardSurfaceRecord {
+pub(in crate::families) enum StandardSurfaceRecord {
     /// Fixed-length analytic carrier record.
     Analytic(SurfacePrefix),
     /// Face bounds and orientation for a carrier linked through an outer alias.
@@ -140,15 +140,15 @@ pub enum StandardSurfaceRecord {
 
 /// Spatial bounds stored by one standard face roster core.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StandardFaceBounds {
+pub(in crate::families) struct StandardFaceBounds {
     /// Axis-aligned bounding-box centre.
-    pub aabb_center: [f64; 3],
+    pub(super) aabb_center: [f64; 3],
     /// Non-negative axis-aligned bounding-box half-extents.
-    pub aabb_half_extents: [f64; 3],
+    pub(super) aabb_half_extents: [f64; 3],
     /// Bounding-sphere centre.
-    pub sphere_center: [f64; 3],
+    pub(super) sphere_center: [f64; 3],
     /// Non-negative bounding-sphere radius.
-    pub sphere_radius: f64,
+    pub(super) sphere_radius: f64,
 }
 
 fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
@@ -210,7 +210,7 @@ fn f32_ulp(value: f32) -> f64 {
 
 /// Read the spatial bounds of one complete face-local surface record.
 #[must_use]
-pub fn standard_face_bounds(
+pub(super) fn standard_face_bounds(
     brep: &[u8],
     record: &StandardSurfaceRecord,
 ) -> Option<StandardFaceBounds> {
@@ -324,7 +324,7 @@ fn standard_surface_record_table(brep: &[u8]) -> StandardSurfaceRecordTable {
 /// support table. Each chain is a source-closed face population; records that
 /// cannot reach that boundary are not assigned to a population.
 #[must_use]
-pub fn standard_surface_record_groups(brep: &[u8]) -> Vec<Vec<StandardSurfaceRecord>> {
+pub(super) fn standard_surface_record_groups(brep: &[u8]) -> Vec<Vec<StandardSurfaceRecord>> {
     let table = standard_surface_record_table(brep);
     let mut has_predecessor = vec![false; table.records.len()];
     for successor in table.successors.iter().flatten() {
@@ -351,26 +351,26 @@ pub fn standard_surface_record_groups(brep: &[u8]) -> Vec<Vec<StandardSurfaceRec
 /// One surface roster and its positionally following, face-local support
 /// table. Support face references remain local to this population.
 #[derive(Debug, Clone)]
-pub struct StandardSurfacePopulation {
+pub(super) struct StandardSurfacePopulation {
     /// The source-closed face-local surface roster.
-    pub records: Vec<StandardSurfaceRecord>,
+    pub(super) records: Vec<StandardSurfaceRecord>,
     /// The source-closed `0x60` edge-support roster.
-    pub supports: Vec<StandardCurveSupport>,
+    pub(super) supports: Vec<StandardCurveSupport>,
 }
 
 type StandardPopulationPair = (FbbPopulationLayout, StandardSurfacePopulation);
 
 /// A nonempty source-ordered population relation.
-pub(crate) struct StandardPopulationPairs {
-    pub first: StandardPopulationPair,
-    pub rest: Vec<StandardPopulationPair>,
+pub(in crate::families::standard) struct StandardPopulationPairs {
+    pub(super) first: StandardPopulationPair,
+    pub(super) rest: Vec<StandardPopulationPair>,
 }
 
 /// Return every source-closed surface/support population with valid local
 /// face references. No population is selected by row count or allocation
 /// order.
 #[must_use]
-pub fn standard_surface_populations(brep: &[u8]) -> Vec<StandardSurfacePopulation> {
+pub(super) fn standard_surface_populations(brep: &[u8]) -> Vec<StandardSurfacePopulation> {
     standard_surface_record_groups(brep)
         .into_iter()
         .filter_map(|records| {
@@ -387,7 +387,7 @@ pub fn standard_surface_populations(brep: &[u8]) -> Vec<StandardSurfacePopulatio
 /// edge cardinality agrees. Allocation order and a repeated count key never
 /// select a population.
 #[must_use]
-pub(crate) fn pair_standard_populations(
+pub(super) fn pair_standard_populations(
     layouts: &[FbbPopulationLayout],
     populations: &[StandardSurfacePopulation],
 ) -> Option<StandardPopulationPairs> {
@@ -416,7 +416,7 @@ pub(crate) fn pair_standard_populations(
 /// by the first curve-support row. A byte pattern inside an analytic payload
 /// cannot create a competing freeform record.
 #[must_use]
-pub fn standard_surface_records(
+pub(super) fn standard_surface_records(
     brep: &[u8],
     face_count: usize,
 ) -> Option<Vec<StandardSurfaceRecord>> {
@@ -477,7 +477,7 @@ pub fn standard_surface_records(
 
 /// Read the trailing per-face orientation byte from a complete analytic
 /// `SurfacicReps` record. `true` means the face follows the carrier normal.
-pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
+pub(super) fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
     let sign = prefix.kind.sign_offset();
     match *brep.get(
         prefix
@@ -495,7 +495,7 @@ pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
 /// cardinality. Each seven-byte row stores `54 <identity:u24le> 00 00 00`;
 /// roster order is coordinate-table order.
 #[must_use]
-pub fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<u32>> {
+pub(super) fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<u32>> {
     if vertex_count == 0 {
         return None;
     }
@@ -541,7 +541,7 @@ pub fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<
 /// Locate every per-face analytic surface record by the strict 5-byte template
 /// `[target_u24 le][00][prebyte] 00 33 <kind>` ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). The strict template
 /// rejects collisional `00 33` matches inside other binary data.
-pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
+pub(crate) fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
     let mut out = Vec::new();
     if brep.len() < 8 {
         return out;
@@ -569,7 +569,7 @@ pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
 /// Locate plane bounds records and bind each persistent carrier tag to the
 /// frame vector of its face-local trim packet. A tag is emitted only when one
 /// valid bounds record carries it.
-pub fn plane_params<S: std::hash::BuildHasher>(
+pub(super) fn plane_params<S: std::hash::BuildHasher>(
     brep: &[u8],
     normals: &HashMap<u32, [f64; 3], S>,
 ) -> Vec<PlaneParams> {
@@ -615,7 +615,7 @@ pub fn plane_params<S: std::hash::BuildHasher>(
 }
 
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
-pub fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
+pub(super) fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
     let normal = unit_vector(params.normal)?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
@@ -629,7 +629,7 @@ pub fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
 
 /// Geometry family carried by one positional standard `0x60` edge row.
 #[derive(Debug, Clone)]
-pub enum StandardCurveGeometry {
+pub(in crate::families) enum StandardCurveGeometry {
     /// The line equation is derived from endpoints or adjacent surfaces.
     Line,
     /// Inline circle parameters.
@@ -647,16 +647,16 @@ pub enum StandardCurveGeometry {
 /// [§5.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#55-0x60-curve-support-edge-incidence-table)): `60 <tag:u24le> <curve_body> <face_ref> <face_ref>`, one row per
 /// spine edge.
 #[derive(Debug, Clone)]
-pub struct StandardCurveSupport {
+pub(in crate::families) struct StandardCurveSupport {
     /// Offset of the `0x60` row marker in the BREP stream.
-    pub pos: usize,
+    pub(super) pos: usize,
     /// Little-endian u24 object id in the file-global allocation journal.
-    pub tag: u32,
+    pub(super) tag: u32,
     /// The two adjacent standard face ordinals forming this edge's
     /// edge-to-face incidence.
-    pub faces: [usize; 2],
+    pub(super) faces: [usize; 2],
     /// The row's curve geometry family and, where inline, its parameters.
-    pub geometry: StandardCurveGeometry,
+    pub(super) geometry: StandardCurveGeometry,
 }
 
 /// Parse the unique complete standard `0x60` table in physical-edge order.
@@ -672,7 +672,7 @@ pub struct StandardCurveSupport {
 /// edge table is complete. A missing count permits carrier-only transfer from
 /// one unique complete run but never permits topology attachment.
 #[must_use]
-pub fn standard_curve_supports(
+pub(super) fn standard_curve_supports(
     brep: &[u8],
     face_count: usize,
     edge_count: Option<usize>,
@@ -803,7 +803,7 @@ fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start:
 /// `00 33 <kind>` marker ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). Returns `None` for the plane kind (its
 /// parameters are in a separate bridged record) and for any non-finite or
 /// invalid payload.
-pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeometry> {
+pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeometry> {
     let mut view = View::over_retained(brep);
     view.seek(prefix.pos + 3)?; // skip `00 33 <kind>`
     match prefix.kind {
@@ -920,7 +920,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
 /// Read the face-side witness point following a standard cylinder or torus
 /// carrier's big-endian parameter block.
 #[must_use]
-pub fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<Point3> {
+pub(super) fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<Point3> {
     if brep.get(marker_pos..marker_pos + 2) != Some(&[0x00, 0x33]) {
         return None;
     }

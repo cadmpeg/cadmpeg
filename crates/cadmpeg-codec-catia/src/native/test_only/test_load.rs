@@ -64,7 +64,7 @@ impl CatiaNative {
     }
 
     /// Load the typed CATIA namespace from generic native arenas.
-    pub fn load(
+    pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let mut catalog_headers: Vec<CatiaCatalogWire> = namespace.arena_as("catalogs")?;
@@ -670,7 +670,7 @@ impl CatiaNative {
     }
 
     /// Store the typed CATIA namespace into generic native arenas.
-    pub fn store(
+    pub(crate) fn store(
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {

@@ -11,11 +11,11 @@ use serde::{Deserialize, Serialize};
 /// Exact class-specific edge-definition frame owned by one consolidated edge node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "EdgeDefinitionWire", into = "EdgeDefinitionWire")]
-pub struct CatiaConsolidatedEdgeDefinition {
+pub(crate) struct CatiaConsolidatedEdgeDefinition {
     /// Complete raw frame.
-    pub frame: ConsolidatedRawFrame<u64>,
+    pub(super) frame: ConsolidatedRawFrame<u64>,
     /// Edge-definition class in `0x23..=0x25`.
-    pub class: ConsolidatedEdgeDefinitionClass,
+    pub(crate) class: ConsolidatedEdgeDefinitionClass,
 }
 
 #[derive(Serialize, Deserialize)]

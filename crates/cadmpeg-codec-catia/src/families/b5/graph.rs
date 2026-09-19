@@ -10,9 +10,9 @@ use cadmpeg_ir::geometry::{knots_strictly_increasing, NurbsSurface, ProceduralSu
 use cadmpeg_ir::math::Point2;
 
 /// Admitted topology control bytes.
-pub(crate) mod controls;
+pub(in crate::families) mod controls;
 /// Vertex tables and typed endpoint references.
-pub(crate) mod vertex_refs;
+pub(in crate::families) mod vertex_refs;
 use vertex_refs::{B5VertexRef, B5Vertices};
 
 use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl};
@@ -29,77 +29,77 @@ const EPS_B5_GRAPH_EXACT_GEOMETRY: f64 = 1.0e-12;
 /// operations admitted for one free-form object population. The allowance
 /// covers one indexed-frame pass, topology materialization, dependency
 /// closure, and one bounded graph-resolution pass.
-pub(crate) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 2_000_000;
+pub(in crate::families) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 2_000_000;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
 /// together with the `05 08 01` vertex points used to bind edge endpoints.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5Graph {
+pub(crate) struct B5Graph {
     /// `true` when every serialized face and loop node belongs to the resolved
     /// reference-closed graph; `false` when the graph is its maximal closed
     /// subset.
-    pub complete: bool,
+    pub(in crate::families) complete: bool,
     /// `b5 03 5f` face nodes, in stream declaration order (equal to STEP
     /// `ADVANCED_FACE` order, [spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
-    pub faces: Vec<B5Face>,
+    pub(in crate::families) faces: Vec<B5Face>,
     /// Structurally complete `b5 03 5f` records, keyed by object id.
-    pub face_records: BTreeMap<u32, B5FaceRecord>,
+    pub(in crate::families) face_records: BTreeMap<u32, B5FaceRecord>,
     /// `b5 03 62` loop nodes, keyed by `object_id`.
-    pub loops: BTreeMap<u32, B5Loop>,
+    pub(in crate::families) loops: BTreeMap<u32, B5Loop>,
     /// `b5 03 21` pcurve nodes, keyed by `object_id`.
-    pub pcurves: BTreeMap<u32, B5Pcurve>,
+    pub(in crate::families) pcurves: BTreeMap<u32, B5Pcurve>,
     /// Structurally bounded pcurve records whose parameter-space geometry is
     /// not yet assigned, keyed by `object_id`.
-    pub opaque_pcurves: BTreeMap<u32, B5OpaquePcurve>,
+    pub(in crate::families) opaque_pcurves: BTreeMap<u32, B5OpaquePcurve>,
     /// Pcurve occurrence ids whose support is bound by a loop and both native
     /// edge-endpoint incidence records, but which have no standalone geometry
     /// record.
-    pub implicit_pcurves: BTreeMap<u32, u32>,
+    pub(in crate::families) implicit_pcurves: BTreeMap<u32, u32>,
     /// `b5 03 27/28/2d` analytic surface nodes and `a8 03 34` NURBS
     /// surfaces, keyed by `object_id`.
-    pub surfaces: BTreeMap<u32, B5Surface>,
+    pub(in crate::families) surfaces: BTreeMap<u32, B5Surface>,
     /// Resolved class-`2e`/`38` surface alias targets, keyed by alias identity.
-    pub surface_aliases: BTreeMap<u32, u32>,
+    pub(in crate::families) surface_aliases: BTreeMap<u32, u32>,
     /// `b5 03 30` offset constructions, keyed by their result surface id.
-    pub offset_surfaces: BTreeMap<u32, B5OffsetSurface>,
+    pub(in crate::families) offset_surfaces: BTreeMap<u32, B5OffsetSurface>,
     /// `b5 03 2c` extrusion constructions, keyed by their result surface id.
-    pub extrusion_surfaces: BTreeMap<u32, B5ExtrusionSurface>,
+    pub(in crate::families) extrusion_surfaces: BTreeMap<u32, B5ExtrusionSurface>,
     /// `b5 03 37/3b` support-bound constructions, keyed by result surface id.
-    pub supported_surfaces: BTreeMap<u32, B5SupportedSurface>,
+    pub(in crate::families) supported_surfaces: BTreeMap<u32, B5SupportedSurface>,
     /// Native class-`06` curve-parameter incidences, keyed by object id.
-    pub parameter_incidences: BTreeMap<u32, B5ParameterIncidence>,
+    pub(in crate::families) parameter_incidences: BTreeMap<u32, B5ParameterIncidence>,
     /// Native class-`5e` physical-edge records, keyed by object id.
-    pub edges: BTreeMap<u32, B5Edge>,
+    pub(in crate::families) edges: BTreeMap<u32, B5Edge>,
     /// Native class-`5d` vertex-to-incidence links, keyed by object id.
-    pub vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink>,
+    pub(in crate::families) vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink>,
     /// Vertex tables with bounds-checked edge bindings.
-    pub vertices: B5Vertices,
+    pub(in crate::families) vertices: B5Vertices,
     /// Ordered class-`06` start/end parameter-incidence references from each
     /// native class-`5e` edge.
-    pub edge_parameter_incidences: BTreeMap<u32, [u32; 2]>,
+    pub(in crate::families) edge_parameter_incidences: BTreeMap<u32, [u32; 2]>,
     /// Maximum incident endpoint residual for each logical vertex, keyed by
     /// the combined vertex index used by `edge_vertices`.
-    pub vertex_tolerances: BTreeMap<usize, f64>,
+    pub(in crate::families) vertex_tolerances: BTreeMap<usize, f64>,
     /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
     /// referenced by `B5Surface::Revolution::profile_curve`.
-    pub profiles: BTreeMap<u32, B5Profile>,
+    pub(in crate::families) profiles: BTreeMap<u32, B5Profile>,
 }
 
 /// One native `5d` logical vertex: its object id and resolved world-frame
 /// coordinate.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct B5LogicalVertex {
+pub(in crate::families) struct B5LogicalVertex {
     /// Native `5d` object id.
-    pub object_id: u32,
+    pub(in crate::families) object_id: u32,
     /// World-frame coordinate resolved from native incidence.
-    pub point: [f64; 3],
+    pub(in crate::families) point: [f64; 3],
 }
 
 impl B5Graph {
     /// Follow surface aliases to their canonical terminal identity.
     #[must_use]
-    pub(crate) fn canonical_surface_id(&self, object_id: u32) -> Option<u32> {
+    pub(super) fn canonical_surface_id(&self, object_id: u32) -> Option<u32> {
         canonical_surface_id(&self.surface_aliases, object_id)
     }
 
@@ -110,7 +110,9 @@ impl B5Graph {
     /// prove that the retained loop set is exhaustive, so callers must use
     /// their unresolved-association fallback in that case.
     #[must_use]
-    pub(crate) fn referenced_edge_vertex_references(&self) -> Option<BTreeMap<u32, [u32; 2]>> {
+    pub(in crate::families) fn referenced_edge_vertex_references(
+        &self,
+    ) -> Option<BTreeMap<u32, [u32; 2]>> {
         if !self.complete {
             return None;
         }
@@ -134,7 +136,7 @@ impl B5Graph {
 
 /// Return the ordered start/end stations for one edge's occurrence of a
 /// pcurve when both native endpoint incidences name that pcurve consistently.
-pub(crate) fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f64; 2]> {
+pub(super) fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f64; 2]> {
     edge_pcurve_parameter_values(
         &graph.edge_parameter_incidences,
         &graph.parameter_incidences,
@@ -169,7 +171,7 @@ fn edge_pcurve_parameter_values(
 }
 
 /// Follow one surface identity through a direct alias map.
-pub(crate) fn canonical_surface_id(
+pub(in crate::families) fn canonical_surface_id(
     aliases: &BTreeMap<u32, u32>,
     mut object_id: u32,
 ) -> Option<u32> {
@@ -185,7 +187,7 @@ pub(crate) fn canonical_surface_id(
 
 /// A profile curve swept by a `b5 03 2d` surface of revolution.
 #[derive(Debug, Clone, PartialEq)]
-pub enum B5Profile {
+pub(in crate::families) enum B5Profile {
     /// `b5 03 0e`: a line through `point` along `direction`.
     Line {
         /// A point on the line.
@@ -212,7 +214,7 @@ pub enum B5Profile {
 }
 
 impl B5Profile {
-    pub(crate) fn parameter_range(&self) -> [f64; 2] {
+    pub(super) fn parameter_range(&self) -> [f64; 2] {
         match self {
             Self::Line {
                 parameter_range, ..
@@ -227,7 +229,7 @@ impl B5Profile {
 /// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
-pub enum B5Surface {
+pub(in crate::families) enum B5Surface {
     /// A NURBS surface whose parameter lattice is decoded but whose pole
     /// representation remains opaque.
     UnresolvedNurbs {
@@ -386,7 +388,7 @@ pub enum B5Surface {
 
 /// An offset result carrier kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum B5OffsetCarrierKind {
+pub(super) enum B5OffsetCarrierKind {
     /// The cache carrier form.
     Cache,
     /// The cylinder carrier form.
@@ -420,37 +422,37 @@ impl B5OffsetCarrierKind {
 
 /// A `b5 03 30` offset construction with an explicit result carrier.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5OffsetSurface {
+pub(in crate::families) struct B5OffsetSurface {
     /// This construction's result surface id.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// Explicit analytic carrier for the offset result.
-    pub carrier_surface: u32,
+    pub(super) carrier_surface: u32,
     /// Surface from which the result is offset.
-    pub source_surface: u32,
+    pub(super) source_surface: u32,
     /// Signed offset distance in millimetres.
-    pub distance: f64,
+    pub(super) distance: f64,
     /// Native carrier-kind discriminator.
-    pub carrier_kind: B5OffsetCarrierKind,
+    pub(super) carrier_kind: B5OffsetCarrierKind,
     /// Ordered native U and V bounds.
-    pub parameter_bounds: [[f64; 2]; 2],
+    pub(super) parameter_bounds: [[f64; 2]; 2],
 }
 
 /// A `b5 03 2c` extrusion construction with a two-support directrix.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5ExtrusionSurface {
+pub(in crate::families) struct B5ExtrusionSurface {
     /// This construction's result surface id.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// Unit world-space extrusion direction.
-    pub direction: [f64; 3],
+    pub(super) direction: [f64; 3],
     /// Increasing native U and V intervals.
-    pub parameter_bounds: [[f64; 2]; 2],
+    pub(super) parameter_bounds: [[f64; 2]; 2],
     /// Exact directrix construction.
-    pub directrix: B5ExtrusionDirectrix,
+    pub(super) directrix: B5ExtrusionDirectrix,
 }
 
 /// Exact directrix construction selected by a `b5 03 2c` extrusion.
 #[derive(Debug, Clone, PartialEq)]
-pub enum B5ExtrusionDirectrix {
+pub(super) enum B5ExtrusionDirectrix {
     /// Two-support intersection carried by an `a8 03 25` record.
     Intersection {
         /// Persistent directrix object id.
@@ -489,7 +491,7 @@ pub enum B5ExtrusionDirectrix {
 }
 
 impl B5ExtrusionDirectrix {
-    pub(crate) fn object_id(&self) -> u32 {
+    pub(super) fn object_id(&self) -> u32 {
         match self {
             Self::Intersection { object_id, .. }
             | Self::SurfaceCurve { object_id, .. }
@@ -526,7 +528,7 @@ impl B5ExtrusionDirectrix {
         }
     }
 
-    pub(crate) fn supports(&self) -> Vec<(u32, u32, [f64; 2])> {
+    pub(super) fn supports(&self) -> Vec<(u32, u32, [f64; 2])> {
         match self {
             Self::Intersection { supports, .. } => supports.to_vec(),
             Self::SurfaceCurve { support, .. } => vec![*support],
@@ -537,22 +539,22 @@ impl B5ExtrusionDirectrix {
 
 /// A class-`37` support-bound surface construction with an explicit result carrier.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5SupportedSurface {
+pub(in crate::families) struct B5SupportedSurface {
     /// This construction's result surface id.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// Explicit carrier for the result geometry and chart.
-    pub carrier_surface: u32,
+    pub(super) carrier_surface: u32,
     /// Ordered construction support surfaces.
-    pub support_surfaces: [u32; 2],
+    pub(super) support_surfaces: [u32; 2],
     /// Ordered pcurves, one bound to each support surface.
-    pub support_pcurves: [u32; 2],
+    pub(super) support_pcurves: [u32; 2],
     /// Class-specific native controls and scalar parameters.
-    pub parameters: B5SupportedSurfaceParameters,
+    pub(super) parameters: B5SupportedSurfaceParameters,
 }
 
 /// Native parameter layouts of a support-bound surface construction.
 #[derive(Debug, Clone, PartialEq)]
-pub enum B5SupportedSurfaceParameters {
+pub(super) enum B5SupportedSurfaceParameters {
     /// Class `37`: interleaved controls, a positive construction radius, and
     /// a zero scalar.
     Radius {
@@ -572,87 +574,87 @@ pub enum B5SupportedSurfaceParameters {
 
 /// One class-`06` incidence lane connecting curves to parameters at a vertex.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5ParameterIncidence {
+pub(crate) struct B5ParameterIncidence {
     /// This record's stream object id.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// Curve, parameter, and control triples in serialized order.
-    pub lanes: Vec<B5IncidenceLane>,
+    pub(in crate::families) lanes: Vec<B5IncidenceLane>,
 }
 
 /// One curve/parameter/control triple of a class-`06` incidence record.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct B5IncidenceLane {
+pub(in crate::families) struct B5IncidenceLane {
     /// Referenced curve or pcurve object id.
-    pub curve: u32,
+    pub(super) curve: u32,
     /// Finite native parameter on that curve.
-    pub parameter: f64,
+    pub(super) parameter: f64,
     /// Compact native control for this lane.
-    pub control: u32,
+    pub(super) control: u32,
 }
 
 /// One complete class-`5e` physical-edge reference production.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct B5Edge {
+pub(crate) struct B5Edge {
     /// This record's stream object id.
-    pub object_id: u32,
+    object_id: u32,
     /// Referenced curve-support wrapper.
-    pub support: u32,
+    support: u32,
     /// Ordered start/end class-`5d` vertex identities.
-    pub vertices: [u32; 2],
+    vertices: [u32; 2],
     /// Ordered start/end class-`06` parameter-incidence identities.
-    pub parameter_incidences: [u32; 2],
+    parameter_incidences: [u32; 2],
     /// Exact admitted terminal control.
-    pub terminal_control: B5EdgeTerminalControl,
+    pub(in crate::families) terminal_control: B5EdgeTerminalControl,
 }
 
 /// One complete class-`5d` vertex-to-incidence reference production.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct B5VertexIncidenceLink {
+pub(crate) struct B5VertexIncidenceLink {
     /// This record's stream object id.
-    pub object_id: u32,
+    object_id: u32,
     /// Referenced counted class-`05` incidence roster.
-    pub incidence: u32,
+    incidence: u32,
     /// Exact admitted terminal control.
-    pub terminal_control: B5VertexIncidenceControl,
+    pub(in crate::families) terminal_control: B5VertexIncidenceControl,
 }
 
 /// A resolved `b5 03 18`, `b5 03 19`, or `b5 03 21` pcurve node, represented as a 2D
 /// B-spline curve in a surface's
 /// parameter space ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5Pcurve {
+pub(crate) struct B5Pcurve {
     /// This record's stream `object_id`.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// `object_id` of the owning surface, taken directly from the pcurve's
     /// `catia_support_ref` ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
-    pub surface: u32,
+    pub(super) surface: u32,
     /// B-spline degree.
-    pub degree: u32,
+    pub(super) degree: u32,
     /// Distinct knot values, strictly increasing.
-    pub distinct_knots: Vec<f64>,
+    pub(super) distinct_knots: Vec<f64>,
     /// Per-knot multiplicities, index-aligned with `distinct_knots`.
-    pub multiplicities: Vec<u32>,
+    pub(super) multiplicities: Vec<u32>,
     /// `(u, v)` control points in the surface's parameter space.
-    pub control_points: Vec<[f64; 2]>,
+    pub(super) control_points: Vec<[f64; 2]>,
     /// Per-pole rational weights. `None` denotes a polynomial pcurve.
-    pub weights: Option<Vec<f64>>,
+    pub(super) weights: Option<Vec<f64>>,
     /// Explicit occurrence parameter interval when the pcurve record stores one.
-    pub parameter_range: Option<[f64; 2]>,
+    pub(super) parameter_range: Option<[f64; 2]>,
     /// Coordinate convention for evaluating the stored knot vector.
-    pub parameterization: B5PcurveParameterization,
+    pub(super) parameterization: B5PcurveParameterization,
     /// Positive scalar stored in the exact class-`21` suffix. When a class-`21`
     /// pcurve is present, it is the length of the zero-based occurrence interval.
-    pub class_21_suffix_scalar: Option<f64>,
+    pub(in crate::families) class_21_suffix_scalar: Option<f64>,
     /// The curve's two clamped-end poles lifted through `surface` into
     /// world-frame 3D points, or `None` before [`parse`] resolves them or
     /// when the lift fails (unresolved surface, degenerate revolution
     /// scale, or NURBS evaluation failure).
-    pub lifted_endpoints: Option<[[f64; 3]; 2]>,
+    pub(super) lifted_endpoints: Option<[[f64; 3]; 2]>,
 }
 
 /// Parameter coordinates used by one B5 pcurve record.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum B5PcurveParameterization {
+pub(super) enum B5PcurveParameterization {
     /// The pcurve's occurrence coordinate is its serialized knot coordinate.
     Native,
     /// The occurrence coordinate starts at zero while the serialized knot
@@ -665,82 +667,82 @@ pub enum B5PcurveParameterization {
 
 /// Exact great-circle fields carried by a class-`1d` sphere pcurve.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5SphereGreatCirclePcurve {
+pub(super) struct B5SphereGreatCirclePcurve {
     /// Length-valued bounds of the curve in the sphere chart.
-    pub chart_bounds: [[f64; 2]; 2],
+    pub(super) chart_bounds: [[f64; 2]; 2],
     /// Length-valued shift contributing to the great-circle plane phase.
-    pub chart_shift: f64,
+    pub(super) chart_shift: f64,
     /// Length scale converting the sphere chart's angular coordinates.
-    pub chart_scale: f64,
+    pub(super) chart_scale: f64,
     /// Signed slope in `tan(latitude) = slope * cos(azimuth - phase)`.
-    pub slope: f64,
+    pub(super) slope: f64,
     /// Stored phase term. The geometric phase is `chart_shift / chart_scale + phase`.
-    pub phase: f64,
+    pub(super) phase: f64,
 }
 
 /// An identity- and support-resolved pcurve whose native chart equation is
 /// opaque or only partly assigned.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5OpaquePcurve {
+pub(in crate::families) struct B5OpaquePcurve {
     /// This record's stream `object_id`.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// Owning surface object id.
-    pub surface: u32,
+    pub(super) surface: u32,
     /// Native pcurve class.
-    pub class: u8,
+    pub(super) class: u8,
     /// Exact source payload.
-    pub payload: Vec<u8>,
+    pub(super) payload: Vec<u8>,
     /// Exact great-circle carrier fields when this is a validated class-`1d`
     /// sphere pcurve.
-    pub sphere_great_circle: Option<B5SphereGreatCirclePcurve>,
+    pub(super) sphere_great_circle: Option<B5SphereGreatCirclePcurve>,
 }
 
 /// One length-framed `b5 03` record as found by the stream walk ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#6-object-stream-record-framing-a5-03-a8-03-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B5Record {
+pub(in crate::families) struct B5Record {
     /// Byte offset of the `b5 03` marker in the source stream.
-    pub offset: usize,
+    pub(in crate::families) offset: usize,
     /// Record family byte (`0xb5` or `0xa8`).
-    pub family: u8,
+    pub(in crate::families) family: u8,
     /// Third header byte: the record's type/class code (`0x5f` face,
     /// `0x62` loop, `0x21` pcurve, `0x27`/`0x28`/`0x2d` surface, `0x5e`
     /// edge, `0x18` line pcurve, `0x0e`/`0x0f` profile, ...).
-    pub class: u8,
+    pub(in crate::families) class: u8,
     /// Dense creation-order `object_id` stored inline at `+4` ([spec §6.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#65-a8-03-common-object-stream-freeform-class)).
-    pub object_id: u32,
+    pub(in crate::families) object_id: u32,
     /// Raw record payload after the 8-byte header.
-    pub payload: Vec<u8>,
+    pub(in crate::families) payload: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ObjectFrame {
-    pub(crate) start: usize,
-    pub(crate) end: usize,
-    pub(crate) family: u8,
-    pub(crate) class: u8,
-    pub(crate) object_id: u32,
+pub(in crate::families) struct ObjectFrame {
+    pub(in crate::families) start: usize,
+    pub(in crate::families) end: usize,
+    family: u8,
+    pub(in crate::families) class: u8,
+    pub(in crate::families) object_id: u32,
 }
 
 type DependencyCandidates = HashMap<u32, Option<ObjectFrame>>;
 
 /// A resolved `b5 03 5f` face node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B5Face {
+pub(in crate::families) struct B5Face {
     /// This record's stream `object_id`.
-    pub object_id: u32,
+    pub(in crate::families) object_id: u32,
     /// `object_id` of the face's surface, taken from the first reference
     /// token.
-    pub surface: u32,
+    pub(super) surface: u32,
     /// `object_id`s of the face's `b5 03 62` loop nodes, in reference
     /// order.
-    pub loops: Vec<u32>,
+    pub(super) loops: Vec<u32>,
     /// Exact terminal control of the counted face production. Uncounted face
     /// framing has no terminal control.
-    pub terminal_control: Option<B5FramingControl>,
+    pub(in crate::families) terminal_control: Option<B5FramingControl>,
 }
 
 /// Count the face incidences for each object-stream loop.
-pub(crate) fn face_loop_owner_counts(faces: &[B5Face]) -> HashMap<u32, usize> {
+pub(super) fn face_loop_owner_counts(faces: &[B5Face]) -> HashMap<u32, usize> {
     let mut owners = HashMap::new();
     for face in faces {
         for &loop_id in &face.loops {
@@ -752,71 +754,71 @@ pub(crate) fn face_loop_owner_counts(faces: &[B5Face]) -> HashMap<u32, usize> {
 
 /// One structurally complete class-`5f` face reference production.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B5FaceRecord {
+pub(crate) struct B5FaceRecord {
     /// This record's stream object id.
-    pub object_id: u32,
+    pub(in crate::families) object_id: u32,
     /// Ordered native references.
-    pub references: Vec<u32>,
+    pub(in crate::families) references: Vec<u32>,
     /// Exact counted-production terminal control. Uncounted framing has no
     /// terminal control.
-    pub terminal_control: Option<B5FramingControl>,
+    pub(in crate::families) terminal_control: Option<B5FramingControl>,
 }
 
 /// A resolved `b5 03 62` loop node: payload `<0x80 + n_refs>
 /// (pcurve_ref edge_ref)* surface_ref` ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5Loop {
+pub(crate) struct B5Loop {
     /// This record's stream `object_id`.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// Pcurve/edge occurrences in serialized order, each with its native
     /// control triple.
-    pub members: Vec<B5LoopMember>,
+    pub(super) members: Vec<B5LoopMember>,
     /// Source-native framing and optional numeric extension.
-    pub metadata: B5LoopMetadata,
+    pub(in crate::families) metadata: B5LoopMetadata,
     /// `object_id` of the loop's surface (the trailing reference token).
-    pub surface: u32,
+    pub(super) surface: u32,
 }
 
 /// One pcurve/edge occurrence of a class-`62` loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B5LoopMember {
+pub(super) struct B5LoopMember {
     /// `object_id` of the member pcurve (or `0x18` line).
-    pub pcurve: u32,
+    pub(super) pcurve: u32,
     /// `object_id` of the member `b5 03 5e` edge.
-    pub edge: u32,
+    pub(super) edge: u32,
     /// Three signed controls for this occurrence.
-    pub controls: [i16; 3],
+    pub(super) controls: [i16; 3],
 }
 
 /// Complete metadata following a class-`62` loop's reference lanes.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5LoopMetadata {
+pub(in crate::families) struct B5LoopMetadata {
     /// Primary and secondary loop framing controls.
-    pub framing_controls: [B5FramingControl; 2],
+    pub(in crate::families) framing_controls: [B5FramingControl; 2],
     /// Optional fixed-width numeric extension.
-    pub extension: Option<B5LoopMetadataExtension>,
+    pub(in crate::families) extension: Option<B5LoopMetadataExtension>,
 }
 
 /// Optional fixed-width numeric extension of a class-`62` loop.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5LoopMetadataExtension {
+pub(in crate::families) struct B5LoopMetadataExtension {
     /// Four finite binary64 fields in serialized order.
-    pub scalars: [f64; 4],
+    scalars: [f64; 4],
     /// Exact admitted odd extension control.
-    pub control: u8,
+    control: u8,
     /// Six finite binary32 fields in serialized order.
-    pub floats: [f32; 6],
+    floats: [f32; 6],
 }
 
 impl B5Loop {
-    pub(crate) fn edge_senses(&self) -> Vec<bool> {
+    pub(super) fn edge_senses(&self) -> Vec<bool> {
         self.members
             .iter()
             .map(|member| member.controls[0] == -1)
             .collect()
     }
 
-    pub(crate) fn pcurve_senses(&self) -> Vec<bool> {
+    pub(super) fn pcurve_senses(&self) -> Vec<bool> {
         self.members
             .iter()
             .map(|member| member.controls[2] == -1)
@@ -826,7 +828,7 @@ impl B5Loop {
 
 /// Resolve the dominant object-stream topology graph through inline object ids.
 #[must_use]
-pub fn parse(bytes: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Option<B5Graph> {
+pub(crate) fn parse(bytes: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Option<B5Graph> {
     let mut graphs = topology_runs(bytes, refusal)
         .into_iter()
         .map(|(_, graph)| graph);
@@ -835,7 +837,7 @@ pub fn parse(bytes: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Option<B
 }
 
 /// Resolve each contiguous object-stream run independently.
-pub(crate) fn topology_runs(
+fn topology_runs(
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Vec<(Range<usize>, B5Graph)> {
@@ -860,7 +862,7 @@ fn parse_flat(bytes: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Option<
     parse_from_records(bytes, &records, &frames, true, refusal)
 }
 
-pub(crate) fn parse_from_frames(
+pub(in crate::families) fn parse_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -869,7 +871,7 @@ pub(crate) fn parse_from_frames(
     parse_from_records(bytes, &records, frames, true, refusal)
 }
 
-pub(crate) fn parse_from_records(
+pub(in crate::families) fn parse_from_records(
     bytes: &[u8],
     records: &[B5Record],
     frames: &[ObjectFrame],
@@ -879,7 +881,7 @@ pub(crate) fn parse_from_records(
     parse_from_records_budgeted(bytes, records, frames, require_topology, None, refusal)
 }
 
-pub(crate) fn parse_from_records_budgeted(
+pub(in crate::families) fn parse_from_records_budgeted(
     bytes: &[u8],
     records: &[B5Record],
     frames: &[ObjectFrame],
@@ -1618,7 +1620,7 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
 /// Return native start/end vertex identities for every framed `b5 03 5e`
 /// edge, keyed by the edge object id.
 #[must_use]
-pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
+pub(in crate::families) fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
     let mut edges = BTreeMap::new();
     let mut ambiguous = HashSet::new();
     for frame in object_stream_frames(bytes) {
@@ -1659,7 +1661,7 @@ pub(crate) fn edge_support_pcurve_references(
     edge_support_pcurve_references_from_frames(bytes, edge_ids, &frames)
 }
 
-pub(crate) fn edge_support_pcurve_references_from_frames(
+pub(in crate::families) fn edge_support_pcurve_references_from_frames(
     bytes: &[u8],
     edge_ids: &HashSet<u32>,
     frames: &[ObjectFrame],
@@ -1707,7 +1709,7 @@ pub(crate) fn edge_support_pcurve_references_from_frames(
         .collect()
 }
 
-pub(crate) fn targeted_surfaces_from_frames(
+pub(in crate::families) fn targeted_surfaces_from_frames(
     bytes: &[u8],
     object_ids: &HashSet<u32>,
     frames: &[ObjectFrame],
@@ -1799,7 +1801,7 @@ pub(crate) fn targeted_geometry_graph(bytes: &[u8]) -> Option<B5Graph> {
     targeted_geometry_graph_from_frames(bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
 }
 
-pub(crate) fn targeted_geometry_graph_from_frames(
+pub(in crate::families) fn targeted_geometry_graph_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -2186,7 +2188,7 @@ fn implicit_pcurve_bindings(
     bindings
 }
 
-pub(crate) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
+pub(super) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     let knots = pcurve_nurbs_knots(pcurve)?;
     let control_points: Vec<Point2> = pcurve
         .control_points
@@ -2215,7 +2217,7 @@ fn pcurve_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
 }
 
 /// Return the knot vector in the pcurve's occurrence coordinate system.
-pub(crate) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
+pub(super) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
     let knots = pcurve_knots(pcurve)?;
     match pcurve.parameterization {
         B5PcurveParameterization::Native => Some(knots),
@@ -2233,7 +2235,7 @@ pub(crate) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
     }
 }
 
-pub(crate) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
+pub(super) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
     let knots = pcurve_nurbs_knots(pcurve)?;
     let degree = usize::try_from(pcurve.degree).ok()?;
     let spline_domain = [
@@ -2253,7 +2255,7 @@ pub(crate) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
 }
 
 /// Clamp a finite occurrence range to a finite, increasing native domain.
-pub(crate) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
+pub(super) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
     const RELATIVE_PARAMETER_TOLERANCE: f64 = EPS_B5_GRAPH_DEGENERATE;
 
     let domain_span = domain[1] - domain[0];
@@ -2492,7 +2494,7 @@ fn vertex_coordinate(
     }
 }
 
-pub(crate) fn loop_chain_closes(
+pub(super) fn loop_chain_closes(
     loop_: &B5Loop,
     edge_vertices: &BTreeMap<u32, [B5VertexRef; 2]>,
 ) -> bool {
@@ -4590,7 +4592,7 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
     records_from_frames(bytes, &frames)
 }
 
-pub(crate) fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
+fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
     records_from_frames_budgeted(bytes, frames, None)
 }
 
@@ -4600,7 +4602,7 @@ pub(crate) fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B
 /// passes rescanned every frame for every newly discovered dependency, which
 /// made a large population spend its bounded work slice on repeated scans
 /// before the selected topology graph could be parsed.
-pub(crate) fn records_from_frames_budgeted(
+fn records_from_frames_budgeted(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
@@ -4870,14 +4872,14 @@ fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
 
 /// Return complete byte ranges for length-closed object-stream records.
 #[must_use]
-pub(crate) fn framed_ranges(bytes: &[u8]) -> Vec<std::ops::Range<usize>> {
+pub(in crate::families) fn framed_ranges(bytes: &[u8]) -> Vec<std::ops::Range<usize>> {
     object_stream_frames(bytes)
         .into_iter()
         .map(|frame| frame.start..frame.end)
         .collect()
 }
 
-pub(crate) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
+pub(in crate::families) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
     fn walk_b5_run(bytes: &[u8], base: usize, frames: &mut Vec<ObjectFrame>) {
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
@@ -4938,7 +4940,7 @@ pub(crate) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
 }
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs.
-pub(crate) fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
+fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
     let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(bytes);
     let mut ranges = Vec::new();
     let mut position = 0usize;
@@ -4979,7 +4981,7 @@ pub(crate) fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
 }
 
 /// Return runs that declare at least one face or loop topology root.
-pub(crate) fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
+fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
     object_stream_run_ranges(bytes)
         .into_iter()
         .filter(|range| {
@@ -4996,7 +4998,7 @@ fn is_topology_root_frame(frame: ObjectFrame) -> bool {
 }
 
 /// Partition one logical stream into independently resolved object populations.
-pub(crate) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u8>> {
+pub(in crate::families) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u8>> {
     let runs = object_stream_run_ranges(stream);
     let topology_runs = topology_root_run_ranges(stream);
     let mut owned_populations = HashMap::new();
@@ -5032,7 +5034,7 @@ pub(crate) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// Unique object population selected across reconstructed logical streams.
-pub(crate) enum ObjectStreamSelection {
+pub(in crate::families) enum ObjectStreamSelection {
     /// Work budget ran out before a population could be chosen.
     Exhausted {
         /// Number of object runs observed before exhaustion.
@@ -5111,7 +5113,7 @@ struct IndexedObjectRun {
 
 /// Select one topology-root population, or one unrooted run when it is the
 /// only object run in the reconstructed logical streams.
-pub(crate) fn select_object_stream_population(
+pub(in crate::families) fn select_object_stream_population(
     streams: &[Vec<u8>],
     budget: Option<&WorkBudget<'_>>,
 ) -> ObjectStreamSelection {
@@ -5283,7 +5285,7 @@ pub(crate) fn select_object_stream_population(
 
 /// Build one topology population from its owning run and uniquely referenced
 /// isolated geometry frames in the same logical stream.
-pub(crate) fn owned_object_stream_population(stream: &[u8], topology_run: Range<usize>) -> Vec<u8> {
+fn owned_object_stream_population(stream: &[u8], topology_run: Range<usize>) -> Vec<u8> {
     let run = &stream[topology_run.clone()];
     let run_frames = object_stream_frames(run);
     let run_records = records_from_frames(run, &run_frames);
@@ -5499,7 +5501,9 @@ pub(crate) fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
     typed_face_records_from_records(&records)
 }
 
-pub(crate) fn typed_face_records_from_records(records: &[B5Record]) -> BTreeMap<u32, B5FaceRecord> {
+pub(in crate::families) fn typed_face_records_from_records(
+    records: &[B5Record],
+) -> BTreeMap<u32, B5FaceRecord> {
     records
         .iter()
         .filter_map(|record| parse_face_record(record).map(|face| (record.object_id, face)))
@@ -5515,7 +5519,9 @@ pub(crate) fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
     typed_loop_records_from_records(&records)
 }
 
-pub(crate) fn typed_loop_records_from_records(records: &[B5Record]) -> BTreeMap<u32, B5Loop> {
+pub(in crate::families) fn typed_loop_records_from_records(
+    records: &[B5Record],
+) -> BTreeMap<u32, B5Loop> {
     records
         .iter()
         .filter_map(|record| parse_loop_record(record).map(|loop_| (record.object_id, loop_)))
@@ -5531,7 +5537,9 @@ pub(crate) fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
     typed_edge_records_from_records(&records)
 }
 
-pub(crate) fn typed_edge_records_from_records(records: &[B5Record]) -> BTreeMap<u32, B5Edge> {
+pub(in crate::families) fn typed_edge_records_from_records(
+    records: &[B5Record],
+) -> BTreeMap<u32, B5Edge> {
     records
         .iter()
         .filter_map(|record| parse_edge(record).map(|edge| (record.object_id, edge)))
@@ -5547,7 +5555,7 @@ pub(crate) fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5Vert
     typed_vertex_incidence_links_from_records(&records)
 }
 
-pub(crate) fn typed_vertex_incidence_links_from_records(
+pub(in crate::families) fn typed_vertex_incidence_links_from_records(
     records: &[B5Record],
 ) -> BTreeMap<u32, B5VertexIncidenceLink> {
     records
@@ -5567,7 +5575,9 @@ pub(crate) fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
     typed_class_21_pcurves_from_records(&records)
 }
 
-pub(crate) fn typed_class_21_pcurves_from_records(records: &[B5Record]) -> BTreeMap<u32, B5Pcurve> {
+pub(in crate::families) fn typed_class_21_pcurves_from_records(
+    records: &[B5Record],
+) -> BTreeMap<u32, B5Pcurve> {
     records
         .iter()
         .filter_map(|record| parse_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
@@ -5583,7 +5593,7 @@ pub(crate) fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5Parame
     typed_parameter_incidences_from_records(&records)
 }
 
-pub(crate) fn typed_parameter_incidences_from_records(
+pub(in crate::families) fn typed_parameter_incidences_from_records(
     records: &[B5Record],
 ) -> BTreeMap<u32, B5ParameterIncidence> {
     records
@@ -5603,7 +5613,7 @@ pub(crate) fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<
     typed_vertex_incidence_rosters_from_records(&records)
 }
 
-pub(crate) fn typed_vertex_incidence_rosters_from_records(
+pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
     records: &[B5Record],
 ) -> BTreeMap<u32, Vec<u32>> {
     records
@@ -5621,7 +5631,7 @@ pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     face_surface_references_from_frames(bytes, &frames)
 }
 
-pub(crate) fn face_surface_references_from_frames(
+pub(in crate::families) fn face_surface_references_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
 ) -> Vec<(u32, u32)> {
@@ -5649,7 +5659,7 @@ pub(crate) fn face_surface_references_from_frames(
 /// Return positive face-to-edge ownership from structurally complete face and
 /// loop records, without requiring their referenced surfaces or p-curves to
 /// resolve into a transferable graph.
-pub(crate) fn edge_face_references_from_frames(
+pub(in crate::families) fn edge_face_references_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
 ) -> HashMap<u32, HashSet<u32>> {

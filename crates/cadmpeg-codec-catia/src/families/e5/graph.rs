@@ -14,29 +14,29 @@ const EPS_PARAMETER_ENDPOINT: f64 = 1.0e-9;
 /// walks every class-tagged record, resolves cross-record references, and
 /// returns `None` if the walk cannot be closed ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
-pub struct E5Topology {
+pub(crate) struct E5Topology {
     /// Class-`0x01` body records with their resolved face rosters and
     /// orientation-sign tapes. Empty when the stream carries no `0x01`
     /// records (bodies are optional; face/loop/edge resolution does not
     /// require them).
-    pub bodies: Vec<E5Body>,
+    pub(super) bodies: Vec<E5Body>,
     /// Class-`0x00` advanced-face records, each resolved to its surface and
     /// loops.
-    pub faces: Vec<E5Face>,
+    pub(super) faces: Vec<E5Face>,
     /// Class-`0xff` trimmed edge-use records, keyed by their `record_id`.
     /// Only edges reachable from a resolved face's loops are retained.
-    pub edges: BTreeMap<u32, E5Edge>,
+    pub(in crate::families) edges: BTreeMap<u32, E5Edge>,
     /// Class-`0x96` (line), `0x97` (circle), `0xa0` (spline jet), and
     /// `0xaa` (NURBS) pcurve records, keyed by `record_id`.
-    pub pcurves: BTreeMap<u32, E5Pcurve>,
+    pub(super) pcurves: BTreeMap<u32, E5Pcurve>,
     /// Class-`0x0e` parameter-bound records, keyed by `record_id`.
-    pub bounds: BTreeMap<u32, E5Bounds>,
+    pub(super) bounds: BTreeMap<u32, E5Bounds>,
     /// Class-`0xc0` (one-pcurve boundary) and `0xc1` (two-pcurve
     /// intersection) curve-support records, keyed by `record_id`.
-    pub curve_supports: BTreeMap<u32, E5CurveSupport>,
+    pub(super) curve_supports: BTreeMap<u32, E5CurveSupport>,
     /// Sorted, deduplicated `record_id`s of every class-`0xfe` vertex record
     /// referenced as an edge endpoint.
-    pub vertex_refs: Vec<u32>,
+    pub(super) vertex_refs: Vec<u32>,
 }
 
 impl E5Topology {
@@ -44,7 +44,7 @@ impl E5Topology {
     /// representation. Each bound must contain that representation exactly
     /// once.
     #[must_use]
-    pub fn edge_representation_parameters(
+    pub(super) fn edge_representation_parameters(
         &self,
         edge_ref: u32,
         representation: u32,
@@ -64,7 +64,7 @@ impl E5Topology {
 /// A class-`0xc0`/`0xc1` curve-support record: the pcurve(s) an edge curve
 /// evaluates against and the surface parameter range they span ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
-pub enum E5CurveSupportKind {
+pub(super) enum E5CurveSupportKind {
     /// Class-`0xc0` one-pcurve boundary support.
     Boundary(u32),
     /// Class-`0xc1` two-pcurve intersection support.
@@ -82,38 +82,38 @@ impl E5CurveSupportKind {
         }
     }
 
-    pub fn pcurves(&self) -> &[u32] {
+    fn pcurves(&self) -> &[u32] {
         match self {
             Self::Boundary(pcurve) => std::slice::from_ref(pcurve),
             Self::Intersection(pcurves) => pcurves,
         }
     }
 
-    pub fn is_intersection(&self) -> bool {
+    fn is_intersection(&self) -> bool {
         matches!(self, Self::Intersection(_))
     }
 }
 
 /// A class-`0xc0`/`0xc1` curve-support record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
-pub struct E5CurveSupport {
+pub(super) struct E5CurveSupport {
     /// Boundary or intersection pcurve layout.
-    pub kind: E5CurveSupportKind,
+    pub(super) kind: E5CurveSupportKind,
     /// Raw mode byte following the pcurve reference lane; meaning not
     /// decoded further.
-    pub mode: u8,
+    pub(super) mode: u8,
     /// Finite `[lo, hi]` parameter range on the support, stored as LE f64.
-    pub range: [f64; 2],
+    pub(super) range: [f64; 2],
     /// Unparsed bytes after the fixed header; not interpreted.
-    pub tail: Vec<u8>,
+    pub(super) tail: Vec<u8>,
 }
 
 impl E5CurveSupport {
-    pub fn pcurves(&self) -> &[u32] {
+    pub(super) fn pcurves(&self) -> &[u32] {
         self.kind.pcurves()
     }
 
-    pub fn is_intersection(&self) -> bool {
+    pub(super) fn is_intersection(&self) -> bool {
         self.kind.is_intersection()
     }
 }
@@ -121,41 +121,41 @@ impl E5CurveSupport {
 /// A class-`0x0e` parameter-bound record: a list of representation
 /// references each paired with a bound parameter ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
-pub struct E5Bounds {
+pub(super) struct E5Bounds {
     /// Ordered `(representation, parameter, code)` entries, one per
     /// referenced representation.
-    pub entries: Vec<E5BoundEntry>,
+    pub(super) entries: Vec<E5BoundEntry>,
 }
 
 /// One entry of an [`E5Bounds`] record.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct E5BoundEntry {
+pub(super) struct E5BoundEntry {
     /// Referenced representation's `record_id`.
-    pub representation: u32,
+    pub(super) representation: u32,
     /// Finite LE-f64 bound parameter for this representation.
-    pub parameter: f64,
+    pub(super) parameter: f64,
     /// Raw trailing `u32` code following the parameter; meaning not decoded
     /// further.
-    pub code: u32,
+    pub(super) code: u32,
 }
 
 /// One knot of a degree-5 E5 UV jet.
 #[derive(Debug, Clone, PartialEq)]
-pub struct E5PcurveJetSite {
+pub(in crate::families) struct E5PcurveJetSite {
     /// Distinct knot.
-    pub knot: f64,
+    pub(super) knot: f64,
     /// Multiplicity of this distinct knot.
-    pub multiplicity: u32,
+    multiplicity: u32,
     /// `(u, v)` position.
-    pub point: [f64; 2],
+    pub(super) point: [f64; 2],
     /// `(u, v)` first derivative.
-    pub first_derivatives: [f64; 2],
+    pub(super) first_derivatives: [f64; 2],
     /// `(u, v)` second derivative.
-    pub second_derivatives: [f64; 2],
+    pub(super) second_derivatives: [f64; 2],
 }
 
 impl E5PcurveJetSite {
-    pub(crate) fn zip(
+    pub(super) fn zip(
         knots: Vec<f64>,
         multiplicities: Vec<u32>,
         points: Vec<[f64; 2]>,
@@ -186,7 +186,7 @@ impl E5PcurveJetSite {
 /// `0xaa` (NURBS)
 /// record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
-pub enum E5Pcurve {
+pub(in crate::families) enum E5Pcurve {
     /// Class `0x96`: `<surface_ref>, origin_u, origin_v, dir_u, dir_v,
     /// param_lo, param_hi` stored as f64.
     Line {
@@ -246,12 +246,12 @@ pub enum E5Pcurve {
 }
 
 impl E5Pcurve {
-    pub const JET_DEGREE: u32 = 5;
+    pub(super) const JET_DEGREE: u32 = 5;
 
     /// The `record_id` of the surface carrier this p-curve lies on, which every
     /// variant states.
     #[must_use]
-    pub fn surface_record_id(&self) -> u32 {
+    pub(super) fn surface_record_id(&self) -> u32 {
         match self {
             Self::Line { surface, .. }
             | Self::Circle { surface, .. }
@@ -265,16 +265,16 @@ impl E5Pcurve {
 /// the body's validated face roster
 /// ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct E5Body {
+pub(in crate::families::e5) struct E5Body {
     /// This class-`0x01` body's stream-assigned `record_id`.
-    pub record_id: u32,
+    pub(super) record_id: u32,
     /// Faces in root-record order.
-    pub faces: Vec<u32>,
+    pub(super) faces: Vec<u32>,
 }
 
 /// An orientation sign.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Sign {
+pub(in crate::families) enum Sign {
     /// Positive orientation.
     Positive,
     /// Negative orientation.
@@ -308,96 +308,96 @@ impl Sign {
 /// A resolved class-`0x00` advanced-face record: its surface, loops, and
 /// root sign-tape entry ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct E5Face {
+pub(super) struct E5Face {
     /// This face record's `record_id`.
-    pub record_id: u32,
+    pub(super) record_id: u32,
     /// `record_id` of the face's surface carrier.
-    pub surface: u32,
+    pub(super) surface: u32,
     /// This face's entry in the class-`0x08` root sign tape (`+1` or
     /// `-1`), used by [`solve_absolute_orientation`] to fix each loop's
     /// global sense.
-    pub trailer_sign: Sign,
+    pub(super) trailer_sign: Sign,
     /// The face's loops, first entry outer-bounded, remaining entries
     /// holes.
-    pub loops: Vec<E5Loop>,
+    pub(super) loops: Vec<E5Loop>,
 }
 
 /// One pcurve/edge-use occurrence of a class-`0x09` loop, with its unique
 /// head-to-tail traversal sense.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct E5LoopMember {
+pub(super) struct E5LoopMember {
     /// `record_id` of the member pcurve.
-    pub pcurve: u32,
+    pub(super) pcurve: u32,
     /// `record_id` of the member edge-use.
-    pub edge_use: u32,
+    pub(super) edge_use: u32,
     /// Traversal sense from [`solve_loop_chain`]; `true` means the edge is
     /// traversed end-to-start.
-    pub reversed: bool,
+    pub(super) reversed: bool,
 }
 
 /// A resolved class-`0x09` loop record: its member pcurve/edge-use pairs and
 /// derived orientation ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct E5Loop {
+pub(super) struct E5Loop {
     /// This loop record's `record_id`.
-    pub record_id: u32,
+    pub(super) record_id: u32,
     /// `record_id` of the loop's surface, matched against the owning
     /// face's surface during resolution.
-    pub surface: u32,
+    pub(super) surface: u32,
     /// Pcurve/edge-use occurrences in serialized order, each with its
     /// unique head-to-tail traversal sense.
-    pub members: Vec<E5LoopMember>,
+    pub(super) members: Vec<E5LoopMember>,
     /// Shell-consistent member order and traversal senses after folding in
     /// the loop's global orientation sign. `None` when the radial parity
     /// system is frustrated or ambiguous.
-    pub(crate) oriented_members: Option<Vec<E5OrientedMember>>,
+    pub(super) oriented_members: Option<Vec<E5OrientedMember>>,
     /// Loop role bit from the trailing sign tape: `Some(true)` =
     /// `FACE_OUTER_BOUND`, `Some(false)` = `FACE_BOUND`, `None` when the
     /// loop carries no trailing role tape.
-    pub outer: Option<bool>,
+    pub(super) outer: Option<bool>,
     /// Exact global-sense anchor for a closed plane-cap split circle. This is
     /// present only when the two-edge loop has a complete role sign, two
     /// complementary intersection-support ranges, and occurrence parameter
     /// directions that determine one native-UV winding. Other loops use the
     /// shared-edge parity component anchor.
-    pub(crate) orientation_hint: Option<Sign>,
+    pub(super) orientation_hint: Option<Sign>,
 }
 
 impl E5Loop {
     /// Shell-consistent member order and senses when radial parity closes.
     #[must_use]
-    pub fn resolved_members(&self) -> Option<&[E5OrientedMember]> {
+    pub(super) fn resolved_members(&self) -> Option<&[E5OrientedMember]> {
         self.oriented_members.as_deref()
     }
 }
 
 /// One E5 loop member in shell-consistent traversal order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct E5OrientedMember {
+pub(super) struct E5OrientedMember {
     /// Index of the member in the serialized loop arrays.
-    pub serialized_index: usize,
+    pub(super) serialized_index: usize,
     /// Whether the physical edge is traversed end-to-start.
-    pub reversed: bool,
+    pub(super) reversed: bool,
 }
 
 /// A resolved class-`0xff` trimmed edge-use record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), grammar `85
 /// <curve_support_ref> <start_vertex> <end_vertex> <param_start>
 /// <param_end>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct E5Edge {
+pub(in crate::families) struct E5Edge {
     /// `record_id` of the owning [`E5CurveSupport`].
-    pub support: u32,
+    pub(super) support: u32,
     /// `record_id` of the class-`0xfe` start vertex.
-    pub start_vertex: u32,
+    pub(in crate::families) start_vertex: u32,
     /// `record_id` of the class-`0xfe` end vertex.
-    pub end_vertex: u32,
+    pub(in crate::families) end_vertex: u32,
     /// Reference to the start-parameter representation on the curve
     /// support.
-    pub parameter_start: u32,
+    pub(super) parameter_start: u32,
     /// Reference to the end-parameter representation on the curve support.
-    pub parameter_end: u32,
+    pub(super) parameter_end: u32,
     /// Bytes following the five counted fields.
-    pub tail: Vec<u8>,
+    pub(super) tail: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -427,7 +427,7 @@ struct RawLoop {
 /// Resolve E5 face→loop→edge-use references and determine each serialized
 /// loop occurrence's unique head-to-tail traversal from stored vertex refs.
 #[must_use]
-pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
+pub(crate) fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
     let records = records(bytes);
     let by_id: HashMap<u32, &Record<'_>> =
         records.iter().map(|record| (record.id, record)).collect();
@@ -631,7 +631,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
 /// This is the narrow face-to-carrier relation used by standard freeform
 /// aliases. It does not claim that the complete E5 topology graph is closed.
 #[must_use]
-pub fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
+pub(in crate::families) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     records(bytes)
         .into_iter()
         .filter(|record| record.class == 0x00)
@@ -857,7 +857,7 @@ fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E
     })
 }
 
-pub(crate) fn expand_nurbs_knots(
+pub(super) fn expand_nurbs_knots(
     degree: u32,
     knots: &[f64],
     multiplicities: &[u32],

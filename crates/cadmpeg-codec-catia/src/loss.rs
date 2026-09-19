@@ -25,7 +25,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`CatiaLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CatiaLossCode {
+pub(crate) enum CatiaLossCode {
     /// The storage layout matched no declared dialect's structural invariants.
     SourceDialectUnverified,
     /// A decode route refused source records and then transferred no model, so
@@ -95,7 +95,7 @@ pub enum CatiaLossCode {
 
 impl CatiaLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [CatiaLossCode] = &[
+    const ALL: &'static [CatiaLossCode] = &[
         Self::SourceDialectUnverified,
         Self::SourceRouteFellThrough,
         Self::SourceAnnotationCollision,
@@ -132,7 +132,7 @@ impl CatiaLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceRouteFellThrough => "source.route-fell-through",
@@ -179,7 +179,7 @@ impl CatiaLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::GeometryCarrierSummary => Severity::Info,
             Self::GeometryUnresolvedCarriers
@@ -241,7 +241,7 @@ impl CatiaLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
                 match cadmpeg_ir::report::LossNamespace::new("catia") {
@@ -259,7 +259,7 @@ impl CatiaLossCode {
     /// The structured code is `catia/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }

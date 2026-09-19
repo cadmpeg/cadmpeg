@@ -16,7 +16,7 @@ use crate::solve::union_find::UnionFind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-pub(crate) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+pub(super) const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_RECORD_BYTES: usize = 3 + 3 * size_of::<f32>();
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
@@ -33,7 +33,7 @@ const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1.0e-6;
 /// not members of this face population. Equal-largest runs leave ownership
 /// unresolved.
 #[must_use]
-pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
+pub(super) fn standard_face_count(bytes: &[u8]) -> Option<usize> {
     let selected = selected_standard_run(bytes)?;
     let layouts = fbb_population_layouts(bytes);
     if layouts.is_empty() || layouts.iter().any(|layout| layout.face_run == selected) {
@@ -64,7 +64,7 @@ pub(crate) fn fbb_only_edge_count(bytes: &[u8]) -> Option<usize> {
 
 /// RGBA display color for each positional standard face row.
 #[must_use]
-pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
+pub(crate) fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {
     let face_run = selected_standard_run(bytes)?;
     let start = face_run.face_start();
     let count = face_run.face_count();
@@ -109,7 +109,7 @@ fn trim_frame_vectors(
 /// vectors in source order; otherwise it uses the established
 /// single-population selection.
 #[must_use]
-pub fn standard_face_frame_vectors(
+pub(super) fn standard_face_frame_vectors(
     bytes: &[u8],
     expected_face_count: usize,
 ) -> Vec<Option<[f64; 3]>> {
@@ -133,7 +133,7 @@ pub fn standard_face_frame_vectors(
 
 /// Return the counted vertex table of an admitted standard nested spine.
 #[must_use]
-pub(crate) fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
+pub(super) fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
     let face_run = selected_standard_run(bytes)?;
     let after_faces = face_run.after_faces();
     let (_, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
@@ -143,7 +143,7 @@ pub(crate) fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
 /// Coordinates from the counted vertex table following a complete FBB-only
 /// edge-table walk.
 #[must_use]
-pub(crate) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
+pub(super) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
     let face_run = largest_fbb_run(bytes)?;
     let after_faces = face_run.after_faces();
     let (_, _, vertex_header, _) = parse_fbb_edge_tables(bytes, after_faces)?;
@@ -154,7 +154,7 @@ pub(crate) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
 /// cycles, physical edge uses, and port/corner vertex equivalence classes.
 /// Returns `None` unless every positional face boundary is unambiguous.
 #[must_use]
-pub fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
+pub(crate) fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
     let face_run = selected_standard_run(bytes)?;
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
@@ -171,7 +171,7 @@ pub fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
 /// the complete vertex table and reproduces every supplied circle endpoint
 /// anchor.
 #[must_use]
-pub fn parse_standard_motif(
+pub(super) fn parse_standard_motif(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     circle_anchors: &[Option<[usize; 2]>],
@@ -223,7 +223,7 @@ pub fn parse_standard_motif(
 /// Reconstruct standard topology while treating equal curve-class identifiers
 /// as interchangeable serialized edge rows during incidence-slot completion.
 #[must_use]
-pub fn parse_standard_endpoints_with_edge_classes(
+pub(super) fn parse_standard_endpoints_with_edge_classes(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
@@ -259,7 +259,7 @@ pub fn parse_standard_endpoints_with_edge_classes(
 /// support to a fixpoint. Only serialized pairs supported by both resulting
 /// port domains are retained.
 #[must_use]
-pub fn prune_edge_candidates_by_port_domains(
+pub(super) fn prune_edge_candidates_by_port_domains(
     edge_ports: &[[u32; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Option<Vec<Vec<[usize; 2]>>> {
@@ -271,7 +271,7 @@ pub fn prune_edge_candidates_by_port_domains(
 /// candidate set to port-domain propagation; their candidates are filtered by
 /// the settled neighbouring ports after that propagation completes.
 #[must_use]
-pub fn prune_edge_candidates_by_port_domains_with_deferred(
+pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
     edge_ports: &[[u32; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     deferred_edges: &[bool],
@@ -365,7 +365,7 @@ pub fn prune_edge_candidates_by_port_domains_with_deferred(
 /// cycle and satisfy radial orientation. Search charges the supplied topology
 /// phase budget.
 #[must_use]
-pub fn parse_standard_endpoint_candidates(
+pub(super) fn parse_standard_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -403,7 +403,7 @@ pub fn parse_standard_endpoint_candidates(
 /// enforcing the serialized endpoint-port equality quotient during search.
 /// Search charges the supplied topology phase budget.
 #[must_use]
-pub fn parse_standard_port_endpoint_candidates(
+pub(super) fn parse_standard_port_endpoint_candidates(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -447,7 +447,7 @@ pub fn parse_standard_port_endpoint_candidates(
 /// incidence can be closed directly. This path does not infer endpoint
 /// identities from trim order.
 #[must_use]
-pub(crate) fn parse_fbb_endpoints_with_edge_classes(
+pub(super) fn parse_fbb_endpoints_with_edge_classes(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
@@ -508,7 +508,7 @@ fn read_handle(bytes: &[u8], position: usize, width: usize) -> Option<u32> {
     }
 }
 
-pub(crate) fn parse_fbb_edge_tables_width(
+pub(super) fn parse_fbb_edge_tables_width(
     bytes: &[u8],
     mut position: usize,
     handle_width: usize,
@@ -588,7 +588,7 @@ pub(crate) fn parse_fbb_edge_tables_width(
 /// complete sequence has no occurrence and the interior sequence has at most
 /// one occurrence per cycle. Rows with no boundary match remain complete so
 /// their fixed unmatched span is preserved for the later placement solver.
-pub(crate) fn classify_fbb_edge_layouts(rows: &mut [EdgeRow], trims: &[TrimRecord]) -> Option<()> {
+pub(super) fn classify_fbb_edge_layouts(rows: &mut [EdgeRow], trims: &[TrimRecord]) -> Option<()> {
     let cycles = trims
         .iter()
         .map(|trim| boundary_cycles(trim.packet.triangles()))
@@ -650,7 +650,7 @@ pub(crate) struct FbbFaceRun {
 }
 impl FbbFaceRun {
     /// Constructs a face run with representable byte bounds.
-    pub(crate) fn try_new(face_start: usize, face_count: usize) -> Option<Self> {
+    pub(super) fn try_new(face_start: usize, face_count: usize) -> Option<Self> {
         let after_faces = face_start.checked_add(face_count.checked_mul(fbb_row::LEN)?)?;
         Some(Self {
             face_start,
@@ -679,7 +679,7 @@ impl FbbFaceRun {
 /// has a single result may select it; a caller that has multiple results must
 /// bind their carrier and incidence rosters before creating neutral bodies.
 #[must_use]
-pub(crate) fn standard_fbb_groups(bytes: &[u8]) -> Vec<FbbFaceRun> {
+pub(super) fn standard_fbb_groups(bytes: &[u8]) -> Vec<FbbFaceRun> {
     crate::container::fbb_run_ranges(bytes)
         .into_iter()
         .filter_map(|range| parse_standard_group(bytes, range.start, range.len() / fbb_row::LEN))
@@ -688,7 +688,7 @@ pub(crate) fn standard_fbb_groups(bytes: &[u8]) -> Vec<FbbFaceRun> {
 
 /// Grammar of a population's edge tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EdgeTableForm {
+pub(super) enum EdgeTableForm {
     Standard,
     FbbOnly,
 }
@@ -697,11 +697,11 @@ pub(crate) enum EdgeTableForm {
 /// endpoint solver. The edge and vertex counts are structural population
 /// keys; they are not body selection by themselves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FbbPopulationLayout {
-    pub(crate) face_run: FbbFaceRun,
-    pub(crate) edge_count: usize,
-    pub(crate) vertex_count: usize,
-    pub(crate) edge_table_form: EdgeTableForm,
+pub(super) struct FbbPopulationLayout {
+    pub(super) face_run: FbbFaceRun,
+    pub(super) edge_count: usize,
+    pub(super) vertex_count: usize,
+    pub(super) edge_table_form: EdgeTableForm,
 }
 
 fn vertex_table_end(bytes: &[u8], position: usize) -> Option<usize> {
@@ -719,7 +719,7 @@ fn vertex_table_end(bytes: &[u8], position: usize) -> Option<usize> {
 /// counted vertex table, so the existing single-population parsers can be
 /// reused without seeing neighboring populations.
 #[must_use]
-pub(crate) fn population_spine<'a>(
+pub(super) fn population_spine<'a>(
     bytes: &'a [u8],
     layout: &FbbPopulationLayout,
 ) -> Option<&'a [u8]> {
@@ -744,7 +744,7 @@ pub(crate) fn population_spine<'a>(
 /// Find every FBB face run with a complete local trim, edge-table, and vertex
 /// walk, without requiring endpoint incidence to be solved.
 #[must_use]
-pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
+pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
     crate::container::fbb_run_ranges(bytes)
         .into_iter()
         .filter_map(|range| {
@@ -872,10 +872,7 @@ pub(crate) fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<Ed
     parse_fbb_edge_tables(bytes, position).map(|(rows, _, vertex_header, _)| (rows, vertex_header))
 }
 
-pub(crate) fn parse_standard_edge_tables(
-    bytes: &[u8],
-    position: usize,
-) -> Option<(Vec<EdgeRow>, usize)> {
+fn parse_standard_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
     parse_standard_edge_tables_with_width(bytes, position)
         .map(|(rows, vertex_header, _)| (rows, vertex_header))
 }
@@ -1165,9 +1162,9 @@ pub(crate) struct TrimRecordLayout {
     strip_count: usize,
     lane: TrimLengthLane,
     frame_vector: Option<[f64; 3]>,
-    pub(crate) handle_offset: usize,
-    pub(crate) handle_count: usize,
-    pub(crate) end: usize,
+    pub(super) handle_offset: usize,
+    pub(super) handle_count: usize,
+    pub(super) end: usize,
 }
 
 #[cfg(test)]
@@ -1408,7 +1405,7 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
     (!cycles.is_empty()).then_some(cycles)
 }
 
-pub(crate) fn cover_cycle(
+pub(super) fn cover_cycle(
     cycle: &[u32],
     rows: &[EdgeRow],
     union: &mut UnionFind,

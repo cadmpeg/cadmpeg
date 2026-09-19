@@ -10,7 +10,7 @@ use super::records::ZeroEntitySupportRun;
 use crate::solve::union_find::UnionFind;
 
 const MODEL_POINT_TOLERANCE: f64 = 2e-3;
-pub(crate) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
+pub(super) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
 
 /// One sense-oriented support occurrence owned by a face.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,7 +35,7 @@ pub(crate) struct ZeroEntityEndpointPairCandidate {
 /// Start or end of an oriented endpoint pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum EdgeEnd {
+pub(crate) enum EdgeEnd {
     /// First oriented endpoint.
     Start,
     /// Second oriented endpoint.
@@ -87,7 +87,7 @@ pub(crate) fn zero_entity_endpoint_pair_candidates(
     endpoint_pair_candidates(&zero_entity_oriented_occurrences(runs))
 }
 
-pub(crate) fn zero_entity_endpoint_pair_candidates_with_budget(
+pub(super) fn zero_entity_endpoint_pair_candidates_with_budget(
     runs: &[ZeroEntitySupportRun],
     budget: &WorkBudget<'_>,
 ) -> Option<Vec<ZeroEntityEndpointPairCandidate>> {
@@ -135,7 +135,7 @@ pub(crate) fn endpoint_pair_candidates(
     endpoint_pair_candidates_inner(occurrences, None).unwrap_or_default()
 }
 
-pub(crate) fn endpoint_pair_candidates_with_budget(
+fn endpoint_pair_candidates_with_budget(
     occurrences: &[ZeroEntityOrientedOccurrence],
     budget: &WorkBudget<'_>,
 ) -> Option<Vec<ZeroEntityEndpointPairCandidate>> {
@@ -243,7 +243,7 @@ pub(crate) fn endpoint_locus_candidates(
     endpoint_locus_candidates_inner(endpoint_pairs, None).unwrap_or_default()
 }
 
-pub(crate) fn endpoint_locus_candidates_with_budget(
+pub(super) fn endpoint_locus_candidates_with_budget(
     endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
     budget: &WorkBudget<'_>,
 ) -> Option<Vec<ZeroEntityEndpointLocusCandidate>> {

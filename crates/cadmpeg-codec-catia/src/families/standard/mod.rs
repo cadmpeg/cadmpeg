@@ -1,10 +1,10 @@
 //! `standard` family record decoders, topology container, and B-rep parsers.
 
-pub mod decode;
-pub mod fbb;
-pub mod records;
-pub mod topology;
-pub(crate) mod trim_packet;
+pub(super) mod decode;
+pub(crate) mod fbb;
+pub(crate) mod records;
+pub(crate) mod topology;
+mod trim_packet;
 
 #[cfg(test)]
 mod tests;
