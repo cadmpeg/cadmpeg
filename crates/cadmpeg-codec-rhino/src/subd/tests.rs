@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::*;
+use super::{
+    decode, decode_mesh_proxy, read_symmetry, DecodedSubd, MeshProxyFingerprint,
+    SubdEnumDiagnostic, SubdError, ANONYMOUS, EMPTY_CONTENT_SHA1, SUBD_MESH_PROXY_USERDATA,
+};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::loss::Diagnostics;
 use crate::objects::ClassUserdata;
+use crate::settings::MillimeterScale;
 use crate::test_support::test_dump::{
     minimal_document, object_record_with_payload, set_test_units, table,
 };
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::subd::{SubdEdgeTag, SubdVertexTag};
+use std::ops::Range;
 
 #[derive(Clone, Copy)]
 #[expect(

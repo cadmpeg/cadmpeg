@@ -4,7 +4,9 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{admission_loss, DECLARED_ARCHIVE_VERSION, DECLARED_OPENNURBS_WRITER_VERSION, FORMAT};
+use crate::chunks::ArchiveVersion;
+use cadmpeg_core::dialect::Admission;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {

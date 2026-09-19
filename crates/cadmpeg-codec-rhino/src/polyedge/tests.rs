@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::*;
+use super::{decode, ANONYMOUS};
 use crate::chunks::ArchiveVersion;
 use crate::test_support::test_archive::class_wrapper;
 use crate::test_support::test_dump::crc_chunk;
@@ -9,6 +9,7 @@ use crate::test_support::test_dump::{
     object_record_with_payload, point_payload, polyedge_scan_objects, polyedge_segment_parameter,
     scan_with_objects, set_identity, POINT_CLASS, POLYEDGE_SEGMENT_TARGET,
 };
+use crate::wire::Uuid;
 
 const OPENNURBS_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 

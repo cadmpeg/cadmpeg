@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::{assert_valid, decode};
+use crate::chunks::ArchiveVersion;
 
 fn unit_binding_document(unit: Option<i32>) -> (Vec<u8>, Vec<u8>) {
     let archive = ArchiveVersion::V8;

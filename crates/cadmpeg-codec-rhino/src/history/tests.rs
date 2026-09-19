@@ -1,14 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::*;
+use super::{
+    evaluation, evaluation_properties, extended_geometry_json, parse_value,
+    parse_value_with_warnings, poly_edge, project, structured_value_properties, EmbeddedGeometry,
+    GeometrySink, HistoryRecord, HistoryValue, RecordType, Value, ANONYMOUS, HISTORY_CLASS,
+};
 use crate::chunks::TCODE_CRC;
+use crate::chunks::{ArchiveVersion, BoundedReader};
 use crate::loss::Diagnostics;
+use crate::settings::MillimeterScale;
 use crate::test_support::test_dump::{
     anonymous_chunk, class_wrapper, crc_chunk, crc_table, minimal_document, nested_crc_chunk,
     units_record, utf16_bytes,
 };
+use crate::wire::Uuid;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use std::collections::BTreeMap;
 use std::io::Cursor;
 
 fn versioned_anonymous_chunk(
