@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::{Codec, FormatId};
 use crate::{ForcedInput, Format};
 
 type DecoderConstructor = fn() -> Box<dyn Codec>;
-pub(crate) type EncoderConstructor = fn() -> Box<dyn Encoder>;
+type EncoderConstructor = fn() -> Box<dyn Encoder>;
 
 /// Opaque witness that a compiled format has a native decoder.
 #[derive(Debug, Clone, Copy)]
@@ -92,9 +92,9 @@ impl OutputPhysics {
 /// Facts that exist together only when a format is writable.
 #[derive(Debug)]
 pub(crate) struct OutputDescriptor {
-    pub extensions: &'static [&'static str],
-    pub physics: OutputPhysics,
-    pub encoder: EncoderConstructor,
+    pub(crate) extensions: &'static [&'static str],
+    pub(crate) physics: OutputPhysics,
+    pub(crate) encoder: EncoderConstructor,
 }
 
 /// One compiled format and all registration facts owned by the registry.
@@ -268,7 +268,7 @@ static CADIR_OUTPUT: OutputDescriptor = OutputDescriptor {
     physics: OutputPhysics::NeutralText,
     encoder: || Box::new(CadirEncoder),
 };
-pub(crate) static CADIR: FormatDescriptor = FormatDescriptor {
+static CADIR: FormatDescriptor = FormatDescriptor {
     kind: FormatKind::Neutral {
         id: FormatId::new("cadir"),
         input_extensions: &["cadir", "json"],

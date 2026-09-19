@@ -201,7 +201,7 @@ impl Registries {
             .filter(move |entry| entry.id.namespace() == format)
     }
 
-    pub(crate) fn rows_all(&self) -> impl Iterator<Item = &DialectEntry> {
+    fn rows_all(&self) -> impl Iterator<Item = &DialectEntry> {
         self.entries.iter()
     }
 }
