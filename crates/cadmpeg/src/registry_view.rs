@@ -134,7 +134,7 @@ fn suffix(id: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::dialect_lines;
 
     /// The provenance line names the id, the read disposition, and the
     /// catalog. It is what `cadmpeg inspect` prints, so a change to any of the

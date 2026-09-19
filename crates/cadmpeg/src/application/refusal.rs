@@ -596,7 +596,10 @@ mod tests {
     use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
     use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
 
-    use super::*;
+    use super::{ApplicationError, CheckOperation, ConversionRefusal, RefusalCode};
+    use cadmpeg_core::target::TargetRefusal;
+    use cadmpeg_ir::codec::DecodeFailure;
+    use cadmpeg_ir::report::ValidationReport;
 
     const IGES_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
         id: cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"),

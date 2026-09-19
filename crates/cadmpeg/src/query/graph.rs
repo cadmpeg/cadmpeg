@@ -261,8 +261,11 @@ fn collect_edges(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::document::{CadirDocument, RecordRef, RecordSelection};
+    use super::super::item::ArenaTarget;
+    use super::{walk, DEFAULT_MAX_PATHS};
     use serde_json::json;
+    use serde_json::Value;
 
     fn doc(v: &Value) -> CadirDocument {
         CadirDocument::from_value(v)

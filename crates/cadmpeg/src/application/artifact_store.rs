@@ -372,10 +372,14 @@ impl Write for TempFileWriter<'_> {
 mod tests {
     use std::io::Cursor;
 
-    use super::*;
+    use super::{
+        check_output_path, load_matching_sidecar, read_bounded_text, read_detection_input,
+        FileDestination, OptionalFileDestination, OutputDestinations,
+    };
     #[cfg(feature = "nx")]
     use crate::test_support::{put_u16, put_u32};
     use cadmpeg_core::decode::InspectOptions;
+    use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
     use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
     use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
 

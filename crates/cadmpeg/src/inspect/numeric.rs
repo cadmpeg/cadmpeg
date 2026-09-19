@@ -311,7 +311,7 @@ impl ScalarValue {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{parse_offset, Endian, ScalarType, ScalarValue};
 
     #[track_caller]
     fn read(ty: ScalarType, bytes: &[u8], endian: Endian) -> ScalarValue {

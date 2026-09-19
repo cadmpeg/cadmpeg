@@ -59,7 +59,8 @@ const fn printable(byte: u8) -> char {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::render;
+    use std::num::NonZeroUsize;
 
     #[test]
     fn renders_one_full_line_with_grouping_and_gutter() {

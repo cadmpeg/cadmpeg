@@ -42,8 +42,9 @@ pub fn validate_native(inputs: &InputCatalog, ir: &CadIr) -> Vec<Finding> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::validate_native;
     use cadmpeg_ir::CadIr;
+    use cadmpeg_registry::InputCatalog;
 
     #[test]
     fn a_document_with_no_native_namespace_has_no_native_findings() {

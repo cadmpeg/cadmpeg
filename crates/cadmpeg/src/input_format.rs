@@ -93,7 +93,10 @@ pub(crate) fn native_input_parser() -> impl TypedValueParser<Value = &'static Na
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{input_format_parser, native_input_parser, InputFormatParser};
+    use cadmpeg_registry::{ForcedInput, RegistryLoadError};
+    use clap::builder::TypedValueParser;
+    use std::ffi::OsStr;
 
     #[test]
     fn load_failure_is_not_an_unknown_value() {

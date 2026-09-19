@@ -461,7 +461,8 @@ fn hex_bytes(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::numeric::{Endian, ScalarType, ScalarValue};
+    use super::{DecodedValue, Field, FieldKind, Layout, LayoutError};
 
     #[test]
     fn padding_does_not_widen_printed_name_column() {

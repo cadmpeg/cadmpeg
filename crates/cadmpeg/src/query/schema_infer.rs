@@ -317,8 +317,9 @@ fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) ->
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{infer_fields, FieldRow, Relation, EXAMPLE_MAX};
     use serde_json::json;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn infers_presence_types_and_nested_paths() {
