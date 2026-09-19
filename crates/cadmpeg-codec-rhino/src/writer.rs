@@ -1201,10 +1201,8 @@ fn admit_pcurve<'a>(
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
             let origin = line.origin();
             let direction = line.direction();
-            if !origin.u.is_finite()
-                || !origin.v.is_finite()
-                || !direction.u.is_finite()
-                || !direction.v.is_finite()
+            if !origin.is_finite()
+                || !direction.is_finite()
                 || direction.u == 0.0 && direction.v == 0.0
             {
                 return Err(CodecError::malformed(format_args!(
