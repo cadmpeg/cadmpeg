@@ -8,7 +8,6 @@ use syn::spanned::Spanned;
 
 use super::{
     collect_rust_sources, deserialize_impl_target, is_test_module, is_test_path, skip_meta_value,
-    HAND_IMPLS,
 };
 
 /// One route shape a hand-written reader is allowed to use.
@@ -1278,7 +1277,3 @@ mod scan;
 mod tests;
 
 pub(crate) use classify::assert_hand_written_reader_routes;
-
-use classify::*;
-use resolve::*;
-use scan::*;

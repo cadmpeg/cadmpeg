@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Path resolution from a reader's own module context.
 
+use std::collections::BTreeSet;
+
+use super::classify::same_crate;
 use super::scan::path_matches;
-use super::*;
+use super::{HandImplSource, ImportBinding, PathShape, SourceIndex, SymbolKey, SymbolKind};
 
 #[derive(Debug, Clone)]
 pub(super) enum ResolvedPath {

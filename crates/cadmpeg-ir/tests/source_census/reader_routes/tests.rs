@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Route-classification controls for the hand-written reader census.
 
-use super::*;
+use std::collections::BTreeSet;
+
+use syn::spanned::Spanned;
+
+use super::classify::{classify_hand_reader, classify_hand_reader_with_bindings, classify_route};
+use super::{
+    collect_macro_routes, collect_source_items, insert_wire, nodes_from_stream, source_span_text,
+    tokenize_block_text, HandImplSource, HandReaderClass, SourceIndex,
+};
 
 #[test]
 fn reader_route_contract_rejects_unclosed_object_routes() {
