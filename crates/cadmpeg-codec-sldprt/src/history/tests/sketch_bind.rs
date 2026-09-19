@@ -6,17 +6,17 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::make_block;
-use crate::test_support::nurbs_sketch_body;
-use crate::test_support::parasolid_with_body;
-use crate::test_support::resolved_features_payload;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::sldprt_with_nested_circular_sketch;
-use crate::test_support::sldprt_with_nested_elliptical_sketch;
-use crate::test_support::sldprt_with_nested_nurbs_sketches;
-use crate::test_support::sldprt_with_nested_sketch_profile;
-use crate::test_support::sldprt_with_nested_sketch_profiles;
-use crate::test_support::triangle_body;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_features_payload;
+use crate::test_support::history::sldprt_with_nested_circular_sketch;
+use crate::test_support::history::sldprt_with_nested_elliptical_sketch;
+use crate::test_support::history::sldprt_with_nested_nurbs_sketches;
+use crate::test_support::history::sldprt_with_nested_sketch_profile;
+use crate::test_support::history::sldprt_with_nested_sketch_profiles;
+use crate::test_support::parasolid::nurbs_sketch_body;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]

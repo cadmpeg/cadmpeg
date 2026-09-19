@@ -5,11 +5,11 @@
 use std::io::Write as _;
 
 use crate::container;
-use crate::test_support::parasolid_payload;
-use crate::test_support::parasolid_with_body;
-use crate::test_support::synthetic_sldprt;
-use crate::test_support::triangle_body;
-use crate::test_support::world_point;
+use crate::test_support::container::synthetic_sldprt;
+use crate::test_support::parasolid::parasolid_payload;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::world_point;
 use flate2::{write::ZlibEncoder, Compression};
 
 fn zlib_member(bytes: &[u8]) -> Vec<u8> {

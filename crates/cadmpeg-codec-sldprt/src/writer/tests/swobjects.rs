@@ -10,12 +10,12 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
-use crate::test_support::make_block;
-use crate::test_support::material_payload;
-use crate::test_support::sldprt_native;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::sldprt_with_body_and_material;
-use crate::test_support::triangle_body;
+use crate::test_support::appearance::material_payload;
+use crate::test_support::appearance::sldprt_with_body_and_material;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]

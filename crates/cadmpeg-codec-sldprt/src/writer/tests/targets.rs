@@ -7,7 +7,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 use std::io::Cursor;
 
-use crate::test_support::{make_block, sldprt_with_body_and_history, triangle_body};
+use crate::test_support::container::make_block;
+use crate::test_support::history::sldprt_with_body_and_history;
+use crate::test_support::parasolid::triangle_body;
 use crate::{dialect::SldprtDialect, loss::SldprtLossCode, SldprtCodec};
 
 #[test]

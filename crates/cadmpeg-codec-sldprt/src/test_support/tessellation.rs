@@ -2,7 +2,8 @@
 //! Synthetic display-list tessellation payloads for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::{make_block, sldprt_with_body};
+use super::container::make_block;
+use super::container::sldprt_with_body;
 
 /// Build a display-list descriptor header followed by its payload bytes.
 pub(crate) fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {

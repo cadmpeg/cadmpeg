@@ -48,13 +48,13 @@ use cadmpeg_ir::LossTaxonomy;
 
 use crate::SldprtCodec;
 
-use crate::test_support::display_list_payload;
-use crate::test_support::extended_display_list_payload;
-use crate::test_support::make_block;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::sldprt_with_body_and_display_list;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::triangle_body;
 use crate::test_support::tessellation::descriptor;
-use crate::test_support::triangle_body;
+use crate::test_support::tessellation::display_list_payload;
+use crate::test_support::tessellation::extended_display_list_payload;
+use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 use cadmpeg_ir::geometry::{Curve, NurbsSurface, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,

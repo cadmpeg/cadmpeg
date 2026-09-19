@@ -17,9 +17,10 @@ use super::{
 };
 use crate::container::scan_bytes;
 use crate::loss::SldprtLossCode;
-use crate::test_support::{
-    make_block, outer_header, sldprt_with_colliding_sites, synthetic_sldprt,
-};
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_colliding_sites;
+use crate::test_support::container::synthetic_sldprt;
 use crate::SldprtCodec;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::dialect::{Admission, DialectLayers};
