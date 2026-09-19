@@ -373,3 +373,149 @@ fn a_compound_loft_scale_member_direction_is_refused_by_the_payload_admission() 
         serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
     );
 }
+
+#[test]
+fn a_loft_member_form_direction_is_refused_by_the_loft_and_net_payload_admissions() {
+    use super::{
+        LoftSurfacePayload, LoftSurfacePayloadWire, NetSurfacePayload, NetSurfacePayloadWire,
+    };
+    use crate::geometry::{
+        CacheContract, LawFormula, LoftMemberForm, LoftPath, LoftPathCurve, LoftProfileMember,
+        LoftSection, LoftSectionEntry, LoftSubdata, NetSurfaceConstruction,
+        SplineSurfaceParameters,
+    };
+    use crate::ids::CurveId;
+    use crate::math::Vector3;
+
+    let subdata = || LoftSubdata::Type211 {
+        dimensions: [1, 0],
+        row: [0.0, 1.0],
+    };
+    let member = |form| LoftProfileMember {
+        profile: LoftPathCurve {
+            id: CurveId::mint("synthetic:test:curve#profile").unwrap(),
+            endpoints: None,
+        },
+        form,
+    };
+    // Both forms carry the field, so both are exercised in every section.
+    let sections = |support_direction, pair_direction| {
+        [
+            LoftSection {
+                entries: vec![LoftSectionEntry {
+                    parameter: 0.0,
+                    profile: vec![
+                        member(LoftMemberForm::Support {
+                            type_code: 1,
+                            surface: None,
+                            support_bounds: [None; 4],
+                            pcurve: None,
+                            first_flag: false,
+                            asm_extension: None,
+                            subdata: subdata(),
+                            direction: support_direction,
+                        }),
+                        member(LoftMemberForm::PcurvePair {
+                            pcurve: None,
+                            secondary_pcurve: None,
+                            asm_extension: None,
+                            subdata: subdata(),
+                            direction: pair_direction,
+                        }),
+                    ],
+                    path: LoftPath {
+                        path: None,
+                        auxiliaries: Vec::new(),
+                        flag: 0,
+                    },
+                }],
+            },
+            LoftSection {
+                entries: Vec::new(),
+            },
+        ]
+    };
+    let parameters = || SplineSurfaceParameters::OrderedRanges {
+        ranges: [[0.0, 1.0], [0.0, 1.0]],
+    };
+    let loft = |support_direction, pair_direction| {
+        LoftSurfacePayload::try_new(
+            sections(support_direction, pair_direction),
+            parameters(),
+            [0; 2],
+            [0; 2],
+            0,
+            Vec::new(),
+            CacheContract::from_form(None),
+        )
+    };
+    let loft_wire = |support_direction, pair_direction| {
+        LoftSurfacePayload::try_from(LoftSurfacePayloadWire {
+            sections: sections(support_direction, pair_direction),
+            parameters: parameters(),
+            closures: [0; 2],
+            singularities: [0; 2],
+            mode: 0,
+            bridge: Vec::new(),
+            cache: CacheContract::from_form(None),
+        })
+    };
+    let construction = |support_direction, pair_direction| {
+        Box::new(NetSurfaceConstruction {
+            sections: Box::new(sections(support_direction, pair_direction)),
+            frame_parameters: [0.0; 12],
+            flag: 0,
+            directions: [Vector3::new(0.0, 0.0, 1.0); 4],
+            formulas: Box::new(std::array::from_fn(|_| LawFormula::Null {})),
+            discontinuities: Default::default(),
+            discontinuity_flag: false,
+        })
+    };
+    let net = |support_direction, pair_direction| {
+        NetSurfacePayload::try_new(construction(support_direction, pair_direction), None)
+    };
+    let net_wire = |support_direction, pair_direction| {
+        NetSurfacePayload::try_from(NetSurfacePayloadWire {
+            construction: construction(support_direction, pair_direction),
+            cache: None,
+        })
+    };
+
+    let admitted = Vector3::new(0.0, 0.0, 1.0);
+    let definition = ProceduralSurfaceDefinition::Loft(loft(Some(admitted), None).unwrap());
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+    // The admitted direction is the only one the profile writes, and the
+    // absent one writes no key at all.
+    let profile = &wire["sections"][0]["entries"][0]["profile"];
+    assert_eq!(
+        profile[0]["form"]["direction"],
+        serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
+    );
+    assert_eq!(profile[1]["form"].get("direction"), None);
+
+    assert!(loft(None, None).is_ok());
+    assert!(loft_wire(None, None).is_ok());
+    assert!(net(None, None).is_ok());
+    assert!(net_wire(None, None).is_ok());
+    assert!(loft(Some(admitted), Some(admitted)).is_ok());
+    assert!(net(Some(admitted), Some(admitted)).is_ok());
+
+    // JSON itself states no infinity or NaN, so the wire cannot spell a
+    // refused direction; `TryFrom<…Wire>` is the conversion the deserializer
+    // runs, and it is exercised directly here.
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let degenerate = Vector3::new(value, 0.0, 1.0);
+        assert!(loft(Some(degenerate), None).is_err());
+        assert!(loft(None, Some(degenerate)).is_err());
+        assert!(loft_wire(Some(degenerate), None).is_err());
+        assert!(loft_wire(None, Some(degenerate)).is_err());
+        assert!(net(Some(degenerate), None).is_err());
+        assert!(net(None, Some(degenerate)).is_err());
+        assert!(net_wire(Some(degenerate), None).is_err());
+        assert!(net_wire(None, Some(degenerate)).is_err());
+    }
+}
