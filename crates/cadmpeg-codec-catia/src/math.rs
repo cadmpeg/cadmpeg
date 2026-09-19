@@ -38,7 +38,7 @@ pub(crate) fn distance<P: Into<[f64; 3]>>(left: P, right: P) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::{distance, unit_vector};
-    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     const EPS_UNIT_ROUNDING: f64 = 4.0 * f64::EPSILON;
 
@@ -94,6 +94,37 @@ mod tests {
         assert_eq!(
             distance([f64::MAX, 0.0, 0.0], [-f64::MAX, 0.0, 0.0]),
             f64::INFINITY
+        );
+    }
+
+    #[test]
+    fn unit_preserves_tiny_finite_direction() {
+        assert_eq!(unit_vector([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
+        assert_eq!(unit_vector([0.0, 0.0, 0.0]), None);
+    }
+
+    #[test]
+    fn unit_preserves_subnormal_direction() {
+        assert_eq!(unit_vector([1e-310, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
+    }
+
+    #[test]
+    fn unit_rejects_nonfinite_length() {
+        for value in [[f64::INFINITY, 0.0, 0.0], [f64::NAN, 0.0, 0.0]] {
+            assert_eq!(unit_vector(value), None);
+        }
+    }
+
+    #[test]
+    fn unit_vector_preserves_tiny_finite_direction() {
+        assert_eq!(
+            unit_vector(Vector3::new(1e-200, 0.0, 0.0)),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+        assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
+        assert_eq!(
+            unit_vector(Vector3::new(f64::from_bits(1), 0.0, 0.0)),
+            Some(Vector3::new(1.0, 0.0, 0.0))
         );
     }
 }

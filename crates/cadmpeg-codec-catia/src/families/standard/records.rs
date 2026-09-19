@@ -983,7 +983,6 @@ fn all_finite(vs: &[f32]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::axis_from_xy;
-    use crate::math::unit_vector;
     use cadmpeg_ir::math::Vector3;
 
     #[test]
@@ -1005,19 +1004,6 @@ mod tests {
             assert_eq!(rows[0].tag, 2);
             assert_eq!(rows[0].faces, [0, 1]);
         }
-    }
-
-    #[test]
-    fn unit_vector_preserves_tiny_finite_direction() {
-        assert_eq!(
-            unit_vector(Vector3::new(1e-200, 0.0, 0.0)),
-            Some(Vector3::new(1.0, 0.0, 0.0))
-        );
-        assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
-        assert_eq!(
-            unit_vector(Vector3::new(f64::from_bits(1), 0.0, 0.0)),
-            Some(Vector3::new(1.0, 0.0, 0.0))
-        );
     }
 
     #[test]
