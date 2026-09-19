@@ -1236,15 +1236,10 @@ impl LoftSurfacePayload {
         };
         let sections_valid = sections
             .iter()
-            .flat_map(|section| &section.entries)
-            .all(|entry| {
-                entry.parameter.is_finite()
-                    && entry.profile.iter().all(|member| {
-                        let table = member.form.subdata();
-                        table.row_values_are_finite()
-                            && member.form.direction().is_none_or(Vector3::is_finite)
-                    })
-            });
+            .all(crate::geometry::LoftSection::values_are_finite);
+        let cache_valid = cache
+            .form()
+            .is_none_or(crate::geometry::LoftRevisionForm::values_are_finite);
         let bridge_valid = bridge.iter().all(|token| match token {
             crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
             crate::geometry::LoftBridgeToken::Boolean(_)
@@ -1252,7 +1247,7 @@ impl LoftSurfacePayload {
             | crate::geometry::LoftBridgeToken::Text(_)
             | crate::geometry::LoftBridgeToken::Enum(_) => true,
         });
-        if !parameters_valid || !sections_valid || !bridge_valid {
+        if !parameters_valid || !sections_valid || !cache_valid || !bridge_valid {
             return Err(ProceduralGeometryError::Payload(
                 "loft construction payload is invalid",
             ));
@@ -1363,18 +1358,15 @@ impl CompoundLoftSurfacePayload {
                 scales.push(second_scale.as_ref());
                 direction.is_finite()
             }
-            crate::geometry::CompoundLoftTail::Zero { direction, .. } => match direction {
-                crate::geometry::CompoundLoftDirection::Vector { value } => value.is_finite(),
-                crate::geometry::CompoundLoftDirection::Curve { .. } => true,
-            },
+            crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
+                direction.values_are_finite()
+            }
         };
         let scales_valid = scales.iter().all(|scale| {
-            scale.members.iter().all(|member| {
-                let data = &member.data;
-                let table = &data.subdata;
-                table.row_values_are_finite()
-                    && data.direction.as_ref().is_none_or(Vector3::is_finite)
-            })
+            scale
+                .members
+                .iter()
+                .all(|member| member.data.values_are_finite())
         });
         if !tail_valid || !scales_valid {
             return Err(ProceduralGeometryError::Payload(
@@ -1673,16 +1665,10 @@ impl NetSurfacePayload {
         construction: Box<NetSurfaceConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let sections_valid = construction.sections.iter().all(|section| {
-            section.entries.iter().all(|entry| {
-                entry.parameter.is_finite()
-                    && entry.profile.iter().all(|member| {
-                        let table = member.form.subdata();
-                        table.row_values_are_finite()
-                            && member.form.direction().is_none_or(Vector3::is_finite)
-                    })
-            })
-        });
+        let sections_valid = construction
+            .sections
+            .iter()
+            .all(crate::geometry::LoftSection::values_are_finite);
         let formulas_valid = construction.formulas.iter().all(|formula| {
             formula
                 .variables()

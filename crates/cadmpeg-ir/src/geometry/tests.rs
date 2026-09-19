@@ -668,6 +668,8 @@ mod revision_cache_form;
 
 mod variable_blend_cache;
 
+mod revision_compound_loft;
+
 mod revision_compound_loft_tail;
 
 mod loft_path;

@@ -3195,6 +3195,16 @@ impl<P> RevisionCacheForm<P> {
     }
 }
 
+impl RevisionCacheForm<RevisionSurfaceParameterization> {
+    /// Whether every stored scalar is finite. A solved cache states its
+    /// tolerance as a `FitTolerance`, which is finite by type.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.parameterization()
+            .is_none_or(RevisionSurfaceParameterization::values_are_finite)
+    }
+}
+
 /// Approximation state and its dependent fit contract for a variable blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3283,6 +3293,18 @@ pub struct RevisionSurfaceParameterization {
     pub u_singularity: i64,
     /// V singularity enum.
     pub v_singularity: i64,
+}
+
+impl RevisionSurfaceParameterization {
+    /// Whether every stored interval bound is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.u_interval
+            .iter()
+            .chain(self.v_interval.iter())
+            .flatten()
+            .all(|value| value.is_finite())
+    }
 }
 
 /// Subtype-specific tail of a native taper spline surface.
@@ -3477,13 +3499,14 @@ impl LoftSubdata {
         }
     }
 
-    /// Whether every leading and per-column scalar is finite.
+    /// Whether every leading, per-column and trailing row scalar is finite.
     #[must_use]
     fn row_values_are_finite(&self) -> bool {
         let mut valid = true;
-        self.visit_rows(|parameters, columns, _extra| {
+        self.visit_rows(|parameters, columns, extra| {
             valid &= parameters.iter().all(|value| value.is_finite())
-                && columns.iter().flatten().all(|value| value.is_finite());
+                && columns.iter().flatten().all(|value| value.is_finite())
+                && extra.into_iter().flatten().all(|value| value.is_finite());
         });
         valid
     }
@@ -3522,6 +3545,15 @@ pub struct ClassicLoftProfileData {
         deserialize_with = "deserialize_direction"
     )]
     pub direction: Option<Vector3>,
+}
+
+impl ClassicLoftProfileData {
+    /// Whether every scalar this profile data carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.subdata.row_values_are_finite()
+            && self.direction.as_ref().is_none_or(Vector3::is_finite)
+    }
 }
 
 /// Type-selected fields of one loft profile member.
@@ -3651,6 +3683,22 @@ impl LoftMemberForm {
             }
         }
     }
+
+    /// Whether every scalar this form carries is finite. The pcurve slots
+    /// carry their own admission, which refuses a non-finite coefficient.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        let bounds_are_finite = match self {
+            Self::Support { support_bounds, .. } => support_bounds
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite()),
+            Self::PcurvePair { .. } => true,
+        };
+        bounds_are_finite
+            && self.subdata().row_values_are_finite()
+            && self.direction().is_none_or(Vector3::is_finite)
+    }
 }
 
 /// One referenced curve together with its optional native parameter bounds.
@@ -3670,6 +3718,18 @@ pub struct LoftPathCurve {
     pub endpoints: Option<[Option<f64>; 2]>,
 }
 
+impl LoftPathCurve {
+    /// Whether every stored parameter endpoint is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.endpoints
+            .iter()
+            .flatten()
+            .flatten()
+            .all(|value| value.is_finite())
+    }
+}
+
 /// One curve member of a loft profile.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3679,6 +3739,14 @@ pub struct LoftProfileMember {
     pub profile: LoftPathCurve,
     /// Structurally selected surface-side constraint form.
     pub form: LoftMemberForm,
+}
+
+impl LoftProfileMember {
+    /// Whether every scalar this member carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.profile.values_are_finite() && self.form.values_are_finite()
+    }
 }
 
 /// Native path data attached to one loft section entry.
@@ -3699,6 +3767,16 @@ pub struct LoftPath {
     pub flag: i64,
 }
 
+impl LoftPath {
+    /// Whether every scalar this path carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.path
+            .as_ref()
+            .is_none_or(LoftPathCurve::values_are_finite)
+    }
+}
+
 /// One parameterized entry in a native loft section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3710,6 +3788,19 @@ pub struct LoftSectionEntry {
     pub profile: Vec<LoftProfileMember>,
     /// Native path data.
     pub path: LoftPath,
+}
+
+impl LoftSectionEntry {
+    /// Whether every scalar this entry carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.parameter.is_finite()
+            && self
+                .profile
+                .iter()
+                .all(LoftProfileMember::values_are_finite)
+            && self.path.values_are_finite()
+    }
 }
 
 /// Revision-gated `loft_spl_sur` form fields.
@@ -3734,6 +3825,19 @@ pub struct LoftRevisionForm {
     pub tail_flag: bool,
 }
 
+impl LoftRevisionForm {
+    /// Whether every scalar this form carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.cache.values_are_finite()
+            && self
+                .discontinuities
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+    }
+}
+
 /// Ordered native loft section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3741,6 +3845,14 @@ pub struct LoftRevisionForm {
 pub struct LoftSection {
     /// Ordered entries in the section.
     pub entries: Vec<LoftSectionEntry>,
+}
+
+impl LoftSection {
+    /// Whether every scalar this section carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.entries.iter().all(LoftSectionEntry::values_are_finite)
+    }
 }
 
 /// Token retained from the variable bridge preceding a loft solved cache.
@@ -4609,7 +4721,7 @@ pub struct RevisionG2BlendConstruction {
 /// revision-gated surface tail precede the construction fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RevisionCompoundLoftConstructionWire")]
 pub struct RevisionCompoundLoftConstruction {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
@@ -4635,6 +4747,96 @@ pub struct RevisionCompoundLoftConstruction {
     pub direction: CompoundLoftDirection,
     /// Trailing bounds and their dependent BS3 curve.
     pub tail: RevisionCompoundLoftTail<CurveId>,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(rename = "RevisionCompoundLoftConstruction")
+)]
+#[serde(deny_unknown_fields)]
+struct RevisionCompoundLoftConstructionWire {
+    /// Positive serializer-revision integer following the subtype name.
+    revision: i64,
+    /// Approximation-cache form selected by the shared tail enum.
+    cache: RevisionCacheForm,
+    /// Six ordered discontinuity arrays following the fit tolerance.
+    #[serde(default)]
+    discontinuities: [Vec<f64>; 6],
+    /// Boolean terminating the shared tail.
+    tail_flag: bool,
+    /// Leading unparameterized scale block: ordered profile members and path.
+    base_profile: Vec<LoftProfileMember>,
+    /// Path data of the leading scale block.
+    base_path: LoftPath,
+    /// Counted parameterized entries; the native parameter trails each
+    /// entry's fields.
+    entries: Vec<LoftSectionEntry>,
+    /// Two flags following the entries.
+    flags: [bool; 2],
+    /// Two flags opening the kind-zero payload.
+    kind_flags: [bool; 2],
+    /// Direction carrier selected by the kind-zero direction tag.
+    direction: CompoundLoftDirection,
+    /// Trailing bounds and their dependent BS3 curve.
+    tail: RevisionCompoundLoftTail<CurveId>,
+}
+
+impl RevisionCompoundLoftConstruction {
+    /// Admit a construction whose stored scalars are all finite. This is the
+    /// admission of the `revision_compound_loft` procedural surface: a
+    /// decoder that builds the construction admits it here, and the
+    /// deserializer runs the same walk.
+    pub fn admit(self) -> Result<Self, ProceduralGeometryError> {
+        if self.values_are_finite() {
+            Ok(self)
+        } else {
+            Err(ProceduralGeometryError::Payload(
+                "revision compound loft construction payload is invalid",
+            ))
+        }
+    }
+
+    /// Whether every scalar this construction carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.cache.values_are_finite()
+            && self
+                .discontinuities
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+            && self
+                .base_profile
+                .iter()
+                .all(LoftProfileMember::values_are_finite)
+            && self.base_path.values_are_finite()
+            && self.entries.iter().all(LoftSectionEntry::values_are_finite)
+            && self.direction.values_are_finite()
+            && self.tail.values_are_finite()
+    }
+}
+
+impl TryFrom<RevisionCompoundLoftConstructionWire> for RevisionCompoundLoftConstruction {
+    type Error = ProceduralGeometryError;
+
+    fn try_from(wire: RevisionCompoundLoftConstructionWire) -> Result<Self, Self::Error> {
+        Self {
+            revision: wire.revision,
+            cache: wire.cache,
+            discontinuities: wire.discontinuities,
+            tail_flag: wire.tail_flag,
+            base_profile: wire.base_profile,
+            base_path: wire.base_path,
+            entries: wire.entries,
+            flags: wire.flags,
+            kind_flags: wire.kind_flags,
+            direction: wire.direction,
+            tail: wire.tail,
+        }
+        .admit()
+    }
 }
 
 /// Trailing parameter bounds of a revision compound loft.
@@ -4670,6 +4872,17 @@ pub enum RevisionCompoundLoftTail<T> {
 }
 
 impl<T> RevisionCompoundLoftTail<T> {
+    /// Whether every stored parameter bound is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        match self {
+            Self::Unbounded {} => true,
+            Self::LowerBound { lower } => lower.is_finite(),
+            Self::UpperBound { upper } => upper.is_finite(),
+            Self::Curve { interval, .. } => interval.iter().all(|value| value.is_finite()),
+        }
+    }
+
     /// Optional bounds in native order.
     #[must_use]
     pub const fn interval(&self) -> [Option<f64>; 2] {
@@ -4901,6 +5114,15 @@ pub enum CompoundLoftDirection {
 }
 
 impl CompoundLoftDirection {
+    /// Whether every scalar this direction form carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        match self {
+            Self::Vector { value } => value.is_finite(),
+            Self::Curve { .. } => true,
+        }
+    }
+
     /// Native selector for this direction form.
     #[must_use]
     pub const fn selector(&self) -> i64 {

@@ -519,3 +519,241 @@ fn a_loft_member_form_direction_is_refused_by_the_loft_and_net_payload_admission
         assert!(net_wire(None, Some(degenerate)).is_err());
     }
 }
+
+#[test]
+fn the_loft_and_net_admissions_refuse_a_non_finite_section_or_cache_scalar() {
+    use super::{
+        LoftSurfacePayload, LoftSurfacePayloadWire, NetSurfacePayload, NetSurfacePayloadWire,
+    };
+    use crate::geometry::{
+        CacheContract, LawFormula, LoftMemberForm, LoftPath, LoftPathCurve, LoftProfileMember,
+        LoftRevisionForm, LoftSection, LoftSectionEntry, LoftSubdata, LoftSubdataRow,
+        NetSurfaceConstruction, RevisionCacheForm, RevisionSurfaceParameterization,
+        SplineSurfaceParameters,
+    };
+    use crate::ids::CurveId;
+    use crate::math::Vector3;
+
+    // One value per float field family the two admissions reach and the
+    // predecessor left unrefused.
+    #[derive(Clone, Copy)]
+    struct Fields {
+        extra: Option<[f64; 2]>,
+        support_bounds: [Option<f64>; 4],
+        profile_endpoints: Option<[Option<f64>; 2]>,
+        path_endpoints: Option<[Option<f64>; 2]>,
+        u_interval: [Option<f64>; 2],
+        v_interval: [Option<f64>; 2],
+        discontinuity: f64,
+    }
+    let admitted = Fields {
+        extra: Some([0.0, 1.0]),
+        support_bounds: [Some(0.0), Some(1.0), None, Some(2.0)],
+        profile_endpoints: Some([Some(0.0), None]),
+        path_endpoints: Some([None, Some(1.0)]),
+        u_interval: [Some(0.0), Some(1.0)],
+        v_interval: [None, Some(2.0)],
+        discontinuity: 3.0,
+    };
+    let curve = || CurveId::mint("synthetic:test:curve#profile").unwrap();
+    // `extra` is stored by the table form only; type 211 has no row to carry it.
+    let sections = |fields: Fields| {
+        [
+            LoftSection {
+                entries: vec![LoftSectionEntry {
+                    parameter: 0.0,
+                    profile: vec![LoftProfileMember {
+                        profile: LoftPathCurve {
+                            id: curve(),
+                            endpoints: fields.profile_endpoints,
+                        },
+                        form: LoftMemberForm::Support {
+                            type_code: 1,
+                            surface: None,
+                            support_bounds: fields.support_bounds,
+                            pcurve: None,
+                            first_flag: false,
+                            asm_extension: None,
+                            subdata: LoftSubdata::table(
+                                3,
+                                vec![LoftSubdataRow {
+                                    parameters: [0.0, 1.0],
+                                    columns: Vec::new(),
+                                    extra: fields.extra,
+                                }],
+                            )
+                            .unwrap(),
+                            direction: None,
+                        },
+                    }],
+                    path: LoftPath {
+                        path: Some(LoftPathCurve {
+                            id: curve(),
+                            endpoints: fields.path_endpoints,
+                        }),
+                        auxiliaries: Vec::new(),
+                        flag: 0,
+                    },
+                }],
+            },
+            LoftSection {
+                entries: Vec::new(),
+            },
+        ]
+    };
+    let cache = |fields: Fields| {
+        CacheContract::from_form(Some(LoftRevisionForm {
+            revision: 1,
+            flags: [false; 4],
+            ints: [0; 2],
+            cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization {
+                u_interval: fields.u_interval,
+                v_interval: fields.v_interval,
+                u_closure: 0,
+                v_closure: 0,
+                u_singularity: 0,
+                v_singularity: 0,
+            }),
+            discontinuities: [
+                vec![fields.discontinuity],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ],
+            tail_flag: false,
+        }))
+    };
+    let parameters = || SplineSurfaceParameters::OrderedRanges {
+        ranges: [[0.0, 1.0], [0.0, 1.0]],
+    };
+    let loft = |fields: Fields| {
+        LoftSurfacePayload::try_new(
+            sections(fields),
+            parameters(),
+            [0; 2],
+            [0; 2],
+            0,
+            Vec::new(),
+            cache(fields),
+        )
+    };
+    let loft_wire = |fields: Fields| {
+        LoftSurfacePayload::try_from(LoftSurfacePayloadWire {
+            sections: sections(fields),
+            parameters: parameters(),
+            closures: [0; 2],
+            singularities: [0; 2],
+            mode: 0,
+            bridge: Vec::new(),
+            cache: cache(fields),
+        })
+    };
+    // The net construction states no revision cache form, so it carries the
+    // section fields only.
+    let construction = |fields: Fields| {
+        Box::new(NetSurfaceConstruction {
+            sections: Box::new(sections(fields)),
+            frame_parameters: [0.0; 12],
+            flag: 0,
+            directions: [Vector3::new(0.0, 0.0, 1.0); 4],
+            formulas: Box::new(std::array::from_fn(|_| LawFormula::Null {})),
+            discontinuities: Default::default(),
+            discontinuity_flag: false,
+        })
+    };
+    let net = |fields: Fields| NetSurfacePayload::try_new(construction(fields), None);
+    let net_wire = |fields: Fields| {
+        NetSurfacePayload::try_from(NetSurfacePayloadWire {
+            construction: construction(fields),
+            cache: None,
+        })
+    };
+
+    let definition = ProceduralSurfaceDefinition::Loft(loft(admitted).unwrap());
+    let wire = serde_json::to_value(&definition).unwrap();
+    let entry = &wire["sections"][0]["entries"][0];
+    let member = &entry["profile"][0];
+    assert_eq!(
+        member["form"]["subdata"]["rows"][0]["extra"],
+        serde_json::json!([0.0, 1.0])
+    );
+    assert_eq!(
+        member["form"]["support_bounds"],
+        serde_json::json!([0.0, 1.0, null, 2.0])
+    );
+    assert_eq!(
+        member["profile"]["endpoints"],
+        serde_json::json!([0.0, null])
+    );
+    assert_eq!(
+        entry["path"]["path"]["endpoints"],
+        serde_json::json!([null, 1.0])
+    );
+    assert_eq!(
+        wire["cache"]["form"]["cache"]["u_interval"],
+        serde_json::json!([0.0, 1.0])
+    );
+    assert_eq!(
+        wire["cache"]["form"]["cache"]["v_interval"],
+        serde_json::json!([null, 2.0])
+    );
+    assert_eq!(
+        wire["cache"]["form"]["discontinuities"][0],
+        serde_json::json!([3.0])
+    );
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        definition
+    );
+    assert!(loft_wire(admitted).is_ok());
+    assert!(net(admitted).is_ok());
+    assert!(net_wire(admitted).is_ok());
+
+    // JSON itself states no infinity or NaN, so the wire cannot spell a
+    // refused value; `TryFrom<…Wire>` is the conversion the deserializer
+    // runs, and it is exercised directly here.
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for fields in [
+            Fields {
+                extra: Some([value, 1.0]),
+                ..admitted
+            },
+            Fields {
+                support_bounds: [Some(0.0), None, Some(value), None],
+                ..admitted
+            },
+            Fields {
+                profile_endpoints: Some([Some(value), None]),
+                ..admitted
+            },
+            Fields {
+                path_endpoints: Some([None, Some(value)]),
+                ..admitted
+            },
+        ] {
+            assert!(loft(fields).is_err());
+            assert!(loft_wire(fields).is_err());
+            assert!(net(fields).is_err());
+            assert!(net_wire(fields).is_err());
+        }
+        for fields in [
+            Fields {
+                u_interval: [Some(value), None],
+                ..admitted
+            },
+            Fields {
+                v_interval: [None, Some(value)],
+                ..admitted
+            },
+            Fields {
+                discontinuity: value,
+                ..admitted
+            },
+        ] {
+            assert!(loft(fields).is_err());
+            assert!(loft_wire(fields).is_err());
+        }
+    }
+}
