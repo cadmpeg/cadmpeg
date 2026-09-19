@@ -599,6 +599,175 @@ def scan_placement(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+MOD_DECL_VIS = re.compile(
+    r"^\s*(?:(?P<vis>pub)(?:\s*\((?P<scope>[^)]*)\))?\s+)?mod\s+"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?P<marker>;|\{)"
+)
+# A module-level item at column zero. An associated item, a struct field and an
+# enum variant are indented, so the anchor alone keeps them out of the rule.
+PATH_ONLY_ITEM = re.compile(
+    r"^pub\s*\(\s*(?P<scope>[^)]*?)\s*\)\s+"
+    r"(?:(?:unsafe|async|extern\s+\"[^\"]*\")\s+)*"
+    r"(?:fn|const|static)\b"
+)
+REEXPORT_USE = re.compile(r"^\s*pub(?:\s*\([^)]*\))?\s+use\s+(?P<path>[^;]*);", re.MULTILINE)
+IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def narrower_scope(left: tuple[str, ...], right: tuple[str, ...]) -> tuple[str, ...]:
+    """Whichever of two module paths lies inside the other."""
+    return left if len(left) >= len(right) else right
+
+
+def spelled_scope(parent: tuple[str, ...], text: str) -> tuple[str, ...] | None:
+    """The module a restriction written inside ``parent`` names, or None for bare `pub`."""
+    text = text.strip()
+    if text == "crate":
+        return ()
+    if text == "self":
+        return parent
+    if text == "super":
+        return parent[:-1]
+    if text.startswith("in "):
+        segments = tuple(part.strip() for part in text[3:].split("::") if part.strip())
+        if segments[:1] == ("crate",):
+            return segments[1:]
+        if segments[:1] == ("self",):
+            return parent + segments[1:]
+        if segments[:1] == ("super",):
+            return parent[:-1] + segments[1:]
+        return segments
+    return None
+
+
+def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[str, ...]]]:
+    """Every file module of one crate, with the module subtree that can name it.
+
+    ``scope`` is the widest module from which a path naming the module can be
+    written. The crate root has the whole crate. A child declared ``pub``
+    inherits its parent's scope, ``pub(crate)`` widens to the whole crate, and a
+    declaration with no marker caps the child at the parent, because no outside
+    module can spell the parent's private child.
+    """
+    modules: list[tuple[Path, tuple[str, ...], tuple[str, ...]]] = []
+    seen: set[Path] = set()
+
+    def walk(path: Path, module: tuple[str, ...], scope: tuple[str, ...]) -> None:
+        path = path.resolve()
+        if path in seen:
+            return
+        seen.add(path)
+        modules.append((path, module, scope))
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+        body(path, lines, 0, len(lines), child_module_dir(path), module, scope)
+
+    def body(
+        path: Path, lines: list[str], index: int, end: int,
+        child_dir: Path, module: tuple[str, ...], scope: tuple[str, ...],
+    ) -> None:
+        attrs: list[str] = []
+        while index < end:
+            stripped = lines[index].lstrip()
+            if stripped.startswith("#["):
+                attr, index = collect_attribute(lines, index)
+                attrs.append(attr)
+                continue
+            if is_trivia_line(stripped):
+                index += 1
+                continue
+            match = MOD_DECL_VIS.match(lines[index])
+            pending, attrs = attrs, []
+            if match is None:
+                index = skip_item(lines, index)
+                continue
+            test_gated = any(attr_is_test_cfg(attr) for attr in pending)
+            child = module + (match.group("name"),)
+            if match.group("vis") is None:
+                child_scope = module
+            else:
+                spelled = spelled_scope(module, match.group("scope") or "")
+                child_scope = scope if spelled is None else narrower_scope(scope, spelled)
+            if match.group("marker") == "{":
+                stop = find_matching_brace_end(lines, index) + 1
+                if not test_gated:
+                    body(path, lines, index + 1, stop,
+                         child_dir / match.group("name"), child, child_scope)
+                index = stop
+                continue
+            index += 1
+            if test_gated:
+                continue
+            explicit = None
+            for attr in pending:
+                explicit = path_attr_target(attr) or explicit
+            target = resolve_module_target(path, child_dir, match.group("name"), explicit)
+            if target is not None:
+                walk(target, child, child_scope)
+
+    walk(crate_root, (), ())
+    return modules
+
+
+def scan_module_visibility(sources: dict[Path, str]) -> list[Finding]:
+    """Report a module-level item claiming more reach than its module can grant.
+
+    A module whose declaration chain caps it below the crate root cannot be named
+    from outside that cap, so no code outside the cap can write a path to the
+    items it declares. A `pub(crate)` marker on such an item therefore spells
+    reach the module already denies, and the honest marker is the narrower one
+    its readers need.
+
+    The rule covers a module-level `fn`, `const` or `static` only. Those are
+    reachable by path alone, so the module's cap is the whole story. An
+    associated item, a struct field and an enum variant are reachable on a value
+    obtained outside the module, with no path written, and a type is subject to
+    the private-interface rule when a wider signature names it; for all of those
+    the compiler can require the wider marker, and the check would report a
+    marker the build needs. Those forms stay outside the rule rather than in an
+    exemption list.
+
+    An item re-exported upward keeps the reach the re-export grants, so a module
+    named by any non-private `use` in its crate is outside the rule as well.
+    """
+    findings: list[Finding] = []
+    for crate_dir in sorted(ROOT.glob("crates/*")):
+        roots = [crate_dir / "src" / name for name in ("lib.rs", "main.rs")]
+        roots = [root for root in roots if root.is_file()]
+        if not roots:
+            continue
+        reexported: set[str] = set()
+        for path in sorted(crate_dir.glob("src/**/*.rs")):
+            if path not in sources:
+                sources[path] = path.read_text(encoding="utf-8", errors="replace")
+            if not REEXPORT_USE.search(sources[path]):
+                continue  # masking is the expensive step; skip a file with no candidate.
+            for match in REEXPORT_USE.finditer(mask_rust_non_code(sources[path])):
+                reexported.update(IDENTIFIER.findall(match.group("path")))
+        for root in roots:
+            for path, module, scope in module_scopes(root):
+                if not scope or not is_production_rs(path) or module[-1] in reexported:
+                    continue
+                if path not in sources:
+                    sources[path] = path.read_text(encoding="utf-8", errors="replace")
+                code, _ = production_source(sources[path])
+                for number, line in enumerate(code.splitlines(), start=1):
+                    match = PATH_ONLY_ITEM.match(line)
+                    if match is None:
+                        continue
+                    granted = spelled_scope(module, match.group("scope"))
+                    if granted is None:
+                        continue
+                    if len(granted) >= len(scope) or scope[:len(granted)] != granted:
+                        continue
+                    findings.append(Finding(
+                        "overwide_module_visibility", relative_path(path), number,
+                        f"Module `{'::'.join(module)}` can be named only inside "
+                        f"`crate::{'::'.join(scope)}`; this marker spells wider reach "
+                        "than the module grants.",
+                    ))
+    return findings
+
+
 # An absolute filesystem path of an authoring machine is corpus provenance and
 # must not be checked in. A URL path segment is not one: it follows a host name,
 # so the character before the segment is alphanumeric.
@@ -718,6 +887,7 @@ def check_source() -> list[Finding]:
     for path, source in sources.items():
         if is_production_rs(path):
             findings.extend(scan_patterns(path, source))
+    findings.extend(scan_module_visibility(sources))
     findings.extend(scan_authoring_paths())
     findings.extend(scan_script_tests())
     return sorted(findings, key=lambda item: (item.path, item.line, item.rule))
