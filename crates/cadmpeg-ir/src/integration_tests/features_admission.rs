@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-
 use crate::features::edge_treatments::{FullRoundFilletGroup, FullRoundSideSelection};
 use crate::features::holes::{CounterdrillDiameters, HoleConstruction, HoleKind, HoleShape};
 use crate::features::{

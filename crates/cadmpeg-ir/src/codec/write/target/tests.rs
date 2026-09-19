@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-
 use super::resolve_write_request;
 use super::TargetRequest;
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;

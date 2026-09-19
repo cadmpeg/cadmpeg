@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-
 use crate::report::export::{CensusBasis, EntityCensus, ExportReport};
 use cadmpeg_core::dialect::DialectId;
 use std::collections::BTreeMap;

@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-
 use crate::geometry::analytic::EllipseCurve;
 use crate::geometry::pcurve::{
     CirclePcurve, EllipsePcurve, HarmonicPcurve, LinePcurve, OffsetPcurve, PcurveGeometry,
