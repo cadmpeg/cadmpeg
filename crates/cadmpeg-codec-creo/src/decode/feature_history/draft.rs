@@ -553,7 +553,9 @@ pub(in super::super) fn schema_feature_definition(
             ));
         }
     }
-    if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
+    if feature_recipe(scan, feature_id)
+        == Some(crate::feature::operations::FeatureRecipeKind::Revolve)
+    {
         let extent = feature_revolution_extent(scan, feature_id);
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
         let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
@@ -950,13 +952,13 @@ pub(in super::super) fn numbered_feature_name_has_family(name: &str, family: &st
 
 pub(in super::super) fn section_sweep_allows_linear_extrusion(
     schema_class: Option<SchemaClass>,
-    recipe: Option<crate::feature::FeatureRecipeKind>,
+    recipe: Option<crate::feature::operations::FeatureRecipeKind>,
 ) -> bool {
-    recipe == Some(crate::feature::FeatureRecipeKind::Extrude)
+    recipe == Some(crate::feature::operations::FeatureRecipeKind::Extrude)
         || (matches!(
             schema_class,
             Some(SchemaClass::Cut | SchemaClass::Protrusion)
-        ) && recipe != Some(crate::feature::FeatureRecipeKind::Revolve))
+        ) && recipe != Some(crate::feature::operations::FeatureRecipeKind::Revolve))
 }
 
 pub(in super::super) fn feature_is_sheet_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
@@ -989,8 +991,9 @@ pub(in super::super) fn feature_allows_additive_linear_extrusion(
             Some(SchemaClass::Protrusion),
             feature_recipe(scan, feature_id),
         )
-        && feature_recipe_effect(scan, feature_id)
-            .is_none_or(|effect| effect == crate::feature::FeatureRecipeEffect::Protrude)
+        && feature_recipe_effect(scan, feature_id).is_none_or(|effect| {
+            effect == crate::feature::operations::FeatureRecipeEffect::Protrude
+        })
 }
 
 pub(in super::super) fn preceding_features_establish_body(ir: &CadIr) -> bool {
@@ -1013,15 +1016,17 @@ pub(in super::super) fn preceding_features_establish_body(ir: &CadIr) -> bool {
 }
 
 pub(in super::super) fn section_sweep_boolean_operation(
-    recipe_effect: Option<crate::feature::FeatureRecipeEffect>,
+    recipe_effect: Option<crate::feature::operations::FeatureRecipeEffect>,
     kind: &str,
     has_evaluated_body: bool,
     prior_body: bool,
 ) -> BooleanOp {
     match recipe_effect {
-        Some(crate::feature::FeatureRecipeEffect::Protrude) if prior_body => BooleanOp::Join,
-        Some(crate::feature::FeatureRecipeEffect::Protrude) => BooleanOp::NewBody,
-        Some(crate::feature::FeatureRecipeEffect::Cut) => BooleanOp::Cut,
+        Some(crate::feature::operations::FeatureRecipeEffect::Protrude) if prior_body => {
+            BooleanOp::Join
+        }
+        Some(crate::feature::operations::FeatureRecipeEffect::Protrude) => BooleanOp::NewBody,
+        Some(crate::feature::operations::FeatureRecipeEffect::Cut) => BooleanOp::Cut,
         None if kind == "Protrusion" && prior_body => BooleanOp::Join,
         None if kind == "Protrusion" => BooleanOp::NewBody,
         None if kind == "Cut" => BooleanOp::Cut,
@@ -1032,7 +1037,7 @@ pub(in super::super) fn section_sweep_boolean_operation(
 
 pub(in super::super) fn class_942_boundary_surface_entity_graph(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> bool {
     let mut generated_surfaces = surface_rows
@@ -1082,7 +1087,7 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
     ) && topology
         .entries
         .iter()
-        .map(crate::feature::FeatureEntityTableEntry::class_id)
+        .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
         .eq([221, 222, 220, 220])
         && owner_entry.source_entity_id() == Some(feature_id)
         && matches!(

@@ -53,7 +53,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             continue;
         };
         if current_additive_feature_recipe(&scan.features.operations, feature_id)
-            != Some(crate::feature::FeatureRecipeKind::Revolve)
+            != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
             || !feature_is_first_material_operation(scan, feature_id)
             || unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id)
                 .is_none()

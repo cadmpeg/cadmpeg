@@ -315,7 +315,7 @@ fn decode_reports_missing_declared_solver_variable_rows() {
 
 #[test]
 fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(7),
             owner_feature_id: Some(8),
@@ -329,12 +329,12 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
             rows: Vec::new(),
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([21, 22]),
+            rows: (vec![crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line([21, 22]),
                 directions: [None; 3],
                 center_id: None,
                 arc_orientation: None,
@@ -352,11 +352,11 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
         }),
         trim_entities: None,
         trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
+        order_table: Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 3,
                 internal_id: 3,
                 bitmask: 0,
@@ -367,9 +367,9 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
         section_3d: None,
         dimensions: None,
         relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Line(
-                crate::feature::FeatureSavedLine {
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+                crate::feature::definitions::FeatureSavedLine {
                     entity_id: 3,
                     references: Vec::new(),
                     attributes: Vec::new(),
@@ -394,8 +394,8 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
 
 #[test]
 fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
-    let line = |point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+    let line = |point_ids| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -406,7 +406,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
         body: Vec::new(),
         offset: 0,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -415,7 +415,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: None,
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
@@ -483,7 +483,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
 
 #[test]
 fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -495,7 +495,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
             crate::feature::definitions::FeatureVariableTable {
                 declared_count: 1,
                 entity_ref: None,
-                rows: vec![crate::feature::FeatureVariableRow {
+                rows: vec![crate::feature::definitions::FeatureVariableRow {
                     variable_type: crate::feature::definitions::VariableType::Radius,
                     key: 6,
                     value: crate::feature::definitions::ScalarLane::DimensionDriven,
@@ -512,60 +512,60 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 offset: 0,
             },
             vec![
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(2.0),
                     v: Some(3.0),
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 2,
                     u: None,
                     v: None,
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 3,
                     u: Some(7.0),
                     v: Some(11.0),
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 4,
                     u: Some(5.0),
                     v: Some(20.0),
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 5,
                     u: None,
                     v: None,
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 6,
                     u: Some(20.0),
                     v: Some(30.0),
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 7,
                     u: None,
                     v: None,
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 8,
                     u: None,
                     v: None,
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 9,
                     u: Some(20.0),
                     v: Some(40.0),
                 },
             ],
         )),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 5,
             has_elided_prototype: false,
             entity_ref: None,
             rows: (vec![
-                crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+                crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
                     directions: [None; 3],
                     center_id: None,
                     arc_orientation: None,
@@ -576,8 +576,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     body: Vec::new(),
                     offset: 0,
                 },
-                crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line([6, 7]),
+                crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Line([6, 7]),
                     directions: [None; 3],
                     center_id: None,
                     arc_orientation: None,
@@ -588,8 +588,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     body: Vec::new(),
                     offset: 0,
                 },
-                crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line([8, 9]),
+                crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Line([8, 9]),
                     directions: [Some(1), None, None],
                     center_id: None,
                     arc_orientation: None,
@@ -600,8 +600,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     body: Vec::new(),
                     offset: 0,
                 },
-                crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line([4, 5]),
+                crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Line([4, 5]),
                     directions: [None; 3],
                     center_id: None,
                     arc_orientation: None,
@@ -612,8 +612,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     body: Vec::new(),
                     offset: 0,
                 },
-                crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Line([2, 3]),
+                crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Line([2, 3]),
                     directions: [None; 3],
                     center_id: None,
                     arc_orientation: None,
@@ -634,11 +634,11 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         trim_vertices: None,
         order_table: None,
         section_3d: None,
-        dimensions: Some(crate::feature::FeatureDimensionTable {
+        dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
             declared_count: 2,
             entity_ref: None,
             rows: vec![
-                crate::feature::FeatureDimension {
+                crate::feature::definitions::FeatureDimension {
                     dimension_type: 2,
                     value: crate::feature::definitions::DimensionValue::Resolved(12.0),
                     value_body: Vec::new(),
@@ -649,7 +649,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     references: None,
                     offset: 0,
                 },
-                crate::feature::FeatureDimension {
+                crate::feature::definitions::FeatureDimension {
                     dimension_type: 3,
                     value: crate::feature::definitions::DimensionValue::Resolved(4.0),
                     value_body: Vec::new(),
@@ -663,11 +663,11 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
             ],
             offset: 0,
         }),
-        relations: Some(crate::feature::FeatureRelationTable {
+        relations: Some(crate::feature::definitions::FeatureRelationTable {
             declared_count: 6,
             entity_ref: None,
             rows: vec![
-                crate::feature::FeatureRelation {
+                crate::feature::definitions::FeatureRelation {
                     relation_id: 1,
                     used: 1,
                     operands: Vec::new(),
@@ -682,7 +682,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     body: Vec::new(),
                     offset: 0,
                 },
-                crate::feature::FeatureRelation {
+                crate::feature::definitions::FeatureRelation {
                     relation_id: 3,
                     used: 1,
                     operands: Vec::new(),
@@ -697,7 +697,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     body: Vec::new(),
                     offset: 0,
                 },
-                crate::feature::FeatureRelation {
+                crate::feature::definitions::FeatureRelation {
                     relation_id: 4,
                     used: 1,
                     operands: Vec::new(),
@@ -712,7 +712,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     body: Vec::new(),
                     offset: 0,
                 },
-                crate::feature::FeatureRelation {
+                crate::feature::definitions::FeatureRelation {
                     relation_id: 2,
                     used: 0,
                     operands: Vec::new(),
@@ -765,12 +765,12 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
     crate::feature::definitions::test_support::append_points(
         variables,
         vec![
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 10,
                 u: None,
                 v: None,
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 11,
                 u: None,
                 v: Some(3.0),
@@ -784,8 +784,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
     segments.declared_count = 7;
     segments.rows.edit_ordinary(|rows| {
         rows.extend([
-            crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([10, 12]),
+            crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line([10, 12]),
                 directions: [None; 3],
                 center_id: None,
                 arc_orientation: None,
@@ -796,8 +796,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 body: Vec::new(),
                 offset: 0,
             },
-            crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([13, 11]),
+            crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line([13, 11]),
                 directions: [None; 3],
                 center_id: None,
                 arc_orientation: None,
@@ -815,42 +815,46 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         .as_mut()
         .expect("dimensions");
     dimensions.declared_count = 3;
-    dimensions.rows.push(crate::feature::FeatureDimension {
-        dimension_type: 2,
-        value: crate::feature::definitions::DimensionValue::Resolved(15.0),
-        value_body: Vec::new(),
-        direction_byte: 0,
-        auxiliary_value: Some(0.0),
-        auxiliary_body: Vec::new(),
-        external_id: 3,
-        references: None,
-        offset: 0,
-    });
+    dimensions
+        .rows
+        .push(crate::feature::definitions::FeatureDimension {
+            dimension_type: 2,
+            value: crate::feature::definitions::DimensionValue::Resolved(15.0),
+            value_body: Vec::new(),
+            direction_byte: 0,
+            auxiliary_value: Some(0.0),
+            auxiliary_body: Vec::new(),
+            external_id: 3,
+            references: None,
+            offset: 0,
+        });
     let relations = saved_endpoint_definition
         .relations
         .as_mut()
         .expect("relations");
     relations.declared_count = 7;
-    relations.rows.push(crate::feature::FeatureRelation {
-        relation_id: 5,
-        used: 1,
-        operands: Vec::new(),
-        operand_vectors: Some([
-            [Some(10), Some(11), None, Some(1)],
-            [Some(1), Some(1), Some(0), Some(1)],
-            [Some(15), Some(16), Some(15), Some(1)],
-        ]),
-        sign: 1,
-        dimension_id: 2,
-        relation_type: 0,
-        body: Vec::new(),
-        offset: 0,
-    });
-    saved_endpoint_definition.order_table = Some(crate::feature::FeatureOrderTable {
+    relations
+        .rows
+        .push(crate::feature::definitions::FeatureRelation {
+            relation_id: 5,
+            used: 1,
+            operands: Vec::new(),
+            operand_vectors: Some([
+                [Some(10), Some(11), None, Some(1)],
+                [Some(1), Some(1), Some(0), Some(1)],
+                [Some(15), Some(16), Some(15), Some(1)],
+            ]),
+            sign: 1,
+            dimension_id: 2,
+            relation_type: 0,
+            body: Vec::new(),
+            offset: 0,
+        });
+    saved_endpoint_definition.order_table = Some(crate::feature::definitions::FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureOrderRow {
+        rows: vec![crate::feature::definitions::FeatureOrderRow {
             external_id: 10,
             internal_id: 10,
             bitmask: 0,
@@ -858,22 +862,23 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         }],
         offset: 0,
     });
-    saved_endpoint_definition.saved_section = Some(crate::feature::FeatureSavedSection {
-        entities: vec![crate::feature::FeatureSavedEntity::Line(
-            crate::feature::FeatureSavedLine {
-                entity_id: 10,
-                references: Vec::new(),
-                attributes: Vec::new(),
-                endpoints: [
-                    [Some(2.0), Some(3.0), Some(0.0)],
-                    [Some(0.0), Some(0.0), Some(0.0)],
-                ],
-                body: Vec::new(),
-                offset: 0,
-            },
-        )],
-        offset: 0,
-    });
+    saved_endpoint_definition.saved_section =
+        Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+                crate::feature::definitions::FeatureSavedLine {
+                    entity_id: 10,
+                    references: Vec::new(),
+                    attributes: Vec::new(),
+                    endpoints: [
+                        [Some(2.0), Some(3.0), Some(0.0)],
+                        [Some(0.0), Some(0.0), Some(0.0)],
+                    ],
+                    body: Vec::new(),
+                    offset: 0,
+                },
+            )],
+            offset: 0,
+        });
     assert_eq!(
         crate::decode::sketch::coordinates::resolved_section_points(&saved_endpoint_definition)
             .get(&11),

@@ -23,7 +23,7 @@ const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 
 pub(in crate::decode) fn stepped_hole_form(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<HoleForm> {
     let candidates = tables
@@ -75,7 +75,7 @@ fn paired_hole_replay_is_counterbore(
 
 fn split_patch_table_is_counterbore(
     feature_id: u32,
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
     let surface_kinds = table
@@ -106,7 +106,7 @@ fn split_patch_table_is_counterbore(
     {
         return false;
     }
-    let is_rowless = |entry: &crate::feature::FeatureEntityTableEntry| {
+    let is_rowless = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
         table.non_surface_entity_ids().contains(&entry.entity_id)
             && !table.surface_ids().contains(&entry.entity_id)
     };
@@ -188,10 +188,10 @@ fn split_patch_table_is_counterbore(
 
 fn paired_hole_replay_surfaces_by_source(
     feature_id: u32,
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<BTreeMap<u32, [Option<crate::surface::SurfaceKind>; 2]>> {
-    let entry_kind = |entry: &crate::feature::FeatureEntityTableEntry| {
+    let entry_kind = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
         if table.surface_ids().contains(&entry.entity_id) {
             Some(Some(
                 crate::surface::unique_surface_row(rows, entry.entity_id)
@@ -282,13 +282,13 @@ impl SimpleDrilledDimensionFamily {
 
 #[derive(Debug, Clone, Copy)]
 pub(in crate::decode) struct SimpleDrilledHoleRecipe<'a> {
-    pub(in crate::decode) table: &'a crate::feature::FeatureEntityTable,
+    pub(in crate::decode) table: &'a crate::feature::entity::FeatureEntityTable,
     pub(in crate::decode) dimension_family: SimpleDrilledDimensionFamily,
 }
 
 pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
     feature_id: u32,
-    tables: &'a [crate::feature::FeatureEntityTable],
+    tables: &'a [crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<SimpleDrilledHoleRecipe<'a>> {
     let candidates = tables
@@ -330,7 +330,7 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
 
 pub(in crate::decode) fn simple_drilled_hole_envelope_spans(
     scan: &ContainerScan,
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
 ) -> Option<[[Option<f64>; 2]; 3]> {
     let [first, second] = simple_drilled_hole_corner_envelopes(scan, table)?;
     paired_corner_envelope_axis_spans(first, second)
@@ -338,7 +338,7 @@ pub(in crate::decode) fn simple_drilled_hole_envelope_spans(
 
 fn simple_drilled_hole_corner_envelopes(
     scan: &ContainerScan,
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
 ) -> Option<[[[f64; 3]; 2]; 2]> {
     let feature_id = table.feature_id;
     let envelopes = table
@@ -359,7 +359,7 @@ fn simple_drilled_hole_corner_envelopes(
 
 fn simple_drilled_hole_cone_terminal_points(
     scan: &ContainerScan,
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
 ) -> Option<[[f64; 3]; 2]> {
     let feature_id = table.feature_id;
     let points = table
@@ -388,7 +388,7 @@ fn simple_drilled_hole_cone_terminal_points(
 
 pub(in crate::decode) fn simple_drilled_hole_placement(
     scan: &ContainerScan,
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
     diameter: f64,
     depth: f64,
 ) -> Option<(Point3, Vector3)> {
@@ -405,7 +405,7 @@ pub(in crate::decode) fn simple_drilled_hole_placement(
 
 pub(in crate::decode) fn simple_drilled_hole_axis_placement(
     scan: &ContainerScan,
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
     diameter: f64,
 ) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let feature_id = table.feature_id;
@@ -814,7 +814,7 @@ pub(in crate::decode) fn simple_drilled_hole_dimensions(
 }
 
 pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
-    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
     observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
 ) -> Option<(f64, f64, f64)> {
@@ -822,20 +822,21 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
         .filter(|table| feature_dimension_table_complete(table) && table.rows.len() == 3)
         .collect::<Vec<_>>();
     let depth_external_id = family.depth_external_id();
-    let has_simple_drilled_signature = |table: &crate::feature::FeatureDimensionTable| {
-        [(0, 2), (1, 10), (depth_external_id, 2)].into_iter().all(
-            |(external_id, dimension_type)| {
-                table
-                    .rows
-                    .iter()
-                    .filter(|row| {
-                        row.external_id == external_id && row.dimension_type == dimension_type
-                    })
-                    .count()
-                    == 1
-            },
-        )
-    };
+    let has_simple_drilled_signature =
+        |table: &crate::feature::definitions::FeatureDimensionTable| {
+            [(0, 2), (1, 10), (depth_external_id, 2)].into_iter().all(
+                |(external_id, dimension_type)| {
+                    table
+                        .rows
+                        .iter()
+                        .filter(|row| {
+                            row.external_id == external_id && row.dimension_type == dimension_type
+                        })
+                        .count()
+                        == 1
+                },
+            )
+        };
     let candidates =
         tables
             .into_iter()

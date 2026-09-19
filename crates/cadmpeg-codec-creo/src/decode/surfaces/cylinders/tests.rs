@@ -88,7 +88,7 @@ fn support_tangent_frame_requires_a_matching_axis_aligned_support() {
 
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
@@ -98,9 +98,9 @@ fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
     });
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 913,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4, 5, 6],
             offset: 0,
         });
@@ -352,7 +352,7 @@ fn split_outline_rejects_duplicate_surface_rows() {
 #[test]
 fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 916,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Cut),
         stream_offset: 0,
@@ -412,7 +412,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
 #[test]
 fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
@@ -484,7 +484,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
 #[test]
 fn inline_type24_frame_is_admitted_in_a_round_feature() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
@@ -548,7 +548,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
 #[test]
 fn positional_frame_reconciles_an_existing_model_cylinder() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 917,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 0,
@@ -704,7 +704,7 @@ fn round_edge_support_frame_rejects_parallel_supports() {
 
 fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 42,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
         stream_offset: 0,
@@ -714,7 +714,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
     });
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(911),
                 owner_feature_id: None,
@@ -728,13 +728,13 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             trim_vertices: None,
             order_table: None,
             section_3d: None,
-            dimensions: Some(crate::feature::FeatureDimensionTable {
+            dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
                 declared_count: 4,
                 entity_ref: Some(88),
                 rows: vec![(2, 20.0, 0), (2, 1.0, 1), (1, 8.0, 2), (2, 60.0, 3)]
                     .into_iter()
-                    .map(
-                        |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
+                    .map(|(dimension_type, value, external_id)| {
+                        crate::feature::definitions::FeatureDimension {
                             dimension_type,
                             value: crate::feature::definitions::DimensionValue::Resolved(value),
                             value_body: Vec::new(),
@@ -744,8 +744,8 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
                             external_id,
                             references: None,
                             offset: 0,
-                        },
-                    )
+                        }
+                    })
                     .collect(),
                 offset: 0,
             }),
@@ -789,7 +789,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             offset: 3,
             body_offset: 3,
         });
-    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
         entity_id,
         payload: crate::feature::entity::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
@@ -797,7 +797,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         end_offset: entity_id as usize + 1,
     };
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             42,
             29,
             vec![entry(1, 100), entry(2, 100), entry(3, 101), entry(4, 101)],
@@ -916,7 +916,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         offset: 0,
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 23,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
@@ -930,7 +930,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             23,
             80,
             vec![
@@ -972,7 +972,7 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
         next_surface: 0,
         offset: 0,
     };
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         23,
         80,
         vec![

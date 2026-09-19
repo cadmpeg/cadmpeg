@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 #[test]
 fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() {
-    let feature_row = |feature_id| crate::feature::FeatureRow {
+    let feature_row = |feature_id| crate::feature::rows::FeatureRow {
         feature_id,
         root_schema_class: None,
         stream_offset: 0,
@@ -36,15 +36,15 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         .rows
         .extend([feature_row(50), feature_row(70)]);
     scan.features.affected_ids.extend([
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: vec![45],
             offset: 0,
         },
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 50,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: vec![60],
             offset: 0,
         },

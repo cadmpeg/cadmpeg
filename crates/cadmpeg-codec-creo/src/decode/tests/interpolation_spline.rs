@@ -399,7 +399,7 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
 
 #[test]
 fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
-    use crate::feature::FeatureRecipeKind::{Extrude, Revolve};
+    use crate::feature::operations::FeatureRecipeKind::{Extrude, Revolve};
 
     assert!(section_sweep_allows_linear_extrusion(
         Some(SchemaClass::Cut),
@@ -429,11 +429,11 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 917,
-            kind: crate::feature::OperationKind::Native,
+            kind: crate::feature::operations::OperationKind::Native,
             name: crate::feature::operations::OperationName::Derived,
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: true,
             depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Protrusion,
@@ -444,7 +444,7 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
         });
 
     assert!(!feature_allows_linear_extrusion(&scan, 917));
-    scan.features.operations[0].kind = crate::feature::OperationKind::Extrude;
+    scan.features.operations[0].kind = crate::feature::operations::OperationKind::Extrude;
     assert!(feature_allows_linear_extrusion(&scan, 917));
 }
 
@@ -453,15 +453,15 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 942,
-            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            kind: crate::feature::operations::OperationKind::Stored("Surface".to_string()),
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -472,7 +472,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         });
     scan.features
         .reference_names
-        .push(crate::feature::FeatureReferenceName {
+        .push(crate::feature::operations::FeatureReferenceName {
             feature_id: 942,
             name_bytes: b"Extrude 1".to_vec(),
             own_reference_id: 1,
@@ -530,15 +530,15 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 942,
-            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            kind: crate::feature::operations::OperationKind::Stored("Surface".to_string()),
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -559,15 +559,15 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 942,
-            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            kind: crate::feature::operations::OperationKind::Stored("Surface".to_string()),
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::operations::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -578,7 +578,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         });
     scan.features
         .reference_names
-        .push(crate::feature::FeatureReferenceName {
+        .push(crate::feature::operations::FeatureReferenceName {
             feature_id: 942,
             name_bytes: b"Extrude 1".to_vec(),
             own_reference_id: 1,
@@ -596,16 +596,17 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         )
         .expect("valid section frame"),
     );
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             942,
             29,
             vec![
@@ -707,20 +708,21 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
 
 #[test]
 fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
-    let entry = |entity_id, class_id, related_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(
-            class_id,
-            None,
-            related_entity_id,
-            related_entity_id.map(|_| 0),
-        ),
+    let entry =
+        |entity_id, class_id, related_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(
+                class_id,
+                None,
+                related_entity_id,
+                related_entity_id.map(|_| 0),
+            ),
 
-        entity_id,
-        prefixed: true,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize,
-    };
-    let table = crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: true,
+            offset: entity_id as usize,
+            end_offset: entity_id as usize,
+        };
+    let table = crate::feature::entity::FeatureEntityTable::new(
         17,
         80,
         vec![
@@ -781,7 +783,7 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
 
 #[test]
 fn draft_neutral_plane_requires_one_owned_class_209_plane() {
-    let entry = |entity_id, class_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, class_id| crate::feature::entity::FeatureEntityTableEntry {
         payload: crate::feature::entity::entry_payload(class_id, None, None, None),
 
         entity_id,
@@ -789,8 +791,8 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         offset: entity_id as usize,
         end_offset: entity_id as usize,
     };
-    let table = |entries: Vec<crate::feature::FeatureEntityTableEntry>, surface_ids| {
-        crate::feature::FeatureEntityTable::new(
+    let table = |entries: Vec<crate::feature::entity::FeatureEntityTableEntry>, surface_ids| {
+        crate::feature::entity::FeatureEntityTable::new(
             225,
             29,
             entries,
@@ -840,10 +842,10 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
 
 #[test]
 fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         225,
         64,
-        vec![crate::feature::FeatureEntityTableEntry {
+        vec![crate::feature::entity::FeatureEntityTableEntry {
             entity_id: 226,
             payload: crate::feature::entity::entry_payload(209, None, None, None),
             prefixed: true,
@@ -928,7 +930,7 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
 
 #[test]
 fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(822),
             owner_feature_id: Some(822),
@@ -941,12 +943,12 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
-        section_3d: Some(crate::feature::FeatureSection3d {
+        section_3d: Some(crate::feature::definitions::FeatureSection3d {
             sketch_plane_entity_id: None,
             sketch_plane_flip: None,
             reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
             reference_plane_datum_geometry_id: None,
-            orientation: crate::feature::FeatureSectionOrientation::default(),
+            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
             offset: 90,
         }),
@@ -1042,7 +1044,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
 
     scan.features
         .revolution_extents
-        .push(crate::feature::FeatureRevolutionExtent {
+        .push(crate::feature::rows::FeatureRevolutionExtent {
             feature_id: 822,
             offset: 1,
         });
@@ -1088,14 +1090,15 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
 
 #[test]
 fn named_linear_sweep_reuses_materialized_cap_extent() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(31, 204, None),
         entry(32, 203, None),
@@ -1103,7 +1106,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     ];
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             7,
             29,
             entries,
@@ -1165,16 +1168,17 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
 
 #[test]
 fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-    };
-    let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = |table_class_id, entries: Vec<crate::feature::entity::FeatureEntityTableEntry>| {
+        crate::feature::entity::FeatureEntityTable::new(
             144,
             table_class_id,
             entries,
@@ -1224,16 +1228,17 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
 
 #[test]
 fn new_sheet_output_requires_an_owned_output_surface() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-    };
-    let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = |table_class_id, entries: Vec<crate::feature::entity::FeatureEntityTableEntry>| {
+        crate::feature::entity::FeatureEntityTable::new(
             144,
             table_class_id,
             entries,
@@ -1272,7 +1277,7 @@ fn new_sheet_output_requires_an_owned_output_surface() {
 
 #[test]
 fn stored_section_sweep_family_defines_boolean_operation() {
-    use crate::feature::FeatureRecipeEffect::{Cut, Protrude};
+    use crate::feature::operations::FeatureRecipeEffect::{Cut, Protrude};
 
     assert_eq!(
         section_sweep_boolean_operation(Some(Protrude), "Körper", false, true),
@@ -1435,23 +1440,23 @@ fn datum_feature_uses_its_unique_complete_local_system() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(5),
                 owner_feature_id: Some(5),
             },
             body: Vec::new(),
             parameter_frames: vec![
-                crate::feature::FeatureParameterFrame {
-                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                crate::feature::definitions::FeatureParameterFrame {
+                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: Vec::new(),
                     decoded_values: Some([
                         1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0, 5.0,
                     ]),
                     offset: 1,
                 },
-                crate::feature::FeatureParameterFrame {
-                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                crate::feature::definitions::FeatureParameterFrame {
+                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: vec![0xff],
                     decoded_values: None,
                     offset: 2,
@@ -1495,23 +1500,23 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(7),
                 owner_feature_id: Some(7),
             },
             body: Vec::new(),
             parameter_frames: vec![
-                crate::feature::FeatureParameterFrame {
-                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                crate::feature::definitions::FeatureParameterFrame {
+                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: Vec::new(),
                     decoded_values: Some([
                         0.0, 2.0, 0.0, -3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0, 7.0,
                     ]),
                     offset: 1,
                 },
-                crate::feature::FeatureParameterFrame {
-                    kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+                crate::feature::definitions::FeatureParameterFrame {
+                    kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                     body: vec![0xff],
                     decoded_values: None,
                     offset: 2,
@@ -1556,14 +1561,14 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(7),
                 owner_feature_id: Some(7),
             },
             body: Vec::new(),
-            parameter_frames: vec![crate::feature::FeatureParameterFrame {
-                kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
+            parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
+                kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
                 body: Vec::new(),
                 decoded_values: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0]),
                 offset: 1,
@@ -1673,27 +1678,36 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
 
 #[test]
 fn current_feature_state_controls_recipe_and_parent_projection() {
-    let operation = |recipe, parent_feature_id, offset| crate::feature::FeatureOperation {
-        feature_id: 6,
-        kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
-        name: crate::feature::operations::OperationName::Derived,
-        recipe: crate::feature::RecipeResolution::Resolved(recipe),
-        display_state_conflict: false,
-        depdb: Some(crate::feature::operations::DepdbPrefix {
-            schema: crate::feature::schema::SchemaClass::Protrusion,
-            parent: parent_feature_id,
-        }),
-        offset,
-        state_offset: offset,
-    };
-    let historical = operation(crate::feature::FeatureRecipe::ProtrudeExtrude, 4, 10);
-    let current = operation(crate::feature::FeatureRecipe::ProtrudeRevolve, 5, 20);
+    let operation =
+        |recipe, parent_feature_id, offset| crate::feature::operations::FeatureOperation {
+            feature_id: 6,
+            kind: crate::feature::operations::OperationKind::Stored("Sweep".to_string()),
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::Resolved(recipe),
+            display_state_conflict: false,
+            depdb: Some(crate::feature::operations::DepdbPrefix {
+                schema: crate::feature::schema::SchemaClass::Protrusion,
+                parent: parent_feature_id,
+            }),
+            offset,
+            state_offset: offset,
+        };
+    let historical = operation(
+        crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+        4,
+        10,
+    );
+    let current = operation(
+        crate::feature::operations::FeatureRecipe::ProtrudeRevolve,
+        5,
+        20,
+    );
     let states = [historical, current.clone()];
     assert_ne!(states[0].recipe.resolved(), states[1].recipe.resolved());
     assert_ne!(states[0].parent_feature_id(), states[1].parent_feature_id());
     assert_eq!(
         current_feature_recipe(std::slice::from_ref(&current), 6),
-        Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
+        Some(crate::feature::operations::FeatureRecipe::ProtrudeRevolve)
     );
     assert_eq!(
         current_feature_recipe_parent(std::slice::from_ref(&current), 6),
@@ -1701,11 +1715,12 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     );
     assert_eq!(
         current_additive_feature_recipe(std::slice::from_ref(&current), 6),
-        Some(crate::feature::FeatureRecipeKind::Revolve)
+        Some(crate::feature::operations::FeatureRecipeKind::Revolve)
     );
     let mut cut = current;
-    cut.recipe =
-        crate::feature::RecipeResolution::Resolved(crate::feature::FeatureRecipe::CutRevolve);
+    cut.recipe = crate::feature::operations::RecipeResolution::Resolved(
+        crate::feature::operations::FeatureRecipe::CutRevolve,
+    );
     assert_eq!(
         current_additive_feature_recipe(std::slice::from_ref(&cut), 6),
         None

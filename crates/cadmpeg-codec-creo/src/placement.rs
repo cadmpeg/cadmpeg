@@ -4,10 +4,12 @@
 use crate::datum::DatumPlaneRecord;
 use crate::decode::uniqueness::exactly_one;
 use crate::feature::definitions::ReferencePlanes;
-use crate::feature::{
-    placement_instructions, AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition,
-    FeatureEntityTable, FeatureGeometryTable, FeatureParameterFrameKind, FeatureSegmentKind,
+use crate::feature::definitions::{
+    placement_instructions, BinaryFlag, FeatureDefinition, FeatureParameterFrameKind,
+    FeatureSegmentKind,
 };
+use crate::feature::entity::FeatureEntityTable;
+use crate::feature::rows::{AffectedIdKind, FeatureAffectedIds, FeatureGeometryTable};
 use crate::surface::{
     unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
@@ -297,7 +299,7 @@ fn generated_planar_section_transform(
         .section_3d
         .as_ref()
         .map_or(table.offset, |section| section.offset);
-    let generated_plane_equation = |entry: &crate::feature::FeatureEntityTableEntry| {
+    let generated_plane_equation = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
         let mut matches = sources
             .outline_planes
             .iter()
@@ -605,7 +607,7 @@ pub(crate) fn unique_complete_local_system(definition: &FeatureDefinition) -> Op
 }
 
 fn reference_flip_for_reference(
-    section: &crate::feature::FeatureSection3d,
+    section: &crate::feature::definitions::FeatureSection3d,
     reference_id: Option<u32>,
 ) -> Option<BinaryFlag> {
     match &section.reference_planes {
@@ -621,7 +623,9 @@ fn reference_flip_for_reference(
     }
 }
 
-fn unique_carrier_reference_id(section: &crate::feature::FeatureSection3d) -> Option<u32> {
+fn unique_carrier_reference_id(
+    section: &crate::feature::definitions::FeatureSection3d,
+) -> Option<u32> {
     if let Some(id) = section.reference_plane_datum_geometry_id {
         return Some(id);
     }
@@ -632,7 +636,7 @@ fn unique_carrier_reference_id(section: &crate::feature::FeatureSection3d) -> Op
 
 fn apply_section_orientation(
     mut transform: FeatureSectionTransform,
-    section: &crate::feature::FeatureSection3d,
+    section: &crate::feature::definitions::FeatureSection3d,
 ) -> FeatureSectionTransform {
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
         transform = transform.flipped_v();
@@ -650,7 +654,7 @@ fn apply_section_orientation(
 
 fn definition_local_frame_transform(
     definition: &FeatureDefinition,
-    section: &crate::feature::FeatureSection3d,
+    section: &crate::feature::definitions::FeatureSection3d,
 ) -> Option<FeatureSectionTransform> {
     let feature_id = definition.identity.owner_feature_id()?;
     let values = unique_complete_local_system(definition)?;
@@ -919,7 +923,7 @@ fn generated_section_cap_plane_equation(
 
 fn zero_offset_standard_section_plane_equation(
     definition: &FeatureDefinition,
-    section: &crate::feature::FeatureSection3d,
+    section: &crate::feature::definitions::FeatureSection3d,
     reference_id: u32,
     reference: SignedPlaneEquation,
     sources: &PlacementSources<'_>,
@@ -966,7 +970,7 @@ fn zero_offset_standard_section_plane_equation(
             table
                 .entries
                 .iter()
-                .map(crate::feature::FeatureEntityTableEntry::class_id)
+                .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
         })
         .collect::<Vec<_>>();
@@ -1024,7 +1028,7 @@ fn circular_profile_aligned_origin(
             table
                 .entries
                 .iter()
-                .map(crate::feature::FeatureEntityTableEntry::class_id)
+                .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
         })
         .collect::<Vec<_>>();
@@ -1041,7 +1045,7 @@ fn circular_profile_aligned_origin(
         .iter()
         .flat_map(|section| &section.entities)
         .filter_map(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Circle(circle)
+            crate::feature::definitions::FeatureSavedEntity::Circle(circle)
                 if circle.entity_id == profile_internal_id =>
             {
                 Some(circle)

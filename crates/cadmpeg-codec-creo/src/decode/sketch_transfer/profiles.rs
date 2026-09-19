@@ -18,7 +18,7 @@ use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn resolved_profile_chains(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
 ) -> Vec<Vec<SketchEntityUse>> {
@@ -118,8 +118,10 @@ pub(in super::super) fn resolved_profile_chains(
                 .as_ref()
                 .and_then(|table| table.segment(external_id))
                 .is_some_and(|segment| {
-                    matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
-                        && segment.arc_orientation == Some(0)
+                    matches!(
+                        segment.kind,
+                        crate::feature::definitions::FeatureSegmentKind::Arc(_)
+                    ) && segment.arc_orientation == Some(0)
                 });
             profile.push(SketchEntityUse {
                 entity: match sketch_entity_id(sketch, external_id) {
@@ -148,7 +150,7 @@ pub(in super::super) fn resolved_profile_chains(
 }
 
 pub(in super::super) fn resolved_segment_profile_chains(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
 ) -> Vec<Vec<SketchEntityUse>> {
@@ -166,8 +168,8 @@ pub(in super::super) fn resolved_segment_profile_chains(
             emitted.contains(&segment.external_id)
                 && matches!(
                     segment.kind,
-                    crate::feature::FeatureSegmentKind::Line(_)
-                        | crate::feature::FeatureSegmentKind::Arc(_)
+                    crate::feature::definitions::FeatureSegmentKind::Line(_)
+                        | crate::feature::definitions::FeatureSegmentKind::Arc(_)
                 )
         })
         .collect::<Vec<_>>();
@@ -235,9 +237,10 @@ pub(in super::super) fn resolved_segment_profile_chains(
             if !traversal_reversed && segment.point_ids()[0] != point {
                 break;
             }
-            let analytic_reversed =
-                matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
-                    && segment.arc_orientation == Some(0);
+            let analytic_reversed = matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Arc(_)
+            ) && segment.arc_orientation == Some(0);
             profile.push(SketchEntityUse {
                 entity: match sketch_entity_id(sketch, segment.external_id) {
                     Some(id) => id,
@@ -260,7 +263,7 @@ pub(in super::super) fn resolved_segment_profile_chains(
 }
 
 pub(in super::super) fn solver_only_section_entities(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<u32, usize> {
     let declared_segment_ids = definition
         .segments
@@ -300,14 +303,16 @@ pub(in super::super) enum SectionEntityIncidenceFamily {
 }
 
 pub(in super::super) fn section_skamp_has_proven_point_locus(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
 ) -> bool {
     if item.sense == 0 {
         return unique_point_segment(definition, item.entity_id).is_some()
             || unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
-                matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_))
-                    && !section_degenerate_axis_line(definition, segment)
+                matches!(
+                    segment.kind,
+                    crate::feature::definitions::FeatureSegmentKind::Point(_)
+                ) && !section_degenerate_axis_line(definition, segment)
             });
     }
     let solver_family =
@@ -326,8 +331,13 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return matches!(
             (segment.kind, item.sense),
-            (crate::feature::FeatureSegmentKind::Line(_), 2 | 3)
-                | (crate::feature::FeatureSegmentKind::Arc(_), 2..=4)
+            (
+                crate::feature::definitions::FeatureSegmentKind::Line(_),
+                2 | 3
+            ) | (
+                crate::feature::definitions::FeatureSegmentKind::Arc(_),
+                2..=4
+            )
         );
     }
     if unique_centered_line_segment(definition, item.entity_id).is_some() {
@@ -351,20 +361,24 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
     }
     matches!(
         (section_saved_entity(definition, item.entity_id), item.sense),
-        (Some(crate::feature::FeatureSavedEntity::Line(_)), 2 | 3)
-            | (Some(crate::feature::FeatureSavedEntity::Arc(_)), 2..=4)
-            | (
-                Some(
-                    crate::feature::FeatureSavedEntity::Circle(_)
-                        | crate::feature::FeatureSavedEntity::Conic(_),
-                ),
-                4,
-            )
+        (
+            Some(crate::feature::definitions::FeatureSavedEntity::Line(_)),
+            2 | 3
+        ) | (
+            Some(crate::feature::definitions::FeatureSavedEntity::Arc(_)),
+            2..=4
+        ) | (
+            Some(
+                crate::feature::definitions::FeatureSavedEntity::Circle(_)
+                    | crate::feature::definitions::FeatureSavedEntity::Conic(_),
+            ),
+            4,
+        )
     )
 }
 
 pub(in super::super) fn section_incidence_curve_family_evidence(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
     section_incidence_curve_family_evidence_with_solver_roles(
@@ -375,7 +389,7 @@ pub(in super::super) fn section_incidence_curve_family_evidence(
 }
 
 fn section_incidence_curve_family_evidence_without_type35(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
     section_incidence_curve_family_evidence_with_solver_roles(
@@ -392,7 +406,7 @@ enum SolverRoles {
 }
 
 fn section_incidence_curve_family_evidence_with_solver_roles(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
     solver_roles: SolverRoles,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {
@@ -421,8 +435,8 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
         }
         if matches!(solver_roles, SolverRoles::Extended) {
             let type35_line_role =
-                |target: &crate::feature::FeatureSkampItem,
-                 point: &crate::feature::FeatureSkampItem| {
+                |target: &crate::feature::definitions::FeatureSkampItem,
+                 point: &crate::feature::definitions::FeatureSkampItem| {
                     if target.sense != 0
                         || (point.sense == 4
                             && unique_centered_line_segment(definition, point.entity_id).is_some())
@@ -443,8 +457,8 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
         }
         if matches!(solver_roles, SolverRoles::Extended) {
             let type_zero_point_role =
-                |target: &crate::feature::FeatureSkampItem,
-                 point: &crate::feature::FeatureSkampItem| {
+                |target: &crate::feature::definitions::FeatureSkampItem,
+                 point: &crate::feature::definitions::FeatureSkampItem| {
                     target.sense == 0
                         && section_skamp_has_proven_point_locus(definition, point)
                         && (unique_opaque_section_entity(definition, target.entity_id)
@@ -486,7 +500,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
 }
 
 fn unique_opaque_section_entity(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> bool {
     definition
@@ -496,7 +510,7 @@ fn unique_opaque_section_entity(
 }
 
 pub(in super::super) fn unique_section_incidence_curve_family(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionEntityIncidenceFamily> {
     exactly_one(section_incidence_curve_family_evidence(definition, entity_id).into_iter())
@@ -516,7 +530,7 @@ pub(in super::super) fn normalize_section_incidence_curve_family_evidence(
 }
 
 pub(in super::super) fn solver_only_section_entity_family(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionEntityIncidenceFamily> {
     solver_only_section_entities(definition)
@@ -566,8 +580,8 @@ pub(in super::super) fn solver_only_section_entity_family(
                             .is_some_and(|segment| {
                                 matches!(
                                     segment.kind,
-                                    crate::feature::FeatureSegmentKind::Line(_)
-                                        | crate::feature::FeatureSegmentKind::Arc(_)
+                                    crate::feature::definitions::FeatureSegmentKind::Line(_)
+                                        | crate::feature::definitions::FeatureSegmentKind::Arc(_)
                                 )
                             })
                             || (saved_section_entity_fallback_allowed(
@@ -577,8 +591,10 @@ pub(in super::super) fn solver_only_section_entity_family(
                                 .is_some_and(|saved| {
                                     matches!(
                                         saved,
-                                        crate::feature::FeatureSavedEntity::Line(_)
-                                            | crate::feature::FeatureSavedEntity::Arc(_)
+                                        crate::feature::definitions::FeatureSavedEntity::Line(_)
+                                            | crate::feature::definitions::FeatureSavedEntity::Arc(
+                                                _
+                                            )
                                     )
                                 })))
                 })
@@ -602,18 +618,18 @@ mod tests {
     };
     use crate::decode::tests::opaque;
 
-    fn midpoint(target: u32, point: u32) -> crate::feature::FeatureSkamp {
-        crate::feature::FeatureSkamp {
+    fn midpoint(target: u32, point: u32) -> crate::feature::definitions::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: target,
             kind: 35,
             flags: 0,
             status: 0,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: target,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: point,
                     sense: 0,
                 },
@@ -622,15 +638,18 @@ mod tests {
         }
     }
 
-    fn definition(target: u32, opaque_target: bool) -> crate::feature::FeatureDefinition {
-        let opaque_rows: Vec<crate::feature::FeatureOpaqueSegment> =
+    fn definition(
+        target: u32,
+        opaque_target: bool,
+    ) -> crate::feature::definitions::FeatureDefinition {
+        let opaque_rows: Vec<crate::feature::definitions::FeatureOpaqueSegment> =
             opaque_target.then(|| opaque(target)).into_iter().collect();
-        let point_rows = vec![crate::feature::FeaturePointSegment {
+        let point_rows = vec![crate::feature::definitions::FeaturePointSegment {
             point_id: 7,
             external_id: 7,
             offset: 7,
         }];
-        crate::feature::FeatureDefinition {
+        crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(917),
                 owner_feature_id: None,
@@ -639,7 +658,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: None,
-            segments: Some(crate::feature::FeatureSegmentTable {
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
                 declared_count: u32::try_from(opaque_rows.len() + point_rows.len())
                     .expect("segment count"),
                 has_elided_prototype: false,
@@ -660,7 +679,7 @@ mod tests {
             order_table: None,
             section_3d: None,
             dimensions: None,
-            relations: Some(crate::feature::FeatureRelationTable {
+            relations: Some(crate::feature::definitions::FeatureRelationTable {
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
@@ -782,7 +801,7 @@ mod tests {
         let mut definition = definition(201, false);
         definition.segments.as_mut().expect("segments").rows.insert(
             crate::feature::segment_rows::SegmentRow::Circle(
-                crate::feature::FeatureCircleSegment {
+                crate::feature::definitions::FeatureCircleSegment {
                     center_id: 0,
                     radius_ref: 1,
                     external_id: 22,
@@ -797,34 +816,34 @@ mod tests {
             .declared_count += 1;
         let relations = definition.relations.as_mut().expect("relations");
         crate::decode::tests::declared_solver_rows(&mut relations.skamps).extend([
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 0,
                 kind: 0,
                 flags: 0,
                 status: 35,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 21,
                         sense: 4,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 22,
                         sense: 4,
                     },
                 ],
                 offset: 23,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 1,
                 kind: 3,
                 flags: 0,
                 status: 34,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 22,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 21,
                         sense: 2,
                     },

@@ -41,21 +41,22 @@ use std::collections::BTreeSet;
 
 #[test]
 fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(43, 204, None),
         entry(46, 203, None),
         entry(49, 200, Some(4)),
         entry(51, 200, None),
     ];
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         40,
         29,
         entries,
@@ -123,7 +124,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         entry(151, 200, None),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             41,
             29,
             reversed_entries,
@@ -244,14 +245,15 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
             row_offset: 0,
             offset: 0,
         });
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(828, 204, None),
         entry(831, 203, None),
@@ -259,7 +261,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         entry(836, 200, None),
     ];
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             825,
             29,
             entries,
@@ -309,15 +311,16 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
 
 #[test]
 fn compact_hole_materialized_core_establishes_the_simple_form() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
-    let mut table = crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let mut table = crate::feature::entity::FeatureEntityTable::new(
         107,
         29,
         vec![
@@ -401,7 +404,7 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     )
     .is_none());
 
-    let mut extended = crate::feature::FeatureEntityTable::new(
+    let mut extended = crate::feature::entity::FeatureEntityTable::new(
         107,
         29,
         vec![
@@ -611,9 +614,9 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 913,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -725,9 +728,9 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     });
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 913,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -908,9 +911,9 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
     }
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 5,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -972,9 +975,9 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     }
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 5,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -1055,9 +1058,9 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     }
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 5,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -1669,7 +1672,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&transform)),
         generated_bounded_cylinder_extent(&scan, &ir, 7, None)
     );
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(7),
             owner_feature_id: Some(7),

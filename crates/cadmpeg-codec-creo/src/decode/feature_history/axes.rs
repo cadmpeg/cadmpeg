@@ -23,7 +23,7 @@ const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
 const EPS_AXIS_OFFSET: f64 = 1.0e-9;
 
 pub(in super::super) fn resolved_revolution_axis(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<RevolutionAxis> {
     definition.variables.as_ref()?;
@@ -33,7 +33,12 @@ pub(in super::super) fn resolved_revolution_axis(
     let candidates = segments
         .rows
         .ordinary()
-        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
+        .filter(|segment| {
+            matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Line(_)
+            )
+        })
         .filter_map(|segment| {
             let start = points.get(&segment.point_ids()[0])?;
             let end = points.get(&segment.point_ids()[1])?;
@@ -203,7 +208,7 @@ pub(in super::super) fn revolution_axis_for_transfer(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
     extent: Option<&RevolveExtent>,
 ) -> Option<RevolutionAxis> {

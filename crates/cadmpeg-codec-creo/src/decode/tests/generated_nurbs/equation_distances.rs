@@ -7,21 +7,22 @@ use crate::feature::definitions::ScalarLane;
 
 #[test]
 fn equation_function_six_derives_positive_point_distance() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let definition = |radius| crate::feature::FeatureDefinition {
+            offset: 0,
+        };
+    let definition = |radius| crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -87,22 +88,23 @@ fn equation_function_six_derives_positive_point_distance() {
 
 #[test]
 fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let definition =
-        |first: [f64; 2], second: [f64; 2], distance| crate::feature::FeatureDefinition {
+            offset: 0,
+        };
+    let definition = |first: [f64; 2], second: [f64; 2], distance| {
+        crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(40),
                 owner_feature_id: None,
@@ -137,7 +139,8 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
             relations: None,
             saved_section: None,
             offset: 0,
-        };
+        }
+    };
 
     assert_eq!(
         resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 0.0], None))
@@ -175,7 +178,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
 
 #[test]
 fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
-    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
+    let variable = |variable_type, key, value| crate::feature::definitions::FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
         value,
@@ -187,7 +190,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         uvar_id: None,
         offset: 0,
     };
-    let dimension = |value| crate::feature::FeatureDimension {
+    let dimension = |value| crate::feature::definitions::FeatureDimension {
         dimension_type: 1,
         value: crate::feature::definitions::DimensionValue::Resolved(value),
         value_body: Vec::new(),
@@ -198,7 +201,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         references: None,
         offset: 0,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -227,7 +230,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         trim_vertices: None,
         order_table: None,
         section_3d: None,
-        dimensions: Some(crate::feature::FeatureDimensionTable {
+        dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
             declared_count: 2,
             entity_ref: None,
             rows: vec![dimension(5.0), dimension(5.0)],
@@ -264,15 +267,16 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     assert!(!resolved_section_scalar_values(&missing_inline)
         .contains_key(&(crate::feature::definitions::VariableType::Dimension, 0)));
 
-    let equation_id = crate::feature::equation_table(&definition.body, 0, definition.body.len())
-        .expect("equation table")
-        .rows
-        .iter()
-        .find(|equation| equation.function_id == 3)
-        .expect("function-three equation")
-        .equation_id;
+    let equation_id =
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+            .expect("equation table")
+            .rows
+            .iter()
+            .find(|equation| equation.function_id == 3)
+            .expect("function-three equation")
+            .equation_id;
     let mut disabled_equation = definition.clone();
-    disabled_equation.relations = Some(crate::feature::FeatureRelationTable {
+    disabled_equation.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -282,7 +286,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -297,7 +301,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(equation_id),
                 skamp_id: Some(900),
@@ -320,21 +324,22 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
 
 #[test]
 fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let definition = crate::feature::FeatureDefinition {
+            offset: 0,
+        };
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,

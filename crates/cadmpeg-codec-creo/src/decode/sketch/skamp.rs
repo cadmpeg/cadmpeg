@@ -18,30 +18,34 @@ const EPS_SAVED_LINE_AXIS: f64 = 1.0e-9;
 const EPS_SKAMP_AGREEMENT: f64 = 1.0e-9;
 
 pub(in crate::decode) fn section_line_fixed_coordinate(
-    definition: &crate::feature::FeatureDefinition,
-    segment: &crate::feature::FeatureSegment,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SectionAxis> {
     let segment = unique_section_skamp_segment(definition, segment.external_id)?;
-    matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)).then_some(())?;
+    matches!(
+        segment.kind,
+        crate::feature::definitions::FeatureSegmentKind::Line(_)
+    )
+    .then_some(())?;
     section_line_entity_fixed_coordinate(definition, segment.external_id)
 }
 
 pub(super) fn section_line_entity_fixed_coordinate(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionAxis> {
     section_line_entity_fixed_coordinate_with_mode(definition, entity_id, false)
 }
 
 pub(super) fn section_line_entity_fixed_coordinate_with_unique_rows(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionAxis> {
     section_line_entity_fixed_coordinate_with_mode(definition, entity_id, true)
 }
 
 fn section_line_entity_fixed_coordinate_with_mode(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
     include_unique_rows: bool,
 ) -> Option<SectionAxis> {
@@ -106,7 +110,7 @@ fn section_line_entity_fixed_coordinate_with_mode(
 }
 
 fn section_line_direct_fixed_coordinates_with_mode(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
     include_unique_rows: bool,
 ) -> BTreeSet<SectionAxis> {
@@ -116,7 +120,12 @@ fn section_line_direct_fixed_coordinates_with_mode(
         unique_section_skamp_segment(definition, entity_id)
     };
     let mut coordinates = segment
-        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
+        .filter(|segment| {
+            matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Line(_)
+            )
+        })
         .and_then(|segment| segment.vertical_horizontal)
         .and_then(|selector| match selector {
             0 => Some(SectionAxis::U),
@@ -148,7 +157,7 @@ fn section_line_direct_fixed_coordinates_with_mode(
         }),
     );
     if saved_section_line_witness_allowed(definition, entity_id) {
-        if let Some(crate::feature::FeatureSavedEntity::Line(line)) =
+        if let Some(crate::feature::definitions::FeatureSavedEntity::Line(line)) =
             section_saved_entity(definition, entity_id)
         {
             let [[Some(x0), Some(y0), _], [Some(x1), Some(y1), _]] = line.endpoints else {
@@ -174,13 +183,13 @@ fn section_line_direct_fixed_coordinates_with_mode(
 }
 
 pub(in crate::decode) fn section_skamp_point_on_line(
-    definition: &crate::feature::FeatureDefinition,
-    skamp: &crate::feature::FeatureSkamp,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    skamp: &crate::feature::definitions::FeatureSkamp,
 ) -> Option<(u32, u32, SectionAxis)> {
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
-    let selected_point_id = |item: &crate::feature::FeatureSkampItem| {
+    let selected_point_id = |item: &crate::feature::definitions::FeatureSkampItem| {
         section_skamp_selected_point_id(definition, item).or_else(|| {
             section_skamp_selected_point_id_with_ordinary_segment(
                 definition,
@@ -189,10 +198,13 @@ pub(in crate::decode) fn section_skamp_point_on_line(
             )
         })
     };
-    let line_for_item = |item: &crate::feature::FeatureSkampItem| {
+    let line_for_item = |item: &crate::feature::definitions::FeatureSkampItem| {
         unique_section_skamp_segment(definition, item.entity_id).or_else(|| {
             unique_decoded_section_segment(definition, item.entity_id).filter(|segment| {
-                matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))
+                matches!(
+                    segment.kind,
+                    crate::feature::definitions::FeatureSegmentKind::Line(_)
+                )
             })
         })
     };
@@ -202,7 +214,10 @@ pub(in crate::decode) fn section_skamp_point_on_line(
             .find_map(|(line_item, point_item)| {
                 let line = line_for_item(line_item)?;
                 (line_item.sense == 0
-                    && matches!(line.kind, crate::feature::FeatureSegmentKind::Line(_)))
+                    && matches!(
+                        line.kind,
+                        crate::feature::definitions::FeatureSegmentKind::Line(_)
+                    ))
                 .then_some((line, selected_point_id(point_item)?))
             }),
         9 => [(first, second), (second, first)]
@@ -211,7 +226,10 @@ pub(in crate::decode) fn section_skamp_point_on_line(
                 let line = line_for_item(line_item)?;
                 if line_item.sense != 0
                     || point_item.sense != 0
-                    || !matches!(line.kind, crate::feature::FeatureSegmentKind::Line(_))
+                    || !matches!(
+                        line.kind,
+                        crate::feature::definitions::FeatureSegmentKind::Line(_)
+                    )
                     || !section_skamp_is_point(definition, point_item)
                 {
                     return None;
@@ -229,8 +247,8 @@ pub(in crate::decode) fn section_skamp_point_on_line(
 }
 
 pub(in crate::decode) fn section_skamp_saved_point_on_line(
-    definition: &crate::feature::FeatureDefinition,
-    skamp: &crate::feature::FeatureSkamp,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    skamp: &crate::feature::definitions::FeatureSkamp,
 ) -> Option<(u32, SectionAxis, f64)> {
     let [first, second] = skamp.items.as_slice() else {
         return None;
@@ -266,7 +284,7 @@ pub(in crate::decode) fn section_skamp_saved_point_on_line(
     if !saved_section_entity_fallback_allowed(definition, line_item.entity_id) {
         return None;
     }
-    let crate::feature::FeatureSavedEntity::Line(line) =
+    let crate::feature::definitions::FeatureSavedEntity::Line(line) =
         section_saved_entity(definition, line_item.entity_id)?
     else {
         return None;
@@ -286,8 +304,8 @@ pub(super) enum SectionSymmetryAxis {
 }
 
 pub(super) fn section_skamp_axis_symmetry(
-    definition: &crate::feature::FeatureDefinition,
-    skamp: &crate::feature::FeatureSkamp,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    skamp: &crate::feature::definitions::FeatureSkamp,
 ) -> Option<(
     SectionSymmetryAxis,
     SectionPointSource,
@@ -310,7 +328,7 @@ pub(super) fn section_skamp_axis_symmetry(
         if !saved_section_line_witness_allowed(definition, axis_item.entity_id) {
             return None;
         }
-        let crate::feature::FeatureSavedEntity::Line(line) =
+        let crate::feature::definitions::FeatureSavedEntity::Line(line) =
             section_saved_entity(definition, axis_item.entity_id)?
         else {
             return None;
@@ -326,8 +344,8 @@ pub(super) fn section_skamp_axis_symmetry(
 }
 
 pub(super) fn section_skamp_point_symmetry(
-    definition: &crate::feature::FeatureDefinition,
-    skamp: &crate::feature::FeatureSkamp,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    skamp: &crate::feature::definitions::FeatureSkamp,
 ) -> Option<(u32, SectionPointSource, SectionPointSource)> {
     let (14, [center, first, second]) = (skamp.kind, skamp.items.as_slice()) else {
         return None;
@@ -340,7 +358,7 @@ pub(super) fn section_skamp_point_symmetry(
 }
 
 fn saved_line_fixed_coordinate_value(
-    line: &crate::feature::FeatureSavedLine,
+    line: &crate::feature::definitions::FeatureSavedLine,
     coordinate: SectionAxis,
 ) -> Option<f64> {
     let [Some(first), Some(second)] = [
@@ -360,22 +378,22 @@ pub(in crate::decode) enum SectionPointSource {
 }
 
 pub(in crate::decode) fn unique_section_skamp_segment(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     external_id: u32,
-) -> Option<&crate::feature::FeatureSegment> {
+) -> Option<&crate::feature::definitions::FeatureSegment> {
     definition.segments.as_ref()?.segment(external_id)
 }
 
 pub(in crate::decode) fn unique_decoded_section_segment(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     external_id: u32,
-) -> Option<&crate::feature::FeatureSegment> {
+) -> Option<&crate::feature::definitions::FeatureSegment> {
     definition.segments.as_ref()?.unique_segment(external_id)
 }
 
 pub(in crate::decode) fn section_segment_rows(
-    definition: &crate::feature::FeatureDefinition,
-) -> Vec<&crate::feature::FeatureSegment> {
+    definition: &crate::feature::definitions::FeatureDefinition,
+) -> Vec<&crate::feature::definitions::FeatureSegment> {
     definition
         .segments
         .as_ref()
@@ -383,8 +401,8 @@ pub(in crate::decode) fn section_segment_rows(
 }
 
 pub(in crate::decode) fn complete_section_segment_rows(
-    definition: &crate::feature::FeatureDefinition,
-) -> Vec<&crate::feature::FeatureSegment> {
+    definition: &crate::feature::definitions::FeatureDefinition,
+) -> Vec<&crate::feature::definitions::FeatureSegment> {
     definition
         .segments
         .as_ref()
@@ -393,32 +411,40 @@ pub(in crate::decode) fn complete_section_segment_rows(
 }
 
 pub(super) fn section_skamp_point_entity_id(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<u32> {
     if let Some(point) = unique_point_segment(definition, item.entity_id) {
         return (item.sense == 0).then_some(point.point_id);
     }
     let segment = unique_decoded_section_segment(definition, item.entity_id)?;
-    (item.sense == 0 && matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)))
-        .then_some(segment.point_ids()[0])
+    (item.sense == 0
+        && matches!(
+            segment.kind,
+            crate::feature::definitions::FeatureSegmentKind::Point(_)
+        ))
+    .then_some(segment.point_ids()[0])
 }
 
 pub(in crate::decode) fn section_skamp_selected_point_id(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<u32> {
     let ordinary_segment = unique_section_skamp_segment(definition, item.entity_id).or_else(|| {
-        unique_decoded_section_segment(definition, item.entity_id)
-            .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)))
+        unique_decoded_section_segment(definition, item.entity_id).filter(|segment| {
+            matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Point(_)
+            )
+        })
     });
     section_skamp_selected_point_id_with_ordinary_segment(definition, item, ordinary_segment)
 }
 
 pub(in crate::decode) fn section_skamp_selected_point_id_with_ordinary_segment(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
-    ordinary_segment: Option<&crate::feature::FeatureSegment>,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
+    ordinary_segment: Option<&crate::feature::definitions::FeatureSegment>,
 ) -> Option<u32> {
     if let Some(segment) = unique_centered_line_segment(definition, item.entity_id) {
         return match item.sense {
@@ -449,7 +475,10 @@ pub(in crate::decode) fn section_skamp_selected_point_id_with_ordinary_segment(
         return (item.sense == 4).then_some(circle.center_id);
     }
     let segment = ordinary_segment?;
-    if matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)) {
+    if matches!(
+        segment.kind,
+        crate::feature::definitions::FeatureSegmentKind::Point(_)
+    ) {
         return matches!(item.sense, 0 | 4).then_some(segment.point_ids()[0]);
     }
     match item.sense {
@@ -461,8 +490,8 @@ pub(in crate::decode) fn section_skamp_selected_point_id_with_ordinary_segment(
 }
 
 fn section_skamp_selected_point(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SectionPointSource> {
     section_skamp_selected_point_id(definition, item)
         .map(SectionPointSource::Point)
@@ -470,8 +499,8 @@ fn section_skamp_selected_point(
 }
 
 pub(in crate::decode) fn section_skamp_incidence_point(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SectionPointSource> {
     section_skamp_selected_point(definition, item).or_else(|| {
         section_skamp_selected_point_id_with_ordinary_segment(
@@ -484,8 +513,8 @@ pub(in crate::decode) fn section_skamp_incidence_point(
 }
 
 fn saved_section_point(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<[f64; 2]> {
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return None;
@@ -494,13 +523,13 @@ fn saved_section_point(
         section_saved_entity(definition, item.entity_id)?,
         item.sense,
     ) {
-        (crate::feature::FeatureSavedEntity::Line(line), 2) => line.endpoints[0],
-        (crate::feature::FeatureSavedEntity::Line(line), 3) => line.endpoints[1],
-        (crate::feature::FeatureSavedEntity::Arc(arc), 2) => arc.endpoints[0],
-        (crate::feature::FeatureSavedEntity::Arc(arc), 3) => arc.endpoints[1],
-        (crate::feature::FeatureSavedEntity::Arc(arc), 4) => arc.center,
-        (crate::feature::FeatureSavedEntity::Circle(circle), 4) => circle.center,
-        (crate::feature::FeatureSavedEntity::Conic(conic), 4) => {
+        (crate::feature::definitions::FeatureSavedEntity::Line(line), 2) => line.endpoints[0],
+        (crate::feature::definitions::FeatureSavedEntity::Line(line), 3) => line.endpoints[1],
+        (crate::feature::definitions::FeatureSavedEntity::Arc(arc), 2) => arc.endpoints[0],
+        (crate::feature::definitions::FeatureSavedEntity::Arc(arc), 3) => arc.endpoints[1],
+        (crate::feature::definitions::FeatureSavedEntity::Arc(arc), 4) => arc.center,
+        (crate::feature::definitions::FeatureSavedEntity::Circle(circle), 4) => circle.center,
+        (crate::feature::definitions::FeatureSavedEntity::Conic(conic), 4) => {
             let frame = conic.local_system?;
             [Some(frame[9]), Some(frame[10]), Some(frame[11])]
         }
@@ -523,10 +552,10 @@ mod tests {
 
     fn point_definition(
         declared_count: u32,
-        rows: Vec<crate::feature::FeatureSegment>,
-        point_rows: Vec<crate::feature::FeaturePointSegment>,
-    ) -> crate::feature::FeatureDefinition {
-        crate::feature::FeatureDefinition {
+        rows: Vec<crate::feature::definitions::FeatureSegment>,
+        point_rows: Vec<crate::feature::definitions::FeaturePointSegment>,
+    ) -> crate::feature::definitions::FeatureDefinition {
+        crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(1),
                 owner_feature_id: None,
@@ -535,7 +564,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: None,
-            segments: Some(crate::feature::FeatureSegmentTable {
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
                 declared_count,
                 has_elided_prototype: false,
                 entity_ref: None,
@@ -565,9 +594,9 @@ mod tests {
         external_id: u32,
         point_id: u32,
         offset: usize,
-    ) -> crate::feature::FeatureSegment {
-        crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Point(point_id),
+    ) -> crate::feature::definitions::FeatureSegment {
+        crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Point(point_id),
             directions: [None; 3],
             center_id: None,
             arc_orientation: None,
@@ -586,7 +615,7 @@ mod tests {
         assert_eq!(
             section_skamp_point_entity_id(
                 &incomplete,
-                &crate::feature::FeatureSkampItem {
+                &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 7,
                     sense: 0,
                 },
@@ -596,7 +625,7 @@ mod tests {
         assert_eq!(
             section_skamp_selected_point_id(
                 &incomplete,
-                &crate::feature::FeatureSkampItem {
+                &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 7,
                     sense: 4,
                 },
@@ -612,7 +641,7 @@ mod tests {
         assert_eq!(
             section_skamp_point_entity_id(
                 &duplicate,
-                &crate::feature::FeatureSkampItem {
+                &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 7,
                     sense: 0,
                 },
@@ -622,7 +651,7 @@ mod tests {
         assert_eq!(
             section_skamp_selected_point_id(
                 &duplicate,
-                &crate::feature::FeatureSkampItem {
+                &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 7,
                     sense: 4,
                 },
@@ -633,7 +662,7 @@ mod tests {
         let cross_family_duplicate = point_definition(
             1,
             vec![ordinary_point(7, 42, 1)],
-            vec![crate::feature::FeaturePointSegment {
+            vec![crate::feature::definitions::FeaturePointSegment {
                 point_id: 44,
                 external_id: 7,
                 offset: 2,
@@ -642,7 +671,7 @@ mod tests {
         assert_eq!(
             section_skamp_point_entity_id(
                 &cross_family_duplicate,
-                &crate::feature::FeatureSkampItem {
+                &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 7,
                     sense: 0,
                 },
@@ -652,7 +681,7 @@ mod tests {
         assert_eq!(
             section_skamp_selected_point_id(
                 &cross_family_duplicate,
-                &crate::feature::FeatureSkampItem {
+                &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 7,
                     sense: 4,
                 },
@@ -663,8 +692,8 @@ mod tests {
 
     #[test]
     fn incomplete_unique_rows_supply_point_symmetry_sources() {
-        let line = |external_id, point_ids| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+        let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
             center_id: None,
             arc_orientation: None,
@@ -680,21 +709,21 @@ mod tests {
             vec![ordinary_point(5, 9, 1), line(10, [1, 2]), line(11, [3, 4])],
             Vec::new(),
         );
-        let skamp = crate::feature::FeatureSkamp {
+        let skamp = crate::feature::definitions::FeatureSkamp {
             id: 14,
             kind: 14,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 5,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 10,
                     sense: 2,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 11,
                     sense: 3,
                 },
@@ -722,7 +751,7 @@ mod tests {
             .expect("segments")
             .rows
             .insert(crate::feature::segment_rows::SegmentRow::Point(
-                crate::feature::FeaturePointSegment {
+                crate::feature::definitions::FeaturePointSegment {
                     point_id: 99,
                     external_id: 10,
                     offset: 99,
@@ -733,8 +762,8 @@ mod tests {
 
     #[test]
     fn incomplete_unique_rows_supply_axis_symmetry_sources() {
-        let line = |external_id, point_ids| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+        let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
             directions: [None; 3],
             center_id: None,
             arc_orientation: None,
@@ -747,11 +776,11 @@ mod tests {
         };
         let mut definition =
             point_definition(3, vec![line(10, [1, 2]), line(11, [3, 4])], Vec::new());
-        definition.order_table = Some(crate::feature::FeatureOrderTable {
+        definition.order_table = Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 99,
                 internal_id: 20,
                 bitmask: 0,
@@ -759,9 +788,9 @@ mod tests {
             }],
             offset: 0,
         });
-        definition.saved_section = Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Line(
-                crate::feature::FeatureSavedLine {
+        definition.saved_section = Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+                crate::feature::definitions::FeatureSavedLine {
                     entity_id: 20,
                     references: Vec::new(),
                     attributes: Vec::new(),
@@ -775,21 +804,21 @@ mod tests {
             )],
             offset: 2,
         });
-        let skamp = crate::feature::FeatureSkamp {
+        let skamp = crate::feature::definitions::FeatureSkamp {
             id: 14,
             kind: 14,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 99,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 10,
                     sense: 2,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 11,
                     sense: 3,
                 },
@@ -813,7 +842,7 @@ mod tests {
             .expect("segments")
             .rows
             .insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(
-                crate::feature::FeatureReferenceLineSegment {
+                crate::feature::definitions::FeatureReferenceLineSegment {
                     directions: [None; 3],
                     point_ids: [None; 2],
                     vertical_horizontal: Some(0),
@@ -873,31 +902,32 @@ mod tests {
         assert!(section_skamp_axis_symmetry(&duplicate_axis, &duplicate_axis_skamp).is_none());
 
         let mut conflicting_orientation = incomplete_axis;
-        conflicting_orientation.relations = Some(crate::feature::FeatureRelationTable {
-            declared_count: 1,
-            entity_ref: None,
-            rows: Vec::new(),
-            skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
-                header: crate::feature::definitions::FeatureSolverTableHeader {
-                    declared_count: 1,
-                    entity_ref: 0,
-                    offset: 0,
-                },
-                rows: vec![crate::feature::FeatureSkamp {
-                    id: 1,
-                    kind: 1,
-                    flags: 0,
-                    status: 1,
-                    items: vec![crate::feature::FeatureSkampItem {
-                        entity_id: 99,
-                        sense: 0,
+        conflicting_orientation.relations =
+            Some(crate::feature::definitions::FeatureRelationTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: Vec::new(),
+                skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    header: crate::feature::definitions::FeatureSolverTableHeader {
+                        declared_count: 1,
+                        entity_ref: 0,
+                        offset: 0,
+                    },
+                    rows: vec![crate::feature::definitions::FeatureSkamp {
+                        id: 1,
+                        kind: 1,
+                        flags: 0,
+                        status: 1,
+                        items: vec![crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 99,
+                            sense: 0,
+                        }],
+                        offset: 0,
                     }],
-                    offset: 0,
-                }],
-            }),
-            triples: None,
-            offset: 0,
-        });
+                }),
+                triples: None,
+                offset: 0,
+            });
         assert!(section_line_entity_fixed_coordinate_with_unique_rows(
             &conflicting_orientation,
             99
@@ -908,22 +938,24 @@ mod tests {
 
     #[test]
     fn incomplete_unique_rows_supply_point_on_line_sources() {
-        let line = |external_id, point_ids, vertical_horizontal| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
-            directions: [None; 3],
-            center_id: None,
-            arc_orientation: None,
-            vertical_horizontal,
-            radius_ref: None,
-            radius2_ref: None,
-            external_id,
-            body: Vec::new(),
-            offset: external_id as usize,
+        let line = |external_id, point_ids, vertical_horizontal| {
+            crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
+                directions: [None; 3],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id,
+                body: Vec::new(),
+                offset: external_id as usize,
+            }
         };
         let definition = point_definition(
             4,
             vec![line(10, [1, 2], Some(1)), line(20, [3, 4], None)],
-            vec![crate::feature::FeaturePointSegment {
+            vec![crate::feature::definitions::FeaturePointSegment {
                 point_id: 5,
                 external_id: 30,
                 offset: 30,
@@ -935,17 +967,17 @@ mod tests {
             .expect("segments")
             .is_complete());
 
-        let type_three = crate::feature::FeatureSkamp {
+        let type_three = crate::feature::definitions::FeatureSkamp {
             id: 3,
             kind: 3,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 10,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 20,
                     sense: 2,
                 },
@@ -964,7 +996,7 @@ mod tests {
             .expect("segments")
             .rows
             .edit_ordinary(|rows| rows[0].vertical_horizontal = None);
-        unary_orientation.relations = Some(crate::feature::FeatureRelationTable {
+        unary_orientation.relations = Some(crate::feature::definitions::FeatureRelationTable {
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
@@ -974,12 +1006,12 @@ mod tests {
                     entity_ref: 0,
                     offset: 0,
                 },
-                rows: vec![crate::feature::FeatureSkamp {
+                rows: vec![crate::feature::definitions::FeatureSkamp {
                     id: 1,
                     kind: 1,
                     flags: 0,
                     status: 1,
-                    items: vec![crate::feature::FeatureSkampItem {
+                    items: vec![crate::feature::definitions::FeatureSkampItem {
                         entity_id: 10,
                         sense: 0,
                     }],
@@ -994,17 +1026,17 @@ mod tests {
             Some((1, 3, crate::decode::sketch::axis::SectionAxis::V))
         );
 
-        let type_nine = crate::feature::FeatureSkamp {
+        let type_nine = crate::feature::definitions::FeatureSkamp {
             id: 9,
             kind: 9,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 10,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 30,
                     sense: 0,
                 },
@@ -1029,7 +1061,7 @@ mod tests {
             .expect("segments")
             .rows
             .insert(crate::feature::segment_rows::SegmentRow::Point(
-                crate::feature::FeaturePointSegment {
+                crate::feature::definitions::FeaturePointSegment {
                     point_id: 8,
                     external_id: 20,
                     offset: 31,
@@ -1049,8 +1081,8 @@ mod tests {
 
     #[test]
     fn saved_line_axis_witness_requires_an_ordinary_line_identity() {
-        let line = |external_id| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+        let line = |external_id| crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
             center_id: None,
             arc_orientation: None,
@@ -1061,9 +1093,9 @@ mod tests {
             body: Vec::new(),
             offset: external_id as usize,
         };
-        let saved_section = crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Line(
-                crate::feature::FeatureSavedLine {
+        let saved_section = crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+                crate::feature::definitions::FeatureSavedLine {
                     entity_id: 7,
                     references: Vec::new(),
                     attributes: Vec::new(),
@@ -1077,11 +1109,11 @@ mod tests {
             )],
             offset: 1,
         };
-        let order_table = crate::feature::FeatureOrderTable {
+        let order_table = crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 7,
                 internal_id: 7,
                 bitmask: 0,
@@ -1093,7 +1125,7 @@ mod tests {
         let mut special = point_definition(1, Vec::new(), Vec::new());
         special.segments.as_mut().expect("segments").rows.insert(
             crate::feature::segment_rows::SegmentRow::Circle(
-                crate::feature::FeatureCircleSegment {
+                crate::feature::definitions::FeatureCircleSegment {
                     center_id: 1,
                     radius_ref: 2,
                     external_id: 7,

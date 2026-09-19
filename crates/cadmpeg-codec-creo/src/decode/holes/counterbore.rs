@@ -131,7 +131,7 @@ pub(in crate::decode) fn counterbore_dimension_tuple_matches_radius(
 }
 
 pub(in crate::decode) fn counterbore_dimension_values<'a>(
-    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
     generated_radii: &[f64],
 ) -> Option<(f64, f64, f64)> {
     let mut candidates = Vec::new();
@@ -188,7 +188,7 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
 }
 
 pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
-    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
     source_spans: &[Option<[[Option<f64>; 2]; 3]>],
 ) -> Option<(f64, f64, f64)> {
     let [first_source, second_source] = source_spans else {
@@ -260,7 +260,7 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
 }
 
 pub(in crate::decode) fn counterbore_unenveloped_dimension_values<'a>(
-    tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
+    tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
 ) -> Option<(f64, f64, f64)> {
     let candidates = tables
         .filter(|table| {
@@ -272,7 +272,7 @@ pub(in crate::decode) fn counterbore_unenveloped_dimension_values<'a>(
 }
 
 fn counterbore_envelope_dimension_tuple(
-    table: &crate::feature::FeatureDimensionTable,
+    table: &crate::feature::definitions::FeatureDimensionTable,
 ) -> Option<(f64, f64, f64)> {
     (feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)).then_some(())?;
     let value = |external_id, dimension_type| {
@@ -421,7 +421,7 @@ fn counterbore_source_corner_envelopes(
 fn counterbore_entity_table<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<&'a crate::feature::FeatureEntityTable> {
+) -> Option<&'a crate::feature::entity::FeatureEntityTable> {
     let tables = scan
         .features
         .entity_tables
@@ -472,7 +472,7 @@ pub(in crate::decode) fn counterbore_axis_placement(
 
 pub(in crate::decode) fn counterbore_support_axis_placement(
     feature_id: u32,
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
     frames: &[crate::surface::PlaneLocalSystem],
 ) -> Option<cadmpeg_ir::features::holes::HolePlacement> {

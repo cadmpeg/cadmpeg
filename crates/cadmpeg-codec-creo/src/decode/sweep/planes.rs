@@ -163,7 +163,7 @@ pub(in super::super) fn feature_outline_planes(
 pub(in super::super) fn generated_arc_cylinder_extent(
     scan: &ContainerScan,
     ir: &CadIr,
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let feature_id = definition.identity.owner_feature_id()?;
@@ -183,7 +183,10 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         let Some(segment) = definition.segments.as_ref()?.segment(source_id) else {
             continue;
         };
-        if !matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_)) {
+        if !matches!(
+            segment.kind,
+            crate::feature::definitions::FeatureSegmentKind::Arc(_)
+        ) {
             continue;
         }
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)

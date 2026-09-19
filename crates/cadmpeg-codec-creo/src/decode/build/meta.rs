@@ -589,7 +589,7 @@ pub(in super::super) fn source_meta(
         scan.features
             .definitions
             .iter()
-            .map(|definition| crate::feature::placement_instructions(definition).len())
+            .map(|definition| crate::feature::definitions::placement_instructions(definition).len())
             .sum::<usize>(),
     );
     coverage.record(
@@ -892,7 +892,12 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter(|definition| {
-                crate::feature::equation_table(&definition.body, 0, definition.body.len()).is_some()
+                crate::feature::definitions::equation_table(
+                    &definition.body,
+                    0,
+                    definition.body.len(),
+                )
+                .is_some()
             })
             .count(),
     );
@@ -902,7 +907,11 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter_map(|definition| {
-                crate::feature::equation_table(&definition.body, 0, definition.body.len())
+                crate::feature::definitions::equation_table(
+                    &definition.body,
+                    0,
+                    definition.body.len(),
+                )
             })
             .map(|equations| equations.rows.len())
             .sum::<usize>(),
@@ -923,7 +932,12 @@ pub(in super::super) fn source_meta(
             .iter()
             .filter_map(|definition| definition.saved_section.as_ref())
             .flat_map(|saved| &saved.entities)
-            .filter(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Conic(_)))
+            .filter(|entity| {
+                matches!(
+                    entity,
+                    crate::feature::definitions::FeatureSavedEntity::Conic(_)
+                )
+            })
             .count(),
     );
     coverage.record(

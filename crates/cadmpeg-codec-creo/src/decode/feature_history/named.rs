@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn numbered_intersect_name_identifies_section_shape_feature() {
         let table = || {
-            crate::feature::FeatureEntityTable::new(
+            crate::feature::entity::FeatureEntityTable::new(
                 50,
                 29,
                 vec![

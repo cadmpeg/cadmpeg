@@ -389,7 +389,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert!(
         scan.features.affected_ids.iter().any(|record| {
             record.feature_id == 4
-                && record.kind == crate::feature::AffectedIdKind::Edges
+                && record.kind == crate::feature::rows::AffectedIdKind::Edges
                 && record.ids == [10, 11]
         }),
         "affected ids: {:#?}",

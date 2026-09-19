@@ -90,7 +90,7 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
 }
 
 fn has_exact_materialized_surface_roster(
-    table: &crate::feature::FeatureEntityTable,
+    table: &crate::feature::entity::FeatureEntityTable,
     expected_ids: impl IntoIterator<Item = u32>,
 ) -> bool {
     let expected_ids = expected_ids.into_iter().collect::<Vec<_>>();
@@ -102,7 +102,7 @@ fn has_exact_materialized_surface_roster(
 
 pub(in crate::decode) fn compact_simple_hole_cylinder_id(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<u32> {
     let candidates = tables

@@ -16,7 +16,7 @@ use super::super::dimensions::{
 #[test]
 fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Section),
         stream_offset: 0,
@@ -26,7 +26,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     });
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(917),
                 owner_feature_id: Some(40),
@@ -40,10 +40,10 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
             trim_vertices: None,
             order_table: None,
             section_3d: None,
-            dimensions: Some(crate::feature::FeatureDimensionTable {
+            dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
                 declared_count: 1,
                 entity_ref: None,
-                rows: vec![crate::feature::FeatureDimension {
+                rows: vec![crate::feature::definitions::FeatureDimension {
                     dimension_type: 2,
                     value: crate::feature::definitions::DimensionValue::Resolved(5.0),
                     value_body: Vec::new(),

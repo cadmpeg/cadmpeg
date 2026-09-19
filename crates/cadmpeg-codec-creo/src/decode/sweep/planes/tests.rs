@@ -78,17 +78,18 @@ fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
 
 #[test]
 fn generated_table_cap_classes_use_placed_cap_planes() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             7,
             29,
             vec![
@@ -228,7 +229,7 @@ fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
 
 #[test]
 fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
-    let entry = crate::feature::FeatureEntityTableEntry {
+    let entry = crate::feature::entity::FeatureEntityTableEntry {
         entity_id: 33,
         payload: crate::feature::entity::entry_payload(200, Some(11), None, None),
         prefixed: false,
@@ -245,7 +246,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     .expect("valid positional cylinder frame");
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             7,
             29,
             vec![entry],
@@ -281,7 +282,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
             offset: 0,
             body_offset: 0,
         });
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(7),
             owner_feature_id: Some(7),
@@ -290,12 +291,12 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: None,
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+            rows: (vec![crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
                 center_id: Some(3),
                 arc_orientation: Some(0),

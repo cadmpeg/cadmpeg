@@ -15,9 +15,9 @@ pub(crate) fn exactly_one<T>(mut iter: impl Iterator<Item = T>) -> Option<T> {
 }
 
 pub(crate) fn unique_owned_feature_definition(
-    definitions: &[crate::feature::FeatureDefinition],
+    definitions: &[crate::feature::definitions::FeatureDefinition],
     feature_id: u32,
-) -> Option<&crate::feature::FeatureDefinition> {
+) -> Option<&crate::feature::definitions::FeatureDefinition> {
     exactly_one(
         definitions
             .iter()
@@ -44,9 +44,9 @@ pub(crate) fn unique_feature_section_transform(
 }
 
 pub(crate) fn unique_feature_definition_for_transform<'a>(
-    definitions: &'a [crate::feature::FeatureDefinition],
+    definitions: &'a [crate::feature::definitions::FeatureDefinition],
     transform: &crate::placement::FeatureSectionTransform,
-) -> Option<&'a crate::feature::FeatureDefinition> {
+) -> Option<&'a crate::feature::definitions::FeatureDefinition> {
     exactly_one(definitions.iter().filter(|definition| {
         definition.identity.id() == transform.definition_id
             && definition
@@ -57,10 +57,10 @@ pub(crate) fn unique_feature_definition_for_transform<'a>(
 }
 
 pub(crate) fn unique_feature_profile_definition<'a>(
-    definitions: &'a [crate::feature::FeatureDefinition],
+    definitions: &'a [crate::feature::definitions::FeatureDefinition],
     transforms: &[crate::placement::FeatureSectionTransform],
     feature_id: u32,
-) -> Option<&'a crate::feature::FeatureDefinition> {
+) -> Option<&'a crate::feature::definitions::FeatureDefinition> {
     let feature_transforms = transforms
         .iter()
         .filter(|transform| transform.feature_id == Some(feature_id))

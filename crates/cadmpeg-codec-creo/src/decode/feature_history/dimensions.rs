@@ -52,9 +52,12 @@ pub(in super::super) fn feature_dimension_parameter_row_id(
 
 pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
     sketch: &SketchId,
-    table: &'a crate::feature::FeatureDimensionTable,
+    table: &'a crate::feature::definitions::FeatureDimensionTable,
     ordinal: usize,
-) -> Option<(&'a crate::feature::FeatureDimension, ParameterId)> {
+) -> Option<(
+    &'a crate::feature::definitions::FeatureDimension,
+    ParameterId,
+)> {
     feature_dimension_table_complete(table).then_some(())?;
     let dimension = table.rows.get(ordinal)?;
     (table
@@ -93,7 +96,7 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
 }
 
 pub(in super::super) fn feature_dimension_table_complete(
-    table: &crate::feature::FeatureDimensionTable,
+    table: &crate::feature::definitions::FeatureDimensionTable,
 ) -> bool {
     usize::try_from(table.declared_count).ok() == Some(table.rows.len())
 }
@@ -107,13 +110,13 @@ pub(in super::super) fn feature_dimension_display(dimension_type: u32) -> Option
 }
 
 pub(in super::super) fn feature_relation_table_complete(
-    table: &crate::feature::FeatureRelationTable,
+    table: &crate::feature::definitions::FeatureRelationTable,
 ) -> bool {
     feature_relation_table_expected_rows(table) == Some(table.rows.len())
 }
 
 pub(in super::super) fn feature_relation_table_expected_rows(
-    table: &crate::feature::FeatureRelationTable,
+    table: &crate::feature::definitions::FeatureRelationTable,
 ) -> Option<usize> {
     match table.declared_count {
         0 => None,
@@ -123,14 +126,14 @@ pub(in super::super) fn feature_relation_table_expected_rows(
 }
 
 pub(in super::super) fn feature_relation_table_missing_rows(
-    table: &crate::feature::FeatureRelationTable,
+    table: &crate::feature::definitions::FeatureRelationTable,
 ) -> usize {
     feature_relation_table_expected_rows(table)
         .map_or(0, |expected| expected.saturating_sub(table.rows.len()))
 }
 
 pub(in super::super) fn feature_skamp_table_complete(
-    table: &crate::feature::FeatureRelationTable,
+    table: &crate::feature::definitions::FeatureRelationTable,
 ) -> bool {
     table
         .skamps
@@ -301,13 +304,13 @@ pub(in super::super) fn transfer_feature_dimensions(
             .value
             .resolved()
             .and_then(|value| match dimension.unit() {
-                crate::feature::DimensionUnit::Radians => {
+                crate::feature::definitions::DimensionUnit::Radians => {
                     Angle::new(value).map(ParameterValue::Angle)
                 }
-                crate::feature::DimensionUnit::Millimeters => {
+                crate::feature::definitions::DimensionUnit::Millimeters => {
                     Length::new(value).map(ParameterValue::Length)
                 }
-                crate::feature::DimensionUnit::SchemaDefined => {
+                crate::feature::definitions::DimensionUnit::SchemaDefined => {
                     cadmpeg_ir::scalar::FiniteReal::new(value).map(ParameterValue::Real)
                 }
             });

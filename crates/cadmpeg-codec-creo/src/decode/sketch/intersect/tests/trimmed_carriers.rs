@@ -9,10 +9,10 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::BTreeMap;
 
 fn trimmed_section_segment_geometry(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
     let missing_line = saved_section_missing_line_geometry(definition);
     trimmed_section_segment_geometry_with_missing_line(
@@ -26,8 +26,8 @@ fn trimmed_section_segment_geometry(
 
 #[test]
 fn trimmed_line_reconciles_carrier_and_solver_orientation() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -38,42 +38,42 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         body: Vec::new(),
         offset: 40,
     };
-    let anchor = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([5, 6]),
+    let anchor = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([5, 6]),
         external_id: 41,
         body: Vec::new(),
         offset: 39,
         ..segment.clone()
     };
-    let horizontal = crate::feature::FeatureSkamp {
+    let horizontal = crate::feature::definitions::FeatureSkamp {
         id: 1,
         kind: 1,
         flags: 0,
         status: 1,
-        items: vec![crate::feature::FeatureSkampItem {
+        items: vec![crate::feature::definitions::FeatureSkampItem {
             entity_id: 41,
             sense: 0,
         }],
         offset: 50,
     };
-    let parallel = crate::feature::FeatureSkamp {
+    let parallel = crate::feature::definitions::FeatureSkamp {
         id: 2,
         kind: 7,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 41,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 42,
                 sense: 0,
             },
         ],
         offset: 55,
     };
-    let mut definition = crate::feature::FeatureDefinition {
+    let mut definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(5),
             owner_feature_id: Some(6),
@@ -82,7 +82,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: None,
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
@@ -92,16 +92,16 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
                 .collect(),
             offset: 20,
         }),
-        trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+        trim_entities: Some(crate::feature::definitions::FeatureTrimEntityTable {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
             buckets: Vec::new(),
-            rows: vec![crate::feature::FeatureTrimEntity {
+            rows: vec![crate::feature::definitions::FeatureTrimEntity {
                 external_id: 42,
                 mode: Some(0),
                 vertices: [1, 2],
-                kind: crate::feature::TrimEntityKind::Line,
+                kind: crate::feature::definitions::TrimEntityKind::Line,
                 offset: 30,
             }],
             solved_external_ids: vec![42],
@@ -111,7 +111,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         order_table: None,
         section_3d: None,
         dimensions: None,
-        relations: Some(crate::feature::FeatureRelationTable {
+        relations: Some(crate::feature::definitions::FeatureRelationTable {
             declared_count: 2,
             entity_ref: None,
             rows: Vec::new(),
@@ -179,12 +179,12 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
     .is_none());
 
     let relations = definition.relations.as_mut().expect("solver relations");
-    declared_solver_rows(&mut relations.skamps).push(crate::feature::FeatureSkamp {
+    declared_solver_rows(&mut relations.skamps).push(crate::feature::definitions::FeatureSkamp {
         id: 3,
         kind: 2,
         flags: 0,
         status: 1,
-        items: vec![crate::feature::FeatureSkampItem {
+        items: vec![crate::feature::definitions::FeatureSkampItem {
             entity_id: 41,
             sense: 0,
         }],
@@ -208,8 +208,8 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
 
 #[test]
 fn arc_carriers_use_trim_vertices() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc([7, 9]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Arc([7, 9]),
         directions: [None; 3],
         center_id: Some(8),
         arc_orientation: Some(0),
@@ -220,7 +220,7 @@ fn arc_carriers_use_trim_vertices() {
         body: Vec::new(),
         offset: 40,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(5),
             owner_feature_id: Some(6),
@@ -230,27 +230,27 @@ fn arc_carriers_use_trim_vertices() {
         outlines: Vec::new(),
         variables: None,
         segments: None,
-        trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+        trim_entities: Some(crate::feature::definitions::FeatureTrimEntityTable {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
             buckets: Vec::new(),
-            rows: vec![crate::feature::FeatureTrimEntity {
+            rows: vec![crate::feature::definitions::FeatureTrimEntity {
                 external_id: 42,
                 mode: Some(0),
                 vertices: [1, 2],
-                kind: crate::feature::TrimEntityKind::Arc { center_vertex: 3 },
+                kind: crate::feature::definitions::TrimEntityKind::Arc { center_vertex: 3 },
                 offset: 30,
             }],
             solved_external_ids: vec![42],
             offset: 28,
         }),
         trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
+        order_table: Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 42,
                 internal_id: 3,
                 bitmask: 0,
@@ -261,9 +261,9 @@ fn arc_carriers_use_trim_vertices() {
         section_3d: None,
         dimensions: None,
         relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Arc(
-                crate::feature::FeatureSavedArc {
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Arc(
+                crate::feature::definitions::FeatureSavedArc {
                     entity_id: 3,
                     center: [Some(0.0), Some(0.0), Some(0.0)],
                     radius: Some(2.0),
@@ -305,24 +305,24 @@ fn arc_carriers_use_trim_vertices() {
             offset: 5,
         },
         vec![
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 7,
                 u: Some(2.0),
                 v: Some(0.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 8,
                 u: Some(0.0),
                 v: Some(0.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 9,
                 u: Some(0.0),
                 v: Some(2.0),
             },
         ],
     ));
-    var_arc.segments = Some(crate::feature::FeatureSegmentTable {
+    var_arc.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,

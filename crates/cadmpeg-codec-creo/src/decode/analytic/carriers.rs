@@ -777,7 +777,7 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
 
 pub(in crate::decode) fn rowless_round_face_orientations(
     round_feature_ids: &BTreeSet<u32>,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
     available_surfaces: &BTreeSet<u32>,
 ) -> BTreeMap<u32, bool> {

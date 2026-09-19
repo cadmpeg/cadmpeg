@@ -66,7 +66,7 @@ fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
     }
 }
 
-fn ordered_row_feature_ids(rows: &[crate::feature::FeatureRow]) -> Vec<u32> {
+fn ordered_row_feature_ids(rows: &[crate::feature::rows::FeatureRow]) -> Vec<u32> {
     let mut seen = BTreeSet::new();
     rows.iter()
         .filter_map(|row| seen.insert(row.feature_id).then_some(row.feature_id))
@@ -183,8 +183,8 @@ pub(super) fn emit_model_features(
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, ir, operation.feature_id);
         let mut source_properties = feature_source_properties(scan, operation.feature_id);
-        if let Some(prefix) =
-            current_operation.and_then(crate::feature::FeatureOperation::stored_name_prefix)
+        if let Some(prefix) = current_operation
+            .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
         {
             source_properties.insert(
                 "mdl_stored_name_prefix".to_string(),

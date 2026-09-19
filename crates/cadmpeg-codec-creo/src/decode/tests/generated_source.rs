@@ -51,25 +51,25 @@ const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
 
 #[test]
 fn generated_source_ids_bind_carriers_independently_of_table_position() {
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         17,
         80,
         vec![
-            crate::feature::FeatureEntityTableEntry {
+            crate::feature::entity::FeatureEntityTableEntry {
                 entity_id: 42,
                 payload: crate::feature::entity::entry_payload(200, Some(10), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
             },
-            crate::feature::FeatureEntityTableEntry {
+            crate::feature::entity::FeatureEntityTableEntry {
                 entity_id: 41,
                 payload: crate::feature::entity::entry_payload(200, Some(8), None, None),
                 prefixed: false,
                 offset: 0,
                 end_offset: 0,
             },
-            crate::feature::FeatureEntityTableEntry {
+            crate::feature::entity::FeatureEntityTableEntry {
                 entity_id: 43,
                 payload: crate::feature::entity::entry_payload(200, Some(9), None, None),
                 prefixed: false,
@@ -81,18 +81,18 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         0,
     )
     .with_surface_ids([41, 42, 43]);
-    let order = crate::feature::FeatureOrderTable {
+    let order = crate::feature::definitions::FeatureOrderTable {
         declared_count: 2,
         has_prototype: false,
         entity_ref: Some(3),
         rows: vec![
-            crate::feature::FeatureOrderRow {
+            crate::feature::definitions::FeatureOrderRow {
                 external_id: 8,
                 internal_id: 1,
                 bitmask: 0,
                 offset: 0,
             },
-            crate::feature::FeatureOrderRow {
+            crate::feature::definitions::FeatureOrderRow {
                 external_id: 9,
                 internal_id: 2,
                 bitmask: 0,
@@ -297,14 +297,15 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
 
 #[test]
 fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(21, 204, None),
         entry(22, 203, None),
@@ -322,7 +323,7 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
         entry(34, 200, Some(6)),
         entry(35, 200, Some(7)),
     ];
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         9,
         29,
         entries,
@@ -365,14 +366,15 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
 
 #[test]
 fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(21, 204, None),
         entry(22, 203, None),
@@ -389,7 +391,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         entry(32, 200, Some(6)),
         entry(33, 200, Some(7)),
     ];
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         9,
         29,
         entries,
@@ -490,27 +492,28 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
 
 #[test]
 fn simple_drilled_dimensions_require_complete_agreeing_tables() {
-    let table = |radius: f64, angle: f64, depth: f64| crate::feature::FeatureDimensionTable {
-        declared_count: 3,
-        entity_ref: Some(88),
-        rows: [(2, radius, 0), (10, angle, 1), (2, depth, 2)]
-            .into_iter()
-            .map(
-                |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
-                    dimension_type,
-                    value: crate::feature::definitions::DimensionValue::Resolved(value),
-                    value_body: Vec::new(),
-                    direction_byte: 0,
-                    auxiliary_value: Some(0.0),
-                    auxiliary_body: Vec::new(),
-                    external_id,
-                    references: None,
-                    offset: 0,
-                },
-            )
-            .collect(),
-        offset: 0,
-    };
+    let table =
+        |radius: f64, angle: f64, depth: f64| crate::feature::definitions::FeatureDimensionTable {
+            declared_count: 3,
+            entity_ref: Some(88),
+            rows: [(2, radius, 0), (10, angle, 1), (2, depth, 2)]
+                .into_iter()
+                .map(|(dimension_type, value, external_id)| {
+                    crate::feature::definitions::FeatureDimension {
+                        dimension_type,
+                        value: crate::feature::definitions::DimensionValue::Resolved(value),
+                        value_body: Vec::new(),
+                        direction_byte: 0,
+                        auxiliary_value: Some(0.0),
+                        auxiliary_body: Vec::new(),
+                        external_id,
+                        references: None,
+                        offset: 0,
+                    }
+                })
+                .collect(),
+            offset: 0,
+        };
     let angle = 118.0_f64.to_radians();
     let id2 = SimpleDrilledDimensionFamily::ExternalId2Depth;
     let first = table(4.2, angle, -25.0);
@@ -743,20 +746,21 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         .rows
         .extend(simple_drilled_recipe_surface_rows(9));
     let drill_point_angle = 118.0_f64.to_radians();
-    let dimension = |dimension_type, external_id, value| crate::feature::FeatureDimension {
-        dimension_type,
-        value: crate::feature::definitions::DimensionValue::Resolved(value),
-        value_body: Vec::new(),
-        direction_byte: 0,
-        auxiliary_value: Some(0.0),
-        auxiliary_body: Vec::new(),
-        external_id,
-        references: None,
-        offset: 0,
-    };
+    let dimension =
+        |dimension_type, external_id, value| crate::feature::definitions::FeatureDimension {
+            dimension_type,
+            value: crate::feature::definitions::DimensionValue::Resolved(value),
+            value_body: Vec::new(),
+            direction_byte: 0,
+            auxiliary_value: Some(0.0),
+            auxiliary_body: Vec::new(),
+            external_id,
+            references: None,
+            offset: 0,
+        };
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(911),
                 owner_feature_id: None,
@@ -770,7 +774,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             trim_vertices: None,
             order_table: None,
             section_3d: None,
-            dimensions: Some(crate::feature::FeatureDimensionTable {
+            dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
                 declared_count: 3,
                 entity_ref: Some(88),
                 rows: vec![
@@ -808,7 +812,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             }, Some(actual_diameter),) if (approximately_equal(angle.get(), drill_point_angle)) && actual_diameter.get() == 8.4 && actual_length.get() == 25.0)));
 
     let compact_entry =
-        |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
             entity_id,
@@ -817,7 +821,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             end_offset: 0,
         };
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             9,
             29,
             vec![
@@ -848,7 +852,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
 
 #[test]
 fn counterbore_sources_require_materialized_table_membership() {
-    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
         entity_id,
         payload: crate::feature::entity::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
@@ -856,7 +860,7 @@ fn counterbore_sources_require_materialized_table_membership() {
         end_offset: 0,
     };
     let entries = vec![entry(11, 4), entry(12, 4), entry(15, 7), entry(16, 7)];
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         9,
         29,
         entries,
@@ -877,10 +881,10 @@ fn counterbore_sources_require_materialized_table_membership() {
     let duplicate_productive_table = table.clone();
     scan.features.entity_tables.push(table);
     scan.features.entity_tables.push(
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             9,
             29,
-            vec![crate::feature::FeatureEntityTableEntry {
+            vec![crate::feature::entity::FeatureEntityTableEntry {
                 entity_id: 99,
                 payload: crate::feature::entity::entry_payload(0, None, None, None),
                 prefixed: true,
@@ -906,7 +910,7 @@ fn counterbore_sources_require_materialized_table_membership() {
 
 #[test]
 fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
-    let table = |depth: f64| crate::feature::FeatureDimensionTable {
+    let table = |depth: f64| crate::feature::definitions::FeatureDimensionTable {
         declared_count: 4,
         entity_ref: Some(88),
         rows: [
@@ -917,7 +921,7 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
         ]
         .into_iter()
         .map(
-            |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
+            |(dimension_type, value, external_id)| crate::feature::definitions::FeatureDimension {
                 dimension_type,
                 value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),
@@ -952,7 +956,7 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
 
 #[test]
 fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
-    let table = |counterbore_depth: f64| crate::feature::FeatureDimensionTable {
+    let table = |counterbore_depth: f64| crate::feature::definitions::FeatureDimensionTable {
         declared_count: 5,
         entity_ref: Some(88),
         rows: [
@@ -964,7 +968,7 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         ]
         .into_iter()
         .map(
-            |(external_id, dimension_type, value)| crate::feature::FeatureDimension {
+            |(external_id, dimension_type, value)| crate::feature::definitions::FeatureDimension {
                 dimension_type,
                 value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),
@@ -1171,7 +1175,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
 
 #[test]
 fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         9,
         29,
         vec![
@@ -1372,7 +1376,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
         row(11, crate::surface::SurfaceKind::Plane),
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         23,
         80,
         vec![

@@ -11,10 +11,11 @@ use super::feature_history::outputs::owned_section_feature_id;
 use super::native_records::{CreoSketchBucketHeader, CreoSketchTableHeader, CreoSketchTableKind};
 
 pub(super) fn feature_definition_has_sketch_design(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> bool {
     definition.variables.is_some()
-        || crate::feature::equation_table(&definition.body, 0, definition.body.len()).is_some()
+        || crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+            .is_some()
         || definition.segments.is_some()
         || definition.trim_entities.is_some()
         || definition.trim_vertices.is_some()
@@ -26,7 +27,7 @@ pub(super) fn feature_definition_has_sketch_design(
 }
 
 pub(super) fn sketch_table_headers(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<CreoSketchTableHeader> {
     let mut headers = Vec::new();
     let mut push = |kind, row_count, offset| {
@@ -46,7 +47,8 @@ pub(super) fn sketch_table_headers(
             table.offset,
         );
     }
-    if let Some(table) = crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    if let Some(table) =
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     {
         push(
             CreoSketchTableKind::Equations {
@@ -170,16 +172,16 @@ pub(super) fn sketch_table_headers(
     headers
 }
 
-pub(super) fn binary_flag_value(flag: crate::feature::BinaryFlag) -> bool {
+pub(super) fn binary_flag_value(flag: crate::feature::definitions::BinaryFlag) -> bool {
     match flag {
-        crate::feature::BinaryFlag::Clear => false,
-        crate::feature::BinaryFlag::Set => true,
+        crate::feature::definitions::BinaryFlag::Clear => false,
+        crate::feature::definitions::BinaryFlag::Set => true,
     }
 }
 
 pub(super) fn feature_definition_record_id(
     scan: &ContainerScan,
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> String {
     if scan
         .features
@@ -205,7 +207,7 @@ pub(super) fn feature_definition_record_id(
 
 pub(super) fn feature_sketch_record_id_in_scan(
     scan: &ContainerScan,
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> String {
     if scan
         .features
@@ -225,7 +227,7 @@ pub(super) fn feature_sketch_record_id_in_scan(
 
 pub(super) fn model_sketch_id(
     scan: &ContainerScan,
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Option<SketchId> {
     let native_id = feature_sketch_record_id_in_scan(scan, definition);
     let scope = native_id.strip_prefix("creo:featdefs:sketch#")?;

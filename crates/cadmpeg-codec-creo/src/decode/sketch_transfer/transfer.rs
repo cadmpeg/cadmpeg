@@ -128,7 +128,7 @@ pub(in super::super) fn transfer_sketches(
         let complete_segment_table = definition
             .segments
             .as_ref()
-            .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
+            .is_some_and(crate::feature::definitions::FeatureSegmentTable::is_complete);
         if let Some(table) = &definition.segments {
             let decoded_rows = table.rows.len();
             let declared_count = usize::try_from(table.declared_count).map_err(|_| {
@@ -154,9 +154,15 @@ pub(in super::super) fn transfer_sketches(
             coverage.record_table_rows(decoded_rows, expected_rows);
             for segment in table.rows.ordinary() {
                 let family = match segment.kind {
-                    crate::feature::FeatureSegmentKind::Line(_) => SketchSegmentFamily::Line,
-                    crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
-                    crate::feature::FeatureSegmentKind::Point(_) => SketchSegmentFamily::Point,
+                    crate::feature::definitions::FeatureSegmentKind::Line(_) => {
+                        SketchSegmentFamily::Line
+                    }
+                    crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
+                        SketchSegmentFamily::Arc
+                    }
+                    crate::feature::definitions::FeatureSegmentKind::Point(_) => {
+                        SketchSegmentFamily::Point
+                    }
                 };
                 coverage.record_family_rows(family, 1);
             }
@@ -236,7 +242,7 @@ pub(in super::super) fn transfer_sketches(
                 (segment.offset, geometry)
             })
             .collect::<BTreeMap<_, _>>();
-        let segment_geometry = |segment: &crate::feature::FeatureSegment| {
+        let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| {
             if section_degenerate_axis_line(definition, segment) {
                 return segment_geometries
                     .get(&segment.offset)
@@ -345,9 +351,13 @@ pub(in super::super) fn transfer_sketches(
             .filter(|segment| resolved_segment_offsets.contains(&segment.offset))
         {
             let family = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line(_) => SketchSegmentFamily::Line,
-                crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
-                crate::feature::FeatureSegmentKind::Point(_) => SketchSegmentFamily::Point,
+                crate::feature::definitions::FeatureSegmentKind::Line(_) => {
+                    SketchSegmentFamily::Line
+                }
+                crate::feature::definitions::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
+                crate::feature::definitions::FeatureSegmentKind::Point(_) => {
+                    SketchSegmentFamily::Point
+                }
             };
             coverage.record_family_resolution(family, 1);
         }

@@ -8,8 +8,8 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::AnnotationBuilder;
 
-fn definition() -> crate::feature::FeatureDefinition {
-    crate::feature::FeatureDefinition {
+fn definition() -> crate::feature::definitions::FeatureDefinition {
+    crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: Some(40),
@@ -25,24 +25,24 @@ fn definition() -> crate::feature::FeatureDefinition {
                 offset: 0,
             },
             vec![
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
                     v: Some(-1.0),
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 2,
                     u: Some(0.0),
                     v: Some(1.0),
                 },
             ],
         )),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+            rows: (vec![crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
                 arc_orientation: None,
@@ -60,11 +60,11 @@ fn definition() -> crate::feature::FeatureDefinition {
         }),
         trim_entities: None,
         trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
+        order_table: Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 7,
                 internal_id: 1,
                 bitmask: 0,
@@ -72,12 +72,12 @@ fn definition() -> crate::feature::FeatureDefinition {
             }],
             offset: 0,
         }),
-        section_3d: Some(crate::feature::FeatureSection3d {
+        section_3d: Some(crate::feature::definitions::FeatureSection3d {
             sketch_plane_entity_id: None,
             sketch_plane_flip: None,
             reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
             reference_plane_datum_geometry_id: None,
-            orientation: crate::feature::FeatureSectionOrientation::default(),
+            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
             offset: 0,
         }),
@@ -106,12 +106,12 @@ fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
     );
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 40,
-            kind: crate::feature::OperationKind::Revolve,
+            kind: crate::feature::operations::OperationKind::Revolve,
             name: crate::feature::operations::OperationName::Derived,
-            recipe: crate::feature::RecipeResolution::Resolved(
-                crate::feature::FeatureRecipe::ProtrudeRevolve,
+            recipe: crate::feature::operations::RecipeResolution::Resolved(
+                crate::feature::operations::FeatureRecipe::ProtrudeRevolve,
             ),
             display_state_conflict: false,
             depdb: None,
@@ -120,7 +120,7 @@ fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
         });
     scan.features
         .revolution_extents
-        .push(crate::feature::FeatureRevolutionExtent {
+        .push(crate::feature::rows::FeatureRevolutionExtent {
             feature_id: 40,
             offset: 0,
         });

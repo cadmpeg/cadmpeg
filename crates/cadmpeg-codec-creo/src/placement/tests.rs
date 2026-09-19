@@ -16,21 +16,23 @@ use super::{
 };
 use crate::datum::DatumPlaneRecord;
 use crate::feature::definitions::ReferencePlanes;
-use crate::feature::{
-    AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition, FeatureEntityTable,
-    FeatureGeometryTable, FeatureParameterFrameKind, FeatureSegmentKind,
+use crate::feature::definitions::{
+    BinaryFlag, FeatureDefinition, FeatureParameterFrameKind, FeatureSegmentKind,
 };
+use crate::feature::entity::FeatureEntityTable;
+use crate::feature::rows::{AffectedIdKind, FeatureAffectedIds, FeatureGeometryTable};
 use crate::surface::{
     OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
 };
 use crate::vecmath::{cross, normalize};
 
 use crate::feature::definitions::FeatureVariableTable;
-use crate::feature::{
-    FeatureEntityTableEntry, FeatureGeometryTableKind, FeatureParameterFrame, FeatureSection3d,
-    FeatureSectionOrientation, FeatureSectionPoint, FeatureSectionReferencePlane, FeatureSegment,
-    FeatureSegmentTable,
+use crate::feature::definitions::{
+    FeatureParameterFrame, FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint,
+    FeatureSectionReferencePlane, FeatureSegment, FeatureSegmentTable,
 };
+use crate::feature::entity::FeatureEntityTableEntry;
+use crate::feature::rows::FeatureGeometryTableKind;
 use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
 
 #[test]
@@ -474,7 +476,7 @@ fn resolves_generated_section_from_declared_cap_pair() {
         offset: 80,
     }];
     let entries = [(43, 204), (92, 203)].map(|(entity_id, class_id)| {
-        crate::feature::FeatureEntityTableEntry {
+        crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, None, None, None),
 
             entity_id,
@@ -487,7 +489,7 @@ fn resolves_generated_section_from_declared_cap_pair() {
         FeatureEntityTable::new(
             40,
             80,
-            vec![crate::feature::FeatureEntityTableEntry {
+            vec![crate::feature::entity::FeatureEntityTableEntry {
                 entity_id: 700,
                 payload: crate::feature::entity::entry_payload(7, None, None, None),
                 prefixed: false,
@@ -1355,7 +1357,7 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
     assert_eq!(section.sketch_plane_entity_id, Some(769));
     assert_eq!(
         section.sketch_plane_flip,
-        Some(crate::feature::BinaryFlag::Set)
+        Some(crate::feature::definitions::BinaryFlag::Set)
     );
     assert_eq!(
         section.reference_planes.entity_ids().collect::<Vec<_>>(),
@@ -1364,13 +1366,13 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
     assert_eq!(section.reference_plane_datum_geometry_id, Some(9));
     assert_eq!(
         section.orientation.section_flip,
-        Some(crate::feature::BinaryFlag::Set)
+        Some(crate::feature::definitions::BinaryFlag::Set)
     );
     assert_eq!(section.orientation.reference_type, Some(2));
     assert_eq!(section.orientation.segment_id, Some(300));
     assert_eq!(
         section.orientation.reference_flip,
-        Some(crate::feature::BinaryFlag::Clear)
+        Some(crate::feature::definitions::BinaryFlag::Clear)
     );
     assert_eq!(section.dimension_ids, vec![7, 257]);
 

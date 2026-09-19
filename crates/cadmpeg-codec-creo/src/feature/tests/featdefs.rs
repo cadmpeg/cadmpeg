@@ -27,7 +27,7 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     assert_eq!(scan.features.definitions[0].parameter_frames.len(), 2);
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].kind,
-        crate::feature::FeatureParameterFrameKind::LocalSystem
+        crate::feature::definitions::FeatureParameterFrameKind::LocalSystem
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].decoded_values,
@@ -35,7 +35,7 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[1].kind,
-        crate::feature::FeatureParameterFrameKind::Transform
+        crate::feature::definitions::FeatureParameterFrameKind::Transform
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[1].decoded_values,
@@ -88,7 +88,10 @@ fn scan_decodes_featdefs_feature_local_outlines() {
 
     let outlines = &scan.features.definitions[0].outlines;
     assert_eq!(outlines.len(), 2);
-    assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
+    assert_eq!(
+        outlines[0].phase,
+        crate::feature::definitions::OutlinePhase::PreRollback
+    );
     assert_eq!(
         outlines[0]
             .local_scalars
@@ -117,7 +120,7 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     );
     assert_eq!(
         outlines[1].phase,
-        crate::feature::OutlinePhase::PostRollback
+        crate::feature::definitions::OutlinePhase::PostRollback
     );
     assert_eq!(
         outlines[1]
@@ -173,7 +176,10 @@ fn scan_stops_feature_local_outlines_at_named_records() {
 
     let outlines = &scan.features.definitions[0].outlines;
     assert_eq!(outlines.len(), 3);
-    assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
+    assert_eq!(
+        outlines[0].phase,
+        crate::feature::definitions::OutlinePhase::PreRollback
+    );
     assert_eq!(
         outlines[0]
             .local_scalars
@@ -192,7 +198,7 @@ fn scan_stops_feature_local_outlines_at_named_records() {
     );
     assert_eq!(
         outlines[1].phase,
-        crate::feature::OutlinePhase::PostRollback
+        crate::feature::definitions::OutlinePhase::PostRollback
     );
     assert_eq!(
         outlines[1]
@@ -210,7 +216,10 @@ fn scan_stops_feature_local_outlines_at_named_records() {
             .as_slice(),
         vec![vec![0xe4], vec![0x0f], vec![], vec![], vec![], vec![]]
     );
-    assert_eq!(outlines[2].phase, crate::feature::OutlinePhase::PostRegen);
+    assert_eq!(
+        outlines[2].phase,
+        crate::feature::definitions::OutlinePhase::PostRegen
+    );
     assert_eq!(
         outlines[2]
             .local_scalars
@@ -354,7 +363,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     assert_eq!(segments.rows.ordinary().count(), 5);
     assert!(matches!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].kind,
-        crate::feature::FeatureSegmentKind::Line(_)
+        crate::feature::definitions::FeatureSegmentKind::Line(_)
     ));
     assert_eq!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].point_ids(),
@@ -374,7 +383,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     );
     assert!(matches!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].kind,
-        crate::feature::FeatureSegmentKind::Arc(_)
+        crate::feature::definitions::FeatureSegmentKind::Arc(_)
     ));
     assert_eq!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].center_id,
@@ -394,7 +403,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     );
     assert!(matches!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].kind,
-        crate::feature::FeatureSegmentKind::Point(_)
+        crate::feature::definitions::FeatureSegmentKind::Point(_)
     ));
     assert_eq!(
         segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].point_ids(),
@@ -667,10 +676,13 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     assert_eq!(entities.rows[0].external_id, 42);
     assert_eq!(entities.rows[0].vertices, [100, 101]);
     assert_eq!(entities.rows[0].center_vertex(), None);
-    assert_eq!(entities.rows[0].kind, crate::feature::TrimEntityKind::Line);
+    assert_eq!(
+        entities.rows[0].kind,
+        crate::feature::definitions::TrimEntityKind::Line
+    );
     assert_eq!(
         entities.rows[1].kind,
-        crate::feature::TrimEntityKind::Arc { center_vertex: 103 }
+        crate::feature::definitions::TrimEntityKind::Arc { center_vertex: 103 }
     );
     assert_eq!(entities.rows[2].external_id, 227);
     assert_eq!(entities.solved_external_ids, vec![42, 43, 227]);
@@ -826,7 +838,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[0].value.resolved(), Some(1.0));
     assert_eq!(
         dimensions.rows[0].unit(),
-        crate::feature::DimensionUnit::Radians
+        crate::feature::definitions::DimensionUnit::Radians
     );
     assert_eq!(dimensions.rows[0].direction_byte, 1);
     assert_eq!(dimensions.rows[0].auxiliary_value, Some(0.0));
@@ -841,7 +853,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
     assert_eq!(
         dimensions.rows[1].unit(),
-        crate::feature::DimensionUnit::Millimeters
+        crate::feature::definitions::DimensionUnit::Millimeters
     );
     assert_eq!(dimensions.rows[1].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[1].external_id, 43);
@@ -1053,7 +1065,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
         .as_ref()
         .expect("p_saved_result");
     assert_eq!(saved.entities.len(), 2);
-    let crate::feature::FeatureSavedEntity::Line(first) = &saved.entities[0] else {
+    let crate::feature::definitions::FeatureSavedEntity::Line(first) = &saved.entities[0] else {
         panic!("saved line prototype");
     };
     assert_eq!(first.entity_id, 42);
@@ -1065,7 +1077,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
             [Some(1.0), Some(0.0), Some(1.0)]
         ]
     );
-    let crate::feature::FeatureSavedEntity::Line(second) = &saved.entities[1] else {
+    let crate::feature::definitions::FeatureSavedEntity::Line(second) = &saved.entities[1] else {
         panic!("saved line replay");
     };
     assert_eq!(second.entity_id, 43);
@@ -1121,19 +1133,19 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         .expect("p_saved_result")
         .entities;
     assert_eq!(entities.len(), 3);
-    let crate::feature::FeatureSavedEntity::Arc(arc) = &entities[0] else {
+    let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &entities[0] else {
         panic!("saved arc");
     };
     assert_eq!(arc.entity_id, 44);
     assert_eq!(arc.center, [Some(0.0), Some(1.0), Some(3.0)]);
     assert_eq!(arc.radius, Some(1.0));
     assert_eq!(arc.parameters, [Some(0.0), Some(1.0)]);
-    let crate::feature::FeatureSavedEntity::Circle(circle) = &entities[1] else {
+    let crate::feature::definitions::FeatureSavedEntity::Circle(circle) = &entities[1] else {
         panic!("saved circle");
     };
     assert_eq!(circle.entity_id, 45);
     assert_eq!(circle.center, [Some(0.0), Some(1.0), Some(0.0)]);
-    let crate::feature::FeatureSavedEntity::Dummy(dummy) = &entities[2] else {
+    let crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) = &entities[2] else {
         panic!("saved dummy");
     };
     assert_eq!(dummy.entity_id, Some(46));

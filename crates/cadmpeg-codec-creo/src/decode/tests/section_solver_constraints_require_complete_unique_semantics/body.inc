@@ -2,8 +2,8 @@
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
     use crate::feature::definitions::test_support::{with_points, append_points, replace_points};
     use crate::feature::definitions::{VariableType, ScalarLane};
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -14,8 +14,8 @@
         body: Vec::new(),
         offset: 40,
     };
-    let arc = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc([2, 3]),
+    let arc = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Arc([2, 3]),
         directions: [None; 3],
         center_id: Some(4),
         arc_orientation: Some(1),
@@ -26,8 +26,8 @@
         body: Vec::new(),
         offset: 41,
     };
-    let point = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point(4),
+    let point = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Point(4),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -38,8 +38,8 @@
         body: Vec::new(),
         offset: 42,
     };
-    let other_line = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([5, 6]),
+    let other_line = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([5, 6]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -50,8 +50,8 @@
         body: Vec::new(),
         offset: 43,
     };
-    let other_arc = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc([5, 6]),
+    let other_arc = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Arc([5, 6]),
         directions: [None; 3],
         center_id: Some(7),
         arc_orientation: Some(1),
@@ -62,10 +62,10 @@
         body: Vec::new(),
         offset: 44,
     };
-    let relations = crate::feature::FeatureRelationTable {
+    let relations = crate::feature::definitions::FeatureRelationTable {
         declared_count: 3,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureRelation {
+        rows: vec![crate::feature::definitions::FeatureRelation {
             relation_id: 8,
             used: 1,
             operands: vec![12, 4],
@@ -81,239 +81,239 @@
             entity_ref: 1,
             offset: 46,
         }, rows: vec![
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 3,
                 kind: 1,
                 flags: 0,
                 status: 1,
-                items: vec![crate::feature::FeatureSkampItem {
+                items: vec![crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
                 }],
                 offset: 50,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 4,
                 kind: 2,
                 flags: 0,
                 status: 1,
-                items: vec![crate::feature::FeatureSkampItem {
+                items: vec![crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
                 }],
                 offset: 60,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 5,
                 kind: 7,
                 flags: 0,
                 status: 1,
-                items: vec![crate::feature::FeatureSkampItem {
+                items: vec![crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 4,
                 }],
                 offset: 70,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 6,
                 kind: 1,
                 flags: 0,
                 status: 1,
-                items: vec![crate::feature::FeatureSkampItem {
+                items: vec![crate::feature::definitions::FeatureSkampItem {
                     entity_id: 13,
                     sense: 0,
                 }],
                 offset: 71,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 7,
                 kind: 0,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 13,
                         sense: 2,
                     },
                 ],
                 offset: 72,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 8,
                 kind: 4,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 3,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 13,
                         sense: 2,
                     },
                 ],
                 offset: 73,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 9,
                 kind: 14,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 2,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 13,
                         sense: 3,
                     },
                 ],
                 offset: 74,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 10,
                 kind: 14,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 13,
                         sense: 4,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 13,
                         sense: 4,
                     },
                 ],
                 offset: 75,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 11,
                 kind: 3,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 14,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 13,
                         sense: 4,
                     },
                 ],
                 offset: 76,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 12,
                 kind: 9,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 14,
                         sense: 0,
                     },
                 ],
                 offset: 77,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 13,
                 kind: 5,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 15,
                         sense: 0,
                     },
                 ],
                 offset: 78,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 14,
                 kind: 7,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 15,
                         sense: 0,
                     },
                 ],
                 offset: 79,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 15,
                 kind: 8,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 15,
                         sense: 0,
                     },
                 ],
                 offset: 80,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 16,
                 kind: 6,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 13,
                         sense: 0,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 16,
                         sense: 0,
                     },
                 ],
                 offset: 81,
             },
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 17,
                 kind: 17,
                 flags: 2,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 12,
                         sense: 2,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 15,
                         sense: 2,
                     },
@@ -324,7 +324,7 @@
         triples: None,
         offset: 45,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed { schema_id: std::num::NonZeroU32::new(917), owner_feature_id: Some(40) },
         body: Vec::new(),
         parameter_frames: Vec::new(),
@@ -335,18 +335,18 @@
             rows: Vec::new(),
             offset: 89,
         }, vec![
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
                     v: Some(2.0),
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 5,
                     u: Some(3.0),
                     v: Some(2.0),
                 },
             ])),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
 declared_count: 5,
 has_elided_prototype: false,
 entity_ref: None,
@@ -357,10 +357,10 @@ offset: 30,
         trim_vertices: None,
         order_table: None,
         section_3d: None,
-        dimensions: Some(crate::feature::FeatureDimensionTable {
+        dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
             declared_count: 1,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureDimension {
+            rows: vec![crate::feature::definitions::FeatureDimension {
                 dimension_type: 2,
                 value: crate::feature::definitions::DimensionValue::Resolved(3.0),
                 value_body: Vec::new(),
@@ -384,17 +384,17 @@ offset: 30,
         rows: Vec::new(),
         offset: 90,
     }, vec![
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 4,
                 u: Some(1.0),
                 v: Some(1.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 6,
                 u: Some(0.0),
                 v: Some(0.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 7,
                 u: None,
                 v: None,
@@ -402,17 +402,17 @@ offset: 30,
         ]));
     let segments = point_row_symmetry.segments.as_mut().expect("segments");
     segments.rows.edit_points(|rows| *rows =  vec![
-        crate::feature::FeaturePointSegment {
+        crate::feature::definitions::FeaturePointSegment {
             point_id: 4,
             external_id: 18,
             offset: 91,
         },
-        crate::feature::FeaturePointSegment {
+        crate::feature::definitions::FeaturePointSegment {
             point_id: 6,
             external_id: 19,
             offset: 92,
         },
-        crate::feature::FeaturePointSegment {
+        crate::feature::definitions::FeaturePointSegment {
             point_id: 7,
             external_id: 20,
             offset: 93,
@@ -420,21 +420,21 @@ offset: 30,
     ]);
     segments.declared_count = 8;
     let relations = point_row_symmetry.relations.as_mut().expect("relations");
-    *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 94,
         kind: 14,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 18,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 19,
                 sense: 4,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 20,
                 sense: 4,
             },
@@ -453,13 +453,13 @@ offset: 30,
         Some(&[2.0, 2.0])
     );
     let mut circle_center_symmetry = point_row_symmetry.clone();
-    append_points(circle_center_symmetry.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
+    append_points(circle_center_symmetry.variables.as_mut().expect("variables"), vec![crate::feature::definitions::FeatureSectionPoint {
             point_id: 8,
             u: Some(0.0),
             v: Some(0.0),
         }]);
     let segments = circle_center_symmetry.segments.as_mut().expect("segments");
-    segments.rows.edit_circles(|rows| *rows =  vec![crate::feature::FeatureCircleSegment {
+    segments.rows.edit_circles(|rows| *rows =  vec![crate::feature::definitions::FeatureCircleSegment {
         center_id: 8,
         radius_ref: 101,
         external_id: 21,
@@ -478,33 +478,33 @@ offset: 30,
         Some(&[2.0, 2.0])
     );
     let mut projected_copy = definition.clone();
-    projected_copy.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+    projected_copy.trim_entities = Some(crate::feature::definitions::FeatureTrimEntityTable {
         declared_count: None,
         entity_ref: None,
         entry_ref: None,
         buckets: Vec::new(),
-        rows: vec![crate::feature::FeatureTrimEntity {
+        rows: vec![crate::feature::definitions::FeatureTrimEntity {
             external_id: 13,
             mode: Some(0),
             vertices: [2, 3],
-            kind: crate::feature::TrimEntityKind::Line,
+            kind: crate::feature::definitions::TrimEntityKind::Line,
             offset: 84,
         }],
         solved_external_ids: vec![13],
         offset: 83,
     });
     *declared_solver_rows(&mut projected_copy.relations.as_mut().expect("relations").skamps) =
-        vec![crate::feature::FeatureSkamp {
+        vec![crate::feature::definitions::FeatureSkamp {
             id: 19,
             kind: 37,
             flags: 98_304,
             status: 34,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 13,
                     sense: 0,
                 },
@@ -555,12 +555,12 @@ offset: 30,
     ] {
         let mut fixed_arc = definition.clone();
         let relations = fixed_arc.relations.as_mut().expect("relations");
-        *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::FeatureSkamp {
+        *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::definitions::FeatureSkamp {
             id: 18,
             kind,
             flags: 0,
             status: 35,
-            items: vec![crate::feature::FeatureSkampItem {
+            items: vec![crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 0,
             }],
@@ -583,7 +583,7 @@ offset: 30,
             SketchConstraintDefinitionInput::ArcAngle { .. }
         ));
         fixed_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             };
@@ -594,7 +594,7 @@ offset: 30,
             SketchConstraintDefinitionInput::Native { .. }
         ));
         fixed_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 2,
             };
@@ -608,12 +608,12 @@ offset: 30,
     for kind in [12, 13] {
         let mut oriented_arc = definition.clone();
         let relations = oriented_arc.relations.as_mut().expect("relations");
-        *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::FeatureSkamp {
+        *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::definitions::FeatureSkamp {
             id: 18,
             kind,
             flags: 0,
             status: 35,
-            items: vec![crate::feature::FeatureSkampItem {
+            items: vec![crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 0,
             }],
@@ -640,7 +640,7 @@ offset: 30,
             SketchConstraintDefinitionInput::SameCoordinate { .. }
         ));
         oriented_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             };
@@ -651,7 +651,7 @@ offset: 30,
             SketchConstraintDefinitionInput::Native { .. }
         ));
         oriented_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 2,
             };
@@ -667,7 +667,7 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments")
-        .rows.edit_bounded_curves(|rows| *rows =  vec![crate::feature::FeatureBoundedCurveSegment {
+        .rows.edit_bounded_curves(|rows| *rows =  vec![crate::feature::definitions::FeatureBoundedCurveSegment {
         directions: [None; 3],
         point_ids: [1, 2],
         center_id: None,
@@ -687,12 +687,12 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 20,
         kind: 33,
         flags: 34,
         status: 35,
-        items: vec![crate::feature::FeatureSkampItem {
+        items: vec![crate::feature::definitions::FeatureSkampItem {
             entity_id: 18,
             sense: 10,
         }],
@@ -807,12 +807,12 @@ offset: 30,
 
     let mut type_33_line = definition.clone();
     *declared_solver_rows(&mut type_33_line.relations.as_mut().expect("relations").skamps) =
-        vec![crate::feature::FeatureSkamp {
+        vec![crate::feature::definitions::FeatureSkamp {
             id: 20,
             kind: 33,
             flags: 393_216,
             status: 35,
-            items: vec![crate::feature::FeatureSkampItem {
+            items: vec![crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 10,
             }],
@@ -839,23 +839,23 @@ offset: 30,
             ..
         }
     ));
-    let point_entity = crate::feature::FeatureSkampItem {
+    let point_entity = crate::feature::definitions::FeatureSkampItem {
         entity_id: 14,
         sense: 0,
     };
     let mut mixed_tangent = definition.clone();
     let mixed_tangent_relations = mixed_tangent.relations.as_mut().expect("relations");
-    *declared_solver_rows(&mut mixed_tangent_relations.skamps) = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut mixed_tangent_relations.skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 18,
         kind: 4,
         flags: 0,
         status: 34,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 3,
             },
@@ -897,7 +897,7 @@ offset: 30,
         }
     );
     mixed_tangent.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] =
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 15,
             sense: 2,
         };
@@ -912,17 +912,17 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 19,
         kind: 5,
         flags: 0,
         status: 34,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
@@ -962,34 +962,34 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .skamps) = vec![
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 18,
             kind: 0,
             flags: 0,
             status: 35,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 99,
                     sense: 2,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 14,
                     sense: 0,
                 },
             ],
             offset: 83,
         },
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 19,
             kind: 5,
             flags: 0,
             status: 34,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 13,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 99,
                     sense: 0,
                 },
@@ -1011,17 +1011,17 @@ offset: 30,
     );
     let mut point_pair = definition.clone();
     let point_pair_relations = point_pair.relations.as_mut().expect("relations");
-    *declared_solver_rows(&mut point_pair_relations.skamps) = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut point_pair_relations.skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 19,
         kind: 3,
         flags: 0,
         status: 34,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 14,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
             },
@@ -1075,14 +1075,14 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations");
-    *declared_solver_rows(&mut point_coincidence_relations.skamps) = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut point_coincidence_relations.skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 0,
         kind: 0,
         flags: 0,
         status: 1,
         items: vec![
             point_entity.clone(),
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 4,
             },
@@ -1118,7 +1118,7 @@ offset: 30,
         .expect("relations");
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 3;
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 12,
             sense: 0,
         },
@@ -1142,11 +1142,11 @@ offset: 30,
         .as_mut()
         .expect("relations");
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 0,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 14,
             sense: 0,
         },
@@ -1171,11 +1171,11 @@ offset: 30,
         .expect("relations");
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 0;
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 12,
             sense: 3,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 2,
         },
@@ -1217,7 +1217,7 @@ offset: 30,
         .as_mut()
         .expect("relations");
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 3;
-    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] = crate::feature::FeatureSkampItem {
+    point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items[0] = crate::feature::definitions::FeatureSkampItem {
         entity_id: 13,
         sense: 0,
     };
@@ -1256,11 +1256,11 @@ offset: 30,
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].flags = 1;
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].status = 0;
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 2,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 4,
         },
@@ -1289,11 +1289,11 @@ offset: 30,
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 3,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 3,
         },
@@ -1321,11 +1321,11 @@ offset: 30,
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 2,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 4,
         },
@@ -1376,11 +1376,11 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0];
     inactive_tangent.kind = 4;
     inactive_tangent.items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 2,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 2,
         },
@@ -1425,11 +1425,11 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0];
     inactive_point_on_curve.kind = 3;
     inactive_point_on_curve.items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 0,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 4,
         },
@@ -1485,15 +1485,15 @@ offset: 30,
         .skamps.as_mut().expect("skamp table").rows_mut()[0];
     inactive_point_symmetry.kind = 14;
     inactive_point_symmetry.items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 97,
             sense: 0,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 98,
             sense: 4,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 4,
         },
@@ -1569,23 +1569,23 @@ offset: 30,
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].kind = 3;
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].flags = 0;
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[0].items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 0,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 2,
         },
     ];
     declared_solver_rows(&mut point_coincidence_relations.skamps).insert(
         0,
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 1,
             kind: 1,
             flags: 0,
             status: 1,
-            items: vec![crate::feature::FeatureSkampItem {
+            items: vec![crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
             }],
@@ -1616,11 +1616,11 @@ offset: 30,
         .expect("relations");
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[1].kind = 35;
     point_coincidence_relations.skamps.as_mut().expect("skamp table").rows_mut()[1].items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 0,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 12,
             sense: 2,
         },
@@ -1664,17 +1664,17 @@ offset: 30,
     ));
     let mut collinear_definition = definition.clone();
     let collinear_relations = collinear_definition.relations.as_mut().expect("relations");
-    *declared_solver_rows(&mut collinear_relations.skamps) = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut collinear_relations.skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 9,
         kind: 9,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 15,
                 sense: 0,
             },
@@ -1699,17 +1699,17 @@ offset: 30,
         }
     );
     let mut midpoint_definition = definition.clone();
-    let midpoint = crate::feature::FeatureSkamp {
+    let midpoint = crate::feature::definitions::FeatureSkamp {
         id: 35,
         kind: 35,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 14,
                 sense: 0,
             },
@@ -1741,17 +1741,17 @@ offset: 30,
         .variables
         .as_mut()
         .expect("variables"), vec![
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 1,
             u: Some(0.0),
             v: Some(0.0),
         },
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 2,
             u: Some(4.0),
             v: Some(2.0),
         },
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 4,
             u: None,
             v: None,
@@ -1762,11 +1762,11 @@ offset: 30,
         BTreeMap::from([(1, [0.0, 0.0]), (2, [4.0, 2.0]), (4, [2.0, 1.0])])
     );
     let mut saved_line_midpoint = midpoint_definition.clone();
-    saved_line_midpoint.order_table = Some(crate::feature::FeatureOrderTable {
+    saved_line_midpoint.order_table = Some(crate::feature::definitions::FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureOrderRow {
+        rows: vec![crate::feature::definitions::FeatureOrderRow {
             external_id: 99,
             internal_id: 20,
             bitmask: 1,
@@ -1774,9 +1774,9 @@ offset: 30,
         }],
         offset: 94,
     });
-    saved_line_midpoint.saved_section = Some(crate::feature::FeatureSavedSection {
-        entities: vec![crate::feature::FeatureSavedEntity::Line(
-            crate::feature::FeatureSavedLine {
+    saved_line_midpoint.saved_section = Some(crate::feature::definitions::FeatureSavedSection {
+        entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+            crate::feature::definitions::FeatureSavedLine {
                 entity_id: 20,
                 references: Vec::new(),
                 attributes: Vec::new(),
@@ -1807,22 +1807,22 @@ offset: 30,
         .variables
         .as_mut()
         .expect("variables"), vec![
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 2,
             u: Some(1.0),
             v: Some(0.0),
         },
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 3,
             u: Some(0.0),
             v: Some(1.0),
         },
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 4,
             u: Some(0.0),
             v: Some(0.0),
         },
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 8,
             u: None,
             v: None,
@@ -1845,18 +1845,18 @@ offset: 30,
         .iter_mut()
         .find(|segment| segment.external_id == 14)
         .expect("point")
-        .kind = crate::feature::FeatureSegmentKind::Point(8));
+        .kind = crate::feature::definitions::FeatureSegmentKind::Point(8));
     let midpoint_skamps = &mut arc_midpoint_definition
         .relations
         .as_mut()
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut();
     midpoint_skamps[0].items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 0,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 14,
             sense: 0,
         },
@@ -1873,12 +1873,12 @@ offset: 30,
             .variables
             .as_mut()
             .expect("variables"), vec![
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(1.0),
                 v: Some(2.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 3,
                 u: if expected_coordinate == 0 {
                     None
@@ -1898,12 +1898,12 @@ offset: 30,
                 .as_mut()
                 .expect("relations")
                 .skamps.as_mut().expect("skamp table").rows_mut();
-            alignment_skamps[0] = crate::feature::FeatureSkamp {
+            alignment_skamps[0] = crate::feature::definitions::FeatureSkamp {
                 id: 12,
                 kind,
                 flags: 0,
                 status: 1,
-                items: vec![crate::feature::FeatureSkampItem {
+                items: vec![crate::feature::definitions::FeatureSkampItem {
                     entity_id: 13,
                     sense: 0,
                 }],
@@ -1944,7 +1944,7 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
-        .items[1] = crate::feature::FeatureSkampItem {
+        .items[1] = crate::feature::definitions::FeatureSkampItem {
         entity_id: 13,
         sense: 0,
     };
@@ -1953,17 +1953,17 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .skamps)
-        .push(crate::feature::FeatureSkamp {
+        .push(crate::feature::definitions::FeatureSkamp {
             id: 36,
             kind: 3,
             flags: 0,
             status: 0,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 13,
                     sense: 4,
                 },
@@ -2005,7 +2005,7 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
-        .items[1] = crate::feature::FeatureSkampItem {
+        .items[1] = crate::feature::definitions::FeatureSkampItem {
         entity_id: 14,
         sense: 0,
     };
@@ -2056,7 +2056,7 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
-        .items[1] = crate::feature::FeatureSkampItem {
+        .items[1] = crate::feature::definitions::FeatureSkampItem {
         entity_id: 13,
         sense: 2,
     };
@@ -2084,12 +2084,12 @@ offset: 30,
         rows: Vec::new(),
         offset: 89,
     }, vec![
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(3.0),
                 v: Some(0.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 4,
                 u: Some(0.0),
                 v: Some(0.0),
@@ -2118,7 +2118,7 @@ offset: 30,
         .as_mut()
         .expect("variables")
         .rows
-        .push(crate::feature::FeatureVariableRow {
+        .push(crate::feature::definitions::FeatureVariableRow {
             variable_type: crate::feature::definitions::VariableType::Radius,
             key: 102,
             value: crate::feature::definitions::ScalarLane::Value(4.0),
@@ -2145,11 +2145,11 @@ offset: 30,
         .expect("segments")
         .rows.edit_ordinary(|rows| rows[1]
         .radius_ref =  Some(101));
-    saved_radius_definition.order_table = Some(crate::feature::FeatureOrderTable {
+    saved_radius_definition.order_table = Some(crate::feature::definitions::FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureOrderRow {
+        rows: vec![crate::feature::definitions::FeatureOrderRow {
             external_id: 99,
             internal_id: 20,
             bitmask: 1,
@@ -2157,9 +2157,9 @@ offset: 30,
         }],
         offset: 91,
     });
-    saved_radius_definition.saved_section = Some(crate::feature::FeatureSavedSection {
-        entities: vec![crate::feature::FeatureSavedEntity::Circle(
-            crate::feature::FeatureSavedCircle {
+    saved_radius_definition.saved_section = Some(crate::feature::definitions::FeatureSavedSection {
+        entities: vec![crate::feature::definitions::FeatureSavedEntity::Circle(
+            crate::feature::definitions::FeatureSavedCircle {
                 entity_id: 20,
                 center: [Some(0.0), Some(0.0), Some(0.0)],
                 radius: Some(4.0),
@@ -2173,17 +2173,17 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 18,
         kind: 6,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
             },
@@ -2207,17 +2207,17 @@ offset: 30,
         section_skamp_constraints(&definition, &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"));
     let mut solver_only = definition.clone();
     *declared_solver_rows(&mut solver_only.relations.as_mut().expect("relations").skamps) =
-        vec![crate::feature::FeatureSkamp {
+        vec![crate::feature::definitions::FeatureSkamp {
             id: 20,
             kind: 0,
             flags: 0,
             status: 35,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 2,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 99,
                     sense: 3,
                 },
@@ -2233,17 +2233,17 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 20,
         kind: 4,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 0,
             },
@@ -2264,28 +2264,28 @@ offset: 30,
     );
     let mut point_symmetry = definition.clone();
     *declared_solver_rows(&mut point_symmetry.relations.as_mut().expect("relations").skamps) =
-        vec![crate::feature::FeatureSkamp {
+        vec![crate::feature::definitions::FeatureSkamp {
             id: 20,
             kind: 14,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 14,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 2,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 13,
                     sense: 3,
                 },
             ],
             offset: 96,
         }];
-    append_points(point_symmetry.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
+    append_points(point_symmetry.variables.as_mut().expect("variables"), vec![crate::feature::definitions::FeatureSectionPoint {
             point_id: 4,
             u: Some(2.0),
             v: Some(3.0),
@@ -2308,12 +2308,12 @@ offset: 30,
     );
     assert_eq!(resolved_section_points(&point_symmetry)[&3], [4.0, 4.0]);
     point_symmetry.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[1] =
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 4,
         };
     point_symmetry.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].items[2] =
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 16,
             sense: 4,
         };
@@ -2415,7 +2415,7 @@ offset: 30,
             ..
         } if native_kind == "creo:skamp:1"
     ));
-    let opaque_segment = crate::feature::FeatureOpaqueSegment {
+    let opaque_segment = crate::feature::definitions::FeatureOpaqueSegment {
         kind: 25,
         directions: [None; 3],
         point_ids: [Some(1), Some(2)],
@@ -2447,12 +2447,12 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments")
-        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::definitions::FeaturePointSegment {
             point_id: 1,
             external_id: 99,
             offset: 601,
         }));
-    let opaque_point_item = crate::feature::FeatureSkampItem {
+    let opaque_point_item = crate::feature::definitions::FeatureSkampItem {
         entity_id: 99,
         sense: 0,
     };
@@ -2470,7 +2470,7 @@ offset: 30,
         section_skamp_locus(
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 sense: 4,
                 ..opaque_point_item.clone()
             },
@@ -2481,7 +2481,7 @@ offset: 30,
         section_skamp_midpoint(
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
@@ -2496,7 +2496,7 @@ offset: 30,
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &opaque_point_item,
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 2,
             },
@@ -2509,7 +2509,7 @@ offset: 30,
         ),
         None
     );
-    let centered_line = crate::feature::FeatureCenteredLineSegment {
+    let centered_line = crate::feature::definitions::FeatureCenteredLineSegment {
         center_id: 2,
         external_id: 100,
         offset: 602,
@@ -2527,14 +2527,14 @@ offset: 30,
     assert_eq!(
         section_centered_line_geometry(
             &BTreeMap::from([(0, [3.0, -1.0]), (1, [3.0, 5.0]), (2, [3.0, 2.0]),]),
-            &crate::feature::FeatureCenteredLineSegment {
+            &crate::feature::definitions::FeatureCenteredLineSegment {
                 center_id: 0,
                 ..centered_line.clone()
             },
         ),
         None
     );
-    let reference_line = crate::feature::FeatureReferenceLineSegment {
+    let reference_line = crate::feature::definitions::FeatureReferenceLineSegment {
         directions: [Some(0), Some(1), Some(0)],
         point_ids: [Some(7), Some(8)],
         vertical_horizontal: Some(1),
@@ -2558,7 +2558,7 @@ offset: 30,
         ),
         None
     );
-    let axis_reference_line = crate::feature::FeatureReferenceLineSegment {
+    let axis_reference_line = crate::feature::definitions::FeatureReferenceLineSegment {
         directions: [Some(0), Some(1), Some(0)],
         vertical_horizontal: Some(1),
         ..reference_line.clone()
@@ -2573,7 +2573,7 @@ offset: 30,
         .rows.insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(axis_reference_line.clone()));
     assert!(section_skamp_is_line(
         &reference_definition,
-        &crate::feature::FeatureSkampItem {
+        &crate::feature::definitions::FeatureSkampItem {
             entity_id: axis_reference_line.external_id,
             sense: 0,
         },
@@ -2602,7 +2602,7 @@ offset: 30,
     assert_eq!(
         section_reference_line_geometry(
             &BTreeMap::from([(7, [-4.0, 2.0])]),
-            &crate::feature::FeatureReferenceLineSegment {
+            &crate::feature::definitions::FeatureReferenceLineSegment {
                 point_ids: [Some(7), None],
                 ..reference_line
             },
@@ -2616,13 +2616,13 @@ offset: 30,
         .expect("segment table");
     endpoint_segments.declared_count += 2;
     endpoint_segments
-        .rows.insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(crate::feature::FeatureReferenceLineSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(crate::feature::definitions::FeatureReferenceLineSegment {
             point_ids: [Some(1), Some(5)],
             external_id: 101,
             ..reference_line.clone()
         }));
     endpoint_segments
-        .rows.insert(crate::feature::segment_rows::SegmentRow::BoundedCurve(crate::feature::FeatureBoundedCurveSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::BoundedCurve(crate::feature::definitions::FeatureBoundedCurveSegment {
             point_ids: [1, 5],
             external_id: 102,
             directions: [None; 3],
@@ -2636,7 +2636,7 @@ offset: 30,
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 101,
                 sense: 2,
             },
@@ -2646,7 +2646,7 @@ offset: 30,
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 101,
                 sense: 3,
             },
@@ -2656,7 +2656,7 @@ offset: 30,
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 102,
                 sense: 2,
             },
@@ -2666,7 +2666,7 @@ offset: 30,
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 102,
                 sense: 3,
             },
@@ -2684,7 +2684,7 @@ offset: 30,
         .as_mut()
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::CenteredLine(centered_line));
-    let opaque_line_item = crate::feature::FeatureSkampItem {
+    let opaque_line_item = crate::feature::definitions::FeatureSkampItem {
         entity_id: 100,
         sense: 0,
     };
@@ -2693,7 +2693,7 @@ offset: 30,
         section_skamp_locus(
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 sense: 2,
                 ..opaque_line_item
             },
@@ -2705,17 +2705,17 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations");
-    *declared_solver_rows(&mut midpoint_relations.skamps) = vec![crate::feature::FeatureSkamp {
+    *declared_solver_rows(&mut midpoint_relations.skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 102,
         kind: 35,
         flags: 0,
         status: 0,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 101,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
@@ -2749,17 +2749,17 @@ offset: 30,
     let conflicting_relations = conflicting_midpoint.relations.as_mut().expect("relations");
     declared_solver_rows(&mut conflicting_relations
         .skamps)
-        .push(crate::feature::FeatureSkamp {
+        .push(crate::feature::definitions::FeatureSkamp {
             id: 103,
             kind: 0,
             flags: 0,
             status: 0,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 101,
                     sense: 4,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 2,
                 },
@@ -2776,17 +2776,17 @@ offset: 30,
         solver_only_section_entity_family(&conflicting_midpoint, 101),
         None
     );
-    let centered_midpoint = crate::feature::FeatureSkamp {
+    let centered_midpoint = crate::feature::definitions::FeatureSkamp {
         id: 35,
         kind: 35,
         flags: 0,
         status: 34,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 101,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 100,
                 sense: 4,
             },
@@ -2840,12 +2840,12 @@ offset: 30,
         .skamps)
         .insert(
             0,
-            crate::feature::FeatureSkamp {
+            crate::feature::definitions::FeatureSkamp {
                 id: 2,
                 kind: 2,
                 flags: 0,
                 status: 1,
-                items: vec![crate::feature::FeatureSkampItem {
+                items: vec![crate::feature::definitions::FeatureSkampItem {
                     entity_id: 101,
                     sense: 0,
                 }],
@@ -2916,7 +2916,7 @@ offset: 30,
         .as_mut()
         .expect("segments")
         .declared_count += 1;
-    let colliding_row = crate::feature::FeatureOpaqueSegment {
+    let colliding_row = crate::feature::definitions::FeatureOpaqueSegment {
         kind: 10,
         directions: [Some(0); 3],
         point_ids: [None, Some(1)],
@@ -2944,7 +2944,7 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments")
-        .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(crate::feature::FeatureOpaqueSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(crate::feature::definitions::FeatureOpaqueSegment {
             external_id: 12,
             ..opaque_segment
         }));
@@ -3137,11 +3137,11 @@ offset: 30,
     ));
     let mut center_coincidence = definition.clone();
     let center_items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 4,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 12,
             sense: 2,
         },
@@ -3186,11 +3186,11 @@ offset: 30,
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(second_arc));
     concentric.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[4].items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 13,
             sense: 4,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 4,
         },
@@ -3219,7 +3219,7 @@ offset: 30,
     for row in variables.rows.iter_mut().filter(|row| row.key == 1 && matches!(row.variable_type, VariableType::U | VariableType::V)) {
         row.value = ScalarLane::Undefined;
     }
-    append_points(variables, vec![crate::feature::FeatureSectionPoint {
+    append_points(variables, vec![crate::feature::definitions::FeatureSectionPoint {
         point_id: 4,
         u: Some(8.0),
         v: Some(9.0),
@@ -3455,12 +3455,12 @@ offset: 30,
         .variables
         .as_mut()
         .expect("variables"), vec![
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 4,
             u: Some(1.0),
             v: Some(2.0),
         },
-        crate::feature::FeatureSectionPoint {
+        crate::feature::definitions::FeatureSectionPoint {
             point_id: 6,
             u: None,
             v: Some(2.0),
@@ -3471,8 +3471,8 @@ offset: 30,
         .as_mut()
         .expect("segments");
     point_segment.declared_count = 6;
-    point_segment.rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point(6),
+    point_segment.rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Point(6),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -3489,11 +3489,11 @@ offset: 30,
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[8]
         .items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 14,
             sense: 0,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 17,
             sense: 0,
         },
@@ -3551,17 +3551,17 @@ offset: 30,
         entity_ref: 901,
         offset: 900,
     },
-        rows: vec![crate::feature::FeatureSkamp {
+        rows: vec![crate::feature::definitions::FeatureSkamp {
         id: 900,
         kind: 0,
         flags: 0,
         status: 0,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 2,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 3,
             },
@@ -3575,7 +3575,7 @@ offset: 30,
         entity_ref: 903,
         offset: 902,
     },
-        rows: vec![crate::feature::FeatureRelationTriple {
+        rows: vec![crate::feature::definitions::FeatureRelationTriple {
         relation_id: Some(8),
         equation_id: None,
         skamp_id: Some(900),
@@ -3601,7 +3601,7 @@ offset: 30,
         }
     );
     let mut conflicting_spanning_distance = distance_definition.clone();
-    append_points(conflicting_spanning_distance.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
+    append_points(conflicting_spanning_distance.variables.as_mut().expect("variables"), vec![crate::feature::definitions::FeatureSectionPoint {
             point_id: 2,
             u: Some(4.0),
             v: Some(3.0),
@@ -3616,11 +3616,11 @@ offset: 30,
         SketchConstraintDefinitionInput::Native { .. }
     ));
     let mut conflicting_saved_spanning_distance = distance_definition.clone();
-    conflicting_saved_spanning_distance.order_table = Some(crate::feature::FeatureOrderTable {
+    conflicting_saved_spanning_distance.order_table = Some(crate::feature::definitions::FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureOrderRow {
+        rows: vec![crate::feature::definitions::FeatureOrderRow {
             external_id: 12,
             internal_id: 20,
             bitmask: 1,
@@ -3628,9 +3628,9 @@ offset: 30,
         }],
         offset: 94,
     });
-    conflicting_saved_spanning_distance.saved_section = Some(crate::feature::FeatureSavedSection {
-        entities: vec![crate::feature::FeatureSavedEntity::Line(
-            crate::feature::FeatureSavedLine {
+    conflicting_saved_spanning_distance.saved_section = Some(crate::feature::definitions::FeatureSavedSection {
+        entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+            crate::feature::definitions::FeatureSavedLine {
                 entity_id: 20,
                 references: Vec::new(),
                 attributes: Vec::new(),
@@ -3654,7 +3654,7 @@ offset: 30,
         SketchConstraintDefinitionInput::Native { .. }
     ));
     let mut agreeing_saved_spanning_distance = conflicting_saved_spanning_distance.clone();
-    let crate::feature::FeatureSavedEntity::Line(line) = agreeing_saved_spanning_distance
+    let crate::feature::definitions::FeatureSavedEntity::Line(line) = agreeing_saved_spanning_distance
         .saved_section
         .as_mut()
         .expect("saved section")
@@ -3690,12 +3690,12 @@ offset: 30,
         entity_ref: 902,
         offset: 900,
     },
-        rows: vec![crate::feature::FeatureSkamp {
+        rows: vec![crate::feature::definitions::FeatureSkamp {
         id: 900,
         kind: 2,
         flags: 0,
         status: 35,
-        items: vec![crate::feature::FeatureSkampItem {
+        items: vec![crate::feature::definitions::FeatureSkampItem {
             entity_id: 12,
             sense: 0,
         }],
@@ -3708,7 +3708,7 @@ offset: 30,
         entity_ref: 903,
         offset: 902,
     },
-        rows: vec![crate::feature::FeatureRelationTriple {
+        rows: vec![crate::feature::definitions::FeatureRelationTriple {
         relation_id: Some(relation_id),
         equation_id: None,
         skamp_id: Some(900),
@@ -3806,12 +3806,12 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .skamps)
-        .push(crate::feature::FeatureSkamp {
+        .push(crate::feature::definitions::FeatureSkamp {
             id: 18,
             kind: 1,
             flags: 0,
             status: 1,
-            items: vec![crate::feature::FeatureSkampItem {
+            items: vec![crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             }],
@@ -3978,7 +3978,7 @@ offset: 30,
         .rows.ordinary().cloned().collect::<Vec<_>>()[1]
         .clone();
     incident.external_id = 2;
-    incident.kind = crate::feature::FeatureSegmentKind::Arc([9, 1]);
+    incident.kind = crate::feature::definitions::FeatureSegmentKind::Arc([9, 1]);
     shared_vertex_definition
         .segments
         .as_mut()
@@ -4080,7 +4080,7 @@ offset: 30,
         .rows.edit_ordinary(|rows| rows
         .last_mut()
         .expect("duplicate")
-        .kind = crate::feature::FeatureSegmentKind::Line([8, 9]));
+        .kind = crate::feature::definitions::FeatureSegmentKind::Line([8, 9]));
     assert!(matches!(
         section_dimension_constraints(
             &duplicate_measured_segment,
@@ -4454,7 +4454,7 @@ offset: 30,
         .expect("segments");
     let arc = segments.rows.edit_ordinary(|rows| rows.remove(1));
     segments
-        .rows.insert(crate::feature::segment_rows::SegmentRow::Circle(crate::feature::FeatureCircleSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Circle(crate::feature::definitions::FeatureCircleSegment {
             center_id: arc.center_id.expect("arc center"),
             radius_ref: arc.radius_ref.expect("arc radius"),
             external_id: arc.external_id,
@@ -4521,7 +4521,7 @@ offset: 30,
         declared_count: 1,
         entity_ref: 2,
         offset: 94,
-    }, rows: vec![crate::feature::FeatureRelationTriple {
+    }, rows: vec![crate::feature::definitions::FeatureRelationTriple {
         relation_id: Some(8),
         equation_id: None,
         skamp_id: Some(3),
@@ -4622,17 +4622,17 @@ offset: 30,
         declared_count: 1,
         entity_ref: 1,
         offset: 80,
-    }, rows: vec![crate::feature::FeatureSkamp {
+    }, rows: vec![crate::feature::definitions::FeatureSkamp {
         id: 81,
         kind: 0,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 13,
                 sense: 0,
             },
@@ -4643,7 +4643,7 @@ offset: 30,
         declared_count: 1,
         entity_ref: 2,
         offset: 82,
-    }, rows: vec![crate::feature::FeatureRelationTriple {
+    }, rows: vec![crate::feature::definitions::FeatureRelationTriple {
         relation_id: Some(8),
         equation_id: None,
         skamp_id: Some(81),
@@ -4709,7 +4709,7 @@ offset: 30,
         .expect("relations")
         .skamps.as_mut().expect("skamp table").rows_mut()[0]
         .items
-        .push(crate::feature::FeatureSkampItem {
+        .push(crate::feature::definitions::FeatureSkampItem {
             entity_id: 15,
             sense: 2,
         });
@@ -4741,7 +4741,7 @@ offset: 30,
     assert!(relation_incidence(&incomplete_triples, 8).is_none());
     let mut duplicate_join = incidence_distance.clone();
     let duplicate_relations = duplicate_join.relations.as_mut().expect("relations");
-    let duplicate = crate::feature::FeatureRelationTriple { offset: 83, ..duplicate_relations.triples()[0].clone() };
+    let duplicate = crate::feature::definitions::FeatureRelationTriple { offset: 83, ..duplicate_relations.triples()[0].clone() };
     declared_solver_rows(&mut duplicate_relations.triples).push(duplicate);
     duplicate_relations
         .triples
@@ -4752,7 +4752,7 @@ offset: 30,
     assert!(relation_incidence(&duplicate_join, 8).is_none());
     let mut null_join = incidence_distance.clone();
     let null_relations = null_join.relations.as_mut().expect("relations");
-    declared_solver_rows(&mut null_relations.triples).push(crate::feature::FeatureRelationTriple {
+    declared_solver_rows(&mut null_relations.triples).push(crate::feature::definitions::FeatureRelationTriple {
             relation_id: Some(8),
             equation_id: None,
             skamp_id: None,
@@ -4818,7 +4818,7 @@ offset: 30,
     let mut angular_dimension = definition.clone();
     angular_dimension.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
         let second_angular_line = &mut rows[1];
-        second_angular_line.kind = crate::feature::FeatureSegmentKind::Line(second_angular_line.point_ids());
+        second_angular_line.kind = crate::feature::definitions::FeatureSegmentKind::Line(second_angular_line.point_ids());
         second_angular_line.center_id = None;
         second_angular_line.radius_ref = None;
     });
@@ -4839,18 +4839,18 @@ offset: 30,
         [Some(1), None, Some(1), Some(1)],
         [Some(15), Some(16), Some(15), Some(24)],
     ]);
-    angular_dimension.order_table = Some(crate::feature::FeatureOrderTable {
+    angular_dimension.order_table = Some(crate::feature::definitions::FeatureOrderTable {
         declared_count: 2,
         has_prototype: false,
         entity_ref: None,
         rows: vec![
-            crate::feature::FeatureOrderRow {
+            crate::feature::definitions::FeatureOrderRow {
                 external_id: 12,
                 internal_id: 4,
                 bitmask: 1,
                 offset: 90,
             },
-            crate::feature::FeatureOrderRow {
+            crate::feature::definitions::FeatureOrderRow {
                 external_id: 13,
                 internal_id: 5,
                 bitmask: 1,
@@ -4892,7 +4892,7 @@ offset: 30,
         .as_mut()
         .expect("order table")
         .rows
-        .push(crate::feature::FeatureOrderRow {
+        .push(crate::feature::definitions::FeatureOrderRow {
             external_id: 13,
             internal_id: 5,
             bitmask: 1,
@@ -4979,14 +4979,14 @@ offset: 30,
     special_segments.rows.edit_circles(Vec::clear);
     special_segments.rows.edit_points(Vec::clear);
     special_segments.rows.edit_centered_lines(Vec::clear);
-    special_segments.rows.edit_reference_lines(|rows| *rows =  vec![crate::feature::FeatureReferenceLineSegment {
+    special_segments.rows.edit_reference_lines(|rows| *rows =  vec![crate::feature::definitions::FeatureReferenceLineSegment {
         directions: [None; 3],
         point_ids: [Some(1), Some(4)],
         vertical_horizontal: None,
         external_id: 101,
         offset: 91,
     }]);
-    special_segments.rows.edit_bounded_curves(|rows| *rows =  vec![crate::feature::FeatureBoundedCurveSegment {
+    special_segments.rows.edit_bounded_curves(|rows| *rows =  vec![crate::feature::definitions::FeatureBoundedCurveSegment {
         directions: [None; 3],
         point_ids: [5, 6],
         center_id: None,
@@ -5043,8 +5043,8 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments")
-        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line([7, 8]),
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([7, 8]),
             directions: [None; 3],
             center_id: None,
             arc_orientation: None,
@@ -5062,32 +5062,32 @@ offset: 30,
         rows: Vec::new(),
         offset: 0,
     }, vec![
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(3.0),
                 v: Some(4.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 5,
                 u: None,
                 v: None,
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 4,
                 u: None,
                 v: Some(9.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 6,
                 u: None,
                 v: None,
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 7,
                 u: Some(2.0),
                 v: Some(6.0),
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 8,
                 u: None,
                 v: None,
@@ -5098,111 +5098,111 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .skamps) = vec![
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 17,
             kind: 0,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 3,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 15,
                     sense: 2,
                 },
             ],
             offset: 83,
         },
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 18,
             kind: 3,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 14,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 15,
                     sense: 3,
                 },
             ],
             offset: 84,
         },
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 19,
             kind: 2,
             flags: 0,
             status: 1,
-            items: vec![crate::feature::FeatureSkampItem {
+            items: vec![crate::feature::definitions::FeatureSkampItem {
                 entity_id: 15,
                 sense: 0,
             }],
             offset: 85,
         },
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 20,
             kind: 9,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 15,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 14,
                     sense: 0,
                 },
             ],
             offset: 86,
         },
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 21,
             kind: 1,
             flags: 0,
             status: 1,
-            items: vec![crate::feature::FeatureSkampItem {
+            items: vec![crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             }],
             offset: 88,
         },
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 22,
             kind: 14,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 17,
                     sense: 2,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 17,
                     sense: 3,
                 },
             ],
             offset: 89,
         },
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 23,
             kind: 5,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 12,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 17,
                     sense: 0,
                 },
@@ -5286,12 +5286,12 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments")
-        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::definitions::FeaturePointSegment {
             point_id: 7,
             external_id: 17,
             offset: 90,
         }));
-    append_points(point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
+    append_points(point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::definitions::FeatureSectionPoint {
             point_id: 7,
             u: Some(4.0),
             v: None,
@@ -5300,17 +5300,17 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 90,
         kind: 9,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 17,
                 sense: 0,
             },
@@ -5338,11 +5338,11 @@ offset: 30,
         Some(&[Some(4.0), Some(2.0)])
     );
     let mut saved_definition = definition;
-    saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
+    saved_definition.order_table = Some(crate::feature::definitions::FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureOrderRow {
+        rows: vec![crate::feature::definitions::FeatureOrderRow {
             external_id: 14,
             internal_id: 20,
             bitmask: 1,
@@ -5350,9 +5350,9 @@ offset: 30,
         }],
         offset: 80,
     });
-    saved_definition.saved_section = Some(crate::feature::FeatureSavedSection {
-        entities: vec![crate::feature::FeatureSavedEntity::Line(
-            crate::feature::FeatureSavedLine {
+    saved_definition.saved_section = Some(crate::feature::definitions::FeatureSavedSection {
+        entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+            crate::feature::definitions::FeatureSavedLine {
                 entity_id: 20,
                 references: Vec::new(),
                 attributes: Vec::new(),
@@ -5370,7 +5370,7 @@ offset: 30,
         section_skamp_endpoint(
             &saved_definition,
             &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
-            &crate::feature::FeatureSkampItem {
+            &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 14,
                 sense: 3,
             },
@@ -5384,7 +5384,7 @@ offset: 30,
         .as_mut()
         .expect("order table")
         .rows
-        .push(crate::feature::FeatureOrderRow {
+        .push(crate::feature::definitions::FeatureOrderRow {
             external_id: 99,
             internal_id: 21,
             bitmask: 1,
@@ -5400,8 +5400,8 @@ offset: 30,
         .as_mut()
         .expect("saved section")
         .entities
-        .push(crate::feature::FeatureSavedEntity::Line(
-            crate::feature::FeatureSavedLine {
+        .push(crate::feature::definitions::FeatureSavedEntity::Line(
+            crate::feature::definitions::FeatureSavedLine {
                 entity_id: 21,
                 references: Vec::new(),
                 attributes: Vec::new(),
@@ -5417,12 +5417,12 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 30,
         kind: 1,
         flags: 0,
         status: 1,
-        items: vec![crate::feature::FeatureSkampItem {
+        items: vec![crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 0,
         }],
@@ -5440,17 +5440,17 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 31,
         kind: 7,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
             },
@@ -5463,7 +5463,7 @@ offset: 30,
         section_line_fixed_coordinate(&saved_definition, segment),
         Some(crate::decode::sketch::axis::SectionAxis::V)
     );
-    append_points(saved_definition.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
+    append_points(saved_definition.variables.as_mut().expect("variables"), vec![crate::feature::definitions::FeatureSectionPoint {
             point_id: 4,
             u: Some(3.0),
             v: None,
@@ -5472,17 +5472,17 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 32,
         kind: 9,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 14,
                 sense: 0,
             },
@@ -5499,12 +5499,12 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments")
-        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::definitions::FeaturePointSegment {
             point_id: 7,
             external_id: 17,
             offset: 94,
         }));
-    append_points(saved_point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
+    append_points(saved_point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::definitions::FeatureSectionPoint {
             point_id: 7,
             u: Some(3.0),
             v: None,
@@ -5550,34 +5550,34 @@ offset: 30,
         .as_mut()
         .expect("relations")
         .skamps) = vec![
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 33,
             kind: 0,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 99,
                     sense: 2,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 15,
                     sense: 2,
                 },
             ],
             offset: 88,
         },
-        crate::feature::FeatureSkamp {
+        crate::feature::definitions::FeatureSkamp {
             id: 34,
             kind: 3,
             flags: 0,
             status: 1,
             items: vec![
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 14,
                     sense: 0,
                 },
-                crate::feature::FeatureSkampItem {
+                crate::feature::definitions::FeatureSkampItem {
                     entity_id: 99,
                     sense: 3,
                 },
@@ -5603,21 +5603,21 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 35,
         kind: 14,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 2,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 15,
                 sense: 2,
             },
@@ -5642,21 +5642,21 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 33,
         kind: 14,
         flags: 0,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 2,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 15,
                 sense: 2,
             },
@@ -5673,17 +5673,17 @@ offset: 30,
         .relations
         .as_mut()
         .expect("relations")
-        .skamps) = vec![crate::feature::FeatureSkamp {
+        .skamps) = vec![crate::feature::definitions::FeatureSkamp {
         id: 36,
         kind: 17,
         flags: 1,
         status: 1,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 2,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 12,
                 sense: 2,
             },
@@ -5709,7 +5709,7 @@ offset: 30,
         .expect("saved section")
         .entities[1]
         .clone();
-    if let crate::feature::FeatureSavedEntity::Line(line) = &mut duplicate_saved {
+    if let crate::feature::definitions::FeatureSavedEntity::Line(line) = &mut duplicate_saved {
         line.offset = 86;
     }
     saved_definition

@@ -27,7 +27,7 @@ const EPS_AXIS_ZERO: f64 = 1.0e-12;
 const EPS_SCALAR_EQUALITY: f64 = 1.0e-9;
 
 pub(super) fn section_equation_coordinate_equalities(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(u32, u32, SectionAxis)> {
     section_equation_coordinate_equality_rows(definition, ambiguous_point_ids)
@@ -49,7 +49,7 @@ pub(in crate::decode) struct SectionEquationCoordinateEquality {
 }
 
 fn section_equation_function_ten_axis_alignment(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     equation: &crate::feature::definitions::FeatureEquation,
     variables: &crate::feature::definitions::FeatureVariableTable,
     ambiguous_point_ids: &BTreeSet<u32>,
@@ -111,7 +111,7 @@ fn section_equation_function_ten_axis_alignment(
     }
 
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
-    let auxiliary_is_zero = |row: &crate::feature::FeatureVariableRow| {
+    let auxiliary_is_zero = |row: &crate::feature::definitions::FeatureVariableRow| {
         reconcile_equation_value(
             row.value.value(),
             scalar_equality_values
@@ -165,7 +165,7 @@ fn section_equation_function_ten_axis_alignment(
 }
 
 pub(in crate::decode) fn section_equation_coordinate_equality_rows(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionEquationCoordinateEquality> {
     let Some(variables) = definition
@@ -176,7 +176,7 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
         return Vec::new();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return Vec::new();
     };
@@ -285,7 +285,7 @@ pub(super) struct SectionEquationAuxiliaryConstraints {
 }
 
 pub(super) fn section_equation_auxiliary_constraints(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> SectionEquationAuxiliaryConstraints {
     let Some(variables) = definition
@@ -296,7 +296,7 @@ pub(super) fn section_equation_auxiliary_constraints(
         return SectionEquationAuxiliaryConstraints::default();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return SectionEquationAuxiliaryConstraints::default();
     };
@@ -417,7 +417,7 @@ pub(super) fn reconcile_equation_value(
 }
 
 pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate_rows(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionFunctionFortyTwoMidpointCoordinate> {
@@ -429,7 +429,7 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
         return Vec::new();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return Vec::new();
     };
@@ -500,7 +500,7 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
 }
 
 pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_rows(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionFunctionThirtyOnePointCoordinates> {
@@ -512,7 +512,7 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
         return Vec::new();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return Vec::new();
     };
@@ -616,7 +616,7 @@ pub(in crate::decode) fn merge_scalar_value_candidate(
 }
 
 pub(super) fn section_relation_radius_scalar_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<(SectionScalarVariable, f64)> {
     let Some(dimensions) = definition
         .dimensions
@@ -667,7 +667,7 @@ pub(super) fn section_relation_radius_scalar_values(
 }
 
 pub(in crate::decode) fn section_equation_scalar_seed_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, Option<f64>> {
     let Some(variables) = definition
         .variables
@@ -718,7 +718,7 @@ pub(in crate::decode) fn section_equation_scalar_seed_values(
 }
 
 pub(in crate::decode) fn propagate_section_equation_scalar_equality_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
 ) -> bool {
     let Some(_variables) = definition
@@ -853,7 +853,7 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
 }
 
 pub(in crate::decode) fn section_equation_scalar_values_from_coordinates(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> BTreeMap<SectionScalarVariable, f64> {
     let ambiguous_point_ids = definition
@@ -941,11 +941,11 @@ pub(in crate::decode) fn section_equation_scalar_values_from_coordinates(
 fn direct_function_five_scalar_rows<'a>(
     function_id: u32,
     arguments: &[Option<u32>],
-    variables: &'a [crate::feature::FeatureVariableRow],
+    variables: &'a [crate::feature::definitions::FeatureVariableRow],
 ) -> Option<(
-    &'a crate::feature::FeatureVariableRow,
-    &'a crate::feature::FeatureVariableRow,
-    &'a crate::feature::FeatureVariableRow,
+    &'a crate::feature::definitions::FeatureVariableRow,
+    &'a crate::feature::definitions::FeatureVariableRow,
+    &'a crate::feature::definitions::FeatureVariableRow,
 )> {
     if function_id != 5 || arguments.len() != 3 {
         return None;
@@ -970,7 +970,7 @@ fn direct_function_five_scalar_rows<'a>(
 }
 
 pub(in crate::decode) fn section_equation_scalar_equality_components(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<BTreeSet<SectionScalarVariable>> {
     let Some(variables) = definition
         .variables
@@ -980,7 +980,7 @@ pub(in crate::decode) fn section_equation_scalar_equality_components(
         return Vec::new();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return Vec::new();
     };
@@ -1090,7 +1090,7 @@ fn scalar_equality_components(
 }
 
 fn scalar_equality_values_for_components(
-    rows: &[crate::feature::FeatureVariableRow],
+    rows: &[crate::feature::definitions::FeatureVariableRow],
     components: &[BTreeSet<SectionScalarVariable>],
 ) -> BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>> {
     let mut values = BTreeMap::<SectionScalarVariable, Vec<f64>>::new();
@@ -1139,7 +1139,7 @@ fn scalar_equality_values_for_components(
 }
 
 pub(in crate::decode) fn section_equation_scalar_equalities(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, f64> {
     section_equation_scalar_equality_values(definition)
         .into_iter()
@@ -1151,7 +1151,7 @@ pub(in crate::decode) fn section_equation_scalar_equalities(
 }
 
 pub(super) fn section_equation_scalar_equality_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>> {
     let Some(variables) = definition
         .variables
@@ -1189,7 +1189,7 @@ impl SectionRadialConstraint {
 }
 
 pub(super) fn section_equation_radial_constraints(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionRadialConstraint> {
@@ -1200,7 +1200,7 @@ pub(super) fn section_equation_radial_constraints(
 }
 
 pub(super) fn section_equation_radial_constraints_with_scalar_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
     scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
@@ -1217,7 +1217,7 @@ pub(super) fn section_equation_radial_constraints_with_scalar_values(
 }
 
 pub(in crate::decode) fn section_equation_radial_constraint_rows(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionRadialConstraint> {
@@ -1230,7 +1230,7 @@ pub(in crate::decode) fn section_equation_radial_constraint_rows(
 }
 
 fn section_equation_radial_constraint_rows_with_scalar_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
     scalar_values: Option<&BTreeMap<SectionScalarVariable, Option<f64>>>,
@@ -1243,7 +1243,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
         return Vec::new();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return Vec::new();
     };
@@ -1290,7 +1290,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
             {
                 return None;
             }
-            let scalar_value = |row: &crate::feature::FeatureVariableRow| {
+            let scalar_value = |row: &crate::feature::definitions::FeatureVariableRow| {
                 let equality_value = scalar_equality_values
                     .get(&(row.variable_type, row.key))
                     .copied()
@@ -1369,7 +1369,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
 }
 
 pub(in crate::decode) fn resolved_section_scalar_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, f64> {
     let coordinates = resolved_section_coordinates(definition);
     let ambiguous_point_ids = definition
@@ -1446,7 +1446,7 @@ pub(in crate::decode) struct SectionFunctionFiveScalarEquality {
 }
 
 pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<SectionFunctionFiveScalarEquality> {
     let Some(variables) = definition
         .variables
@@ -1456,7 +1456,7 @@ pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
         return Vec::new();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return Vec::new();
     };
@@ -1526,7 +1526,7 @@ pub(in crate::decode) struct SectionFunctionSixteenAngleDifference {
 }
 
 pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<(SectionScalarVariable, f64)> {
     section_equation_function_sixteen_angle_difference_rows(definition)
         .into_iter()
@@ -1536,7 +1536,7 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_valu
 }
 
 pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<SectionFunctionSixteenAngleDifference> {
     let Some(variables) = definition
         .variables
@@ -1546,7 +1546,7 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
         return Vec::new();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return Vec::new();
     };
@@ -1664,7 +1664,7 @@ pub(in crate::decode) struct SectionFunctionFortyThreeAxisDistance {
 }
 
 pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(SectionScalarVariable, f64)> {
@@ -1680,7 +1680,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_val
 }
 
 pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_rows(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionFunctionFortyThreeAxisDistance> {
@@ -1692,7 +1692,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
         return Vec::new();
     };
     let Some(equations) =
-        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
     else {
         return Vec::new();
     };
@@ -1770,7 +1770,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
             {
                 return None;
             }
-            let auxiliary_value = |row: &crate::feature::FeatureVariableRow| {
+            let auxiliary_value = |row: &crate::feature::definitions::FeatureVariableRow| {
                 reconcile_equation_value(
                     row.value.value(),
                     scalar_equality_values

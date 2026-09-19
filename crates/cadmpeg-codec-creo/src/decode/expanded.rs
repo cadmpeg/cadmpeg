@@ -162,21 +162,21 @@ pub(super) fn feature_surface_replay_associations(
     associations
 }
 
-pub(super) fn affected_kind(kind: crate::feature::AffectedIdKind) -> &'static str {
+pub(super) fn affected_kind(kind: crate::feature::rows::AffectedIdKind) -> &'static str {
     match kind {
-        crate::feature::AffectedIdKind::Geometry => "geometry",
-        crate::feature::AffectedIdKind::Edges => "edges",
-        crate::feature::AffectedIdKind::StrongParents => "strong_parents",
-        crate::feature::AffectedIdKind::Parents => "parents",
-        crate::feature::AffectedIdKind::Contours => "contours",
-        crate::feature::AffectedIdKind::Quilts => "quilts",
+        crate::feature::rows::AffectedIdKind::Geometry => "geometry",
+        crate::feature::rows::AffectedIdKind::Edges => "edges",
+        crate::feature::rows::AffectedIdKind::StrongParents => "strong_parents",
+        crate::feature::rows::AffectedIdKind::Parents => "parents",
+        crate::feature::rows::AffectedIdKind::Contours => "contours",
+        crate::feature::rows::AffectedIdKind::Quilts => "quilts",
     }
 }
 
-pub(super) fn extent_source(source: crate::feature::ReplayExtentSource) -> &'static str {
+pub(super) fn extent_source(source: crate::feature::rows::ReplayExtentSource) -> &'static str {
     match source {
-        crate::feature::ReplayExtentSource::Explicit => "explicit",
-        crate::feature::ReplayExtentSource::Inherited => "inherited",
+        crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
+        crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
     }
 }
 

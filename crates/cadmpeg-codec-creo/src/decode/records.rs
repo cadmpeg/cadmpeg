@@ -190,7 +190,7 @@ pub(super) struct CreoFeatureGeometryTableRecord {
     pub(super) id: String,
     pub(super) owner_feature_id: u32,
     #[serde(flatten, serialize_with = "serialize_geometry_table_kind")]
-    pub(super) kind: crate::feature::FeatureGeometryTableKind,
+    pub(super) kind: crate::feature::rows::FeatureGeometryTableKind,
     pub(super) declared_count: u32,
     pub(super) entity_class_id: u32,
     pub(super) offset: usize,
@@ -198,10 +198,10 @@ pub(super) struct CreoFeatureGeometryTableRecord {
 }
 
 fn serialize_geometry_table_kind<S: serde::Serializer>(
-    kind: &crate::feature::FeatureGeometryTableKind,
+    kind: &crate::feature::rows::FeatureGeometryTableKind,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    use crate::feature::FeatureGeometryTableKind;
+    use crate::feature::rows::FeatureGeometryTableKind;
     use serde::ser::SerializeMap;
     let name = match kind {
         FeatureGeometryTableKind::EdgeIds => "edge_ids",
@@ -225,17 +225,17 @@ pub(super) struct CreoFeatureLoopHistoryEntryRecord {
     pub(super) loop_id: u32,
     pub(super) field_bytes: Vec<Vec<u8>>,
     #[serde(flatten, serialize_with = "serialize_loop_history_boundary")]
-    pub(super) boundary: crate::feature::FeatureLoopHistoryBoundary,
+    pub(super) boundary: crate::feature::rows::FeatureLoopHistoryBoundary,
     pub(super) offset: usize,
     pub(super) end_offset: usize,
     pub(super) source_section: String,
 }
 
 fn serialize_loop_history_boundary<S: serde::Serializer>(
-    boundary: &crate::feature::FeatureLoopHistoryBoundary,
+    boundary: &crate::feature::rows::FeatureLoopHistoryBoundary,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    use crate::feature::FeatureLoopHistoryBoundary;
+    use crate::feature::rows::FeatureLoopHistoryBoundary;
     use serde::ser::SerializeMap;
     let (boundary, reference) = match boundary {
         FeatureLoopHistoryBoundary::CompoundClose => ("compound_close", None),
@@ -942,8 +942,8 @@ pub(super) fn feature_loop_restore_direction_records(
             id: format!("creo:feature:loop_restore_direction#{}", record.offset),
             owner_feature_id: record.feature_id,
             lane: match record.lane {
-                crate::feature::LoopRestoreDirectionLane::Primary => "primary",
-                crate::feature::LoopRestoreDirectionLane::Secondary => "secondary",
+                crate::feature::rows::LoopRestoreDirectionLane::Primary => "primary",
+                crate::feature::rows::LoopRestoreDirectionLane::Secondary => "secondary",
             },
             value: record.value,
             offset: record.offset,
@@ -1035,23 +1035,23 @@ pub(super) fn feature_choice_field_records(
             name: field.name.clone(),
             type_byte: field.type_byte,
             value: match &field.value {
-                crate::feature::FeatureFieldValue::Empty => CreoFeatureFieldValue::Empty,
-                crate::feature::FeatureFieldValue::CompactInt(value) => {
+                crate::feature::rows::FeatureFieldValue::Empty => CreoFeatureFieldValue::Empty,
+                crate::feature::rows::FeatureFieldValue::CompactInt(value) => {
                     CreoFeatureFieldValue::CompactInt { value: *value }
                 }
-                crate::feature::FeatureFieldValue::CompactIntArray(values) => {
+                crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => {
                     CreoFeatureFieldValue::CompactIntArray {
                         values: values.clone(),
                     }
                 }
-                crate::feature::FeatureFieldValue::EntityReference {
+                crate::feature::rows::FeatureFieldValue::EntityReference {
                     entity_id,
                     terminated,
                 } => CreoFeatureFieldValue::EntityReference {
                     entity_id: *entity_id,
                     terminated: *terminated,
                 },
-                crate::feature::FeatureFieldValue::ScalarArray {
+                crate::feature::rows::FeatureFieldValue::ScalarArray {
                     dimensions,
                     count,
                     body,
@@ -1062,7 +1062,7 @@ pub(super) fn feature_choice_field_records(
                     body: body.clone(),
                     decoded_values: decoded_values.clone(),
                 },
-                crate::feature::FeatureFieldValue::Raw(bytes) => CreoFeatureFieldValue::Raw {
+                crate::feature::rows::FeatureFieldValue::Raw(bytes) => CreoFeatureFieldValue::Raw {
                     bytes: bytes.clone(),
                 },
             },
@@ -1441,7 +1441,7 @@ pub(super) fn feature_placement_instruction_records(
         .definitions
         .iter()
         .flat_map(|definition| {
-            crate::feature::placement_instructions(definition)
+            crate::feature::definitions::placement_instructions(definition)
                 .into_iter()
                 .map(|instruction| CreoFeaturePlacementInstructionRecord {
                     id: format!(
@@ -2126,7 +2126,7 @@ pub(super) fn feature_operation_state_records(
                 recipe: state
                     .recipe
                     .candidate()
-                    .map(crate::feature::FeatureRecipe::name),
+                    .map(crate::feature::operations::FeatureRecipe::name),
                 recipe_conflict: state.recipe.is_conflicting().then_some(true),
                 display_state_conflict: state.display_state_conflict.then_some(true),
                 root_schema_class: state.root_schema_class().map(SchemaClass::code),
@@ -2356,20 +2356,24 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     })
                     .collect()
             },
-            equations: crate::feature::equation_table(&definition.body, 0, definition.body.len())
-                .into_iter()
-                .flat_map(|table| table.rows)
-                .map(|equation| CreoSketchEquation {
-                    equation_id: equation.equation_id,
-                    function_id: equation.function_id,
-                    explicit_argument_count: equation.explicit_argument_count,
-                    arguments: equation.arguments,
-                    arguments_body: equation.arguments_body,
-                    auxiliary_body: equation.auxiliary_body,
-                    body: equation.body,
-                    offset: equation.offset,
-                })
-                .collect(),
+            equations: crate::feature::definitions::equation_table(
+                &definition.body,
+                0,
+                definition.body.len(),
+            )
+            .into_iter()
+            .flat_map(|table| table.rows)
+            .map(|equation| CreoSketchEquation {
+                equation_id: equation.equation_id,
+                function_id: equation.function_id,
+                explicit_argument_count: equation.explicit_argument_count,
+                arguments: equation.arguments,
+                arguments_body: equation.arguments_body,
+                auxiliary_body: equation.auxiliary_body,
+                body: equation.body,
+                offset: equation.offset,
+            })
+            .collect(),
             segments: definition
                 .segments
                 .iter()
@@ -2377,9 +2381,9 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|segment| CreoSketchSegment {
                     external_id: segment.external_id,
                     kind: match segment.kind {
-                        crate::feature::FeatureSegmentKind::Line(_) => "line",
-                        crate::feature::FeatureSegmentKind::Arc(_) => "arc",
-                        crate::feature::FeatureSegmentKind::Point(_) => "point",
+                        crate::feature::definitions::FeatureSegmentKind::Line(_) => "line",
+                        crate::feature::definitions::FeatureSegmentKind::Arc(_) => "arc",
+                        crate::feature::definitions::FeatureSegmentKind::Point(_) => "point",
                     },
                     point_ids: segment.point_ids(),
                     center_id: segment.center_id,
@@ -2491,8 +2495,8 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertices: entity.vertices,
                     center_vertex: entity.center_vertex(),
                     kind: match entity.kind {
-                        crate::feature::TrimEntityKind::Line => "line",
-                        crate::feature::TrimEntityKind::Arc { .. } => "arc",
+                        crate::feature::definitions::TrimEntityKind::Line => "line",
+                        crate::feature::definitions::TrimEntityKind::Arc { .. } => "arc",
                     },
                     offset: entity.offset,
                 })
@@ -2524,24 +2528,28 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .iter()
                 .flat_map(|section| &section.entities)
                 .map(|entity| match entity {
-                    crate::feature::FeatureSavedEntity::Line(line) => CreoSketchSavedEntity::Line {
-                        entity_id: line.entity_id,
-                        references: line.references.clone(),
-                        attributes: line.attributes.clone(),
-                        endpoints: line.endpoints,
-                        body: line.body.clone(),
-                        offset: line.offset,
-                    },
-                    crate::feature::FeatureSavedEntity::Arc(arc) => CreoSketchSavedEntity::Arc {
-                        entity_id: arc.entity_id,
-                        center: arc.center,
-                        radius: arc.radius,
-                        endpoints: arc.endpoints,
-                        parameters: arc.parameters,
-                        body: arc.body.clone(),
-                        offset: arc.offset,
-                    },
-                    crate::feature::FeatureSavedEntity::Circle(circle) => {
+                    crate::feature::definitions::FeatureSavedEntity::Line(line) => {
+                        CreoSketchSavedEntity::Line {
+                            entity_id: line.entity_id,
+                            references: line.references.clone(),
+                            attributes: line.attributes.clone(),
+                            endpoints: line.endpoints,
+                            body: line.body.clone(),
+                            offset: line.offset,
+                        }
+                    }
+                    crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
+                        CreoSketchSavedEntity::Arc {
+                            entity_id: arc.entity_id,
+                            center: arc.center,
+                            radius: arc.radius,
+                            endpoints: arc.endpoints,
+                            parameters: arc.parameters,
+                            body: arc.body.clone(),
+                            offset: arc.offset,
+                        }
+                    }
+                    crate::feature::definitions::FeatureSavedEntity::Circle(circle) => {
                         CreoSketchSavedEntity::Circle {
                             entity_id: circle.entity_id,
                             center: circle.center,
@@ -2550,7 +2558,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             offset: circle.offset,
                         }
                     }
-                    crate::feature::FeatureSavedEntity::Conic(conic) => {
+                    crate::feature::definitions::FeatureSavedEntity::Conic(conic) => {
                         CreoSketchSavedEntity::Conic {
                             entity_id: conic.entity_id,
                             endpoints: conic.endpoints,
@@ -2561,7 +2569,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             offset: conic.offset,
                         }
                     }
-                    crate::feature::FeatureSavedEntity::Spline(spline) => {
+                    crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
                         CreoSketchSavedEntity::Spline {
                             entity_id: spline.entity_id,
                             declared_point_count: spline.declared_point_count,
@@ -2576,7 +2584,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             offset: spline.offset,
                         }
                     }
-                    crate::feature::FeatureSavedEntity::Dummy(dummy) => {
+                    crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
                         CreoSketchSavedEntity::Dummy {
                             entity_id: dummy.entity_id,
                             body: dummy.body.clone(),
@@ -2595,9 +2603,11 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     value: dimension.value.clone(),
                     value_body: dimension.value_body.clone(),
                     unit: match dimension.unit() {
-                        crate::feature::DimensionUnit::Radians => "radians",
-                        crate::feature::DimensionUnit::Millimeters => "millimeters",
-                        crate::feature::DimensionUnit::SchemaDefined => "schema_defined",
+                        crate::feature::definitions::DimensionUnit::Radians => "radians",
+                        crate::feature::definitions::DimensionUnit::Millimeters => "millimeters",
+                        crate::feature::definitions::DimensionUnit::SchemaDefined => {
+                            "schema_defined"
+                        }
                     },
                     direction_byte: dimension.direction_byte,
                     auxiliary_value: dimension.auxiliary_value,
@@ -2674,7 +2684,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
 }
 
 pub(super) fn sketch_section_point_records(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<CreoSketchSectionPoint> {
     let Some(variables) = &definition.variables else {
         return Vec::new();
@@ -2718,8 +2728,12 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
                 .iter()
                 .map(|frame| CreoFeatureParameterFrame {
                     kind: match frame.kind {
-                        crate::feature::FeatureParameterFrameKind::LocalSystem => "local_system",
-                        crate::feature::FeatureParameterFrameKind::Transform => "transform",
+                        crate::feature::definitions::FeatureParameterFrameKind::LocalSystem => {
+                            "local_system"
+                        }
+                        crate::feature::definitions::FeatureParameterFrameKind::Transform => {
+                            "transform"
+                        }
                     },
                     body: frame.body.clone(),
                     decoded_values: frame.decoded_values,
@@ -2731,9 +2745,9 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
                 .iter()
                 .map(|outline| CreoFeatureOutline {
                     phase: match outline.phase {
-                        crate::feature::OutlinePhase::PreRollback => "pre_rollback",
-                        crate::feature::OutlinePhase::PostRollback => "post_rollback",
-                        crate::feature::OutlinePhase::PostRegen => "post_regen",
+                        crate::feature::definitions::OutlinePhase::PreRollback => "pre_rollback",
+                        crate::feature::definitions::OutlinePhase::PostRollback => "post_rollback",
+                        crate::feature::definitions::OutlinePhase::PostRegen => "post_regen",
                     },
                     local_values: outline
                         .local_scalars
@@ -2770,7 +2784,7 @@ mod tests {
     fn overlapping_feature_candidates_do_not_expose_short_headers() {
         let payload = [1, 0xe3, 2, 0, 0, 0xe3, 0xf6, 0x83, 0x8f, 0xe1];
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
-        scan.features.rows = crate::feature::rows(&payload, &BTreeSet::from([1, 2]), 0);
+        scan.features.rows = crate::feature::rows::rows(&payload, &BTreeSet::from([1, 2]), 0);
         let records = feature_row_records(&scan);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].owner_feature_id, 2);

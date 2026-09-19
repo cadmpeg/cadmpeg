@@ -43,7 +43,7 @@ const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 pub(in crate::decode) fn resolved_section_radii(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<u32, f64> {
     let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
     for segment in definition
@@ -186,7 +186,12 @@ pub(in crate::decode) fn resolved_section_radii(
         .segments
         .iter()
         .flat_map(|table| table.rows.ordinary())
-        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_)))
+        .filter(|segment| {
+            matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Arc(_)
+            )
+        })
     {
         if unique_decoded_section_segment(definition, segment.external_id) != Some(segment) {
             continue;
@@ -325,9 +330,9 @@ pub(in crate::decode) fn resolved_section_radii(
 }
 
 pub(super) fn section_relation_length_dimension<'a>(
-    definition: &'a crate::feature::FeatureDefinition,
-    relation: &crate::feature::FeatureRelation,
-) -> Option<&'a crate::feature::FeatureDimension> {
+    definition: &'a crate::feature::definitions::FeatureDefinition,
+    relation: &crate::feature::definitions::FeatureRelation,
+) -> Option<&'a crate::feature::definitions::FeatureDimension> {
     let dimension = definition
         .dimensions
         .as_ref()
@@ -338,9 +343,9 @@ pub(super) fn section_relation_length_dimension<'a>(
 }
 
 fn section_type5_radius_arc<'a>(
-    definition: &'a crate::feature::FeatureDefinition,
-    relation: &crate::feature::FeatureRelation,
-) -> Option<&'a crate::feature::FeatureSegment> {
+    definition: &'a crate::feature::definitions::FeatureDefinition,
+    relation: &crate::feature::definitions::FeatureRelation,
+) -> Option<&'a crate::feature::definitions::FeatureSegment> {
     (relation.relation_type == 5 && relation.sign == 1).then_some(())?;
     section_relation_length_dimension(definition, relation)?;
     let vectors = relation.operand_vectors?;
@@ -363,9 +368,9 @@ fn section_type5_radius_arc<'a>(
 }
 
 fn section_type6_radius_arc<'a>(
-    definition: &'a crate::feature::FeatureDefinition,
-    relation: &crate::feature::FeatureRelation,
-) -> Option<&'a crate::feature::FeatureSegment> {
+    definition: &'a crate::feature::definitions::FeatureDefinition,
+    relation: &crate::feature::definitions::FeatureRelation,
+) -> Option<&'a crate::feature::definitions::FeatureSegment> {
     (relation.relation_type == 6 && relation.sign == 1).then_some(())?;
     section_relation_length_dimension(definition, relation)?;
     let vectors = relation.operand_vectors?;
@@ -388,9 +393,9 @@ fn section_type6_radius_arc<'a>(
 }
 
 pub(in crate::decode) fn section_radius_relation_arc<'a>(
-    definition: &'a crate::feature::FeatureDefinition,
-    relation: &crate::feature::FeatureRelation,
-) -> Option<&'a crate::feature::FeatureSegment> {
+    definition: &'a crate::feature::definitions::FeatureDefinition,
+    relation: &crate::feature::definitions::FeatureRelation,
+) -> Option<&'a crate::feature::definitions::FeatureSegment> {
     match relation.relation_type {
         5 => section_type5_radius_arc(definition, relation),
         6 => section_type6_radius_arc(definition, relation),
@@ -399,18 +404,20 @@ pub(in crate::decode) fn section_radius_relation_arc<'a>(
 }
 
 fn unique_section_radius_arc(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     dimension_id: u32,
     first_point: u32,
     second_point: u32,
     center: u32,
-) -> Option<&crate::feature::FeatureSegment> {
+) -> Option<&crate::feature::definitions::FeatureSegment> {
     let unique_entities = unique_section_segment_external_ids(definition);
     let matching = section_segment_rows(definition)
         .into_iter()
         .filter(|segment| {
-            matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
-                && segment.radius_ref == Some(dimension_id)
+            matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Arc(_)
+            ) && segment.radius_ref == Some(dimension_id)
                 && segment.center_id == Some(center)
                 && (segment.point_ids() == [first_point, second_point]
                     || segment.point_ids() == [second_point, first_point])
@@ -430,24 +437,27 @@ enum SectionRadiusSource {
 }
 
 fn section_skamp_radius_source(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Option<SectionRadiusSource> {
     if let Some(circle) = unique_circle_segment(definition, item.entity_id) {
         return Some(SectionRadiusSource::Reference(circle.radius_ref));
     }
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
-        return matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
-            .then_some(segment.radius_ref)
-            .flatten()
-            .map(SectionRadiusSource::Reference);
+        return matches!(
+            segment.kind,
+            crate::feature::definitions::FeatureSegmentKind::Arc(_)
+        )
+        .then_some(segment.radius_ref)
+        .flatten()
+        .map(SectionRadiusSource::Reference);
     }
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return None;
     }
     let radius = match section_saved_entity(definition, item.entity_id)? {
-        crate::feature::FeatureSavedEntity::Arc(arc) => arc.radius,
-        crate::feature::FeatureSavedEntity::Circle(circle) => circle.radius,
+        crate::feature::definitions::FeatureSavedEntity::Arc(arc) => arc.radius,
+        crate::feature::definitions::FeatureSavedEntity::Circle(circle) => circle.radius,
         _ => None,
     }?;
     (radius.is_finite() && radius > 0.0).then_some(SectionRadiusSource::Value(radius))
@@ -456,9 +466,13 @@ fn section_skamp_radius_source(
 pub(super) fn section_arc_carrier(
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<([f64; 2], f64)> {
-    matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_)).then_some(())?;
+    matches!(
+        segment.kind,
+        crate::feature::definitions::FeatureSegmentKind::Arc(_)
+    )
+    .then_some(())?;
     let center = *points.get(&segment.center_id?)?;
     let radius = *radii.get(&segment.radius_ref?)?;
     Some((center, radius))
@@ -466,9 +480,13 @@ pub(super) fn section_arc_carrier(
 
 pub(in crate::decode) fn section_axis_line_carrier_with_points(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)).then_some(())?;
+    matches!(
+        segment.kind,
+        crate::feature::definitions::FeatureSegmentKind::Line(_)
+    )
+    .then_some(())?;
     let fixed_coordinate = match segment.directions {
         [Some(0), _, _] => SectionAxis::U,
         [_, Some(0), _] => SectionAxis::V,
@@ -479,10 +497,14 @@ pub(in crate::decode) fn section_axis_line_carrier_with_points(
 
 fn section_fixed_coordinate_line_carrier(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
     fixed_coordinate: SectionAxis,
 ) -> Option<SketchGeometry> {
-    (matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_))).then_some(())?;
+    (matches!(
+        segment.kind,
+        crate::feature::definitions::FeatureSegmentKind::Line(_)
+    ))
+    .then_some(())?;
     let endpoint = |id| variable_points.get(&id);
     let [first, second] = segment.point_ids().map(endpoint);
     let (Some(first), Some(second)) = (first, second) else {
@@ -515,9 +537,9 @@ fn section_fixed_coordinate_line_carrier(
 }
 
 fn section_proven_axis_line_carrier(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
     if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
         Some(geometry)
@@ -531,9 +553,9 @@ fn section_proven_axis_line_carrier(
 }
 
 pub(in crate::decode) fn section_axis_reference_line_geometry(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
     if !section_degenerate_axis_line(definition, segment) {
         return section_proven_axis_line_carrier(definition, variable_points, segment);
@@ -575,10 +597,10 @@ pub(in crate::decode) fn section_axis_reference_line_geometry(
 }
 
 pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Option<SketchGeometry> {
@@ -605,8 +627,8 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
 }
 
 pub(in crate::decode) fn trim_segment_id(
-    definition: &crate::feature::FeatureDefinition,
-    row: &crate::feature::FeatureTrimEntity,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    row: &crate::feature::definitions::FeatureTrimEntity,
 ) -> Option<u32> {
     let trim_table = definition.trim_entities.as_ref()?;
     (trim_table.has_complete_bucket_frame() && trim_table.has_unique_external_ids())
@@ -659,8 +681,8 @@ mod tests {
 
     #[test]
     fn unique_incomplete_axis_row_supplies_unbounded_carrier() {
-        let line = crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+        let line = crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
             center_id: None,
             arc_orientation: None,
@@ -673,7 +695,7 @@ mod tests {
         };
         let variable_points =
             std::collections::BTreeMap::from([(1, [Some(0.0), None]), (2, [Some(0.0), None])]);
-        let definition = crate::feature::FeatureDefinition {
+        let definition = crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(916),
                 owner_feature_id: None,
@@ -682,7 +704,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: None,
-            segments: Some(crate::feature::FeatureSegmentTable {
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
                 declared_count: 2,
                 has_elided_prototype: false,
                 entity_ref: None,
@@ -692,16 +714,16 @@ mod tests {
                     .collect(),
                 offset: 0,
             }),
-            trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+            trim_entities: Some(crate::feature::definitions::FeatureTrimEntityTable {
                 declared_count: None,
                 entity_ref: None,
                 entry_ref: None,
                 buckets: Vec::new(),
-                rows: vec![crate::feature::FeatureTrimEntity {
+                rows: vec![crate::feature::definitions::FeatureTrimEntity {
                     external_id: 10,
                     mode: None,
                     vertices: [1, 2],
-                    kind: crate::feature::TrimEntityKind::Line,
+                    kind: crate::feature::definitions::TrimEntityKind::Line,
                     offset: 1,
                 }],
                 solved_external_ids: vec![10],
@@ -742,10 +764,9 @@ mod tests {
 
         let mut duplicate = definition;
         duplicate.segments.as_mut().expect("segments").rows.insert(
-            crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
-                offset: 2,
-                ..line
-            }),
+            crate::feature::segment_rows::SegmentRow::Ordinary(
+                crate::feature::definitions::FeatureSegment { offset: 2, ..line },
+            ),
         );
         assert!(section_proven_axis_line_carrier(
             &duplicate,
@@ -775,7 +796,7 @@ mod tests {
 
     #[test]
     fn unique_arc_rows_remain_radius_sources_in_incomplete_segment_tables() {
-        let definition = crate::feature::FeatureDefinition {
+        let definition = crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(917),
                 owner_feature_id: None,
@@ -791,29 +812,29 @@ mod tests {
                     offset: 0,
                 },
                 vec![
-                    crate::feature::FeatureSectionPoint {
+                    crate::feature::definitions::FeatureSectionPoint {
                         point_id: 1,
                         u: Some(0.0),
                         v: Some(0.0),
                     },
-                    crate::feature::FeatureSectionPoint {
+                    crate::feature::definitions::FeatureSectionPoint {
                         point_id: 2,
                         u: Some(3.0),
                         v: Some(0.0),
                     },
-                    crate::feature::FeatureSectionPoint {
+                    crate::feature::definitions::FeatureSectionPoint {
                         point_id: 3,
                         u: Some(0.0),
                         v: Some(3.0),
                     },
                 ],
             )),
-            segments: Some(crate::feature::FeatureSegmentTable {
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
                 declared_count: 2,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: (vec![crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Arc([2, 3]),
+                rows: (vec![crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Arc([2, 3]),
                     directions: [None; 3],
                     center_id: Some(1),
                     arc_orientation: Some(1),
@@ -850,7 +871,7 @@ mod tests {
         assert!(matches!(
             section_skamp_radius_source(
                 &definition,
-                &crate::feature::FeatureSkampItem {
+                &crate::feature::definitions::FeatureSkampItem {
                     entity_id: 10,
                     sense: 0,
                 },

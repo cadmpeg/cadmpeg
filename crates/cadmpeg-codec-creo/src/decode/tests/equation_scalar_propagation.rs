@@ -17,8 +17,12 @@ use crate::decode::sketch::equations_scalar::{
 use crate::feature::definitions::ScalarLane;
 use std::collections::{BTreeMap, BTreeSet};
 
-fn row(variable_type: u32, key: u32, value: Option<f64>) -> crate::feature::FeatureVariableRow {
-    crate::feature::FeatureVariableRow {
+fn row(
+    variable_type: u32,
+    key: u32,
+    value: Option<f64>,
+) -> crate::feature::definitions::FeatureVariableRow {
+    crate::feature::definitions::FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
         value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
@@ -36,9 +40,9 @@ fn row(variable_type: u32, key: u32, value: Option<f64>) -> crate::feature::Feat
 
 fn definition(
     body: &[u8],
-    rows: Vec<crate::feature::FeatureVariableRow>,
-) -> crate::feature::FeatureDefinition {
-    crate::feature::FeatureDefinition {
+    rows: Vec<crate::feature::definitions::FeatureVariableRow>,
+) -> crate::feature::definitions::FeatureDefinition {
+    crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -82,7 +86,7 @@ fn equation_body(rows: &[(u8, u8, &[u8])]) -> Vec<u8> {
 }
 
 fn axis_distance_values(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<((crate::feature::definitions::VariableType, u32), f64)> {
     let ambiguous_point_ids = definition
         .variables
@@ -450,10 +454,10 @@ fn dimension_equations_accept_scalar_values_proved_by_equality() {
             row(0, 1, Some(5.0)),
         ],
     );
-    coordinate_definition.dimensions = Some(crate::feature::FeatureDimensionTable {
+    coordinate_definition.dimensions = Some(crate::feature::definitions::FeatureDimensionTable {
         declared_count: 1,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureDimension {
+        rows: vec![crate::feature::definitions::FeatureDimension {
             dimension_type: 1,
             value: crate::feature::definitions::DimensionValue::Resolved(5.0),
             value_body: Vec::new(),
@@ -516,10 +520,10 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
             row(0, 1, Some(5.0)),
         ],
     );
-    radius_definition.dimensions = Some(crate::feature::FeatureDimensionTable {
+    radius_definition.dimensions = Some(crate::feature::definitions::FeatureDimensionTable {
         declared_count: 1,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureDimension {
+        rows: vec![crate::feature::definitions::FeatureDimension {
             dimension_type: 3,
             value: crate::feature::definitions::DimensionValue::Resolved(5.0),
             value_body: Vec::new(),

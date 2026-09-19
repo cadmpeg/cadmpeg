@@ -34,8 +34,8 @@ fn generated_surface_binding_requires_one_matching_row() {
     ));
 }
 
-fn saved_spline_definition() -> crate::feature::FeatureDefinition {
-    crate::feature::FeatureDefinition {
+fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
+    crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: Some(40),
@@ -48,20 +48,20 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
-        section_3d: Some(crate::feature::FeatureSection3d {
+        section_3d: Some(crate::feature::definitions::FeatureSection3d {
             sketch_plane_entity_id: None,
             sketch_plane_flip: None,
             reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
             reference_plane_datum_geometry_id: None,
-            orientation: crate::feature::FeatureSectionOrientation::default(),
+            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
             offset: 0,
         }),
         dimensions: None,
         relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Spline(
-                crate::feature::FeatureSavedSpline {
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Spline(
+                crate::feature::definitions::FeatureSavedSpline {
                     entity_id: Some(1),
                     declared_point_count: Some(2),
                     interpolation_points: vec![[2.0, 0.0, 0.0], [2.0, 0.0, 1.0]],

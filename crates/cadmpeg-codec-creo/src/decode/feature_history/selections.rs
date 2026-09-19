@@ -20,7 +20,7 @@ pub(in super::super) fn feature_edge_selection(
     let (ids, native) = if let Some(ids) = agreed_feature_affected_ids(
         &scan.features.affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Edges,
+        crate::feature::rows::AffectedIdKind::Edges,
     ) {
         if ids.is_empty() {
             let native = format!("creo:allfeatur:edgs_affected#{feature_id}:");
@@ -38,7 +38,7 @@ pub(in super::super) fn feature_edge_selection(
         if has_feature_affected_ids(
             &scan.features.affected_ids,
             feature_id,
-            crate::feature::AffectedIdKind::Edges,
+            crate::feature::rows::AffectedIdKind::Edges,
         ) {
             return None;
         }
@@ -171,14 +171,14 @@ pub(in super::super) fn feature_result_edge_ids_by_feature(
 }
 
 pub(in super::super) fn agreed_feature_geometry_ids<'a>(
-    affected_ids: &'a [crate::feature::FeatureAffectedIds],
-    replay_affected_ids: &'a [crate::feature::FeatureReplayAffectedIds],
+    affected_ids: &'a [crate::feature::rows::FeatureAffectedIds],
+    replay_affected_ids: &'a [crate::feature::rows::FeatureReplayAffectedIds],
     feature_id: u32,
 ) -> Option<&'a [u32]> {
     let named = agreed_feature_affected_ids(
         affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Geometry,
+        crate::feature::rows::AffectedIdKind::Geometry,
     );
     if named.is_some() {
         return named;
@@ -186,7 +186,7 @@ pub(in super::super) fn agreed_feature_geometry_ids<'a>(
     if has_feature_affected_ids(
         affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Geometry,
+        crate::feature::rows::AffectedIdKind::Geometry,
     ) {
         return None;
     }

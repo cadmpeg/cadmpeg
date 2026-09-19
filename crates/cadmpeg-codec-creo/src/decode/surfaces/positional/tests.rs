@@ -10,7 +10,7 @@ use crate::CreoCodec;
 #[test]
 fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,

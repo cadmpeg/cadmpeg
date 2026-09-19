@@ -273,7 +273,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
         };
         for spline in
             semantic_saved_section_entities(definition).filter_map(|entity| match entity {
-                crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
         {
@@ -677,7 +677,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
 
         let splines = semantic_saved_section_entities(definition)
             .filter_map(|entity| match entity {
-                crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
             .filter_map(|spline| {
