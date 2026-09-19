@@ -70,7 +70,7 @@ fn e5_isoparametric_direction(direction: Point2) -> Option<E5IsoparametricDirect
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
-pub(crate) fn try_decode_e5(
+pub(in crate::families) fn try_decode_e5(
     _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -354,7 +354,7 @@ fn derive_e5_vertices(
         .collect()
 }
 
-pub(crate) fn append_e5_planes(
+fn append_e5_planes(
     stream: &[u8],
     topology: &crate::families::e5::graph::E5Topology,
     points: &[Point3],
@@ -478,7 +478,7 @@ fn e5_uv_vectors_are_independent(left: [f64; 2], right: [f64; 2]) -> bool {
     (left[0] * right[1] - left[1] * right[0]).abs() > RANK_TOLERANCE
 }
 
-pub(crate) fn solve_e5_plane_frame(
+fn solve_e5_plane_frame(
     surface_ref: u32,
     origin: [f64; 3],
     topology: &crate::families::e5::graph::E5Topology,
@@ -696,9 +696,7 @@ pub(crate) fn solve_e5_plane_frame(
     (canonical.len() == 1).then(|| canonical[0])
 }
 
-pub(crate) fn e5_native_uv_endpoints(
-    pcurve: &crate::families::e5::graph::E5Pcurve,
-) -> Option<[[f64; 2]; 2]> {
+fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Option<[[f64; 2]; 2]> {
     let finite = |endpoints: [[f64; 2]; 2]| {
         endpoints
             .into_iter()
@@ -756,7 +754,7 @@ pub(crate) fn e5_native_uv_endpoints(
     }
 }
 
-pub(crate) fn fit_e5_plane_axes(
+fn fit_e5_plane_axes(
     origin: [f64; 3],
     pairs: &[([f64; 2], Point3)],
 ) -> Option<(Vector3, Vector3, f64)> {
@@ -846,7 +844,7 @@ pub(crate) fn fit_e5_plane_axes(
     ))
 }
 
-pub(crate) fn fit_rank_one_e5_plane_axes(
+fn fit_rank_one_e5_plane_axes(
     origin: [f64; 3],
     pairs: &[([f64; 2], Point3)],
     normal: Vector3,
@@ -894,7 +892,7 @@ pub(crate) fn fit_rank_one_e5_plane_axes(
     residual.is_finite().then_some((u_axis, v_axis, residual))
 }
 
-pub(crate) fn plane_frame_residual(
+fn plane_frame_residual(
     origin: [f64; 3],
     pairs: &[([f64; 2], Point3)],
     u_axis: Vector3,
@@ -915,7 +913,7 @@ pub(crate) fn plane_frame_residual(
     })
 }
 
-pub(crate) fn canonical_direction(mut direction: Vector3) -> Vector3 {
+fn canonical_direction(mut direction: Vector3) -> Vector3 {
     let first = [direction.x, direction.y, direction.z]
         .into_iter()
         .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY)
@@ -926,7 +924,7 @@ pub(crate) fn canonical_direction(mut direction: Vector3) -> Vector3 {
     direction
 }
 
-pub(crate) fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     let body_id = BodyId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "e5", "body"),
         cadmpeg_ir::identity_key!("unbound-points"),
@@ -983,7 +981,7 @@ pub(crate) fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut Annotati
     );
 }
 
-pub(crate) struct E5IntersectionSidePlan {
+struct E5IntersectionSidePlan {
     surface: SurfaceId,
     pcurve: PcurveGeometry,
     pcurve_range: [f64; 2],
@@ -1063,7 +1061,7 @@ struct E5Ownership {
     face_shell: HashMap<u32, ShellId>,
 }
 
-pub(crate) fn transfer_e5_topology(
+fn transfer_e5_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     topology: &crate::families::e5::graph::E5Topology,
@@ -2114,7 +2112,7 @@ fn emit_e5_faces_loops_coedges(
     true
 }
 
-pub(crate) fn e5_stored_pcurve_reversed(
+fn e5_stored_pcurve_reversed(
     topology: &crate::families::e5::graph::E5Topology,
     edge_ref: u32,
     pcurve_ref: u32,
@@ -2139,17 +2137,14 @@ fn unique_endpoint_direction(forward_error: f64, reverse_error: f64) -> Option<b
     }
 }
 
-pub(crate) fn parameter_ranges_reversed(
-    parameters: [f64; 2],
-    native_range: [f64; 2],
-) -> Option<bool> {
+fn parameter_ranges_reversed(parameters: [f64; 2], native_range: [f64; 2]) -> Option<bool> {
     let bound_span = parameters[1] - parameters[0];
     let native_span = native_range[1] - native_range[0];
     (bound_span.is_finite() && bound_span != 0.0 && native_span.is_finite() && native_span != 0.0)
         .then_some(bound_span.is_sign_negative() != native_span.is_sign_negative())
 }
 
-pub(crate) fn e5_pcurve_on_surface(
+fn e5_pcurve_on_surface(
     pcurve: &crate::families::e5::graph::E5Pcurve,
     decoded_surface: &crate::families::e5::records::E5Surface,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -2365,7 +2360,7 @@ pub(crate) fn e5_pcurve_on_surface(
     }
 }
 
-pub(crate) fn e5_boundary_curve(
+fn e5_boundary_curve(
     surface: &SurfaceGeometry,
     native_pcurve: &crate::families::e5::graph::E5Pcurve,
     pcurve: &PcurveGeometry,
@@ -2807,7 +2802,7 @@ fn e5_circle_carriers_have_same_ordered_sweep(
         && left_end.distance(right_end) <= E5_ENDPOINT_MATCH_TOLERANCE
 }
 
-pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
+fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
     match (left, right) {
         (
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
@@ -2845,10 +2840,7 @@ pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGe
     }
 }
 
-pub(crate) fn e5_constant_v_circle(
-    surface: &SurfaceGeometry,
-    v: f64,
-) -> Option<(Point3, f64, Vector3)> {
+fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f64, Vector3)> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
@@ -2892,10 +2884,7 @@ pub(crate) fn e5_constant_v_circle(
     }
 }
 
-pub(crate) fn e5_constant_u_circle(
-    surface: &SurfaceGeometry,
-    u: f64,
-) -> Option<(Point3, f64, Vector3)> {
+fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f64, Vector3)> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
@@ -2924,10 +2913,7 @@ pub(crate) fn e5_constant_u_circle(
     }
 }
 
-pub(crate) fn e5_surface_uv(
-    surface: &crate::families::e5::records::E5Surface,
-    raw: [f64; 2],
-) -> Point2 {
+fn e5_surface_uv(surface: &crate::families::e5::records::E5Surface, raw: [f64; 2]) -> Point2 {
     Point2::new(raw[0] * surface.uv_scale[0], raw[1] * surface.uv_scale[1])
 }
 

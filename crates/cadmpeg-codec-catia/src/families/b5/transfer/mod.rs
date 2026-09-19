@@ -176,7 +176,7 @@ struct TransferPlan {
 
 /// Transfer a complete B5 graph. Returns `false` without mutation when any
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
-pub(crate) fn transfer(
+pub(in crate::families) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     mut graph: B5Graph,
@@ -652,7 +652,7 @@ fn build_plan(
     })
 }
 
-pub(crate) fn resolved_surface_geometry(
+pub(in crate::families) fn resolved_surface_geometry(
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -673,23 +673,23 @@ pub(crate) fn resolved_surface_geometry(
 
 /// Exact construction of a surface-of-revolution carrier.
 #[derive(Clone, PartialEq)]
-pub(crate) struct ResolvedRevolutionSurface {
+pub(in crate::families) struct ResolvedRevolutionSurface {
     /// Exact profile curve used as the revolution directrix.
-    pub(crate) directrix: NurbsCurve,
+    pub(in crate::families) directrix: NurbsCurve,
     /// Point on the revolution axis.
-    pub(crate) axis_origin: Point3,
+    pub(in crate::families) axis_origin: Point3,
     /// Unit revolution-axis direction.
-    pub(crate) axis_direction: Vector3,
+    pub(in crate::families) axis_direction: Vector3,
     /// Angular interval in radians.
-    pub(crate) angular_interval: [f64; 2],
+    pub(in crate::families) angular_interval: [f64; 2],
     /// Native angular surface-parameter interval mapped to `angular_interval`.
-    pub(crate) angular_parameter_interval: [f64; 2],
+    pub(in crate::families) angular_parameter_interval: [f64; 2],
     /// Native profile parameter interval.
-    pub(crate) parameter_interval: [f64; 2],
+    pub(in crate::families) parameter_interval: [f64; 2],
 }
 
 /// Resolve a surface-of-revolution construction with an exact NURBS result.
-pub(crate) fn resolved_revolution_surface(
+pub(in crate::families) fn resolved_revolution_surface(
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -723,20 +723,20 @@ pub(crate) fn resolved_revolution_surface(
 
 #[derive(Clone, PartialEq)]
 /// One object-stream pcurve lowered with its exact resolved support carrier.
-pub(crate) struct ResolvedObjectStreamPcurve {
+pub(in crate::families) struct ResolvedObjectStreamPcurve {
     /// Persistent identity of the pcurve's support surface.
-    pub(crate) surface_object_id: u32,
+    pub(in crate::families) surface_object_id: u32,
     /// Exact neutral support construction.
-    pub(crate) carrier: ResolvedPcurveSurface,
+    pub(in crate::families) carrier: ResolvedPcurveSurface,
     /// Exact neutral parameter-space curve.
-    pub(crate) geometry: PcurveGeometry,
+    pub(in crate::families) geometry: PcurveGeometry,
     /// Native pcurve parameter interval.
-    pub(crate) parameter_range: [f64; 2],
+    pub(in crate::families) parameter_range: [f64; 2],
 }
 
 /// Exact neutral carrier for an identity-bound object-stream pcurve.
 #[derive(Clone, PartialEq)]
-pub(crate) enum ResolvedPcurveSurface {
+pub(in crate::families) enum ResolvedPcurveSurface {
     /// Direct neutral surface geometry.
     Geometry(SurfaceGeometry),
     /// Procedural rolling-ball carrier.
@@ -749,7 +749,9 @@ pub(crate) enum ResolvedPcurveSurface {
 }
 
 /// Lower one resolved object-stream surface to an exact neutral carrier.
-pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPcurveSurface> {
+pub(in crate::families) fn resolved_surface_carrier(
+    surface: &B5Surface,
+) -> Option<ResolvedPcurveSurface> {
     match surfaces::surface_carrier(surface) {
         surfaces::B5SurfaceCarrier::Analytic(geometry) => {
             Some(ResolvedPcurveSurface::Geometry(geometry))
@@ -770,7 +772,7 @@ pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPc
 
 /// Resolve a pcurve support carrier with the graph context required by exact
 /// constructed surfaces such as surface-of-revolution records.
-pub(crate) fn resolved_surface_carrier_in_graph(
+pub(in crate::families) fn resolved_surface_carrier_in_graph(
     graph: &B5Graph,
     surface_object_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -784,7 +786,7 @@ pub(crate) fn resolved_surface_carrier_in_graph(
 
 /// Lower one decoded degree-5 UV jet through its resolved native chart.
 #[must_use]
-pub(crate) fn resolved_object_stream_pcurve(
+pub(in crate::families) fn resolved_object_stream_pcurve(
     pcurve: &crate::families::a5a8::records::A8Pcurve,
     surface: &B5Surface,
     graph: Option<&B5Graph>,
@@ -817,7 +819,7 @@ pub(crate) fn resolved_object_stream_pcurve(
     })
 }
 
-pub(crate) fn resolved_surface_procedural_definition(
+pub(in crate::families) fn resolved_surface_procedural_definition(
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -838,22 +840,22 @@ pub(crate) fn resolved_surface_procedural_definition(
 
 /// Neutral support evidence for one side of an exact extrusion directrix.
 #[derive(Clone, PartialEq)]
-pub(crate) struct ResolvedExtrusionSupport {
+pub(in crate::families) struct ResolvedExtrusionSupport {
     /// Persistent support-surface identity.
-    pub(crate) surface_object_id: u32,
+    pub(in crate::families) surface_object_id: u32,
     /// Exact neutral support geometry.
-    pub(crate) surface: SurfaceGeometry,
+    pub(in crate::families) surface: SurfaceGeometry,
     /// Exact parameter-space directrix occurrence.
-    pub(crate) pcurve: PcurveGeometry,
+    pub(in crate::families) pcurve: PcurveGeometry,
     /// Native interval used by this support occurrence.
-    pub(crate) pcurve_parameter_range: [f64; 2],
+    pub(in crate::families) pcurve_parameter_range: [f64; 2],
     /// Exact model-space lift when the support chart admits one.
-    pub(crate) curve: Option<CurveGeometry>,
+    curve: Option<CurveGeometry>,
 }
 
 /// Exact neutral construction of one extrusion directrix.
 #[derive(Clone, PartialEq)]
-pub(crate) enum ResolvedExtrusionDirectrix {
+pub(in crate::families) enum ResolvedExtrusionDirectrix {
     /// Intersection of two support surfaces.
     Intersection {
         /// Ordered exact support sides.
@@ -887,23 +889,23 @@ pub(crate) enum ResolvedExtrusionDirectrix {
 
 /// Exact two-support directrix and extrusion chart resolved from B5 objects.
 #[derive(Clone, PartialEq)]
-pub(crate) struct ResolvedExtrusionSurface {
+pub(in crate::families) struct ResolvedExtrusionSurface {
     /// Persistent extrusion-surface identity.
-    pub(crate) surface_object_id: u32,
+    pub(in crate::families) surface_object_id: u32,
     /// Persistent directrix identity.
-    pub(crate) directrix_object_id: u32,
+    pub(in crate::families) directrix_object_id: u32,
     /// Solved directrix interval shared by the support mappings.
-    pub(crate) directrix_parameter_range: [f64; 2],
+    pub(in crate::families) directrix_parameter_range: [f64; 2],
     /// Unit world-space extrusion direction.
-    pub(crate) direction: Vector3,
+    pub(in crate::families) direction: Vector3,
     /// Ordered native U and V chart bounds.
-    pub(crate) parameter_bounds: [[f64; 2]; 2],
+    pub(in crate::families) parameter_bounds: [[f64; 2]; 2],
     /// Exact directrix construction.
-    pub(crate) directrix: ResolvedExtrusionDirectrix,
+    pub(in crate::families) directrix: ResolvedExtrusionDirectrix,
 }
 
 impl ResolvedExtrusionSurface {
-    pub(crate) fn supports(&self) -> Vec<&ResolvedExtrusionSupport> {
+    pub(in crate::families) fn supports(&self) -> Vec<&ResolvedExtrusionSupport> {
         match &self.directrix {
             ResolvedExtrusionDirectrix::Intersection { supports, .. } => supports.iter().collect(),
             ResolvedExtrusionDirectrix::SurfaceCurve { support, .. }
@@ -914,7 +916,7 @@ impl ResolvedExtrusionSurface {
 
 /// Exact support construction of a resolved offset surface.
 #[derive(Clone, PartialEq)]
-pub(crate) enum ResolvedOffsetSupport {
+pub(in crate::families) enum ResolvedOffsetSupport {
     /// Direct neutral support geometry.
     Geometry(SurfaceGeometry),
     /// Procedural extrusion support.
@@ -923,20 +925,20 @@ pub(crate) enum ResolvedOffsetSupport {
 
 /// Exact offset construction resolved from a B5 class-`30` object.
 #[derive(Clone, PartialEq)]
-pub(crate) struct ResolvedOffsetSurface {
+pub(in crate::families) struct ResolvedOffsetSurface {
     /// Persistent result-carrier identity.
-    pub(crate) carrier_object_id: u32,
+    pub(in crate::families) carrier_object_id: u32,
     /// Persistent support-surface identity.
-    pub(crate) support_object_id: u32,
+    pub(in crate::families) support_object_id: u32,
     /// Exact support construction.
-    pub(crate) support: ResolvedOffsetSupport,
+    pub(in crate::families) support: ResolvedOffsetSupport,
     /// Signed offset distance.
-    pub(crate) distance: f64,
+    pub(in crate::families) distance: f64,
     /// Ordered native U and V chart bounds.
-    pub(crate) parameter_bounds: [[f64; 2]; 2],
+    pub(in crate::families) parameter_bounds: [[f64; 2]; 2],
 }
 
-pub(crate) fn resolved_extrusion_surface(
+pub(in crate::families) fn resolved_extrusion_surface(
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1140,7 +1142,7 @@ fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
     domain[0] <= active[0] + tolerance && active[1] <= domain[1] + tolerance
 }
 
-pub(crate) fn resolved_offset_surface(
+pub(in crate::families) fn resolved_offset_surface(
     graph: &B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
