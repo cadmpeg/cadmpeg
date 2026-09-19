@@ -1,7 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Expression and block scanning for deserializer input routes.
 
-use super::*;
+use std::collections::BTreeSet;
+
+use syn::spanned::Spanned;
+
+use super::classify::{receiver_is_keyless, receiver_is_value};
+use super::resolve::{resolve_receiver_path, ResolvedPath};
+use super::{
+    expr_check_binding, expr_is_direct_binding, expr_single_name, item_shadows_version_check,
+    nodes_from_stream, path_is_named, receiver_from_expr_path, token_mentions_binding,
+    HandImplSource, InputRoute, PathShape, SourceIndex, SymbolKind,
+};
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct ScanEnvironment {

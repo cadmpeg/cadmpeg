@@ -1,7 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Route classification for one hand-written reader.
 
-use super::*;
+use std::collections::BTreeSet;
+use std::path::Path;
+
+use proc_macro2::Delimiter;
+
+use super::resolve::{
+    external_is_keyless, external_is_value, resolve_path_from_context, resolve_receiver_path,
+    ResolvedPath,
+};
+use super::scan::{scan_block, RouteScan, ScanEnvironment};
+use super::{
+    atom_opt, call_uses_deserializer, insert_symbol, insert_wire, is_atom, local_denied_types,
+    path_tail, receiver_before, source_index, token_mentions_binding, tokenize_block_text,
+    HandImplSource, HandReaderClass, InputRoute, Node, Receiver, SourceIndex, SymbolKind,
+    TypeShape,
+};
+use crate::HAND_IMPLS;
 
 pub(super) fn type_is_keyless(
     route: &HandImplSource,
