@@ -176,7 +176,7 @@ impl TryFrom<AssetWire> for Asset {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Asset, AssetContent, AssetData, AssetId};
 
     #[test]
     fn complete_document_admission_requires_nonempty_canonical_asset_bytes() {

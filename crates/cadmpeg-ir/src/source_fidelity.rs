@@ -494,7 +494,17 @@ mod tests {
     mod admission;
     mod unknown_keys;
 
-    use super::*;
+    use std::path::{Path, PathBuf};
+
+    use super::{
+        decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
+        SourceFidelity,
+    };
+    use crate::document::CadIr;
+    use crate::hash::digest::Sha256Digest;
+    use crate::ids::UnknownId;
+    use crate::report::DecodeReport;
+    use crate::unknown::UnknownRecord;
 
     fn record(data: &[u8]) -> RetainedSourceRecord {
         RetainedSourceRecord::whole("source", data.to_vec())

@@ -103,7 +103,11 @@ pub fn admit_with_additional_native_identities<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        admit, CATIA_ADMISSION_CHECKS, DRAFT_CORE_CHECKS, RHINO_DRAFT_CHECKS,
+        RHINO_INSTANCE_CHECKS, SLDPRT_EXPORT_PRECONDITION_CHECKS,
+    };
+    use crate::report::Check;
     use crate::validate::admissibility_freeze::{
         accepted_empty, rejected_missing_point, rejected_missing_region,
     };

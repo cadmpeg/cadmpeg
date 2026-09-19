@@ -1717,7 +1717,10 @@ fn collect_rust_sources(directory: &Path, found: &mut Vec<PathBuf>) -> Result<()
 
 #[cfg(test)]
 mod scanner_tests {
-    use super::*;
+    use super::{
+        collect_hand_impls, collect_rust_sources, deserialize_impl_target, is_test_module,
+        macro_body_impl_targets, reader_routes,
+    };
 
     #[test]
     fn cfg_classification_requires_a_test_only_expression() {

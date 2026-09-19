@@ -436,7 +436,6 @@ mod tests {
 
     #[test]
     fn camera_kinds_and_states_round_trip_without_payload_or_tag_loss() {
-        use super::*;
         let kinds = [
             PresentationStateKind::Camera(CameraState {
                 position: Some(
@@ -485,8 +484,14 @@ mod tests {
         );
     }
 
-    use super::*;
+    use std::collections::BTreeMap;
+
+    use super::{
+        CameraState, PresentationDocument, PresentationId, PresentationItem, PresentationLayer,
+        PresentationState, PresentationStateKind,
+    };
     use crate::document::CadIr;
+    use crate::ids::{FaceId, LayerId};
     use crate::report::Check;
     use crate::validate::validate_neutral;
 

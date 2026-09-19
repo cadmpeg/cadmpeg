@@ -86,7 +86,7 @@ impl schemars::JsonSchema for Sha256Digest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Sha256Digest;
 
     #[cfg(feature = "schema")]
     #[test]

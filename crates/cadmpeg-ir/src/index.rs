@@ -325,7 +325,9 @@ crate::document::arena_registry!(define_model_index);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ModelIndex;
+    use crate::document::CadIr;
+    use crate::geometry::{ProceduralSurface, Surface};
     use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
     use crate::{NativeNamespace, NativeRecord};
     use serde_json::Map;

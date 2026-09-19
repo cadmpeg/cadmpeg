@@ -219,7 +219,8 @@ impl UnknownRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{NativeUnknownRecord, UnknownRecord};
+    use crate::ids::UnknownId;
 
     #[test]
     fn product_projection_checks_raw_link_identity_without_changing_evidence() {

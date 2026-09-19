@@ -314,7 +314,8 @@ impl FiniteVector<2> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{FiniteVector, NonzeroVector, Tolerances};
+    use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
 
     #[test]
