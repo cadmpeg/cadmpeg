@@ -15,9 +15,7 @@ use crate::test_support::lp_utf16;
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> usize {
     let start = bytes.len();
-    bytes.extend_from_slice(&3_u32.to_le_bytes());
-    bytes.extend_from_slice(&class_tag);
-    bytes.extend_from_slice(&record_index.to_le_bytes());
+    crate::test_support::indexed_header(bytes, class_tag, record_index);
     start
 }
 

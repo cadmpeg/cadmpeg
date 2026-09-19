@@ -1,15 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-#![allow(
-    clippy::cloned_ref_to_slice_refs,
-    clippy::default_trait_access,
-    clippy::if_not_else,
-    clippy::needless_pass_by_value,
-    clippy::range_plus_one,
-    clippy::semicolon_if_nothing_returned,
-    clippy::trivially_copy_pass_by_ref
-)]
-
 use crate::history::{
     bind_mirror_selection_planes, design_geometry_mirror_plane, historical_loop_plane,
     historical_mirror_plane,
