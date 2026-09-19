@@ -41,7 +41,7 @@ const EPS_OFFSET_SOLVE_DAMPED_LEAST_SQUARES_4X4_E12: f64 = 1.0e-12;
 const OFFSET_NEWTON_ITERATIONS: usize = 32;
 const MAX_OFFSET_FIT_CACHE_ENTRIES: usize = 4096;
 
-pub(crate) fn saved_offset_carriers(
+pub(super) fn saved_offset_carriers(
     ir: &CadIr,
     graph: &Graph,
     offsets: &[crate::topology::OffsetSurface],
@@ -164,7 +164,7 @@ pub(crate) fn certified_offset_cache_fit(
     )
 }
 
-pub(crate) fn certified_offset_cache_fit_with_budget(
+fn certified_offset_cache_fit_with_budget(
     support: &SurfaceGeometry,
     candidate: &SurfaceGeometry,
     distance: f64,
@@ -295,7 +295,7 @@ fn offset_candidate_sample_error(
     Some(point_distance(expected, candidate_point))
 }
 
-pub(crate) fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
+fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
     let u_count = surface.u_count();
@@ -313,14 +313,14 @@ pub(crate) fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2
 }
 
 #[derive(Clone)]
-pub(crate) struct HomogeneousSurfaceNet {
-    pub(crate) u_degree: usize,
-    pub(crate) v_degree: usize,
-    pub(crate) u_knots: Vec<f64>,
-    pub(crate) v_knots: Vec<f64>,
-    pub(crate) u_count: usize,
-    pub(crate) v_count: usize,
-    pub(crate) controls: Vec<[f64; 4]>,
+struct HomogeneousSurfaceNet {
+    u_degree: usize,
+    v_degree: usize,
+    u_knots: Vec<f64>,
+    v_knots: Vec<f64>,
+    u_count: usize,
+    v_count: usize,
+    controls: Vec<[f64; 4]>,
 }
 
 impl HomogeneousSurfaceNet {
@@ -503,13 +503,13 @@ impl HomogeneousSurfaceNet {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct HomogeneousControlBounds {
-    pub(crate) minimum_weight: f64,
-    pub(crate) maximum_position_norm: f64,
-    pub(crate) maximum_weight_magnitude: f64,
+struct HomogeneousControlBounds {
+    minimum_weight: f64,
+    maximum_position_norm: f64,
+    maximum_weight_magnitude: f64,
 }
 
-pub(crate) fn active_spline_controls(
+fn active_spline_controls(
     knots: &[f64],
     degree: usize,
     count: usize,
@@ -530,7 +530,7 @@ pub(crate) fn active_spline_controls(
     (span >= degree && span < count).then_some(span - degree..=span)
 }
 
-pub(crate) fn certified_curved_offset_cache_fit_with_budget(
+pub(super) fn certified_curved_offset_cache_fit_with_budget(
     support: &NurbsSurface,
     candidate: &NurbsSurface,
     distance: f64,
@@ -653,12 +653,12 @@ pub(crate) fn certified_curved_offset_cache_fit_with_budget(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct RationalSurfaceDerivativeBounds {
-    pub(crate) u: f64,
-    pub(crate) v: f64,
-    pub(crate) uu: f64,
-    pub(crate) uv: f64,
-    pub(crate) vv: f64,
+struct RationalSurfaceDerivativeBounds {
+    u: f64,
+    v: f64,
+    uu: f64,
+    uv: f64,
+    vv: f64,
 }
 
 struct RationalSurfaceDerivativeNets {
@@ -753,7 +753,7 @@ fn rational_surface_derivative_bounds_with_nets(
         .then_some(RationalSurfaceDerivativeBounds { u, v, uu, uv, vv })
 }
 
-pub(crate) fn subdivide_offset_rectangle(
+pub(super) fn subdivide_offset_rectangle(
     rectangles: &mut Vec<[f64; 4]>,
     [u0, u1, v0, v1]: [f64; 4],
     [u, v]: [f64; 2],
@@ -772,7 +772,7 @@ pub(crate) fn subdivide_offset_rectangle(
     }
 }
 
-pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
+pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
@@ -829,7 +829,7 @@ fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vect
     })
 }
 
-pub(crate) fn positive_weights(weights: Option<impl IntoIterator<Item = f64>>) -> bool {
+fn positive_weights(weights: Option<impl IntoIterator<Item = f64>>) -> bool {
     let Some(weights) = weights else {
         return true;
     };
@@ -957,7 +957,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index(
     )
 }
 
-pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
+pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -1141,7 +1141,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
 /// that case a global NURBS search is both unnecessary and unsafe for the
 /// caller's work slice.  This helper therefore returns only a fit-certified
 /// result and never falls back to global patch subdivision.
-pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
+pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -1247,7 +1247,7 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
     (distance <= fit_tolerance).then_some(parameters)
 }
 
-pub(crate) fn coarse_model_surface_parameters(
+pub(super) fn coarse_model_surface_parameters(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -1318,7 +1318,7 @@ fn coarse_surface_sample_counts(
     }
 }
 
-pub(crate) fn initial_surface_parameters_with_index_and_budget(
+fn initial_surface_parameters_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -1365,7 +1365,7 @@ pub(crate) fn initial_surface_parameters_with_index_and_budget(
     }
 }
 
-pub(crate) fn surface_parameter_domain_with_index(
+pub(super) fn surface_parameter_domain_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> Option<([f64; 2], [f64; 2])> {
@@ -1400,17 +1400,14 @@ pub(crate) fn surface_parameter_domain_with_index(
     }
 }
 
-pub(crate) fn clamp_surface_parameters(
-    parameters: &mut Point2,
-    domain: Option<([f64; 2], [f64; 2])>,
-) {
+fn clamp_surface_parameters(parameters: &mut Point2, domain: Option<([f64; 2], [f64; 2])>) {
     if let Some((u_domain, v_domain)) = domain {
         parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
         parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
     }
 }
 
-pub(crate) fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>) -> f64 {
+pub(super) fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>) -> f64 {
     domain.map_or_else(
         || EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6 * (1.0 + parameter.abs()),
         |domain| EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6 * (domain[1] - domain[0]).abs().max(1.0),
@@ -1420,7 +1417,7 @@ pub(crate) fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>
 // Keep the parameter-space and finite-difference policy explicit while passing
 // the caller-owned budget through every surface evaluation.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn model_surface_derivative(
+fn model_surface_derivative(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     parameters: Point2,
@@ -1578,7 +1575,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     )
 }
 
-pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
+pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],
@@ -1760,11 +1757,11 @@ pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     Some(lanes)
 }
 
-pub(crate) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -> f64 {
+pub(super) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -> f64 {
     value + ((reference - value) / period).round() * period
 }
 
-pub(crate) fn surface_parameter_periods_with_index(
+pub(super) fn surface_parameter_periods_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> [Option<f64>; 2] {
@@ -1840,7 +1837,7 @@ fn surface_parameter_periods_inner(
 // Newton correction carries its chart, scale, and shared work slice together
 // so no nested solve can silently create an independent budget.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn correct_intersection_parameters(
+fn correct_intersection_parameters(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     predictor: [f64; 4],
@@ -1901,12 +1898,12 @@ pub(crate) fn correct_intersection_parameters(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct IntersectionParameterSpace {
-    pub(crate) domains: [Option<([f64; 2], [f64; 2])>; 2],
-    pub(crate) periods: [[Option<f64>; 2]; 2],
+struct IntersectionParameterSpace {
+    domains: [Option<([f64; 2], [f64; 2])>; 2],
+    periods: [[Option<f64>; 2]; 2],
 }
 
-pub(crate) fn intersection_parameter_tangent(
+fn intersection_parameter_tangent(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     parameters: [f64; 4],
@@ -1952,7 +1949,7 @@ pub(crate) fn intersection_parameter_tangent(
     (norm.is_finite() && norm > 1.0e-14).then(|| tangent.map(|value| value / norm))
 }
 
-pub(crate) fn intersection_parameter_jacobian(
+fn intersection_parameter_jacobian(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     parameters: [f64; 4],
@@ -2001,10 +1998,7 @@ pub(crate) fn intersection_parameter_jacobian(
     ])
 }
 
-pub(crate) fn clamp_intersection_parameters(
-    parameters: &mut [f64; 4],
-    space: IntersectionParameterSpace,
-) {
+fn clamp_intersection_parameters(parameters: &mut [f64; 4], space: IntersectionParameterSpace) {
     for side in 0..2 {
         let mut pair = Point2::new(parameters[side * 2], parameters[side * 2 + 1]);
         clamp_surface_parameters_with_periods(&mut pair, space.domains[side], space.periods[side]);
@@ -2013,7 +2007,7 @@ pub(crate) fn clamp_intersection_parameters(
     }
 }
 
-pub(crate) fn clamp_surface_parameters_with_periods(
+fn clamp_surface_parameters_with_periods(
     parameters: &mut Point2,
     domain: Option<([f64; 2], [f64; 2])>,
     periods: [Option<f64>; 2],
@@ -2028,13 +2022,13 @@ pub(crate) fn clamp_surface_parameters_with_periods(
     }
 }
 
-pub(crate) fn determinant_3x3(matrix: [[f64; 3]; 3]) -> f64 {
+fn determinant_3x3(matrix: [[f64; 3]; 3]) -> f64 {
     matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
         - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
         + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
 }
 
-pub(crate) fn null_vector_3x4(matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
+fn null_vector_3x4(matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
     let mut vector = [0.0; 4];
     for (omitted, component) in vector.iter_mut().enumerate() {
         let minor = std::array::from_fn(|row| {
@@ -2054,7 +2048,7 @@ pub(crate) fn null_vector_3x4(matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
     (norm.is_finite() && norm > 1.0e-14).then(|| vector.map(|value| value / norm))
 }
 
-pub(crate) fn solve_4x4(mut matrix: [[f64; 4]; 4], mut rhs: [f64; 4]) -> Option<[f64; 4]> {
+fn solve_4x4(mut matrix: [[f64; 4]; 4], mut rhs: [f64; 4]) -> Option<[f64; 4]> {
     for pivot in 0..4 {
         let row = (pivot..4).max_by(|first, second| {
             matrix[*first][pivot]
@@ -2097,7 +2091,7 @@ pub(crate) fn solve_4x4(mut matrix: [[f64; 4]; 4], mut rhs: [f64; 4]) -> Option<
 /// caller still requires the corrected nonlinear surfaces to agree and to
 /// remain inside the source chart tolerance, so this fallback cannot qualify a
 /// nearby branch.
-pub(crate) fn solve_damped_least_squares_4x4(
+pub(super) fn solve_damped_least_squares_4x4(
     matrix: [[f64; 4]; 4],
     rhs: [f64; 4],
 ) -> Option<[f64; 4]> {
@@ -2165,7 +2159,7 @@ pub(crate) fn solve_damped_least_squares_4x4(
     None
 }
 
-pub(crate) fn least_squares_step(
+pub(super) fn least_squares_step(
     du: Vector3,
     dv: Vector3,
     residual: Vector3,
@@ -2187,13 +2181,13 @@ pub(crate) fn least_squares_step(
     ))
 }
 
-pub(crate) fn point_distance(first: Point3, second: Point3) -> f64 {
+pub(super) fn point_distance(first: Point3, second: Point3) -> f64 {
     (first.x - second.x)
         .hypot(first.y - second.y)
         .hypot(first.z - second.z)
 }
 
-pub(crate) fn intersection_side(
+pub(super) fn intersection_side(
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
@@ -2239,7 +2233,7 @@ pub(crate) fn intersection_side(
     })
 }
 
-pub(crate) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<Point2> {
+pub(super) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<Point2> {
     let point = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
             Point2::new(uv[0] * 1000.0, uv[1] * 1000.0)
@@ -2265,7 +2259,7 @@ pub(crate) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Opt
         .then_some(point)
 }
 
-pub(crate) fn normalize_pcurve_parameters(
+pub(super) fn normalize_pcurve_parameters(
     pcurve: &mut PcurveGeometry,
     surface: &SurfaceGeometry,
 ) -> Option<()> {

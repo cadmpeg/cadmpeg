@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroU16;
 
 #[derive(Clone, Copy)]
-pub(crate) enum TrailingCopies {
+pub(super) enum TrailingCopies {
     One,
     Two,
 }
@@ -21,7 +21,7 @@ pub(crate) struct Type70State {
     trailing_reference: NonNullXmt,
 }
 impl Type70State {
-    pub(crate) fn new(
+    pub(super) fn new(
         xmt: u32,
         node_id: u32,
         references: [u32; 4],
@@ -37,16 +37,16 @@ impl Type70State {
                 .map_err(|_| "trailing_reference: must be non-null")?,
         })
     }
-    pub(crate) fn xmt(&self) -> u32 {
+    pub(super) fn xmt(&self) -> u32 {
         self.xmt.into()
     }
-    pub(crate) fn node_id(&self) -> u32 {
+    pub(super) fn node_id(&self) -> u32 {
         self.node_id
     }
-    pub(crate) fn references(&self) -> [u32; 4] {
+    pub(super) fn references(&self) -> [u32; 4] {
         self.references
     }
-    pub(crate) fn trailing_reference(&self) -> NonNullXmt {
+    pub(super) fn trailing_reference(&self) -> NonNullXmt {
         self.trailing_reference
     }
 }

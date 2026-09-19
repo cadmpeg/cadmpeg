@@ -181,7 +181,7 @@ mod tests {
     }
 }
 
-pub(crate) fn decoded_surface_point_inner_with_budget(
+pub(super) fn decoded_surface_point_inner_with_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     u: f64,
@@ -202,7 +202,7 @@ pub(crate) fn decoded_surface_point_inner_with_budget(
     })
 }
 
-pub(crate) fn decoded_surface_point_with_geometry_and_budget(
+pub(super) fn decoded_surface_point_with_geometry_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     geometry: &SurfaceGeometry,
@@ -269,7 +269,7 @@ pub(crate) fn blend_surface_parameters_for_fit(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum BlendParameterGrid<'a> {
+pub(super) enum BlendParameterGrid<'a> {
     #[cfg(test)]
     Build,
     Disabled,
@@ -297,7 +297,7 @@ pub(crate) fn blend_surface_parameters_for_fit_with_grid(
     )
 }
 
-pub(crate) fn blend_surface_parameters_for_fit_with_grid_and_budget(
+pub(super) fn blend_surface_parameters_for_fit_with_grid_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -318,7 +318,7 @@ pub(crate) fn blend_surface_parameters_for_fit_with_grid_and_budget(
     )
 }
 
-pub(crate) fn blend_surface_parameters_for_fit_with_source_continuation_and_budget(
+pub(super) fn blend_surface_parameters_for_fit_with_source_continuation_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -620,7 +620,7 @@ pub(crate) fn coarse_blend_surface_parameters_with_index_and_budget(
     closest_blend_surface_grid_parameters(&grid, point)
 }
 
-pub(crate) fn blend_surface_parameter_grid_with_index_and_budget(
+pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     depth: usize,
@@ -678,7 +678,7 @@ pub(crate) fn blend_surface_parameter_grid_with_index_and_budget(
     (!grid.is_empty()).then_some(grid)
 }
 
-pub(crate) fn closest_blend_surface_grid_parameters(
+fn closest_blend_surface_grid_parameters(
     grid: &[(Point2, Point3)],
     point: Point3,
 ) -> Option<Point2> {
@@ -689,7 +689,7 @@ pub(crate) fn closest_blend_surface_grid_parameters(
         .map(|(parameters, _)| *parameters)
 }
 
-pub(crate) fn blend_surface_parameters_from_grid_for_fit_and_budget(
+pub(super) fn blend_surface_parameters_from_grid_for_fit_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -708,7 +708,7 @@ pub(crate) fn blend_surface_parameters_from_grid_for_fit_and_budget(
     )
 }
 
-pub(crate) fn blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget(
+pub(super) fn blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -953,7 +953,7 @@ pub(crate) fn blend_surface_point_inner(
     blend_surface_point_inner_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
 
-pub(crate) fn blend_surface_point_inner_with_index_and_budget(
+pub(super) fn blend_surface_point_inner_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     u: f64,
@@ -1007,7 +1007,7 @@ pub(crate) fn blend_surface_point_inner_with_index_and_budget(
     Some(blend_surface_point_from_frame(frame, v))
 }
 
-pub(crate) type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
+type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
 
 const MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES: usize = 512;
 const MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES: usize = 2_048;
@@ -1033,7 +1033,7 @@ struct BlendBoundaryPointCacheEntry {
 /// Entries belong to one [`GeometryWorkBudget`] and are valid only while its
 /// model index is unchanged. Failed evaluations are not retained because a
 /// later contact seed or route may produce a valid witness.
-pub(crate) struct BlendSurfaceFrameCache {
+pub(super) struct BlendSurfaceFrameCache {
     entries: VecDeque<BlendSurfaceFrameCacheEntry>,
     boundary_points: VecDeque<BlendBoundaryPointCacheEntry>,
 }
@@ -1133,7 +1133,7 @@ impl BlendSurfaceFrameCache {
             });
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         self.entries.clear();
         self.boundary_points.clear();
     }
@@ -1156,7 +1156,7 @@ struct BlendContactSeed {
 /// Keeping a small nearest-parameter set makes adaptive endpoint and midpoint
 /// sampling local without allowing a model-wide cache to select a branch from
 /// an unrelated intersection.
-pub(crate) struct BlendContactSeedCache {
+pub(super) struct BlendContactSeedCache {
     entries: Vec<BlendContactSeed>,
 }
 
@@ -1223,7 +1223,7 @@ impl BlendContactSeedCache {
     }
 }
 
-pub(crate) fn blend_surface_point_from_frame(
+fn blend_surface_point_from_frame(
     (center, tangent, first, second, radius): BlendSurfaceFrame,
     v: f64,
 ) -> Point3 {
@@ -1249,7 +1249,7 @@ pub(crate) fn blend_surface_u_derivative(
     blend_surface_u_derivative_with_index_and_budget(&index, surface, u, v, depth, &geometry_budget)
 }
 
-pub(crate) fn blend_surface_u_derivative_with_index_and_budget(
+fn blend_surface_u_derivative_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     u: f64,
@@ -1360,14 +1360,14 @@ pub(crate) fn blend_surface_u_derivative_with_index_and_budget(
     ))
 }
 
-pub(crate) struct BlendContactDerivativeContext<'a> {
-    pub(crate) index: &'a cadmpeg_ir::index::ModelIndex<'a>,
-    pub(crate) spine: &'a CurveId,
-    pub(crate) parameter: f64,
-    pub(crate) center: Point3,
-    pub(crate) center_derivative: Vector3,
-    pub(crate) radius: f64,
-    pub(crate) depth: usize,
+struct BlendContactDerivativeContext<'a> {
+    index: &'a cadmpeg_ir::index::ModelIndex<'a>,
+    spine: &'a CurveId,
+    parameter: f64,
+    center: Point3,
+    center_derivative: Vector3,
+    radius: f64,
+    depth: usize,
 }
 
 impl BlendContactDerivativeContext<'_> {
@@ -1427,7 +1427,7 @@ impl BlendContactDerivativeContext<'_> {
     }
 }
 
-pub(crate) fn blend_surface_frame_with_index_and_budget(
+fn blend_surface_frame_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     u: f64,
@@ -1562,7 +1562,7 @@ fn spine_contact_direction_with_index_and_budget_and_options(
     ))
 }
 
-pub(crate) fn blend_boundary_point_with_index_and_budget(
+fn blend_boundary_point_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     parameter: f64,
@@ -1602,7 +1602,7 @@ pub(crate) fn blend_boundary_point_with_index_and_budget(
 // Boundary inversion carries the geometric query state and the shared work
 // slice explicitly so nested certification cannot allocate a private budget.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn blend_boundary_parameter_with_index_and_budget(
+fn blend_boundary_parameter_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -1631,14 +1631,14 @@ pub(crate) fn blend_boundary_parameter_with_index_and_budget(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct BoundaryInverseTarget {
-    pub(crate) point: Point3,
-    pub(crate) seed: Option<Point2>,
-    pub(crate) tolerance: f64,
+pub(super) struct BoundaryInverseTarget {
+    pub(super) point: Point3,
+    pub(super) seed: Option<Point2>,
+    pub(super) tolerance: f64,
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_budget(
+pub(super) fn blend_boundary_parameter_from_support_pcurve_with_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -1661,7 +1661,7 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_budget(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
+fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -1698,7 +1698,7 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_bud
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
+pub(super) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     support: &SurfaceId,
     support_geometry: &SurfaceGeometry,
@@ -1730,7 +1730,7 @@ pub(crate) fn blend_boundary_parameter_from_contact_pcurve_with_geometry_and_bud
 /// the fast path, with a bounded 3D closest-point fallback.  Every result is
 /// certified by reproducing the source sample on the target support.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -1808,7 +1808,7 @@ pub(crate) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     certify(parameter)
 }
 
-pub(crate) fn blend_surface_parameters_from_point_with_index_and_budget(
+pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -2159,9 +2159,9 @@ pub(crate) fn closest_pcurve_parameters(
     ))
 }
 
-pub(crate) struct HomogeneousCurveSpans<const DIMENSION: usize> {
-    pub(crate) spans: Vec<BezierSpan<DIMENSION>>,
-    pub(crate) coordinate_tolerance: f64,
+struct HomogeneousCurveSpans<const DIMENSION: usize> {
+    spans: Vec<BezierSpan<DIMENSION>>,
+    coordinate_tolerance: f64,
 }
 
 #[cfg(test)]
@@ -2224,7 +2224,7 @@ fn homogeneous_pcurve_spans(
     })
 }
 
-pub(crate) fn stationary_rational_distance_candidates<const DIMENSION: usize>(
+fn stationary_rational_distance_candidates<const DIMENSION: usize>(
     homogeneous: &HomogeneousCurveSpans<DIMENSION>,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -2260,7 +2260,7 @@ pub(crate) fn stationary_rational_distance_candidates<const DIMENSION: usize>(
     Some(candidates)
 }
 
-pub(crate) fn rational_squared_distance_derivative<const DIMENSION: usize>(
+fn rational_squared_distance_derivative<const DIMENSION: usize>(
     controls: &[[f64; DIMENSION]],
 ) -> Option<Vec<f64>> {
     // For residual R/W, half the squared-distance derivative has numerator
@@ -2300,7 +2300,7 @@ pub(crate) fn rational_squared_distance_derivative<const DIMENSION: usize>(
     subtract_bernstein_polynomials(first, second)
 }
 
-pub(crate) fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64>> {
+fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64>> {
     let first_degree = first.len().checked_sub(1)?;
     let second_degree = second.len().checked_sub(1)?;
     let degree = first_degree.checked_add(second_degree)?;
@@ -2326,7 +2326,7 @@ pub(crate) fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64
         .collect()
 }
 
-pub(crate) fn binomial_coefficient(n: usize, k: usize) -> Option<f64> {
+fn binomial_coefficient(n: usize, k: usize) -> Option<f64> {
     let k = k.min(n.checked_sub(k)?);
     (1..=k).try_fold(1.0, |value, index| {
         let next = value * (n - k + index) as f64 / index as f64;
@@ -2334,7 +2334,7 @@ pub(crate) fn binomial_coefficient(n: usize, k: usize) -> Option<f64> {
     })
 }
 
-pub(crate) fn add_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
+fn add_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
     let result = (first.len() == second.len()).then(|| {
         first
             .into_iter()
@@ -2348,7 +2348,7 @@ pub(crate) fn add_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Op
         .then_some(result)
 }
 
-pub(crate) fn sum_bernstein_polynomials(
+fn sum_bernstein_polynomials(
     polynomials: impl IntoIterator<Item = Option<Vec<f64>>>,
 ) -> Option<Vec<f64>> {
     polynomials.into_iter().try_fold(None, |sum, polynomial| {
@@ -2360,10 +2360,7 @@ pub(crate) fn sum_bernstein_polynomials(
     })?
 }
 
-pub(crate) fn subtract_bernstein_polynomials(
-    first: Vec<f64>,
-    second: Vec<f64>,
-) -> Option<Vec<f64>> {
+fn subtract_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
     let result = (first.len() == second.len()).then(|| {
         first
             .into_iter()
@@ -2377,18 +2374,18 @@ pub(crate) fn subtract_bernstein_polynomials(
         .then_some(result)
 }
 
-pub(crate) enum ScalarBezierRoots {
+pub(in crate::decode) enum ScalarBezierRoots {
     Constant,
     Isolated(Vec<f64>),
 }
 
 #[derive(Clone)]
-pub(crate) struct ScalarBezierSpan {
-    pub(crate) domain: [f64; 2],
-    pub(crate) controls: Vec<f64>,
+pub(super) struct ScalarBezierSpan {
+    pub(super) domain: [f64; 2],
+    pub(super) controls: Vec<f64>,
 }
 
-pub(crate) fn scalar_bezier_roots_with_budget(
+pub(super) fn scalar_bezier_roots_with_budget(
     span: ScalarBezierSpan,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<ScalarBezierRoots> {
@@ -2455,7 +2452,7 @@ pub(crate) fn scalar_bezier_roots_with_budget(
     Some(ScalarBezierRoots::Isolated(parameters))
 }
 
-pub(crate) fn scalar_bernstein_sign_variations(controls: &[f64]) -> usize {
+fn scalar_bernstein_sign_variations(controls: &[f64]) -> usize {
     // Bernstein-form Descartes variation bounds the roots in the open span.
     // Exact zero controls do not contribute a sign.
     controls
@@ -2472,7 +2469,7 @@ pub(crate) fn scalar_bernstein_sign_variations(controls: &[f64]) -> usize {
         .1
 }
 
-pub(crate) fn subdivide_scalar_bezier_span(
+fn subdivide_scalar_bezier_span(
     span: ScalarBezierSpan,
     middle: f64,
 ) -> (ScalarBezierSpan, ScalarBezierSpan) {
@@ -2506,7 +2503,7 @@ pub(crate) fn subdivide_scalar_bezier_span(
     )
 }
 
-pub(crate) fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64; 2]) -> f64 {
+fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64; 2]) -> f64 {
     let fraction = (parameter - domain[0]) / (domain[1] - domain[0]);
     let mut values = controls.to_vec();
     while values.len() > 1 {
@@ -2519,12 +2516,12 @@ pub(crate) fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64
 }
 
 #[derive(Clone)]
-pub(crate) struct BezierSpan<const DIMENSION: usize> {
-    pub(crate) domain: [f64; 2],
-    pub(crate) controls: Vec<[f64; DIMENSION]>,
+pub(in crate::decode) struct BezierSpan<const DIMENSION: usize> {
+    pub(super) domain: [f64; 2],
+    pub(super) controls: Vec<[f64; DIMENSION]>,
 }
 
-pub(crate) fn bezier_spans<const DIMENSION: usize>(
+pub(super) fn bezier_spans<const DIMENSION: usize>(
     degree: usize,
     knots: &[f64],
     mut controls: Vec<[f64; DIMENSION]>,
@@ -2562,7 +2559,7 @@ pub(crate) fn bezier_spans<const DIMENSION: usize>(
     (!spans.is_empty()).then_some(spans)
 }
 
-pub(crate) fn insert_homogeneous_curve_knot<const DIMENSION: usize>(
+fn insert_homogeneous_curve_knot<const DIMENSION: usize>(
     degree: usize,
     knots: &mut Vec<f64>,
     controls: &mut Vec<[f64; DIMENSION]>,
@@ -2600,7 +2597,7 @@ pub(crate) fn insert_homogeneous_curve_knot<const DIMENSION: usize>(
     Some(())
 }
 
-pub(crate) fn homogeneous_residual_distance<const DIMENSION: usize>(
+pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     controls: &[[f64; DIMENSION]],
     parameter: f64,
     domain: [f64; 2],
@@ -2625,7 +2622,7 @@ pub(crate) fn homogeneous_residual_distance<const DIMENSION: usize>(
         / values[0][DIMENSION - 1]
 }
 
-pub(crate) fn closest_parameter_candidates(
+fn closest_parameter_candidates(
     candidates: impl IntoIterator<Item = (f64, f64)>,
     seed: Option<f64>,
 ) -> Option<Vec<f64>> {
@@ -2661,11 +2658,7 @@ pub(crate) fn closest_parameter_candidates(
     (!nearest.is_empty()).then_some(nearest)
 }
 
-pub(crate) fn canonical_periodic_parameter(
-    domain: [f64; 2],
-    periodic: bool,
-    parameter: f64,
-) -> f64 {
+fn canonical_periodic_parameter(domain: [f64; 2], periodic: bool, parameter: f64) -> f64 {
     if !periodic {
         return parameter;
     }
@@ -2673,7 +2666,7 @@ pub(crate) fn canonical_periodic_parameter(
     domain[0] + (parameter - domain[0]).rem_euclid(period)
 }
 
-pub(crate) fn lift_periodic_parameters(
+fn lift_periodic_parameters(
     mut parameters: Vec<f64>,
     domain: [f64; 2],
     periodic: bool,
@@ -2696,7 +2689,7 @@ pub(crate) fn lift_periodic_parameters(
     parameters
 }
 
-pub(crate) fn spine_contact_point_with_index_and_budget(
+fn spine_contact_point_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     support: &SurfaceId,
     spine: &CurveId,
@@ -2926,7 +2919,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
     Some(*candidate)
 }
 
-pub(crate) fn spine_contact_pcurve_with_index<'a>(
+pub(super) fn spine_contact_pcurve_with_index<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'a>,
     support: &SurfaceId,
     spine: &CurveId,
@@ -3030,7 +3023,7 @@ fn blend_surface_offset_with_index(
     (matches == 1).then_some(distance)
 }
 
-pub(crate) fn analytic_surface_offset(
+pub(super) fn analytic_surface_offset(
     support: &SurfaceGeometry,
     offset: &SurfaceGeometry,
 ) -> Option<f64> {
@@ -3207,7 +3200,7 @@ pub(crate) fn analytic_surface_offset(
     }
 }
 
-pub(crate) fn blend_contact_offset_matches(
+pub(super) fn blend_contact_offset_matches(
     support_offset: f64,
     spine_side_offset: f64,
     radius: f64,
@@ -3249,7 +3242,7 @@ fn surface_offset_lineage_with_index(
     Some((base, accumulated + distance))
 }
 
-pub(crate) fn blend_surface_definition_with_index(
+pub(super) fn blend_surface_definition_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
@@ -3451,7 +3444,7 @@ fn blend_surface_contact_direction_with_budget(
     ))
 }
 
-pub(crate) fn model_curve_point_with_index_and_budget(
+fn model_curve_point_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     parameter: f64,
@@ -3461,7 +3454,7 @@ pub(crate) fn model_curve_point_with_index_and_budget(
     curve_point_with_budget(&carrier.geometry, parameter, geometry_budget)
 }
 
-pub(crate) fn model_curve_tangent_with_index_and_budget(
+fn model_curve_tangent_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     parameter: f64,
@@ -3487,7 +3480,7 @@ pub(crate) fn closest_spine_parameter(
     closest_spine_parameter_with_index_and_budget(&index, curve, point, seed, &geometry_budget)
 }
 
-pub(crate) fn closest_spine_parameter_with_index_and_budget(
+pub(super) fn closest_spine_parameter_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     point: Point3,
@@ -3528,7 +3521,7 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
     }
 }
 
-pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
+fn closest_periodic_analytic_curve_parameter_with_budget(
     geometry: &SolvedCurveGeometry,
     point: Point3,
     seed: Option<f64>,
@@ -3602,7 +3595,7 @@ pub(crate) fn closest_periodic_analytic_curve_parameter_with_budget(
     .next()
 }
 
-pub(crate) fn real_polynomial_roots(coefficients: &[f64]) -> Option<Vec<f64>> {
+pub(super) fn real_polynomial_roots(coefficients: &[f64]) -> Option<Vec<f64>> {
     if coefficients
         .iter()
         .any(|coefficient| !coefficient.is_finite())
@@ -3624,7 +3617,7 @@ pub(crate) fn real_polynomial_roots(coefficients: &[f64]) -> Option<Vec<f64>> {
     Some(roots)
 }
 
-pub(crate) fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
+fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<Vec<f64>> {
     let mut coefficients = coefficients.to_vec();
     while coefficients
         .last()
@@ -3729,7 +3722,7 @@ pub(crate) fn polynomial_roots_in_unit_interval(coefficients: &[f64]) -> Option<
     Some(roots)
 }
 
-pub(crate) fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
+fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
     coefficients
         .iter()
         .rev()
@@ -3746,7 +3739,7 @@ pub(crate) fn closest_nurbs_curve_parameter(
     closest_nurbs_curve_parameter_with_budget(curve, point, seed, &geometry_budget)
 }
 
-pub(crate) fn closest_nurbs_curve_parameter_with_budget(
+fn closest_nurbs_curve_parameter_with_budget(
     curve: &NurbsCurve,
     point: Point3,
     seed: Option<f64>,
@@ -3818,11 +3811,11 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
         .next()
 }
 
-pub(crate) fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {
+fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {
     dot_vector(cross_vector(first, second), axis).atan2(dot_vector(first, second))
 }
 
-pub(crate) fn rodrigues_rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
+fn rodrigues_rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
     let cross = cross_vector(axis, vector);
     let dot = dot_vector(axis, vector);
     Vector3::new(
