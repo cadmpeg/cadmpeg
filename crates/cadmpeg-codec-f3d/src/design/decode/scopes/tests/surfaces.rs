@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_test_support::bytes::put_u32;
+use cadmpeg_test_support::bytes::{put_u32, put_u64};
 
 use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
 use crate::design::decode::scopes::surfaces::{
     exact_ruled_surface_operation, exact_surface_stitch_operation,
 };
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::put_u64;
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::{

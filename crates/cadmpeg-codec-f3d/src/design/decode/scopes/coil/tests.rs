@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::bytes::put_u32;
+use cadmpeg_test_support::bytes::{put_u32, put_u64};
 
 use super::exact_coil_placement;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::sketch::IndexedRecordOffsets;
-use crate::design::test_support::put_u64;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_selection;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;

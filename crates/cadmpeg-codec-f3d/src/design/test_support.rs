@@ -70,10 +70,6 @@ pub(crate) fn parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
-pub(crate) fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
-    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-}
-
 pub(crate) fn identity_matrix() -> [[f64; 4]; 4] {
     [
         [1.0, 0.0, 0.0, 0.0],
