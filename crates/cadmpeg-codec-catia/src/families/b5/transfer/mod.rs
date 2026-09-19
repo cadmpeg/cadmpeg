@@ -1222,19 +1222,5 @@ fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool
     })
 }
 
-/// Normalize by per-component division.
-///
-/// This is not the same function as
-/// [`graph::unit_by_reciprocal_multiply`](super::graph). The two accept and
-/// refuse exactly the same inputs, but the results differ in the last bit on
-/// about half of all finite directions, because the graph form rounds
-/// `1.0 / length` once before the multiply. For example `[-4.898619485211566,
-/// -0.09129825816118142, -1.010178704225238]` normalizes here to a third
-/// component of `-0.20193371236201627` and there to `-0.20193371236201624`.
-fn unit_by_component_division(value: [f64; 3]) -> Option<[f64; 3]> {
-    let length = value[0].hypot(value[1]).hypot(value[2]);
-    (length.is_finite() && length != 0.0)
-        .then(|| [value[0] / length, value[1] / length, value[2] / length])
-}
 #[cfg(test)]
 mod tests;

@@ -4,13 +4,13 @@ use super::super::super::graph::{
     B5Loop, B5LoopMember, B5OffsetSurface, B5ParameterIncidence, B5Pcurve,
     B5PcurveParameterization, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
+use super::super::super::vecmath::unit;
 use super::super::edges::{
     b5_edge_support_definition, b5_supports_follow_edge, ordered_subrange,
     orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::surfaces::{rational_arc, revolve_nurbs};
-use super::super::unit_by_component_division;
 use super::super::vertices::transfer_vertex_tolerances;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::tests::test_loop_members;
@@ -34,11 +34,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[test]
 fn unit_preserves_tiny_finite_direction() {
-    assert_eq!(
-        unit_by_component_division([1e-200, 0.0, 0.0]),
-        Some([1.0, 0.0, 0.0])
-    );
-    assert_eq!(unit_by_component_division([0.0, 0.0, 0.0]), None);
+    assert_eq!(unit([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
+    assert_eq!(unit([0.0, 0.0, 0.0]), None);
 }
 
 #[test]
