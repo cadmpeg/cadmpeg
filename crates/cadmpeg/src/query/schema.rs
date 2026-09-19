@@ -16,18 +16,18 @@ use super::{cell, print_json};
 
 /// Target selection for `query schema`.
 #[derive(Debug, Args)]
-pub struct SchemaArgs {
+pub(crate) struct SchemaArgs {
     /// Schema source; omit to list model arenas.
     #[command(subcommand)]
-    pub target: Option<SchemaTarget>,
+    target: Option<SchemaTarget>,
     /// Print the schema as JSON.
     #[arg(long, global = true)]
-    pub json: bool,
+    json: bool,
 }
 
 /// Source of a schema projection.
 #[derive(Debug, Subcommand)]
-pub enum SchemaTarget {
+enum SchemaTarget {
     /// Describe compiled IR types.
     Types {
         /// Model arena; omit to list all model arenas.
@@ -47,7 +47,7 @@ pub enum SchemaTarget {
 const SHAPE: &str = "the generated schema does not have the expected shape";
 
 /// Runs `query schema`.
-pub fn run(args: &SchemaArgs) -> Result<()> {
+pub(super) fn run(args: &SchemaArgs) -> Result<()> {
     match &args.target {
         None => compile_run(None, args.json),
         Some(SchemaTarget::Types { arena }) => compile_run(arena.as_deref(), args.json),

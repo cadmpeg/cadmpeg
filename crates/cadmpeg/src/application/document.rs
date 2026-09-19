@@ -6,17 +6,17 @@ use cadmpeg_registry::Selection;
 
 /// A neutral document and the source information available for later export.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LoadedDocument {
+pub(crate) struct LoadedDocument {
     /// The format-neutral document.
-    pub ir: CadIr,
+    pub(crate) ir: CadIr,
     /// Whether the document came from neutral JSON or a native decoder.
-    pub origin: LoadOrigin,
+    pub(crate) origin: LoadOrigin,
 }
 
 /// Source information attached to a loaded document.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
-pub enum LoadOrigin {
+pub(crate) enum LoadOrigin {
     /// The document was loaded without native decode metadata.
     Neutral,
     /// Decode metadata restored from a neutral document sidecar.
@@ -39,7 +39,7 @@ pub enum LoadOrigin {
 
 impl LoadedDocument {
     /// Creates a document from a neutral CADIR payload.
-    pub const fn neutral(ir: CadIr) -> Self {
+    pub(crate) const fn neutral(ir: CadIr) -> Self {
         Self {
             ir,
             origin: LoadOrigin::Neutral,
@@ -47,7 +47,7 @@ impl LoadedDocument {
     }
 
     /// Creates a document from a native decode result.
-    pub fn decoded(result: DecodeResult, selection: Selection) -> Self {
+    pub(crate) fn decoded(result: DecodeResult, selection: Selection) -> Self {
         let (ir, report, fidelity) = result.into_parts();
         Self {
             ir,
@@ -60,7 +60,7 @@ impl LoadedDocument {
     }
 
     /// Creates a neutral load whose matching sidecar restores decode origin.
-    pub fn restored(ir: CadIr, report: DecodeReport, fidelity: SourceFidelity) -> Self {
+    pub(crate) fn restored(ir: CadIr, report: DecodeReport, fidelity: SourceFidelity) -> Self {
         Self {
             ir,
             origin: LoadOrigin::Restored { report, fidelity },
@@ -68,7 +68,7 @@ impl LoadedDocument {
     }
 
     /// Returns the native decode report, when this document has decoded origin.
-    pub const fn decode_report(&self) -> Option<&DecodeReport> {
+    pub(crate) const fn decode_report(&self) -> Option<&DecodeReport> {
         match &self.origin {
             LoadOrigin::Neutral => None,
             LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. } => {
@@ -78,7 +78,7 @@ impl LoadedDocument {
     }
 
     /// Returns source fidelity, when this document has decoded origin.
-    pub const fn fidelity(&self) -> Option<&SourceFidelity> {
+    pub(crate) const fn fidelity(&self) -> Option<&SourceFidelity> {
         match &self.origin {
             LoadOrigin::Neutral => None,
             LoadOrigin::Decoded { fidelity, .. } | LoadOrigin::Restored { fidelity, .. } => {

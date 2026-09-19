@@ -5,6 +5,6 @@
 use assert_cmd::Command;
 
 /// The built `cadmpeg` binary, ready to take arguments.
-pub fn cadmpeg() -> Command {
+pub(crate) fn cadmpeg() -> Command {
     Command::cargo_bin("cadmpeg").unwrap()
 }

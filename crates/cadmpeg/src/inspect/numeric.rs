@@ -12,7 +12,7 @@ use cadmpeg_core::bytes::assemble_u64_le;
 /// `0x`/`0X` selects hexadecimal, anything else is decimal. Underscores
 /// separate digit groups and are ignored. The value is unsigned; a leading
 /// sign is rejected so that a mistyped offset never silently wraps.
-pub fn parse_offset(text: &str) -> Result<u64, String> {
+pub(super) fn parse_offset(text: &str) -> Result<u64, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("expected a byte offset, found an empty value".to_string());
@@ -41,7 +41,7 @@ pub fn parse_offset(text: &str) -> Result<u64, String> {
 
 /// Byte order applied to a multi-byte scalar read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum Endian {
+pub(super) enum Endian {
     /// Least significant byte first.
     Le,
     /// Most significant byte first.
@@ -50,7 +50,7 @@ pub enum Endian {
 
 impl Endian {
     /// Returns the two-letter suffix used in output and in layout specs.
-    pub const fn suffix(self) -> &'static str {
+    const fn suffix(self) -> &'static str {
         match self {
             Self::Le => "le",
             Self::Be => "be",
@@ -64,7 +64,7 @@ impl Endian {
 /// help list — but catches the recurring text and hex-dump guesses with an
 /// error that names the tool that does that job.
 #[derive(Clone)]
-pub struct ScalarTypeParser;
+pub(super) struct ScalarTypeParser;
 
 impl clap::builder::TypedValueParser for ScalarTypeParser {
     type Value = ScalarType;
@@ -108,7 +108,7 @@ impl clap::builder::TypedValueParser for ScalarTypeParser {
 
 /// A fixed-width scalar that a decoder reads out of a record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum ScalarType {
+pub(super) enum ScalarType {
     /// Unsigned 8-bit.
     U8,
     /// Signed 8-bit.
@@ -133,10 +133,10 @@ pub enum ScalarType {
 
 impl ScalarType {
     /// The widest encoding any variant uses.
-    pub const MAX_WIDTH: usize = 8;
+    pub(super) const MAX_WIDTH: usize = 8;
 
     /// Returns the encoded width in bytes.
-    pub const fn width(self) -> NonZeroUsize {
+    pub(super) const fn width(self) -> NonZeroUsize {
         match self {
             Self::U8 | Self::I8 => NonZeroUsize::MIN,
             Self::U16 | Self::I16 => NonZeroUsize::MIN.saturating_add(1),
@@ -146,12 +146,12 @@ impl ScalarType {
     }
 
     /// Returns true when the encoding is one byte wide and byte order is moot.
-    pub const fn is_single_byte(self) -> bool {
+    pub(super) const fn is_single_byte(self) -> bool {
         self.width().get() == 1
     }
 
     /// Returns the spec name without a byte-order suffix.
-    pub const fn base_name(self) -> &'static str {
+    const fn base_name(self) -> &'static str {
         match self {
             Self::U8 => "u8",
             Self::I8 => "i8",
@@ -167,7 +167,7 @@ impl ScalarType {
     }
 
     /// Returns the display name, with a byte-order suffix for wide types.
-    pub fn display_name(self, endian: Endian) -> String {
+    pub(super) fn display_name(self, endian: Endian) -> String {
         if self.is_single_byte() {
             self.base_name().to_string()
         } else {
@@ -176,7 +176,7 @@ impl ScalarType {
     }
 
     /// Parses a base type name with no byte-order suffix.
-    pub fn from_base_name(name: &str) -> Option<Self> {
+    pub(super) fn from_base_name(name: &str) -> Option<Self> {
         [
             Self::U8,
             Self::I8,
@@ -194,7 +194,7 @@ impl ScalarType {
     }
 
     /// Returns a window over the leading [`ScalarType::width`] bytes of a maximum-width buffer.
-    pub fn window_of(self, buffer: &[u8; ScalarType::MAX_WIDTH]) -> ScalarWindow<'_> {
+    pub(super) fn window_of(self, buffer: &[u8; ScalarType::MAX_WIDTH]) -> ScalarWindow<'_> {
         ScalarWindow {
             ty: self,
             bytes: &buffer[..self.width().get()],
@@ -204,14 +204,14 @@ impl ScalarType {
 
 /// A byte window of exactly the width of the scalar type that minted it.
 #[derive(Debug, Clone, Copy)]
-pub struct ScalarWindow<'a> {
+pub(in crate::inspect) struct ScalarWindow<'a> {
     ty: ScalarType,
     bytes: &'a [u8],
 }
 
 impl ScalarWindow<'_> {
     /// Decodes the window in the stated byte order.
-    pub fn read(self, endian: Endian) -> ScalarValue {
+    pub(super) fn read(self, endian: Endian) -> ScalarValue {
         let bytes = self.bytes;
         let mut raw = [0u8; ScalarType::MAX_WIDTH];
         raw[..bytes.len()].copy_from_slice(bytes);
@@ -236,7 +236,7 @@ impl ScalarWindow<'_> {
 
 /// A decoded scalar whose variant retains its exact encoded type.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ScalarValue {
+pub(super) enum ScalarValue {
     U8(u8),
     I8(i8),
     U16(u16),
@@ -251,7 +251,7 @@ pub enum ScalarValue {
 
 impl ScalarValue {
     /// Returns the encoded type the value was decoded from.
-    pub const fn ty(self) -> ScalarType {
+    pub(super) const fn ty(self) -> ScalarType {
         match self {
             Self::U8(_) => ScalarType::U8,
             Self::I8(_) => ScalarType::I8,
@@ -267,7 +267,7 @@ impl ScalarValue {
     }
 
     /// Renders the value the way a human reads it.
-    pub fn decimal(self) -> String {
+    pub(super) fn decimal(self) -> String {
         match self {
             Self::U8(value) => value.to_string(),
             Self::I8(value) => value.to_string(),
@@ -286,7 +286,7 @@ impl ScalarValue {
     ///
     /// Signed values print their two's-complement pattern and floats print
     /// their IEEE-754 bits, so the text always matches what is in the file.
-    pub fn hex(self) -> String {
+    pub(super) fn hex(self) -> String {
         let bits = match self {
             Self::U8(value) => u64::from(value),
             Self::I8(value) => u64::from(value as u8),
