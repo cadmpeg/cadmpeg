@@ -18,7 +18,22 @@ fn offset_digits(last_offset: u64) -> usize {
 /// eights, and the printable ASCII for the same bytes between pipes. A short
 /// final line is padded so the gutter stays in one column.
 pub(super) fn render(base: u64, bytes: &[u8], width: NonZeroUsize) -> String {
-    let width = width.get();
+    rows(base, bytes, width.get())
+}
+
+/// Renders `bytes` at sixteen bytes per line, the width the `hex` command
+/// takes when its argument states none.
+pub(super) fn render_default_width(base: u64, bytes: &[u8]) -> String {
+    rows(base, bytes, 16)
+}
+
+/// Writes one line per `width` bytes of `bytes`, starting at absolute offset
+/// `base`.
+///
+/// The two entry points above are the only callers: one states the row length
+/// as a `NonZeroUsize` and the other as the literal beside this walk, so the
+/// row length is at least one byte.
+fn rows(base: u64, bytes: &[u8], width: usize) -> String {
     let last = base.saturating_add(bytes.len().saturating_sub(1) as u64);
     let digits = offset_digits(last);
     let mut out = String::new();
