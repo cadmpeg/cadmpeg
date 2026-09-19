@@ -1333,7 +1333,7 @@ fn zero_entity_support_pcurve(
                 .pos
                 .checked_add(pole_start + index.checked_mul(16)?)?;
             let point = Point2::new(f64_le(data, at)?, f64_le(data, at.checked_add(8)?)?);
-            (point.u.is_finite() && point.v.is_finite()).then_some(point)
+            point.is_finite().then_some(point)
         })
         .collect::<Option<Vec<_>>>()?;
     let weights = if let Some(weight_start) = weight_start {
@@ -1401,7 +1401,7 @@ pub(super) fn zero_entity_neutral_pcurve(
         .iter()
         .map(|point| {
             let point = Point2::new(point.u * u_scale, point.v * v_scale);
-            ([point.u, point.v].into_iter().all(f64::is_finite)).then_some(point)
+            point.is_finite().then_some(point)
         })
         .collect::<Option<Vec<_>>>()?;
     Some(PcurveGeometry::Nurbs {

@@ -2122,10 +2122,6 @@ fn e5_stored_pcurve_reversed(
     parameter_ranges_reversed(parameters, native_range)
 }
 
-fn finite_point2(point: Point2) -> bool {
-    [point.u, point.v].into_iter().all(f64::is_finite)
-}
-
 fn unique_endpoint_direction(forward_error: f64, reverse_error: f64) -> Option<bool> {
     match (
         forward_error.is_finite() && forward_error <= E5_ENDPOINT_MATCH_TOLERANCE,
@@ -2162,8 +2158,8 @@ fn e5_pcurve_on_surface(
                 direction[0] * decoded_surface.uv_scale[0],
                 direction[1] * decoded_surface.uv_scale[1],
             );
-            if !finite_point2(origin)
-                || !finite_point2(direction)
+            if !origin.is_finite()
+                || !direction.is_finite()
                 || !range.iter().copied().all(f64::is_finite)
             {
                 return None;
@@ -2174,7 +2170,7 @@ fn e5_pcurve_on_surface(
                     origin.v + parameter * direction.v,
                 )
             });
-            if !uv.iter().copied().all(finite_point2) {
+            if !uv.iter().copied().all(|point| point.is_finite()) {
                 return None;
             }
             let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
@@ -2217,7 +2213,11 @@ fn e5_pcurve_on_surface(
                     Ok(())
                 })
                 .ok()?;
-            if !nurbs.control_points().iter().copied().all(finite_point2)
+            if !nurbs
+                .control_points()
+                .iter()
+                .copied()
+                .all(|point| point.is_finite())
                 || !nurbs.knots().iter().copied().all(f64::is_finite)
                 || nurbs
                     .weights()
@@ -2297,7 +2297,11 @@ fn e5_pcurve_on_surface(
                 return None;
             };
             if !nurbs.knots().iter().copied().all(f64::is_finite)
-                || !nurbs.control_points().iter().copied().all(finite_point2)
+                || !nurbs
+                    .control_points()
+                    .iter()
+                    .copied()
+                    .all(|point| point.is_finite())
                 || nurbs
                     .weights()
                     .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
@@ -2332,7 +2336,10 @@ fn e5_pcurve_on_surface(
                 .all(|value| value.is_finite() && value != 0.0)
                 || !range.iter().copied().all(f64::is_finite)
                 || !knots.iter().copied().all(f64::is_finite)
-                || !control_points.iter().copied().all(finite_point2)
+                || !control_points
+                    .iter()
+                    .copied()
+                    .all(|point| point.is_finite())
             {
                 return None;
             }
@@ -2522,7 +2529,7 @@ fn e5_boundary_curve(
     };
     let origin = line_pcurve.origin();
     let direction = line_pcurve.direction();
-    if !finite_point2(*origin) || !finite_point2(*direction) {
+    if !origin.is_finite() || !direction.is_finite() {
         return None;
     }
     let start_uv = Point2::new(
@@ -2531,7 +2538,7 @@ fn e5_boundary_curve(
     );
     let span = range[1] - range[0];
     let span_direction = Point2::new(span * direction.u, span * direction.v);
-    if !finite_point2(start_uv) || !span.is_finite() || !finite_point2(span_direction) {
+    if !start_uv.is_finite() || !span.is_finite() || !span_direction.is_finite() {
         return None;
     }
 
