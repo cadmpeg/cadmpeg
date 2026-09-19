@@ -85,10 +85,53 @@ pub(super) fn check_presentation(
                 PresentationItem::Source { .. } => true,
             };
             if !resolved {
-                invalid_layer(
+                presentation_error(
                     findings,
                     layer.id.as_str(),
                     "unresolved presentation-layer item",
+                );
+            }
+        }
+    }
+}
+
+/// Refuse a non-finite float carried by an appearance texture.
+///
+/// [`crate::appearance::TextureMap2d`] and [`crate::appearance::BumpMap`] are
+/// plain carriers: every float is a public `f64` with no refusing constructor,
+/// so the arena holds whatever a decoder installs. This is the one place that
+/// states the value is illegal.
+pub(super) fn check_appearances(ir: &CadIr, findings: &mut Vec<Finding>) {
+    for appearance in &ir.model.appearances {
+        for texture in &appearance.textures {
+            let mapping = &texture.mapping;
+            let mapped = [
+                mapping.u_offset,
+                mapping.v_offset,
+                mapping.u_scale,
+                mapping.v_scale,
+                mapping.rotation,
+                mapping.real_world_offset_x,
+                mapping.real_world_offset_y,
+                mapping.real_world_scale_x,
+                mapping.real_world_scale_y,
+            ];
+            if !mapped.iter().all(|value| value.is_finite()) {
+                presentation_error(
+                    findings,
+                    appearance.id.as_str(),
+                    "non-finite texture mapping value",
+                );
+            }
+            if texture
+                .bump
+                .as_ref()
+                .is_some_and(|bump| !bump.depth.is_finite() || !bump.normal_scale.is_finite())
+            {
+                presentation_error(
+                    findings,
+                    appearance.id.as_str(),
+                    "non-finite texture bump-map value",
                 );
             }
         }
@@ -108,7 +151,7 @@ fn invalid_state(findings: &mut Vec<Finding>, entity: Option<String>, message: &
     });
 }
 
-fn invalid_layer(findings: &mut Vec<Finding>, entity: &str, message: &str) {
+fn presentation_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
     findings.push(Finding {
         check: Check::Presentation,
         severity: Severity::Error,
