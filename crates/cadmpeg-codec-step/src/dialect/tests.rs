@@ -4,7 +4,14 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    dialect_loss, AlternateEncoding, StepDialect, DECLARED_FILE_SCHEMA_IDENTIFIER,
+    DECLARED_FILE_SCHEMA_IDENTIFIERS, DECLARED_IMPLEMENTATION_LEVEL, DECLARED_LONG_FORM_ARCS,
+    FORMAT, NEAREST_STRATEGY,
+};
+use crate::loss::StepLossCode;
+use crate::options::StepSchema;
+use cadmpeg_core::dialect::Admission;
 use std::collections::BTreeSet;
 
 #[test]

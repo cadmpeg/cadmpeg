@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-use super::*;
+use super::{
+    byte_accounting, claim_trivia, decode_exchange_mode, implicit_face_plane_work,
+    semantic_input_work, ByteClass, Packaging,
+};
 use crate::loss::StepLossCode;
+use std::collections::HashSet;
 
 #[test]
 fn byte_accounting_reports_an_unrecognized_suffix() {
