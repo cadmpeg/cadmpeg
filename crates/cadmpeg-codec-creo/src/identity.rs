@@ -1,7 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Checked identity namespaces used by the Creo decoder.
+//! Checked identity namespaces used by the Creo decoder, and the row
+//! uniqueness a namespace identity depends on.
+
+use std::collections::BTreeMap;
 
 use cadmpeg_ir::ids::IdentityNamespace;
+
+/// Return the rows whose native identifier, read by `id`, occurs exactly once.
+///
+/// A repeated identifier names no single row, so the namespace identity it
+/// would carry is not established and the row is left out.
+pub(crate) fn uniquely_identified_rows<T>(rows: &[T], id: impl Fn(&T) -> u32) -> Vec<&T> {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for row in rows {
+        *counts.entry(id(row)).or_default() += 1;
+    }
+    rows.iter()
+        .filter(|row| counts.get(&id(row)) == Some(&1))
+        .collect()
+}
 
 pub(crate) const VISIBGEOM_BODY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "visibgeom", "body");

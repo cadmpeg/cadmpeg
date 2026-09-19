@@ -14,13 +14,7 @@ use crate::curve::CurveTopologyRow;
 
 /// Return rows whose native curve identifier occurs exactly once.
 pub(crate) fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveTopologyRow> {
-    let mut counts = BTreeMap::<u32, usize>::new();
-    for row in rows {
-        *counts.entry(row.id).or_default() += 1;
-    }
-    rows.iter()
-        .filter(|row| counts.get(&row.id) == Some(&1))
-        .collect()
+    crate::identity::uniquely_identified_rows(rows, |row| row.id)
 }
 
 /// One of the two native curve suffix sides.
