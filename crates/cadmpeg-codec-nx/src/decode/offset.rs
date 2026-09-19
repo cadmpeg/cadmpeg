@@ -1008,7 +1008,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         let Some(mut candidate) = candidate else {
             return;
         };
-        if !candidate.u.is_finite() || !candidate.v.is_finite() {
+        if !candidate.is_finite() {
             return;
         }
         if !linear_extension {
@@ -1164,7 +1164,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
     let domain = surface_parameter_domain_with_index(index, surface);
     let derivative_domain = (!linear_extension).then_some(domain).flatten();
     let mut parameters = seed;
-    if !parameters.u.is_finite() || !parameters.v.is_finite() {
+    if !parameters.is_finite() {
         return None;
     }
     if !linear_extension {

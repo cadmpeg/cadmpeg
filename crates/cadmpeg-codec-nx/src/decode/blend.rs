@@ -1751,8 +1751,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
         return None;
     }
     let source_uv = pcurve_uv(source_pcurve, curve_parameter)?;
-    if !source_uv.u.is_finite()
-        || !source_uv.v.is_finite()
+    if !source_uv.is_finite()
         || !target.point.is_finite()
         || !target.tolerance.is_finite()
         || target.tolerance < 0.0
@@ -2178,11 +2177,8 @@ fn homogeneous_pcurve_spans(
         || knots.len() != count.checked_add(degree)?.checked_add(1)?
         || knots.iter().any(|knot| !knot.is_finite())
         || !knots_nondecreasing(knots)
-        || control_points
-            .iter()
-            .any(|control| !control.u.is_finite() || !control.v.is_finite())
-        || !point.u.is_finite()
-        || !point.v.is_finite()
+        || control_points.iter().any(|control| !control.is_finite())
+        || !point.is_finite()
     {
         return None;
     }

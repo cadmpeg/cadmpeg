@@ -415,8 +415,7 @@ pub(super) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> boo
     match pcurve {
         None => true,
         Some(PcurveGeometry::Nurbs { nurbs }) => nurbs.control_points().iter().any(|point| {
-            !point.u.is_finite()
-                || !point.v.is_finite()
+            !point.is_finite()
                 || missing_support_parameter(point.u)
                 || missing_support_parameter(point.v)
         }),
@@ -425,7 +424,7 @@ pub(super) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> boo
             let direction = *line_pcurve.direction();
             [origin, direction]
                 .into_iter()
-                .any(|point| !point.u.is_finite() || !point.v.is_finite())
+                .any(|point| !point.is_finite())
         }
         Some(_) => false,
     }
@@ -436,8 +435,7 @@ fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> O
         return None;
     };
     nurbs.control_points().get(index).copied().filter(|point| {
-        point.u.is_finite()
-            && point.v.is_finite()
+        point.is_finite()
             && !missing_support_parameter(point.u)
             && !missing_support_parameter(point.v)
     })
