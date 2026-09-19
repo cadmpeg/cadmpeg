@@ -11,7 +11,7 @@ pub(crate) mod target;
 
 /// A STEP instance name such as `#42`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Ref(pub u64);
+pub(crate) struct Ref(pub u64);
 
 impl std::fmt::Display for Ref {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -20,7 +20,7 @@ impl std::fmt::Display for Ref {
 }
 
 /// Accumulates DATA instances in allocation order and counts their entity types.
-pub struct Emitter {
+pub(crate) struct Emitter {
     lines: Vec<String>,
     counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
@@ -28,7 +28,7 @@ pub struct Emitter {
 }
 
 impl Emitter {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Emitter {
             lines: Vec::new(),
             counts: BTreeMap::new(),
@@ -40,7 +40,7 @@ impl Emitter {
     ///
     /// `type_` is also the entity-count key. Complex instances use their leading
     /// keyword as the key.
-    pub fn emit(&mut self, type_: &'static str, params: &str) -> Ref {
+    pub(crate) fn emit(&mut self, type_: &'static str, params: &str) -> Ref {
         let id = self.lines.len() as u64 + 1;
         self.lines.push(format!("#{id} = {type_}({params});"));
         *self.counts.entry(type_).or_insert(0) += 1;
@@ -50,7 +50,7 @@ impl Emitter {
     /// Append a preformatted entity or complex-instance body.
     ///
     /// `tally` supplies its entity-count key.
-    pub fn emit_raw(&mut self, tally: &'static str, body: &str) -> Ref {
+    pub(crate) fn emit_raw(&mut self, tally: &'static str, body: &str) -> Ref {
         let id = self.lines.len() as u64 + 1;
         self.lines.push(format!("#{id} = {body};"));
         *self.counts.entry(tally).or_insert(0) += 1;
@@ -58,7 +58,7 @@ impl Emitter {
     }
 
     /// Emit a value-like leaf or reuse an identical encoded instance.
-    pub fn emit_interned(&mut self, type_: &'static str, params: &str) -> Ref {
+    pub(crate) fn emit_interned(&mut self, type_: &'static str, params: &str) -> Ref {
         let key = format!("{type_}|{params}");
         if let Some(r) = self.interned.get(&key) {
             return *r;
@@ -68,7 +68,7 @@ impl Emitter {
         r
     }
 
-    pub fn counts(&self) -> BTreeMap<String, usize> {
+    pub(crate) fn counts(&self) -> BTreeMap<String, usize> {
         self.counts
             .iter()
             .map(|(type_, count)| ((*type_).to_string(), *count))
@@ -76,7 +76,7 @@ impl Emitter {
     }
 
     /// Consume the emitter and return one encoded DATA instance per element.
-    pub fn into_lines(self) -> Vec<String> {
+    pub(crate) fn into_lines(self) -> Vec<String> {
         self.lines
     }
 }
@@ -85,7 +85,7 @@ impl Emitter {
 ///
 /// The result always contains a decimal point, including scientific notation.
 /// Non-finite inputs become `0.`.
-pub fn real(v: f64) -> String {
+pub(crate) fn real(v: f64) -> String {
     if !v.is_finite() {
         return "0.".to_string();
     }
@@ -117,12 +117,12 @@ pub fn real(v: f64) -> String {
 ///
 /// Apostrophes are doubled. Non-ASCII and control characters use
 /// `\X2\..\X0\` or `\X4\..\X0\` hexadecimal notation, keeping the encoded file 7-bit.
-pub fn string(s: &str) -> String {
+pub(crate) fn string(s: &str) -> String {
     format!("'{}'", crate::strings::encode(s))
 }
 
 /// Join instance references into a Part 21 aggregate such as `(#1,#2,#3)`.
-pub fn refs(items: &[Ref]) -> String {
+pub(crate) fn refs(items: &[Ref]) -> String {
     let mut out = String::from("(");
     for (i, r) in items.iter().enumerate() {
         if i > 0 {

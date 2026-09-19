@@ -46,12 +46,12 @@ const EPS_TOPOLOGY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 mod admissions;
 
 pub(super) struct TopologyData {
-    pub body_by_root: BTreeMap<u64, Vec<BodyId>>,
+    pub(super) body_by_root: BTreeMap<u64, Vec<BodyId>>,
     shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
-    pub body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
-    pub faces_by_source: BTreeMap<u64, Vec<FaceId>>,
-    pub edges_by_source: BTreeMap<u64, Vec<EdgeId>>,
-    pub vertices_by_source: BTreeMap<u64, Vec<VertexId>>,
+    pub(super) body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
+    pub(super) faces_by_source: BTreeMap<u64, Vec<FaceId>>,
+    pub(super) edges_by_source: BTreeMap<u64, Vec<EdgeId>>,
+    pub(super) vertices_by_source: BTreeMap<u64, Vec<VertexId>>,
 }
 
 fn topology_commit_error(context: &str, error: &DraftError) -> String {

@@ -64,21 +64,21 @@ pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
 }
 
 /// Fully scanned container used by inspection and decode.
-pub struct Scan<'a> {
+pub(crate) struct Scan<'a> {
     /// Container summary entries.
-    pub entries: Vec<ContainerEntry>,
+    pub(crate) entries: Vec<ContainerEntry>,
     /// Persistence metadata.
-    pub document: DocumentFacts,
+    pub(crate) document: DocumentFacts,
     /// Declared persistence schema version, owned by the source declaration.
-    pub schema_version: String,
+    pub(crate) schema_version: String,
     /// Exact physical archive partition.
-    pub ledger: Vec<ArchiveSpan>,
+    pub(crate) ledger: Vec<ArchiveSpan>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
-    pub data: BTreeMap<String, View<'a>>,
+    pub(crate) data: BTreeMap<String, View<'a>>,
 }
 
 /// Scan an archive through the session resource budget.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(root)?;
     ctx.charge_collection_items(archive.entries().len() as u64, "fcstd ZIP entries")?;
     let mut data = BTreeMap::new();
@@ -118,7 +118,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 }
 
 /// Summarize one scan.
-pub fn summarize(scan: &Scan) -> ContainerSummary {
+pub(crate) fn summarize(scan: &Scan) -> ContainerSummary {
     let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
     let losses = crate::dialect::FcstdDialect::dialect_loss(&matched)
         .into_iter()

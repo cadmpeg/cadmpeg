@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// A finite right-handed orthonormal affine frame.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
-pub struct FiniteFrame(Transform);
+pub(crate) struct FiniteFrame(Transform);
 
 impl TryFrom<[[f64; 4]; 4]> for FiniteFrame {
     type Error = String;
@@ -37,7 +37,7 @@ impl FiniteFrame {
 /// A scale vector with finite components.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
-pub struct FiniteVec3([f64; 3]);
+pub(crate) struct FiniteVec3([f64; 3]);
 impl TryFrom<[f64; 3]> for FiniteVec3 {
     type Error = String;
     fn try_from(values: [f64; 3]) -> Result<Self, Self::Error> {

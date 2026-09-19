@@ -22,17 +22,17 @@ struct DependencyInfo {
 }
 
 /// Recovered persistence graph.
-pub struct Graph {
+pub(crate) struct Graph {
     /// Declared objects.
-    pub objects: Vec<ObjectRecord>,
+    pub(crate) objects: Vec<ObjectRecord>,
     /// Dynamic extensions.
-    pub extensions: Vec<ExtensionRecord>,
+    pub(crate) extensions: Vec<ExtensionRecord>,
     /// Document and object properties.
-    pub properties: Vec<PropertyRecord>,
+    pub(crate) properties: Vec<PropertyRecord>,
 }
 
 /// Recover the persistence graph, charging retained property XML against the session.
-pub fn parse_with_context(
+pub(crate) fn parse_with_context(
     bytes: &[u8],
     schema_version: &str,
     ctx: Option<&DecodeContext<'_>>,

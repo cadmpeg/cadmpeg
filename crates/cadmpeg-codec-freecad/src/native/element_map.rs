@@ -6,26 +6,26 @@ use std::collections::BTreeMap;
 
 /// One persisted element map owned by an exact-shape property.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ElementMapRecord {
+pub(crate) struct ElementMapRecord {
     /// Stable map identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning shape property identity.
-    pub property: String,
+    pub(crate) property: String,
     /// Version discriminator carried by the shape value.
-    pub version: String,
+    pub(crate) version: String,
     /// Document string-table index used by mapped names.
-    pub hasher_index: Option<usize>,
+    pub(crate) hasher_index: Option<usize>,
     /// Referenced side entry, or `None` for inline data.
-    pub source_entry: Option<String>,
+    pub(crate) source_entry: Option<String>,
     /// Native map identity.
-    pub map_id: u64,
+    pub(crate) map_id: u64,
     /// Optional XML element-map count retained as metadata; it does not frame
     /// or have to equal the native map stream.
-    pub declared_count: usize,
+    pub(crate) declared_count: usize,
     /// Ordered postfix dictionary.
-    pub postfixes: Vec<String>,
+    pub(crate) postfixes: Vec<String>,
     /// Ordered child-map records; the last record is the owning shape map.
-    pub maps: ElementMapNodes,
+    pub(crate) maps: ElementMapNodes,
 }
 
 /// A nonempty sequence whose last node is the owning shape map.
@@ -36,7 +36,7 @@ pub struct ElementMapRecord {
 /// position.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "Vec<ElementMapNodeWire>")]
-pub struct ElementMapNodes(Vec<ElementMapNode>);
+pub(crate) struct ElementMapNodes(Vec<ElementMapNode>);
 
 impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
     type Error = String;
@@ -165,7 +165,7 @@ impl From<ElementMapNodes> for Vec<ElementMapNode> {
 
 impl ElementMapNodes {
     /// Construct one root from legacy name groups, which have no child maps.
-    pub fn from_root_names(
+    pub(crate) fn from_root_names(
         map_id: u64,
         groups: BTreeMap<String, Vec<Vec<ElementMappedName>>>,
     ) -> Self {
@@ -183,12 +183,12 @@ impl ElementMapNodes {
     }
 
     /// Returns the owning shape map.
-    pub fn root(&self) -> &ElementMapNode {
+    pub(crate) fn root(&self) -> &ElementMapNode {
         &self.0[self.0.len() - 1]
     }
 
     /// Add a topology binding without exposing child-map descriptors for mutation.
-    pub fn bind_root_topology(&mut self, indexed_name: &str, source_index: usize, id: &str) {
+    pub(crate) fn bind_root_topology(&mut self, indexed_name: &str, source_index: usize, id: &str) {
         let index = self.0.len() - 1;
         for group in &mut self.0[index].groups {
             if group.indexed_name != indexed_name {
@@ -206,7 +206,7 @@ impl ElementMapNodes {
     }
 
     /// Returns nodes in serialized order.
-    pub fn iter(&self) -> std::slice::Iter<'_, ElementMapNode> {
+    pub(crate) fn iter(&self) -> std::slice::Iter<'_, ElementMapNode> {
         self.0.iter()
     }
 }
@@ -220,11 +220,11 @@ impl std::ops::Index<usize> for ElementMapNodes {
 
 /// One map node, including recursively referenced child maps.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ElementMapNode {
+pub(crate) struct ElementMapNode {
     /// Native node identity.
-    pub map_id: u64,
+    pub(crate) map_id: u64,
     /// Ordered indexed-element groups.
-    pub groups: Vec<ElementMapGroup>,
+    pub(crate) groups: Vec<ElementMapGroup>,
 }
 
 #[derive(Deserialize)]
@@ -243,26 +243,26 @@ struct ElementMapNodeWireRef<'a> {
 
 /// Persistent-name chains for one native topology kind.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ElementMapGroup {
+pub(crate) struct ElementMapGroup {
     /// Native indexed-name prefix such as `Face`, `Edge`, or `Vertex`.
-    pub indexed_name: String,
+    pub(crate) indexed_name: String,
     /// Child-map descriptors retained exactly.
-    pub children: Vec<String>,
+    pub(crate) children: Vec<String>,
     /// One entry per transient indexed element, in index order.
-    pub names: Vec<Vec<ElementMappedName>>,
+    pub(crate) names: Vec<Vec<ElementMappedName>>,
 }
 
 /// One persistent mapped-name encoding and its neutral topology bindings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ElementMappedName {
+pub(crate) struct ElementMappedName {
     /// Exact encoded mapped name.
-    pub encoded: String,
+    pub(crate) encoded: String,
     /// Decoded base and postfix when all dictionary references are valid.
-    pub resolved: Option<String>,
+    pub(crate) resolved: Option<String>,
     /// Referenced persistent string identities.
-    pub string_ids: Vec<i64>,
+    pub(crate) string_ids: Vec<i64>,
     /// Neutral topology ids for every placed occurrence of this element.
-    pub topology_ids: Vec<String>,
+    pub(crate) topology_ids: Vec<String>,
 }
 
 #[cfg(test)]

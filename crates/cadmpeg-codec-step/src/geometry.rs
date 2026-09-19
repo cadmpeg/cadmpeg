@@ -115,7 +115,7 @@ fn similarity_transform(transform: &Transform) -> bool {
 }
 
 /// Emit or reuse a `CARTESIAN_POINT`.
-pub fn point(e: &mut Emitter, p: Point3) -> Ref {
+pub(crate) fn point(e: &mut Emitter, p: Point3) -> Ref {
     let params = format!("'',({},{},{})", real(p.x), real(p.y), real(p.z));
     e.emit_interned("CARTESIAN_POINT", &params)
 }
@@ -168,7 +168,7 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
 }
 
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
-pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
     Some(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
@@ -302,7 +302,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
 /// Emit or reuse a unit-length `DIRECTION`.
 ///
 /// A zero-length vector becomes `(0,0,1)`.
-pub fn direction(e: &mut Emitter, v: Vector3) -> Ref {
+pub(crate) fn direction(e: &mut Emitter, v: Vector3) -> Ref {
     let n = v.norm();
     let u = if n > 0.0 {
         Vector3::new(v.x / n, v.y / n, v.z / n)
@@ -317,7 +317,7 @@ pub fn direction(e: &mut Emitter, v: Vector3) -> Ref {
 /// +X reference direction.
 ///
 /// STEP projects the reference direction onto the plane normal to the axis.
-pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector3) -> Ref {
+pub(crate) fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector3) -> Ref {
     let o = point(e, origin);
     let a = direction(e, axis);
     let r = direction(e, ref_dir);
@@ -359,7 +359,7 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
 }
 
 /// Emit an analytic or NURBS surface carrier.
-pub fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
+pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
@@ -428,7 +428,7 @@ pub fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
 }
 
 /// Emit an analytic or NURBS 3D curve carrier.
-pub fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
+pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     Some(match g {
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();

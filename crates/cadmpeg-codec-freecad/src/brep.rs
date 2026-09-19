@@ -26,7 +26,7 @@ use crate::native::{self, EntryRecord, PropertyRecord};
 /// Exact-shape side-entry form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ShapePayloadForm {
+enum ShapePayloadForm {
     /// Explicit zero-byte null shape.
     Empty,
     /// Compact text shape-set grammar.
@@ -38,20 +38,20 @@ pub enum ShapePayloadForm {
 /// One exact-shape property bound to its side entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ShapePayloadRecordWire", into = "ShapePayloadRecordWire")]
-pub struct ShapePayloadRecord {
+pub(crate) struct ShapePayloadRecord {
     /// Stable payload identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning property identity.
-    pub property: String,
+    pub(crate) property: String,
     /// Side-entry identity.
-    pub entry: String,
+    pub(crate) entry: String,
     /// Carrier payload.
-    pub payload: ShapePayload,
+    pub(crate) payload: ShapePayload,
 }
 
 /// Supported text topology grammar versions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextTopologyVersion {
+pub(crate) enum TextTopologyVersion {
     /// Version 1.
     V1,
     /// Version 2.
@@ -62,7 +62,7 @@ pub enum TextTopologyVersion {
 
 impl TextTopologyVersion {
     /// Returns the wire version number.
-    pub const fn number(self) -> u8 {
+    const fn number(self) -> u8 {
         match self {
             Self::V1 => 1,
             Self::V2 => 2,
@@ -85,7 +85,7 @@ impl TryFrom<u8> for TextTopologyVersion {
 
 /// Supported binary topology grammar versions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryTopologyVersion {
+pub(crate) enum BinaryTopologyVersion {
     /// Version 1.
     V1,
     /// Version 2.
@@ -98,7 +98,7 @@ pub enum BinaryTopologyVersion {
 
 impl BinaryTopologyVersion {
     /// Returns the wire version number.
-    pub const fn number(self) -> u8 {
+    const fn number(self) -> u8 {
         match self {
             Self::V1 => 1,
             Self::V2 => 2,
@@ -123,7 +123,7 @@ impl TryFrom<u8> for BinaryTopologyVersion {
 
 /// Parsed exact-shape carrier.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ShapePayload {
+pub(crate) enum ShapePayload {
     /// Explicit zero-byte null shape.
     Empty,
     /// Compact text shape-set grammar.
@@ -144,7 +144,7 @@ pub enum ShapePayload {
 
 impl ShapePayload {
     /// Carrier form retained on the CADIR wire.
-    pub const fn form(&self) -> ShapePayloadForm {
+    const fn form(&self) -> ShapePayloadForm {
         match self {
             Self::Empty => ShapePayloadForm::Empty,
             Self::Text { .. } => ShapePayloadForm::Text,
@@ -153,7 +153,7 @@ impl ShapePayload {
     }
 
     /// Returns the grammar version for a nonempty carrier.
-    pub const fn topology_version(&self) -> Option<u8> {
+    pub(crate) const fn topology_version(&self) -> Option<u8> {
         match self {
             Self::Empty => None,
             Self::Text { version, .. } => Some(version.number()),
@@ -162,7 +162,7 @@ impl ShapePayload {
     }
 
     /// Shared table contents when the carrier is text or binary.
-    pub const fn shape_set(&self) -> Option<&ShapeSet> {
+    pub(crate) const fn shape_set(&self) -> Option<&ShapeSet> {
         match self {
             Self::Empty => None,
             Self::Text { facts, .. } | Self::Binary { facts, .. } => Some(facts),
@@ -172,25 +172,25 @@ impl ShapePayload {
 
 /// Versioned prefix tables shared by text and binary shape sets.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ShapeSet {
+pub(crate) struct ShapeSet {
     /// Ordered location table with resolved transforms.
-    pub locations: Vec<TextLocation>,
+    pub(crate) locations: Vec<TextLocation>,
     /// Ordered parameter-space curve table.
-    pub curve2ds: Vec<TextCurve2d>,
+    pub(crate) curve2ds: Vec<TextCurve2d>,
     /// Ordered 3D curve table.
-    pub curves: Vec<TextCurve>,
+    pub(crate) curves: Vec<TextCurve>,
     /// Ordered standalone 3D polygons.
-    pub polygons3d: Vec<TextPolygon3d>,
+    pub(crate) polygons3d: Vec<TextPolygon3d>,
     /// Ordered polygons indexing triangulation nodes.
-    pub polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    pub(crate) polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
     /// Ordered exact surface table.
-    pub surfaces: Vec<TextSurface>,
+    pub(crate) surfaces: Vec<TextSurface>,
     /// Ordered display triangulation table.
-    pub triangulations: Vec<TextTriangulation>,
+    pub(crate) triangulations: Vec<TextTriangulation>,
     /// Ordered subshape-first topology records.
-    pub tshapes: TextTShapes,
+    pub(crate) tshapes: TextTShapes,
     /// Root shape uses stored after the shape set.
-    pub roots: Vec<TextShapeUse>,
+    pub(crate) roots: Vec<TextShapeUse>,
 }
 
 impl ShapeSet {
@@ -715,7 +715,7 @@ impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
 /// Topological shape family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TextShapeKind {
+pub(crate) enum TextShapeKind {
     Vertex,
     Edge,
     Wire,
@@ -729,7 +729,7 @@ pub enum TextShapeKind {
 /// Orientation of one shape use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TextOrientation {
+pub(crate) enum TextOrientation {
     Forward,
     Reversed,
     Internal,
@@ -738,13 +738,13 @@ pub enum TextOrientation {
 
 /// One oriented, located use of a topology record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TextShapeUse {
+pub(crate) struct TextShapeUse {
     /// One-based `tshapes` index.
-    pub shape: usize,
+    pub(crate) shape: usize,
     /// Use orientation.
-    pub orientation: TextOrientation,
+    pub(crate) orientation: TextOrientation,
     /// One-based location index, or zero for identity.
-    pub location: LocationRef,
+    pub(crate) location: LocationRef,
 }
 
 /// One vertex point representation.
@@ -753,7 +753,7 @@ pub struct TextShapeUse {
     try_from = "TextPointRepresentationWire",
     into = "TextPointRepresentationWire"
 )]
-pub enum TextPointRepresentation {
+pub(crate) enum TextPointRepresentation {
     /// Kind 1: point on a 3D curve.
     Curve3d {
         /// Curve parameter.
@@ -789,7 +789,7 @@ pub enum TextPointRepresentation {
 
 impl TextPointRepresentation {
     /// Representation family code 1 through 3 retained on the CADIR wire.
-    pub const fn kind(&self) -> u8 {
+    const fn kind(&self) -> u8 {
         match self {
             Self::Curve3d { .. } => 1,
             Self::Pcurve { .. } => 2,
@@ -896,7 +896,7 @@ impl TryFrom<TextPointRepresentationWire> for TextPointRepresentation {
     try_from = "TextEdgeRepresentationWire",
     into = "TextEdgeRepresentationWire"
 )]
-pub enum TextEdgeRepresentation {
+pub(crate) enum TextEdgeRepresentation {
     /// Kind 1: exact 3D curve.
     Curve3d {
         /// One-based 3D curve index.
@@ -972,7 +972,7 @@ pub enum TextEdgeRepresentation {
 
 impl TextEdgeRepresentation {
     /// Representation code 1 through 7 retained on the CADIR wire.
-    pub const fn kind(&self) -> u8 {
+    const fn kind(&self) -> u8 {
         match self {
             Self::Curve3d { .. } => 1,
             Self::Pcurve { .. } => 2,
@@ -985,7 +985,7 @@ impl TextEdgeRepresentation {
     }
 
     /// Primary location index, or zero for identity.
-    pub const fn location(&self) -> usize {
+    pub(crate) const fn location(&self) -> usize {
         match *self {
             Self::Curve3d { location, .. }
             | Self::Pcurve { location, .. }
@@ -1001,7 +1001,7 @@ impl TextEdgeRepresentation {
     }
 
     /// Parameter range when the representation carries one.
-    pub const fn parameter_range(&self) -> Option<[f64; 2]> {
+    pub(crate) const fn parameter_range(&self) -> Option<[f64; 2]> {
         match *self {
             Self::Curve3d {
                 parameter_range, ..
@@ -1261,7 +1261,7 @@ impl TryFrom<TextEdgeRepresentationWire> for TextEdgeRepresentation {
 
 /// Geometry and flags specific to a topology record.
 #[derive(Debug, Clone, PartialEq)]
-pub enum TextTShapeGeometry {
+pub(crate) enum TextTShapeGeometry {
     Vertex {
         tolerance: f64,
         point: Point3,
@@ -1290,7 +1290,7 @@ pub enum TextTShapeGeometry {
 
 impl TextTShapeGeometry {
     /// Shape family retained as `kind` on the CADIR wire.
-    pub const fn kind(&self) -> TextShapeKind {
+    const fn kind(&self) -> TextShapeKind {
         match self {
             Self::Vertex { .. } => TextShapeKind::Vertex,
             Self::Edge { .. } => TextShapeKind::Edge,
@@ -1307,7 +1307,7 @@ impl TextTShapeGeometry {
 /// An identity placement or a nonzero location-table reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "usize", into = "usize")]
-pub enum LocationRef {
+pub(crate) enum LocationRef {
     /// The identity placement.
     Identity,
     /// A stored placement.
@@ -1328,7 +1328,7 @@ impl From<LocationRef> for usize {
 
 impl LocationRef {
     /// Returns the location wire index.
-    pub fn index(self) -> usize {
+    fn index(self) -> usize {
         match self {
             Self::Identity => 0,
             Self::Table(index) => index.index(),
@@ -1336,7 +1336,7 @@ impl LocationRef {
     }
 
     /// Resolves a placement against the location table.
-    pub fn resolve(self, table: &[TextLocation]) -> Result<Transform, CodecError> {
+    pub(crate) fn resolve(self, table: &[TextLocation]) -> Result<Transform, CodecError> {
         match self {
             Self::Identity => Ok(Transform::identity()),
             Self::Table(index) => Ok(index.resolve(table)?.transform),
@@ -1346,7 +1346,7 @@ impl LocationRef {
 
 /// A nonzero one-based reference to an owned table.
 #[derive(Debug)]
-pub struct TableRef<T> {
+pub(crate) struct TableRef<T> {
     index: std::num::NonZeroUsize,
     table: std::marker::PhantomData<fn() -> T>,
 }
@@ -1369,12 +1369,12 @@ impl<T> Clone for TableRef<T> {
 
 impl<T> TableRef<T> {
     /// Admits a nonzero table index.
-    pub fn new(index: usize) -> Result<Self, String> {
+    fn new(index: usize) -> Result<Self, String> {
         Self::optional(index).ok_or_else(|| "table reference must be nonzero".to_owned())
     }
 
     /// Admits an optional one-based table index.
-    pub fn optional(index: usize) -> Option<Self> {
+    fn optional(index: usize) -> Option<Self> {
         std::num::NonZeroUsize::new(index).map(|index| Self {
             index,
             table: std::marker::PhantomData,
@@ -1382,12 +1382,12 @@ impl<T> TableRef<T> {
     }
 
     /// Returns the one-based wire index.
-    pub fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self.index.get()
     }
 
     /// Resolves the reference against its table.
-    pub fn resolve(self, table: &[T]) -> Result<&T, CodecError> {
+    pub(crate) fn resolve(self, table: &[T]) -> Result<&T, CodecError> {
         table.get(self.index.get() - 1).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "table reference {} is out of range",
@@ -1399,18 +1399,18 @@ impl<T> TableRef<T> {
 
 /// One subshape-first topology record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TextTShape {
+pub(crate) struct TextTShape {
     /// Family-specific geometry, including geometry-less families.
-    pub geometry: TextTShapeGeometry,
+    pub(crate) geometry: TextTShapeGeometry,
     /// Free, modified, checked, orientable, closed, infinite, convex flags.
-    pub flags: [bool; 7],
+    pub(crate) flags: [bool; 7],
     /// Ordered child uses.
-    pub children: Vec<TextShapeUse>,
+    pub(crate) children: Vec<TextShapeUse>,
 }
 
 impl TextTShape {
     /// Shape family retained as `kind` on the CADIR wire.
-    pub const fn kind(&self) -> TextShapeKind {
+    pub(crate) const fn kind(&self) -> TextShapeKind {
         self.geometry.kind()
     }
 }
@@ -1452,11 +1452,11 @@ enum TextTShapeGeometryWire {
 /// Topology records whose one-based identity is their collection position.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "Vec<TextTShapeWire>", into = "Vec<TextTShapeWire>")]
-pub struct TextTShapes(Vec<TextTShape>);
+pub(crate) struct TextTShapes(Vec<TextTShape>);
 
 impl TextTShapes {
     /// Resolve a one-based topology identity without unchecked subtraction.
-    pub fn resolve(&self, index: usize) -> Result<&TextTShape, CodecError> {
+    pub(crate) fn resolve(&self, index: usize) -> Result<&TextTShape, CodecError> {
         index
             .checked_sub(1)
             .and_then(|position| self.0.get(position))
@@ -1639,45 +1639,45 @@ impl TryFrom<TextTShapeWire> for TextTShape {
 
 /// One standalone 3D polygon carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextPolygon3d {
+pub(crate) struct TextPolygon3d {
     /// Chordal deflection.
-    pub deflection: f64,
+    pub(crate) deflection: f64,
     /// Ordered model-space nodes.
-    pub nodes: Vec<Point3>,
+    pub(crate) nodes: Vec<Point3>,
     /// Optional per-node curve parameters.
-    pub parameters: Option<Vec<f64>>,
+    pub(crate) parameters: Option<Vec<f64>>,
 }
 
 /// One polygon whose indices address a triangulation node table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextPolygonOnTriangulation {
+pub(crate) struct TextPolygonOnTriangulation {
     /// One-based source node indices.
-    pub nodes: Vec<u32>,
+    pub(crate) nodes: Vec<u32>,
     /// Chordal deflection.
-    pub deflection: f64,
+    pub(crate) deflection: f64,
     /// Optional per-node curve parameters.
-    pub parameters: Option<Vec<f64>>,
+    pub(crate) parameters: Option<Vec<f64>>,
 }
 
 /// A rational or non-rational 2D B-spline curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct NurbsCurve2d {
+pub(crate) struct NurbsCurve2d {
     /// Curve degree.
-    pub degree: u32,
+    pub(crate) degree: u32,
     /// Full knot vector.
-    pub knots: Vec<f64>,
+    pub(crate) knots: Vec<f64>,
     /// Ordered parameter-space poles.
-    pub control_points: Vec<Point2>,
+    pub(crate) control_points: Vec<Point2>,
     /// Optional rational weights.
-    pub weights: Option<Vec<f64>>,
+    pub(crate) weights: Option<Vec<f64>>,
     /// Periodicity flag.
-    pub periodic: bool,
+    pub(crate) periodic: bool,
 }
 
 /// One exact parameter-space curve record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TextCurve2d {
+pub(crate) enum TextCurve2d {
     /// Infinite line.
     Line { origin: Point2, direction: Point2 },
     /// Full circle with its oriented parameter frame.
@@ -1726,26 +1726,26 @@ pub enum TextCurve2d {
 
 /// One factor in a compound location.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LocationFactor {
+pub(crate) struct LocationFactor {
     /// One-based index of an earlier location.
-    pub location: usize,
+    location: usize,
     /// Signed composition power.
-    pub power: i64,
+    power: i64,
 }
 
 /// One text B-rep location record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextLocation {
+pub(crate) struct TextLocation {
     /// Ordered source factors; empty for an elementary transform.
-    pub factors: Vec<LocationFactor>,
+    pub(crate) factors: Vec<LocationFactor>,
     /// Fully composed affine transform.
-    pub transform: Transform,
+    pub(crate) transform: Transform,
 }
 
 /// Supported byte-exact 3D curve records from the text carrier table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TextCurve {
+pub(crate) enum TextCurve {
     /// Infinite line.
     Line { origin: Point3, direction: Vector3 },
     /// Full circle.
@@ -1796,7 +1796,7 @@ pub enum TextCurve {
 /// Supported byte-exact surface records from the text carrier table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum TextSurface {
+pub(crate) enum TextSurface {
     /// Infinite plane.
     Plane {
         origin: Point3,
@@ -1926,7 +1926,7 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
 }
 
 /// Bind every exact-shape property to and frame its payload.
-pub fn parse_payloads(
+pub(crate) fn parse_payloads(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
@@ -1999,7 +1999,9 @@ fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, Codec
 }
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
-pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::CarrierCensusRecord> {
+pub(crate) fn carrier_census(
+    payloads: &[ShapePayloadRecord],
+) -> Vec<crate::native::CarrierCensusRecord> {
     let mut census = payloads
         .iter()
         .filter_map(|payload| {
@@ -2144,7 +2146,7 @@ fn census_surface(
     increment(counts, family);
 }
 
-pub(crate) fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
+fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let headers = [
@@ -2276,9 +2278,7 @@ fn text_brep_section(
     Ok((index, count))
 }
 
-pub(crate) fn parse_binary_prefix(
-    bytes: &[u8],
-) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
+fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
@@ -5285,7 +5285,7 @@ pub(crate) fn transfer_text_curves(
     Ok(transfer)
 }
 
-pub(crate) fn append_text_curve(
+fn append_text_curve(
     curve: &TextCurve,
     id: CurveId,
     association: &SourceObjectAssociation,
@@ -5498,7 +5498,7 @@ pub(crate) fn transfer_text_surfaces(
     Ok(transfer)
 }
 
-pub(crate) fn append_text_surface(
+fn append_text_surface(
     surface: &TextSurface,
     id: SurfaceId,
     association: &SourceObjectAssociation,

@@ -17,9 +17,9 @@ impl<T> PerNode<T> {
 /// One indexed display triangulation with aligned optional node attributes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "TextTriangulationWire", into = "TextTriangulationWire")]
-pub struct TextTriangulation {
+pub(crate) struct TextTriangulation {
     /// Chordal deflection.
-    pub deflection: f64,
+    pub(crate) deflection: f64,
     nodes: Vec<Point3>,
     uv_nodes: Option<PerNode<Point2>>,
     triangles: Vec<[u32; 3]>,
@@ -28,7 +28,7 @@ pub struct TextTriangulation {
 
 impl TextTriangulation {
     /// Admits attributes with exactly one value per node.
-    pub fn try_new(
+    pub(super) fn try_new(
         deflection: f64,
         nodes: Vec<Point3>,
         uv_nodes: Option<Vec<Point2>>,
@@ -62,23 +62,23 @@ impl TextTriangulation {
     }
 
     /// Returns ordered model-space vertices.
-    pub fn nodes(&self) -> &[Point3] {
+    pub(crate) fn nodes(&self) -> &[Point3] {
         &self.nodes
     }
 
     /// Returns zero-based triangle indices.
-    pub fn triangles(&self) -> &[[u32; 3]] {
+    pub(crate) fn triangles(&self) -> &[[u32; 3]] {
         &self.triangles
     }
 
     #[cfg(test)]
     /// Returns optional UV coordinates in node order.
-    pub fn uv_nodes(&self) -> Option<&[Point2]> {
+    pub(super) fn uv_nodes(&self) -> Option<&[Point2]> {
         self.uv_nodes.as_ref().map(|values| values.0.as_slice())
     }
 
     /// Returns optional normals in node order.
-    pub fn normals(&self) -> Option<&[Vector3]> {
+    pub(crate) fn normals(&self) -> Option<&[Vector3]> {
         self.normals.as_ref().map(|values| values.0.as_slice())
     }
 }
