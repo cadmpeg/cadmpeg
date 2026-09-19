@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
-pub const MAGIC: &[u8; 8] = b"SPLMSSTR";
+const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
 fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
