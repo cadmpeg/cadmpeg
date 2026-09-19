@@ -146,7 +146,7 @@ pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNo
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`RhinoLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum RhinoLossCode {
+pub(crate) enum RhinoLossCode {
     /// Container or table scan surfaced a structural diagnostic.
     ContainerScanDiagnostic,
     /// A stored checksum does not match the protected bytes.
@@ -302,7 +302,7 @@ impl RhinoLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
             Self::IntegrityFailure => "container.integrity-failure",
@@ -351,7 +351,7 @@ impl RhinoLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::ObjectRecordCensus => Severity::Info,
             Self::ObjectFramingUndecodable | Self::IntegrityFailure => Severity::Error,
@@ -428,7 +428,7 @@ impl RhinoLossCode {
 
     /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         cadmpeg_ir::report::NamespacedLossKind::new(
             const {
                 match cadmpeg_ir::report::LossNamespace::new("rhino") {
@@ -448,7 +448,7 @@ impl RhinoLossCode {
     /// The structured code is `rhino/<local>`; the message is the per-instance
     /// text only. Severity and strict floor come from the local code.
     #[must_use]
-    pub fn note(self, message: impl std::fmt::Display) -> LossNote {
+    pub(crate) fn note(self, message: impl std::fmt::Display) -> LossNote {
         LossNote::new(self.kind(), message.to_string()).with_severity(self.severity())
     }
 }
