@@ -1961,6 +1961,7 @@ mod tests {
     use cadmpeg_core::container::ContainerRole;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
     use super::{
         cfb_name_cmp, cfb_upper_unit, parse_directory, path_key, range_lock_sector,
@@ -2649,11 +2650,5 @@ mod tests {
             return false;
         };
         CompoundSnapshot::new(&ctx, root).is_ok()
-    }
-    fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-    }
-    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 }

@@ -177,6 +177,8 @@ mod tests {
     use cadmpeg_core::decode::{InspectOptions, ResourceLimits};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Confidence, FormatId};
+    #[cfg(feature = "nx")]
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
     use super::{identify, resolve_and_inspect_with, Identification, InspectError};
     use crate::{InputCatalog, Selection};
@@ -270,16 +272,6 @@ mod tests {
         put_u32(entry, 72, FREE);
         put_u32(entry, 76, child);
         put_u32(entry, 116, start);
-    }
-
-    #[cfg(feature = "nx")]
-    fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-    }
-
-    #[cfg(feature = "nx")]
-    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 
     /// The per-format fixture table and the case it drives.

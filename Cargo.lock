@@ -376,6 +376,7 @@ name = "cadmpeg-container"
 version = "0.6.0"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-test-support",
  "crc32fast",
  "flate2",
  "zip",
@@ -449,6 +450,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-test-support",
  "serde",
  "serde_json",
  "thiserror",
