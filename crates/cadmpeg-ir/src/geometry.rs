@@ -23,10 +23,6 @@ pub mod curve_payloads;
 /// Checked procedural surface payloads.
 pub mod surface_payloads;
 
-fn default_true() -> bool {
-    true
-}
-
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

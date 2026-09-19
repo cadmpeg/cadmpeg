@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for geometry payloads.
-#![allow(clippy::wildcard_imports)]
 
-use super::*;
+use crate::document::CadIr;
+use crate::report::{Check, Finding, Severity};
+
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
         if mesh.body.as_ref().is_some_and(|body| {

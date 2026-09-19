@@ -8,17 +8,11 @@
 //! positions). It does not evaluate interior surface membership or solid
 //! closure.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use crate::document::{CadIr, CensusKey};
-use crate::features::Feature;
-use crate::geometry::{
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
-};
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
 use crate::source_fidelity::SourceFidelity;
-use crate::topology::Coedge;
 
 /// Frozen accept/reject IR builders for Phase 5 gate swaps.
 pub mod admissibility_freeze;
@@ -47,7 +41,7 @@ use geometry_consistency::{
     check_procedural_support_consistency,
 };
 use geometry_payloads::check_tessellations;
-use identity_order::{check_identity_and_order, collect_native_ids};
+use identity_order::check_identity_and_order;
 use pmi::check_pmi;
 use presentation::{check_appearances, check_presentation};
 use products::check_products;
@@ -60,10 +54,10 @@ use topology::{
     check_topology_tolerances, check_wire_topology,
 };
 
-/// Record a referential-integrity error against one entity.
-fn referential_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
+/// Record an error finding of `check` against one entity.
+fn error_finding(findings: &mut Vec<Finding>, check: Check, entity: &str, message: &str) {
     findings.push(Finding {
-        check: Check::ReferentialIntegrity,
+        check,
         severity: Severity::Error,
         message: message.into(),
         entity: Some(entity.into()),

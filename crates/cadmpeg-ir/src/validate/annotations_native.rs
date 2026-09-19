@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for annotations native.
-#![allow(clippy::wildcard_imports)]
 
-use super::*;
+use std::collections::{HashMap, HashSet};
+
+use super::identity_order::collect_native_ids;
+use crate::document::CadIr;
+use crate::report::{Check, Finding, Severity};
 
 macro_rules! define_model_entity_json {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {

@@ -2392,7 +2392,7 @@ pub enum FeatureOperation {
         /// Embedded or external raster resource.
         asset: AssetId,
         /// Whether the raster is visible in the source presentation.
-        #[serde(default = "default_true")]
+        #[serde(default = "crate::default_true")]
         visible: bool,
         /// Whether image u increases toward decreasing plane-local u.
         #[serde(default)]
@@ -3483,7 +3483,7 @@ pub enum FeatureOperation {
         #[serde(default)]
         closed: bool,
         /// Whether the sections bound a solid instead of a sheet body.
-        #[serde(default = "default_true")]
+        #[serde(default = "crate::default_true")]
         solid: bool,
         /// Whether adjacent sections are connected by straight ruled spans.
         #[serde(default)]
@@ -3820,10 +3820,6 @@ pub enum FuzzyTolerance {
     Automatic,
     /// Use the supplied positive model-unit tolerance.
     Explicit(PositiveLength),
-}
-
-const fn default_true() -> bool {
-    true
 }
 
 /// Geometric offset construction used by a thin-wall shell operation.
