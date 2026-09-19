@@ -1,6 +1,6 @@
 //! Behavioral tests for standard B-rep topology solvers and parsers.
 
-pub(super) use std::{
+use std::{
     collections::{BTreeMap, HashSet},
     sync::Arc,
 };

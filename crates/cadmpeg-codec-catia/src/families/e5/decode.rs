@@ -3046,12 +3046,10 @@ mod route_tests {
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_circle_carriers_have_same_ordered_sweep, e5_native_uv_endpoints,
-        e5_occurrence_intersection_cache, e5_occurrence_intersection_context, e5_ownership_plan,
-        e5_pcurve_on_surface, e5_stored_pcurve_reversed,
-        e5_support_occurrence_intersection_context, equivalent_e5_curve_carriers,
-        fit_e5_plane_axes, fit_rank_one_e5_plane_axes, parameter_range_agreement_tolerance,
-        parameter_ranges_reversed, plan_e5_boundary, solve_e5_plane_frame,
-        E5OccurrenceIntersectionSide, EPS_E5_DECODE_EXACT_GEOMETRY, EPS_E5_DECODE_POSITION,
+        e5_occurrence_intersection_context, e5_ownership_plan, e5_pcurve_on_surface,
+        e5_stored_pcurve_reversed, equivalent_e5_curve_carriers, parameter_ranges_reversed,
+        plan_e5_boundary, solve_e5_plane_frame, EPS_E5_DECODE_EXACT_GEOMETRY,
+        EPS_E5_DECODE_POSITION,
     };
     use crate::families::e5::tests::e5_loop_members;
 
@@ -3064,7 +3062,7 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs, SolvedCurveGeometry,
+        CurveGeometry, NurbsSurface, PcurveGeometry, PcurveNurbs, SolvedCurveGeometry,
         SolvedSurfaceGeometry, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};

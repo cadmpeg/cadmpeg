@@ -1,6 +1,19 @@
 use super::test_consolidated::valid_consolidated_plane_geometry;
-use super::*;
+use crate::container;
+use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+use crate::native::edge_node::consolidated_vertex_identities;
 use crate::native::edge_node::CatiaConsolidatedEdgeNode;
+use crate::native::{
+    containing_finjpl_segment, finjpl_family, repeated_reference_schema_selection,
+    value_schema_selections, CatiaAliasRow, CatiaCatalog, CatiaConsolidatedCircle,
+    CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
+    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedOwnerPacket,
+    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedSphere,
+    CatiaConsolidatedSupportBinding, CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity,
+    CatiaFinjplSegment, CatiaObjectGraph, CatiaOwnerPacketPayload, CatiaValueBlock,
+};
+use crate::object_graph;
+use std::collections::{HashMap, HashSet};
 
 pub(super) fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],

@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::assemble::quintic_jet_pcurve;
+use crate::families::e5::decode::{
+    e5_occurrence_intersection_cache, e5_support_occurrence_intersection_context,
+    parameter_range_agreement_tolerance, E5OccurrenceIntersectionSide,
+    EPS_E5_DECODE_EXACT_GEOMETRY,
+};
+use cadmpeg_ir::eval::pcurve_uv;
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 #[test]
 fn support_range_agreement_requires_matching_endpoints() {

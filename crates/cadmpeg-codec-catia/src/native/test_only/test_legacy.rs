@@ -1,4 +1,13 @@
-use super::*;
+use crate::entity_table;
+use crate::legacy_entity;
+use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::{
+    entity_suffix_value, legacy_evaluated_value_name, valid_legacy_identifier,
+    CatiaLegacyEntityRun, CatiaLegacyIntegerEncoding, CatiaLegacyRelation, CatiaLegacyRoleName,
+    CatiaLegacyRoleSelector, CatiaLegacyScalarEvaluation, CatiaLegacySchemaField,
+    CatiaLegacySchemaIdentifier, CatiaLegacySchemaProgram, CatiaLegacyTextEncoding,
+    CatiaLegacyTextField, CatiaLegacyTypeValue,
+};
 
 pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
     if let Some(body) = &record.inline_body() {
