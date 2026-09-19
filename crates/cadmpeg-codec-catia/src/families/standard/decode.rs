@@ -43,6 +43,7 @@ use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
 use crate::math::unit_vector;
+use crate::nurbs::reverse_nurbs_curve;
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, retain_distinct_matching_supports,
 };
@@ -6547,36 +6548,6 @@ fn nurbs_surface_parameter_domain(surface: &NurbsSurface) -> Option<[[f64; 2]; 2
         .then_some(domains)
 }
 
-fn reverse_nurbs_curve(curve: &NurbsCurve) -> Option<NurbsCurve> {
-    let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?;
-    let sum = lower + upper;
-    if !sum.is_finite() {
-        return None;
-    }
-    let knots = curve
-        .knots()
-        .iter()
-        .rev()
-        .map(|knot| sum - knot)
-        .collect::<Vec<_>>();
-    knots
-        .iter()
-        .copied()
-        .all(f64::is_finite)
-        .then(|| {
-            NurbsCurve::from_lanes(
-                curve.degree(),
-                knots,
-                curve.control_points().iter().rev().copied().collect(),
-                curve
-                    .weights()
-                    .map(|weights| weights.iter().rev().copied().collect()),
-                curve.periodic(),
-            )
-        })
-        .and_then(Result::ok)
-}
-
 fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
     left.is_finite()
         && right.is_finite()
@@ -6616,7 +6587,9 @@ fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> 
             }
     };
     same_payload(left, right)
-        || reverse_nurbs_curve(right).is_some_and(|reversed| same_payload(left, &reversed))
+        || cadmpeg_ir::eval::nurbs_curve_parameter_domain(right)
+            .and_then(|range| reverse_nurbs_curve(right, range).ok())
+            .is_some_and(|reversed| same_payload(left, &reversed))
 }
 
 fn nurbs_surface_boundary_curves(surface: &NurbsSurface) -> Option<[NurbsCurve; 4]> {

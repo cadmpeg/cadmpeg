@@ -31,7 +31,7 @@ use crate::assemble::{
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
-use crate::math::unit_vector;
+use crate::math::{distance, unit_vector};
 use crate::solve::union_find::UnionFind;
 
 const EPS_E5_DECODE_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -555,17 +555,7 @@ fn solve_e5_plane_frame(
     };
     let endpoint_error =
         |axes: (Vector3, Vector3), segment: &([[f64; 2]; 2], [Point3; 2]), reversed: bool| {
-            endpoint_pairs(segment, reversed)
-                .into_iter()
-                .map(|(uv, point)| {
-                    let predicted = Point3::new(
-                        origin[0] + uv[0] * axes.0.x + uv[1] * axes.1.x,
-                        origin[1] + uv[0] * axes.0.y + uv[1] * axes.1.y,
-                        origin[2] + uv[0] * axes.0.z + uv[1] * axes.1.z,
-                    );
-                    predicted.distance(point)
-                })
-                .fold(0.0_f64, f64::max)
+            plane_frame_residual(origin, &endpoint_pairs(segment, reversed), axes.0, axes.1)
         };
 
     let mut fitted_axes = Vec::new();
@@ -594,7 +584,7 @@ fn solve_e5_plane_frame(
                 pairs.extend(endpoint_pairs(segment, reversed));
             }
             if let Some(fit) = fit_e5_plane_axes(origin, &pairs) {
-                fitted_axes.push(fit);
+                fitted_axes.push((fit, pairs));
             }
         }
     } else {
@@ -624,13 +614,13 @@ fn solve_e5_plane_frame(
                 pairs.extend(endpoint_pairs(segment, reversed));
             }
             if let Some(fit) = fit_rank_one_e5_plane_axes(origin, &pairs, normal) {
-                fitted_axes.push(fit);
+                fitted_axes.push((fit, pairs));
             }
         }
     }
 
     let mut candidates = Vec::new();
-    for (u_axis, v_axis, residual) in fitted_axes {
+    for ((u_axis, v_axis, residual), pairs) in fitted_axes {
         let Some(u_axis) = unit_vector(u_axis) else {
             continue;
         };
@@ -655,7 +645,10 @@ fn solve_e5_plane_frame(
         )) else {
             continue;
         };
-        if !normal.is_finite() {
+        // The returned chart uses unit axes and derives v from normal x u.
+        // Validate that chart, not the unrestricted least-squares fit.
+        let residual = plane_frame_residual(origin, &pairs, u_axis, normal.cross(u_axis));
+        if !normal.is_finite() || !residual.is_finite() || residual > E5_ENDPOINT_MATCH_TOLERANCE {
             continue;
         }
         if expected_normal.is_some_and(|expected| {
@@ -821,28 +814,10 @@ fn fit_e5_plane_axes(
     if u.into_iter().chain(v).any(|value| !value.is_finite()) {
         return None;
     }
-    let mut residual = 0.0f64;
-    for (uv, point) in pairs {
-        let predicted = [
-            origin[0] + uv[0] * u[0] + uv[1] * v[0],
-            origin[1] + uv[0] * u[1] + uv[1] * v[1],
-            origin[2] + uv[0] * u[2] + uv[1] * v[2],
-        ];
-        residual = residual.max(
-            ((predicted[0] - point.x).powi(2)
-                + (predicted[1] - point.y).powi(2)
-                + (predicted[2] - point.z).powi(2))
-            .sqrt(),
-        );
-    }
-    if !residual.is_finite() {
-        return None;
-    }
-    Some((
-        Vector3::new(u[0], u[1], u[2]),
-        Vector3::new(v[0], v[1], v[2]),
-        residual,
-    ))
+    let u_axis = Vector3::from(u);
+    let v_axis = Vector3::from(v);
+    let residual = plane_frame_residual(origin, pairs, u_axis, v_axis);
+    residual.is_finite().then_some((u_axis, v_axis, residual))
 }
 
 fn fit_rank_one_e5_plane_axes(
@@ -905,12 +880,12 @@ fn plane_frame_residual(
             origin[1] + uv[0] * u_axis.y + uv[1] * v_axis.y,
             origin[2] + uv[0] * u_axis.z + uv[1] * v_axis.z,
         ];
-        residual.max(
-            ((predicted[0] - point.x).powi(2)
-                + (predicted[1] - point.y).powi(2)
-                + (predicted[2] - point.z).powi(2))
-            .sqrt(),
-        )
+        let error = distance(predicted, <[f64; 3]>::from(*point));
+        if error.is_finite() {
+            residual.max(error)
+        } else {
+            f64::INFINITY
+        }
     })
 }
 

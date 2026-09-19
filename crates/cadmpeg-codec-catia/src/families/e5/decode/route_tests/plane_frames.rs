@@ -145,3 +145,95 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
     assert!(u_axis.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
     assert_eq!(uv_scale, [-1.0, -1.0]);
 }
+
+#[test]
+fn e5_plane_solver_rechecks_the_returned_unit_frame() {
+    let sites = [[1.0, 1.0], [3.0, 1.0], [3.0, 4.0], [1.0, 4.0]];
+    let mut edges = BTreeMap::new();
+    let mut pcurves = BTreeMap::new();
+    for index in 0..4 {
+        let next = (index + 1) % 4;
+        let key = index as u32;
+        edges.insert(
+            key,
+            E5Edge {
+                support: 0,
+                start_vertex: key,
+                end_vertex: next as u32,
+                parameter_start: 0,
+                parameter_end: 0,
+                tail: Vec::new(),
+            },
+        );
+        pcurves.insert(
+            key,
+            E5Pcurve::Line {
+                surface: 100,
+                origin: sites[index],
+                direction: [
+                    sites[next][0] - sites[index][0],
+                    sites[next][1] - sites[index][1],
+                ],
+                range: [0.0, 1.0],
+            },
+        );
+    }
+    let topology = E5Topology {
+        bodies: Vec::new(),
+        faces: vec![E5Face {
+            record_id: 1,
+            surface: 100,
+            trailer_sign: crate::families::e5::graph::Sign::Positive,
+            loops: vec![E5Loop {
+                record_id: 2,
+                surface: 100,
+                members: e5_loop_members(&[0, 1, 2, 3], &[0, 1, 2, 3], &[false; 4]),
+                oriented_members: None,
+                outer: Some(true),
+                orientation_hint: None,
+            }],
+        }],
+        edges,
+        pcurves,
+        bounds: BTreeMap::new(),
+        curve_supports: BTreeMap::new(),
+        vertex_refs: vec![0, 1, 2, 3],
+    };
+    for scale in [1.0, 2.0] {
+        let points = sites.map(|[u, v]| Point3::new(u * scale, v * scale, 0.0));
+        let result = super::super::solve_e5_plane_frame(
+            100,
+            [0.0; 3],
+            &topology,
+            &points,
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+        );
+        if scale == 1.0 {
+            let (normal, u_axis, uv_scale) = result.expect("unit plane chart");
+            let v_axis = normal.cross(u_axis);
+            for ([u, v], expected) in sites.into_iter().zip(points) {
+                let mapped = u_axis.scale(u * uv_scale[0]) + v_axis.scale(v * uv_scale[1]);
+                assert!(
+                    crate::math::distance(<[f64; 3]>::from(mapped), expected.into())
+                        < EPS_E5_DECODE_EXACT_GEOMETRY
+                );
+            }
+        } else {
+            assert!(
+                result.is_none(),
+                "normalizing scale-two axes would move the endpoints"
+            );
+        }
+    }
+}
+
+#[test]
+fn plane_frame_residual_rejects_nonfinite_predictions() {
+    let residual = super::super::plane_frame_residual(
+        [0.0; 3],
+        &[([f64::MAX, f64::MAX], Point3::new(0.0, 0.0, 0.0))],
+        Vector3::new(f64::MAX, 0.0, 0.0),
+        Vector3::new(-f64::MAX, 0.0, 0.0),
+    );
+    assert_eq!(residual, f64::INFINITY);
+}
