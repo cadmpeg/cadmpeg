@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{
+    FeatureDraftConstructionBinary32Lane, FeatureDraftConstructionFixedLane,
+    FeatureDraftConstructionIdentityFrame, FeatureDraftConstructionIndexLane,
+    FeatureDraftConstructionTerminalLane,
+};
 
 use crate::native::features::test_support::check_lane_wire;
 

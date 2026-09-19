@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{
+    FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleRepeatedScalarLane,
+    FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
+};
+use crate::native::features::operation_record::FeatureOperationRecord;
 
 use crate::native::features::test_support::check_lane_wire;
 

@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3};
 
-use super::*;
+use super::{Curve, Pcurve, Surface};
 
 const EPS_SHARED_NURBS_GEOMETRY: f64 = f64::EPSILON;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Lane extent and token-position construction boundaries.
 
-use super::*;
+use super::{scan, AbrLane, CountedLane};
 
 #[test]
 fn counted_lane_positions_follow_every_encoded_width() {
