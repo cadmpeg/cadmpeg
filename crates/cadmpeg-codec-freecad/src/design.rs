@@ -1810,8 +1810,7 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
             .ok()
             .is_none_or(|degree| degree >= pole_count)
         || poles.iter().any(|(point, z, weight)| {
-            !point.u.is_finite()
-                || !point.v.is_finite()
+            !point.is_finite()
                 || !z.is_finite()
                 || z.abs() > f64::EPSILON
                 || !weight.is_finite()
