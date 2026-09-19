@@ -224,7 +224,9 @@ impl TryFrom<PropertyValueWire> for PropertyValue {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::num::NonZeroUsize;
+
+    use super::{DecodedProperty, PropertyContent, PropertyValue};
 
     #[test]
     fn empty_references_preserve_the_flat_wire() {
