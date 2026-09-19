@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -15,7 +16,11 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 
-use super::*;
+use super::{
+    apply_to_parameters, dimension_subtype, enrich_history_parameters, neutral_parameter_is_count,
+    parse_payload, patch_payload, patch_slots,
+};
+use crate::records::PmiDimension;
 use crate::test_support::make_block;
 use crate::test_support::pmi::fixstr;
 use crate::test_support::pmi::push_array_header;

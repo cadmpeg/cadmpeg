@@ -1,6 +1,11 @@
 //! Tests for the `operations` module.
 
-use super::*;
+use super::{
+    enrich_history_split_lines, extrusion_operation, feature_inline_operation,
+    feature_inline_operation_fields, feature_operation_code, inherit_configuration_operations,
+    revolution_operation, SPLIT_LINE_MODE_PROPERTY, SPLIT_LINE_PROJECTION_MODE,
+    SPLIT_LINE_TOOL_PROPERTY,
+};
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{

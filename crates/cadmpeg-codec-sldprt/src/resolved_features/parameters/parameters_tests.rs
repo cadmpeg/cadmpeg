@@ -1,13 +1,16 @@
 //! Tests for the `parameters` module.
 
-use super::*;
+use super::{
+    enrich_history_parameters, native_scalar_matches_discrete_parameter,
+    scalar_unit_from_feature_parameter, sync_changed_feature_scalars, ScalarUnit,
+};
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{
     FeatureContent, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureInputScalar,
     FeatureInputScalarRole,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 #[test]
 fn native_scalar_must_match_an_existing_discrete_parameter() {
