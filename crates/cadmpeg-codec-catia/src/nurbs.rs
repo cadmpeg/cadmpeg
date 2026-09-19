@@ -188,10 +188,9 @@ pub(crate) fn note_refusal<T>(
 
 /// Reverse a supported pcurve over an increasing source-stated range.
 ///
-/// The range is the only value here the source states directly, so it is the
-/// only one whose refusal reaches the sink. Every other `return None` re-reads
-/// a coordinate an IR carrier already refined, and the trailing `_ => None` is
-/// a pcurve kind this reverser does not carry.
+/// Invalid source ranges and reconstructed NURBS lanes record a refusal.
+/// Other failures return `None` for unsupported geometry or a non-finite
+/// analytic reconstruction.
 pub(crate) fn reverse_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
@@ -244,10 +243,9 @@ pub(crate) fn reverse_pcurve_geometry(
 
 /// Reverse a supported model-space curve over an increasing native range.
 ///
-/// As in [`reverse_pcurve_geometry`], the range is the one source-stated value
-/// and the one refusal that reaches the sink; the remaining `return None`
-/// exits re-read refined carrier coordinates, and `_ => None` is a curve kind
-/// this reverser does not carry.
+/// Invalid source ranges and reconstructed NURBS lanes record a refusal,
+/// as in [`reverse_pcurve_geometry`]. Unsupported geometry and non-finite
+/// analytic reconstructions return `None`.
 pub(crate) fn reverse_curve_geometry(
     geometry: &CurveGeometry,
     range: [f64; 2],
