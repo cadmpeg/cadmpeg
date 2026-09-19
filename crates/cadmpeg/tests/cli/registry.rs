@@ -2,10 +2,10 @@
 //! `cadmpeg formats` and `cadmpeg dialects`: the registries, rendered.
 
 use assert_cmd::Command;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::*;
+use crate::support::{fixture, minimal_rhino_archive};
 
 /// `formats` states read and write separately, because they differ.
 ///

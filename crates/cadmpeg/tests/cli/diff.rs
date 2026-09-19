@@ -3,10 +3,10 @@
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::*;
+use crate::support::{cube_with_source, fixture, minimal_rhino_archive};
 
 #[test]
 fn diff_reports_modified_entities_and_uses_diff_exit_codes() {

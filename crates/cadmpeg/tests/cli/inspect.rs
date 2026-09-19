@@ -5,10 +5,12 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::*;
+use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::*;
+use crate::support::{
+    fixture, minimal_fcstd, minimal_rhino_archive, rhino_header, synthetic_rhino_point,
+};
 
 #[test]
 fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
