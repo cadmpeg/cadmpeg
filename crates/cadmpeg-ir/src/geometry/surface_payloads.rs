@@ -464,6 +464,11 @@ impl RevolutionSurfaceConstruction {
                 "revolution cache form is not finite",
             ));
         }
+        if !axis_origin.is_finite() || !axis_direction.is_finite() {
+            return Err(ProceduralGeometryError::Payload(
+                "revolution axis_origin and axis_direction must be finite",
+            ));
+        }
         let admit_interval = |range: [f64; 2], message| {
             let interval = ParameterInterval::new(range)
                 .map_err(|_| ProceduralGeometryError::Payload(message))?;
