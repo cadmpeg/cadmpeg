@@ -300,7 +300,7 @@ fn every_hand_written_deserialize_states_its_coverage() {
         stale.join("\n")
     );
 
-    reader_routes::assert_hand_written_reader_routes();
+    reader_routes::classify::assert_hand_written_reader_routes();
 
     // Namespace and arena names are open. Their values still have fixed shapes:
     // a namespace is an arena map, and an arena is a list of native records.
