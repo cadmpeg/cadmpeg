@@ -26,20 +26,20 @@ const EPS_SWEEP_PROFILE_NURBS_E9: f64 = 1.0e-9;
 
 /// A parsed swept- or spun-surface carrier.
 #[derive(Debug, Clone)]
-pub(crate) struct SweepCarrier {
+pub(super) struct SweepCarrier {
     /// Stream-local attribute id of the record.
-    pub(crate) attr: u16,
+    attr: u16,
     /// Tag-byte offset in the stream.
-    pub(crate) offset: usize,
+    pub(super) offset: usize,
     /// Attribute of the profile curve carrier.
-    pub(crate) profile_attr: u16,
+    pub(super) profile_attr: u16,
     /// Construction-specific fields.
-    pub(crate) kind: SweepKind,
+    pub(super) kind: SweepKind,
 }
 
 /// The construction a [`SweepCarrier`] encodes.
 #[derive(Debug, Clone)]
-pub(crate) enum SweepKind {
+pub(super) enum SweepKind {
     /// `00 43`: translation of the profile along a unit direction.
     Swept {
         /// Unit sweep direction (dimensionless).
@@ -122,7 +122,7 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
 }
 
 /// Scan a stream for swept/spun surface carriers, keyed by attribute.
-pub(crate) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
+pub(super) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
     let mut out = HashMap::new();
     for off in 0..bytes.len().saturating_sub(20) {
         if let Some(carrier) = parse_sweep(bytes, off) {
@@ -137,7 +137,7 @@ pub(crate) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
 /// The nine poles are four rational quadratic quarter arcs. Odd poles are the
 /// intersections of adjacent endpoint tangents and therefore carry weight
 /// `sqrt(2) / 2`.
-pub(crate) fn profile_nurbs(
+pub(super) fn profile_nurbs(
     geometry: &CurveGeometry,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
@@ -220,7 +220,7 @@ pub(crate) fn profile_nurbs(
 
 /// Build the ruled NURBS patch of a swept surface over `v` in
 /// `[v_start, v_end]` millimetres of travel along the unit direction.
-pub(crate) fn swept_nurbs(
+pub(super) fn swept_nurbs(
     profile: &NurbsCurve,
     direction: Vector3,
     v_start: f64,
@@ -276,7 +276,7 @@ pub(crate) fn swept_nurbs(
 /// Build the exact rational NURBS of a full surface of revolution: the
 /// profile revolved `2π` about the axis through `base`, with the angular
 /// parameter (`v`, radians) following `A × (C - Z)`.
-pub(crate) fn spun_nurbs(
+pub(super) fn spun_nurbs(
     profile: &NurbsCurve,
     base: Point3,
     axis: Vector3,

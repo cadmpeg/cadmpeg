@@ -107,7 +107,7 @@ pub(crate) fn prepare_configurations_for_write(
     Ok(())
 }
 
-pub(crate) fn sync_configuration_design_state(
+fn sync_configuration_design_state(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
@@ -256,7 +256,7 @@ pub(crate) fn sync_configuration_design_state(
     Ok(())
 }
 
-pub(crate) fn patch_configuration_parameter_scalars(
+fn patch_configuration_parameter_scalars(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
@@ -391,7 +391,7 @@ pub(crate) fn patch_configuration_parameter_scalars(
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
 /// the neutral side.
-pub(crate) fn sync_neutral_configurations(
+pub(in crate::history) fn sync_neutral_configurations(
     configurations: &[DesignConfiguration],
     native: &mut Option<crate::native::SldprtNative>,
 ) {
@@ -509,7 +509,7 @@ pub(crate) fn sync_neutral_configurations(
     synchronize_history_content_order(native);
 }
 
-pub(crate) fn configuration_slot(
+fn configuration_slot(
     properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     ordinal: u32,
 ) -> u32 {
@@ -519,9 +519,7 @@ pub(crate) fn configuration_slot(
         .unwrap_or(ordinal)
 }
 
-pub(crate) fn native_configuration_slot_owners(
-    histories: &[FeatureHistory],
-) -> BTreeMap<u32, Option<String>> {
+fn native_configuration_slot_owners(histories: &[FeatureHistory]) -> BTreeMap<u32, Option<String>> {
     let configurations = histories
         .iter()
         .flat_map(|history| &history.configurations)

@@ -23,13 +23,13 @@ use crate::records::FeatureSource;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
 
-pub(crate) type SurfaceSelectionFaceBindings =
+pub(super) type SurfaceSelectionFaceBindings =
     HashMap<(String, String), Option<cadmpeg_ir::ids::FaceId>>;
 
-pub(crate) struct FaceSelectionContext<'a> {
-    pub(crate) ids: &'a HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
-    pub(crate) feature_ref: Option<&'a str>,
-    pub(crate) surface_selection_faces: &'a SurfaceSelectionFaceBindings,
+pub(super) struct FaceSelectionContext<'a> {
+    pub(super) ids: &'a HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
+    pub(super) feature_ref: Option<&'a str>,
+    pub(super) surface_selection_faces: &'a SurfaceSelectionFaceBindings,
 }
 
 pub(crate) struct TopologySelectionInputs<'a> {
@@ -49,7 +49,7 @@ const SURFACE_COMPONENT_SELECTION_PREFIX: &str = "sldprt:feature-input:surface-c
 /// An explicit reference-face origin takes precedence. A surface-component
 /// selection stores the resulting plane origin, so its support is one signed
 /// `D1` displacement along the stored normal.
-pub(crate) fn offset_plane_support_origin(
+fn offset_plane_support_origin(
     source_properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     native: Option<&str>,
     fallback_origin: Point3,
@@ -128,7 +128,7 @@ fn surface_selection_face_bindings<'a>(
     bindings
 }
 
-pub(crate) fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide> {
+fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide> {
     match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => vec![side],
         ExtrudeExtent::TwoSided { first, second } => vec![first, second],
@@ -457,7 +457,7 @@ pub(crate) fn bind_topology_selections(
     Ok(())
 }
 
-pub(crate) fn resolve_planar_face_selection(
+pub(super) fn resolve_planar_face_selection(
     selection: &mut FaceSelection,
     origin: Point3,
     normal: Vector3,
@@ -515,7 +515,7 @@ pub(crate) fn resolve_planar_face_selection(
     };
 }
 
-pub(crate) fn resolve_offset_plane_face_selection(
+pub(super) fn resolve_offset_plane_face_selection(
     selection: &mut FaceSelection,
     origin: Point3,
     normal: Vector3,
@@ -533,7 +533,7 @@ pub(crate) fn resolve_offset_plane_face_selection(
     resolve_planar_face_selection(selection, origin, normal, faces, surfaces);
 }
 
-pub(crate) fn resolve_planar_profile_ref(
+fn resolve_planar_profile_ref(
     profile: &mut PlanarProfileRef,
     faces: &HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
 ) {
@@ -544,7 +544,7 @@ pub(crate) fn resolve_planar_profile_ref(
     }
 }
 
-pub(crate) fn resolve_profile_ref(
+fn resolve_profile_ref(
     profile: &mut ProfileRef,
     faces: &HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
 ) {
@@ -553,7 +553,7 @@ pub(crate) fn resolve_profile_ref(
     }
 }
 
-pub(crate) fn resolve_path_ref(
+fn resolve_path_ref(
     path: &mut PathRef,
     edges: &HashMap<String, Option<cadmpeg_ir::ids::EdgeId>>,
     curves: &HashMap<String, Option<cadmpeg_ir::ids::CurveId>>,
@@ -567,7 +567,7 @@ pub(crate) fn resolve_path_ref(
     }
 }
 
-pub(crate) fn selection_ids<'a, Id: Clone + 'a>(
+fn selection_ids<'a, Id: Clone + 'a>(
     values: impl Iterator<Item = (&'a str, Option<&'a str>, Id)>,
 ) -> HashMap<String, Option<Id>> {
     let mut ids = HashMap::new();
@@ -582,10 +582,7 @@ pub(crate) fn selection_ids<'a, Id: Clone + 'a>(
     ids
 }
 
-pub(crate) fn resolve_ids<Id: Clone>(
-    native: &str,
-    ids: &HashMap<String, Option<Id>>,
-) -> Option<Vec<Id>> {
+fn resolve_ids<Id: Clone>(native: &str, ids: &HashMap<String, Option<Id>>) -> Option<Vec<Id>> {
     let resolved = native
         .split(',')
         .map(str::trim)
@@ -595,10 +592,7 @@ pub(crate) fn resolve_ids<Id: Clone>(
     (!resolved.is_empty()).then_some(resolved)
 }
 
-pub(crate) fn resolve_face_selection(
-    selection: &mut FaceSelection,
-    context: &FaceSelectionContext<'_>,
-) {
+fn resolve_face_selection(selection: &mut FaceSelection, context: &FaceSelectionContext<'_>) {
     if let FaceSelection::Native(native) = selection {
         let faces = resolve_ids(native, context.ids).or_else(|| {
             let feature_ref = context.feature_ref?;
@@ -645,7 +639,7 @@ fn history_feature_sources(
     sources
 }
 
-pub(crate) fn resolve_edge_selection(
+fn resolve_edge_selection(
     selection: &mut EdgeSelection,
     ids: &HashMap<String, Option<cadmpeg_ir::ids::EdgeId>>,
 ) {
@@ -659,7 +653,7 @@ pub(crate) fn resolve_edge_selection(
     }
 }
 
-pub(crate) fn resolve_body_selection(
+fn resolve_body_selection(
     selection: &mut BodySelection,
     ids: &HashMap<String, Option<cadmpeg_ir::ids::BodyId>>,
 ) {

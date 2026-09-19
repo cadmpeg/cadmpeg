@@ -19,14 +19,14 @@ use crate::history::literals::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum NativePatternClass {
+pub(in crate::history) enum NativePatternClass {
     Linear,
     Circular,
     CurveDriven,
     Mirror,
 }
 
-pub(crate) fn pattern_form(feature: &Feature) -> Option<NativePatternClass> {
+pub(in crate::history) fn pattern_form(feature: &Feature) -> Option<NativePatternClass> {
     let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
         "linear" | "linearpattern" | "lpattern" => Some(NativePatternClass::Linear),
         "circular" | "circularpattern" | "cirpattern" => Some(NativePatternClass::Circular),
@@ -59,7 +59,7 @@ pub(crate) fn pattern_form(feature: &Feature) -> Option<NativePatternClass> {
         .and_then(|form| parse(form))
 }
 
-pub(crate) fn project_pattern(
+pub(super) fn project_pattern(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
     native_by_source: &HashMap<String, &str>,

@@ -66,7 +66,7 @@ const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
 ];
 
 pub(crate) struct FeatureProjection {
-    pub(crate) features: Vec<cadmpeg_ir::features::Feature>,
+    pub(super) features: Vec<cadmpeg_ir::features::Feature>,
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
 }
 
@@ -106,7 +106,7 @@ impl FeatureProjection {
         }
     }
 
-    pub(crate) fn into_model(self) -> (cadmpeg_ir::document::Model, Vec<cadmpeg_ir::LossNote>) {
+    pub(super) fn into_model(self) -> (cadmpeg_ir::document::Model, Vec<cadmpeg_ir::LossNote>) {
         let mut model = cadmpeg_ir::document::Model::default();
         let mut losses = Vec::new();
         self.install(&mut model, &mut losses);
@@ -289,7 +289,7 @@ pub(crate) fn project_semantic_notes(
         .collect()
 }
 
-pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
+pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
     fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
         feature
             .native_ref
@@ -713,7 +713,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
     }
 }
 
-pub(crate) fn bind_native_construction_features(
+fn bind_native_construction_features(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
 ) {
@@ -837,7 +837,7 @@ pub(crate) fn custom_property_attributes(histories: &[FeatureHistory]) -> Vec<So
         .collect()
 }
 
-pub(crate) fn unique_source_bindings(
+fn unique_source_bindings(
     history: &FeatureHistory,
 ) -> HashMap<FeatureSource, Option<(&str, FeatureId)>> {
     let mut bindings = HashMap::new();
@@ -916,7 +916,7 @@ pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]
         .sum()
 }
 
-pub(crate) fn project_feature_content(
+pub(super) fn project_feature_content(
     feature: &Feature,
     by_native: &HashMap<&str, FeatureId>,
 ) -> Result<cadmpeg_ir::features::FeatureContent, cadmpeg_core::CodecError> {
@@ -949,7 +949,7 @@ pub(crate) fn project_feature_content(
         .map_err(|message: &'static str| cadmpeg_core::CodecError::Malformed(message.into()))
 }
 
-pub(crate) fn project_feature_dependencies(
+fn project_feature_dependencies(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
 ) -> Vec<FeatureId> {
@@ -997,7 +997,7 @@ pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<Design
 }
 
 /// Project every native feature dimension into the neutral parameter arena.
-pub(crate) fn project_definition(
+pub(super) fn project_definition(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
     native_by_source: &HashMap<String, &str>,
@@ -1163,7 +1163,7 @@ pub(crate) fn project_definition(
     }
 }
 
-pub(crate) fn parameter_names(feature: &Feature) -> Vec<String> {
+pub(super) fn parameter_names(feature: &Feature) -> Vec<String> {
     let mut names = feature
         .content
         .iter()
@@ -1184,7 +1184,7 @@ pub(crate) fn parameter_names(feature: &Feature) -> Vec<String> {
     names
 }
 
-pub(crate) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
+pub(super) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
     let mut seen = HashSet::new();
     parameter_names(feature)
         .into_iter()
@@ -1192,21 +1192,21 @@ pub(crate) fn projected_parameter_names(feature: &Feature) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> ParameterId {
+pub(super) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> ParameterId {
     ParameterId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
         feature_identity_key(&feature.id).colon(ordinal),
     )
 }
 
-pub(crate) fn native_definition(feature: &Feature) -> FeatureDefinition {
+fn native_definition(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::Native {
         kind: feature.kind.clone().into(),
         parameters: feature.parameters.clone(),
     })
 }
 
-pub(crate) fn neutral_feature_id(native_id: &str) -> FeatureId {
+pub(super) fn neutral_feature_id(native_id: &str) -> FeatureId {
     FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "model", "feature"),
         feature_identity_key(native_id),

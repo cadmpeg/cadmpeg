@@ -15,7 +15,7 @@ const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
 const EPS_LITERALS_PARSE_LENGTH_MM_E7: f64 = 1.0e-7;
 const EPS_LITERALS_FORMAT_F64_LITERAL_E6: f64 = 1.0e-6;
 
-pub(crate) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
+pub(super) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
     let normal_length = normal.norm();
     let u_length = u_axis.norm();
     normal_length.is_finite()
@@ -25,11 +25,11 @@ pub(crate) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
         && normal.dot(u_axis).abs() <= EPS_LITERALS_VALID_PLANE_FRAME_E9 * normal_length * u_length
 }
 
-pub(crate) fn valid_direction(direction: Vector3) -> bool {
+pub(super) fn valid_direction(direction: Vector3) -> bool {
     direction.norm().is_finite() && direction.norm() > f64::EPSILON
 }
 
-pub(crate) fn parse_length_mm(value: &str) -> Option<f64> {
+pub(super) fn parse_length_mm(value: &str) -> Option<f64> {
     let value = value.trim();
     let (value, display_length) = value
         .strip_prefix(['R', 'r', '\u{2300}', '\u{00d8}'])
@@ -64,7 +64,7 @@ pub(crate) fn parse_length_mm(value: &str) -> Option<f64> {
         .filter(|value| value.is_finite())
 }
 
-pub(crate) fn parse_positive_length_mm(value: &str) -> Option<f64> {
+pub(super) fn parse_positive_length_mm(value: &str) -> Option<f64> {
     parse_length_mm(value).filter(|value| *value > 0.0)
 }
 
@@ -123,7 +123,7 @@ pub(crate) fn format_angle_rad(value: f64) -> String {
     format!("{}rad", format_f64_literal(value))
 }
 
-pub(crate) fn format_f64_literal(value: f64) -> String {
+pub(super) fn format_f64_literal(value: f64) -> String {
     let magnitude = value.abs();
     if magnitude != 0.0 && !(EPS_LITERALS_FORMAT_F64_LITERAL_E6..1.0e15).contains(&magnitude) {
         format!("{value:e}")
@@ -148,11 +148,11 @@ pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
     (values.len() == 3).then(|| Vector3::new(values[0], values[1], values[2]))
 }
 
-pub(crate) fn parse_valid_direction(value: &str) -> Option<Vector3> {
+pub(super) fn parse_valid_direction(value: &str) -> Option<Vector3> {
     parse_vector3(value).filter(|value| valid_direction(*value))
 }
 
-pub(crate) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
+pub(super) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
     match value.to_ascii_lowercase().as_str() {
         "join" => Some(BooleanOp::Join),
         "cut" => Some(BooleanOp::Cut),
@@ -162,7 +162,7 @@ pub(crate) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
     }
 }
 
-pub(crate) fn parse_bool(value: &str) -> Option<bool> {
+pub(super) fn parse_bool(value: &str) -> Option<bool> {
     match value {
         "1" | "true" | "True" => Some(true),
         "0" | "false" | "False" => Some(false),
@@ -170,7 +170,7 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
+pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
     if dimension_display(expression).is_some() {
         return parse_dimension_display_length(expression)
             .and_then(Length::new)
@@ -200,7 +200,7 @@ pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         .map(ParameterValue::Real)
 }
 
-pub(crate) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
+pub(super) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     let expression = strip_dimension_count(expression.trim());
     if strip_diameter_modifier(expression).is_some()
         || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
@@ -226,7 +226,7 @@ pub(crate) fn parse_dimension_display_length(expression: &str) -> Option<f64> {
         .or_else(|| parse_length_mm(expression))
 }
 
-pub(crate) fn strip_dimension_count(expression: &str) -> &str {
+fn strip_dimension_count(expression: &str) -> &str {
     let digit_count = expression.bytes().take_while(u8::is_ascii_digit).count();
     let (count, rest) = expression.split_at(digit_count);
     if !count.is_empty()
@@ -239,7 +239,7 @@ pub(crate) fn strip_dimension_count(expression: &str) -> &str {
     }
 }
 
-pub(crate) fn strip_dimension_fit(value: &str) -> Option<&str> {
+fn strip_dimension_fit(value: &str) -> Option<&str> {
     let fit_start = value
         .char_indices()
         .find_map(|(offset, character)| character.is_ascii_alphabetic().then_some(offset))?;
@@ -262,14 +262,14 @@ pub(crate) fn strip_diameter_modifier(expression: &str) -> Option<&str> {
         .or_else(|| expression.strip_prefix("&lt;MOD-DIAM&gt;"))
 }
 
-pub(crate) fn strip_radius_modifier(expression: &str) -> Option<&str> {
+fn strip_radius_modifier(expression: &str) -> Option<&str> {
     let expression = expression.trim();
     expression
         .strip_prefix("<MOD-RHO>")
         .or_else(|| expression.strip_prefix("&lt;MOD-RHO&gt;"))
 }
 
-pub(crate) fn parse_neutral_parameter_literal(
+pub(super) fn parse_neutral_parameter_literal(
     feature: &cadmpeg_ir::features::Feature,
     name: &str,
     expression: &str,
@@ -311,7 +311,7 @@ pub(crate) fn parse_neutral_parameter_literal(
     parse_parameter_literal(expression)
 }
 
-pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
+pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(value) => {
             let value = value.get();

@@ -14,13 +14,13 @@ const COMMON_REFERENCE_COUNT: usize = 5;
 
 /// One exact offset-surface construction, keyed by its stream-local attribute.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct OffsetCarrier {
+pub(super) struct OffsetCarrier {
     /// Attribute of the support-surface carrier.
-    pub(crate) support: u16,
+    pub(super) support: u16,
     /// Signed offset distance in millimetres.
-    pub(crate) distance: f64,
+    pub(super) distance: f64,
     /// Byte offset of the `00 3c` tag.
-    pub(crate) offset: usize,
+    pub(super) offset: usize,
 }
 
 fn parse_payload(
@@ -83,7 +83,7 @@ fn parse_at(body: &[u8], offset: usize) -> Option<(u16, OffsetCarrier)> {
 }
 
 /// Scan all structurally valid type-60 offset-surface records.
-pub(crate) fn scan(body: &[u8]) -> HashMap<u16, OffsetCarrier> {
+pub(super) fn scan(body: &[u8]) -> HashMap<u16, OffsetCarrier> {
     let mut out = HashMap::new();
     for offset in 0..body.len().saturating_sub(1) {
         if let Some((attr, carrier)) = parse_at(body, offset) {

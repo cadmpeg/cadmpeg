@@ -15,14 +15,14 @@ enum Token {
     Bare(String),
 }
 
-pub(crate) struct ParameterExpressionParser<'a> {
+pub(in crate::history) struct ParameterExpressionParser<'a> {
     input: &'a str,
     offset: usize,
     aliases: ParameterAliasMap<'a>,
     values: &'a HashMap<ParameterId, ParameterValue>,
 }
 
-pub(crate) enum ParameterAliasMap<'a> {
+enum ParameterAliasMap<'a> {
     Layered(ParameterAliasView<'a>),
     #[cfg(test)]
     Flat(&'a HashMap<String, Option<ParameterId>>),
@@ -39,7 +39,7 @@ impl ParameterAliasMap<'_> {
 }
 
 impl<'a> ParameterExpressionParser<'a> {
-    pub(crate) fn new(
+    pub(super) fn new(
         input: &'a str,
         aliases: ParameterAliasView<'a>,
         values: &'a HashMap<ParameterId, ParameterValue>,
@@ -66,7 +66,7 @@ impl<'a> ParameterExpressionParser<'a> {
         }
     }
 
-    pub(crate) fn parse(mut self) -> Option<ParameterValue> {
+    pub(in crate::history) fn parse(mut self) -> Option<ParameterValue> {
         self.skip_space();
         self.take('=');
         self.skip_space();
@@ -257,7 +257,7 @@ impl<'a> ParameterExpressionParser<'a> {
     }
 }
 
-pub(crate) fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
+fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
     Some(match value {
         ParameterValue::Length(value) => ParameterValue::Length(Length::new(-value.get())?),
         ParameterValue::Angle(value) => ParameterValue::Angle(Angle::new(-value.get())?),
@@ -267,7 +267,7 @@ pub(crate) fn negate_parameter_value(value: &ParameterValue) -> Option<Parameter
     })
 }
 
-pub(crate) fn add_parameter_values(
+fn add_parameter_values(
     left: ParameterValue,
     right: ParameterValue,
     subtract: bool,
@@ -294,7 +294,7 @@ pub(crate) fn add_parameter_values(
     })
 }
 
-pub(crate) fn compare_parameter_values(
+pub(in crate::history) fn compare_parameter_values(
     left: &ParameterValue,
     right: &ParameterValue,
     operator: &str,
@@ -332,7 +332,7 @@ pub(crate) fn compare_parameter_values(
     })
 }
 
-pub(crate) fn compare_integer_real(integer: i64, real: f64) -> Option<std::cmp::Ordering> {
+fn compare_integer_real(integer: i64, real: f64) -> Option<std::cmp::Ordering> {
     if real.is_nan() {
         return None;
     }
@@ -350,7 +350,7 @@ pub(crate) fn compare_integer_real(integer: i64, real: f64) -> Option<std::cmp::
     }
 }
 
-pub(crate) fn conditional_parameter_value(
+fn conditional_parameter_value(
     condition: &ParameterValue,
     when_true: ParameterValue,
     when_false: ParameterValue,
@@ -377,7 +377,7 @@ pub(crate) fn conditional_parameter_value(
     }
 }
 
-pub(crate) fn multiply_parameter_values(
+fn multiply_parameter_values(
     left: ParameterValue,
     right: ParameterValue,
     divide: bool,
@@ -423,7 +423,7 @@ pub(crate) fn multiply_parameter_values(
     }
 }
 
-pub(crate) fn exponentiate_parameter_value(
+pub(in crate::history) fn exponentiate_parameter_value(
     base: &ParameterValue,
     exponent: &ParameterValue,
 ) -> Option<ParameterValue> {
@@ -474,7 +474,7 @@ pub(crate) fn exponentiate_parameter_value(
     })
 }
 
-pub(crate) fn integer_power_real(base: i64, exponent: i64) -> f64 {
+fn integer_power_real(base: i64, exponent: i64) -> f64 {
     let mut exponent = exponent.unsigned_abs();
     let mut factor = base as f64;
     let mut value = 1.0;
@@ -489,7 +489,7 @@ pub(crate) fn integer_power_real(base: i64, exponent: i64) -> f64 {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ParameterFunction {
+pub(in crate::history) enum ParameterFunction {
     Iif,
     Abs,
     Sin,
@@ -512,7 +512,7 @@ pub(crate) enum ParameterFunction {
 }
 
 impl ParameterFunction {
-    pub(crate) fn parse(name: &str) -> Option<Self> {
+    pub(super) fn parse(name: &str) -> Option<Self> {
         Some(match name.to_ascii_lowercase().as_str() {
             "iif" => Self::Iif,
             "abs" => Self::Abs,
@@ -544,7 +544,7 @@ impl ParameterFunction {
         }
     }
 
-    pub(crate) fn apply(self, arguments: &[ParameterValue]) -> Option<ParameterValue> {
+    pub(in crate::history) fn apply(self, arguments: &[ParameterValue]) -> Option<ParameterValue> {
         let unary = || {
             let [argument] = arguments else {
                 return None;
@@ -640,7 +640,7 @@ impl ParameterFunction {
     }
 }
 
-pub(crate) fn real_parameter_value(value: &ParameterValue) -> Option<f64> {
+fn real_parameter_value(value: &ParameterValue) -> Option<f64> {
     match value {
         ParameterValue::Real(value) => Some(value.get()),
         ParameterValue::Integer(value) => Some(*value as f64),
@@ -648,7 +648,7 @@ pub(crate) fn real_parameter_value(value: &ParameterValue) -> Option<f64> {
     }
 }
 
-pub(crate) fn parameter_numeric_value(value: &ParameterValue) -> Option<f64> {
+fn parameter_numeric_value(value: &ParameterValue) -> Option<f64> {
     match value {
         ParameterValue::Length(value) => Some(value.get()),
         ParameterValue::Angle(value) => Some(value.get()),

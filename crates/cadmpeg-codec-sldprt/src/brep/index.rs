@@ -7,14 +7,14 @@ use cadmpeg_ir::report::LossNote;
 use std::collections::{HashMap, HashSet};
 
 /// An exact carrier or a derived intersection carrier.
-pub(crate) enum IndexedCurve {
+pub(super) enum IndexedCurve {
     Exact(CurveCarrier),
     Derived(intersection::IntersectionCarrier),
 }
 
 impl IndexedCurve {
     /// Returns the curve carrier for either provenance variant.
-    pub(crate) fn carrier(&self) -> &CurveCarrier {
+    pub(super) fn carrier(&self) -> &CurveCarrier {
         match self {
             Self::Exact(carrier) => carrier,
             Self::Derived(intersection) => &intersection.carrier,
@@ -23,7 +23,7 @@ impl IndexedCurve {
 }
 
 #[derive(Default)]
-pub(crate) struct CarrierIndex {
+pub(super) struct CarrierIndex {
     curves: HashMap<u16, IndexedCurve>,
     surfaces: HashMap<u16, SurfaceCarrier>,
     /// Swept/spun surface constructions, resolved to a patch at face binding.
@@ -36,7 +36,7 @@ pub(crate) struct CarrierIndex {
     blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
     /// Spline carriers whose pole and weight lanes do not pair, each a loss
     /// naming its attribute id and the pairing's own refusal.
-    pub(crate) lane_refusals: Vec<LossNote>,
+    pub(super) lane_refusals: Vec<LossNote>,
 }
 
 impl CarrierIndex {
@@ -52,35 +52,35 @@ impl CarrierIndex {
         }
     }
 
-    pub(crate) fn curve(&self, attr: u16) -> Option<&IndexedCurve> {
+    pub(super) fn curve(&self, attr: u16) -> Option<&IndexedCurve> {
         self.curves.get(&attr)
     }
 
-    pub(crate) fn curve_attrs(&self) -> HashSet<u16> {
+    pub(super) fn curve_attrs(&self) -> HashSet<u16> {
         self.curves.keys().copied().collect()
     }
 
-    pub(crate) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
+    pub(super) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
         self.surfaces.get(&attr)
     }
 
     /// Swept/spun surface construction carried by one attribute.
-    pub(crate) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
+    pub(super) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
         self.sweeps.get(&attr)
     }
 
     /// Constant-radius rolling-ball construction carried by `attr`.
-    pub(crate) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
+    pub(super) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
         self.blends.get(&attr)
     }
 
     /// Exact offset-surface construction carried by `attr`.
-    pub(crate) fn offset(&self, attr: u16) -> Option<&offset::OffsetCarrier> {
+    pub(super) fn offset(&self, attr: u16) -> Option<&offset::OffsetCarrier> {
         self.offsets.get(&attr)
     }
 
     /// Zero-offset surface pair carried by `attr`.
-    pub(crate) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
+    pub(super) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
         self.blend_support_pairs.get(&attr)
     }
 
@@ -99,7 +99,7 @@ impl CarrierIndex {
         self.blend_support_pairs.insert(attr, carrier);
     }
 
-    pub(crate) fn merge_missing(&mut self, other: Self) {
+    pub(super) fn merge_missing(&mut self, other: Self) {
         for (attr, carrier) in other.curves {
             self.curves.entry(attr).or_insert(carrier);
         }
@@ -127,7 +127,7 @@ impl CarrierIndex {
 /// same identity. Cross-stream precedence is applied by [`CarrierIndex::merge_missing`]:
 /// the partition carrier remains authoritative and a deltas carrier fills only
 /// an absent identity.
-pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
+pub(super) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     let mut out = CarrierIndex::default();
     let mut i = 0usize;
     while i + 2 <= body.len() {
