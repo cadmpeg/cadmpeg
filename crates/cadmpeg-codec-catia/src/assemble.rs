@@ -284,10 +284,8 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         || !end.is_finite()
         || !axis.is_finite()
         || !ref_direction.is_finite()
-        || !pcurve_origin.u.is_finite()
-        || !pcurve_origin.v.is_finite()
-        || !pcurve_direction.u.is_finite()
-        || !pcurve_direction.v.is_finite()
+        || !pcurve_origin.is_finite()
+        || !pcurve_direction.is_finite()
         || !radius.is_finite()
         || radius <= 0.0
     {
@@ -329,7 +327,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
         pcurve_origin.u + 0.5 * pcurve_direction.u,
         pcurve_origin.v + 0.5 * pcurve_direction.v,
     );
-    if !midpoint_uv.u.is_finite() || !midpoint_uv.v.is_finite() {
+    if !midpoint_uv.is_finite() {
         return None;
     }
     let surface_midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
@@ -786,7 +784,7 @@ pub(crate) fn rational_pcurve_arc(
         || !control_points
             .iter()
             .copied()
-            .all(|point| [point.u, point.v].into_iter().all(f64::is_finite))
+            .all(|point| point.is_finite())
         || !weights.iter().copied().all(f64::is_finite)
     {
         return None;

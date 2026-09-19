@@ -23,10 +23,6 @@ const EPS_HELIX_ORTHO: f64 = EPS_NURBS_GEOMETRY;
 const EPS_HELIX_PITCH_ALIGNMENT: f64 = EPS_NURBS_GEOMETRY;
 const EPS_RELATIVE_TOLERANCE: f64 = EPS_NURBS_COARSE_GEOMETRY;
 
-fn finite_point2(point: Point2) -> bool {
-    [point.u, point.v].into_iter().all(f64::is_finite)
-}
-
 fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
     nurbs.knots().iter().copied().all(f64::is_finite)
         && knots_nondecreasing(nurbs.knots())
@@ -46,7 +42,11 @@ fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
 fn valid_pcurve_nurbs(nurbs: &PcurveNurbs) -> bool {
     nurbs.knots().iter().copied().all(f64::is_finite)
         && knots_nondecreasing(nurbs.knots())
-        && nurbs.control_points().iter().copied().all(finite_point2)
+        && nurbs
+            .control_points()
+            .iter()
+            .copied()
+            .all(|point| point.is_finite())
         && nurbs.weights().is_none_or(|weights| {
             weights
                 .iter()
@@ -205,7 +205,7 @@ pub(crate) fn reverse_pcurve_geometry(
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
             let direction = line_pcurve.direction();
-            if !finite_point2(*origin) || !finite_point2(*direction) {
+            if !origin.is_finite() || !direction.is_finite() {
                 return None;
             }
             let sum = range[0] + range[1];
@@ -213,7 +213,7 @@ pub(crate) fn reverse_pcurve_geometry(
                 return None;
             }
             let origin = Point2::new(origin.u + sum * direction.u, origin.v + sum * direction.v);
-            finite_point2(origin).then_some(PcurveGeometry::Line(
+            origin.is_finite().then_some(PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     origin,
                     Point2::new(-direction.u, -direction.v),
