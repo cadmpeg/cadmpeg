@@ -665,7 +665,9 @@ impl DialectMatch {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::*;
+    use std::collections::BTreeMap;
+
+    use super::{Admission, DialectId, DialectLayers, DialectMatch, Grammar, StaticDialectId};
 
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]

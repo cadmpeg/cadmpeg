@@ -171,7 +171,7 @@ const fn default_max_work_units() -> u64 {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::*;
+    use super::{ResourceLimits, GIB, MIB};
 
     #[test]
     fn desktop_ceilings_are_explicit() {

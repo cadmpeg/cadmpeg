@@ -332,7 +332,12 @@ impl<'de> Deserialize<'de> for NonBlankString {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::*;
+    #[cfg(feature = "schema")]
+    use std::collections::BTreeMap;
+
+    use super::{
+        named_entries, named_entries_reporting, NamedEntryError, NonBlankString, NonWhitespaceChar,
+    };
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {
