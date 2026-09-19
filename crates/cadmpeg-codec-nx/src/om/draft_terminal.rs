@@ -90,7 +90,8 @@ pub(crate) fn scan(record: OperationPayload<'_>) -> Option<DraftTerminalLane> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::compact::ExtendedCompactIndex;
+    use super::DraftTerminalLane;
 
     #[test]
     fn terminal_frame_requires_room_for_indices_fixed_bytes_and_tail() {

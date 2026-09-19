@@ -114,7 +114,8 @@ fn extrude_profile_reference_field(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::extrude_profile_references;
 
     #[test]
     fn relocation_preserves_the_shared_witness_and_checks_both_complete_spans() {

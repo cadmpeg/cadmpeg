@@ -87,7 +87,7 @@ impl<T> ThruCurveBranchItems<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ThruCurveBranchItems;
 
     #[test]
     fn state_layout_and_member_count_cannot_disagree() {

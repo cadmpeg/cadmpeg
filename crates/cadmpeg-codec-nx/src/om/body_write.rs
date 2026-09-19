@@ -134,7 +134,7 @@ positioned_frame!(u64);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
 
     #[test]
     fn body_write_indices_preserve_packed_aliases_and_canonical_feature_widths() {

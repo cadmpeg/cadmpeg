@@ -128,7 +128,7 @@ pub(crate) fn scan(bytes: &[u8]) -> Vec<DatumIndexLane> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{scan, DatumIndexLane};
 
     #[test]
     fn datum_terminal_positions_follow_mixed_token_widths_and_checked_extent() {

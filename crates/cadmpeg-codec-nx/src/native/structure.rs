@@ -575,8 +575,14 @@ fn take<'a>(bytes: &'a [u8], at: &mut usize, len: usize) -> Option<&'a [u8]> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::occurrences::FastLoadOccurrences;
+    use super::{
+        fast_load_component_object_groups, fast_load_component_roster, select_roster_candidate,
+        Candidate, FastLoadComponentObjectGroup, OccurrenceLaneForm, ENTRY_NAME,
+    };
+    use crate::container::Container;
     use crate::container::{DirEntry, Region};
+    use crate::native::om::object_uuid::ObjectUuidValue;
     use std::borrow::Cow;
 
     fn string(bytes: &mut Vec<u8>, value: &str) {

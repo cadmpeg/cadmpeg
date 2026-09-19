@@ -31,7 +31,7 @@ impl From<ThruCurveControls> for [u8; 9] {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ThruCurveControls;
 
     #[test]
     fn controls_keep_variable_bytes_and_derive_the_terminal_marker() {

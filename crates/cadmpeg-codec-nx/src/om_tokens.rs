@@ -28,7 +28,8 @@ pub fn unit_for(token: &str) -> Option<ExpressionUnit> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::unit_for;
+    use crate::om::ExpressionUnit;
 
     #[test]
     fn resolves_known_and_native_units() {

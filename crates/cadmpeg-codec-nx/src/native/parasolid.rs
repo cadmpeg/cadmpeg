@@ -4285,7 +4285,32 @@ mod tests {
 
     use crate::NxCodec;
 
-    use super::*;
+    use super::group_member::GroupMemberTarget;
+    use super::structured_value_kind::StructuredValueKind;
+    use super::topology_attribute_kind::TopologyAttributeKind;
+    use super::{
+        group_member, parasolid_attribute_field_names, parasolid_attribute_field_uses,
+        parasolid_entity_51_structured_uses,
+        parasolid_topology_attribute_fields_have_untransferred_values, GroupReferenceStatus,
+        ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
+        ParasolidAttributeFieldValueKind, ParasolidEntity51NumericKind,
+        ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
+        ParasolidEntity51StructuredUse, ParasolidEntity54StringRecord, ParasolidEntity58TagRecord,
+        ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidFieldNamesRecord,
+        ParasolidGroupMember, ParasolidTopologyAttributeClassUse,
+        ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
+    };
+    use crate::deltas::group::GroupSelector;
+    use crate::deltas::inline_schema_fields::InlineSchemaFields;
+    use crate::framing::xmt_reference::NonNullXmt;
+    use crate::framing::xmt_reference::XmtTarget;
+    use crate::parasolid::attribute_action::AttributeAction;
+    use crate::parasolid::attribute_field::AttributeField;
+    use crate::parasolid::entity_references::EntityReferences;
+    use crate::parasolid::name_references::NameReferences;
+    use crate::printable_string::PrintableString;
+    use std::collections::BTreeMap;
+    use std::num::NonZeroU32;
 
     #[test]
     fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {

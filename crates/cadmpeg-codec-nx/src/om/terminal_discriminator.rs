@@ -148,7 +148,8 @@ pub(crate) fn operation_terminal_discriminator(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::operation_terminal_discriminator;
 
     #[test]
     fn terminal_frame_preserves_empty_and_zero_valued_trailing_lanes() {

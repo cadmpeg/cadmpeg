@@ -56,7 +56,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for BranchItems<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::BranchItems;
 
     #[test]
     fn branch_count_includes_one_implicit_slot_and_fits_a_byte() {

@@ -97,7 +97,7 @@ impl TryFrom<ChartWire> for ParasolidChartRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::ParasolidChartRecord;
 
     #[test]
     fn chart_fields_keep_wire_order_and_reject_mismatched_layouts() {

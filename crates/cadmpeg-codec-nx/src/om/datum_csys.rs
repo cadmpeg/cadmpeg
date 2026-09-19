@@ -145,7 +145,8 @@ mod tests {
         }
     }
 
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::{datum_csys_references, HEADER_SUFFIX, TRAILER};
 
     #[test]
     fn frame_derives_mixed_width_positions_and_relocates_the_complete_span() {

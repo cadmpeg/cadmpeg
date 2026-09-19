@@ -51,7 +51,7 @@ impl TryFrom<SupportUvWire> for ParasolidSupportUvRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::ParasolidSupportUvRecord;
 
     #[test]
     fn support_tuples_preserve_wire_and_reject_invalid_count_or_packing() {

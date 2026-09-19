@@ -94,7 +94,8 @@ impl TryFrom<NumericTailWire> for ParasolidDeltasTermUseNumericTail {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::ParasolidDeltasTermUseNumericTail;
+    use super::super::ParasolidDeltasTerminalNullReferences;
 
     #[test]
     fn null_tail_wire_is_derived_from_its_complete_form() {

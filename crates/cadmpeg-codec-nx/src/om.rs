@@ -3200,7 +3200,7 @@ pub fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringVal
 
 #[cfg(test)]
 mod uuid_string_value_tests {
-    use super::*;
+    use super::uuid_string_values;
 
     #[test]
     fn decodes_only_complete_canonical_uuid_frames() {

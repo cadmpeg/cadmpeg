@@ -117,7 +117,7 @@ impl TryFrom<GroupWire> for ParasolidGroupRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::ParasolidGroupRecord;
 
     #[test]
     fn group_wire_preserves_scopes_and_rejects_invalid_controls() {

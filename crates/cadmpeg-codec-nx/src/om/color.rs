@@ -115,7 +115,7 @@ impl ColorComponent {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ColorComponent, PaletteIndex};
 
     #[test]
     fn palette_index_distinguishes_definition_and_display_encodings() {

@@ -386,7 +386,8 @@ impl<'a> ParsedStreams<'a> {
 mod tests {
     use crate::test_support::test_deltas::bspline_partition_stream;
 
-    use super::*;
+    use super::{topology_streams, ParsedStreams};
+    use std::borrow::Cow;
 
     #[test]
     fn unchanged_stream_views_borrow_the_inflated_bytes() {

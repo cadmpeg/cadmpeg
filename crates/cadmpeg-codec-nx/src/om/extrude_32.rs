@@ -206,7 +206,12 @@ fn counted_lane<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::branch_items::BranchItems;
+    use super::super::compact::CompactIndexAtom;
+    use super::super::compact::WrappedCompactIndex;
+    use super::super::reference_index::FeatureReferenceToken;
+    use super::super::scalar::ShiftedBinary64;
+    use super::Extrude32Frame;
 
     #[test]
     fn frame_derives_mixed_width_lane_positions_and_the_complete_end() {
