@@ -7,9 +7,27 @@
 pub(crate) mod test_archive;
 pub(crate) mod test_dump;
 
-/// The millimetre scale a fixture states directly.
+/// The millimetre scale a fixture states, bound through the custom unit route
+/// a scanned document uses.
 pub(crate) fn millimeter_scale(millimeters_per_unit: f64) -> crate::settings::MillimeterScale {
-    crate::settings::MillimeterScale::new(millimeters_per_unit).expect("test millimetre scale")
+    let unit = crate::settings::UnitSystem::custom(
+        millimeters_per_unit / 1000.0,
+        "fixture unit".to_owned(),
+    )
+    .expect("test millimetre scale");
+    let units = crate::settings::UnitsAndTolerances {
+        unit,
+        absolute_tolerance: 0.01,
+        angular_tolerance: 0.1,
+        relative_tolerance: 0.01,
+        distance_display: None,
+    };
+    let crate::settings::UnitBinding::Millimeters(scale) =
+        crate::settings::UnitBinding::from_units(Some(&units))
+    else {
+        panic!("a custom unit binds a millimetre scale");
+    };
+    scale
 }
 
 /// Plans a write at one archive version, the request the command line builds

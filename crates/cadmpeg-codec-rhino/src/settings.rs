@@ -213,7 +213,7 @@ pub(crate) enum StandardUnit {
 }
 
 impl StandardUnit {
-    pub(crate) fn from_value(value: i32) -> Option<Self> {
+    pub(crate) const fn from_value(value: i32) -> Option<Self> {
         Some(match value {
             1 => Self::Microns,
             2 => Self::Millimeters,
@@ -247,7 +247,7 @@ impl StandardUnit {
         self as i32
     }
 
-    fn millimeters_per_unit(self) -> f64 {
+    const fn millimeters_per_unit(self) -> f64 {
         match self {
             Self::Microns => 0.001,
             Self::Millimeters => 1.0,
@@ -275,7 +275,33 @@ impl StandardUnit {
             Self::Parsecs => 3.085_677_58e19,
         }
     }
+
+    /// Whether every admitted unit code maps to a finite positive scale.
+    ///
+    /// `From<StandardUnit> for MillimeterScale` builds the scale directly, so
+    /// the table itself must hold the invariant of the checked constructor.
+    const fn scales_are_positive_finite() -> bool {
+        let mut value = 0;
+        while value <= LAST_STANDARD_UNIT_VALUE {
+            if let Some(unit) = Self::from_value(value) {
+                let scale = unit.millimeters_per_unit();
+                if !scale.is_finite() || scale <= 0.0 {
+                    return false;
+                }
+            }
+            value += 1;
+        }
+        true
+    }
 }
+
+/// The highest standard unit code the archive grammar admits.
+const LAST_STANDARD_UNIT_VALUE: i32 = 25;
+
+/// Fails to compile if any arm of [`StandardUnit::millimeters_per_unit`] is not
+/// finite and positive. That is what admits the direct construction in
+/// `From<StandardUnit> for MillimeterScale`.
+const _: [(); 1] = [(); StandardUnit::scales_are_positive_finite() as usize];
 
 /// A custom unit whose meter and millimeter scales are finite and positive.
 #[derive(Debug, Clone, PartialEq)]
@@ -378,7 +404,7 @@ impl MillimeterScale {
     pub(crate) const IDENTITY: Self = Self(1.0);
 
     /// Admits a finite positive conversion factor.
-    pub(crate) fn new(millimeters_per_unit: f64) -> Option<Self> {
+    fn new(millimeters_per_unit: f64) -> Option<Self> {
         (millimeters_per_unit.is_finite() && millimeters_per_unit > 0.0)
             .then_some(Self(millimeters_per_unit))
     }
