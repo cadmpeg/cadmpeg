@@ -2,7 +2,18 @@
 
 use super::super::curves::SketchPlaneUAxisSource;
 use super::super::{CLASS_MARKER, NAME_MARKER};
-use super::*;
+use super::{
+    angled_reference_plane_frame_candidates, compact_offset_plane_source,
+    compact_reference_plane_frame, constraint_midplane_frame, constraint_reference_plane_frame,
+    explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
+    legacy_reference_axis_triads, matrix_reference_plane_frame,
+    offset_plane_reference_frame_matches, offset_reference_plane_frame_pair,
+    plane_intersection_axis_frame, plane_intersection_axis_sources,
+    reconcile_reference_plane_frame_with_source, reference_plane_frame_key,
+    resolved_coordinate_system, resolved_reference_point,
+    sketch_block_identity_normalization_origin, sketch_block_record_origin,
+    MINIMAL_REFERENCE_PLANE_FRAME_LEN,
+};
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
 use crate::records::FeatureSource;
@@ -10,11 +21,8 @@ use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::{
-    features::{FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane},
-    scalar::Length,
-};
 use std::collections::BTreeMap;
 
 const REFERENCE_POINT_NAME_END: usize = NAME_MARKER.len() + 1 + 12;

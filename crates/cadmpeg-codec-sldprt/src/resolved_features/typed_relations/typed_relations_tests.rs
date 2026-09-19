@@ -2,8 +2,15 @@
 
 use super::super::markers::sketch_input_entities;
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
-use super::*;
-use crate::records::{SketchInputEntity, SketchInputKind};
+use super::{
+    consecutive_legacy_profile_line_endpoints, coordinate_centered_line_endpoints,
+    current_coordinate_linked_line_endpoints, extended_wide_selected_axis_endpoints,
+    legacy_point_roster_line_endpoint_markers, legacy_terminal_indexed_profile_line,
+    one_based_point_roster_line_endpoint_markers, typed_marker_relation_definition,
+};
+use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+use std::collections::HashMap;
 
 #[test]
 fn compact_legacy_coordinate_line_ends_at_the_following_marker_coordinate() {

@@ -1,6 +1,11 @@
 //! Tests for the `projections` module.
 
-use super::*;
+use super::{
+    full_round_fillet_selection_triple, project_compact_surface_selections,
+    project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
+    sole_unresolved_fillet_group, unique_cylindrical_face, unique_planar_face,
+    unique_topological_cylindrical_face, variable_fillet_radius_groups,
+};
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 use crate::records::{
@@ -14,7 +19,7 @@ use cadmpeg_ir::topology::{Face, Sense};
 use cadmpeg_ir::{
     features::{
         BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId,
-        FeatureOperation,
+        FeatureOperation, RadiusSpec, UnresolvedFamily, VariableRadius,
     },
     scalar::Length,
 };

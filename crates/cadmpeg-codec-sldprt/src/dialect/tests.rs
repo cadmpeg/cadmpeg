@@ -11,13 +11,18 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    classify_layers, dialect_loss, dialect_losses, SldprtDialect, DECLARED_SW_VERSION, FORMAT,
+    PARASOLID_FORMAT, VERIFIED_KERNELS,
+};
 use crate::container::scan_bytes;
+use crate::loss::SldprtLossCode;
 use crate::test_support::{
     make_block, outer_header, sldprt_with_colliding_sites, synthetic_sldprt,
 };
 use crate::SldprtCodec;
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::dialect::{Admission, DialectLayers};
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;

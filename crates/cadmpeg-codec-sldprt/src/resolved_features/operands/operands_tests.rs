@@ -1,6 +1,10 @@
 //! Tests for the `operands` module.
 
-use super::*;
+use super::super::selections::operand_accepts_marker;
+use super::{
+    coordinate_line_endpoints_with_linked_point, resolve_operand_marker,
+    resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,

@@ -1,8 +1,13 @@
-use super::*;
-use crate::records::FeatureSource;
-use crate::resolved_features::curves::sketch_plane_frames;
-use cadmpeg_ir::features::FeatureOperation;
-use std::collections::HashSet;
+use super::super::{
+    classed_offset_plane_sources, legacy_offset_plane_face_alias, offset_plane_reference_source,
+    select_reference_plane_frame_source, structured_offset_plane_sources,
+};
+use crate::records::{Feature, FeatureSource};
+use crate::resolved_features::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::Length;
+use std::collections::{BTreeMap, HashSet};
 
 #[test]
 fn legacy_offset_plane_face_alias_requires_the_complete_nested_record() {

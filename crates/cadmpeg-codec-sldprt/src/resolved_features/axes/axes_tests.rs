@@ -5,7 +5,13 @@ use super::super::endpoints::roster_curve_endpoint_markers;
 use super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::*;
+use super::{
+    bounded_profile_axis_endpoints, common_generated_surface_axis,
+    compact_line_reference_directions, enrich_history_revolution_inputs,
+    profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
+    profile_roster_principal_axis_endpoints, revolution_line_reference_inputs,
+    temporary_axis_reference,
+};
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;

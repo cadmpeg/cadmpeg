@@ -1,5 +1,17 @@
-use super::*;
+use super::super::{relation_constraint_is_inactive, typed_relation_definition};
 use crate::records::operand_tag::NativeOperandTag;
+use crate::records::{
+    FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+    FeatureInputRelationInstance,
+};
+use cadmpeg_ir::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition, SketchId,
+};
+use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
