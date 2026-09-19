@@ -3,7 +3,7 @@
 
 use crate::{
     examples::unit_cube,
-    geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry},
+    geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry, PcurveNurbs},
     math::Point2,
     test_support::nurbs::{pcurve, polar},
 };
@@ -45,6 +45,29 @@ fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
         ))
     );
     assert_eq!(pcurve, original);
+}
+
+#[test]
+fn a_refused_nurbs_pcurve_scale_keeps_the_prior_poles() {
+    let mut geometry = PcurveGeometry::Nurbs { nurbs: pcurve() };
+    let original = geometry.clone();
+    assert!(geometry.try_scale_coordinates([1e308, 1e308]).is_err());
+    assert_eq!(geometry, original);
+}
+
+#[test]
+fn nurbs_pcurve_scaling_scales_the_poles_and_keeps_the_knot_lane() {
+    let mut geometry = PcurveGeometry::Nurbs { nurbs: pcurve() };
+    assert!(geometry.try_scale_coordinates([2.0, 3.0]).is_ok());
+    let expected = PcurveNurbs::from_lanes(
+        pcurve().degree(),
+        pcurve().knots().to_vec(),
+        vec![Point2::new(2.0, 6.0), Point2::new(6.0, 12.0)],
+        pcurve().weights(),
+        pcurve().periodic(),
+    )
+    .unwrap();
+    assert_eq!(geometry, PcurveGeometry::Nurbs { nurbs: expected });
 }
 mod metadata;
 
