@@ -810,14 +810,6 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
     Ok(ExitCode::from(1))
 }
 
-/// Bytes per line in a difference window, matching the `hex` default width.
-const WINDOW_HEX_WIDTH: NonZeroUsize = match NonZeroUsize::new(16) {
-    Some(width) => width,
-    // The literal above is not zero, so this arm is not taken. It keeps the
-    // constant total without a panic.
-    None => NonZeroUsize::MIN,
-};
-
 /// Renders a bounded hexadecimal window of an in-memory buffer.
 ///
 /// The window is the intersection of `start..start + len` with the buffer: a
@@ -832,7 +824,7 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
         Some(Ok(end)) if end < bytes.len() => end,
         _ => bytes.len(),
     };
-    hexdump::render(begin as u64, &bytes[begin..end], WINDOW_HEX_WIDTH)
+    hexdump::render_default_width(begin as u64, &bytes[begin..end])
 }
 
 #[cfg(test)]
