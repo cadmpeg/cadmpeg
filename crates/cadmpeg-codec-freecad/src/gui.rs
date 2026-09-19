@@ -405,7 +405,7 @@ fn transfer_schema_one(
             .get("Transparency")
             .and_then(|value| value.attribute("value"))
             .and_then(|value| value.parse::<f32>().ok())
-            .map(|percent| (percent / 100.0).clamp(0.0, 1.0));
+            .map(|percent| percent / 100.0);
         let packed_color = values
             .get("ShapeColor")
             .and_then(|value| value.attribute("value"))
