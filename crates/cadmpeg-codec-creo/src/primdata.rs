@@ -311,7 +311,10 @@ fn primitive_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        scalar_arrays, triangle_strip_geometry, triangle_strips, PrimitiveArrayField,
+        PrimitiveScalarArray, TriangleStripGeometry, TriangleStripGeometryError,
+    };
 
     fn named(name: &str, values: &[u8], count: u8) -> Vec<u8> {
         let mut bytes = vec![0xe0, 0x06];

@@ -335,7 +335,10 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        compact_int, is_short_form_float, reference_id, short_form_float, token, token_at, tokens,
+        Token, TokenKind,
+    };
 
     #[test]
     fn compact_int_one_byte() {

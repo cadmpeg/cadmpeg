@@ -2113,7 +2113,25 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        admitted_scalar_body, compact_inline_frame, decode, decode_explicit_local_system_slots,
+        decode_feature_local_system_slots, decode_in_lane, decode_in_pcurve_lane,
+        decode_in_row_lane, decode_in_surface_row_lane, decode_in_torus_row_lane,
+        decode_inline_non_plane_local_system_prefix, decode_inline_surface_suffix_scalar,
+        decode_model_reference_coordinate, decode_named_local_system_coordinate,
+        decode_named_positive_dict_scalar, decode_plane_support_lane_variants,
+        decode_plane_support_local_system, decode_plane_support_local_system_slots,
+        decode_positional_cylinder_local_system_slots, decode_positional_plane_local_system_slots,
+        decode_positive_dict, decode_round_edge_coordinate, decode_saved_conic_local_system_prefix,
+        decode_tabulated_cylinder_first_coordinate,
+        decode_tabulated_cylinder_first_frame_coordinate,
+        decode_tabulated_cylinder_frame_coordinate, decode_tabulated_cylinder_second_coordinate,
+        decode_two_chart_first_coordinate, decode_two_chart_second_coordinate, double_xar_tables,
+        plane_support_layout, valid_equal_scale_orthogonal_directions, CompactFrameAxes,
+        DoubleXarSlot, InlineNonPlaneLocalSystemPrefix, PlaneSupportFrameLayout, ScalarCache,
+        NORMAL_X_PLANE_SUPPORT_PREFIXES, POSITIONAL_SLOT_TABLE_WIDTH,
+    };
+    use std::collections::BTreeMap;
 
     /// Every arm of the surface-row lane reads the bytes it reports: a decode
     /// that states a value advances the cursor and stops inside the body. The

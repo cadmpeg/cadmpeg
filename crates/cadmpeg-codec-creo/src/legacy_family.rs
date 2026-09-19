@@ -552,7 +552,12 @@ impl FamilyTable {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        parse, FamilyTableValuePayload, FAMILY_ROOT, INSTANCES_ARRAY, ITEMS_ARRAY, VALUES_ARRAY,
+        VALUE_INTEGER, VALUE_REAL, VALUE_STRING,
+    };
+    use crate::legacy;
+    use crate::legacy::{NumericPayload, ObjectPayload, ObjectRecord, Persistence, StringPayload};
 
     fn fixture_offset(id: &str) -> usize {
         match id {

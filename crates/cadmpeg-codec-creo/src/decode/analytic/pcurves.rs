@@ -1922,9 +1922,23 @@ pub fn planar_curve_pcurve(
 
 #[cfg(test)]
 mod tests {
-    use super::super::equations::PlaneEquation;
-    use super::*;
+    use super::super::equations::{CarrierEquation, PlaneEquation};
+    use super::{
+        map_two_chart_endpoint_sets, mapped_pcurve_endpoints, mapped_two_chart_endpoint_sets,
+        mirrored_support_apex_cone, pcurve_edge_endpoint_evidence_with_carriers,
+        pcurve_edge_endpoint_evidence_with_diagnostics, pcurve_mismatch_detail,
+        pcurve_plane_carrier_status, point_coordinate_error, support_cone_witness_matches,
+        topology_ignored_surface_ids, transfer_analytic_pcurve_carriers, MappedPcurvePath,
+        PcurveCarrierStatus, PcurveCarrierUnknownReason, TwoChartEndpointSets, TwoChartMapping,
+    };
+    use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::NurbsSurface;
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CurveId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use std::collections::BTreeMap;
     use std::collections::BTreeSet;
 
     #[test]

@@ -179,7 +179,7 @@ mod tests {
         bytes
     }
 
-    use super::*;
+    use super::{decode, CLEAR};
 
     #[test]
     fn decodes_literal_non_block_stream() {

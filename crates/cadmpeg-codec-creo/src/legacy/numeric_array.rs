@@ -47,8 +47,7 @@ impl<T> NumericArray<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::legacy::NumericPayload;
+    use crate::legacy::{NumericPayload, NumericRun};
 
     #[test]
     fn rejects_incomplete_or_overflowing_extent_products() {

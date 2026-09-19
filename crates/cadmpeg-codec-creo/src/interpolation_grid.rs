@@ -130,7 +130,7 @@ impl InterpolationGrid {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::InterpolationGrid;
 
     #[test]
     fn source_grid_admission_rejects_mismatched_and_unordered_fields() {
