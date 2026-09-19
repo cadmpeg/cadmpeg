@@ -14,7 +14,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::container::{self};
 use crate::CreoCodec;
 
-use super::*;
+use super::{
+    build, edge_start_vertex_pairs, edge_vertex_pairs, face_components, selected_body_count,
+    vertex_incident_faces, vertex_orbits, HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence,
+    TopologicalVertex,
+};
+use crate::curve::CurveTopologyRow;
 
 fn row(id: u32, next: u32) -> CurveTopologyRow {
     CurveTopologyRow {

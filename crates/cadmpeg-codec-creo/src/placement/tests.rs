@@ -9,7 +9,21 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::container::{self};
 use crate::CreoCodec;
 
-use super::*;
+use super::{
+    definition_local_plane_equation, generated_cylinder_section_transform,
+    generated_planar_section_transform, plane_equation, resolve, unique_complete_local_system,
+    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_FRAME_AGREEMENT,
+};
+use crate::datum::DatumPlaneRecord;
+use crate::feature::definitions::ReferencePlanes;
+use crate::feature::{
+    AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition, FeatureEntityTable,
+    FeatureGeometryTable, FeatureParameterFrameKind, FeatureSegmentKind,
+};
+use crate::surface::{
+    OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
+};
+use crate::vecmath::{cross, normalize};
 
 use crate::feature::definitions::FeatureVariableTable;
 use crate::feature::{
