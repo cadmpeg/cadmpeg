@@ -25,11 +25,57 @@ use serde::Serialize;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, NativeConvertError, NativeNamespace};
 
-use super::model::NativeModel;
-#[allow(clippy::wildcard_imports)]
-use super::{
-    display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, toggle::*,
+use super::display_jt::{
+    DisplayJtBaseNodeData, DisplayJtCompressedElement, DisplayJtCompressedElementSequence,
+    DisplayJtCompressedVertexRecordsHeader, DisplayJtGeometricTransformAttribute,
+    DisplayJtGroupNodeData, DisplayJtInitialFaceDegreeSymbols, DisplayJtInstanceNode,
+    DisplayJtMaterialAttribute, DisplayJtPartitionNode, DisplayJtPolygonMesh,
+    DisplayJtRangeLodNode, DisplayJtSegment, DisplayJtShapeLodBinding, DisplayJtShapeLodElement,
+    DisplayJtStringPropertyAtom, DisplayJtTopologyPacketSequence, DisplayJtTriStripLodHeader,
+    DisplayJtTriStripShapeNode, DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
+    DisplayJtVertexCoordinates, DisplayJtVertexFlags, DisplayJtVertexNormals,
+    DisplayJtVertexTextureCoordinates,
 };
+use super::features::{
+    FeatureBodyReference, FeatureBooleanOperation, FeatureInputBlock, FeatureOperationBodyWrite,
+    FeatureOperationCommonFrame, FeatureOperationLabel, FeatureOperationObjectReference,
+    FeatureOperationStateJournalUse, FeatureOperationTerminalFrame, FeatureParameterBinding,
+    FeaturePayloadString, FeatureSketchDatumCsysDependency, FeatureSketchFixedPoint,
+    FeatureSketchNamedPointBlockUse, FeatureSketchPayloadFixedPair, FeatureSketchPayloadMixedPair,
+    FeatureSketchPrecedingNamedPointUse, FeatureSketchRecord, OffsetStoreNamedPoint,
+};
+use super::model::NativeModel;
+use super::om::{
+    DataBlockControlClassReference, DataBlockControlForm, DataBlockControlHandlePair,
+    DataBlockControlIndexValue, DataBlockControlReference, DataBlockControlValue,
+    DataBlockReference, ExpressionDeclaration, ExternalReference, ExternalReferenceRecord,
+    MaterialTextureCatalogEntry, ObjectRecordHandlePair, OmAuditTrailRow, OmOperationStateCounter,
+    OmOperationStateMessage, OmRecordArea, StoreHeader,
+};
+use super::parasolid::{
+    ParasolidAttributeDefinition, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
+    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
+    ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasRecord,
+    ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
+    ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
+    ParasolidDeltasSchemaReferencePreamble, ParasolidDeltasTaggedReferenceLane,
+    ParasolidDeltasTermUseNumericTail, ParasolidDeltasTerminalNullReferences,
+    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidDeltasType150StatePacket,
+    ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
+    ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
+    ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
+    ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidGroupRecord,
+    ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
+    ParasolidTermUseRecord, ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
+};
+use super::segments::{
+    SegmentBodyBinding, SegmentBodyLineageStatus, SegmentIndexRow, SegmentOmLink, SegmentStreamLink,
+};
+use super::structure::{
+    FastLoadComponentObjectGroup, FastLoadComponentOccurrence, FastLoadComponentPrototype,
+    FastLoadComponentUuid,
+};
+use super::toggle::{SavedToggleEntry, SavedToggleStream};
 
 pub(crate) type CatalogueRow =
     FamilyRow<NativeModel, AnnotationBuilder, NativeNamespace, Exactness>;

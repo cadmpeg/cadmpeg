@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Siemens NX object-model records retained in the native namespace.
 
-use cadmpeg_ir::report::LossNote;
-use std::collections::{BTreeMap, BTreeSet};
-
-use serde::{Deserialize, Serialize};
-
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 
-use crate::container::Container;
 use crate::decode::Scan;
-use crate::parasolid::Stream;
 
 mod attach;
 pub(crate) mod catalogue;
