@@ -1251,6 +1251,32 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
                 assert!(refused);
             }
         }
+
+        // The revolution axis is stored raw rather than in a checked carrier,
+        // and no interval rule reads it.
+        assert!(RevolutionSurfaceConstruction::try_new(
+            curve(),
+            (Point3::new(value, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            [0.0, 1.0],
+            None,
+            None,
+            false,
+            cache(admitted),
+        )
+        .is_err());
+        assert!(
+            RevolutionSurfaceConstruction::try_from(RevolutionSurfaceConstructionWire {
+                directrix: curve(),
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, value, 0.0),
+                angular_interval: [0.0, 1.0],
+                angular_parameter_interval: None,
+                parameter_interval: None,
+                transposed: false,
+                cache: cache(admitted),
+            })
+            .is_err()
+        );
     }
 }
 
