@@ -2119,6 +2119,10 @@ pub(crate) fn e5_stored_pcurve_reversed(
     parameter_ranges_reversed(parameters, native_range)
 }
 
+fn finite_point2(point: Point2) -> bool {
+    [point.u, point.v].into_iter().all(f64::is_finite)
+}
+
 fn unique_endpoint_direction(forward_error: f64, reverse_error: f64) -> Option<bool> {
     match (
         forward_error.is_finite() && forward_error <= E5_ENDPOINT_MATCH_TOLERANCE,
@@ -2145,7 +2149,6 @@ pub(crate) fn e5_pcurve_on_surface(
     decoded_surface: &crate::families::e5::records::E5Surface,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
-    let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
     let surface = &decoded_surface.geometry;
     match pcurve {
         crate::families::e5::graph::E5Pcurve::Line {
@@ -2366,7 +2369,6 @@ pub(crate) fn e5_boundary_curve(
     uv_scale: [f64; 2],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(CurveGeometry, [f64; 2])> {
-    let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
     if !uv_scale
         .into_iter()
         .all(|value| value.is_finite() && value != 0.0)
