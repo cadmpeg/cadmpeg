@@ -305,8 +305,12 @@ fn read_i32(bytes: &[u8], offset: usize, name: &str) -> Result<i32, CodecError> 
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    use super::*;
+    use super::{
+        decode_kernel_carrier, parse_carrier, ActiveCarrier, DecodedKernelCarrier, KernelFamily,
+    };
     use crate::test_support::test_fixtures::acis_sphere_kernel_stream;
+    use cadmpeg_core::decode::View;
+    use cadmpeg_core::CodecError;
 
     fn decode_test_carrier(
         ctx: &DecodeContext<'_>,

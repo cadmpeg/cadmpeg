@@ -647,7 +647,14 @@ impl<'a> Cursor<'a> {
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
-    use super::*;
+    use super::{
+        frame_bulk_records, parse_extended_record_trailer, parse_meta_tables,
+        synthetic_meta_table_body, Cursor, TERMINAL_ID_LEN,
+    };
+    use crate::layout::meta_body_prefix as meta_prefix;
+    use crate::test_support::test_fixtures::push_u32;
+    use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::CodecError;
 
     #[test]
     fn metadata_tables_frame_forward_and_backward_sections() {

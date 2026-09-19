@@ -1880,8 +1880,16 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform, project,
+        PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcTransformPayload, SketchConstraintTag,
+        SketchEntityTag, SketchInventory, COINCIDENT_TYPE, DIRECTION_TYPE, LINE_TYPE, POINT_TYPE,
+        SKETCH_TYPE, TRANSFORM_TYPE,
+    };
+    use crate::pmdc::{type_id_string, PmDcReference, PmDcReferenceList};
+    use crate::record_identity::Located;
     use crate::test_support::test_fixtures::{content, parse};
+    use cadmpeg_ir::sketches::SketchPlacement;
 
     fn list(marker: u16, references: &[u32]) -> Vec<u8> {
         let mut bytes = Vec::new();

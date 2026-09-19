@@ -283,7 +283,9 @@ mod tests {
     use cadmpeg_protein::property::{DecodedProperty, PropertyValue};
     use cadmpeg_protein::DecodedRecord;
 
-    use super::*;
+    use super::project_catalog;
+    use crate::protein::ProteinInstanceRecords;
+    use std::collections::BTreeMap;
 
     #[test]
     fn catalog_projects_assets_and_refuses_ambiguous_texture_guids() {

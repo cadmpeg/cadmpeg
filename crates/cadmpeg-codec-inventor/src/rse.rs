@@ -853,7 +853,9 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use super::*;
+    use super::{parse_bulk_stream, parse_meta_stream, MetaStreamDeclaration, SegmentMetaState};
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_core::CodecError;
 
     #[test]
     fn meta_stream_v8_frames_header_and_exact_zlib_body() {

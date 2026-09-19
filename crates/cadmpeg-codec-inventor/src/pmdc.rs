@@ -523,8 +523,10 @@ impl<V> TryFrom<PmDcPairedMapWire<V>> for PmDcPairedMap<V> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{content_header, reference_list, Cursor};
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::CodecError;
 
     /// The diagnostic a truncated read produces, without an unwrap on the route.
     fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {

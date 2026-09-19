@@ -1025,7 +1025,20 @@ mod tests {
     use cadmpeg_ir::appearance::AppearanceTarget;
     use cadmpeg_ir::ids::AppearanceId;
 
-    use super::*;
+    use super::{
+        parse_default_style, parse_graphics_face, parse_graphics_primary_color_style,
+        parse_graphics_style_collection, parse_rendering_style, project_bindings,
+        project_default_bindings, Cursor, PmGraphicsFace, PmGraphicsPrimaryColorStyle,
+        PmGraphicsStyleCollection, PresentationInventory, DEFAULT_STYLE_TYPE, GRAPHICS_FACE_TYPE,
+        GRAPHICS_PRIMARY_COLOR_STYLE_TYPE, GRAPHICS_STYLE_COLLECTION_TYPE, RENDERING_STYLE_TYPE,
+    };
+    use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
+    use crate::record_identity::Located;
+    use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::ids::{BodyId, FaceId};
+    use cadmpeg_ir::topology::Color;
 
     #[test]
     fn parses_current_default_style_and_one_based_rendering_reference() {

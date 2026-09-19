@@ -787,7 +787,12 @@ impl UfrxRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxModelStateRecord,
+        UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
+    };
+    use crate::native::digest::Sha256Hex;
+    use cadmpeg_ir::native::NativeNamespace;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]

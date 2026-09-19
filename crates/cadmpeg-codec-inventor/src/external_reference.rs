@@ -908,7 +908,13 @@ mod tests {
     use cadmpeg_container::compound::CompoundStreamId;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
-    use super::*;
+    use super::{
+        parse_embedded_references, parse_occurrences, parse_schema_table, parse_stream, Cursor,
+    };
+    use crate::rse::DocumentKind;
+    use cadmpeg_container::compound::CompoundSnapshot;
+    use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::CodecError;
 
     fn stream_id() -> CompoundStreamId {
         let bytes = crate::test_support::test_fixtures::fixture(true);
