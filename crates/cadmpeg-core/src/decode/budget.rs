@@ -12,7 +12,7 @@ use super::policy::{
 };
 
 #[derive(Debug)]
-pub(crate) struct DecodeBudget {
+pub(super) struct DecodeBudget {
     /// Policy applied to this budget.
     policy: DecodePolicy,
     input_bytes: u64,
@@ -32,7 +32,7 @@ impl DecodeBudget {
         &self.policy
     }
 
-    pub(crate) fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
+    pub(super) fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
         Self {
             policy,
             input_bytes,
@@ -47,11 +47,11 @@ impl DecodeBudget {
         }
     }
 
-    pub(crate) fn fused(&self) -> Option<ResourceLimit> {
+    pub(super) fn fused(&self) -> Option<ResourceLimit> {
         self.fuse.get()
     }
 
-    pub(crate) fn decompression_allowance(&self) -> u64 {
+    pub(super) fn decompression_allowance(&self) -> u64 {
         let proportional = DECOMPRESSED_TOTAL_BASE
             .saturating_add(DECOMPRESSED_TOTAL_PER_INPUT_BYTE.saturating_mul(self.input_bytes));
         self.policy
@@ -60,11 +60,11 @@ impl DecodeBudget {
             .min(proportional)
     }
 
-    pub(crate) fn input_bytes(&self) -> u64 {
+    pub(super) fn input_bytes(&self) -> u64 {
         self.input_bytes
     }
 
-    pub(crate) fn charge_decompressed(
+    pub(super) fn charge_decompressed(
         &self,
         amount: u64,
         operation: &'static str,
@@ -78,7 +78,7 @@ impl DecodeBudget {
         )
     }
 
-    pub(crate) fn decompressed_used(&self) -> u64 {
+    pub(super) fn decompressed_used(&self) -> u64 {
         self.decompressed.get()
     }
 
@@ -121,7 +121,7 @@ impl DecodeBudget {
         Ok(())
     }
 
-    pub(crate) fn refuse(
+    pub(super) fn refuse(
         &self,
         dimension: ResourceDimension,
         reason: ResourceFailure,
@@ -142,7 +142,7 @@ impl DecodeBudget {
         CodecError::ResourceLimit(resource)
     }
 
-    pub(crate) fn reserve_scoped(
+    pub(super) fn reserve_scoped(
         &self,
         bytes: u64,
         operation: &'static str,
@@ -161,7 +161,7 @@ impl DecodeBudget {
         })
     }
 
-    pub(crate) fn charge_retained(
+    pub(super) fn charge_retained(
         &self,
         bytes: u64,
         operation: &'static str,
@@ -175,7 +175,7 @@ impl DecodeBudget {
         )
     }
 
-    pub(crate) fn charge_entities(
+    pub(super) fn charge_entities(
         &self,
         count: u64,
         operation: &'static str,
@@ -189,7 +189,7 @@ impl DecodeBudget {
         )
     }
 
-    pub(crate) fn charge_collection_items(
+    pub(super) fn charge_collection_items(
         &self,
         count: u64,
         operation: &'static str,
@@ -203,7 +203,7 @@ impl DecodeBudget {
         )
     }
 
-    pub(crate) fn enter_nested(
+    pub(super) fn enter_nested(
         &self,
         operation: &'static str,
     ) -> Result<DepthGuard<'_>, CodecError> {
@@ -217,7 +217,7 @@ impl DecodeBudget {
         Ok(DepthGuard { budget: self })
     }
 
-    pub(crate) fn charge_work(
+    pub(super) fn charge_work(
         &self,
         units: u64,
         operation: &'static str,
@@ -323,7 +323,7 @@ impl WorkBudget<'static> {
 }
 
 impl<'a> WorkBudget<'a> {
-    pub(crate) fn for_session(limit: u64, session: &'a DecodeBudget) -> Self {
+    pub(super) fn for_session(limit: u64, session: &'a DecodeBudget) -> Self {
         let limit = if limit > usize::MAX as u64 {
             usize::MAX
         } else {

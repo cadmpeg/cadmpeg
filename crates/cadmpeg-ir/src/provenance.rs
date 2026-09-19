@@ -373,7 +373,7 @@ pub enum SourceOwner {
 impl SourceOwner {
     /// Return the retained-record wire spelling.
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Self::Root => "",
             Self::Named(stream) => stream.as_str(),

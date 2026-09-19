@@ -55,7 +55,7 @@ impl DecodeTransfer {
 
     /// Constructs the transfer state from the sealed wrapper's request scope
     /// and the backend's geometry outcome.
-    pub(crate) const fn stamp_request_scope(container_only: bool, transfer: Self) -> Self {
+    const fn stamp_request_scope(container_only: bool, transfer: Self) -> Self {
         if container_only {
             Self::ContainerOnly {}
         } else {

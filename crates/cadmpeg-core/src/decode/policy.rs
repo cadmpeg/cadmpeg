@@ -134,14 +134,14 @@ pub struct InspectOptions {
     pub limits: ResourceLimits,
 }
 
-pub(crate) const DECOMPRESSED_TOTAL_BASE: u64 = 16 * MIB;
-pub(crate) const DECOMPRESSED_TOTAL_PER_INPUT_BYTE: u64 = 1000;
-pub(crate) const DECOMPRESSED_PER_EXPAND_BASE: u64 = 16 * MIB;
-pub(crate) const DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE: u64 = 256;
-pub(crate) const MATERIALIZED_BASE: u64 = 16 * MIB;
-pub(crate) const MATERIALIZED_PER_INPUT_BYTE: u64 = 1000;
-pub(crate) const RETAINED_BASE: u64 = 16 * MIB;
-pub(crate) const RETAINED_PER_INPUT_BYTE: u64 = 1000;
+pub(super) const DECOMPRESSED_TOTAL_BASE: u64 = 16 * MIB;
+pub(super) const DECOMPRESSED_TOTAL_PER_INPUT_BYTE: u64 = 1000;
+pub(super) const DECOMPRESSED_PER_EXPAND_BASE: u64 = 16 * MIB;
+pub(super) const DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE: u64 = 256;
+pub(super) const MATERIALIZED_BASE: u64 = 16 * MIB;
+pub(super) const MATERIALIZED_PER_INPUT_BYTE: u64 = 1000;
+pub(super) const RETAINED_BASE: u64 = 16 * MIB;
+pub(super) const RETAINED_PER_INPUT_BYTE: u64 = 1000;
 
 const fn default_max_materialized_bytes() -> u64 {
     ResourceLimits::desktop().max_materialized_bytes
