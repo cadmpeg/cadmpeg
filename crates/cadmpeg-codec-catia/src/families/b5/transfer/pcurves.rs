@@ -19,11 +19,11 @@ use super::super::graph::{
     edge_pcurve_parameters, evaluate_pcurve, pcurve_nurbs_knots, B5Graph, B5Pcurve,
     B5SphereGreatCirclePcurve, B5Surface,
 };
-use super::super::vecmath::{add, cross, scale};
+use super::super::vecmath::{add, cross, scale, unit};
 use super::edges::ordered_subrange;
 use super::{
-    annotate, distance, dot, point3, subtract, unit_by_component_division, vector, CurvePlan,
-    HelixPlan, TransferPlan, POINT_TOLERANCE,
+    annotate, distance, dot, point3, subtract, vector, CurvePlan, HelixPlan, TransferPlan,
+    POINT_TOLERANCE,
 };
 
 const EPS_PCURVE_RESIDUAL: f64 = 1.0e-9;
@@ -49,7 +49,7 @@ pub(super) fn sphere_great_circle_geometry(
         return None;
     }
     let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
-    let plane_axis = unit_by_component_division(add(
+    let plane_axis = unit(add(
         scale(*sphere_axis, 1.0),
         add(
             scale(*direction_x, -pcurve.slope * phase.cos()),

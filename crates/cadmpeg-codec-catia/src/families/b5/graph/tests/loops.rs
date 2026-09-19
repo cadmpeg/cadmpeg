@@ -10,23 +10,21 @@ use crate::families::b5::graph::{
     merge_pcurve_candidate, merge_surface_candidate, parameter_incidence, parse_face,
     parse_face_record, parse_loop, parse_pcurve, pcurve_endpoints, pcurve_nurbs_knots,
     pcurve_parameter_domain, point_index, resolve_surface_aliases, resolve_targeted_surface,
-    sphere_great_circle_point, surface_alias_carrier, unit_by_reciprocal_multiply, B5FaceRecord,
-    B5IncidenceLane, B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension,
-    B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization,
-    B5Record, B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
+    sphere_great_circle_point, surface_alias_carrier, B5FaceRecord, B5IncidenceLane,
+    B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension, B5OpaquePcurve,
+    B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization, B5Record,
+    B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
 };
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
+use crate::families::b5::vecmath::unit;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[test]
 fn unit_preserves_tiny_finite_direction() {
-    assert_eq!(
-        unit_by_reciprocal_multiply([1e-200, 0.0, 0.0]),
-        Some([1.0, 0.0, 0.0])
-    );
-    assert_eq!(unit_by_reciprocal_multiply([0.0, 0.0, 0.0]), None);
+    assert_eq!(unit([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
+    assert_eq!(unit([0.0, 0.0, 0.0]), None);
 }
 
 #[test]
