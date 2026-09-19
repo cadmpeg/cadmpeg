@@ -8,6 +8,8 @@
 //! compressor output.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::bytes::{put_u16, put_u32};
+
 pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
     const SECTOR: usize = 512;
     const END: u32 = 0xffff_fffe;
@@ -187,12 +189,4 @@ pub(crate) fn cfb_directory_entry(
 pub(crate) fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
     let start = (sector + 1) * 512;
     &mut file[start..start + 512]
-}
-
-pub(crate) fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-}
-
-pub(crate) fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }

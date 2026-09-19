@@ -383,12 +383,12 @@ mod tests {
         check_output_path, load_matching_sidecar, read_bounded_text, read_detection_input,
         FileDestination, OptionalFileDestination, OutputDestinations,
     };
-    #[cfg(feature = "nx")]
-    use crate::test_support::{put_u16, put_u32};
     use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
     use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
     use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
+    #[cfg(feature = "nx")]
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
     #[test]
     fn clap_pairs_each_output_with_the_shared_force_flag() {

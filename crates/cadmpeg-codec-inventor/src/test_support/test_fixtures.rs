@@ -3,6 +3,7 @@
 use std::io::Write as _;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
@@ -102,14 +103,6 @@ fn directory_entry(
 fn sector_mut(file: &mut [u8], id: usize) -> &mut [u8] {
     let start = SECTOR_SIZE * (id + 1);
     &mut file[start..start + SECTOR_SIZE]
-}
-
-fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-}
-
-fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
 /// The `RSe` version declarations a synthetic primary envelope carries.
