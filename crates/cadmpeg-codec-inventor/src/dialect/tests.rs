@@ -9,11 +9,18 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::dialect::Admission;
+use cadmpeg_core::dialect::{Admission, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossNote;
 
-use super::*;
+use super::{
+    dialect_loss, kernel_dialect_loss, DialectRecovery, InventorDialect,
+    DECLARED_CFB_MAJOR_VERSION, DECLARED_META_STREAM_MARKER, DECLARED_META_STREAM_VERSION,
+    DECLARED_RSE_DB_SCHEMA, FORMAT,
+};
+use crate::database::RseSchema;
+use crate::loss::InventorLossCode;
+use crate::rse::MetaStreamDeclaration;
 use crate::test_support::test_fixtures::{
     fixture, primary_envelope_fixture_with, primary_envelope_fixture_with_broken_database,
     primary_envelope_fixture_with_broken_metadata,

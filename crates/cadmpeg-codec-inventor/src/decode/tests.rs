@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 mod native_admission;
 
-use super::*;
+use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
 use crate::loss::InventorLossCode;
+use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
+use crate::property_set::PropertyValue;
 use crate::test_support::test_fixtures::{
     acis_kernel_stream, acis_sphere_kernel_stream, fixture, primary_envelope_fixture,
     primary_envelope_fixture_with_kernel, EnvelopeDeclarations,
