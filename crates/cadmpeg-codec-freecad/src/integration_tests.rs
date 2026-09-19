@@ -49,10 +49,8 @@ use crate::topology_transfer::tests::{
     transfers_connected_text_brep_topology,
     transfers_triangulation_only_face_and_indexed_edge_polygon,
 };
-use crate::writer::tests::{
-    write_target_and_source_requirements_are_explicit,
-    writer_rejects_unserialized_declaration_and_stale_payload_edits,
-};
+use crate::writer::tests::patching::writer_rejects_unserialized_declaration_and_stale_payload_edits;
+use crate::writer::tests::targets::write_target_and_source_requirements_are_explicit;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     FcstdCodec
