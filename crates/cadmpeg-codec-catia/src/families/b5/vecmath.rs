@@ -30,6 +30,12 @@ mod tests {
     use super::unit;
 
     #[test]
+    fn unit_preserves_tiny_finite_direction() {
+        assert_eq!(unit([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
+        assert_eq!(unit([0.0, 0.0, 0.0]), None);
+    }
+
+    #[test]
     fn unit_preserves_subnormal_direction() {
         assert_eq!(unit([1e-310, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
     }
