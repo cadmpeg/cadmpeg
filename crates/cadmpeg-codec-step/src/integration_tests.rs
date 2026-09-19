@@ -14,11 +14,11 @@ use crate::archive::tests::{
 };
 use crate::export::write_step;
 use crate::reader::dependencies::tests::decode_reports_data_section_external_dependencies;
-use crate::reader::geometry::tests::{
+use crate::reader::geometry::tests::analytic::procedural_step_geometry_round_trips_as_native_entities;
+use crate::reader::geometry::tests::units::{
     decode_conical_apex_and_context_plane_angle_units,
     decode_resolves_conversion_units_and_linear_uncertainty,
     decode_transfers_placed_analytic_geometry_in_millimetres,
-    procedural_step_geometry_round_trips_as_native_entities,
 };
 use crate::reader::pmi::tests::{
     ap242_dimension_kinds_emit_concrete_schema_entities,
@@ -46,14 +46,14 @@ use crate::reader::tests::{
     decode_accounts_for_every_part21_byte,
     decode_preserves_named_opaque_records_with_exact_byte_spans,
 };
-use crate::reader::topology::tests::{
+use crate::reader::topology::tests::faces::face_outer_bound_is_canonicalized_ahead_of_inner_bounds;
+use crate::reader::topology::tests::sheets::{
     decode_and_write_singular_vertex_loops, decode_builds_a_valid_ap203_sheet_brep,
-    decode_builds_a_valid_connected_sheet_brep, every_region_of_a_body_is_retained_as_a_shape_item,
-    face_outer_bound_is_canonicalized_ahead_of_inner_bounds,
-    reader_recovers_a_valid_solid_from_writer_output,
+    decode_builds_a_valid_connected_sheet_brep, reader_recovers_a_valid_solid_from_writer_output,
 };
+use crate::reader::topology::tests::shells::every_region_of_a_body_is_retained_as_a_shape_item;
 use crate::strings::tests::string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode;
-use crate::writer::tests::{
+use crate::writer::tests::round_trips::{
     analytic_conics_round_trip_through_step,
     ap242_writer_round_trips_indexed_tessellation_and_exact_body_link,
     nurbs_surface_grid_orientation_is_u_major,

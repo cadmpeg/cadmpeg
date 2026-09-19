@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-use super::*;
+use super::{find_color, style_application_order, ColorResolution, StyleDomain};
+use std::collections::{BTreeMap, BTreeSet};
 
 mod surface_styles;
 
@@ -206,6 +207,8 @@ fn ps04_product_definition_views_keep_identity_when_records_reordered() {
 
 #[test]
 fn presentation_layer_preserves_empty_label_and_visibility() {
+    use cadmpeg_ir::presentation::PresentationItem;
+
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #2=PRESENTATION_LAYER_ASSIGNMENT('','empty label description',(#1));

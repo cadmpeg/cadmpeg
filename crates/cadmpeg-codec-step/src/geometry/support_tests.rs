@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::{curve, curve_is_supported};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 
 #[test]
 fn rejects_transform_that_step_operator_cannot_represent() {
