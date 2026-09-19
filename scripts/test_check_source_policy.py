@@ -468,6 +468,64 @@ class PlacementRules(TempSourceCase):
         self.assertEqual([f.path for f in self.findings("test_size")], ["crates/demo/tests/smoke.rs"])
 
 
+class ModuleVisibility(TempSourceCase):
+    def test_private_inner_module_cannot_grant_crate_reach(self) -> None:
+        self.write("crates/demo/src/lib.rs", "pub mod outer;\n")
+        self.write("crates/demo/src/outer.rs", "mod inner;\n")
+        self.write("crates/demo/src/outer/inner.rs", '\n'.join([
+            "pub(crate) fn wide() {}", "pub(crate) const WIDE: u8 = 1;",
+            "pub(crate) static ALSO: u8 = 1;", "pub(super) fn narrow() {}", "",
+        ]))
+        findings = self.findings("overwide_module_visibility")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/demo/src/outer/inner.rs", 1),
+            ("crates/demo/src/outer/inner.rs", 2),
+            ("crates/demo/src/outer/inner.rs", 3),
+        ])
+        self.assertIn("outer::inner", findings[0].message)
+        self.assertIn("crate::outer", findings[0].message)
+
+    def test_reach_the_declaration_chain_grants_is_accepted(self) -> None:
+        # A private module of the crate root: the root's subtree is the whole crate.
+        self.write("crates/demo/src/lib.rs", "mod inner;\npub mod outer;\n")
+        self.write("crates/demo/src/inner.rs", "pub(crate) fn wide() {}\n")
+        # A `pub` chain keeps the parent's reach, and `pub(crate)` widens to it.
+        self.write("crates/demo/src/outer.rs", "pub mod shown;\npub(crate) mod lifted;\n")
+        self.write("crates/demo/src/outer/shown.rs", "pub(crate) fn wide() {}\n")
+        self.write("crates/demo/src/outer/lifted.rs", "pub(crate) fn wide() {}\n")
+        self.assertEqual(self.findings("overwide_module_visibility"), [])
+
+    def test_marker_wider_than_a_deeper_cap_is_reported(self) -> None:
+        self.write("crates/demo/src/lib.rs", "pub mod a;\n")
+        self.write("crates/demo/src/a.rs", "mod b;\n")
+        self.write("crates/demo/src/a/b.rs", "mod c;\n")
+        self.write("crates/demo/src/a/b/c.rs", '\n'.join([
+            "pub(in crate::a) fn wide() {}", "pub(in crate::a::b) fn exact() {}",
+            "pub(super) fn narrow() {}", "",
+        ]))
+        findings = self.findings("overwide_module_visibility")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/demo/src/a/b/c.rs", 1),
+        ])
+
+    def test_forms_the_compiler_can_require_stay_outside_the_rule(self) -> None:
+        self.write("crates/demo/src/lib.rs", "pub mod outer;\n")
+        self.write("crates/demo/src/outer.rs", "mod inner;\n")
+        self.write("crates/demo/src/outer/inner.rs", '\n'.join([
+            "pub(crate) struct Held {", "    pub(crate) field: u8,", "}",
+            "pub(crate) enum Tag { One }", "pub(crate) type Alias = u8;",
+            "impl Held {", "    pub(crate) fn reached(&self) -> u8 {", "        self.field",
+            "    }", "}", "#[cfg(test)]", "pub(crate) fn gated() {}", "",
+        ]))
+        self.assertEqual(self.findings("overwide_module_visibility"), [])
+
+    def test_a_reexported_module_keeps_the_reach_the_reexport_grants(self) -> None:
+        self.write("crates/demo/src/lib.rs", "pub mod outer;\n")
+        self.write("crates/demo/src/outer.rs", "mod inner;\npub(crate) use inner::wide;\n")
+        self.write("crates/demo/src/outer/inner.rs", "pub(crate) fn wide() {}\n")
+        self.assertEqual(self.findings("overwide_module_visibility"), [])
+
+
 class EndianExceptions(TempSourceCase):
     def test_literal_cannot_supply_an_exception(self) -> None:
         self.write("crates/demo/src/lib.rs", '''fn f() {

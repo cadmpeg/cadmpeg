@@ -21,6 +21,13 @@ each violation by rule, file, line, and explanation.
 - Test files and inline test modules have a 2,000-line limit. Golden test files
   are excluded. Production files have a 10,000-line limit after removing
   `cfg(test)` items. These are maintenance limits, not correctness proofs.
+- A module-level `fn`, `const` or `static` claims no more reach than its module
+  can grant. A module the declaration chain caps below the crate root cannot be
+  named from outside that cap, so `pub(crate)` on such an item spells reach the
+  module already denies. Associated items, struct fields, enum variants and
+  types stay outside the rule: the compiler can require the wider marker for
+  them. A module named by a non-private `use` keeps the reach the re-export
+  grants.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and
