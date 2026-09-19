@@ -398,14 +398,14 @@ pub(crate) fn canonical_model_curve_range(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
-            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
+            let tolerance = EPS_NURBS_GEOMETRY.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
             if nurbs.periodic() {
                 (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
-            } else if range[0] >= lower && range[1] <= upper {
-                Some(range)
+            } else if lower - range[0] > tolerance || range[1] - upper > tolerance {
+                None
             } else {
-                ((range[0] - lower).abs().max((range[1] - upper).abs()) <= tolerance)
-                    .then_some([lower, upper])
+                // Correct only endpoints outside the domain; retain interior trims.
+                Some(range.map(|parameter| parameter.clamp(lower, upper)))
             }
         }
         _ => Some(range),
@@ -951,6 +951,8 @@ mod tests {
     };
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
+    const DOMAIN_ROUNDING: f64 = 1.0e-12;
+
     #[test]
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
@@ -970,18 +972,41 @@ mod tests {
         assert_eq!(
             canonical_model_curve_range(
                 &geometry,
-                [-1.0e-12, 1.0 + 1.0e-12],
+                [-DOMAIN_ROUNDING, 1.0 + DOMAIN_ROUNDING],
                 &mut refusal,
                 "test curve"
             ),
             Some([0.0, 1.0])
         );
+        for (range, expected) in [
+            ([-DOMAIN_ROUNDING, 0.5], [0.0, 0.5]),
+            ([0.5, 1.0 + DOMAIN_ROUNDING], [0.5, 1.0]),
+            ([0.25, 0.75], [0.25, 0.75]),
+            (
+                [-DOMAIN_ROUNDING, 1.0 - DOMAIN_ROUNDING],
+                [0.0, 1.0 - DOMAIN_ROUNDING],
+            ),
+            (
+                [DOMAIN_ROUNDING, 1.0 + DOMAIN_ROUNDING],
+                [DOMAIN_ROUNDING, 1.0],
+            ),
+        ] {
+            assert_eq!(
+                canonical_model_curve_range(&geometry, range, &mut refusal, "test curve"),
+                Some(expected)
+            );
+        }
+        for range in [[-1.0e-4, 0.5], [0.5, 1.0 + 1.0e-4]] {
+            assert_eq!(
+                canonical_model_curve_range(&geometry, range, &mut refusal, "test curve"),
+                None
+            );
+        }
         assert_eq!(
             canonical_model_curve_range(&geometry, [-1.0e-4, 1.0], &mut refusal, "test curve"),
             None
         );
-        // Both answers re-read a domain the IR carrier refined, so neither is
-        // a refused source range.
+        // Domain corrections do not add a refused source range.
         assert!(refusal.take_notes().is_empty());
 
         // A source-stated interval that does not increase is a refused record.

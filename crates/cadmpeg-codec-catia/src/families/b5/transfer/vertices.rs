@@ -13,8 +13,9 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::B5Graph;
 use super::edges::b5_support_endpoints;
-use super::{annotate, distance, B5SupportPlan, SurfacePlan, TransferPlan};
+use super::{annotate, B5SupportPlan, SurfacePlan, TransferPlan};
 use crate::assemble::cgm_source;
+use crate::math::distance;
 
 const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 

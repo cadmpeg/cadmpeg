@@ -26,11 +26,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::assemble::{
     annotate, circle_parameter_range_from_surface_branch, insert_unresolved_carrier_loss,
     link_payload_carriers, neutral_model_is_admissible, ordered_range, preserve_raw_payload,
-    quintic_jet_pcurve, rational_pcurve_arc, unit_vector,
+    quintic_jet_pcurve, rational_pcurve_arc,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
+use crate::math::unit_vector;
 use crate::solve::union_find::UnionFind;
 
 const EPS_E5_DECODE_COARSE_GEOMETRY: f64 = 1.0e-6;

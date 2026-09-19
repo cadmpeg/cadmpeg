@@ -190,20 +190,25 @@ impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
             .then_some(Self(value))
     }
 
-    /// Normalizes a direction whose norm is above [`f64::EPSILON`], dividing
-    /// each component by that norm.
+    /// Normalizes a finite direction whose norm is above [`f64::EPSILON`].
+    /// The result must pass this type's unit-length admission.
     pub(crate) fn normalized(value: [f64; 3]) -> Option<Self> {
-        let length = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
-        (length > f64::EPSILON)
-            .then(|| Self([value[0] / length, value[1] / length, value[2] / length]))
+        let length = value[0].hypot(value[1]).hypot(value[2]);
+        if length <= f64::EPSILON {
+            return None;
+        }
+        Self::new(crate::math::unit_vector(value)?)
     }
 
     /// Constructs a unit direction from a `scale`-scaled stored vector whose
-    /// `hypot` length is `scale` within the tolerance.
+    /// `hypot` length is `scale` within the tolerance. The divided components
+    /// must also pass this type's unit-length admission.
     pub(crate) fn from_scaled(stored: [f64; 3], scale: f64) -> Option<Self> {
         let length = stored[0].hypot(stored[1]).hypot(stored[2]);
-        (length.is_finite() && ((length / scale) - 1.0).abs() <= Self::TOLERANCE)
-            .then(|| Self(stored.map(|component| component / scale)))
+        if !(length.is_finite() && ((length / scale) - 1.0).abs() <= Self::TOLERANCE) {
+            return None;
+        }
+        Self::new(stored.map(|component| component / scale))
     }
 
     /// Returns the direction components.
@@ -343,6 +348,52 @@ mod tests {
             Some([0.0, 3.0 / 5.0, 4.0 / 5.0])
         );
         assert!(ExactNormUnitVector3::normalized([0.0, 0.0, 0.0]).is_none());
+    }
+
+    #[test]
+    fn normalized_directions_enforce_the_unit_invariant_and_length_gate() {
+        for value in [[1e200, 0.0, 0.0], [f64::MAX, f64::MAX, 0.0]] {
+            let direction = ExactNormUnitVector3::normalized(value)
+                .expect("large finite direction can be normalized");
+            assert!(ExactNormUnitVector3::new(direction.get()).is_some());
+        }
+        assert_eq!(
+            ExactNormUnitVector3::normalized([1e200, 0.0, 0.0]).map(ExactNormUnitVector3::get),
+            Some([1.0, 0.0, 0.0])
+        );
+        for magnitude in [f64::from_bits(1), f64::EPSILON] {
+            assert!(ExactNormUnitVector3::normalized([magnitude, 0.0, 0.0]).is_none());
+        }
+        assert_eq!(
+            ExactNormUnitVector3::normalized([
+                f64::from_bits(f64::EPSILON.to_bits() + 1),
+                0.0,
+                0.0,
+            ])
+            .map(ExactNormUnitVector3::get),
+            Some([1.0, 0.0, 0.0])
+        );
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for axis in 0..3 {
+                let mut value = [1.0; 3];
+                value[axis] = invalid;
+                assert!(ExactNormUnitVector3::normalized(value).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn scaled_directions_reject_a_rounded_length_that_hides_a_nonunit_result() {
+        let smallest = f64::from_bits(1);
+        assert!(ExactHypotUnitVector3::from_scaled([smallest, smallest, 0.0], smallest).is_none());
+        assert_eq!(
+            ExactHypotUnitVector3::from_scaled([smallest, 0.0, 0.0], smallest)
+                .map(ExactHypotUnitVector3::get),
+            Some([1.0, 0.0, 0.0])
+        );
+        for scale in [0.0, f64::NAN, f64::INFINITY, -1.0] {
+            assert!(ExactHypotUnitVector3::from_scaled([1.0, 0.0, 0.0], scale).is_none());
+        }
     }
 
     #[test]

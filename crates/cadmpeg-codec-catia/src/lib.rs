@@ -58,6 +58,7 @@ pub(crate) mod layout;
 pub(crate) mod legacy_entity;
 #[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 pub(crate) mod loss;
+mod math;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod object_graph;

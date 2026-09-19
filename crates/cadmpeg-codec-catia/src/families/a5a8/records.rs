@@ -4,6 +4,7 @@
 //! rolling-ball jets, guide-curve jets, and object-stream UV pcurves.
 
 use super::knot_lane::{strictly_increasing_finite, A8KnotLane};
+use crate::math::distance;
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
 use crate::wire::records::{
@@ -511,7 +512,7 @@ pub(in crate::families) struct RollingBallSite {
 impl RollingBallSite {
     /// Radius from the centre to the first limit.
     pub(super) fn radius(&self) -> f64 {
-        distance3(self.center, self.limit1)
+        distance(self.center, self.limit1)
     }
 }
 
@@ -1128,9 +1129,9 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
         let limit1 = [v[0], v[1], v[2]];
         let limit2 = [v[3], v[4], v[5]];
         let center = [v[6], v[7], v[8]];
-        let radius = distance3(center, limit1);
-        let other = distance3(center, limit2);
-        let chord = distance3(limit1, limit2);
+        let radius = distance(center, limit1);
+        let other = distance(center, limit2);
+        let chord = distance(limit1, limit2);
         let radius_scale = radius.max(other);
         let relative_radius_difference = ((radius / radius_scale) - (other / radius_scale)).abs();
         if !radius.is_finite()
@@ -1150,10 +1151,6 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
         });
     }
     Some(sites)
-}
-
-fn distance3(a: [f64; 3], b: [f64; 3]) -> f64 {
-    (a[0] - b[0]).hypot(a[1] - b[1]).hypot(a[2] - b[2])
 }
 
 /// Decode framed `a8 <flag> 20` UV jet records.

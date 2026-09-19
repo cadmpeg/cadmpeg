@@ -33,7 +33,7 @@ use crate::assemble::cgm_source;
 use crate::assemble::{
     annotate, build_geometry_report, circle_parameter_range_from_surface_branch,
     link_payload_carriers, neutral_model_is_admissible, ordered_range, preserve_raw_payload,
-    rational_pcurve_arc, unit_vector, unwrap_angle, TypedCounts,
+    rational_pcurve_arc, unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::freeform::{
@@ -42,6 +42,7 @@ use crate::families::freeform::{
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
+use crate::math::unit_vector;
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, retain_distinct_matching_supports,
 };

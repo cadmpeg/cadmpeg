@@ -1863,10 +1863,6 @@ pub(in crate::families) fn b2_cylinder_point(
     ))
 }
 
-pub(in crate::families) fn point_distance(a: Point3, b: Point3) -> f64 {
-    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
-}
-
 /// Arc-length circle support stored in a `b2 03 19` record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct B2Circle {

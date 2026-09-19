@@ -4,6 +4,7 @@
 //! and their native incidence graph, and resolves edge-block side carriers
 //! against typed analytic and NURBS charts.
 
+use crate::math::distance;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -23,9 +24,9 @@ use crate::families::b2::records::{
     b2_embedded_cylinders_from_records, b2_face_nodes_5f_from_records,
     b2_owner_identity_targets_from_records, b2_owner_packets_from_records, b2_pcurves_from_records,
     b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records,
-    b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records, point_distance,
-    B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters,
-    B2EmbeddedCylinder, B2FaceNode5f, B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
+    b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records, B2Circle,
+    B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder,
+    B2FaceNode5f, B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
@@ -1437,7 +1438,7 @@ fn point_sequences_agree(first: &[Point3], second: &[Point3]) -> bool {
         && first
             .iter()
             .zip(second)
-            .all(|(&left, &right)| point_distance(left, right) <= 2e-3)
+            .all(|(&left, &right)| distance(left, right) <= 2e-3)
 }
 
 fn resolved_support_loci(
@@ -1633,7 +1634,7 @@ fn pcurve_endpoints_match(
         evaluate(uv).is_some_and(|point| {
             vertices
                 .iter()
-                .any(|vertex| point_distance(point, *vertex) < 2e-3)
+                .any(|vertex| distance(point, *vertex) < 2e-3)
         })
     })
 }
@@ -1656,7 +1657,7 @@ fn pcurve_endpoints_match_sphere(
         cadmpeg_ir::eval::surface_point(&geometry, u, v).is_some_and(|point| {
             vertices
                 .iter()
-                .any(|vertex| point_distance(point, *vertex) < 2e-3)
+                .any(|vertex| distance(point, *vertex) < 2e-3)
         })
     })
 }
@@ -1679,7 +1680,7 @@ fn pcurve_endpoints_match_plane(
         cadmpeg_ir::eval::surface_point(&geometry, u, v).is_some_and(|point| {
             vertices
                 .iter()
-                .any(|vertex| point_distance(point, *vertex) < 2e-3)
+                .any(|vertex| distance(point, *vertex) < 2e-3)
         })
     })
 }
@@ -1706,7 +1707,7 @@ fn pcurve_endpoints_match_vertices(
     [first, last].iter().all(|point| {
         vertices
             .iter()
-            .any(|vertex| point_distance(*point, *vertex) < 2e-3)
+            .any(|vertex| distance(*point, *vertex) < 2e-3)
     })
 }
 
