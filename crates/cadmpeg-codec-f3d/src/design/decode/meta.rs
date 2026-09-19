@@ -56,7 +56,7 @@ impl<'a> MetaStreamEntry<'a> {
 }
 
 /// Decode the type table of every Design `MetaStream` entry.
-pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
+pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -99,7 +99,7 @@ fn insert_component_naming_space(
 }
 
 /// Decode each component entity's UUID-bound local naming space.
-pub fn decode_component_naming_spaces(
+pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
     let mut out = Vec::new();
@@ -244,12 +244,12 @@ pub(crate) fn metadata_for_bulk_stream(
 /// One live Design record selected by the primary index and resolved through
 /// its segment-local class tag.
 #[derive(Clone)]
-pub(crate) struct DesignPrimaryFrame<'a> {
-    pub(crate) entity_id: u64,
-    pub(crate) class_tag: crate::records::references::DesignClassTag,
-    pub(crate) start: usize,
-    pub(crate) end: usize,
-    pub(crate) design_type: &'a SegmentType,
+pub(in crate::design::decode) struct DesignPrimaryFrame<'a> {
+    pub(super) entity_id: u64,
+    pub(super) class_tag: crate::records::references::DesignClassTag,
+    pub(super) start: usize,
+    pub(super) end: usize,
+    pub(super) design_type: &'a SegmentType,
 }
 
 fn dynamic_type<'a>(
@@ -288,7 +288,7 @@ fn record_header_class_tag(
 /// registers that entity. A secondary entry supplies the exact end of the
 /// primary class-member sequence and must point to a nested header for the same
 /// entity.
-pub(crate) fn design_primary_frames<'a>(
+pub(super) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
@@ -351,16 +351,16 @@ pub(crate) fn design_primary_frames<'a>(
 
 /// One primary `BulkStream` frame selected through a registered Design type.
 #[derive(Clone, Copy)]
-pub(crate) struct TypedPrimaryFrame<'a> {
-    pub(crate) entity_id: u64,
-    pub(crate) start: usize,
-    pub(crate) end: usize,
-    pub(crate) design_type: &'a SegmentType,
+pub(super) struct TypedPrimaryFrame<'a> {
+    pub(super) entity_id: u64,
+    pub(super) start: usize,
+    pub(super) end: usize,
+    pub(super) design_type: &'a SegmentType,
 }
 
 /// Resolve every entity registered to `type_guid` through the sibling
 /// `MetaStream` primary index and verify its dynamic class tag.
-pub(crate) fn typed_primary_frames<'a>(
+pub(super) fn typed_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     type_guid: &str,
@@ -413,7 +413,7 @@ pub(crate) fn typed_primary_frames<'a>(
 
 /// Type GUID and record version keyed by the Design entity ids that carry the
 /// type in the sibling `BulkStream`.
-pub(crate) fn stream_types_by_entity<'a>(
+pub(super) fn stream_types_by_entity<'a>(
     types: &'a [SegmentType],
     bulk_entry_name: &str,
 ) -> HashMap<u64, (&'a str, u32)> {
@@ -436,7 +436,7 @@ pub(crate) fn stream_types_by_entity<'a>(
 }
 
 /// Complete type-table row keyed by the segment-local dynamic class tag.
-pub(crate) fn stream_types_by_class_tag<'a>(
+pub(super) fn stream_types_by_class_tag<'a>(
     types: &'a [SegmentType],
     bulk_entry_name: &str,
 ) -> HashMap<u32, &'a SegmentType> {
@@ -539,7 +539,7 @@ fn parse_feature_timeline_record(
 }
 
 /// Decode the exact counted scope list that carries authored feature order.
-pub fn decode_feature_timelines(
+pub(crate) fn decode_feature_timelines(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
     let mut out = Vec::new();

@@ -20,13 +20,13 @@ use crate::records::{
     references::DesignClassTag,
 };
 
-pub struct DecodedAct {
-    pub entities: Vec<ActEntity>,
-    pub guids: Vec<ActGuid>,
-    pub registry_channels: Vec<ActRegistryChannel>,
-    pub root_components: Vec<ActRootComponent>,
-    pub table_references: Vec<ActTableReference>,
-    pub non_root_component_links: usize,
+pub(crate) struct DecodedAct {
+    pub(crate) entities: Vec<ActEntity>,
+    pub(crate) guids: Vec<ActGuid>,
+    pub(crate) registry_channels: Vec<ActRegistryChannel>,
+    pub(crate) root_components: Vec<ActRootComponent>,
+    pub(crate) table_references: Vec<ActTableReference>,
+    pub(crate) non_root_component_links: usize,
 }
 
 struct RecordFrame {
@@ -139,7 +139,7 @@ fn sibling_meta_name(stream: &str) -> Option<String> {
     ))
 }
 
-pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
+pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
     let mut entities = Vec::new();
     let mut guids = Vec::new();
     let mut registry_channels = Vec::new();

@@ -73,7 +73,9 @@ fn parse_configuration_variant_order(
 }
 
 /// Decode every JSON design-configuration table and rule entry.
-pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfiguration>, CodecError> {
+pub(crate) fn decode_configurations(
+    scan: &ContainerScan,
+) -> Result<Vec<DesignConfiguration>, CodecError> {
     let configurations = scan
         .entries
         .iter()
@@ -120,7 +122,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
 /// Project named variants from configuration-table JSON into the neutral
 /// configuration arena. Rule documents remain in the native arena because a
 /// rule is a selector, not a model variant.
-pub fn project_configurations(
+pub(crate) fn project_configurations(
     native: &[DesignConfiguration],
 ) -> Result<Vec<cadmpeg_ir::features::DesignConfiguration>, CodecError> {
     use cadmpeg_ir::features::DesignConfiguration as NeutralConfiguration;
@@ -201,7 +203,7 @@ pub fn project_configurations(
 
 /// Replace name-keyed configuration properties with stable parameter references
 /// when exactly one neutral parameter has the named source identity.
-pub fn bind_configuration_parameter_overrides(
+pub(crate) fn bind_configuration_parameter_overrides(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     parameters: &[cadmpeg_ir::features::DesignParameter],
 ) {
@@ -227,7 +229,7 @@ pub fn bind_configuration_parameter_overrides(
 
 /// Replace name-keyed suppression properties with stable feature references
 /// when exactly one neutral feature has the named source identity.
-pub fn bind_configuration_suppressed_features(
+pub(crate) fn bind_configuration_suppressed_features(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     features: &[cadmpeg_ir::features::Feature],
 ) {

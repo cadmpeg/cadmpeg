@@ -31,22 +31,22 @@ use crate::records::{
 };
 
 /// Top-level container entry holding the external-reference table.
-pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
+const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
 /// Top-level container entry holding the document-properties slot.
-pub const PROPERTIES_ENTRY: &str = "Properties.dat";
+const PROPERTIES_ENTRY: &str = "Properties.dat";
 /// Top-level JSON document carrying component-reference extension data.
-pub const COMPONENT_REFERENCE_ENTRY: &str = "ComponentReferenceData.json";
+const COMPONENT_REFERENCE_ENTRY: &str = "ComponentReferenceData.json";
 
 /// Stable type-table identity of a Design occurrence-placement record.
 const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
 
 /// The parsed `RedirectionsStream.dat` table.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct XrefTable {
+pub(crate) struct XrefTable {
     /// Design entries in source order; entry 0 is the document itself.
-    pub designs: Vec<XrefDesign>,
+    pub(crate) designs: Vec<XrefDesign>,
     /// Outgoing XREF placements in source order; empty for a leaf document.
-    pub references: Vec<XrefReference>,
+    pub(crate) references: Vec<XrefReference>,
     /// Source reference ordinals whose role-named placement records were
     /// admitted by the type table but did not close under the generation's
     /// placement grammar and had no other valid placement carrier.
@@ -65,11 +65,11 @@ pub(crate) struct PlacementOverride {
 
 /// The `docstruct` document-type declaration of a JSON `Properties.dat`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Docstruct {
+pub(crate) struct Docstruct {
     /// Document type: `assembly-design` or `part-design`.
-    pub doc_type: String,
+    pub(crate) doc_type: String,
     /// Document subtype, e.g. `assembly-standard` or `part-sheetmetal`.
-    pub subtype: Option<String>,
+    pub(crate) subtype: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -233,7 +233,7 @@ fn parse_component_reference_data(bytes: &[u8]) -> Result<serde_json::Value, Cod
 }
 
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
-pub fn decode(scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
+pub(crate) fn decode(scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
     decode_with_scopes(scan, &[])
 }
 
@@ -265,7 +265,7 @@ fn ordinal_at(position: usize) -> Result<u32, CodecError> {
 }
 
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
-pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
+fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
     let parsed: RedirectionsJson = serde_json::from_slice(bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
@@ -332,7 +332,7 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
 /// Parse the `docstruct` declaration of a non-empty `Properties.dat`, if
 /// present. The entry is a `u32` payload byte count followed by that many
 /// JSON bytes; count 0 is the empty slot and carries no declaration.
-pub fn docstruct(scan: &ContainerScan) -> Option<Docstruct> {
+pub(crate) fn docstruct(scan: &ContainerScan) -> Option<Docstruct> {
     let bytes = scan.entry_bytes(PROPERTIES_ENTRY).ok()?;
     let mut view = View::over_retained(bytes);
     let count = view.u32_le()? as usize;
@@ -351,7 +351,7 @@ pub fn docstruct(scan: &ContainerScan) -> Option<Docstruct> {
 /// A valid assembly document: declared `assembly-design`, at least one
 /// outgoing XREF, and no B-rep streams. Its model is the placement of its
 /// XREF targets.
-pub fn is_assembly(scan: &ContainerScan, table: Option<&XrefTable>) -> bool {
+pub(crate) fn is_assembly(scan: &ContainerScan, table: Option<&XrefTable>) -> bool {
     crate::container::design_breps(scan).next().is_none()
         && table.is_some_and(|table| !table.references.is_empty())
         && docstruct(scan).is_some_and(|docstruct| docstruct.doc_type == "assembly-design")
@@ -359,7 +359,10 @@ pub fn is_assembly(scan: &ContainerScan, table: Option<&XrefTable>) -> bool {
 
 /// The lineage/version design entry for one reference: the entry whose
 /// `target_file_name` equals the reference's `relative_path`.
-pub fn design_for<'a>(table: &'a XrefTable, reference: &XrefReference) -> Option<&'a XrefDesign> {
+pub(crate) fn design_for<'a>(
+    table: &'a XrefTable,
+    reference: &XrefReference,
+) -> Option<&'a XrefDesign> {
     table
         .designs
         .iter()
@@ -367,7 +370,9 @@ pub fn design_for<'a>(table: &'a XrefTable, reference: &XrefReference) -> Option
 }
 
 /// Project each external-reference placement as one root product occurrence.
-pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
+pub(crate) fn project_occurrences(
+    table: &XrefTable,
+) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
     table
         .references
         .iter()
@@ -406,7 +411,7 @@ pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg
 }
 
 /// Resolve exact `Component Insert` history scopes to their placed occurrences.
-pub fn bind_component_insert_features(
+pub(crate) fn bind_component_insert_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     table: &XrefTable,

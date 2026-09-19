@@ -137,7 +137,7 @@ fn text_frame_curve_records(
 }
 
 /// Project placed Design sketches and their exact planar point/curve records.
-pub fn project_sketch_design(
+pub(crate) fn project_sketch_design(
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
@@ -398,7 +398,7 @@ pub fn project_sketch_design(
 }
 
 /// Project non-planar Design sketch curves into model-space spatial sketches.
-pub fn project_spatial_sketch_design(
+pub(crate) fn project_spatial_sketch_design(
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
@@ -767,7 +767,7 @@ pub fn project_spatial_sketch_design(
 }
 
 /// Project exact aggregate relations owned by model-space spatial sketches.
-pub fn project_spatial_sketch_constraints(
+pub(crate) fn project_spatial_sketch_constraints(
     placements: &[DesignSketchPlacement],
     relations: &[SketchRelation],
     points: &[SketchPoint],

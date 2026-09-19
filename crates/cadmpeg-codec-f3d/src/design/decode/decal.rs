@@ -30,7 +30,7 @@ const DECAL_TARGET_ROLE: crate::records::topology::extrude_selection::DesignOper
     crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A;
 
 /// Decode every structurally complete Decal image record.
-pub fn decode_decal_images(
+pub(crate) fn decode_decal_images(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignDecalImage>, CodecError> {
@@ -58,7 +58,7 @@ pub fn decode_decal_images(
 }
 
 /// Project exact Decal image and face bindings into neutral features.
-pub fn project_decal_images(
+pub(crate) fn project_decal_images(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     images: &[DesignDecalImage],

@@ -478,24 +478,24 @@ fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
 /// Bindings follow the design-entity join backbone in
 /// [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 #[derive(Default)]
-pub struct DecodedMaterials {
+pub(crate) struct DecodedMaterials {
     /// Merged appearance records, deduplicated by [`AppearanceId`].
-    pub appearances: Vec<Appearance>,
+    pub(crate) appearances: Vec<Appearance>,
     /// Body-to-appearance bindings resolved through ACT and Design body-map joins.
-    pub bindings: Vec<AppearanceBinding>,
+    pub(crate) bindings: Vec<AppearanceBinding>,
     /// Per-face appearance assignments awaiting the BREP face-attribute join.
-    pub face_assignments: Vec<FaceAppearanceAssignment>,
+    pub(crate) face_assignments: Vec<FaceAppearanceAssignment>,
     /// Whether the document serializes any body or face appearance assignment.
     ///
     /// Protein assets form a document-local appearance catalog and need not be
     /// assigned to topology. This distinguishes an unassigned catalog from an
     /// assignment that failed to resolve.
-    pub has_topology_assignments: bool,
+    pub(crate) has_topology_assignments: bool,
     /// Distance-valued texture properties omitted because their unit tag has
     /// no defined model-space conversion.
-    pub untyped_distance_properties: usize,
+    pub(crate) untyped_distance_properties: usize,
     /// Rejected Protein record diagnostics.
-    pub notes: Vec<String>,
+    pub(crate) notes: Vec<String>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without resolved
@@ -504,7 +504,7 @@ pub struct DecodedMaterials {
 /// The [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)
 /// Design body-map join is skipped. Use [`decode_with_body_bindings`] when the
 /// resolved map pairs are available.
-pub fn decode<'a>(
+pub(crate) fn decode<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
 ) -> Result<DecodedMaterials, CodecError> {
@@ -514,7 +514,7 @@ pub fn decode<'a>(
 /// Decode appearance assets and resolve body bindings through the ordered,
 /// blob-qualified Design body-map pairs, closing the design-entity join
 /// backbone in [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
-pub fn decode_with_body_bindings<'a>(
+pub(crate) fn decode_with_body_bindings<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
     body_bindings: &[DesignBodyBinding],
@@ -1058,13 +1058,13 @@ pub(crate) fn decode_design_assignments(
 }
 
 /// One per-body appearance override joined through its exact Design body-map pair.
-pub(crate) struct BodyAppearanceOverride {
+struct BodyAppearanceOverride {
     /// Solved body selected by the exact blob-qualified body-map pair.
-    pub body: BodyId,
+    body: BodyId,
     /// The body's design-entity suffix.
-    pub entity_suffix: u64,
+    entity_suffix: u64,
     /// Complete serialized visual token bound by the body record.
-    pub visual_guid: DesignVisualToken,
+    visual_guid: DesignVisualToken,
 }
 
 /// Decode per-body appearance overrides from browser body records in every
@@ -1148,13 +1148,13 @@ fn decode_body_appearance_overrides(
 /// `NEUTRON_Material_attrib_def` attribute
 /// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
 #[derive(Debug, Clone, PartialEq)]
-pub struct FaceAppearanceAssignment {
+pub(crate) struct FaceAppearanceAssignment {
     /// The face GUID shared with the BREP face attribute.
-    pub face_guid: String,
+    pub(crate) face_guid: String,
     /// Complete serialized visual token bound by the face record.
-    pub visual_guid: DesignVisualToken,
+    pub(crate) visual_guid: DesignVisualToken,
     /// Face-local neutral color carried by a legacy assignment entry.
-    pub color: Option<Color>,
+    pub(crate) color: Option<Color>,
 }
 
 /// Decode per-face appearance assignments from every Design `BulkStream`.
@@ -1458,7 +1458,7 @@ fn is_lowercase_guid(value: &str) -> bool {
 /// The terminating visual marker is shared with face-presentation records.
 /// A record is body-owned only when exactly one GUID in its bounded prefix
 /// resolves through a browser-node record to one Design entity suffix.
-pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, DesignVisualToken)> {
+fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, DesignVisualToken)> {
     let nodes = crate::design::decode::body::scanned_browser_node_entities(bytes);
     let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
@@ -1998,7 +1998,7 @@ fn consume_catalog_strings(record: &[u8], position: &mut usize) -> Result<(), Co
     Ok(())
 }
 
-pub(crate) fn nested_entry<'a>(
+fn nested_entry<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
     suffix: &str,

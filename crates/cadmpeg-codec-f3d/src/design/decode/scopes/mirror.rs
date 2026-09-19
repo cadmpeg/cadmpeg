@@ -226,7 +226,7 @@ fn exact_legacy_mirror_scope_tolerance(
 
 /// Join a Mirror scope's two operand groups and fixed parameters with either a
 /// referenced `WorkPlane` or a persistent plane-face selection.
-pub fn bind_mirror_constructions(
+pub(crate) fn bind_mirror_constructions(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
