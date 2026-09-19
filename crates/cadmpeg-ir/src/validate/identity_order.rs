@@ -28,7 +28,7 @@ fn push_identity(seen: &mut HashSet<String>, findings: &mut Vec<Finding>, id: &s
     }
 }
 
-pub(super) fn check_order<'a>(
+fn check_order<'a>(
     arena: &str,
     ids: impl IntoIterator<Item = &'a str>,
     findings: &mut Vec<Finding>,

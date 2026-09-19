@@ -28,7 +28,7 @@ pub(super) enum Node {
 
 impl Node {
     /// This value.
-    pub(super) fn into_value(self) -> Value {
+    fn into_value(self) -> Value {
         match self {
             Node::Value(value) => value,
             Node::Object(entries) => Value::Object(entries),

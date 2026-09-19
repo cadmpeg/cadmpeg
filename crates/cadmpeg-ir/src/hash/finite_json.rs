@@ -42,7 +42,7 @@ pub enum CanonicalJsonError {
 /// The guard is consulted on both arms. A `Serialize` implementation that
 /// catches the adapter's refusal and completes would otherwise outrun it and
 /// produce canonical JSON for a value the adapter had already refused.
-pub(crate) fn write_canonical_json<W: std::io::Write, T: Serialize + ?Sized>(
+pub(super) fn write_canonical_json<W: std::io::Write, T: Serialize + ?Sized>(
     writer: W,
     value: &T,
 ) -> Result<(), CanonicalJsonError> {
@@ -71,18 +71,18 @@ pub fn to_canonical_json_string<T: Serialize + ?Sized>(
 
 /// Records the float that a [`FiniteSerializer`] walk refused.
 #[derive(Debug, Default)]
-pub(super) struct FiniteGuard {
+struct FiniteGuard {
     refused: Cell<Option<f64>>,
 }
 
 impl FiniteGuard {
     /// Returns a guard that has refused nothing.
-    pub(super) fn new() -> Self {
+    fn new() -> Self {
         Self::default()
     }
 
     /// Returns the refused float, if this walk refused one.
-    pub(super) fn refused(&self) -> Option<f64> {
+    fn refused(&self) -> Option<f64> {
         self.refused.get()
     }
 
@@ -94,14 +94,14 @@ impl FiniteGuard {
 }
 
 /// Serializes a value through `inner`, refusing every non-finite float.
-pub(super) struct FiniteSerializer<'guard, S> {
+struct FiniteSerializer<'guard, S> {
     inner: S,
     guard: &'guard FiniteGuard,
 }
 
 impl<'guard, S> FiniteSerializer<'guard, S> {
     /// Returns an adapter over `inner` that reports refusals through `guard`.
-    pub(super) fn new(inner: S, guard: &'guard FiniteGuard) -> Self {
+    fn new(inner: S, guard: &'guard FiniteGuard) -> Self {
         Self { inner, guard }
     }
 }
@@ -120,7 +120,7 @@ impl<T: ?Sized + Serialize> Serialize for FiniteValue<'_, '_, T> {
 }
 
 /// Wraps a compound serializer so its elements serialize through the adapter.
-pub(super) struct FiniteCompound<'guard, C> {
+struct FiniteCompound<'guard, C> {
     inner: C,
     guard: &'guard FiniteGuard,
 }

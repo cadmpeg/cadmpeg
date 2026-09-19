@@ -141,7 +141,7 @@ impl Default for ExactSignedSum {
 /// The largest biased significand exponent a finite `f64` states. The field is
 /// eleven bits wide and a finite value never reaches the all-ones field, and
 /// biasing by [`MIN_SIGNIFICAND_EXPONENT`] subtracts one more.
-pub(crate) const MAX_BIASED_SIGNIFICAND_EXPONENT: i32 = 0x7fe - 1;
+const MAX_BIASED_SIGNIFICAND_EXPONENT: i32 = 0x7fe - 1;
 
 /// The widest significand a finite `f64` states, the hidden bit included.
 ///
@@ -149,19 +149,18 @@ pub(crate) const MAX_BIASED_SIGNIFICAND_EXPONENT: i32 = 0x7fe - 1;
 /// `fraction`, which is below `1 << 52`, and its normal branch answers
 /// `(1 << 52) | fraction`. The highest set bit is therefore at most 52 and the
 /// width at most 53.
-pub(crate) const MAX_SIGNIFICAND_BITS: i32 = 53;
+const MAX_SIGNIFICAND_BITS: i32 = 53;
 
 /// The least power of two a [`ScaledExponent`] holds. `ExactSignedSum::finish`
 /// states `EXACT_PRODUCT_EXPONENT + highest_bit + 1` with `highest_bit` at
 /// least zero, which is below everything `scaled_finite` can state.
-pub(crate) const MIN_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + 1;
+const MIN_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + 1;
 
 /// The greatest power of two a [`ScaledExponent`] holds.
 /// `ExactSignedSum::finish` states `EXACT_PRODUCT_EXPONENT + highest_bit + 2`
 /// in its rounding-carry arm, with `highest_bit` at most one below the
 /// accumulator's bit width.
-pub(crate) const MAX_SCALED_EXPONENT: i32 =
-    EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS as i32 * 64 + 1;
+const MAX_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS as i32 * 64 + 1;
 
 /// The power of two that scales a [`ScaledValue`]'s mantissa back to the value.
 ///

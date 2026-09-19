@@ -12,7 +12,7 @@
 
 use serde::Deserialize;
 
-pub(crate) fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
+fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<String, D::Error> {
     let value = String::deserialize(deserializer)?;

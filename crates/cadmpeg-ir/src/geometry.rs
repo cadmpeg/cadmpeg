@@ -1109,7 +1109,7 @@ impl<F> CacheContract<F> {
     }
 
     /// Mutable legacy solved-cache slot, absent in the revision layout.
-    pub(crate) const fn legacy_cache_mut(&mut self) -> Option<&mut Option<LegacyCache>> {
+    const fn legacy_cache_mut(&mut self) -> Option<&mut Option<LegacyCache>> {
         match self {
             Self::Legacy { cache } => Some(cache),
             Self::Revision { .. } => None,
@@ -1189,7 +1189,7 @@ const REQUIRED_LEGACY_SLOT: &str = "this construction states a solved-cache fit 
 /// refusal a slot makes. Surface-only: `ProceduralCurveDefinition` has no
 /// `Required` slot, so a curve lends its slot as a plain
 /// `&mut Option<LegacyCache>`.
-pub(crate) enum LegacyCacheSlot<'a> {
+enum LegacyCacheSlot<'a> {
     /// Slot of a layout whose record may state no cache.
     Optional(&'a mut Option<LegacyCache>),
     /// Slot of a layout that always states a cache.
@@ -1198,10 +1198,7 @@ pub(crate) enum LegacyCacheSlot<'a> {
 
 impl LegacyCacheSlot<'_> {
     /// Replace the cache the slot holds.
-    pub(crate) const fn set(
-        &mut self,
-        cache: Option<LegacyCache>,
-    ) -> Result<(), CacheContractError> {
+    const fn set(&mut self, cache: Option<LegacyCache>) -> Result<(), CacheContractError> {
         match (self, cache) {
             (Self::Optional(slot), cache) => {
                 **slot = cache;
@@ -3482,7 +3479,7 @@ impl LoftSubdata {
 
     /// Whether every leading and per-column scalar is finite.
     #[must_use]
-    pub(crate) fn row_values_are_finite(&self) -> bool {
+    fn row_values_are_finite(&self) -> bool {
         let mut valid = true;
         self.visit_rows(|parameters, columns, _extra| {
             valid &= parameters.iter().all(|value| value.is_finite())
@@ -6976,18 +6973,18 @@ impl ProceduralCurve {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ProceduralSurfaceRow {
     /// Stable construction identity.
-    pub(crate) id: ProceduralSurfaceId,
+    id: ProceduralSurfaceId,
     /// Carrier surface this construction produces.
-    pub(crate) surface: SurfaceId,
+    surface: SurfaceId,
     /// Neutral construction definition.
-    pub(crate) definition: ProceduralSurfaceDefinition,
+    definition: ProceduralSurfaceDefinition,
     /// Four optional U/V parameter bounds following the record's subtype scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_record_bounds"
     )]
-    pub(crate) record_bounds: Option<RecordBounds>,
+    record_bounds: Option<RecordBounds>,
 }
 
 /// One procedural-curve row: the construction and the carrier it produces.
@@ -6996,11 +6993,11 @@ pub(crate) struct ProceduralSurfaceRow {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ProceduralCurveRow {
     /// Stable construction identity.
-    pub(crate) id: ProceduralCurveId,
+    id: ProceduralCurveId,
     /// Carrier curve this construction produces.
-    pub(crate) curve: CurveId,
+    curve: CurveId,
     /// Neutral construction definition.
-    pub(crate) definition: ProceduralCurveDefinition,
+    definition: ProceduralCurveDefinition,
 }
 
 impl ProceduralSurfaceRow {
@@ -7132,7 +7129,7 @@ impl CompoundCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(crate) const fn legacy_cache_slot_mut(&mut self) -> &mut Option<LegacyCache> {
+    const fn legacy_cache_slot_mut(&mut self) -> &mut Option<LegacyCache> {
         &mut self.cache
     }
 }
@@ -7145,7 +7142,7 @@ impl HelixCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(crate) const fn legacy_cache_slot_mut(&mut self) -> &mut Option<LegacyCache> {
+    const fn legacy_cache_slot_mut(&mut self) -> &mut Option<LegacyCache> {
         &mut self.cache
     }
 }
@@ -7162,7 +7159,7 @@ impl TSplineSurfaceConstruction {
 
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
     /// states the tolerance instead.
-    pub(crate) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+    fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
         self.cache.legacy_cache_mut().map(LegacyCacheSlot::Optional)
     }
 }

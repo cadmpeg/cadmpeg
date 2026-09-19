@@ -1295,7 +1295,7 @@ impl<'a> FeatureWriteWire<'a> {
         }
     }
 
-    pub(crate) fn standalone(feature: &'a Feature) -> Self {
+    fn standalone(feature: &'a Feature) -> Self {
         Self::new(feature, None)
     }
 }
