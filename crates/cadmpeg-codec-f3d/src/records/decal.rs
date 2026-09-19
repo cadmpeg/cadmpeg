@@ -7,7 +7,7 @@ const DESIGN_DECAL_FIT_TO_FACES_CODE: u8 = 0x60;
 
 /// A Decal mapping byte other than the fit-to-faces code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UnrecognizedDecalMappingMode(u8);
+pub(crate) struct UnrecognizedDecalMappingMode(u8);
 
 impl TryFrom<u8> for UnrecognizedDecalMappingMode {
     type Error = String;
@@ -23,14 +23,14 @@ impl TryFrom<u8> for UnrecognizedDecalMappingMode {
 /// Decal image mapping-mode byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "u8", into = "u8")]
-pub enum DesignDecalMappingMode {
+pub(crate) enum DesignDecalMappingMode {
     FitToFaces,
     Unknown(UnrecognizedDecalMappingMode),
 }
 
 impl DesignDecalMappingMode {
     #[must_use]
-    pub fn from_code(code: u8) -> Self {
+    pub(crate) fn from_code(code: u8) -> Self {
         match code {
             DESIGN_DECAL_FIT_TO_FACES_CODE => Self::FitToFaces,
             code => Self::Unknown(UnrecognizedDecalMappingMode(code)),
@@ -38,7 +38,7 @@ impl DesignDecalMappingMode {
     }
 
     #[must_use]
-    pub fn code(self) -> u8 {
+    pub(crate) fn code(self) -> u8 {
         match self {
             Self::FitToFaces => DESIGN_DECAL_FIT_TO_FACES_CODE,
             Self::Unknown(code) => code.0,
@@ -60,7 +60,7 @@ impl From<DesignDecalMappingMode> for u8 {
 
 /// Primary Decal asset and its consecutive image-name record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignDecalAsset {
+pub(crate) struct DesignDecalAsset {
     class_tags: [String; 2],
     record_index: u32,
     byte_offset: u64,
@@ -69,7 +69,7 @@ pub struct DesignDecalAsset {
 }
 
 impl DesignDecalAsset {
-    pub fn new(
+    pub(crate) fn new(
         class_tags: [String; 2],
         record_indices: [u32; 2],
         byte_offset: u64,
@@ -106,19 +106,19 @@ impl DesignDecalAsset {
             name,
         })
     }
-    pub fn record_index(&self) -> u32 {
+    pub(crate) fn record_index(&self) -> u32 {
         self.record_index
     }
-    pub fn entity_suffix(&self) -> u32 {
+    pub(crate) fn entity_suffix(&self) -> u32 {
         self.entity_suffix
     }
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
-    pub const fn primary_frame_length() -> u64 {
+    pub(crate) const fn primary_frame_length() -> u64 {
         crate::layout::design_decal_image_asset_record::LEN as u64
     }
-    pub fn name_frame_length(&self) -> u64 {
+    pub(crate) fn name_frame_length(&self) -> u64 {
         crate::layout::design_decal_image_name_prefix::LEN as u64
             + 2 * self.name.encode_utf16().count() as u64
     }
@@ -141,20 +141,20 @@ impl DesignDecalAsset {
 /// Exact image and target binding owned by one Design `Decal` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignDecalImageWire", into = "DesignDecalImageWire")]
-pub struct DesignDecalImage {
+pub(crate) struct DesignDecalImage {
     /// Globally unique native binding identity.
-    pub id: String,
+    pub(crate) id: String,
     scope: Located<u32>,
     /// Source mapping-mode byte.
-    pub mapping_mode: DesignDecalMappingMode,
+    pub(crate) mapping_mode: DesignDecalMappingMode,
     /// Target construction-group record index.
-    pub target_group_record_index: u32,
+    pub(crate) target_group_record_index: u32,
     /// Consecutive asset and image-name records.
-    pub asset: DesignDecalAsset,
+    pub(crate) asset: DesignDecalAsset,
 }
 
 impl DesignDecalImage {
-    pub fn new(
+    pub(crate) fn new(
         id: String,
         scope: Located<u32>,
         mapping_mode: DesignDecalMappingMode,
@@ -173,10 +173,10 @@ impl DesignDecalImage {
             asset,
         })
     }
-    pub fn scope_record_index(&self) -> u32 {
+    pub(crate) fn scope_record_index(&self) -> u32 {
         self.scope.value
     }
-    pub fn scope_byte_offset(&self) -> u64 {
+    pub(crate) fn scope_byte_offset(&self) -> u64 {
         self.scope.offset
     }
     fn asset_reference_offset(&self) -> u64 {
@@ -346,13 +346,13 @@ impl From<DesignDecalImage> for DesignDecalImageWire {
 
 /// One indexed record header in the recursive Design `BulkStream` tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignRecordHeader {
+pub(crate) struct DesignRecordHeader {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Index of this record within the recursive `BulkStream` tree.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this header within its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
 }

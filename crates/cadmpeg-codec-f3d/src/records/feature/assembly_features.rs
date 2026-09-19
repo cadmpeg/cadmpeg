@@ -22,34 +22,34 @@ cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transfor
     try_from = "DesignComponentInsertConstructionWire",
     into = "DesignComponentInsertConstructionWire"
 )]
-pub struct DesignComponentInsertConstruction {
+pub(crate) struct DesignComponentInsertConstruction {
     /// Scope-owned relation record.
-    pub relation_record_index: u32,
+    pub(crate) relation_record_index: u32,
     /// Grouped occurrence carrier named by the relation record.
-    pub carrier_record_index: u32,
+    pub(crate) carrier_record_index: u32,
     /// Eight-byte occurrence identity carried by the scope prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub occurrence_identity: Option<u64>,
+    pub(crate) occurrence_identity: Option<u64>,
     /// Occurrence-role GUID joining the carrier to the external-reference table.
     /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
-    pub neutron_role: String,
+    pub(crate) neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
-    pub neutron_role_offset: u64,
+    pub(crate) neutron_role_offset: u64,
     /// Explicit scope-local placement and its optional repeated carrier location.
     /// Absence is the encoded identity form.
-    pub placement: Option<DesignComponentInsertMatrix>,
+    pub(crate) placement: Option<DesignComponentInsertMatrix>,
 }
 
 /// Scope-local matrix with an optional equal matrix in the grouped carrier.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignComponentInsertMatrix {
-    pub scope: Located<SketchPlacementMatrix>,
-    pub carrier_offset: Option<u64>,
+pub(crate) struct DesignComponentInsertMatrix {
+    pub(crate) scope: Located<SketchPlacementMatrix>,
+    pub(crate) carrier_offset: Option<u64>,
 }
 
 impl DesignComponentInsertConstruction {
     #[must_use]
-    pub fn transform(&self) -> &SketchPlacementMatrix {
+    pub(crate) fn transform(&self) -> &SketchPlacementMatrix {
         self.placement
             .as_ref()
             .map_or(&SketchPlacementMatrix::IDENTITY, |matrix| {
@@ -58,12 +58,12 @@ impl DesignComponentInsertConstruction {
     }
 
     #[must_use]
-    pub fn transform_offset(&self) -> Option<u64> {
+    pub(crate) fn transform_offset(&self) -> Option<u64> {
         self.placement.as_ref().map(|matrix| matrix.scope.offset)
     }
 
     #[must_use]
-    pub fn carrier_transform_offset(&self) -> Option<u64> {
+    pub(crate) fn carrier_transform_offset(&self) -> Option<u64> {
         self.placement
             .as_ref()
             .and_then(|matrix| matrix.carrier_offset)
@@ -167,21 +167,21 @@ impl From<DesignComponentInsertConstruction> for DesignComponentInsertConstructi
 
 /// Local component occurrence joined through a `DerivedInstance` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignDerivedInstanceConstruction {
+pub(crate) struct DesignDerivedInstanceConstruction {
     /// Scope prologue record referenced by the fixed field at scope offset 22.
-    pub reference_record_index: u32,
+    pub(crate) reference_record_index: u32,
     /// Scope-owned class-310 relation record.
-    pub relation_record_index: u32,
+    pub(crate) relation_record_index: u32,
     /// Class-380 component-occurrence carrier named by the relation.
-    pub carrier_record_index: u32,
+    pub(crate) carrier_record_index: u32,
     /// Component definition GUID carried by the joined occurrence.
-    pub component_guid: DesignRelaxedGuidText,
+    pub(crate) component_guid: DesignRelaxedGuidText,
     /// Placed occurrence GUID carried by the joined occurrence.
-    pub occurrence_guid: DesignRelaxedGuidText,
+    pub(crate) occurrence_guid: DesignRelaxedGuidText,
     /// Row-major local-to-model placement in centimetres.
-    pub transform: SketchPlacementMatrix,
+    pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first scope-local transform scalar.
-    pub transform_offset: u64,
+    pub(crate) transform_offset: u64,
 }
 
 /// One exact local component-occurrence carrier.
@@ -190,49 +190,49 @@ pub struct DesignDerivedInstanceConstruction {
     try_from = "DesignComponentOccurrenceWire",
     into = "DesignComponentOccurrenceWire"
 )]
-pub struct DesignComponentOccurrence {
+pub(crate) struct DesignComponentOccurrence {
     /// Stable native record identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Indexed-record class carrying this occurrence.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Indexed carrier record.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the indexed header.
     byte_offset: u64,
     /// Referenced component-definition record.
-    pub component_record_index: u64,
+    component_record_index: u64,
     /// Stable component-definition GUID.
-    pub component_guid: DesignRelaxedGuidText,
+    pub(crate) component_guid: DesignRelaxedGuidText,
     /// Stable placed-occurrence GUID.
-    pub occurrence_guid: DesignRelaxedGuidText,
+    pub(crate) occurrence_guid: DesignRelaxedGuidText,
     /// Base occurrence or a placed occurrence with its ordinal and matrix.
     placement: DesignComponentOccurrencePlacement,
 }
 
 /// Local occurrence payload before checked frame admission.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignComponentOccurrenceDraft {
+pub(crate) struct DesignComponentOccurrenceDraft {
     /// Stable native record identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Indexed-record class carrying this occurrence.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Indexed carrier record.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the indexed header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Referenced component-definition record.
-    pub component_record_index: u64,
+    pub(crate) component_record_index: u64,
     /// Stable component-definition GUID.
-    pub component_guid: DesignRelaxedGuidText,
+    pub(crate) component_guid: DesignRelaxedGuidText,
     /// Stable placed-occurrence GUID.
-    pub occurrence_guid: DesignRelaxedGuidText,
+    pub(crate) occurrence_guid: DesignRelaxedGuidText,
     /// Base occurrence or a placed occurrence with its ordinal and matrix.
-    pub placement: DesignComponentOccurrencePlacement,
+    pub(crate) placement: DesignComponentOccurrencePlacement,
 }
 
 /// Placement envelope of a local component occurrence.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DesignComponentOccurrencePlacement {
+pub(crate) enum DesignComponentOccurrencePlacement {
     /// First occurrence, with no explicit matrix payload.
     Base,
     /// Explicit matrix and one-based occurrence ordinal.
@@ -244,7 +244,7 @@ pub enum DesignComponentOccurrencePlacement {
 
 impl DesignComponentOccurrence {
     /// Admit a local occurrence with representable GUID and placement offsets.
-    pub fn try_new(draft: DesignComponentOccurrenceDraft) -> Result<Self, String> {
+    pub(crate) fn try_new(draft: DesignComponentOccurrenceDraft) -> Result<Self, String> {
         let last_offset = match draft.placement {
             DesignComponentOccurrencePlacement::Base => 124,
             DesignComponentOccurrencePlacement::Explicit { .. } => 209,
@@ -266,27 +266,27 @@ impl DesignComponentOccurrence {
     }
 
     /// Indexed header byte offset.
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
 
     /// Component GUID byte offset.
-    pub fn component_guid_offset(&self) -> u64 {
+    fn component_guid_offset(&self) -> u64 {
         self.byte_offset + 48
     }
 
     /// Occurrence GUID byte offset.
-    pub fn occurrence_guid_offset(&self) -> u64 {
+    fn occurrence_guid_offset(&self) -> u64 {
         self.byte_offset + 124
     }
 
     /// Base or explicit local placement.
-    pub fn placement(&self) -> &DesignComponentOccurrencePlacement {
+    pub(crate) fn placement(&self) -> &DesignComponentOccurrencePlacement {
         &self.placement
     }
 
     #[must_use]
-    pub fn occurrence_ordinal(&self) -> u32 {
+    pub(crate) fn occurrence_ordinal(&self) -> u32 {
         match self.placement {
             DesignComponentOccurrencePlacement::Base => 1,
             DesignComponentOccurrencePlacement::Explicit { ordinal, .. } => ordinal.get(),
@@ -294,7 +294,7 @@ impl DesignComponentOccurrence {
     }
 
     #[must_use]
-    pub fn transform(&self) -> Option<Located<SketchPlacementMatrix>> {
+    pub(crate) fn transform(&self) -> Option<Located<SketchPlacementMatrix>> {
         match self.placement {
             DesignComponentOccurrencePlacement::Base => None,
             DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(Located {
@@ -403,25 +403,25 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
 
 /// Legacy component copy/paste construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignCopyPasteComponentOperation {
+pub(crate) struct DesignCopyPasteComponentOperation {
     /// Scope-owned relation record.
-    pub relation_record_index: u32,
+    pub(crate) relation_record_index: u32,
     /// Existing source occurrence carrier.
-    pub source_occurrence_record_index: u32,
+    pub(crate) source_occurrence_record_index: u32,
     /// Newly copied occurrence carrier.
-    pub copied_occurrence_record_index: u32,
+    pub(crate) copied_occurrence_record_index: u32,
     /// Reusable component definition shared by source and copy.
-    pub component_guid: DesignRelaxedGuidText,
+    pub(crate) component_guid: DesignRelaxedGuidText,
     /// Existing source occurrence identity.
-    pub source_occurrence_guid: DesignRelaxedGuidText,
+    pub(crate) source_occurrence_guid: DesignRelaxedGuidText,
     /// Newly copied occurrence identity.
-    pub copied_occurrence_guid: DesignRelaxedGuidText,
+    pub(crate) copied_occurrence_guid: DesignRelaxedGuidText,
     /// Source placement embedded by the scope.
-    pub source_transform: SketchPlacementMatrix,
+    pub(crate) source_transform: SketchPlacementMatrix,
     /// Byte offset of the source placement.
-    pub source_transform_offset: u64,
+    pub(crate) source_transform_offset: u64,
     /// Copied placement embedded by both scope and occurrence carrier.
-    pub copied_transform: SketchPlacementMatrix,
+    pub(crate) copied_transform: SketchPlacementMatrix,
     /// Byte offset of the scope-local copied placement.
-    pub copied_transform_offset: u64,
+    pub(crate) copied_transform_offset: u64,
 }

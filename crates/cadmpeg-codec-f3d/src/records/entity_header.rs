@@ -25,23 +25,23 @@ cadmpeg_core::named_optional_field!(
     "record_reference_offset"
 );
 /// Add-in module that registers the Design sketch types.
-pub const DESIGN_MODULE_SKETCH: &str = "MSketch";
+pub(crate) const DESIGN_MODULE_SKETCH: &str = "MSketch";
 
 /// Add-in module that registers the Design body types.
-pub const DESIGN_MODULE_BODY: &str = "Body";
+pub(crate) const DESIGN_MODULE_BODY: &str = "Body";
 
 /// Add-in module that registers the Design geometry types.
-pub const DESIGN_MODULE_GEOMETRY: &str = "Geometry";
+pub(crate) const DESIGN_MODULE_GEOMETRY: &str = "Geometry";
 
 /// Add-in module that registers the Design component types.
-pub const DESIGN_MODULE_COMPONENT: &str = "Component";
+pub(crate) const DESIGN_MODULE_COMPONENT: &str = "Component";
 
 /// Add-in module that registers the root Fusion document types.
-pub const DESIGN_MODULE_FUSION: &str = "Fusion";
+pub(crate) const DESIGN_MODULE_FUSION: &str = "Fusion";
 
 /// The base-type-GUID field of a type-table entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BaseTypeGuid {
+pub(crate) enum BaseTypeGuid {
     /// The entry stores no base-type-GUID field.
     Absent,
     /// The entry stores an explicit empty root GUID at this location.
@@ -60,7 +60,7 @@ pub enum BaseTypeGuid {
 
 impl BaseTypeGuid {
     /// The named base type, when the entry names one.
-    pub fn value(&self) -> Option<&DesignRelaxedGuidText> {
+    pub(crate) fn value(&self) -> Option<&DesignRelaxedGuidText> {
         match self {
             Self::Absent | Self::EmptyRoot { .. } => None,
             Self::Guid { value, .. } => Some(value),
@@ -68,7 +68,7 @@ impl BaseTypeGuid {
     }
 
     /// Byte offset of the stored base-GUID bytes, when the entry stores them.
-    pub fn offset(&self) -> Option<u64> {
+    pub(crate) fn offset(&self) -> Option<u64> {
         match *self {
             Self::Absent => None,
             Self::EmptyRoot { offset } | Self::Guid { offset, .. } => Some(offset),
@@ -103,29 +103,29 @@ impl BaseTypeGuid {
 /// carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "SegmentTypeWire", into = "SegmentTypeWire")]
-pub struct SegmentType {
+pub(crate) struct SegmentType {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Byte offset of this type-table entry in its `MetaStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
     /// this GUID is the only discriminator that is stable across files.
-    pub type_guid: DesignRelaxedGuidText,
+    pub(crate) type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
-    pub type_guid_offset: u64,
+    pub(crate) type_guid_offset: u64,
     /// Base-type-GUID field and location.
-    pub base_type_guid: BaseTypeGuid,
+    pub(crate) base_type_guid: BaseTypeGuid,
     /// Record version of this type.
-    pub version: u32,
+    pub(crate) version: u32,
     /// Byte offset of `version` in the Design `MetaStream`.
-    pub version_offset: u64,
+    pub(crate) version_offset: u64,
     /// Add-in module that registers this type, e.g. `Fusion`, `MSketch`, or
     /// `Body`. Every type a module registers repeats the module name, so it
     /// classifies a type but does not identify one. Some types record no module.
-    pub module: String,
+    pub(crate) module: String,
     /// Entity ids whose records carry this type, in source `MetaStream` order;
     /// a count rather than a fixed-arity list, so length varies per entry.
-    pub entities: ReferenceRun<u64>,
+    pub(crate) entities: ReferenceRun<u64>,
 }
 
 /// One type-table entry from a `MetaStream` segment header. The entry registers
@@ -134,14 +134,14 @@ pub struct SegmentType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct SegmentTypeWire {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: String,
     /// Byte offset of this type-table entry in its `MetaStream`.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
     /// this GUID is the only discriminator that is stable across files.
-    pub type_guid: DesignRelaxedGuidText,
+    type_guid: DesignRelaxedGuidText,
     /// Byte offset of the type-GUID bytes in the `MetaStream`.
-    pub type_guid_offset: u64,
+    type_guid_offset: u64,
     /// GUID of this type's base type; `None` for a root type, whose stored base
     /// GUID is the empty string.
     #[serde(
@@ -149,27 +149,27 @@ struct SegmentTypeWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_base_type_guid"
     )]
-    pub base_type_guid: Option<String>,
+    base_type_guid: Option<String>,
     /// Byte offset of the base-type-GUID bytes, when the entry names one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_base_type_guid_offset"
     )]
-    pub base_type_guid_offset: Option<u64>,
+    base_type_guid_offset: Option<u64>,
     /// Record version of this type.
-    pub version: u32,
+    version: u32,
     /// Byte offset of `version` in the Design `MetaStream`.
-    pub version_offset: u64,
+    version_offset: u64,
     /// Add-in module that registers this type, e.g. `Fusion`, `MSketch`, or
     /// `Body`. Every type a module registers repeats the module name, so it
     /// classifies a type but does not identify one. Some types record no module.
-    pub module: String,
+    module: String,
     /// Entity ids whose records carry this type, in source `MetaStream` order;
     /// a count rather than a fixed-arity list, so length varies per entry.
-    pub entity_ids: Vec<u64>,
+    entity_ids: Vec<u64>,
     /// Byte offsets parallel to `entity_ids`.
-    pub entity_id_offsets: Vec<u64>,
+    entity_id_offsets: Vec<u64>,
 }
 
 impl TryFrom<SegmentTypeWire> for SegmentType {
@@ -219,7 +219,7 @@ impl From<SegmentType> for SegmentTypeWire {
 
 /// Source timeline frame with bounded, ordered reference locations.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignTimelineFrame {
+pub(crate) struct DesignTimelineFrame {
     byte_offset: u64,
     frame_length: u64,
     context_record_index_offset: u64,
@@ -228,7 +228,7 @@ pub struct DesignTimelineFrame {
 }
 
 impl DesignTimelineFrame {
-    pub fn new(
+    pub(crate) fn new(
         byte_offset: u64,
         frame_length: u64,
         context_record_index_offset: u64,
@@ -285,14 +285,14 @@ impl DesignTimelineFrame {
             items,
         })
     }
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
     #[cfg(test)]
     pub fn frame_length(&self) -> u64 {
         self.frame_length
     }
-    pub fn items(&self) -> &[Located<u64>] {
+    pub(crate) fn items(&self) -> &[Located<u64>] {
         &self.items
     }
 
@@ -323,20 +323,20 @@ impl DesignTimelineFrame {
     try_from = "DesignFeatureTimelineWire",
     into = "DesignFeatureTimelineWire"
 )]
-pub struct DesignFeatureTimeline {
+pub(crate) struct DesignFeatureTimeline {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
     segment_end: usize,
     /// Checked source frame and ordered item locations.
     frame: DesignTimelineFrame,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Design entity identity of the timeline record.
-    pub record_index: std::num::NonZeroU64,
+    pub(crate) record_index: std::num::NonZeroU64,
     /// Zero-based position in the `MetaStream` timeline-record list.
-    pub source_ordinal: u32,
+    pub(crate) source_ordinal: u32,
     /// Same-segment context record referenced before the scope list.
-    pub context_record_index: std::num::NonZeroU64,
+    pub(crate) context_record_index: std::num::NonZeroU64,
 }
 
 impl DesignFeatureTimeline {
@@ -464,35 +464,35 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
 /// Self-validating entity-bound header in the Design `BulkStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignEntityHeaderWire", into = "DesignEntityHeaderWire")]
-pub struct DesignEntityHeader {
+pub(crate) struct DesignEntityHeader {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Byte offset of this entity header in its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Full UTF-16LE-decoded design-entity id string for this header.
-    pub entity_id: DesignEntityId,
+    pub(crate) entity_id: DesignEntityId,
     /// Source per-file dynamic three-digit ASCII class tag naming this header's record type.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Whether the flag-selected four-byte optional slot is present.
-    pub optional_slot_present: bool,
+    pub(crate) optional_slot_present: bool,
     /// Module registration and its sketch-owned data.
-    pub registration: DesignEntityRegistration,
+    pub(crate) registration: DesignEntityRegistration,
 }
 
 /// A sketch header's located reference-list slot.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SketchHeaderReferences {
+pub(crate) struct SketchHeaderReferences {
     /// Owning record, absent for the no-base-record sentinel.
-    pub record_reference: Option<u32>,
+    pub(crate) record_reference: Option<u32>,
     /// Byte offset of the owning-record slot.
-    pub record_reference_offset: u64,
+    pub(crate) record_reference_offset: u64,
     /// Located references in the counted list.
-    pub references: Vec<Located<u32>>,
+    pub(crate) references: Vec<Located<u32>>,
 }
 
 /// Module registration with data owned only by sketch headers.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignEntityRegistration(DesignEntityRegistrationKind);
+pub(crate) struct DesignEntityRegistration(DesignEntityRegistrationKind);
 
 #[derive(Debug, Clone, PartialEq)]
 enum DesignEntityRegistrationKind {
@@ -505,7 +505,7 @@ enum DesignEntityRegistrationKind {
 
 impl DesignEntityRegistration {
     /// Construct a module registration and its sketch data.
-    pub fn new(
+    pub(crate) fn new(
         module: Option<String>,
         references: Option<SketchHeaderReferences>,
         members: ReferenceRun<u32>,
@@ -525,12 +525,12 @@ impl DesignEntityRegistration {
 
 impl DesignEntityHeader {
     /// Declared reference count for a present sketch reference list.
-    pub fn declared_reference_count(&self) -> Option<usize> {
+    pub(crate) fn declared_reference_count(&self) -> Option<usize> {
         self.sketch_references().map(|list| list.references.len())
     }
 
     /// Registered module name.
-    pub fn module(&self) -> Option<&str> {
+    pub(crate) fn module(&self) -> Option<&str> {
         match &self.registration.0 {
             DesignEntityRegistrationKind::Other(module) => module.as_deref(),
             DesignEntityRegistrationKind::Sketch { .. } => Some(DESIGN_MODULE_SKETCH),
@@ -538,7 +538,7 @@ impl DesignEntityHeader {
     }
 
     /// Located sketch reference-list slot.
-    pub fn sketch_references(&self) -> Option<&SketchHeaderReferences> {
+    pub(crate) fn sketch_references(&self) -> Option<&SketchHeaderReferences> {
         match &self.registration.0 {
             DesignEntityRegistrationKind::Sketch { references, .. } => references.as_ref(),
             DesignEntityRegistrationKind::Other(_) => None,
@@ -554,14 +554,14 @@ impl DesignEntityHeader {
     }
 
     /// Referenced record indices.
-    pub fn reference_values(&self) -> impl Iterator<Item = &u32> {
+    pub(crate) fn reference_values(&self) -> impl Iterator<Item = &u32> {
         self.sketch_references()
             .into_iter()
             .flat_map(|list| list.references.iter().map(|row| &row.value))
     }
 
     /// Member record indices.
-    pub fn member_values(&self) -> impl Iterator<Item = &u32> {
+    pub(crate) fn member_values(&self) -> impl Iterator<Item = &u32> {
         match &self.registration.0 {
             DesignEntityRegistrationKind::Sketch { members, .. } => Some(members),
             DesignEntityRegistrationKind::Other(_) => None,
@@ -571,7 +571,7 @@ impl DesignEntityHeader {
     }
 
     /// Whether the entity belongs to the sketch module.
-    pub fn in_sketch_module(&self) -> bool {
+    pub(crate) fn in_sketch_module(&self) -> bool {
         matches!(
             self.registration.0,
             DesignEntityRegistrationKind::Sketch { .. }
