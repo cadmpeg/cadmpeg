@@ -152,15 +152,17 @@ Generators resolve that tree (and the FCStd donated fixture) from
 `CARGO_MANIFEST_DIR`, so the current working directory does not change the
 output path.
 
-Every file in the tree outside the seven `fcstd_*` directories is written from
-literals in the source of the generators under `src/bin/`, or is a
+Every file in the tree outside the seven generated `fcstd_*` directories is
+written from literals in the source of the generators under `src/bin/`, or is a
 hand-authored parser input in the same form. Those
 files contain no bytes carved from CAD application output, vendor samples,
 customer files, or other third-party CAD files. They are parser inputs, not
 public CAD corpus files. JSON seeds, malformed inputs, empty inputs, and
-truncated inputs are not CAD container files. `generate_fcstd_seeds` fills the
-`fcstd_*` directories from the donated CC0 fixture and from entries it reads
-out of that fixture. Public CAD fixtures enter the repository only through the
+truncated inputs are not CAD container files. The tree holds eight `fcstd_*`
+directories. `generate_fcstd_seeds` fills seven of them from the donated CC0
+fixture and from entries it reads out of that fixture; the eighth,
+`fcstd_write`, is hand-authored and no generator writes it.
+Public CAD fixtures enter the repository only through the
 [corpus donation process](../../corpus/README.md).
 
 Most of the checked-in tree is the output of seven generators, run from the
@@ -177,8 +179,11 @@ cargo run --manifest-path crates/cadmpeg-fuzz/Cargo.toml --bin generate_fcstd_se
 ```
 
 The order fixes the container targets that more than one generator writes.
+`generate_fcstd_seeds` removes its seven directories before it writes, so it
+must run after every generator that writes into them.
 Running the sequence again writes the same bytes. `generate_fcstd_seeds`
-rewrites the `fcstd_*` seeds from the donated fixture and writes nothing else.
+rewrites those seven directories from the donated fixture and writes nothing
+else.
 
 The focused STEP, IGES, SAT, `f3d_writer`, `fcstd_write` and
 `decode_pipeline_mutated` seeds are hand-authored: they were written or reduced

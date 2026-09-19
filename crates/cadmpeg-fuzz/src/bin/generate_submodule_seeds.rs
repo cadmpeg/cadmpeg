@@ -523,7 +523,15 @@ fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     push_u32(&mut bulk, 0);
     push_u32(&mut bulk, 0);
     push_u32(&mut bulk, u32::MAX);
-    let bulk_padding = metadata_body.len().saturating_sub(bulk.len());
+    if bulk.len() > metadata_body.len() {
+        return Err(format!(
+            "the RSe bulk record pads out to the {}-byte metadata body; this one states {}",
+            metadata_body.len(),
+            bulk.len()
+        )
+        .into());
+    }
+    let bulk_padding = metadata_body.len() - bulk.len();
     pad_zeros(&mut bulk, bulk_padding);
     records.extend_from_slice(&bulk);
     write_seed("seeds/inventor_rse_records", "minimal", &records)?;

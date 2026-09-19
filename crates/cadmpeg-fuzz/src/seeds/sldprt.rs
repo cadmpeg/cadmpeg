@@ -6,20 +6,20 @@ use std::io::Write;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
 
-pub const MARKER: [u8; 4] = [0x9e, 0x14, 0x01, 0x00];
+const MARKER: [u8; 4] = [0x9e, 0x14, 0x01, 0x00];
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
-pub fn swap_name(name: &str) -> Vec<u8> {
+fn swap_name(name: &str) -> Vec<u8> {
     name.bytes().map(|b| b.rotate_left(4)).collect()
 }
 
-pub fn crc32(data: &[u8]) -> u32 {
+fn crc32(data: &[u8]) -> u32 {
     let mut h = crc32fast::Hasher::new();
     h.update(data);
     h.finalize()
 }
 
-pub fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
+fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
     let swapped = swap_name(name);
     let mut b = Vec::new();
     b.extend_from_slice(&MARKER);
@@ -32,7 +32,7 @@ pub fn make_cache_cell(logical_len: u32, name: &str) -> Vec<u8> {
     b
 }
 
-pub fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
+fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
     let swapped = swap_name(name);
     let mut b = Vec::new();
     b.extend_from_slice(&MARKER);
@@ -47,7 +47,7 @@ pub fn make_directory_entry(type_id: u32, size: u32, name: &str) -> Vec<u8> {
     b
 }
 
-pub fn parasolid_payload(description: &str, schema: &str) -> Vec<u8> {
+fn parasolid_payload(description: &str, schema: &str) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(&[b'P', b'S', 0x00, 0x00]);
     b.extend_from_slice(&(description.len() as u16).to_be_bytes());

@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 /// The environment variable that redirects the seed tree.
-pub const SEED_ROOT_ENV: &str = "CADMPEG_FUZZ_SEED_ROOT";
+const SEED_ROOT_ENV: &str = "CADMPEG_FUZZ_SEED_ROOT";
 
 pub fn crate_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
