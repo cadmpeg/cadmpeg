@@ -2052,20 +2052,20 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for entity in &mut saved.entities {
             match entity {
                 feature::definitions::FeatureSavedEntity::Line(line) => {
-                    line.offset += section_offset
+                    line.offset += section_offset;
                 }
                 feature::definitions::FeatureSavedEntity::Arc(arc) => arc.offset += section_offset,
                 feature::definitions::FeatureSavedEntity::Circle(circle) => {
-                    circle.offset += section_offset
+                    circle.offset += section_offset;
                 }
                 feature::definitions::FeatureSavedEntity::Conic(conic) => {
-                    conic.offset += section_offset
+                    conic.offset += section_offset;
                 }
                 feature::definitions::FeatureSavedEntity::Spline(spline) => {
-                    spline.offset += section_offset
+                    spline.offset += section_offset;
                 }
                 feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
-                    dummy.offset += section_offset
+                    dummy.offset += section_offset;
                 }
             }
         }
