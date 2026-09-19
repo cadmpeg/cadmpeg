@@ -2,9 +2,11 @@
 //! Convert: destination rules, format selection, and write-back fidelity.
 
 use std::fs;
+#[cfg(any(feature = "sldprt", feature = "rhino"))]
 use std::io::Cursor;
 
 use assert_cmd::Command;
+#[cfg(any(feature = "sldprt", feature = "rhino"))]
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
@@ -94,6 +96,7 @@ fn step_artifact_starts_with_step_header() {
         .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
 }
 
+#[cfg(feature = "sldprt")]
 #[test]
 fn source_less_ir_exports_to_decodable_sldprt() {
     let dir = tempdir().unwrap();
@@ -121,6 +124,7 @@ fn source_less_ir_exports_to_decodable_sldprt() {
     assert_eq!(decoded.ir().model.edges.len(), 12);
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn source_less_ir_exports_to_decodable_rhino() {
     let dir = tempdir().unwrap();

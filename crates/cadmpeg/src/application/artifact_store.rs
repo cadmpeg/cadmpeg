@@ -377,16 +377,20 @@ impl Write for TempFileWriter<'_> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::default_trait_access)]
 mod tests {
+    #[cfg(feature = "nx")]
     use std::io::Cursor;
 
     use super::{
         check_output_path, load_matching_sidecar, read_bounded_text, read_detection_input,
         FileDestination, OptionalFileDestination, OutputDestinations,
     };
+    #[cfg(feature = "nx")]
     use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
     use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
-    use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
+    use cadmpeg_registry::DETECTION_PREFIX_LEN;
+    #[cfg(feature = "nx")]
+    use cadmpeg_registry::{identify, InputCatalog};
     #[cfg(feature = "nx")]
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
