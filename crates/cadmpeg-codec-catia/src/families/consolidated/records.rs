@@ -70,7 +70,7 @@ pub(crate) struct ConsolidatedAnalyticCircleEdgeRun {
     pub(crate) circle: B2Circle,
     /// Eight-scalar class-`0x23` edge definition.
     #[cfg(test)]
-    pub definition: ConsolidatedEdgeDefinition,
+    pub(super) definition: ConsolidatedEdgeDefinition,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub(crate) node: B2EdgeNode,
 }
@@ -425,12 +425,12 @@ fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Class25P
 #[cfg(test)]
 pub(in crate::families::consolidated) struct ConsolidatedNativeEdgeGraph {
     /// Persistent native vertex identities in first-incidence order.
-    pub vertex_identities: Vec<u32>,
+    pub(super) vertex_identities: Vec<u32>,
     /// Edge runs in serialization order, with endpoints indexing
     /// `vertex_identities`.
-    pub edges: Vec<ConsolidatedNativeGraphEdge>,
+    pub(super) edges: Vec<ConsolidatedNativeGraphEdge>,
     /// Connected edge components, expressed as edge ordinals.
-    pub components: Vec<Vec<usize>>,
+    pub(super) components: Vec<Vec<usize>>,
 }
 
 /// One edge in a consolidated native endpoint-incidence graph.
@@ -438,7 +438,7 @@ pub(in crate::families::consolidated) struct ConsolidatedNativeEdgeGraph {
 #[cfg(test)]
 pub(super) struct ConsolidatedNativeGraphEdge {
     /// Compact endpoint indices into [`ConsolidatedNativeEdgeGraph::vertex_identities`].
-    pub vertices: [usize; 2],
+    pub(super) vertices: [usize; 2],
 }
 
 /// Uniquely resolved carrier for one side of a consolidated edge block.

@@ -36,10 +36,10 @@ pub(in crate::families::e5) struct E5Plane {
     pub(super) origin: [f64; 3],
     /// Natural U-coordinate bounds.
     #[cfg(test)]
-    pub u_range: [f64; 2],
+    pub(super) u_range: [f64; 2],
     /// Natural V-coordinate bounds.
     #[cfg(test)]
-    pub v_range: [f64; 2],
+    pub(super) v_range: [f64; 2],
 }
 
 /// A directly decoded E5 analytic surface carrier.
