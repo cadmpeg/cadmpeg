@@ -1950,8 +1950,21 @@ fn scale_spatial_sketch_constraint_definition(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        normalize_model_lengths, scale_curve_geometry, scale_face_motion, scale_feature_definition,
+        scale_pattern_kind, scale_surface_geometry,
+    };
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::ParameterValue;
     use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::transform::Transform;
+    use std::collections::BTreeMap;
 
     const EPS_UNIT_SCALE: f64 = f64::EPSILON * 4096.0;
 

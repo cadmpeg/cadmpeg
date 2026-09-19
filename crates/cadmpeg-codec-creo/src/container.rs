@@ -2980,7 +2980,14 @@ pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
 
 #[cfg(test)]
 mod feature_row_definition_tests {
-    use super::*;
+    use super::{
+        feature_row_definitions, feature_row_has_model_identity, section_owner_ranges,
+        structural_feature_ids, toc_sections,
+    };
+    use crate::curve::CurveTopologyRow;
+    use crate::feature;
+    use crate::feature::{FeatureOperation, FeatureRecipe, FeatureReferenceName, FeatureRow};
+    use crate::surface::SurfaceRow;
 
     #[test]
     fn surface_and_curve_generators_are_structural_feature_identities() {

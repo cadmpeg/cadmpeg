@@ -2763,7 +2763,8 @@ pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTabl
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::feature_row_records;
+    use std::collections::BTreeSet;
 
     #[test]
     fn overlapping_feature_candidates_do_not_expose_short_headers() {

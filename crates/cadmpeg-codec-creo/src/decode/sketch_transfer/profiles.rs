@@ -596,7 +596,10 @@ pub(in super::super) fn solver_only_section_entity_family(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        solver_only_section_entity_family, unique_section_incidence_curve_family,
+        SectionEntityIncidenceFamily,
+    };
     use crate::decode::tests::opaque;
 
     fn midpoint(target: u32, point: u32) -> crate::feature::FeatureSkamp {

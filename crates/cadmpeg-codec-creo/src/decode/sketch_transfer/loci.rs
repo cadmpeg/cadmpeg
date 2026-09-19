@@ -1081,8 +1081,19 @@ pub(in super::super) fn active_complete_section_skamps(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        section_point_locus, section_skamp_arc_midpoint_source, section_skamp_curve_entity,
+        section_skamp_is_arc, section_skamp_is_line, section_skamp_is_point,
+        section_skamp_line_midpoint_sources, section_skamp_locus, section_skamp_point_locus,
+        section_skamp_same_coordinate_sources, section_skamp_tangent_loci,
+    };
+    use crate::decode::sketch::skamp::SectionPointSource;
+    use crate::decode::sketch_transfer::profiles::{
+        unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
+    };
     use cadmpeg_ir::sketches::SketchEntityId;
+    use cadmpeg_ir::sketches::{SketchId, SketchLocus};
+    use std::collections::BTreeMap;
 
     #[test]
     fn standalone_point_rows_supply_point_loci() {

@@ -656,7 +656,14 @@ pub fn solved_topological_vertices(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::planes::CarrierSolveDiagnostics;
+    use super::{
+        carrier_failure_kind, pcurve_endpoint_is_ambiguous, unique_model_curve, CarrierFailureKind,
+    };
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     #[test]
     fn unique_model_curve_rejects_duplicate_ids() {
