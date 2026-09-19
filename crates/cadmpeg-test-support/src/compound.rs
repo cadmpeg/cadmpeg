@@ -5,6 +5,8 @@
 //! integration tests share no module path. This crate is the one home both
 //! read the builder from.
 
+use crate::bytes::{put_u16, put_u32};
+
 const CFB_SECTOR: usize = 512;
 const CFB_FREE: u32 = 0xffff_ffff;
 const CFB_END: u32 = 0xffff_fffe;
@@ -44,7 +46,8 @@ pub fn compound_fixture() -> Vec<u8> {
     fat.fill(0xff);
     put_u32(fat, 0, CFB_END);
     for sector in 1..8 {
-        put_u32(fat, sector * 4, (sector + 1) as u32);
+        let next = u32::try_from(sector + 1).expect("the fixture spans eleven sectors");
+        put_u32(fat, sector * 4, next);
     }
     put_u32(fat, 8 * 4, CFB_END);
     put_u32(fat, 9 * 4, CFB_FAT);
@@ -66,7 +69,9 @@ fn directory_entry(
     for (offset, unit) in units.iter().enumerate() {
         put_u16(entry, offset * 2, *unit);
     }
-    put_u16(entry, 64, ((units.len() + 1) * 2) as u16);
+    let name_bytes = u16::try_from((units.len() + 1) * 2)
+        .expect("a directory entry name field holds 32 UTF-16 units");
+    put_u16(entry, 64, name_bytes);
     entry[66] = object_type;
     entry[67] = 1;
     put_u32(entry, 68, CFB_FREE);
@@ -80,14 +85,4 @@ fn directory_entry(
 fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
     let start = (sector + 1) * CFB_SECTOR;
     &mut file[start..start + CFB_SECTOR]
-}
-
-/// Write a little-endian `u16` at `offset`.
-fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
-    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-}
-
-/// Write a little-endian `u32` at `offset`.
-fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
-    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }

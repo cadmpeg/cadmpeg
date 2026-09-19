@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use cadmpeg_test_support::bytes::put_u16;
+
 use crate::test_support::test_bytes::zlib_compress;
 use crate::test_support::test_bytes::MAGIC;
 use crate::test_support::test_cfb::legacy_cfb_with_partial_ug_part;
 use crate::test_support::test_cfb::legacy_cfb_with_two_streams;
 use crate::test_support::test_cfb::legacy_cfb_with_ug_part;
-use crate::test_support::test_cfb::put_u16;
 use crate::test_support::test_deltas::bspline_partition_stream;
 use crate::test_support::test_deltas::circle_topology_partition_stream;
 use crate::test_support::test_deltas::cone_topology_partition_stream;
