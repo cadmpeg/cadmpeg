@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use super::error_finding;
 use crate::document::CadIr;
 use crate::presentation::PresentationItem;
 use crate::report::{Check, Finding, Severity};
@@ -85,8 +86,9 @@ pub(super) fn check_presentation(
                 PresentationItem::Source { .. } => true,
             };
             if !resolved {
-                presentation_error(
+                error_finding(
                     findings,
+                    Check::Presentation,
                     layer.id.as_str(),
                     "unresolved presentation-layer item",
                 );
@@ -117,8 +119,9 @@ pub(super) fn check_appearances(ir: &CadIr, findings: &mut Vec<Finding>) {
                 mapping.real_world_scale_y,
             ];
             if !mapped.iter().all(|value| value.is_finite()) {
-                presentation_error(
+                error_finding(
                     findings,
+                    Check::Presentation,
                     appearance.id.as_str(),
                     "non-finite texture mapping value",
                 );
@@ -128,8 +131,9 @@ pub(super) fn check_appearances(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .as_ref()
                 .is_some_and(|bump| !bump.depth.is_finite() || !bump.normal_scale.is_finite())
             {
-                presentation_error(
+                error_finding(
                     findings,
+                    Check::Presentation,
                     appearance.id.as_str(),
                     "non-finite texture bump-map value",
                 );
@@ -148,14 +152,5 @@ fn invalid_state(findings: &mut Vec<Finding>, entity: Option<String>, message: &
         severity: Severity::Error,
         message: message.into(),
         entity,
-    });
-}
-
-fn presentation_error(findings: &mut Vec<Finding>, entity: &str, message: &str) {
-    findings.push(Finding {
-        check: Check::Presentation,
-        severity: Severity::Error,
-        message: message.into(),
-        entity: Some(entity.into()),
     });
 }

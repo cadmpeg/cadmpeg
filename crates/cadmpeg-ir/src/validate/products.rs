@@ -3,10 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::referential_error;
+use super::error_finding;
 use crate::document::CadIr;
 use crate::products::{AssemblyGraph, OccurrenceParent, OperandContainer, PrototypeReference};
-use crate::report::Finding;
+use crate::report::{Check, Finding};
 
 pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
     let definitions = ir
@@ -34,8 +34,9 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .iter()
             .any(|body| !bodies.contains(body.as_str()))
         {
-            referential_error(
+            error_finding(
                 findings,
+                Check::ReferentialIntegrity,
                 definition.id.as_str(),
                 "invalid product body reference",
             );
@@ -43,8 +44,9 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 
     if AssemblyGraph::new(&ir.model.occurrences).is_err() {
-        referential_error(
+        error_finding(
             findings,
+            Check::ReferentialIntegrity,
             "model:assembly",
             "invalid occurrence parent graph",
         );
@@ -87,8 +89,9 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             element_valid && copy_targets_valid
         });
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions {
-            referential_error(
+            error_finding(
                 findings,
+                Check::ReferentialIntegrity,
                 occurrence.id.as_str(),
                 "invalid occurrence reference, ordinal, or affine transform",
             );
@@ -106,8 +109,9 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                     OperandContainer::Root {} | OperandContainer::External { .. } => true,
                 });
         if !operands_valid {
-            referential_error(
+            error_finding(
                 findings,
+                Check::ReferentialIntegrity,
                 joint.id.as_str(),
                 "invalid assembly joint operands, frames, or limits",
             );

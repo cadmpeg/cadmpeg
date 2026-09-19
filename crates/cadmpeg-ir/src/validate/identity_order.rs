@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for identity order.
-#![allow(clippy::wildcard_imports)]
 
-use super::*;
+use std::collections::{BTreeMap, HashSet};
+
+use crate::document::CadIr;
+use crate::report::{Check, Finding, Severity};
 
 fn push_identity(seen: &mut HashSet<String>, findings: &mut Vec<Finding>, id: &str) {
     if !crate::ids::is_valid_identity(id) {

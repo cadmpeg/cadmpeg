@@ -3,9 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::error_finding;
 use crate::document::CadIr;
 use crate::pmi::{PmiDefinition, PmiTarget};
-use crate::report::{Check, Finding, Severity};
+use crate::report::{Check, Finding};
 
 pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
     let ids = ir
@@ -82,7 +83,12 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 PmiTarget::ShapeAspect { .. } => true,
             };
             if !resolved {
-                invalid(findings, annotation.id.as_str(), "unresolved PMI target");
+                error_finding(
+                    findings,
+                    Check::Pmi,
+                    annotation.id.as_str(),
+                    "unresolved PMI target",
+                );
             }
         }
         match &annotation.definition {
@@ -92,8 +98,9 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         definitions.get(reference.datum.as_str()),
                         Some(PmiDefinition::Datum { .. })
                     ) {
-                        invalid(
+                        error_finding(
                             findings,
+                            Check::Pmi,
                             annotation.id.as_str(),
                             "unresolved datum reference",
                         );
@@ -107,14 +114,20 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Some(PmiDefinition::DatumSystem { .. })
                     )
                 }) {
-                    invalid(findings, annotation.id.as_str(), "unresolved datum system");
+                    error_finding(
+                        findings,
+                        Check::Pmi,
+                        annotation.id.as_str(),
+                        "unresolved datum system",
+                    );
                 }
             }
             PmiDefinition::Dimension { .. } => {}
             PmiDefinition::Presentation { semantics, .. } => {
                 if semantics.iter().any(|id| !ids.contains(id.as_str())) {
-                    invalid(
+                    error_finding(
                         findings,
+                        Check::Pmi,
                         annotation.id.as_str(),
                         "unresolved semantic annotation",
                     );
@@ -124,13 +137,4 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
             PmiDefinition::DatumTarget { .. } => {}
         }
     }
-}
-
-fn invalid(findings: &mut Vec<Finding>, entity: &str, message: &str) {
-    findings.push(Finding {
-        check: Check::Pmi,
-        severity: Severity::Error,
-        message: message.into(),
-        entity: Some(entity.into()),
-    });
 }

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural curve payloads.
 
-use super::{
-    default_true, CacheFirstCurveForm, CurveOffsetRange, DeformableCurveData,
-    DeformableCurveSource, IntcurveSupportContext, OffsetSide, ProceduralGeometryError,
-    SilhouetteKind, VectorOffsetRoles,
-};
 use super::{CacheContract, IntcurveSupportSide, LegacyCache, ProjectionTail, SpringLayout};
+use super::{
+    CacheFirstCurveForm, CurveOffsetRange, DeformableCurveData, DeformableCurveSource,
+    IntcurveSupportContext, OffsetSide, ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
+};
 use crate::features::FiniteVector3;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
@@ -730,7 +729,7 @@ pub struct SubsetCurveConstruction {
     /// Native parameter interval retained from the parent.
     parameter_range: ParameterInterval,
     /// Whether the subset follows increasing parent parameters.
-    #[serde(default = "default_true")]
+    #[serde(default = "crate::default_true")]
     sense: bool,
     /// Solved-cache fit contract this construction states itself.
     #[serde(
@@ -750,7 +749,7 @@ struct SubsetCurveConstructionWire {
     /// Native parameter interval retained from the parent.
     parameter_range: [f64; 2],
     /// Whether the subset follows increasing parent parameters.
-    #[serde(default = "default_true")]
+    #[serde(default = "crate::default_true")]
     sense: bool,
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,

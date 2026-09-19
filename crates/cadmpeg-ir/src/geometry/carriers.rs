@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{default_true, CacheContractError, FitTolerance};
+use super::{CacheContractError, FitTolerance};
 use crate::features::FinitePoint3;
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3, Vector3};
@@ -3289,7 +3289,7 @@ impl TryFrom<HyperbolicPcurveWire> for HyperbolicPcurve {
 #[serde(try_from = "TrimmedPcurveWire")]
 pub struct TrimmedPcurve {
     parameter_range: [f64; 2],
-    #[serde(default = "default_true")]
+    #[serde(default = "crate::default_true")]
     same_sense: bool,
     basis: Box<PcurveGeometry>,
 }
@@ -3299,7 +3299,7 @@ pub struct TrimmedPcurve {
 #[serde(deny_unknown_fields)]
 struct TrimmedPcurveWire {
     parameter_range: [f64; 2],
-    #[serde(default = "default_true")]
+    #[serde(default = "crate::default_true")]
     same_sense: bool,
     basis: Box<PcurveGeometry>,
 }

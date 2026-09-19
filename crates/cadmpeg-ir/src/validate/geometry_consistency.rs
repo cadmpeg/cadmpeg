@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometric consistency checks: evaluated carrier geometry must land on the
 //! topology it supports.
-#![allow(clippy::wildcard_imports)]
 
-use super::*;
+use std::collections::{HashMap, HashSet};
+
+use crate::document::CadIr;
 use crate::eval::{
     curve_parameter_near_point, curve_point, model_curve_point_by_id, model_surface_partials_by_id,
     model_surface_point_by_id, pcurve_tangent, pcurve_uv,
 };
-use crate::geometry::{PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::geometry::{
+    PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use crate::math::{Point3, Vector3};
+use crate::report::{Check, Finding, Severity};
 use crate::topology::Sense;
 
 use crate::units::COINCIDENCE_TOLERANCE;

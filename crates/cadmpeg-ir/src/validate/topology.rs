@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for topology.
-#![allow(clippy::wildcard_imports)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use super::*;
+use crate::document::CadIr;
 use crate::features::{
-    BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, FeatureSourceContent,
+    BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, Feature, FeatureSourceContent,
     PatternKind, PatternSeed, PatternTransform, SplitFaceTool, UnresolvedFamily,
 };
+use crate::geometry::{
+    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
+};
+use crate::report::{Check, Finding, Severity};
+use crate::topology::Coedge;
 
 fn collect_pattern_paths<'a>(
     pattern: &'a PatternKind,

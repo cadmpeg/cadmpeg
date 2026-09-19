@@ -3,7 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{referential_error, CadIr, Finding};
+use super::{error_finding, CadIr, Finding};
+use crate::report::Check;
 
 pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
     let features = ir
@@ -20,8 +21,9 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect::<HashMap<_, _>>();
     for sheet in &ir.model.spreadsheets {
         if !features.contains(&sheet.feature) {
-            referential_error(
+            error_finding(
                 findings,
+                Check::ReferentialIntegrity,
                 sheet.id.as_str(),
                 "spreadsheet feature does not resolve",
             );
@@ -30,30 +32,34 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
         let mut addresses = HashSet::new();
         for cell in &sheet.cells {
             let Some(parameter) = parameters.get(&cell.parameter) else {
-                referential_error(
+                error_finding(
                     findings,
+                    Check::ReferentialIntegrity,
                     sheet.id.as_str(),
                     "spreadsheet cell does not resolve",
                 );
                 continue;
             };
             if !cells.insert(&cell.parameter) {
-                referential_error(
+                error_finding(
                     findings,
+                    Check::ReferentialIntegrity,
                     sheet.id.as_str(),
                     "spreadsheet repeats a cell identity",
                 );
             }
             if parameter.owner.as_ref() != Some(&sheet.feature) {
-                referential_error(
+                error_finding(
                     findings,
+                    Check::ReferentialIntegrity,
                     sheet.id.as_str(),
                     "spreadsheet cell has a different owner",
                 );
             }
             if !addresses.insert(cell.address) {
-                referential_error(
+                error_finding(
                     findings,
+                    Check::ReferentialIntegrity,
                     sheet.id.as_str(),
                     "spreadsheet cell address is invalid or repeated",
                 );
@@ -64,12 +70,22 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
         let mut ranges = Vec::new();
         for range in &sheet.merged_ranges {
             if !addresses.contains(&range.start()) {
-                referential_error(findings, sheet.id.as_str(), "merged range is invalid");
+                error_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    sheet.id.as_str(),
+                    "merged range is invalid",
+                );
                 continue;
             }
             let span = (range.start(), range.end());
             if ranges.iter().any(|other| overlaps(*other, span)) {
-                referential_error(findings, sheet.id.as_str(), "merged ranges overlap");
+                error_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    sheet.id.as_str(),
+                    "merged ranges overlap",
+                );
             }
             ranges.push(span);
         }
@@ -84,8 +100,9 @@ fn check_dimensions(
     let mut names = HashSet::new();
     for dimension in dimensions {
         if !names.insert(dimension.index) {
-            referential_error(
+            error_finding(
                 findings,
+                Check::ReferentialIntegrity,
                 sheet,
                 "spreadsheet dimension is invalid or repeated",
             );

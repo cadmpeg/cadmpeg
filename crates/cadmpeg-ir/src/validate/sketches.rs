@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for sketches.
-#![allow(clippy::wildcard_imports)]
 
-use super::*;
+use super::error_finding;
+use crate::document::CadIr;
+use crate::report::{Check, Finding};
 use crate::sketches::{
     SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchGeometry,
     SketchGeometryDefinition, SketchLocus,
@@ -28,15 +29,6 @@ const EPS_SKETCHES_CHECK_SKETCHES_E9: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_SKETCHES_CHECK_SKETCHES_E12: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
 const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
 const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
-
-fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
-    findings.push(Finding {
-        check,
-        severity: Severity::Error,
-        message: message.into(),
-        entity: Some(id.into()),
-    });
-}
 
 fn spatial_oriented_endpoints(
     geometry: &SpatialSketchGeometry,
@@ -492,7 +484,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     continue;
                 };
                 if distance2(left.1, right.0) > ir.tolerances.linear.get() {
-                    finding(
+                    error_finding(
                         findings,
                         Check::GeometricConsistency,
                         sketch.id.as_str(),
@@ -519,7 +511,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         for profile in &sketch.profiles {
             for use_ in profile.boundary() {
                 if spatial_geometry.get(&use_.entity).map(|(owner, _)| *owner) != Some(&sketch.id) {
-                    finding(
+                    error_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         sketch.id.as_str(),
@@ -534,7 +526,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         .map(|(sketch, geometry)| (sketch, geometry.definition())),
                     Some((_, SpatialSketchGeometryDefinition::Circle { .. }))
                 ) {
-                    finding(
+                    error_finding(
                         findings,
                         Check::GeometricConsistency,
                         sketch.id.as_str(),
@@ -563,7 +555,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                             .hypot(left.1.z - right.0.z)
                             > ir.tolerances.linear.get()
                     }) {
-                        finding(
+                        error_finding(
                             findings,
                             Check::GeometricConsistency,
                             sketch.id.as_str(),
@@ -577,7 +569,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     for entity in &ir.model.spatial_sketch_entities {
         let id = entity.id().as_str();
         if !spatial_sketches.contains(&entity.sketch) {
-            finding(
+            error_finding(
                 findings,
                 Check::ReferentialIntegrity,
                 id,
@@ -588,7 +580,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             entity.geometry.definition()
         {
             if surface.u_degree() == 0 || surface.v_degree() == 0 {
-                finding(
+                error_finding(
                     findings,
                     Check::ParameterDomain,
                     id,
@@ -618,7 +610,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect::<HashMap<_, _>>();
     for constraint in &ir.model.spatial_sketch_constraints {
         if !spatial_sketches.contains(&constraint.sketch) {
-            finding(
+            error_finding(
                 findings,
                 Check::ReferentialIntegrity,
                 constraint.id.as_str(),
@@ -664,7 +656,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         };
         for entity in &entities {
             if spatial_entities.get(entity) != Some(&constraint.sketch) {
-                finding(
+                error_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     constraint.id.as_str(),
@@ -687,7 +679,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Some(SpatialSketchGeometryDefinition::Point { .. })
                 ) =>
             {
-                finding(
+                error_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     constraint.id.as_str(),
@@ -718,8 +710,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     _ => false,
                 };
                 if !solved {
-                    finding(
-                        findings,
+                    error_finding(findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
                         "spatial symmetry requires two points reflected across a nondegenerate line",
@@ -739,7 +730,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Some(SpatialSketchGeometryDefinition::Line { .. })
                 ) =>
             {
-                finding(
+                error_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     constraint.id.as_str(),
@@ -759,7 +750,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Some(SpatialSketchGeometryDefinition::NurbsSurface { .. })
                 ) =>
             {
-                finding(
+                error_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     constraint.id.as_str(),
@@ -789,7 +780,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     )
                 ) =>
             {
-                finding(
+                error_finding(
                     findings,
                     Check::ReferentialIntegrity,
                     constraint.id.as_str(),
@@ -817,8 +808,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                 });
                 if !matches {
-                    finding(
-                        findings,
+                    error_finding(findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
                         "spatial distance requires parallel lines separated by its length parameter",
@@ -835,8 +825,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     spatial_length_parameter_matches(measured, parameter, &parameter_values)
                 });
                 if !matches {
-                    finding(
-                        findings,
+                    error_finding(findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
                         "repeated spatial distance requires disjoint parallel-line pairs matching one length parameter",
@@ -878,8 +867,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                 });
                 if !matches {
-                    finding(
-                        findings,
+                    error_finding(findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
                         "spatial point distance requires two points separated by its length parameter",
@@ -902,7 +890,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         .map(|geometry| geometry.definition()),
                     Some(SpatialSketchGeometryDefinition::Line { .. })
                 ) {
-                    finding(
+                    error_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         constraint.id.as_str(),
@@ -916,8 +904,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         .and_then(|line| spatial_point_line_distance(point, line))
                 });
                 if !spatial_length_parameter_matches(measured, parameter, &parameter_values) {
-                    finding(
-                        findings,
+                    error_finding(findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
                         "spatial point-line distance requires a point-to-line distance matching its length parameter",
@@ -929,7 +916,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .get(entity)
                     .and_then(|geometry| spatial_line_length(geometry));
                 if !spatial_length_parameter_matches(measured, parameter, &parameter_values) {
-                    finding(
+                    error_finding(
                         findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
@@ -959,8 +946,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     })
                 });
                 if !matches {
-                    finding(
-                        findings,
+                    error_finding(findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
                         "repeated spatial line length requires distinct lines matching one length parameter",
@@ -1004,8 +990,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && second_collinear
                     && spatial_length_parameter_matches(measured, parameter, &parameter_values);
                 if !matches {
-                    finding(
-                        findings,
+                    error_finding(findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
                         "spatial parallel-line-set distance requires collinear carriers with overlapping spans separated by its length parameter",
@@ -1047,7 +1032,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     },
                 };
                 if !curves_match {
-                    finding(
+                    error_finding(
                         findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
@@ -1055,7 +1040,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
                 if !parameter_matches {
-                    finding(
+                    error_finding(
                         findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
@@ -1068,7 +1053,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .get(entity)
                     .map(|geometry| geometry.definition())
                 else {
-                    finding(
+                    error_finding(
                         findings,
                         Check::ReferentialIntegrity,
                         constraint.id.as_str(),
@@ -1088,7 +1073,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     || line_norm <= EPS_SKETCHES_CHECK_SKETCHES_E12
                     || cross.norm() > EPS_SKETCHES_CHECK_SKETCHES_E9 * line_norm
                 {
-                    finding(
+                    error_finding(
                         findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
@@ -1402,7 +1387,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             | Constraint::Native { .. } => true,
         };
         if !valid {
-            finding(
+            error_finding(
                 findings,
                 Check::Counts,
                 constraint.id.as_str(),
@@ -1416,7 +1401,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     SketchGeometryDefinition::Point { .. }
                 )
             }) {
-                finding(
+                error_finding(
                     findings,
                     Check::GeometricConsistency,
                     constraint.id.as_str(),
@@ -1445,7 +1430,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 ),
             };
             if !valid {
-                finding(
+                error_finding(
                     findings,
                     Check::GeometricConsistency,
                     constraint.id.as_str(),
@@ -1475,7 +1460,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         )
                     });
                 if !valid {
-                    finding(
+                    error_finding(
                         findings,
                         Check::GeometricConsistency,
                         constraint.id.as_str(),
@@ -1490,7 +1475,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .zip(entity_geometry.get(result))
                 .is_none_or(|(source, result)| source == result);
             if !valid {
-                finding(
+                error_finding(
                     findings,
                     Check::GeometricConsistency,
                     constraint.id.as_str(),
