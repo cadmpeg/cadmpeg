@@ -17,7 +17,10 @@ use crate::validate::validate_neutral;
 use crate::CadIr;
 
 use super::resolve::resolve_write_request;
-use super::*;
+use super::{
+    CadirEncoder, Catalog, Consumption, DialectFree, EncodeInput, Encoder, EncoderBackend,
+    ExportBody, PatchConsumption, ResolvedWrite, TargetRequest, WritePath,
+};
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
