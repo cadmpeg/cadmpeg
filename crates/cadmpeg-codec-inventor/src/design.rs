@@ -929,8 +929,18 @@ impl RecordPayload for PmDcUnitPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        close_parameter_graph, parse_binary_expression, parse_parameter, parse_unary_expression,
+        parse_unit_definition, parse_value_expression, project_parameters, DesignInventory,
+        PmDcBinaryOperation, PmDcExpressionKind, PmDcExpressionPayload, PmDcParameterPayload,
+        PmDcUnaryOperation, PmDcUnitDimension, PmDcUnitKind, PmDcUnitPayload,
+    };
+    use crate::pmdc::{PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
+    use crate::record_identity::Located;
+    use cadmpeg_core::decode::DecodeContext;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::scalar::Length;
 
     const fn reference(index: u32, qualified: bool) -> PmDcReference {
         PmDcReference { index, qualified }

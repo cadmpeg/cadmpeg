@@ -493,7 +493,16 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_ir::products::PrototypeReference;
 
-    use super::*;
+    use super::{
+        parse_occurrence, parse_placement, project_occurrences, SUPPRESSED_REFERENCE_STATE,
+    };
+    use crate::compact_matrix::CompactMatrix;
+    use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
+    use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_ir::transform::Transform;
+    use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
 
     #[test]
     fn frames_occurrence_identity_and_variable_related_references() {

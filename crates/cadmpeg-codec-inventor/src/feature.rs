@@ -1779,10 +1779,33 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        parse_boolean, parse_boundary_patch, parse_chamfer, parse_edge_item,
+        parse_entity_style_link, parse_feature, parse_fillet_edge_selection, parse_fillet_edge_set,
+        parse_label, parse_part_operation, parse_pattern_feature, parse_placement,
+        parse_profile_selection, parse_rdx_variable, parse_surface_body, parse_terminator,
+        project_chamfer, project_extrusion, project_fillet, project_hole, ClassId,
+        PmDcEntityStyleLink, PmDcEntityStyleLinkPayload, PmDcFeature, PmDcFeatureEnumFamily,
+        PmDcFeatureLabel, PmDcFeatureLabelPayload, PmDcFeatureLabelPayloadWire, PmDcFeaturePayload,
+        PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload,
+        PmDcFeatureReferenceFamily, PmDcLinkedHeader, PmDcPatternFamily, ProjectionIndex,
+        CHAMFER_CLASS_ID, ENTITY_STYLE_LINK_TYPE, EXTRUSION_CLASS_ID, FEATURE_LABEL_TYPE,
+        FEATURE_TYPE, FILLET_CLASS_ID, HOLE_CLASS_ID,
+    };
+    use crate::pmdc::{type_id_string, PmDcContentHeader, PmDcReferenceList, PmDcU32List};
+    use crate::record_identity::Located;
     use crate::test_support::test_fixtures::{content, parse};
+    use cadmpeg_ir::features::{
+        BooleanOp, ChamferSpec, DesignParameter, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+        FeatureDefinition, FeatureOperation, HoleKind, HolePlacement, LinearTermination,
+        RadiusSpec,
+    };
     use cadmpeg_ir::features::{ParameterId, ParameterValue};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::scalar::{Angle, Length};
+    use cadmpeg_ir::sketches::Sketch;
     use cadmpeg_ir::sketches::{SketchId, SketchPlacement};
+    use std::collections::BTreeMap;
 
     fn segment() -> cadmpeg_ir::ids::IdentityKey {
         cadmpeg_ir::identity_key!("generated")

@@ -182,7 +182,8 @@ mod tests {
     };
     use zip::write::SimpleFileOptions;
 
-    use super::*;
+    use super::{decode_instances_from, parse_stream, ParsedProtein};
+    use cadmpeg_core::decode::DecodeContext;
 
     #[test]
     fn protein_distinguishes_empty_and_exact_package() {

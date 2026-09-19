@@ -116,7 +116,9 @@ pub(crate) fn at<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{array, at, u16_array};
+    use cadmpeg_core::decode::View;
+    use cadmpeg_core::CodecError;
 
     /// The truncation a read reports, as its variant, field and offset,
     /// without an unwrap on the route.

@@ -427,7 +427,9 @@ mod tests {
     use crate::test_support::test_fixtures::push_version;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    use super::*;
+    use super::{
+        parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionPayload, RseSchema,
+    };
 
     #[test]
     fn schema_31_database_reports_failed_exact_exhaustion_as_unframed() {

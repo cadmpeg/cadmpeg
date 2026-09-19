@@ -904,7 +904,12 @@ impl<'a> Cursor<'a> {
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
-    use super::*;
+    use super::{
+        has_property_set_header, parse_property_set_stream, Cursor, PropertySetStream,
+        PropertyValue, BYTE_ORDER_LE,
+    };
+    use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::CodecError;
 
     #[test]
     fn property_set_parses_unicode_metadata_and_preview_blob() {
