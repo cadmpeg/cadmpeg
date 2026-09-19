@@ -13,7 +13,9 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind};
 
-use super::*;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureId};
+use cadmpeg_ir::ids::BodyId;
 
 fn model_body(id: &str) -> Body {
     Body {

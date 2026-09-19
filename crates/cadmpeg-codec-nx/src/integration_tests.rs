@@ -51,7 +51,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 
-use super::*;
+use super::NxCodec;
 
 mod dialect;
 

@@ -4,11 +4,17 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    classify_layers, NxDialect, DECLARED_SPLMSSTR_VERSION, DECLARED_UGII_VERSION, FORMAT,
+    PARASOLID_FORMAT,
+};
+use crate::container::Container;
 use crate::container::MAGIC;
+use crate::loss::NxLossCode;
 use crate::test_support::extract_streams;
 use crate::test_support::test_prt::single_part_prt;
 use cadmpeg_core::dialect::Admission;
+use cadmpeg_core::dialect::DialectMatch;
 use std::sync::OnceLock;
 
 #[test]
