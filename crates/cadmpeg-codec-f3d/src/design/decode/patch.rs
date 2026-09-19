@@ -18,7 +18,7 @@ const PAYLOAD: usize = 19;
 /// each settings-bearing `SurfacePatch` scope form. Every reference member is
 /// offered to the record grammar and only the members it closes are kept. The
 /// single-group path form carries no settings record and therefore yields none.
-pub(crate) fn surface_patch_boundaries(
+pub(super) fn surface_patch_boundaries(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     reference_members: &[u32],

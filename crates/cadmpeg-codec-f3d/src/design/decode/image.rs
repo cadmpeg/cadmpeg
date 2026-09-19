@@ -7,7 +7,7 @@ use crate::container::ContainerScan;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 
-pub(crate) fn embedded_image_asset(
+pub(super) fn embedded_image_asset(
     scan: &ContainerScan,
     asset_name: &str,
 ) -> Result<Option<Asset>, CodecError> {
