@@ -43,27 +43,27 @@ use super::visit_feature_history_operation_records;
 
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeaturePatternReference {
+pub(in crate::native) struct FeaturePatternReference {
     /// Globally unique pattern-reference identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning pattern operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Exact byte layout that framed the reference field.
-    pub layout: PatternPayloadReferenceLayout,
+    layout: PatternPayloadReferenceLayout,
     /// Zero-based non-null slot order in the exact reference field.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: PayloadIndexToken,
+    pub(in crate::native) token: PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    pub(in crate::native) data_block: Option<String>,
     /// Absolute file offset of the width marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Exact counted reference lane carried by a bounded `Pattern Feature` payload.
@@ -72,10 +72,10 @@ pub struct FeaturePatternReference {
     try_from = "FeaturePatternCountedReferenceLaneWire",
     into = "FeaturePatternCountedReferenceLaneWire"
 )]
-pub struct FeaturePatternCountedReferenceLane {
-    pub id: String,
-    pub operation_label: String,
-    pub references: CountedPatternReferences<Option<String>>,
+pub(in crate::native) struct FeaturePatternCountedReferenceLane {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    references: CountedPatternReferences<Option<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -179,21 +179,21 @@ impl TryFrom<FeaturePatternCountedReferenceLaneWire> for FeaturePatternCountedRe
 
 /// Canonical printable string in a reconstructed pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeaturePatternConstructionString {
+pub(in crate::native) struct FeaturePatternConstructionString {
     /// Globally unique string identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Reconstructed pattern payload carrying the string.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based string order within the payload.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Exact printable value.
-    pub value: PrintableString<String>,
+    value: PrintableString<String>,
     /// Payload-relative offset of the `66 32 03` marker.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Absolute source offset of the marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Complete signed Q1.55 lane in a reconstructed pattern payload.
@@ -202,19 +202,19 @@ pub struct FeaturePatternConstructionString {
     try_from = "FeaturePatternConstructionFixedLaneWire",
     into = "FeaturePatternConstructionFixedLaneWire"
 )]
-pub struct FeaturePatternConstructionFixedLane {
+pub(in crate::native) struct FeaturePatternConstructionFixedLane {
     /// Globally unique lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Reconstructed pattern payload carrying the lane.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based lane order within the payload.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Framed scalar run with absolute source locations.
-    pub lane: FramedScalarRun<Q155LaneFrame, u64>,
+    lane: FramedScalarRun<Q155LaneFrame, u64>,
     /// Absolute source offset of the fixed discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -328,7 +328,7 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
 /// Byte layout selected by one exact pattern-transform lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeaturePatternTransformLayout {
+enum FeaturePatternTransformLayout {
     /// One shifted scalar per row and terminal mode `01`.
     ScalarRows,
     /// Four shifted binary64 values and one terminal value per row, with terminal mode `02`.
@@ -341,12 +341,12 @@ pub enum FeaturePatternTransformLayout {
     try_from = "FeaturePatternTransformLaneWire",
     into = "FeaturePatternTransformLaneWire"
 )]
-pub struct FeaturePatternTransformLane {
-    pub id: String,
-    pub operation_label: String,
-    pub row_schema_index: NonZeroU8,
-    pub rows: PatternRows<crate::om::compact::LocatedCompactIndex<u64>, u64>,
-    pub source_offset: u64,
+pub(in crate::native) struct FeaturePatternTransformLane {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    row_schema_index: NonZeroU8,
+    rows: PatternRows<crate::om::compact::LocatedCompactIndex<u64>, u64>,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -630,15 +630,15 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
     try_from = "FeatureMultiInstanceOutputLaneWire",
     into = "FeatureMultiInstanceOutputLaneWire"
 )]
-pub struct FeatureMultiInstanceOutputLane {
+pub(in crate::native) struct FeatureMultiInstanceOutputLane {
     /// Globally unique output-lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `Multi Instance Output` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Complete selector groups and their trailing references.
-    pub outputs: crate::om::instances::MultiInstanceOutputs<u64>,
+    outputs: crate::om::instances::MultiInstanceOutputs<u64>,
     /// Absolute source offset of the opening `25 01, count` field.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -803,20 +803,20 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
     try_from = "FeatureIdenticalInstanceOutputLaneWire",
     into = "FeatureIdenticalInstanceOutputLaneWire"
 )]
-pub struct FeatureIdenticalInstanceOutputLane {
+pub(in crate::native) struct FeatureIdenticalInstanceOutputLane {
     /// Globally unique output-lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `IDENTICAL INSTANCE OUTPUT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Schema index preceding the count field.
-    pub leading_schema_index: u8,
+    leading_schema_index: u8,
     /// Schema index framing the serialized count.
-    pub count_schema_index: crate::om::IdenticalInstanceSchemaIndex,
+    count_schema_index: crate::om::IdenticalInstanceSchemaIndex,
     /// Ordered complete source tokens.
-    pub selectors:
+    selectors:
         crate::om::compact::CountedIndexMembers<crate::om::compact::LocatedCompactIndex<u64>>,
     /// Absolute source offset of the leading schema index.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -923,7 +923,9 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
 
 /// Decode and resolve exact ordered construction references in pattern
 /// payloads without assigning seed or transform semantics to their slots.
-pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternReference> {
+pub(in crate::native) fn feature_pattern_references(
+    container: &Container,
+) -> Vec<FeaturePatternReference> {
     let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
@@ -955,7 +957,7 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
 
 /// Decode and resolve the exact counted reference lane in `Pattern Feature`
 /// payloads without assigning roles to its references.
-pub fn feature_pattern_counted_reference_lanes(
+pub(in crate::native) fn feature_pattern_counted_reference_lanes(
     container: &Container,
 ) -> Vec<FeaturePatternCountedReferenceLane> {
     let indexed = container.indexed_om_sections();
@@ -986,7 +988,7 @@ pub fn feature_pattern_counted_reference_lanes(
 }
 
 /// Reconstruct ordered logical payloads from complete pattern-reference graphs.
-pub fn feature_pattern_construction_payloads(
+pub(in crate::native) fn feature_pattern_construction_payloads(
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeaturePatternReference],
@@ -1055,7 +1057,7 @@ pub fn feature_pattern_construction_payloads(
 }
 
 /// Decode canonical printable strings from reconstructed pattern payloads.
-pub fn feature_pattern_construction_strings(
+pub(in crate::native) fn feature_pattern_construction_strings(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePatternConstructionString> {
@@ -1088,7 +1090,7 @@ pub fn feature_pattern_construction_strings(
 }
 
 /// Decode complete signed Q1.55 lanes from reconstructed pattern payloads.
-pub fn feature_pattern_construction_fixed_lanes(
+pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePatternConstructionFixedLane> {
@@ -1121,7 +1123,9 @@ pub fn feature_pattern_construction_fixed_lanes(
 }
 
 /// Decode exact counted transform lanes from bounded pattern payloads.
-pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatternTransformLane> {
+pub(in crate::native) fn feature_pattern_transform_lanes(
+    container: &Container,
+) -> Vec<FeaturePatternTransformLane> {
     let mut lanes = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -1153,7 +1157,7 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
 }
 
 /// Decode exact counted output lanes from bounded multi-instance payloads.
-pub fn feature_multi_instance_output_lanes(
+pub(in crate::native) fn feature_multi_instance_output_lanes(
     container: &Container,
 ) -> Vec<FeatureMultiInstanceOutputLane> {
     let mut lanes = Vec::new();
@@ -1181,7 +1185,7 @@ pub fn feature_multi_instance_output_lanes(
 
 /// Decode exact counted selector lanes from bounded identical-instance output
 /// payloads.
-pub fn feature_identical_instance_output_lanes(
+pub(in crate::native) fn feature_identical_instance_output_lanes(
     container: &Container,
 ) -> Vec<FeatureIdenticalInstanceOutputLane> {
     let mut lanes = Vec::new();

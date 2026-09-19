@@ -39,7 +39,7 @@ impl<B> ThruCurveBranch<B> {
             + 3
     }
 
-    pub(crate) fn byte_len(&self) -> u64 {
+    fn byte_len(&self) -> u64 {
         self.terminal_position() + self.terminal.0.raw().len() as u64 + 3
     }
 }
@@ -168,7 +168,9 @@ fn thru_curve_payload_branch(
 
 /// Decode the exact counted branch group after a bounded `THRU_CURVE`
 /// reference envelope.
-pub fn thru_curve_payload_branch_group(record: OperationPayload<'_>) -> Option<ThruCurveGroup<()>> {
+pub(crate) fn thru_curve_payload_branch_group(
+    record: OperationPayload<'_>,
+) -> Option<ThruCurveGroup<()>> {
     let envelope = thru_curve_payload_references(record)?;
     let mut at = envelope.byte_len();
     let group_offset = at;

@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
     try_from = "FeatureOperationTerminalDiscriminatorWire",
     into = "FeatureOperationTerminalDiscriminatorWire"
 )]
-pub(crate) struct FeatureOperationTerminalDiscriminator {
-    pub id: String,
-    pub operation_label: String,
-    pub frame: OperationTerminalDiscriminator,
+pub(in crate::native) struct FeatureOperationTerminalDiscriminator {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    pub(super) frame: OperationTerminalDiscriminator,
 }
 
 #[derive(Serialize, Deserialize)]

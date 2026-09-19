@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum TopologyAttributeKind {
+pub(in crate::native) enum TopologyAttributeKind {
     Shell,
     Face,
     Loop,
@@ -15,7 +15,7 @@ pub(crate) enum TopologyAttributeKind {
 }
 
 impl TopologyAttributeKind {
-    pub(crate) const ALL: [Self; 6] = [
+    pub(super) const ALL: [Self; 6] = [
         Self::Shell,
         Self::Face,
         Self::Loop,
@@ -24,7 +24,7 @@ impl TopologyAttributeKind {
         Self::Vertex,
     ];
 
-    pub(crate) fn node_kind(self) -> crate::framing::node_kind::NodeKind {
+    pub(super) fn node_kind(self) -> crate::framing::node_kind::NodeKind {
         match self {
             Self::Shell => crate::framing::node_kind::NodeKind::Shell,
             Self::Face => crate::framing::node_kind::NodeKind::Face,
@@ -35,11 +35,11 @@ impl TopologyAttributeKind {
         }
     }
 
-    pub(crate) fn code(self) -> u8 {
+    pub(in crate::native) fn code(self) -> u8 {
         self.node_kind().code()
     }
 
-    pub(crate) fn as_str(self) -> &'static str {
+    pub(in crate::native) fn as_str(self) -> &'static str {
         match self {
             Self::Shell => "shell",
             Self::Face => "face",

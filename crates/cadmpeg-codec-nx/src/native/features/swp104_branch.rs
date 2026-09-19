@@ -27,7 +27,7 @@ struct ReferenceWire {
     try_from = "FeatureSwp104LeadingBranchWire",
     into = "FeatureSwp104LeadingBranchWire"
 )]
-pub(crate) struct FeatureSwp104LeadingBranch {
+pub(in crate::native) struct FeatureSwp104LeadingBranch {
     /// Globally unique leading-branch identity.
     id: String,
     /// Owning `SWP104` operation label.
@@ -57,7 +57,7 @@ struct Reference {
 }
 
 impl FeatureSwp104LeadingBranch {
-    pub(crate) fn from_source(
+    pub(super) fn from_source(
         id: String,
         operation_label: String,
         source_offset: u64,

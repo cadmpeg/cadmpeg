@@ -14,7 +14,7 @@ const ENTRY_NAME: &str = "/Root/UG_PART/LastSavedToggleInfoStream";
 /// State text stored by one saved toggle-information member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SavedToggleState {
+enum SavedToggleState {
     /// Serialized `On` state.
     On,
     /// Serialized `Off` state.
@@ -24,16 +24,16 @@ pub enum SavedToggleState {
 /// One named member of the saved toggle-information stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "SavedToggleEntryWire", into = "SavedToggleEntryWire")]
-pub struct SavedToggleEntry {
+pub(super) struct SavedToggleEntry {
     /// Zero-based serialized member order.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Lowercase 32-hex-digit toggle identity.
     toggle_id: ToggleId,
     /// Record-order-independent identity when the toggle ID is unique in the stream.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stable_identity: Option<String>,
+    stable_identity: Option<String>,
     /// Exact state selected by the member text.
-    pub state: SavedToggleState,
+    state: SavedToggleState,
     /// Absolute file offset of the member-length word.
     source_offset: u64,
 }
@@ -96,20 +96,20 @@ impl From<SavedToggleEntry> for SavedToggleEntryWire {
 /// Complete saved toggle-information stream envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "SavedToggleStreamWire", into = "SavedToggleStreamWire")]
-pub struct SavedToggleStream {
+pub(super) struct SavedToggleStream {
     /// Number of ordered saved-toggle members.
     entry_count: u32,
     /// Exact four-byte terminal word.
-    pub trailer: [u8; 4],
+    trailer: [u8; 4],
     /// Absolute file offset of the version byte.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
     /// Absolute file offset of the terminal word.
-    pub trailer_source_offset: u64,
+    trailer_source_offset: u64,
 }
 
 impl SavedToggleStream {
     /// Native identity of the saved-toggle stream.
-    pub const fn id() -> &'static str {
+    pub(super) const fn id() -> &'static str {
         "nx:saved-toggle:stream#0"
     }
 }
@@ -184,12 +184,12 @@ impl SavedToggleState {
 
 impl SavedToggleEntry {
     /// Native identity derived from the member ordinal.
-    pub fn id(&self) -> String {
+    pub(super) fn id(&self) -> String {
         format!("nx:saved-toggle:entry#{}", self.ordinal)
     }
 
     /// Absolute file offset of the member-length word.
-    pub fn source_offset(&self) -> u64 {
+    pub(super) fn source_offset(&self) -> u64 {
         self.source_offset
     }
 }
@@ -200,7 +200,7 @@ struct ParsedToggleStream {
 }
 
 /// Decode the unique complete saved toggle-information stream.
-pub fn saved_toggle_records(
+pub(super) fn saved_toggle_records(
     container: &Container,
 ) -> (Vec<SavedToggleStream>, Vec<SavedToggleEntry>) {
     let mut candidates = container

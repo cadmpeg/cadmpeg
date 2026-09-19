@@ -11,19 +11,19 @@ use serde::{Deserialize, Serialize};
     try_from = "FeatureOperationBodyScalarTripleWire",
     into = "FeatureOperationBodyScalarTripleWire"
 )]
-pub struct FeatureOperationBodyScalarTriple {
+pub(in crate::native) struct FeatureOperationBodyScalarTriple {
     /// Globally unique scalar-clause identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    pub(in crate::native) body_reference_ordinal: u32,
     /// Serialized body object index.
-    pub body_object_index: u32,
+    pub(super) body_object_index: u32,
     /// Branch discriminator following the body-reference terminator.
-    pub branch: u8,
+    pub(super) branch: u8,
     /// Three checked scalar atoms and their absolute source offsets.
-    pub scalars: ScalarTriple,
+    pub(super) scalars: ScalarTriple,
 }
 
 #[derive(Serialize, Deserialize)]

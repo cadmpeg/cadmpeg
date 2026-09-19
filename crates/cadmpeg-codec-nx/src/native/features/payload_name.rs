@@ -8,19 +8,19 @@ use serde::{Deserialize, Serialize};
 /// Exact framed name retained from a reconstructed construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "FeaturePayloadNameWire", into = "FeaturePayloadNameWire")]
-pub struct FeaturePayloadName {
+pub(in crate::native) struct FeaturePayloadName {
     /// Globally unique name-field identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed construction payload carrying this field.
-    pub construction_payload: String,
+    pub(super) construction_payload: String,
     /// Zero-based name-field order within the reconstructed payload.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Checked name text and its leading or compact-typed frame.
-    pub frame: NameField<String>,
+    pub(super) frame: NameField<String>,
     /// Absolute file offset of the opening marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]

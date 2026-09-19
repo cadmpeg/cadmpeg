@@ -15,9 +15,9 @@ use std::num::NonZeroU8;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "GroupWire", into = "GroupWire")]
-pub(crate) struct FeatureThruCurveConstructionBranchGroup {
-    pub(crate) id: String,
-    pub(crate) operation_label: String,
+pub(in crate::native) struct FeatureThruCurveConstructionBranchGroup {
+    id: String,
+    operation_label: String,
     frame: ThruCurveGroup<Option<String>>,
 }
 
@@ -179,7 +179,7 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
     }
 }
 
-pub(crate) fn feature_thru_curve_construction_branch_groups(
+pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
     container: &Container,
 ) -> Vec<FeatureThruCurveConstructionBranchGroup> {
     let indexed = container.indexed_om_sections();

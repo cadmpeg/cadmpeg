@@ -2,7 +2,7 @@
 //! JT display-model record extractors and their record types.
 
 pub(crate) mod admission;
-pub(crate) mod packet_role;
+mod packet_role;
 mod version;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -71,15 +71,15 @@ fn inflate_display_jt(
 /// Outer index of the embedded JT display-model stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DisplayJtIndexWire", into = "DisplayJtIndexWire")]
-pub struct DisplayJtIndex {
+pub(super) struct DisplayJtIndex {
     /// Globally unique index identity.
-    pub id: String,
+    pub(super) id: String,
     /// Serialized index version.
-    pub version: u32,
+    version: u32,
     /// Indexed document rows in serialized order.
     rows: NonEmpty<DisplayJtIndexRow>,
     /// Absolute source offset of the `DisplayJT` payload.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 impl DisplayJtIndex {
@@ -100,12 +100,12 @@ impl DisplayJtIndex {
     }
 
     /// Number of indexed JT documents.
-    pub fn declared_count(&self) -> usize {
+    fn declared_count(&self) -> usize {
         self.rows.len()
     }
 
     /// Indexed document rows in serialized order.
-    pub(crate) fn rows(&self) -> impl Iterator<Item = &DisplayJtIndexRow> {
+    pub(super) fn rows(&self) -> impl Iterator<Item = &DisplayJtIndexRow> {
         self.rows.iter()
     }
 }
@@ -145,39 +145,39 @@ impl TryFrom<DisplayJtIndexWire> for DisplayJtIndex {
 
 /// One physical-header offset and associated value in a `DisplayJT` index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtIndexRow {
+pub(in crate::native) struct DisplayJtIndexRow {
     /// Globally unique row identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based row index.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Payload-relative physical JT-header offset.
-    pub header_offset: u32,
+    header_offset: u32,
     /// Nonzero serialized row value whose semantic role is unassigned.
-    pub value: NonZeroU64,
+    value: NonZeroU64,
     /// Absolute source offset of the row.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One bounded embedded JT document and its table of contents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DisplayJtDocumentWire", into = "DisplayJtDocumentWire")]
-pub struct DisplayJtDocument {
+pub(crate) struct DisplayJtDocument {
     /// Globally unique document identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning outer-index row.
-    pub index_row: String,
+    index_row: String,
     /// Exact admitted 80-byte version field.
-    pub version: JtVersionField,
+    version: JtVersionField,
     /// Payload-relative table-of-contents offset.
-    pub toc_offset: u32,
+    toc_offset: u32,
     /// Exact 16-byte logical scene-graph segment identifier.
-    pub lsg_segment_id: [u8; 16],
+    lsg_segment_id: [u8; 16],
     /// Ordered table-of-contents entries.
-    pub toc_entries: Vec<DisplayJtTocEntry>,
+    pub(super) toc_entries: Vec<DisplayJtTocEntry>,
     /// Physical byte length ending at the next indexed header or stream boundary.
-    pub physical_byte_len: u64,
+    physical_byte_len: u64,
     /// Absolute source offset of the JT version field.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -240,44 +240,44 @@ impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
 
 /// One fixed-width entry in an embedded JT document table of contents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtTocEntry {
+pub(in crate::native) struct DisplayJtTocEntry {
     /// Globally unique TOC-entry identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based serialized entry order.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact 16-byte segment identifier.
-    pub segment_id: [u8; 16],
+    segment_id: [u8; 16],
     /// Document-relative segment offset.
-    pub segment_offset: u32,
+    segment_offset: u32,
     /// Physical segment byte length.
-    pub segment_byte_len: u32,
+    segment_byte_len: u32,
     /// Exact four-byte segment attribute field.
-    pub attributes: [u8; 4],
+    attributes: [u8; 4],
     /// Absolute source offset of the TOC entry.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One physically bounded segment in an embedded JT document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtSegment {
+pub(crate) struct DisplayJtSegment {
     /// Globally unique segment identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning JT document.
-    pub document: String,
+    document: String,
     /// Owning table-of-contents entry.
-    pub toc_entry: String,
+    toc_entry: String,
     /// Exact 16-byte segment identifier.
-    pub segment_id: [u8; 16],
+    segment_id: [u8; 16],
     /// Segment type repeated by the table-of-contents attribute word.
-    pub segment_type: u32,
+    segment_type: u32,
     /// Physical segment byte length, including its 24-byte header.
-    pub segment_byte_len: u32,
+    segment_byte_len: u32,
     /// SHA-256 of the bytes following the segment header.
-    pub payload_sha256: Sha256Hex,
+    payload_sha256: Sha256Hex,
     /// Complete compressed-data envelope when the payload is compressed.
-    pub compression: Option<DisplayJtCompression>,
+    compression: Option<DisplayJtCompression>,
     /// Absolute source offset of the segment header.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Validated compressed-data envelope following a JT segment header.
@@ -286,10 +286,10 @@ pub struct DisplayJtSegment {
     try_from = "DisplayJtCompressionWire",
     into = "DisplayJtCompressionWire"
 )]
-pub struct DisplayJtCompression {
+struct DisplayJtCompression {
     envelope: JtCompressionEnvelope,
     /// SHA-256 of the completely inflated payload.
-    pub inflated_sha256: Sha256Hex,
+    inflated_sha256: Sha256Hex,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -364,23 +364,23 @@ impl From<DisplayJtCompression> for DisplayJtCompressionWire {
     try_from = "DisplayJtShapeLodElementWire",
     into = "DisplayJtShapeLodElementWire"
 )]
-pub struct DisplayJtShapeLodElement {
+pub(crate) struct DisplayJtShapeLodElement {
     /// Globally unique element identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning type-7 segment.
-    pub segment: String,
+    segment: String,
     /// Zero-based serialized element order.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact 16-byte object-type identifier.
-    pub object_type_id: [u8; 16],
+    object_type_id: [u8; 16],
     /// Serialized object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Bytes following the common element header.
-    pub body_byte_len: u32,
+    body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
-    pub body_sha256: Sha256Hex,
+    body_sha256: Sha256Hex,
     /// Absolute source offset of the element length.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -432,82 +432,82 @@ impl From<DisplayJtShapeLodElement> for DisplayJtShapeLodElementWire {
 
 /// Fixed version and binding header of a JT 9 tri-strip shape-LOD element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtTriStripLodHeader {
+pub(super) struct DisplayJtTriStripLodHeader {
     /// Globally unique header identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning shape-LOD element.
-    pub element: String,
+    element: String,
     /// Base shape-LOD data version.
-    pub base_version: u16,
+    base_version: u16,
     /// Vertex shape-LOD data version.
-    pub vertex_version: u16,
+    vertex_version: u16,
     /// Packed vertex-channel binding mask.
-    pub vertex_bindings: u64,
+    vertex_bindings: u64,
     /// Topological mesh LOD data version.
-    pub topological_mesh_version: u16,
+    topological_mesh_version: u16,
     /// Serialized object identifier shared by the vertex records.
-    pub vertex_records_object_id: u32,
+    vertex_records_object_id: u32,
     /// Compressed topological-mesh representation version.
-    pub compressed_lod_version: u16,
+    compressed_lod_version: u16,
     /// Bytes following the fixed header.
-    pub compressed_representation_byte_len: u32,
+    compressed_representation_byte_len: u32,
     /// SHA-256 of the bytes following the fixed header.
-    pub compressed_representation_sha256: Sha256Hex,
+    compressed_representation_sha256: Sha256Hex,
     /// Absolute source offset of the fixed header.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Decoded context-zero face-degree symbols from a JT topological mesh.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtInitialFaceDegreeSymbols {
+pub(super) struct DisplayJtInitialFaceDegreeSymbols {
     /// Globally unique symbol-vector identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning tri-strip shape-LOD element.
-    pub element: String,
+    element: String,
     /// Decoded symbols in topology-coder visit order.
-    pub degrees: Vec<i32>,
+    degrees: Vec<i32>,
     /// Complete compressed-packet byte length.
-    pub packet_byte_len: u32,
+    packet_byte_len: u32,
     /// SHA-256 of the complete compressed packet.
-    pub packet_sha256: Sha256Hex,
+    packet_sha256: Sha256Hex,
     /// Absolute source offset of the compressed packet.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One structurally bounded compressed topology vector in a JT 9 mesh.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtTopologyPacket {
+struct DisplayJtTopologyPacket {
     /// Stable semantic lane name.
-    pub role: TopologyPacketRole,
+    role: TopologyPacketRole,
     /// Number of values represented by the packet.
-    pub value_count: u32,
+    value_count: u32,
     /// Serialized compression codec identifier; zero denotes an empty vector.
-    pub codec: u8,
+    codec: u8,
     /// Complete packet length in bytes.
-    pub byte_len: u32,
+    byte_len: u32,
     /// Digest of the complete packet bytes.
-    pub sha256: Sha256Hex,
+    sha256: Sha256Hex,
     /// Mesh-representation-relative packet offset.
-    pub representation_offset: u32,
+    representation_offset: u32,
     /// Reconstructed primal values when the packet codec is decoded.
-    pub values: Option<Vec<i32>>,
+    values: Option<Vec<i32>>,
 }
 
 /// Complete compressed-topology envelope preceding JT 9 vertex records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtTopologyPacketSequence {
+pub(super) struct DisplayJtTopologyPacketSequence {
     /// Globally unique sequence identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning tri-strip shape-LOD element.
-    pub element: String,
+    element: String,
     /// Ordered topology vectors.
-    pub packets: Vec<DisplayJtTopologyPacket>,
+    packets: Vec<DisplayJtTopologyPacket>,
     /// Integrity hash serialized after the topology vectors.
-    pub composite_hash: u32,
+    composite_hash: u32,
     /// Total topology-envelope length including the hash.
-    pub topology_byte_len: u32,
+    topology_byte_len: u32,
     /// Absolute source offset of the compressed representation.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Polygon connectivity reconstructed from one JT topological dual mesh.
@@ -516,17 +516,17 @@ pub struct DisplayJtTopologyPacketSequence {
     try_from = "DisplayJtPolygonMeshWire",
     into = "DisplayJtPolygonMeshWire"
 )]
-pub struct DisplayJtPolygonMesh {
+pub(super) struct DisplayJtPolygonMesh {
     /// Globally unique polygon-mesh identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning topology packet sequence.
-    pub topology: String,
+    topology: String,
     /// Coordinate-array header indexed by the polygons.
-    pub coordinate_header: String,
+    coordinate_header: String,
     /// Ordered polygons with paired coordinate and attribute indices.
     polygons: Vec<Polygon>,
     /// Absolute source offset of the topology packet sequence.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -604,139 +604,139 @@ impl From<DisplayJtPolygonMesh> for DisplayJtPolygonMeshWire {
 
 /// Fixed header of the vertex records following a JT 9 topology envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtCompressedVertexRecordsHeader {
+pub(super) struct DisplayJtCompressedVertexRecordsHeader {
     /// Globally unique header identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning tri-strip shape-LOD element.
-    pub element: String,
+    element: String,
     /// Packed vertex-channel binding mask.
-    pub vertex_bindings: u64,
+    vertex_bindings: u64,
     /// Quantization bits per vertex coordinate component.
-    pub vertex_quantization_bits: u8,
+    vertex_quantization_bits: u8,
     /// Normal quantization factor.
-    pub normal_quantization_factor: u8,
+    normal_quantization_factor: u8,
     /// Quantization bits per texture-coordinate component.
-    pub texture_quantization_bits: u8,
+    texture_quantization_bits: u8,
     /// Quantization bits per color component.
-    pub color_quantization_bits: u8,
+    color_quantization_bits: u8,
     /// Number of unique topological vertices.
-    pub topological_vertex_count: u32,
+    topological_vertex_count: u32,
     /// Number of vertex-attribute records.
-    pub vertex_attribute_count: u32,
+    vertex_attribute_count: u32,
     /// Remaining compressed vertex-array length.
-    pub compressed_arrays_byte_len: u32,
+    compressed_arrays_byte_len: u32,
     /// Digest of the remaining compressed vertex arrays.
-    pub compressed_arrays_sha256: Sha256Hex,
+    compressed_arrays_sha256: Sha256Hex,
     /// Absolute source offset of this header.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Fixed quantization envelope of a JT 9 compressed coordinate array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DisplayJtVertexCoordinateArrayHeader {
+pub(super) struct DisplayJtVertexCoordinateArrayHeader {
     /// Globally unique header identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning tri-strip shape-LOD element.
-    pub element: String,
+    element: String,
     /// Number of unique coordinate records.
-    pub unique_vertex_count: u32,
+    unique_vertex_count: u32,
     /// Number of coordinate components per record.
-    pub component_count: u8,
+    component_count: u8,
     /// Inclusive component ranges as minimum and maximum pairs for X, Y, and Z.
-    pub component_ranges: [[f32; 2]; 3],
+    component_ranges: [[f32; 2]; 3],
     /// Quantization bits for X, Y, and Z.
-    pub component_quantization_bits: [u8; 3],
+    component_quantization_bits: [u8; 3],
     /// Remaining compressed component-data length.
-    pub compressed_components_byte_len: u32,
+    compressed_components_byte_len: u32,
     /// Digest of the remaining compressed component data.
-    pub compressed_components_sha256: Sha256Hex,
+    compressed_components_sha256: Sha256Hex,
     /// Absolute source offset of this header.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Model-space coordinates decoded from one JT 9 vertex array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DisplayJtVertexCoordinates {
+pub(super) struct DisplayJtVertexCoordinates {
     /// Globally unique coordinate-array identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning coordinate-array header.
-    pub header: String,
+    header: String,
     /// XYZ coordinates in the JT model's serialized metre unit.
-    pub points_m: Vec<[f32; 3]>,
+    points_m: Vec<[f32; 3]>,
     /// Combined hash serialized after the component vectors.
-    pub coordinate_hash: u32,
+    coordinate_hash: u32,
     /// Complete byte length of the component packets and hash.
-    pub byte_len: u32,
+    byte_len: u32,
     /// Absolute source offset of the first component packet.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Normal vectors decoded from one JT 9 vertex-attribute array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DisplayJtVertexNormals {
+pub(super) struct DisplayJtVertexNormals {
     /// Globally unique normal-array identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed vertex-record header.
-    pub vertex_records_header: String,
+    vertex_records_header: String,
     /// Ordered unit normal vectors in attribute-record order.
-    pub normals: Vec<[f32; 3]>,
+    normals: Vec<[f32; 3]>,
     /// Combined hash serialized after the component vectors.
-    pub normal_hash: u32,
+    normal_hash: u32,
     /// Complete byte length of the normal-array header, packets, and hash.
-    pub byte_len: u32,
+    byte_len: u32,
     /// Absolute source offset of the normal-array count.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Colors decoded from one JT 9 vertex-attribute array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DisplayJtVertexColors {
+pub(super) struct DisplayJtVertexColors {
     /// Globally unique color-array identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed vertex-record header.
-    pub vertex_records_header: String,
+    vertex_records_header: String,
     /// Ordered RGBA colors in vertex-attribute record order.
-    pub colors: Vec<[f32; 4]>,
+    colors: Vec<[f32; 4]>,
     /// Combined hash serialized after the component vectors.
-    pub color_hash: u32,
+    color_hash: u32,
     /// Complete byte length of the color-array header, packets, and hash.
-    pub byte_len: u32,
+    byte_len: u32,
     /// Absolute source offset of the color-array count.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One decoded JT 9 vertex texture-coordinate channel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DisplayJtVertexTextureCoordinates {
+pub(super) struct DisplayJtVertexTextureCoordinates {
     /// Globally unique channel identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed vertex-record header.
-    pub vertex_records_header: String,
+    vertex_records_header: String,
     /// Zero-based texture-coordinate channel selected by the binding nibble.
-    pub channel: u8,
+    channel: u8,
     /// Ordered component vectors in vertex-attribute record order.
-    pub values: Vec<Vec<f32>>,
+    values: Vec<Vec<f32>>,
     /// Combined hash serialized after the component vectors.
-    pub texture_coordinate_hash: u32,
+    texture_coordinate_hash: u32,
     /// Complete byte length of the array header, packets, and hash.
-    pub byte_len: u32,
+    byte_len: u32,
     /// Absolute source offset of the texture-coordinate count.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One decoded JT 9 vertex-flag array.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtVertexFlags {
+pub(super) struct DisplayJtVertexFlags {
     /// Globally unique flag-array identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed vertex-record header.
-    pub vertex_records_header: String,
+    vertex_records_header: String,
     /// Ordered zero-or-one flag values in vertex-attribute record order.
-    pub values: Vec<u32>,
+    values: Vec<u32>,
     /// Complete byte length of the count and compressed packet.
-    pub byte_len: u32,
+    byte_len: u32,
     /// Absolute source offset of the vertex-flag count.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -767,7 +767,7 @@ impl JtVertexVersion {
 
 /// A finite fraction in the inclusive range zero through one.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct JtUnitFraction(f32);
+struct JtUnitFraction(f32);
 
 impl TryFrom<f32> for JtUnitFraction {
     type Error = &'static str;
@@ -842,43 +842,43 @@ impl From<JtRangeLimits> for Vec<f32> {
     try_from = "DisplayJtTriStripShapeNodeWire",
     into = "DisplayJtTriStripShapeNodeWire"
 )]
-pub struct DisplayJtTriStripShapeNode {
+pub(super) struct DisplayJtTriStripShapeNode {
     /// Globally unique shape-node identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning common node-data record.
-    pub base_node: String,
+    base_node: String,
     /// Serialized node object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Reserved model-coordinate bounds.
-    pub reserved_bounds: [[f32; 3]; 2],
+    reserved_bounds: [[f32; 3]; 2],
     /// Untransformed model-coordinate bounds.
-    pub untransformed_bounds: [[f32; 3]; 2],
+    untransformed_bounds: [[f32; 3]; 2],
     /// Surface area in normalized coordinate space.
-    pub area: f32,
+    area: f32,
     /// Minimum and maximum vertex counts.
-    pub vertex_count_range: [i32; 2],
+    vertex_count_range: [i32; 2],
     /// Minimum and maximum scene-node counts.
-    pub node_count_range: [i32; 2],
+    node_count_range: [i32; 2],
     /// Minimum and maximum polygon counts.
-    pub polygon_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
     /// Expected in-memory byte size of the late-loaded LOD.
-    pub memory_byte_len: u32,
+    memory_byte_len: u32,
     /// Qualitative compression level in the inclusive range zero through one.
-    pub compression_level: JtUnitFraction,
+    compression_level: JtUnitFraction,
     /// Vertex-shape data version.
     vertex_version: JtVertexVersion,
     /// Packed vertex-channel binding mask.
-    pub vertex_bindings: u64,
+    vertex_bindings: u64,
     /// Quantization bits per vertex coordinate component.
-    pub vertex_quantization_bits: u8,
+    vertex_quantization_bits: u8,
     /// Normal quantization factor.
-    pub normal_quantization_factor: u8,
+    normal_quantization_factor: u8,
     /// Quantization bits per texture-coordinate component.
-    pub texture_quantization_bits: u8,
+    texture_quantization_bits: u8,
     /// Quantization bits per color component.
-    pub color_quantization_bits: u8,
+    color_quantization_bits: u8,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -965,34 +965,34 @@ impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
     try_from = "DisplayJtCompressedElementWire",
     into = "DisplayJtCompressedElementWire"
 )]
-pub struct DisplayJtCompressedElement {
+pub(crate) struct DisplayJtCompressedElement {
     /// Globally unique element identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed segment.
-    pub segment: String,
+    segment: String,
     /// Owning segment type.
-    pub segment_type: u32,
+    segment_type: u32,
     /// Zero-based serialized element order.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact 16-byte object-type identifier.
-    pub object_type_id: [u8; 16],
+    object_type_id: [u8; 16],
     /// Serialized object-base-type discriminator.
-    pub object_base_type: u8,
+    object_base_type: u8,
     /// Serialized object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Bytes following the common element header.
     body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
-    pub body_sha256: Sha256Hex,
+    body_sha256: Sha256Hex,
     /// Offset of the element length in the inflated payload.
-    pub inflated_offset: u32,
+    inflated_offset: u32,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 impl DisplayJtCompressedElement {
     /// Bytes following the common element header.
-    pub fn body_byte_len(&self) -> u32 {
+    fn body_byte_len(&self) -> u32 {
         self.body_byte_len
     }
 }
@@ -1060,36 +1060,36 @@ impl From<DisplayJtCompressedElement> for DisplayJtCompressedElementWire {
     try_from = "DisplayJtCompressedElementSequenceWire",
     into = "DisplayJtCompressedElementSequenceWire"
 )]
-pub struct DisplayJtCompressedElementSequence {
+pub(crate) struct DisplayJtCompressedElementSequence {
     /// Globally unique sequence identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed segment.
-    pub segment: String,
+    segment: String,
     /// Owning segment type.
-    pub segment_type: u32,
+    segment_type: u32,
     /// Ordered decoded element identities.
     elements: Vec<String>,
     /// Inflated byte length through the end-object marker.
     framed_byte_len: u32,
     /// Exact bytes following the end-object marker.
-    pub tail: Vec<u8>,
+    tail: Vec<u8>,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 impl DisplayJtCompressedElementSequence {
     /// Ordered decoded element identities.
-    pub fn elements(&self) -> &[String] {
+    fn elements(&self) -> &[String] {
         &self.elements
     }
 
     /// Inflated byte length through the end-object marker.
-    pub fn framed_byte_len(&self) -> u32 {
+    fn framed_byte_len(&self) -> u32 {
         self.framed_byte_len
     }
 
     /// SHA-256 of the exact post-marker tail.
-    pub fn tail_sha256(&self) -> Sha256Hex {
+    fn tail_sha256(&self) -> Sha256Hex {
         Sha256Hex::digest(&self.tail)
     }
 }
@@ -1153,17 +1153,17 @@ impl From<DisplayJtCompressedElementSequence> for DisplayJtCompressedElementSequ
     try_from = "DisplayJtStringPropertyAtomWire",
     into = "DisplayJtStringPropertyAtomWire"
 )]
-pub struct DisplayJtStringPropertyAtom {
+pub(super) struct DisplayJtStringPropertyAtom {
     /// Globally unique property-atom identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed element.
-    pub element: String,
+    element: String,
     /// Serialized object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Decoded string value.
-    pub value: String,
+    value: String,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1212,117 +1212,117 @@ impl TryFrom<DisplayJtStringPropertyAtomWire> for DisplayJtStringPropertyAtom {
 
 /// Property-table link from a logical shape node to a late-loaded LOD segment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtShapeLodBinding {
+pub(super) struct DisplayJtShapeLodBinding {
     /// Globally unique binding identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning type-1 logical scene-graph segment.
-    pub scene_segment: String,
+    scene_segment: String,
     /// Serialized property-table version.
-    pub table_version: u16,
+    table_version: u16,
     /// Shape-node object identifier owning the property pair.
-    pub shape_node_object_id: u32,
+    shape_node_object_id: u32,
     /// String-property object identifier used as the key.
-    pub key_object_id: u32,
+    key_object_id: u32,
     /// Exact decoded property key.
-    pub key: String,
+    key: String,
     /// Late-loaded-property object identifier used as the value.
-    pub value_object_id: u32,
+    value_object_id: u32,
     /// Base-property state flags.
-    pub state_flags: u32,
+    state_flags: u32,
     /// Late-loaded-property version.
-    pub property_version: u16,
+    property_version: u16,
     /// Resolved type-7 shape-LOD segment.
-    pub shape_segment: String,
+    shape_segment: String,
     /// Serialized payload object identifier within the shape-LOD segment.
-    pub payload_object_id: u32,
+    payload_object_id: u32,
     /// Serialized positive late-loaded-property reserved value.
-    pub reserved_value: u32,
+    reserved_value: u32,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Common node-data header carried by one type-1 JT element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtBaseNodeData {
+pub(super) struct DisplayJtBaseNodeData {
     /// Globally unique node-data identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed element.
-    pub element: String,
+    element: String,
     /// Exact 16-byte object-type identifier of the owning element.
-    pub object_type_id: [u8; 16],
+    object_type_id: [u8; 16],
     /// Serialized node object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Common node-data version.
-    pub version: u16,
+    version: u16,
     /// Serialized node flags.
-    pub flags: u32,
+    flags: u32,
     /// Ordered attribute object identifiers.
-    pub attribute_object_ids: Vec<u32>,
+    attribute_object_ids: Vec<u32>,
     /// Byte length after the common node-data header.
-    pub family_data_byte_len: u32,
+    family_data_byte_len: u32,
     /// SHA-256 of the bytes after the common node-data header.
-    pub family_data_sha256: Sha256Hex,
+    family_data_sha256: Sha256Hex,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Complete JT 9 instance node referencing one shared logical scene node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtInstanceNode {
+pub(super) struct DisplayJtInstanceNode {
     /// Globally unique instance-node identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning common node-data record.
-    pub base_node: String,
+    base_node: String,
     /// Serialized instance-node object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Instance-node data version.
-    pub version: u16,
+    version: u16,
     /// Referenced child node object identifier.
-    pub child_object_id: u32,
+    child_object_id: u32,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Common JT 9 group-node data carried by every group-derived scene node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DisplayJtGroupNodeData {
+pub(super) struct DisplayJtGroupNodeData {
     /// Globally unique group-data identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning common node-data record.
-    pub base_node: String,
+    base_node: String,
     /// Serialized group-derived node object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Group-node data version.
-    pub version: u16,
+    version: u16,
     /// Ordered child node object identifiers.
-    pub child_object_ids: Vec<u32>,
+    child_object_ids: Vec<u32>,
     /// Byte length after the common group-node data.
-    pub family_data_byte_len: u32,
+    family_data_byte_len: u32,
     /// SHA-256 of the bytes after the common group-node data.
-    pub family_data_sha256: Sha256Hex,
+    family_data_sha256: Sha256Hex,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One JT geometric-transform attribute attached to logical scene nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DisplayJtGeometricTransformAttribute {
+pub(super) struct DisplayJtGeometricTransformAttribute {
     /// Globally unique transform-attribute identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed logical scene-graph element.
-    pub element: String,
+    element: String,
     /// Serialized attribute object identifier referenced by nodes.
-    pub object_id: u32,
+    object_id: u32,
     /// Base-attribute state flags.
-    pub state_flags: u8,
+    state_flags: u8,
     /// Base-attribute field-inhibit flags.
-    pub field_inhibit_flags: u32,
+    field_inhibit_flags: u32,
     /// Sparse-matrix stored-values mask in row-major bit order.
-    pub stored_values_mask: u16,
+    stored_values_mask: u16,
     /// Complete row-major local-to-parent homogeneous matrix.
-    pub matrix: [[f32; 4]; 4],
+    matrix: [[f32; 4]; 4],
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One JT material attribute attached to logical scene nodes.
@@ -1331,33 +1331,33 @@ pub struct DisplayJtGeometricTransformAttribute {
     try_from = "DisplayJtMaterialAttributeWire",
     into = "DisplayJtMaterialAttributeWire"
 )]
-pub struct DisplayJtMaterialAttribute {
+pub(super) struct DisplayJtMaterialAttribute {
     /// Globally unique material-attribute identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning compressed logical scene-graph element.
-    pub element: String,
+    element: String,
     /// Serialized attribute object identifier referenced by nodes.
-    pub object_id: u32,
+    object_id: u32,
     /// Base-attribute state flags.
-    pub state_flags: u8,
+    state_flags: u8,
     /// Base-attribute field-inhibit flags.
-    pub field_inhibit_flags: u32,
+    field_inhibit_flags: u32,
     /// Material-record version.
     version: JtMaterialVersion,
     /// Material blending and vertex-color override flags.
-    pub data_flags: u16,
+    data_flags: u16,
     /// Ambient RGBA components.
-    pub ambient: [f32; 4],
+    ambient: [f32; 4],
     /// Diffuse RGBA components.
-    pub diffuse: [f32; 4],
+    diffuse: [f32; 4],
     /// Specular RGBA components.
-    pub specular: [f32; 4],
+    specular: [f32; 4],
     /// Emission RGBA components.
-    pub emission: [f32; 4],
+    emission: [f32; 4],
     /// Specular exponent in the inclusive range 1 through 128.
-    pub shininess: f32,
+    shininess: f32,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1427,7 +1427,7 @@ impl From<DisplayJtMaterialAttribute> for DisplayJtMaterialAttributeWire {
 
 /// Extra partition-node bounds selected by flag bit zero.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DisplayJtPartitionBounds {
+enum DisplayJtPartitionBounds {
     /// Reserved bounds when partition flag bit zero is clear.
     Reserved([[f32; 3]; 2]),
     /// Untransformed bounds when partition flag bit zero is set.
@@ -1440,33 +1440,33 @@ pub enum DisplayJtPartitionBounds {
     try_from = "DisplayJtPartitionNodeWire",
     into = "DisplayJtPartitionNodeWire"
 )]
-pub struct DisplayJtPartitionNode {
+pub(super) struct DisplayJtPartitionNode {
     /// Globally unique partition-node identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning common node-data record.
-    pub base_node: String,
+    base_node: String,
     /// Serialized node object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Group-node data version.
-    pub group_version: u16,
+    group_version: u16,
     /// Ordered child node object identifiers.
-    pub child_object_ids: Vec<u32>,
+    child_object_ids: Vec<u32>,
     /// Decoded partition filename.
-    pub file_name: String,
+    file_name: String,
     /// Transformed axis-aligned bounds as minimum and maximum XYZ corners.
-    pub transformed_bounds: [[f32; 3]; 2],
+    transformed_bounds: [[f32; 3]; 2],
     /// Total descendant surface area in normalized coordinate space.
-    pub area: f32,
+    area: f32,
     /// Minimum and maximum descendant vertex counts.
-    pub vertex_count_range: [i32; 2],
+    vertex_count_range: [i32; 2],
     /// Minimum and maximum descendant node counts.
-    pub node_count_range: [i32; 2],
+    node_count_range: [i32; 2],
     /// Minimum and maximum descendant polygon counts.
-    pub polygon_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
     /// Extra bounds selected by partition flag bit zero.
-    pub bounds: DisplayJtPartitionBounds,
+    bounds: DisplayJtPartitionBounds,
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1563,31 +1563,31 @@ impl TryFrom<DisplayJtPartitionNodeWire> for DisplayJtPartitionNode {
 
 /// Complete JT 9 range-LOD node selecting among ordered child nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DisplayJtRangeLodNode {
+pub(super) struct DisplayJtRangeLodNode {
     /// Globally unique range-LOD-node identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning common node-data record.
-    pub base_node: String,
+    base_node: String,
     /// Serialized node object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Group-node data version.
-    pub group_version: u16,
+    group_version: u16,
     /// Ordered alternate-representation child identifiers.
-    pub child_object_ids: Vec<u32>,
+    child_object_ids: Vec<u32>,
     /// LOD-node data version.
-    pub lod_version: u16,
+    lod_version: u16,
     /// Reserved finite floating-point vector.
-    pub reserved_values: Vec<f32>,
+    reserved_values: Vec<f32>,
     /// Reserved signed integer.
-    pub reserved_value: i32,
+    reserved_value: i32,
     /// Range-LOD data version.
-    pub range_version: u16,
+    range_version: u16,
     /// Strictly increasing nonnegative eye-distance limits.
     range_limits: JtRangeLimits,
     /// Model-coordinate centre for range selection.
-    pub center: [f32; 3],
+    center: [f32; 3],
     /// Absolute source offset of the owning compressed envelope.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 struct ParsedJtElement<'a> {
@@ -1622,7 +1622,7 @@ fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>
     }
 }
 
-pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<String> {
+fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<String> {
     const PREFIX: [u8; 8] = [1, 0, 0, 0, 0, 0x40, 1, 0];
     if body.get(..8) != Some(PREFIX.as_slice()) {
         return None;
@@ -1635,7 +1635,7 @@ pub(crate) fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<String> 
     Some(value)
 }
 
-pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
+fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
     let mut view = View::over_retained(body);
     let base_version = view.u16_le()?;
     let vertex_version = view.u16_le()?;
@@ -1658,7 +1658,7 @@ pub(crate) fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u
     ))
 }
 
-pub(crate) fn jt9_topology_high_degree_lane_count(
+fn jt9_topology_high_degree_lane_count(
     representation: &[u8],
     expected_vertex_bindings: u64,
 ) -> Option<usize> {
@@ -1728,10 +1728,7 @@ pub(crate) fn jt9_topology_high_degree_lane_count(
     (match_count == 1).then_some(matched_lane_count)
 }
 
-pub(crate) fn parse_jt_base_node_body(
-    body: &[u8],
-    format_major: u16,
-) -> Option<(u16, u32, Vec<u32>, &[u8])> {
+fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, Vec<u32>, &[u8])> {
     let (version, flags_offset, count_offset, attributes_offset): (u16, usize, usize, usize) =
         if format_major < 10 {
             (View::u16_le_at(body, 0)?, 2, 6, 10)
@@ -1751,33 +1748,31 @@ pub(crate) fn parse_jt_base_node_body(
     ))
 }
 
-pub(crate) fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
+fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     let version = View::u16_le_at(family, 0)?;
     let child_object_id = View::u32_le_at(family, 2)?;
     (version == 1 && family.len() == 6).then_some((version, child_object_id))
 }
 
-pub(crate) struct ParsedJtTriStripShapeNode {
-    pub(crate) reserved_bounds: [[f32; 3]; 2],
-    pub(crate) untransformed_bounds: [[f32; 3]; 2],
-    pub(crate) area: f32,
-    pub(crate) vertex_count_range: [i32; 2],
-    pub(crate) node_count_range: [i32; 2],
-    pub(crate) polygon_count_range: [i32; 2],
-    pub(crate) memory_byte_len: u32,
-    pub(crate) compression_level: JtUnitFraction,
+struct ParsedJtTriStripShapeNode {
+    reserved_bounds: [[f32; 3]; 2],
+    untransformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    memory_byte_len: u32,
+    compression_level: JtUnitFraction,
     vertex_version: JtVertexVersion,
-    pub(crate) vertex_bindings: u64,
-    pub(crate) vertex_quantization_bits: u8,
-    pub(crate) normal_quantization_factor: u8,
-    pub(crate) texture_quantization_bits: u8,
-    pub(crate) color_quantization_bits: u8,
+    vertex_bindings: u64,
+    vertex_quantization_bits: u8,
+    normal_quantization_factor: u8,
+    texture_quantization_bits: u8,
+    color_quantization_bits: u8,
 }
 
-pub(crate) fn parse_jt9_tri_strip_shape_node_body(
-    body: &[u8],
-) -> Option<ParsedJtTriStripShapeNode> {
+fn parse_jt9_tri_strip_shape_node_body(body: &[u8]) -> Option<ParsedJtTriStripShapeNode> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     if family.len() < jt_family::LEN || View::u16_le_at(family, jt_family::SHAPE_VERSION)? != 1 {
         return None;
@@ -1857,16 +1852,16 @@ pub(crate) fn parse_jt9_tri_strip_shape_node_body(
     })
 }
 
-pub(crate) struct ParsedJtPartitionNode {
-    pub(crate) group_version: u16,
-    pub(crate) child_object_ids: Vec<u32>,
-    pub(crate) file_name: String,
-    pub(crate) transformed_bounds: [[f32; 3]; 2],
-    pub(crate) area: f32,
-    pub(crate) vertex_count_range: [i32; 2],
-    pub(crate) node_count_range: [i32; 2],
-    pub(crate) polygon_count_range: [i32; 2],
-    pub(crate) bounds: DisplayJtPartitionBounds,
+struct ParsedJtPartitionNode {
+    group_version: u16,
+    child_object_ids: Vec<u32>,
+    file_name: String,
+    transformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    bounds: DisplayJtPartitionBounds,
 }
 
 fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
@@ -1877,12 +1872,12 @@ fn parse_jt9_group_data(bytes: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
     Some((version, children, bytes.get(view.position()..)?))
 }
 
-pub(crate) fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
+fn parse_jt9_group_node_body(body: &[u8]) -> Option<(u16, Vec<u32>, &[u8])> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     parse_jt9_group_data(family)
 }
 
-pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
+fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtPartitionNode> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     let (group_version, child_object_ids, family) = parse_jt9_group_data(family)?;
     let mut view = View::over_retained(family);
@@ -1955,15 +1950,15 @@ pub(crate) fn parse_jt9_partition_node_body(body: &[u8]) -> Option<ParsedJtParti
     })
 }
 
-pub(crate) struct ParsedJtRangeLodNode {
-    pub(crate) group_version: u16,
-    pub(crate) child_object_ids: Vec<u32>,
-    pub(crate) lod_version: u16,
-    pub(crate) reserved_values: Vec<f32>,
-    pub(crate) reserved_value: i32,
-    pub(crate) range_version: u16,
+struct ParsedJtRangeLodNode {
+    group_version: u16,
+    child_object_ids: Vec<u32>,
+    lod_version: u16,
+    reserved_values: Vec<f32>,
+    reserved_value: i32,
+    range_version: u16,
     range_limits: JtRangeLimits,
-    pub(crate) center: [f32; 3],
+    center: [f32; 3],
 }
 
 fn parse_jt_f32_vector(bytes: &[u8]) -> Option<(Vec<f32>, &[u8])> {
@@ -1976,7 +1971,7 @@ fn parse_jt_f32_vector(bytes: &[u8]) -> Option<(Vec<f32>, &[u8])> {
         .then_some((values, bytes.get(view.position()..)?))
 }
 
-pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
+fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRangeLodNode> {
     let (_, _, _, family) = parse_jt_base_node_body(body, 9)?;
     let (group_version, child_object_ids, mut family) = parse_jt9_group_data(family)?;
     let lod_version = View::u16_le_at(family, 0)?;
@@ -2007,9 +2002,7 @@ pub(crate) fn parse_jt9_range_lod_node_body(body: &[u8]) -> Option<ParsedJtRange
     })
 }
 
-pub(crate) fn parse_jt9_geometric_transform_body(
-    body: &[u8],
-) -> Option<(u8, u32, u16, [[f32; 4]; 4])> {
+fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, [[f32; 4]; 4])> {
     let mut view = View::over_retained(body);
     let base_version = view.u16_le()?;
     let state_flags = view.u8()?;
@@ -2124,7 +2117,7 @@ fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
 }
 
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
-pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
+pub(super) fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
     const JT_HEADER: &[u8] = b"Version ";
     let word_swapped_u64 = |bytes: &[u8]| -> Option<u64> {
         let high = View::u32_le_at(bytes, 0)?;
@@ -2186,7 +2179,7 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
 }
 
 /// Decode complete standard JT headers and tables of contents from an outer index.
-pub fn display_jt_documents(
+pub(super) fn display_jt_documents(
     container: &Container,
     indices: &[DisplayJtIndex],
 ) -> Vec<DisplayJtDocument> {
@@ -2320,7 +2313,7 @@ pub fn display_jt_documents(
 }
 
 /// Decode every segment declared by complete embedded JT documents.
-pub fn display_jt_segments(
+pub(super) fn display_jt_segments(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     documents: &[DisplayJtDocument],
@@ -2415,7 +2408,7 @@ pub fn display_jt_segments(
 }
 
 /// Decode complete object-element sequences from type-7 shape-LOD segments.
-pub fn display_jt_shape_lod_elements(
+pub(super) fn display_jt_shape_lod_elements(
     container: &Container,
     segments: &[DisplayJtSegment],
 ) -> Vec<DisplayJtShapeLodElement> {
@@ -2454,7 +2447,7 @@ pub fn display_jt_shape_lod_elements(
 }
 
 /// Decode fixed headers from JT 9 tri-strip shape-LOD elements.
-pub fn display_jt_tri_strip_lod_headers(
+pub(super) fn display_jt_tri_strip_lod_headers(
     container: &Container,
     elements: &[DisplayJtShapeLodElement],
 ) -> Vec<DisplayJtTriStripLodHeader> {
@@ -2503,7 +2496,7 @@ pub fn display_jt_tri_strip_lod_headers(
 }
 
 /// Decode the initial face-degree packet from each JT 9 topological mesh.
-pub fn display_jt_initial_face_degree_symbols(
+pub(super) fn display_jt_initial_face_degree_symbols(
     container: &Container,
     elements: &[DisplayJtShapeLodElement],
 ) -> Vec<DisplayJtInitialFaceDegreeSymbols> {
@@ -2548,7 +2541,7 @@ pub fn display_jt_initial_face_degree_symbols(
 }
 
 /// Bound every JT 9 topology vector and decode the following vertex-record header.
-pub fn display_jt_topology_packet_sequences(
+pub(super) fn display_jt_topology_packet_sequences(
     container: &Container,
     elements: &[DisplayJtShapeLodElement],
 ) -> (
@@ -2784,7 +2777,7 @@ pub fn display_jt_topology_packet_sequences(
 }
 
 /// Decode every complete JT 9 coordinate array.
-pub fn display_jt_vertex_coordinates(
+pub(super) fn display_jt_vertex_coordinates(
     container: &Container,
     headers: &[DisplayJtVertexCoordinateArrayHeader],
 ) -> Vec<DisplayJtVertexCoordinates> {
@@ -2824,7 +2817,7 @@ pub fn display_jt_vertex_coordinates(
 }
 
 /// Reconstruct every complete JT 9 polygon mesh from its dual-mesh lanes.
-pub fn display_jt_polygon_meshes(
+pub(super) fn display_jt_polygon_meshes(
     sequences: &[DisplayJtTopologyPacketSequence],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
 ) -> Vec<DisplayJtPolygonMesh> {
@@ -2932,7 +2925,7 @@ pub fn display_jt_polygon_meshes(
 }
 
 /// Decode every complete JT 9 normal array following a coordinate array.
-pub fn display_jt_vertex_normals(
+pub(super) fn display_jt_vertex_normals(
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
@@ -2987,7 +2980,7 @@ pub fn display_jt_vertex_normals(
 }
 
 /// Decode every complete JT 9 color array after coordinates and optional normals.
-pub fn display_jt_vertex_colors(
+pub(super) fn display_jt_vertex_colors(
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
@@ -3055,7 +3048,7 @@ pub fn display_jt_vertex_colors(
 }
 
 /// Decode texture-coordinate channels after preceding coordinate, normal, and color arrays.
-pub fn display_jt_vertex_texture_coordinates(
+pub(super) fn display_jt_vertex_texture_coordinates(
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
@@ -3151,7 +3144,7 @@ pub fn display_jt_vertex_texture_coordinates(
 }
 
 /// Decode every complete JT 9 vertex-flag array after all preceding vertex arrays.
-pub fn display_jt_vertex_flags(
+pub(super) fn display_jt_vertex_flags(
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
@@ -3244,7 +3237,7 @@ pub fn display_jt_vertex_flags(
 }
 
 /// Decode element framing and exact post-marker tails from compressed segments.
-pub fn display_jt_compressed_element_sequences(
+pub(super) fn display_jt_compressed_element_sequences(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3329,7 +3322,7 @@ fn display_jt_framing_error(message: &str) -> cadmpeg_core::CodecError {
 }
 
 /// Decode all string property atoms from complete type-31 segment sequences.
-pub fn display_jt_string_property_atoms(
+pub(super) fn display_jt_string_property_atoms(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3378,7 +3371,7 @@ pub fn display_jt_string_property_atoms(
 }
 
 /// Resolve JT 9 logical shape nodes to their late-loaded type-7 LOD segments.
-pub fn display_jt_shape_lod_bindings(
+pub(super) fn display_jt_shape_lod_bindings(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3537,7 +3530,7 @@ pub fn display_jt_shape_lod_bindings(
 }
 
 /// Decode the common node-data header from every type-1 segment element.
-pub fn display_jt_base_node_data(
+pub(super) fn display_jt_base_node_data(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3595,7 +3588,7 @@ pub fn display_jt_base_node_data(
 }
 
 /// Decode common group-node data from every JT 9 group-derived scene node.
-pub fn display_jt_group_node_data(
+pub(super) fn display_jt_group_node_data(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3654,7 +3647,7 @@ pub fn display_jt_group_node_data(
 }
 
 /// Decode complete JT 9 instance nodes from logical scene-graph segments.
-pub fn display_jt_instance_nodes(
+pub(super) fn display_jt_instance_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3714,7 +3707,7 @@ pub fn display_jt_instance_nodes(
 }
 
 /// Decode JT 9 geometric-transform attributes from logical scene-graph segments.
-pub fn display_jt_geometric_transform_attributes(
+pub(super) fn display_jt_geometric_transform_attributes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3777,7 +3770,7 @@ pub fn display_jt_geometric_transform_attributes(
 }
 
 /// Decode JT 9 material attributes from logical scene-graph segments.
-pub fn display_jt_material_attributes(
+pub(super) fn display_jt_material_attributes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3846,7 +3839,7 @@ pub fn display_jt_material_attributes(
 }
 
 /// Decode complete JT 9 partition nodes from logical scene-graph segments.
-pub fn display_jt_partition_nodes(
+pub(super) fn display_jt_partition_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3909,7 +3902,7 @@ pub fn display_jt_partition_nodes(
 }
 
 /// Decode complete JT 9 range-LOD nodes from logical scene-graph segments.
-pub fn display_jt_range_lod_nodes(
+pub(super) fn display_jt_range_lod_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -3971,7 +3964,7 @@ pub fn display_jt_range_lod_nodes(
 }
 
 /// Decode complete JT 9 tri-strip shape nodes from logical scene-graph segments.
-pub fn display_jt_tri_strip_shape_nodes(
+pub(super) fn display_jt_tri_strip_shape_nodes(
     budget: Option<(&DecodeContext<'_>, View<'_>)>,
     container: &Container,
     segments: &[DisplayJtSegment],
@@ -4058,24 +4051,24 @@ struct DisplayJtPath {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct DisplayJtTessellationInputs<'a> {
-    pub(crate) meshes: &'a [DisplayJtPolygonMesh],
-    pub(crate) coordinates: &'a [DisplayJtVertexCoordinates],
-    pub(crate) normals: &'a [DisplayJtVertexNormals],
-    pub(crate) colors: &'a [DisplayJtVertexColors],
-    pub(crate) texture_coordinates: &'a [DisplayJtVertexTextureCoordinates],
-    pub(crate) vertex_flags: &'a [DisplayJtVertexFlags],
-    pub(crate) vertex_headers: &'a [DisplayJtCompressedVertexRecordsHeader],
-    pub(crate) coordinate_headers: &'a [DisplayJtVertexCoordinateArrayHeader],
-    pub(crate) shape_elements: &'a [DisplayJtShapeLodElement],
-    pub(crate) bindings: &'a [DisplayJtShapeLodBinding],
-    pub(crate) shape_nodes: &'a [DisplayJtTriStripShapeNode],
-    pub(crate) base_nodes: &'a [DisplayJtBaseNodeData],
-    pub(crate) group_nodes: &'a [DisplayJtGroupNodeData],
-    pub(crate) instance_nodes: &'a [DisplayJtInstanceNode],
-    pub(crate) transforms: &'a [DisplayJtGeometricTransformAttribute],
-    pub(crate) materials: &'a [DisplayJtMaterialAttribute],
-    pub(crate) compressed_elements: &'a [DisplayJtCompressedElement],
+pub(super) struct DisplayJtTessellationInputs<'a> {
+    pub(super) meshes: &'a [DisplayJtPolygonMesh],
+    pub(super) coordinates: &'a [DisplayJtVertexCoordinates],
+    pub(super) normals: &'a [DisplayJtVertexNormals],
+    pub(super) colors: &'a [DisplayJtVertexColors],
+    pub(super) texture_coordinates: &'a [DisplayJtVertexTextureCoordinates],
+    pub(super) vertex_flags: &'a [DisplayJtVertexFlags],
+    pub(super) vertex_headers: &'a [DisplayJtCompressedVertexRecordsHeader],
+    pub(super) coordinate_headers: &'a [DisplayJtVertexCoordinateArrayHeader],
+    pub(super) shape_elements: &'a [DisplayJtShapeLodElement],
+    pub(super) bindings: &'a [DisplayJtShapeLodBinding],
+    pub(super) shape_nodes: &'a [DisplayJtTriStripShapeNode],
+    pub(super) base_nodes: &'a [DisplayJtBaseNodeData],
+    pub(super) group_nodes: &'a [DisplayJtGroupNodeData],
+    pub(super) instance_nodes: &'a [DisplayJtInstanceNode],
+    pub(super) transforms: &'a [DisplayJtGeometricTransformAttribute],
+    pub(super) materials: &'a [DisplayJtMaterialAttribute],
+    pub(super) compressed_elements: &'a [DisplayJtCompressedElement],
 }
 
 fn accumulate_display_jt_material(
@@ -4388,7 +4381,7 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<Vector
 ///
 /// Refuses a vertex-normal lane that does not cover the vertex lane, and a
 /// tessellation the IR will not admit.
-pub(crate) fn display_jt_tessellations(
+pub(super) fn display_jt_tessellations(
     inputs: &DisplayJtTessellationInputs<'_>,
 ) -> Result<Vec<(Tessellation, u64)>, CodecError> {
     let mut refusal = None;

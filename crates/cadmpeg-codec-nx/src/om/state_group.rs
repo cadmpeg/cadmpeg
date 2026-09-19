@@ -11,7 +11,7 @@ pub(crate) enum OperationStateGroupOpener {
 }
 
 impl OperationStateGroupOpener {
-    pub fn bytes(self) -> [u8; 2] {
+    pub(crate) fn bytes(self) -> [u8; 2] {
         match self {
             Self::Form00 => [1, 0],
             Self::Form01 => [1, 1],
@@ -40,14 +40,14 @@ pub(crate) enum OperationStateGroupCount {
 }
 
 impl OperationStateGroupCount {
-    pub fn prefix(self) -> Option<u8> {
+    pub(crate) fn prefix(self) -> Option<u8> {
         match self {
             Self::Empty => None,
             Self::Counted(_) => Some(1),
         }
     }
 
-    pub fn declared_count(self) -> u8 {
+    pub(crate) fn declared_count(self) -> u8 {
         match self {
             Self::Empty => 0,
             Self::Counted(count) => count,
@@ -61,7 +61,7 @@ impl OperationStateGroupCount {
     /// slot and no rows. The count owns this arithmetic: a caller that
     /// subtracts the owner slot itself can state a row count the header does
     /// not carry.
-    pub fn member_row_count(self) -> usize {
+    pub(super) fn member_row_count(self) -> usize {
         match self {
             Self::Empty | Self::Counted(0) => 0,
             Self::Counted(count) => usize::from(count) - 1,
@@ -130,7 +130,7 @@ impl<R> StateGroupMembers<R> {
         }))
     }
 
-    pub(crate) fn map_rows<U>(self, mut map: impl FnMut(u8, R) -> U) -> StateGroupMembers<U> {
+    pub(super) fn map_rows<U>(self, mut map: impl FnMut(u8, R) -> U) -> StateGroupMembers<U> {
         StateGroupMembers(match self.0 {
             GroupBody::Empty => GroupBody::Empty,
             GroupBody::CountedZero => GroupBody::CountedZero,

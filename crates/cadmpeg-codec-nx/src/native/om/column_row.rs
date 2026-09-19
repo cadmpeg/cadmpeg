@@ -14,21 +14,21 @@ mod wire;
     try_from = "wire::DataBlockIndexRowWire",
     into = "wire::DataBlockIndexRowWire"
 )]
-pub struct DataBlockIndexRow {
+pub(in crate::native) struct DataBlockIndexRow {
     /// Globally unique row identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
+    pub(in crate::native) section_ordinal: u32,
     /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Complete row with resolved targets and derived token positions.
-    pub frame: IndexRow<String, u64>,
+    pub(in crate::native) frame: IndexRow<String, u64>,
     /// Directory entry containing the offset-only store.
-    pub source_entry: String,
+    pub(in crate::native) source_entry: String,
     /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
+    pub(in crate::native) opening_data_block: String,
     /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
+    pub(in crate::native) opening_block_offset: u32,
 }
 
 /// Self-framed linked index row in contiguous column storage.
@@ -37,21 +37,21 @@ pub struct DataBlockIndexRow {
     try_from = "wire::DataBlockLinkedIndexRowWire",
     into = "wire::DataBlockLinkedIndexRowWire"
 )]
-pub struct DataBlockLinkedIndexRow {
+pub(in crate::native) struct DataBlockLinkedIndexRow {
     /// Globally unique row identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
+    pub(in crate::native) section_ordinal: u32,
     /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Complete row with resolved targets and derived token positions.
-    pub frame: LinkedRow<String, u64>,
+    pub(in crate::native) frame: LinkedRow<String, u64>,
     /// Directory entry containing the store.
-    pub source_entry: String,
+    pub(in crate::native) source_entry: String,
     /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
+    pub(in crate::native) opening_data_block: String,
     /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
+    pub(in crate::native) opening_block_offset: u32,
 }
 
 /// Self-framed target-index row in contiguous column storage.
@@ -60,25 +60,25 @@ pub struct DataBlockLinkedIndexRow {
     try_from = "wire::DataBlockTargetIndexRowWire",
     into = "wire::DataBlockTargetIndexRowWire"
 )]
-pub struct DataBlockTargetIndexRow {
+pub(in crate::native) struct DataBlockTargetIndexRow {
     /// Globally unique row identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
+    pub(in crate::native) section_ordinal: u32,
     /// Zero-based row order within the section's column storage.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Complete row with resolved targets and derived token positions.
-    pub frame: TargetRow<String, u64>,
+    pub(in crate::native) frame: TargetRow<String, u64>,
     /// Directory entry containing the store.
-    pub source_entry: String,
+    pub(in crate::native) source_entry: String,
     /// Column block containing the row's opening byte.
-    pub opening_data_block: String,
+    pub(in crate::native) opening_data_block: String,
     /// Byte offset of the row opening within `opening_data_block`.
-    pub opening_block_offset: u32,
+    pub(in crate::native) opening_block_offset: u32,
 }
 
 /// Decode complete index rows from offset-store column storage.
-pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
+pub(in crate::native) fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -122,7 +122,9 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
 }
 
 /// Decode complete in-range linked index rows from column storage.
-pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinkedIndexRow> {
+pub(in crate::native) fn data_block_linked_index_rows(
+    container: &Container,
+) -> Vec<DataBlockLinkedIndexRow> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -168,7 +170,9 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
 }
 
 /// Decode complete in-range target-index rows from column storage.
-pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTargetIndexRow> {
+pub(in crate::native) fn data_block_target_index_rows(
+    container: &Container,
+) -> Vec<DataBlockTargetIndexRow> {
     container
         .indexed_om_sections()
         .into_iter()

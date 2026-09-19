@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ObjectFrameWire", into = "ObjectFrameWire")]
-pub(crate) struct DataBlockObjectFrame {
-    pub(crate) id: String,
-    pub(crate) data_block: String,
-    pub(crate) ordinal: u32,
-    pub(crate) object: LocatedCompactIndex<u64>,
+pub(in crate::native) struct DataBlockObjectFrame {
+    pub(in crate::native) id: String,
+    pub(super) data_block: String,
+    pub(super) ordinal: u32,
+    pub(in crate::native) object: LocatedCompactIndex<u64>,
 }
 
 #[derive(Serialize, Deserialize)]

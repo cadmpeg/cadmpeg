@@ -13,20 +13,20 @@ use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_message::StateMessage;
 use crate::om::state_table::StateTableEntry;
 use crate::printable_string::PrintableString;
-pub(crate) mod finite_value;
-pub(crate) mod journal_group;
+pub(super) mod finite_value;
+pub(super) mod journal_group;
 use finite_value::FiniteValue;
-pub(crate) mod material_texture;
-pub(crate) mod object_uuid;
+pub(super) mod material_texture;
+pub(super) mod object_uuid;
 mod reference_wire;
 mod state_index_wire;
 use journal_group::OmOperationStateJournalGroup;
 use material_texture::MaterialTextureAsset;
 
-pub(crate) mod column_row;
-pub(crate) mod compact_lane;
-pub(crate) mod creation_display;
-pub(crate) mod display_color;
+pub(super) mod column_row;
+pub(super) mod compact_lane;
+pub(super) mod creation_display;
+pub(super) mod display_color;
 use column_row::{DataBlockLinkedIndexRow, DataBlockTargetIndexRow};
 mod membership_wire;
 use crate::container::extref_handles::ExtrefHandles;
@@ -34,23 +34,23 @@ use crate::container::extref_slot::ExtrefSlot;
 use crate::container::membership::ObjectIdMembers;
 use crate::om::color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
 mod color_wire;
-pub(crate) mod column_index;
+pub(super) mod column_index;
 use column_index::ColumnIndexRows;
 
 use crate::native::segments::segment_om_links;
 use crate::om::parameter_name::ParameterName;
-pub(crate) mod roll_forward;
+pub(super) mod roll_forward;
 use crate::om::IndexedStore;
 use roll_forward::OmRollForwardStateTable;
-pub(crate) mod state_slot_lane;
+pub(super) mod state_slot_lane;
 use state_slot_lane::OmOperationStateSlotLane;
-pub(crate) mod state_status;
+pub(super) mod state_status;
 use state_status::OmOperationStateStatus;
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum OmSchemaRole {
+pub(super) enum OmSchemaRole {
     /// General part object model declaring `UGS::Solid::Topol`.
     Model,
     /// Construction/history model declaring `UGS::FEATURE_RECORD`.
@@ -67,23 +67,23 @@ pub enum OmSchemaRole {
 
 /// Internally pointed record area in a role-classified size-framed OM section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmRecordArea {
+pub(super) struct OmRecordArea {
     /// Globally unique record-area identity.
-    pub id: String,
+    pub(super) id: String,
     /// Link identifying the owning ordered OM section.
-    pub section_link: String,
+    pub(super) section_link: String,
     /// Registry-derived role of the owning section.
-    pub schema_role: OmSchemaRole,
+    pub(super) schema_role: OmSchemaRole,
     /// Three exact little-endian control words.
-    pub control_words: [u32; 3],
+    pub(super) control_words: [u32; 3],
     /// Exact printable product/version string.
-    pub product_version: crate::om::product::ProductText<String>,
+    pub(super) product_version: crate::om::product::ProductText<String>,
     /// Exact record-area byte length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// SHA-256 of the complete pointed record area.
-    pub sha256: crate::native::hex::Sha256Hex,
+    pub(super) sha256: crate::native::hex::Sha256Hex,
     /// Absolute file offset of the first control word.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One complete row retained from an audit-trail record area.
@@ -92,15 +92,15 @@ pub struct OmRecordArea {
     try_from = "state_index_wire::OmAuditTrailRowWire",
     into = "state_index_wire::OmAuditTrailRowWire"
 )]
-pub struct OmAuditTrailRow {
+pub(super) struct OmAuditTrailRow {
     /// Globally unique audit-row identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning audit-trail section link.
-    pub section_link: String,
+    section_link: String,
     /// Exact framed audit content.
     record: crate::om::audit::AuditRecord,
     /// Directory entry containing the audit-trail section.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the row's opening `04` marker.
     source_offset: u64,
 }
@@ -123,13 +123,13 @@ impl OmAuditTrailRow {
         })
     }
 
-    pub fn record(&self) -> crate::om::audit::AuditRecord {
+    fn record(&self) -> crate::om::audit::AuditRecord {
         self.record
     }
-    pub fn source_offset(&self) -> u64 {
+    pub(super) fn source_offset(&self) -> u64 {
         self.source_offset
     }
-    pub fn end_offset(&self) -> u64 {
+    fn end_offset(&self) -> u64 {
         self.source_offset + self.record.byte_len() as u64
     }
 }
@@ -140,39 +140,39 @@ impl OmAuditTrailRow {
     try_from = "state_index_wire::OmOperationStateCounterWire",
     into = "state_index_wire::OmOperationStateCounterWire"
 )]
-pub struct OmOperationStateCounter {
+pub(super) struct OmOperationStateCounter {
     /// Globally unique counter-row identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning feature-history section link.
-    pub section_link: String,
+    section_link: String,
     /// Zero-based row ordinal within the section's counter map.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Complete counter row with derived index position.
-    pub frame: crate::om::state_counter::StateCounter,
+    pub(super) frame: crate::om::state_counter::StateCounter,
     /// Directory entry containing the feature-history section.
-    pub source_entry: String,
+    source_entry: String,
 }
 
 /// One standalone operation-state message record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OmOperationStateMessage {
+pub(super) struct OmOperationStateMessage {
     /// Globally unique message identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning feature-history section link.
-    pub section_link: String,
+    section_link: String,
     /// Zero-based message ordinal within the bounded state block.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Diagnostic payload.
     #[serde(flatten)]
-    pub body: StateMessage<String>,
+    body: StateMessage<String>,
     /// Directory entry containing the feature-history section.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the opening `03` marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Decode internally pointed record areas from linked OM sections.
-pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
+pub(super) fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
     let links = segment_om_links(container);
     let sections = container.om_sections();
     links
@@ -212,7 +212,7 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
 }
 
 /// Decode complete rows from audit-trail record areas.
-pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
+pub(super) fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
     let sections = container.om_sections();
     segment_om_links(container)
         .into_iter()
@@ -252,7 +252,7 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
 }
 
 /// Decode exact object state-counter rows from canonical feature-history areas.
-pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCounter> {
+pub(super) fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCounter> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
@@ -293,7 +293,9 @@ pub fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCo
 }
 
 /// Decode anchored state-journal groups from canonical feature-history areas.
-pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationStateJournalGroup> {
+pub(super) fn operation_state_journal_groups(
+    container: &Container,
+) -> Vec<OmOperationStateJournalGroup> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
@@ -335,7 +337,7 @@ pub fn operation_state_journal_groups(container: &Container) -> Vec<OmOperationS
 }
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
-pub fn operation_state_groups(
+pub(super) fn operation_state_groups(
     container: &Container,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
     let sections = container.om_sections();
@@ -381,7 +383,7 @@ pub fn operation_state_groups(
 }
 
 /// Decode standalone operation-state messages from canonical feature-history areas.
-pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMessage> {
+pub(super) fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMessage> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
@@ -424,7 +426,7 @@ pub fn operation_state_messages(container: &Container) -> Vec<OmOperationStateMe
 }
 
 /// Decode exact per-object operation-state status rows from feature-history areas.
-pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateStatus> {
+pub(super) fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateStatus> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
@@ -471,7 +473,7 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
 }
 
 /// Decode exact feature-record slot lanes from feature-history status blocks.
-pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationStateSlotLane> {
+pub(super) fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationStateSlotLane> {
     let sections = container.om_sections();
     crate::native::features::canonical_feature_history_links(segment_om_links(container))
         .into_iter()
@@ -519,7 +521,7 @@ pub fn operation_state_slot_lanes(container: &Container) -> Vec<OmOperationState
 /// Unit declared by an NX numeric expression.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ExpressionUnit {
+pub(super) enum ExpressionUnit {
     /// Model length in millimeters as stored by NX.
     Millimeter,
     /// Model length in inches as stored by NX.
@@ -533,7 +535,7 @@ pub enum ExpressionUnit {
 const INCH_TO_MILLIMETERS: f64 = 25.4;
 
 impl ExpressionUnit {
-    pub(crate) fn property_name(&self) -> String {
+    pub(super) fn property_name(&self) -> String {
         match self {
             Self::Millimeter => "millimeter".to_string(),
             Self::Inch => "inch".to_string(),
@@ -543,7 +545,7 @@ impl ExpressionUnit {
     }
 }
 
-pub(crate) fn expression_length_in_millimeters(unit: &ExpressionUnit, value: f64) -> Option<f64> {
+pub(super) fn expression_length_in_millimeters(unit: &ExpressionUnit, value: f64) -> Option<f64> {
     match unit {
         ExpressionUnit::Millimeter => Some(value),
         ExpressionUnit::Inch => Some(value * INCH_TO_MILLIMETERS),
@@ -566,22 +568,22 @@ pub(crate) fn canonical_expression_value(unit: &str, value: f64) -> Option<f64> 
     try_from = "ExpressionDeclarationWire",
     into = "ExpressionDeclarationWire"
 )]
-pub struct ExpressionDeclaration {
+pub(super) struct ExpressionDeclaration {
     /// Globally unique declaration identity.
-    pub id: String,
+    pub(super) id: String,
     /// Persistent OM object identifier.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// Owning entry in the native OM record directory.
-    pub record: String,
+    pub(super) record: String,
     /// Exact NX parameter name.
-    pub name: ParameterName<String, u32>,
+    pub(super) name: ParameterName<String, u32>,
     /// Independently framed constant numeric expression in the declaration record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub literal: Option<String>,
+    pub(super) literal: Option<String>,
     /// Directory entry containing the declaration record.
-    pub source_entry: String,
+    pub(super) source_entry: String,
     /// Absolute file offset of the declaration-name marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -655,36 +657,36 @@ impl TryFrom<ExpressionDeclarationWire> for ExpressionDeclaration {
 /// Explicit numeric expression serialized in one NX OM entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ExpressionWire", into = "ExpressionWire")]
-pub struct Expression {
+pub(super) struct Expression {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Externally bounded OM record and its persistent identity.
-    pub owner: Option<ExpressionOwner>,
+    pub(super) owner: Option<ExpressionOwner>,
     /// Exact-name declaration record for this parameter, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub declaration: Option<String>,
+    pub(super) declaration: Option<String>,
     /// NX parameter name.
-    pub name: ParameterName<String>,
+    pub(super) name: ParameterName<String>,
     /// Declared native unit.
-    pub unit: ExpressionUnit,
+    pub(super) unit: ExpressionUnit,
     /// Exact serialized expression text.
     #[allow(clippy::struct_field_names)]
-    pub expression: String,
+    pub(super) expression: String,
     /// Finite numeric value after context-free and dependency-graph evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<FiniteValue>,
+    pub(super) value: Option<FiniteValue>,
     /// Directory entry containing the OM section.
-    pub source_entry: String,
+    pub(super) source_entry: String,
     /// Self-contained expression table selected by the nearest preceding table marker.
-    pub source_table: cadmpeg_core::text::NonBlankString,
+    pub(super) source_table: cadmpeg_core::text::NonBlankString,
     /// Absolute file offset of the expression text.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExpressionOwner {
-    pub object_id: u32,
-    pub record: String,
+pub(super) struct ExpressionOwner {
+    pub(super) object_id: u32,
+    pub(super) record: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -840,24 +842,24 @@ fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> 
 /// Length-framed class definition from an NX OM type registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ClassDefinitionWire", into = "ClassDefinitionWire")]
-pub struct ClassDefinition {
+pub(super) struct ClassDefinition {
     /// Globally unique native-record identity.
-    pub id: String,
+    id: String,
     /// Registered `UGS::` class name.
-    pub name: String,
+    name: String,
     /// Zero-based declaration ordinal used as class identity.
-    pub ordinal: u32,
+    ordinal: u32,
     /// First registry-token byte serialized after the class name (legacy field name).
-    pub trailing_code: u8,
+    trailing_code: u8,
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub registry_suffix: Vec<u8>,
+    registry_suffix: Vec<u8>,
     /// Absolute file offset of the containing OM section base.
-    pub section_offset: u64,
+    section_offset: u64,
     /// Directory entry containing the OM section.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the definition's length byte.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -992,24 +994,24 @@ impl TryFrom<ClassDefinitionWire> for ClassDefinition {
 /// Member declaration from an NX OM field registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "FieldDefinitionWire", into = "FieldDefinitionWire")]
-pub struct FieldDefinition {
+pub(super) struct FieldDefinition {
     /// Globally unique declaration identity.
-    pub id: String,
+    id: String,
     /// Registered `m_` member name.
-    pub name: String,
+    name: String,
     /// Zero-based declaration ordinal within its section.
-    pub ordinal: u32,
+    ordinal: u32,
     /// First registry-token byte serialized immediately after the name (legacy field name).
-    pub trailing_code: u8,
+    trailing_code: u8,
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub registry_suffix: Vec<u8>,
+    registry_suffix: Vec<u8>,
     /// Absolute file offset of the containing OM section signature.
-    pub section_offset: u64,
+    section_offset: u64,
     /// Directory entry containing the OM section.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the declaration length byte.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1131,34 +1133,34 @@ impl TryFrom<FieldDefinitionWire> for FieldDefinition {
 /// Directory entry for one externally bounded NX OM entity record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
-pub struct ObjectRecord {
+pub(super) struct ObjectRecord {
     /// Globally unique record identity.
-    pub id: String,
+    id: String,
     /// Persistent OM object identifier and the offset of its table word.
-    pub object_id: (u32, u64),
+    object_id: (u32, u64),
     /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
+    section_ordinal: u32,
     /// Zero-based record ordinal within the indexed section.
-    pub record_ordinal: u32,
+    record_ordinal: u32,
     /// Absolute file offset of the containing OM section base.
-    pub section_offset: u64,
+    section_offset: u64,
     /// Exact serialized record length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// Content-backed identity when the scoped exact bytes are unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stable_identity: Option<String>,
+    stable_identity: Option<String>,
     /// Ordered distinct same-section records referenced by this record.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<String>,
+    dependencies: Vec<String>,
     /// Ordered distinct same-section records that reference this record.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependents: Vec<String>,
+    dependents: Vec<String>,
     /// Directory entry containing the OM section.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the record start.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 // The identity and its offset are stated together, so the refusal names which
@@ -1255,7 +1257,7 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 /// The source entry scopes the exact bytes. Callers must only admit the value
 /// when this key is unique in that scope; equal records have no stable
 /// position-independent identity without another serialized owner.
-pub(crate) fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) -> String {
+fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) -> String {
     let mut seed = Vec::with_capacity(source_entry.len() + bytes.len() + 20);
     seed.extend_from_slice(b"nx:om:object-record\0");
     seed.extend_from_slice(source_entry.as_bytes());
@@ -1431,17 +1433,17 @@ fn stable_object_record_graph_identity(
     try_from = "membership_wire::TableWire",
     into = "membership_wire::TableWire"
 )]
-pub struct RmFastLoadObjectIdTable {
+pub(super) struct RmFastLoadObjectIdTable {
     /// Globally unique table identity.
-    pub id: String,
+    id: String,
     /// Ordered members in the native `rmfastload_object_ids` arena.
-    pub members: ObjectIdMembers<String>,
+    members: ObjectIdMembers<String>,
     /// Directory entry containing the table.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the `UGS::Solid::Topol` registry marker.
-    pub registry_source_offset: u64,
+    registry_source_offset: u64,
     /// Absolute file offset of the four-byte count word.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// One fixed-width active-object membership word from `RMFastLoad`.
@@ -1450,66 +1452,66 @@ pub struct RmFastLoadObjectIdTable {
     try_from = "membership_wire::MemberWire",
     into = "membership_wire::MemberWire"
 )]
-pub struct RmFastLoadObjectId {
+pub(super) struct RmFastLoadObjectId {
     /// Globally unique member identity.
-    pub id: String,
+    id: String,
     /// Owning table in the native `rmfastload_object_id_tables` arena.
-    pub table: String,
+    table: String,
     /// Zero-based serialized member order.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Decoded active object identifier.
-    pub value: u32,
+    value: u32,
     /// Record-order-independent identity when the value is unique in the table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stable_identity: Option<String>,
+    stable_identity: Option<String>,
     /// Absolute file offset of the four-byte object-id word.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 impl RmFastLoadObjectIdTable {
-    pub fn raw_count(&self) -> [u8; 4] {
+    fn raw_count(&self) -> [u8; 4] {
         self.members.count().to_le_bytes()
     }
 }
 impl RmFastLoadObjectId {
-    pub fn raw(&self) -> [u8; 4] {
+    fn raw(&self) -> [u8; 4] {
         self.value.to_le_bytes()
     }
 }
 
 /// One externally bounded block in an NX OM offset-only column store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlock {
+pub(super) struct DataBlock {
     /// Globally unique block identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
+    pub(super) section_ordinal: u32,
     /// Zero-based block ordinal within the offset-only section.
-    pub block_ordinal: u32,
+    pub(super) block_ordinal: u32,
     /// Whether this is the store control block or one data column block.
-    pub role: DataBlockRole,
+    pub(super) role: DataBlockRole,
     /// Absolute file offset of the containing OM section base.
-    pub section_offset: u64,
+    pub(super) section_offset: u64,
     /// Exact serialized block length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// SHA-256 of the exact serialized block bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    pub(super) sha256: crate::native::hex::Sha256Hex,
     /// Content-backed identity when the scoped exact bytes are unique.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_stable_identity"
     )]
-    pub stable_identity: Option<String>,
+    pub(super) stable_identity: Option<String>,
     /// Directory entry containing the OM section.
-    pub source_entry: String,
+    pub(super) source_entry: String,
     /// Absolute file offset of the block start.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Admitted complete grammar selected for one offset-store control block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DataBlockControlFormKind {
+enum DataBlockControlFormKind {
     ZeroPrefixed {
         value_count: std::num::NonZeroU32,
     },
@@ -1526,19 +1528,19 @@ pub enum DataBlockControlFormKind {
     try_from = "DataBlockControlFormWire",
     into = "DataBlockControlFormWire"
 )]
-pub struct DataBlockControlForm {
+pub(super) struct DataBlockControlForm {
     /// Globally unique control-form identity.
-    pub id: String,
+    pub(super) id: String,
     /// Opening control block in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Selected complete control grammar.
-    pub kind: DataBlockControlFormKind,
+    kind: DataBlockControlFormKind,
     /// Absolute file offset of the control block.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 impl DataBlockControlFormKind {
-    pub fn value_count(self) -> u32 {
+    fn value_count(self) -> u32 {
         match self {
             Self::ZeroPrefixed { value_count } | Self::ProductAnchored { value_count, .. } => {
                 value_count.get()
@@ -1546,7 +1548,7 @@ impl DataBlockControlFormKind {
         }
     }
 
-    pub fn byte_len(self) -> u64 {
+    fn byte_len(self) -> u64 {
         match self {
             Self::ZeroPrefixed { value_count } => u64::from(value_count.get()) * 4,
             Self::ProductAnchored { byte_len, .. } => byte_len.get(),
@@ -1658,39 +1660,39 @@ impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
 
 /// Ordered value from a zero-prefixed offset-only OM store control array.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockControlValue {
+pub(super) struct DataBlockControlValue {
     /// Globally unique control-value identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning control block in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Zero-based word order in the complete control block.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Unsigned 24-bit value serialized after the zero byte.
-    pub value: crate::om::control_word::ControlWord24,
+    value: crate::om::control_word::ControlWord24,
     /// Absolute file offset of the four-byte word.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Ordered little-endian value preceding a store product anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockControlIndexValue {
+pub(super) struct DataBlockControlIndexValue {
     /// Globally unique value identity.
-    pub id: String,
+    pub(super) id: String,
     /// Control block that opens the logical lane in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Zero-based value order in the aligned prefix array.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Unsigned little-endian value.
-    pub value: u32,
+    value: u32,
     /// Same-section offset-store block addressed by an in-range value.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_target_data_block"
     )]
-    pub target_data_block: Option<String>,
+    target_data_block: Option<String>,
     /// Absolute file offset of the four-byte value.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Registered class selected by the leading lane of an offset-store control block.
@@ -1699,26 +1701,26 @@ pub struct DataBlockControlIndexValue {
     try_from = "DataBlockControlClassReferenceWire",
     into = "DataBlockControlClassReferenceWire"
 )]
-pub struct DataBlockControlClassReference {
+pub(super) struct DataBlockControlClassReference {
     /// Globally unique class-reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning control block in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Zero-based order in the class-selection lane.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Zero-based ordinal in the store's class registry.
-    pub class_ordinal: u32,
+    class_ordinal: u32,
     /// Retained class definition and name when that registry slot exists.
-    pub class: Option<DataBlockControlClassRef>,
+    class: Option<DataBlockControlClassRef>,
     /// Absolute file offset of the four-byte control word.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Retained class-definition identity and registered name.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataBlockControlClassRef {
-    pub definition: String,
-    pub name: String,
+struct DataBlockControlClassRef {
+    definition: String,
+    name: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1787,51 +1789,51 @@ impl TryFrom<DataBlockControlClassReferenceWire> for DataBlockControlClassRefere
 /// Ordered object reference carried by an offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DataBlockReferenceWire", into = "DataBlockReferenceWire")]
-pub struct DataBlockReference {
+pub(super) struct DataBlockReference {
     /// Globally unique reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning block in the native `data_blocks` arena.
-    pub data_block: String,
+    pub(super) data_block: String,
     /// Zero-based reference order within the block.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Referenced persistent OM object ID.
-    pub object: crate::om::reference_index::FeatureReferenceToken,
+    pub(super) object: crate::om::reference_index::FeatureReferenceToken,
     /// Uniquely resolved object record in the same directory entry.
-    pub target_record: Option<String>,
+    pub(super) target_record: Option<String>,
     /// Uniquely resolved parameter declaration carrying this object ID.
-    pub target_expression_declaration: Option<String>,
+    pub(super) target_expression_declaration: Option<String>,
     /// Absolute file offset of the object-index token.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
 struct DataBlockReferenceWire {
     /// Globally unique reference identity.
-    pub id: String,
+    id: String,
     /// Owning block in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Zero-based reference order within the block.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Referenced persistent OM object ID.
-    pub object_id: u32,
+    object_id: u32,
     /// Exact serialized object-index token.
-    pub raw_object_id: Vec<u8>,
+    raw_object_id: Vec<u8>,
     /// Uniquely resolved object record in the same directory entry.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_target_record"
     )]
-    pub target_record: Option<String>,
+    target_record: Option<String>,
     /// Uniquely resolved parameter declaration carrying this object ID.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_target_expression_declaration"
     )]
-    pub target_expression_declaration: Option<String>,
+    target_expression_declaration: Option<String>,
     /// Absolute file offset of the object-index token.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 impl From<DataBlockReference> for DataBlockReferenceWire {
@@ -1874,19 +1876,19 @@ impl TryFrom<DataBlockReferenceWire> for DataBlockReference {
     try_from = "color_wire::PartColorTableWire",
     into = "color_wire::PartColorTableWire"
 )]
-pub struct PartColorTable {
+pub(super) struct PartColorTable {
     /// Globally unique table identity.
-    pub id: String,
+    id: String,
     /// Registered `UGS::COLOR_table` declaration in `class_definitions`.
-    pub class_definition: String,
+    class_definition: String,
     /// Exact background components and their absolute file offsets.
-    pub background: [(ColorComponent, u64); 3],
+    background: [(ColorComponent, u64); 3],
     /// Ordered entries in the native `part_color_definitions` arena.
-    pub definitions: [String; PALETTE_SIZE],
+    definitions: [String; PALETTE_SIZE],
     /// Directory entry containing the table.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the counted name roster.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// One named RGB entry from an NX part palette.
@@ -1895,43 +1897,43 @@ pub struct PartColorTable {
     try_from = "color_wire::PartColorDefinitionWire",
     into = "color_wire::PartColorDefinitionWire"
 )]
-pub struct PartColorDefinition {
+pub(super) struct PartColorDefinition {
     /// Globally unique color-definition identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning table in the native `part_color_tables` arena.
-    pub color_table: String,
+    pub(super) color_table: String,
     /// One-based NX color index.
-    pub color_index: PaletteIndex,
+    pub(super) color_index: PaletteIndex,
     /// Serialized color name.
-    pub name: String,
+    pub(super) name: String,
     /// Exact normalized components and their absolute file offsets.
-    pub components: [(ColorComponent, u64); 3],
+    pub(super) components: [(ColorComponent, u64); 3],
     /// Absolute file offset of the opening `05` marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Complete composite table spanning linked and target-index row grammars.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockColumnIndexTable {
+pub(super) struct DataBlockColumnIndexTable {
     /// Globally unique table identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
+    pub(super) section_ordinal: u32,
     /// Leading mode-7 linked row.
-    pub opening_linked_row: String,
+    pub(super) opening_linked_row: String,
     /// Consecutive target and linked rows with their checked index interval.
     #[serde(flatten)]
-    pub rows: ColumnIndexRows,
+    pub(super) rows: ColumnIndexRows,
     /// Directory entry containing the store.
-    pub source_entry: String,
+    pub(super) source_entry: String,
     /// Absolute source offset of the opening linked row.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "StoreHeaderWire", into = "StoreHeaderWire")]
-pub enum StoreHeader {
+pub(super) enum StoreHeader {
     /// Header in an ID-bounded store record.
     Fixed(FixedStoreHeader),
     /// Header in an offset-bounded store block.
@@ -1940,30 +1942,30 @@ pub enum StoreHeader {
 
 /// Product/version header in an ID-bounded store record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FixedStoreHeader {
+pub(in crate::native) struct FixedStoreHeader {
     /// Persistent object identity.
-    pub object_id: u32,
+    object_id: u32,
     /// Product/version location and text.
-    pub header: OffsetStoreHeader,
+    header: OffsetStoreHeader,
 }
 
 /// Product/version location and text in an offset-bounded store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OffsetStoreHeader {
+pub(in crate::native) struct OffsetStoreHeader {
     /// Globally unique store-header identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
+    section_ordinal: u32,
     /// Exact printable product/version text.
-    pub version: crate::om::product::ProductText<String>,
+    version: crate::om::product::ProductText<String>,
     /// Directory entry containing the OM store.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the `04 01` marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 impl StoreHeader {
-    pub(crate) fn header(&self) -> &OffsetStoreHeader {
+    pub(super) fn header(&self) -> &OffsetStoreHeader {
         match self {
             Self::Fixed(header) => &header.header,
             Self::OffsetOnly(header) => header,
@@ -2008,7 +2010,7 @@ impl From<StoreHeader> for StoreHeaderWire {
 /// Role of one bounded block in an offset-only NX OM store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DataBlockRole {
+pub(super) enum DataBlockRole {
     /// Store-level schema and root metadata from boundary slot zero.
     Control,
     /// One offset-bounded column-storage block.
@@ -2020,11 +2022,7 @@ pub enum DataBlockRole {
 /// The source entry and block role scope the exact bytes. Callers must only
 /// admit the value when this key is unique in that scope; equal bytes at two
 /// positions are not distinguishable without an additional serialized owner.
-pub(crate) fn stable_data_block_identity(
-    source_entry: &str,
-    role: DataBlockRole,
-    bytes: &[u8],
-) -> String {
+fn stable_data_block_identity(source_entry: &str, role: DataBlockRole, bytes: &[u8]) -> String {
     let mut seed = Vec::with_capacity(source_entry.len() + bytes.len() + 18);
     seed.extend_from_slice(b"nx:om:data-block\0");
     seed.extend_from_slice(source_entry.as_bytes());
@@ -2039,21 +2037,21 @@ pub(crate) fn stable_data_block_identity(
 
 /// Self-framed printable string carried by one NX OM record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StringValue {
+pub(super) struct StringValue {
     /// Globally unique value identity.
-    pub id: String,
+    id: String,
     /// Owning entry in the native OM record directory.
-    pub record: String,
+    record: String,
     /// Persistent OM object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Zero-based occurrence ordinal within the owning record.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact printable value.
-    pub value: PrintableString<String>,
+    value: PrintableString<String>,
     /// Directory entry containing the OM section.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the `66 32 03` marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[cfg(test)]
@@ -2101,296 +2099,296 @@ mod printable_value_wire_tests {
 
 /// Ordered tagged-reference occurrence owned by one NX OM record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ObjectReference {
+pub(super) struct ObjectReference {
     /// Globally unique occurrence identity.
-    pub id: String,
+    id: String,
     /// Owning entry in the native OM record directory.
-    pub record: String,
+    record: String,
     /// Persistent OM object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// Zero-based occurrence ordinal within the owning record.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Typed reference and its same-section target when present.
     #[serde(flatten, with = "reference_wire")]
-    pub reference: RecordReference<String>,
+    reference: RecordReference<String>,
     /// Directory entry containing the OM section.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the reference marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Exact two-token persistent-handle run in one bounded OM object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ObjectRecordHandlePair {
+pub(super) struct ObjectRecordHandlePair {
     /// Globally unique pair identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning entry in the native OM record directory.
-    pub record: String,
+    record: String,
     /// Persistent OM object identifier.
-    pub object_id: u32,
+    object_id: u32,
     /// First handle-reference occurrence.
-    pub first_reference: String,
+    first_reference: String,
     /// Second handle-reference occurrence.
-    pub second_reference: String,
+    second_reference: String,
     /// First persistent-handle value.
-    pub first_handle: u32,
+    first_handle: u32,
     /// Second persistent-handle value.
-    pub second_handle: u32,
+    second_handle: u32,
     /// Absolute file offset of the first `e0` marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Ordered persistent or tagged reference in an offset-store control block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockControlReference {
+pub(super) struct DataBlockControlReference {
     /// Globally unique occurrence identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning control block in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Zero-based retained-reference order within the control block.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Self-identifying reference payload.
     #[serde(flatten)]
-    pub reference: DirectReference,
+    reference: DirectReference,
     /// Absolute file offset of the reference marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Exact two-token persistent-handle run in an offset-store control block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockControlHandlePair {
+pub(super) struct DataBlockControlHandlePair {
     /// Globally unique pair identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning control block in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// First handle-reference occurrence.
-    pub first_reference: String,
+    first_reference: String,
     /// Second handle-reference occurrence.
-    pub second_reference: String,
+    second_reference: String,
     /// First persistent-handle value.
-    pub first_handle: u32,
+    first_handle: u32,
     /// Second persistent-handle value.
-    pub second_handle: u32,
+    second_handle: u32,
     /// Absolute file offset of the first `e0` marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Cross-record identity established by equal persistent-handle values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PersistentHandle {
+pub(super) struct PersistentHandle {
     /// Globally unique handle identity.
-    pub id: String,
+    id: String,
     /// Unsigned persistent-handle value.
-    pub value: u32,
+    value: u32,
     /// Ordered distinct OM directory records containing the handle.
-    pub records: Vec<String>,
+    records: Vec<String>,
     /// Total serialized occurrences across OM records and offset-store control blocks.
-    pub occurrence_count: u32,
+    occurrence_count: u32,
     /// Ordered distinct offset-store control blocks containing the handle.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub data_blocks: Vec<String>,
+    data_blocks: Vec<String>,
     /// Ordered distinct EXTREFSTREAM records containing the same handle.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub external_records: Vec<String>,
+    external_records: Vec<String>,
     /// Total serialized occurrences across EXTREFSTREAM record prefixes and tails.
     #[serde(default)]
-    pub external_occurrence_count: u32,
+    external_occurrence_count: u32,
 }
 
 /// Named NX arrangement from `/Root/part/arrangements`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Configuration {
+pub(super) struct Configuration {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Arrangement name.
-    pub name: String,
+    pub(super) name: String,
     /// Whether NX marks this arrangement as the default.
-    pub is_default: bool,
+    is_default: bool,
     /// Directory entry containing the arrangement XML.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the arrangement element.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Exact agreement between the default arrangement and the part attribute
 /// naming the active arrangement.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConfigurationAttributeUse {
+pub(super) struct ConfigurationAttributeUse {
     /// Globally unique relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Default arrangement from the native configuration arena.
-    pub configuration: String,
+    pub(super) configuration: String,
     /// Typed `NX_Arrangement` part attribute carrying the same name.
-    pub part_attribute: String,
+    part_attribute: String,
     /// Exact shared arrangement name.
-    pub name: String,
+    name: String,
 }
 
 /// One typed part-level attribute from `/Root/part/attrs`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PartAttribute {
+pub(super) struct PartAttribute {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Attribute owner token.
-    pub owner: String,
+    owner: String,
     /// UTF-8 attribute title.
-    pub title: String,
+    pub(super) title: String,
     /// UTF-8 attribute value.
-    pub value: String,
+    pub(super) value: String,
     /// XML schema type token.
-    pub value_type: String,
+    value_type: String,
     /// Whether product-data management owns the value.
-    pub pdm_based: bool,
+    pdm_based: bool,
     /// Attribute record schema version.
-    pub version: u32,
+    version: u32,
     /// Directory entry containing the attribute XML.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the attribute element.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// End-anchored child-part string from an NX external-reference stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExternalReference {
+pub(super) struct ExternalReference {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based string-table ordinal within the stream.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact serialized child-part name or path.
-    pub path: String,
+    path: String,
     /// Directory entry containing the external-reference stream.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the first path byte.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Externally bounded record retained from an EXTREFSTREAM index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExternalReferenceIndexedRecord {
+pub(super) struct ExternalReferenceIndexedRecord {
     /// Globally unique indexed-record identity.
-    pub id: String,
+    id: String,
     /// Record type from the external-reference directory.
-    pub record_id: u32,
+    record_id: u32,
     /// Exact serialized record length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// Specialized handle-set record when that complete grammar resolves.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_handle_set_record"
     )]
-    pub handle_set_record: Option<String>,
+    handle_set_record: Option<String>,
     /// Directory entry containing the external-reference stream.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the indexed record.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Indexed EXTREFSTREAM record prefix with its exact handle membership set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExternalReferenceRecord {
+pub(super) struct ExternalReferenceRecord {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Record type from the external-reference directory.
-    pub record_id: u32,
+    record_id: u32,
     /// Count declared before the four ID slots.
-    pub declared_count: u16,
+    declared_count: u16,
     /// Four uninterpreted little-endian ID slots.
-    pub id_slots: [u32; 4],
+    id_slots: [u32; 4],
     /// Ordered encoded handle tokens with derived closing and length fields.
     #[serde(flatten)]
-    pub handles: ExtrefHandles,
+    handles: ExtrefHandles,
     /// Length after the decoded handle-set prefix and before the next record or string table.
-    pub tail_byte_len: u64,
+    tail_byte_len: u64,
     /// Directory entry containing the external-reference stream.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the record marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Empty EXTREFSTREAM indexed-record form.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExternalReferenceEmptyRecord {
+pub(super) struct ExternalReferenceEmptyRecord {
     /// Globally unique empty-record identity.
-    pub id: String,
+    id: String,
     /// Owning record in the native `external_reference_indexed_records` arena.
-    pub indexed_record: String,
+    indexed_record: String,
     /// Whether the six-byte header is followed by a closing `01` marker.
-    pub closing_marker: bool,
+    closing_marker: bool,
 }
 
 /// Exact adjacent reference pair in an EXTREFSTREAM handle-set tail.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExternalReferenceTailReferencePair {
+pub(super) struct ExternalReferenceTailReferencePair {
     /// Globally unique pair identity.
-    pub id: String,
+    id: String,
     /// Owning record in the native `external_reference_records` arena.
-    pub handle_set_record: String,
+    handle_set_record: String,
     /// Zero-based pair order within the bounded tail.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Persistent handle from the `e0 + u32 BE` token.
-    pub persistent_handle: u32,
+    persistent_handle: u32,
     /// Low 28 bits of the following four-byte `0xC?` reference.
-    pub tagged_reference: crate::om::reference_value::Tagged28,
+    tagged_reference: crate::om::reference_value::Tagged28,
     /// Absolute file offset of the `e0` marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// One external-reference record slot resolved through its same-stream string table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExternalReferenceRecordStringUse {
+pub(super) struct ExternalReferenceRecordStringUse {
     /// Globally unique slot-use identity.
-    pub id: String,
+    id: String,
     /// Owning record in the native `external_reference_records` arena.
-    pub external_record: String,
+    external_record: String,
     /// Zero-based slot in the record's four-value lane.
-    pub slot: ExtrefSlot,
+    slot: ExtrefSlot,
     /// Serialized string-table index.
-    pub string_index: u32,
+    string_index: u32,
     /// Target in the native `external_references` arena.
-    pub external_reference: String,
+    external_reference: String,
     /// Absolute file offset of the serialized `u32 LE` slot value.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Child-part identity selected by one complete external-reference record lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExternalReferenceRecordChild {
+pub(super) struct ExternalReferenceRecordChild {
     /// Globally unique child-binding identity.
-    pub id: String,
+    id: String,
     /// Owning record in the native `external_reference_records` arena.
-    pub external_record: String,
+    external_record: String,
     /// Slot-zero child filename in the native `external_references` arena.
-    pub name_reference: String,
+    name_reference: String,
     /// Slot-two child directory in the native `external_references` arena.
-    pub directory_reference: String,
+    directory_reference: String,
 }
 
 /// Exact QAF catalog mapping for one embedded material texture.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MaterialTextureCatalogEntry {
+pub(super) struct MaterialTextureCatalogEntry {
     /// Globally unique native relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Target in the native `material_texture_assets` arena.
-    pub texture_asset: String,
+    texture_asset: String,
     /// Stored path relative to `/Root/`.
-    pub storage_path: String,
+    storage_path: String,
     /// Logical material-texture path recorded by QAF metadata.
-    pub material_path: String,
+    material_path: String,
     /// Exact QAF creation-time text.
-    pub create_time: String,
+    create_time: String,
     /// Exact QAF modification-time text.
-    pub modify_time: String,
+    modify_time: String,
     /// Directory entry containing the QAF catalog.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the `folderProperties` element.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Join QAF material paths to embedded TIFF streams by exact stored path.
-pub fn material_texture_catalog_entries(
+pub(super) fn material_texture_catalog_entries(
     container: &Container,
     assets: &[MaterialTextureAsset],
 ) -> Vec<MaterialTextureCatalogEntry> {
@@ -2480,7 +2478,7 @@ fn parse_material_texture_catalog(
 }
 
 /// Decode end-anchored external child-part string tables.
-pub fn external_references(container: &Container) -> Vec<ExternalReference> {
+pub(super) fn external_references(container: &Container) -> Vec<ExternalReference> {
     let mut ordinals = BTreeMap::<String, u32>::new();
     container
         .external_reference_strings()
@@ -2502,7 +2500,7 @@ pub fn external_references(container: &Container) -> Vec<ExternalReference> {
 }
 
 /// Decode exact indexed external-reference record prefixes.
-pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenceRecord> {
+pub(super) fn external_reference_records(container: &Container) -> Vec<ExternalReferenceRecord> {
     container
         .external_reference_records()
         .into_iter()
@@ -2526,7 +2524,7 @@ pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenc
 }
 
 /// Retain all indexed records and link uniquely decoded handle-set records.
-pub fn external_reference_indexed_records(
+pub(super) fn external_reference_indexed_records(
     container: &Container,
     decoded: &[ExternalReferenceRecord],
 ) -> Vec<ExternalReferenceIndexedRecord> {
@@ -2565,7 +2563,7 @@ pub fn external_reference_indexed_records(
 }
 
 /// Decode every exact six- or seven-byte empty indexed record.
-pub fn external_reference_empty_records(
+pub(super) fn external_reference_empty_records(
     container: &Container,
     indexed: &[ExternalReferenceIndexedRecord],
 ) -> Vec<ExternalReferenceEmptyRecord> {
@@ -2584,7 +2582,7 @@ pub fn external_reference_empty_records(
 }
 
 /// Decode exact adjacent reference pairs from bounded handle-set tails.
-pub fn external_reference_tail_reference_pairs(
+pub(super) fn external_reference_tail_reference_pairs(
     container: &Container,
     records: &[ExternalReferenceRecord],
 ) -> Vec<ExternalReferenceTailReferencePair> {
@@ -2626,7 +2624,7 @@ pub fn external_reference_tail_reference_pairs(
 }
 
 /// Resolve complete four-slot record lanes through same-stream string tables.
-pub fn external_reference_record_string_uses(
+pub(super) fn external_reference_record_string_uses(
     records: &[ExternalReferenceRecord],
     references: &[ExternalReference],
 ) -> Vec<ExternalReferenceRecordStringUse> {
@@ -2685,7 +2683,7 @@ pub fn external_reference_record_string_uses(
 }
 
 /// Bind complete record lanes to their slot-zero name and slot-two directory.
-pub fn external_reference_record_children(
+pub(super) fn external_reference_record_children(
     records: &[ExternalReferenceRecord],
     references: &[ExternalReference],
     uses: &[ExternalReferenceRecordStringUse],
@@ -2742,7 +2740,7 @@ pub fn external_reference_record_children(
 }
 
 /// Decode the explicit NX arrangement table.
-pub fn configurations(container: &Container) -> Vec<Configuration> {
+pub(super) fn configurations(container: &Container) -> Vec<Configuration> {
     if container
         .entries
         .iter()
@@ -2806,7 +2804,7 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
 }
 
 /// Join the two independently framed active-arrangement declarations.
-pub fn configuration_attribute_uses(
+pub(super) fn configuration_attribute_uses(
     configurations: &[Configuration],
     attributes: &[PartAttribute],
 ) -> Vec<ConfigurationAttributeUse> {
@@ -2837,7 +2835,7 @@ pub fn configuration_attribute_uses(
 }
 
 /// Decode the typed part-attribute XML stream atomically.
-pub fn part_attributes(container: &Container) -> Vec<PartAttribute> {
+pub(super) fn part_attributes(container: &Container) -> Vec<PartAttribute> {
     if container
         .entries
         .iter()
@@ -2863,7 +2861,7 @@ pub fn part_attributes(container: &Container) -> Vec<PartAttribute> {
         .unwrap_or_default()
 }
 
-pub(crate) fn parse_part_attributes(
+fn parse_part_attributes(
     payload: &[u8],
     entry_index: usize,
     source_entry: &str,
@@ -2923,7 +2921,7 @@ fn xml_stream_text(payload: &[u8]) -> Option<&str> {
 }
 
 /// Decode class definitions from every framed OM section.
-pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
+pub(super) fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
         let entry_index = entry.index();
@@ -2987,7 +2985,7 @@ fn registry_layout(suffix: &[u8]) -> Option<RegistryLayout<'_>> {
 }
 
 /// Decode member definitions from every framed OM section.
-pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
+pub(super) fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
     let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
         let entry_index = entry.index();
@@ -3031,7 +3029,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
 }
 
 /// Catalog every externally bounded NX OM entity record.
-pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
+pub(super) fn object_records(container: &Container) -> Vec<ObjectRecord> {
     let mut candidates = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
@@ -3141,7 +3139,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
 }
 
 /// Retain the complete counted `RMFastLoad` active-object membership table.
-pub fn rmfastload_object_id_table(
+pub(super) fn rmfastload_object_id_table(
     container: &Container,
 ) -> Option<(RmFastLoadObjectIdTable, Vec<RmFastLoadObjectId>)> {
     let (entry, table) = container.rmfastload_object_id_table()?;
@@ -3193,7 +3191,7 @@ fn assign_rmfastload_object_id_identities(entries: &mut [RmFastLoadObjectId]) {
 }
 
 /// Catalog every externally bounded block in offset-only NX OM storage.
-pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
+pub(super) fn data_blocks(container: &Container) -> Vec<DataBlock> {
     let mut candidates = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
@@ -3270,7 +3268,7 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
 }
 
 /// Classify every admitted complete offset-only store control lane.
-pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlForm> {
+pub(super) fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlForm> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -3307,7 +3305,7 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
 }
 
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
-pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlValue> {
+pub(super) fn data_block_control_values(container: &Container) -> Vec<DataBlockControlValue> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -3344,7 +3342,7 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
 }
 
 /// Resolve each atomic leading control lane through its store-local class registry.
-pub fn data_block_control_class_references(
+pub(super) fn data_block_control_class_references(
     container: &Container,
 ) -> Vec<DataBlockControlClassReference> {
     container
@@ -3420,7 +3418,9 @@ pub fn data_block_control_class_references(
 }
 
 /// Decode aligned index arrays preceding a unique control-lane product anchor.
-pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockControlIndexValue> {
+pub(super) fn data_block_control_index_values(
+    container: &Container,
+) -> Vec<DataBlockControlIndexValue> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -3468,7 +3468,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
         .collect()
 }
 
-pub(crate) fn control_index_data_block(
+fn control_index_data_block(
     section_ordinal: usize,
     block_count: usize,
     value: u32,
@@ -3500,7 +3500,9 @@ fn column_storage_block_at(
 }
 
 /// Decode persistent-handle and tagged-28 occurrences in bounded control blocks.
-pub fn data_block_control_references(container: &Container) -> Vec<DataBlockControlReference> {
+pub(super) fn data_block_control_references(
+    container: &Container,
+) -> Vec<DataBlockControlReference> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -3530,7 +3532,7 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
 }
 
 /// Join maximal two-token adjacent persistent-handle runs atomically.
-pub fn data_block_control_handle_pairs(
+pub(super) fn data_block_control_handle_pairs(
     references: &[DataBlockControlReference],
 ) -> Vec<DataBlockControlHandlePair> {
     let mut by_block = BTreeMap::<&str, Vec<(&DataBlockControlReference, u32)>>::new();
@@ -3576,7 +3578,7 @@ pub fn data_block_control_handle_pairs(
 }
 
 /// Decode framed object references from offset-only OM data blocks.
-pub fn data_block_references(
+pub(super) fn data_block_references(
     container: &Container,
     object_records: &[ObjectRecord],
     expression_declarations: &[ExpressionDeclaration],
@@ -3647,7 +3649,9 @@ pub fn data_block_references(
 }
 
 /// Decode complete part-local color tables from class-declaring offset stores.
-pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<PartColorDefinition>) {
+pub(super) fn part_color_tables(
+    container: &Container,
+) -> (Vec<PartColorTable>, Vec<PartColorDefinition>) {
     const CLASS_NAME: &str = "UGS::COLOR_table";
     let mut tables = Vec::new();
     let mut definitions = Vec::new();
@@ -3717,7 +3721,7 @@ fn rmfastload_target_object_id(object_ids: &[RmFastLoadObjectId], target: u32) -
 }
 
 /// Resolve complete composite column-index tables atomically by section.
-pub fn data_block_column_index_tables(
+pub(super) fn data_block_column_index_tables(
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
 ) -> Vec<DataBlockColumnIndexTable> {
@@ -3798,7 +3802,7 @@ pub fn data_block_column_index_tables(
 }
 
 /// Decode one product/version header from each indexed NX OM store.
-pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
+pub(super) fn store_headers(container: &Container) -> Vec<StoreHeader> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -3841,7 +3845,7 @@ pub fn store_headers(container: &Container) -> Vec<StoreHeader> {
 }
 
 /// Decode self-framed printable values from bounded NX OM records.
-pub fn string_values(container: &Container) -> Vec<StringValue> {
+pub(super) fn string_values(container: &Container) -> Vec<StringValue> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -3883,7 +3887,7 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
 }
 
 /// Decode ordered tagged references from bounded NX OM records.
-pub fn object_references(container: &Container) -> Vec<ObjectReference> {
+pub(super) fn object_references(container: &Container) -> Vec<ObjectReference> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -3929,7 +3933,9 @@ pub fn object_references(container: &Container) -> Vec<ObjectReference> {
 }
 
 /// Join maximal two-token adjacent persistent-handle runs within object records.
-pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectRecordHandlePair> {
+pub(super) fn object_record_handle_pairs(
+    references: &[ObjectReference],
+) -> Vec<ObjectRecordHandlePair> {
     let mut by_record = BTreeMap::<&str, Vec<(&ObjectReference, u32)>>::new();
     for reference in references {
         let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
@@ -3973,7 +3979,7 @@ pub fn object_record_handle_pairs(references: &[ObjectReference]) -> Vec<ObjectR
 }
 
 /// Group persistent-handle occurrences into cross-record identities.
-pub fn persistent_handles(
+pub(super) fn persistent_handles(
     references: &[ObjectReference],
     control_references: &[DataBlockControlReference],
     external: &[ExternalReferenceRecord],
@@ -4044,7 +4050,7 @@ pub fn persistent_handles(
 }
 
 /// Decode named parameter declarations from expression-class OM records.
-pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclaration> {
+pub(super) fn expression_declarations(container: &Container) -> Vec<ExpressionDeclaration> {
     container
         .indexed_om_sections()
         .into_iter()
@@ -4090,7 +4096,7 @@ pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclarati
 }
 
 /// Decode explicit numeric expressions from all indexed OM sections.
-pub fn expressions(container: &Container) -> Vec<Expression> {
+pub(super) fn expressions(container: &Container) -> Vec<Expression> {
     let declarations = expression_declarations(container);
     let mut declarations_by_name = BTreeMap::<(&str, &str), Vec<&ExpressionDeclaration>>::new();
     for declaration in &declarations {
@@ -4190,7 +4196,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
     expressions
 }
 
-pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
+fn evaluate_expression_graphs(expressions: &mut [Expression]) {
     let mut name_counts = BTreeMap::<(String, String, ExpressionUnit), usize>::new();
     for expression in expressions.iter() {
         *name_counts

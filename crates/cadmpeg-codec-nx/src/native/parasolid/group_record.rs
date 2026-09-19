@@ -7,7 +7,7 @@ use crate::parasolid::StreamKind;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GroupOrigin {
+pub(in crate::native) enum GroupOrigin {
     Partition {
         stream_ordinal: u32,
     },
@@ -17,20 +17,20 @@ pub(crate) enum GroupOrigin {
     },
 }
 impl GroupOrigin {
-    pub(crate) fn stream_ordinal(self) -> u32 {
+    pub(in crate::native) fn stream_ordinal(self) -> u32 {
         match self {
             Self::Partition { stream_ordinal } | Self::Deltas { stream_ordinal, .. } => {
                 stream_ordinal
             }
         }
     }
-    pub(crate) fn stream_kind(self) -> StreamKind {
+    pub(super) fn stream_kind(self) -> StreamKind {
         match self {
             Self::Partition { .. } => StreamKind::Partition,
             Self::Deltas { .. } => StreamKind::Deltas,
         }
     }
-    pub(crate) fn partition_stream_ordinal(self) -> Option<u32> {
+    pub(in crate::native) fn partition_stream_ordinal(self) -> Option<u32> {
         match self {
             Self::Partition { stream_ordinal } => Some(stream_ordinal),
             Self::Deltas {

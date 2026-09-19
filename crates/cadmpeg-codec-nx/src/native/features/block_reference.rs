@@ -5,49 +5,49 @@ use serde::{Deserialize, Serialize};
 
 /// Ordered construction reference carried by a bounded `BLOCK` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct FeatureBlockConstructionReference {
+pub(in crate::native) struct FeatureBlockConstructionReference {
     /// Globally unique construction-reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `BLOCK` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Payload control byte preceding the construction field.
-    pub control: u8,
+    pub(super) control: u8,
     /// Checked position in the fixed field; terminal status is derived.
     #[serde(flatten)]
-    pub position: BlockReferencePosition,
+    pub(super) position: BlockReferencePosition,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::PayloadIndexToken,
+    pub(super) token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    pub(super) data_block: Option<String>,
     /// Absolute file offset of the width marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Position in the eighteen-member field followed by its terminal reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PositionWire", into = "PositionWire")]
-pub(crate) struct BlockReferencePosition(u8);
+pub(super) struct BlockReferencePosition(u8);
 
 impl BlockReferencePosition {
-    pub(crate) fn new(ordinal: u32) -> Result<Self, &'static str> {
+    pub(super) fn new(ordinal: u32) -> Result<Self, &'static str> {
         if ordinal > 18 {
             return Err("ordinal: block reference position must be within 0..=18");
         }
         Ok(Self(ordinal as u8))
     }
-    pub(crate) fn ordinal(self) -> u32 {
+    pub(super) fn ordinal(self) -> u32 {
         u32::from(self.0)
     }
     fn terminal(self) -> bool {
         self.0 == 18
     }
-    pub(crate) fn enumerate<T>(references: [T; 19]) -> impl Iterator<Item = (Self, T)> {
+    pub(super) fn enumerate<T>(references: [T; 19]) -> impl Iterator<Item = (Self, T)> {
         references
             .into_iter()
             .enumerate()

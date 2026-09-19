@@ -4,10 +4,10 @@
 use crate::om::reference_index::ReferenceIndexToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ConstructionReference<B, T = ReferenceIndexToken> {
-    pub(crate) token: T,
-    pub(crate) data_block: B,
-    pub(crate) source_offset: u64,
+pub(super) struct ConstructionReference<B, T = ReferenceIndexToken> {
+    pub(super) token: T,
+    pub(super) data_block: B,
+    pub(super) source_offset: u64,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

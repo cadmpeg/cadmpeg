@@ -6,7 +6,7 @@ use crate::layout::token;
 /// Supported fixed-record node kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
-pub enum NodeKind {
+pub(crate) enum NodeKind {
     /// Body record.
     Body = token::BODY,
     /// Shell record.
@@ -59,7 +59,7 @@ pub enum NodeKind {
 
 impl NodeKind {
     /// Parasolid record tag byte.
-    pub const fn code(self) -> u8 {
+    pub(crate) const fn code(self) -> u8 {
         self as u8
     }
 }

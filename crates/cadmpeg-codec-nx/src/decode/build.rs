@@ -57,7 +57,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) fn ordered_point_candidates<'a>(
+pub(super) fn ordered_point_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
 ) -> Vec<(Point3, &'a Node)> {
@@ -71,7 +71,7 @@ pub(crate) fn ordered_point_candidates<'a>(
     )
 }
 
-pub(crate) fn ordered_surface_candidates<'a>(
+pub(super) fn ordered_surface_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
 ) -> Vec<(SurfaceGeometry, &'a Node)> {
@@ -91,7 +91,7 @@ pub(crate) fn ordered_surface_candidates<'a>(
     )
 }
 
-pub(crate) fn ordered_curve_candidates<'a>(
+pub(super) fn ordered_curve_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
 ) -> Vec<(CurveGeometry, &'a Node)> {
@@ -105,7 +105,7 @@ pub(crate) fn ordered_curve_candidates<'a>(
     )
 }
 
-pub(crate) fn ordered_fixed_candidates<T>(
+fn ordered_fixed_candidates<T>(
     fallback: impl IntoIterator<Item = (usize, T)>,
     graph: &Graph,
     kinds: impl IntoIterator<Item = NodeKind>,
@@ -131,14 +131,14 @@ pub(crate) fn ordered_fixed_candidates<T>(
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
-pub(crate) type GeometryDecode = (
+type GeometryDecode = (
     CadIr,
     DecodeBody,
     cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
 );
 
-pub(crate) fn try_decode_geometry(
+pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     scan: &Scan,
@@ -1259,7 +1259,7 @@ pub(crate) fn try_decode_geometry(
     Ok(Some((ir, report, annotations, unknowns)))
 }
 
-pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
+fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     let mut used_surfaces: BTreeSet<_> = ir
         .model
         .faces
@@ -1347,7 +1347,7 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     });
 }
 
-pub(crate) fn retain_live_annotations(
+fn retain_live_annotations(
     ir: &CadIr,
     unknowns: &[UnknownRecord],
     annotations: &mut cadmpeg_ir::Annotations,
@@ -1382,7 +1382,7 @@ pub(crate) fn retain_live_annotations(
     *annotations = builder.build();
 }
 
-pub(crate) fn retain_live_unknown_links(
+fn retain_live_unknown_links(
     ir: &CadIr,
     unknowns: &mut [UnknownRecord],
     annotations: &mut AnnotationBuilder,
@@ -1414,7 +1414,7 @@ pub(crate) fn retain_live_unknown_links(
     Ok(())
 }
 
-pub(crate) fn topology_body_node_ids(
+pub(super) fn topology_body_node_ids(
     stream_index: usize,
     graph: &Graph,
 ) -> BTreeMap<BodyId, BTreeSet<u32>> {
@@ -1525,7 +1525,7 @@ pub(crate) fn topology_body_node_ids(
 /// `RMFastLoad` membership set. This is the same admission predicate used after
 /// topology emission, applied to graph-only body identities before carrier
 /// construction.
-pub(crate) fn rmfastload_selected_bodies(
+pub(super) fn rmfastload_selected_bodies(
     body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
     rmfastload_ids: &[u32],
 ) -> BTreeSet<BodyId> {
@@ -1537,7 +1537,7 @@ pub(crate) fn rmfastload_selected_bodies(
         .collect()
 }
 
-pub(crate) fn rmfastload_allows_terminal_lineage(
+pub(super) fn rmfastload_allows_terminal_lineage(
     body_count: usize,
     rmfastload_selected: &BTreeSet<BodyId>,
 ) -> bool {
@@ -1547,7 +1547,7 @@ pub(crate) fn rmfastload_allows_terminal_lineage(
 /// Return the stream ordinals that can contain selected body images. A
 /// malformed body identity disables preselection rather than guessing a
 /// stream owner.
-pub(crate) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
+pub(super) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
     selected
         .iter()
         .map(|body| {
@@ -1608,7 +1608,7 @@ fn apply_preselected_active_body_selection(
     true
 }
 
-pub(crate) fn select_active_body(
+pub(super) fn select_active_body(
     ir: &mut CadIr,
     body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
     rmfastload_ids: &[u32],
@@ -1633,7 +1633,7 @@ pub(crate) fn select_active_body(
     )
 }
 
-pub(crate) fn select_terminal_feature_bodies(
+fn select_terminal_feature_bodies(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
 ) -> bool {
@@ -1659,7 +1659,7 @@ pub(crate) fn select_terminal_feature_bodies(
     apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
 }
 
-pub(crate) fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
+fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
     ir.model.bodies.retain(|body| selected.contains(&body.id));
     ir.model
         .regions
@@ -1729,7 +1729,7 @@ pub(crate) fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId
     prune_inactive_geometry(ir);
 }
 
-pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
+fn prune_inactive_geometry(ir: &mut CadIr) {
     let mut surfaces: BTreeSet<_> = ir
         .model
         .faces
@@ -1841,7 +1841,7 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
         .retain(|pcurve| pcurves.contains(&pcurve.id));
 }
 
-pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn finalize_point_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     let referenced_points: BTreeSet<_> = ir
         .model
         .vertices
@@ -1916,7 +1916,7 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
     });
 }
 
-pub(crate) fn classify_body_kinds(ir: &mut CadIr) {
+fn classify_body_kinds(ir: &mut CadIr) {
     let region_bodies: BTreeMap<_, _> = ir
         .model
         .regions

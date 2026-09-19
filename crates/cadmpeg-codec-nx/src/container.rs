@@ -36,24 +36,24 @@ use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
-pub const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
+pub(crate) const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
 
 const LEGACY_UGII_PREFIX: &[u8; legacy_ugii_payload_prefix::VERSION] = b"\x0d\x01UGII  ";
 
 /// A directory entry from the `HEADER` or `FOOTER` region.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DirEntry {
+pub(crate) struct DirEntry {
     /// The `/Root/...` path name.
-    pub name: String,
+    pub(crate) name: String,
     /// Which region the entry was read from.
-    pub region: Region,
+    pub(crate) region: Region,
     /// Directory or file payload.
-    pub body: DirEntryBody,
+    pub(crate) body: DirEntryBody,
 }
 
 /// Payload of a directory entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirEntryBody {
+pub(crate) enum DirEntryBody {
     /// A directory without a file payload.
     Directory,
     /// A file payload at an offset and length.
@@ -67,7 +67,7 @@ pub enum DirEntryBody {
 
 /// Directory region containing an entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Region {
+pub(crate) enum Region {
     /// The `HEADER` region near the start of the file.
     Header,
     /// The `FOOTER` region near EOF.
@@ -95,7 +95,7 @@ pub(crate) enum EntryContent {
 
 impl EntryContent {
     /// Stable inspection label for this content family.
-    pub fn role(self) -> ContainerRole {
+    pub(crate) fn role(self) -> ContainerRole {
         match self {
             Self::Directory => ContainerRole::Directory,
             Self::PartPayload => ContainerRole::PartPayload,
@@ -115,7 +115,7 @@ impl EntryContent {
     }
 
     /// Whether the codec retains the complete payload as named opaque content.
-    pub fn retains_opaque_payload(self) -> bool {
+    pub(crate) fn retains_opaque_payload(self) -> bool {
         matches!(
             self,
             Self::FastLoadStructure
@@ -124,7 +124,7 @@ impl EntryContent {
                 | Self::NamedOpaqueStream
         )
     }
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         self.role().as_str()
     }
 }
@@ -162,48 +162,48 @@ impl DirEntry {
 
 /// One 12-byte row in the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SegmentIndexRow {
+pub(crate) struct SegmentIndexRow {
     /// First little-endian row word.
-    pub type_code: u32,
+    pub(crate) type_code: u32,
     /// Second little-endian row word.
-    pub subtype_code: u32,
+    pub(crate) subtype_code: u32,
     /// Third little-endian row word.
-    pub value: u32,
+    pub(crate) value: u32,
 }
 
 /// Self-bounded segment index at the start of the canonical `UG_PART` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SegmentIndex<'a> {
+pub(crate) struct SegmentIndex<'a> {
     /// Complete 12-byte rows before the declared table end.
-    pub rows: Vec<SegmentIndexRow>,
+    pub(crate) rows: Vec<SegmentIndexRow>,
     /// Zero to eleven trailing bytes after the last complete row.
-    pub padding: &'a [u8],
+    padding: &'a [u8],
 }
 
 /// One segment-index word whose target frames a compressed stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SegmentStreamWrapper {
     /// Zero-based segment-index row ordinal.
-    pub row_ordinal: usize,
+    pub(crate) row_ordinal: usize,
     /// Zero-based word ordinal within the row.
-    pub word_ordinal: usize,
+    pub(crate) word_ordinal: usize,
     /// Absolute file offset of the wrapper.
-    pub wrapper_offset: usize,
+    pub(crate) wrapper_offset: usize,
     /// Bytes from the wrapper start through its extension.
-    pub wrapper_byte_len: usize,
+    pub(crate) wrapper_byte_len: usize,
     /// Absolute file offset of the candidate zlib member.
-    pub zlib_offset: usize,
+    pub(crate) zlib_offset: usize,
 }
 
 /// Counted object-id table in `/Root/FastLoad/RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RmFastLoadObjectIdTable {
+pub(crate) struct RmFastLoadObjectIdTable {
     /// Payload-relative offset of the `UGS::Solid::Topol` registry marker.
-    pub registry_offset: usize,
+    pub(crate) registry_offset: usize,
     /// Payload-relative offset of the four-byte count word.
-    pub count_offset: usize,
+    pub(crate) count_offset: usize,
     /// Ordered fixed-width object-id members.
-    pub object_ids: ObjectIdMembers<u32>,
+    pub(crate) object_ids: ObjectIdMembers<u32>,
 }
 
 impl RmFastLoadObjectIdTable {
@@ -214,7 +214,7 @@ impl RmFastLoadObjectIdTable {
 
 impl Region {
     /// Return the directory-region label used in summaries.
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Region::Header => "HEADER",
             Region::Footer => "FOOTER",
@@ -272,7 +272,7 @@ impl<'a> Container<'a> {
     }
 
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
-    pub fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
+    pub(crate) fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
         let entry = self
             .entries
             .iter()
@@ -372,7 +372,7 @@ impl<'a> Container<'a> {
     }
 
     /// Locate independently size-framed NX object-model sections.
-    pub fn om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::Section<'_>)> {
+    pub(crate) fn om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::Section<'_>)> {
         let framed_cache = self.om_section_cache.get_or_init(|| match &self.data {
             Cow::Borrowed(bytes) => {
                 let bytes: &'a [u8] = bytes;
@@ -403,7 +403,7 @@ impl<'a> Container<'a> {
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
-    pub fn indexed_om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)> {
+    pub(crate) fn indexed_om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)> {
         let cache = self
             .indexed_section_layouts
             .get_or_init(|| match &self.data {
@@ -474,7 +474,7 @@ impl<'a> Container<'a> {
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
-    pub fn external_reference_paths(&self) -> Vec<String> {
+    pub(crate) fn external_reference_paths(&self) -> Vec<String> {
         self.external_reference_strings()
             .into_iter()
             .map(|(_, _, path)| path)
@@ -549,7 +549,9 @@ impl<'a> Container<'a> {
     }
 
     /// Decode the counted object-id table from `/Root/FastLoad/RMFastLoad`.
-    pub fn rmfastload_object_id_table(&self) -> Option<(&DirEntry, RmFastLoadObjectIdTable)> {
+    pub(crate) fn rmfastload_object_id_table(
+        &self,
+    ) -> Option<(&DirEntry, RmFastLoadObjectIdTable)> {
         const REGISTRY_MARKER: &[u8] = b"UGS::Solid::Topol";
         let entry = self
             .entries
@@ -597,20 +599,20 @@ impl<'a> Container<'a> {
 /// Decoded prefix of one indexed EXTREFSTREAM record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExtrefRecord {
-    pub record_id: u32,
-    pub offset: usize,
-    pub declared_count: u16,
-    pub id_slots: [u32; 4],
-    pub handles: ExtrefHandles,
-    pub tail_byte_len: usize,
+    pub(crate) record_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) declared_count: u16,
+    pub(crate) id_slots: [u32; 4],
+    pub(crate) handles: ExtrefHandles,
+    pub(crate) tail_byte_len: usize,
 }
 
 /// One externally bounded record from a validated EXTREFSTREAM index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExtrefIndexedRecord {
-    pub record_id: u32,
-    pub offset: usize,
-    pub byte_len: usize,
+    pub(crate) record_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) byte_len: usize,
 }
 
 pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(usize, String)>)> {
@@ -764,7 +766,7 @@ pub(crate) fn parse_extref_reference_pairs(
 
 /// Layout-specific facts of a parsed NX container.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ContainerLayout {
+pub(crate) enum ContainerLayout {
     /// Modern SPLMSSTR framing and its footer metadata.
     Modern {
         /// Version byte at file offset 8.
@@ -804,16 +806,16 @@ pub(crate) fn test_modern_layout(version: u8) -> ContainerLayout {
 
 /// A parsed NX container and its directory entries.
 #[derive(Debug, Clone)]
-pub struct Container<'a> {
+pub(crate) struct Container<'a> {
     /// The source image, or the materialized logical stream image for legacy CFB.
-    pub data: Cow<'a, [u8]>,
+    pub(crate) data: Cow<'a, [u8]>,
     /// Physical source-image length before legacy CFB stream materialization.
-    pub physical_size: u64,
+    pub(crate) physical_size: u64,
     /// Facts owned by the container grammar that parsed the source.
-    pub layout: ContainerLayout,
+    pub(crate) layout: ContainerLayout,
     /// Modern entries from both regions or legacy CFB paths, in serialized
     /// order.
-    pub entries: Vec<DirEntry>,
+    pub(crate) entries: Vec<DirEntry>,
     /// Cached source ranges for indexed object-model sections.
     pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
     /// Cached size-framed object-model sections when the container borrows its input.
@@ -930,7 +932,7 @@ fn parse_indexed_section_cache<'bytes>(
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].
-pub fn looks_like_nx(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_nx(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
 }
 
@@ -940,7 +942,7 @@ pub fn looks_like_nx(prefix: &[u8]) -> bool {
 /// The CFB signature alone is not sufficient: Inventor and other CAD formats
 /// use the same envelope. Requiring the canonical `UG_PART/UG_PART` path keeps
 /// detection tied to the NX payload namespace.
-pub fn looks_like_legacy_nx(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_legacy_nx(prefix: &[u8]) -> bool {
     let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix) else {
         return false;
     };
@@ -967,7 +969,7 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
 }
 
 /// Parse an SPLMSSTR file image.
-pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, CodecError> {
+pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, CodecError> {
     let data = data.into();
     if !data.starts_with(MAGIC) {
         return Err(CodecError::WrongFormat(
@@ -1052,7 +1054,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
 }
 
 /// Open the legacy NX `UG_PART/UG_PART` stream from a validated CFB source.
-pub fn scan_legacy<'a>(
+pub(crate) fn scan_legacy<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<(Container<'a>, View<'a>), CodecError> {

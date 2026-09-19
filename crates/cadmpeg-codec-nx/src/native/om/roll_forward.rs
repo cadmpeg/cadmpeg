@@ -14,10 +14,10 @@ use serde::{Deserialize, Serialize};
     try_from = "OmRollForwardStateGroupWire",
     into = "OmRollForwardStateGroupWire"
 )]
-pub(crate) struct OmRollForwardStateGroup {
+pub(in crate::native) struct OmRollForwardStateGroup {
     /// Globally unique group identity.
-    pub id: String,
-    pub(crate) frame: OperationStateGroup<u64>,
+    pub(in crate::native) id: String,
+    pub(in crate::native) frame: OperationStateGroup<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -86,7 +86,7 @@ impl TryFrom<OmRollForwardStateGroupWire> for OmRollForwardStateGroup {
     try_from = "OmRollForwardStateTableWire",
     into = "OmRollForwardStateTableWire"
 )]
-pub(crate) struct OmRollForwardStateTable {
+pub(in crate::native) struct OmRollForwardStateTable {
     section_link: String,
     source_entry: String,
     table_footer: GroupTableFooter,
@@ -109,7 +109,7 @@ struct OmRollForwardStateTableWire {
 }
 
 impl OmRollForwardStateTable {
-    pub(crate) fn from_frames(
+    pub(super) fn from_frames(
         section_ordinal: usize,
         section_link: &str,
         source_entry: &str,
@@ -140,7 +140,7 @@ impl OmRollForwardStateTable {
         })
     }
 
-    pub(crate) fn groups(&self) -> &[OmRollForwardStateGroup] {
+    pub(in crate::native) fn groups(&self) -> &[OmRollForwardStateGroup] {
         &self.groups
     }
 

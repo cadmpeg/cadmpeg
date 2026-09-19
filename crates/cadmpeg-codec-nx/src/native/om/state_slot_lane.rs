@@ -8,12 +8,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Wire", into = "Wire")]
-pub(crate) struct OmOperationStateSlotLane {
-    pub(crate) id: String,
-    pub(crate) section_link: String,
-    pub(crate) ordinal: u32,
-    pub(crate) frame: StateSlotLane<u64>,
-    pub(crate) source_entry: String,
+pub(in crate::native) struct OmOperationStateSlotLane {
+    pub(in crate::native) id: String,
+    pub(super) section_link: String,
+    pub(super) ordinal: u32,
+    pub(in crate::native) frame: StateSlotLane<u64>,
+    pub(super) source_entry: String,
 }
 
 #[derive(Serialize, Deserialize)]

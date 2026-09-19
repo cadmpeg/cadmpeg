@@ -40,129 +40,129 @@ pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
 
 /// A supported fixed-record node with its XMT identifier and source offset.
 #[derive(Debug, Clone)]
-pub struct Node {
+pub(crate) struct Node {
     /// Parasolid node type.
-    pub kind: NodeKind,
+    kind: NodeKind,
     /// Stream-scoped XMT identifier.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Record type-tag offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
     shift: usize,
     bytes: Vec<u8>,
 }
 
 /// Decoded fields needed from a sequentially framed FACE record.
 #[derive(Debug, Clone, Copy)]
-pub struct FaceFields {
+pub(crate) struct FaceFields {
     /// Attribute-list reference.
-    pub attributes: Option<XmtTarget>,
+    pub(crate) attributes: Option<XmtTarget>,
     /// Face tolerance in Parasolid metres.
-    pub tolerance: f64,
+    pub(crate) tolerance: f64,
     /// Next face in the owning shell, or the null reference.
-    pub next_face: Option<XmtTarget>,
+    next_face: Option<XmtTarget>,
     /// First loop reference.
-    pub loop_xmt: Option<XmtTarget>,
+    loop_xmt: Option<XmtTarget>,
     /// Owning shell reference.
-    pub shell: Option<XmtTarget>,
+    pub(crate) shell: Option<XmtTarget>,
     /// Surface-carrier reference.
-    pub surface: Option<XmtTarget>,
+    pub(crate) surface: Option<XmtTarget>,
     /// Decoded orientation.
-    pub sense: Sense,
+    pub(crate) sense: Sense,
 }
 
 /// Decoded fields needed from a sequentially framed EDGE record.
 #[derive(Debug, Clone, Copy)]
-pub struct EdgeFields {
+pub(crate) struct EdgeFields {
     /// Attribute-list reference.
-    pub attributes: Option<XmtTarget>,
+    pub(crate) attributes: Option<XmtTarget>,
     /// Edge tolerance in Parasolid metres.
-    pub tolerance: f64,
+    pub(crate) tolerance: f64,
     /// First fin reference.
-    pub fin: Option<XmtTarget>,
+    pub(crate) fin: Option<XmtTarget>,
     /// Curve-carrier reference.
-    pub curve: Option<XmtTarget>,
+    pub(crate) curve: Option<XmtTarget>,
 }
 
 /// Exact topology witnesses carried by the unique edge using one curve.
 #[derive(Debug, Clone, Copy)]
-pub struct CurveEdgeWitness {
+pub(crate) struct CurveEdgeWitness {
     /// Ordered model-space edge endpoints in millimetres.
-    pub endpoints: [Point3; 2],
+    pub(crate) endpoints: [Point3; 2],
     /// Serialized edge tolerance in Parasolid metres.
-    pub tolerance: f64,
+    pub(crate) tolerance: f64,
 }
 
 /// Sequentially decoded SHELL references.
 #[derive(Debug, Clone, Copy)]
-pub struct ShellFields {
+pub(crate) struct ShellFields {
     /// Attribute-list reference.
-    pub attributes: Option<XmtTarget>,
+    pub(crate) attributes: Option<XmtTarget>,
     /// Owning body.
-    pub body: Option<XmtTarget>,
+    pub(crate) body: Option<XmtTarget>,
     /// Next shell in the owning body.
-    pub next_shell: Option<XmtTarget>,
+    next_shell: Option<XmtTarget>,
     /// First face in the shell.
-    pub first_face: Option<XmtTarget>,
+    first_face: Option<XmtTarget>,
     /// First fixed shell sentinel.
-    pub sentinel_0: Option<XmtTarget>,
+    sentinel_0: Option<XmtTarget>,
     /// Second fixed shell sentinel.
-    pub sentinel_1: Option<XmtTarget>,
+    sentinel_1: Option<XmtTarget>,
     /// Owning region.
-    pub region: Option<XmtTarget>,
+    pub(crate) region: Option<XmtTarget>,
     /// Face ownership anchor, or null when ownership uses the FACE chain.
-    pub last_face: Option<XmtTarget>,
+    last_face: Option<XmtTarget>,
 }
 
 /// Sequentially decoded LOOP references.
 #[derive(Debug, Clone, Copy)]
-pub struct LoopFields {
+pub(crate) struct LoopFields {
     /// Attribute-list reference.
-    pub attributes: Option<XmtTarget>,
+    pub(crate) attributes: Option<XmtTarget>,
     /// First fin in the loop.
-    pub fin: Option<XmtTarget>,
+    fin: Option<XmtTarget>,
     /// Owning face.
-    pub face: Option<XmtTarget>,
+    pub(crate) face: Option<XmtTarget>,
     /// Next loop owned by the same face, or the null reference.
-    pub next_loop: Option<XmtTarget>,
+    next_loop: Option<XmtTarget>,
 }
 
 /// Sequentially decoded FIN references and sense.
 #[derive(Debug, Clone, Copy)]
-pub struct FinFields {
+pub(crate) struct FinFields {
     /// Attribute-list reference.
-    pub attributes: Option<XmtTarget>,
+    pub(crate) attributes: Option<XmtTarget>,
     /// Owning loop.
-    pub loop_xmt: Option<XmtTarget>,
+    pub(crate) loop_xmt: Option<XmtTarget>,
     /// Forward fin in the ring.
-    pub forward: Option<XmtTarget>,
+    pub(crate) forward: Option<XmtTarget>,
     /// Backward fin in the ring.
-    pub backward: Option<XmtTarget>,
+    pub(crate) backward: Option<XmtTarget>,
     /// Vertex at this fin.
-    pub vertex: Option<XmtTarget>,
+    pub(crate) vertex: Option<XmtTarget>,
     /// Edge carried by this fin.
-    pub edge: Option<XmtTarget>,
+    pub(crate) edge: Option<XmtTarget>,
     /// Partner fin on the opposite side of the edge.
-    pub other: Option<XmtTarget>,
+    pub(crate) other: Option<XmtTarget>,
     /// Curve carried by this fin.
-    pub curve_xmt: Option<XmtTarget>,
+    pub(crate) curve_xmt: Option<XmtTarget>,
     /// Decoded orientation.
-    pub sense: Sense,
+    pub(crate) sense: Sense,
 }
 
 /// Sequentially decoded VERTEX fields.
 #[derive(Debug, Clone, Copy)]
-pub struct VertexFields {
+pub(crate) struct VertexFields {
     /// Attribute-list reference.
-    pub attributes: Option<XmtTarget>,
+    pub(crate) attributes: Option<XmtTarget>,
     /// Referenced point record.
-    pub point: Option<XmtTarget>,
+    pub(crate) point: Option<XmtTarget>,
     /// Vertex tolerance in Parasolid metres.
-    pub tolerance: f64,
+    pub(crate) tolerance: f64,
 }
 
 impl Node {
     /// Kernel node identity serialized by fixed topology families.
-    pub fn node_id(&self) -> Option<u32> {
+    pub(crate) fn node_id(&self) -> Option<u32> {
         matches!(
             self.kind,
             NodeKind::Body
@@ -178,7 +178,7 @@ impl Node {
     }
 
     /// Inflated-stream offset of this topology record's attribute-list field.
-    pub fn attribute_field_offset(&self) -> Option<usize> {
+    pub(crate) fn attribute_field_offset(&self) -> Option<usize> {
         match self.kind {
             NodeKind::Shell
             | NodeKind::Face
@@ -191,40 +191,40 @@ impl Node {
     }
 
     /// First byte after this complete record in its source stream.
-    pub fn end(&self) -> usize {
+    pub(crate) fn end(&self) -> usize {
         self.pos + self.bytes.len()
     }
 
     /// Locate the payload following the five-reference compact geometry header.
-    pub fn compact_tail_offset(&self) -> Option<usize> {
+    fn compact_tail_offset(&self) -> Option<usize> {
         let mut at = 8 + self.shift;
         skip_sequence_at(&self.bytes, &mut at, 5)?;
         matches!(self.bytes.get(at), Some(b'+' | b'-')).then_some(at + 1)
     }
 
     /// Decode adjacent references at the start of a compact geometry payload.
-    pub fn compact_tail_references(&self, count: usize) -> Option<Vec<u32>> {
+    pub(crate) fn compact_tail_references(&self, count: usize) -> Option<Vec<u32>> {
         let mut at = self.compact_tail_offset()?;
         read_sequence_at(&self.bytes, &mut at, count)
     }
 
     /// Read a byte at its logical record offset.
-    pub fn byte_at(&self, offset: usize) -> Option<u8> {
+    pub(crate) fn byte_at(&self, offset: usize) -> Option<u8> {
         self.bytes.get(offset + self.shift).copied()
     }
 
     /// Read a big-endian floating-point field at its logical record offset.
-    pub fn f64_at(&self, offset: usize) -> Option<f64> {
+    pub(crate) fn f64_at(&self, offset: usize) -> Option<f64> {
         View::f64_be_at(&self.bytes, offset + self.shift)
     }
 
     /// Read a big-endian unsigned 32-bit field at a logical record offset.
-    pub fn u32_at(&self, offset: usize) -> Option<u32> {
+    pub(crate) fn u32_at(&self, offset: usize) -> Option<u32> {
         View::u32_be_at(&self.bytes, offset + self.shift)
     }
 
     /// Decode FACE fields while accumulating every preceding large-index shift.
-    pub fn face_fields(&self) -> Option<FaceFields> {
+    pub(crate) fn face_fields(&self) -> Option<FaceFields> {
         (self.kind == NodeKind::Face).then_some(())?;
         let mut at = 8 + self.shift;
         let attributes = read_and_advance(&self.bytes, &mut at)?;
@@ -248,7 +248,7 @@ impl Node {
     }
 
     /// Decode EDGE fields while accumulating every preceding large-index shift.
-    pub fn edge_fields(&self) -> Option<EdgeFields> {
+    pub(crate) fn edge_fields(&self) -> Option<EdgeFields> {
         (self.kind == NodeKind::Edge).then_some(())?;
         let mut at = 8 + self.shift;
         let attributes = read_and_advance(&self.bytes, &mut at)?;
@@ -264,7 +264,7 @@ impl Node {
     }
 
     /// Decode SHELL references with cumulative large-index shifts.
-    pub fn shell_fields(&self) -> Option<ShellFields> {
+    pub(crate) fn shell_fields(&self) -> Option<ShellFields> {
         (self.kind == NodeKind::Shell).then_some(())?;
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 8)?;
@@ -281,7 +281,7 @@ impl Node {
     }
 
     /// Decode LOOP references with cumulative large-index shifts.
-    pub fn loop_fields(&self) -> Option<LoopFields> {
+    pub(crate) fn loop_fields(&self) -> Option<LoopFields> {
         (self.kind == NodeKind::Loop).then_some(())?;
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 4)?;
@@ -294,7 +294,7 @@ impl Node {
     }
 
     /// Decode FIN references with cumulative large-index shifts.
-    pub fn fin_fields(&self) -> Option<FinFields> {
+    pub(crate) fn fin_fields(&self) -> Option<FinFields> {
         (self.kind == NodeKind::Fin).then_some(())?;
         let mut at = 4 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 9)?;
@@ -317,7 +317,7 @@ impl Node {
     }
 
     /// Decode VERTEX fields with cumulative large-index shifts.
-    pub fn vertex_fields(&self) -> Option<VertexFields> {
+    pub(crate) fn vertex_fields(&self) -> Option<VertexFields> {
         (self.kind == NodeKind::Vertex).then_some(())?;
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
@@ -330,7 +330,7 @@ impl Node {
     }
 
     /// Decode a fully framed POINT position into model millimeters.
-    pub fn point_position(&self) -> Option<Point3> {
+    pub(crate) fn point_position(&self) -> Option<Point3> {
         (self.kind == NodeKind::Point).then_some(())?;
         let mut at = 8 + self.shift;
         skip_sequence_at(&self.bytes, &mut at, 4)?;
@@ -341,7 +341,7 @@ impl Node {
     }
 
     /// Decode this graph-owned fixed analytic surface carrier.
-    pub fn surface_geometry(&self) -> Option<cadmpeg_ir::geometry::SurfaceGeometry> {
+    pub(crate) fn surface_geometry(&self) -> Option<cadmpeg_ir::geometry::SurfaceGeometry> {
         matches!(
             self.kind,
             NodeKind::Plane
@@ -356,7 +356,7 @@ impl Node {
     }
 
     /// Decode this graph-owned fixed analytic curve carrier.
-    pub fn curve_geometry(&self) -> Option<cadmpeg_ir::geometry::CurveGeometry> {
+    pub(crate) fn curve_geometry(&self) -> Option<cadmpeg_ir::geometry::CurveGeometry> {
         matches!(
             self.kind,
             NodeKind::Line | NodeKind::Circle | NodeKind::Ellipse
@@ -447,7 +447,7 @@ impl Node {
 
 /// An index of supported records keyed by `(node type, XMT identifier)`.
 #[derive(Debug, Default)]
-pub struct Graph {
+pub(crate) struct Graph {
     nodes: BTreeMap<(NodeKind, u32), Node>,
     by_pos: BTreeMap<usize, (NodeKind, u32)>,
     /// Record keys grouped by kind in their physical stream order.
@@ -465,28 +465,28 @@ enum ReferenceRole {
 
 /// A type-133 parameter restriction over a basis curve.
 #[derive(Debug, Clone, Copy)]
-pub struct TrimmedCurve {
+pub(crate) struct TrimmedCurve {
     /// Cross-reference index (XMT) of the tag-133 record.
-    pub xmt: u32,
-    pub state: TrimmedCurveState,
+    pub(crate) xmt: u32,
+    pub(crate) state: TrimmedCurveState,
     /// Record type-tag offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// A type-137 curve-on-surface wrapper.
 #[derive(Debug, Clone, Copy)]
-pub struct SurfaceCurve {
+pub(crate) struct SurfaceCurve {
     /// Cross-reference index of the `SP_CURVE` record.
-    pub xmt: u32,
-    pub state: SurfaceCurveState,
+    pub(crate) xmt: u32,
+    pub(crate) state: SurfaceCurveState,
     /// Record type-tag offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// Admitted serialized offset-surface status discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "char", into = "char")]
-pub enum OffsetSurfaceDiscriminator {
+pub(crate) enum OffsetSurfaceDiscriminator {
     V,
     I,
     U,
@@ -516,49 +516,49 @@ impl TryFrom<char> for OffsetSurfaceDiscriminator {
 
 /// A type-60 offset surface referencing its support carrier.
 #[derive(Debug, Clone, Copy)]
-pub struct OffsetSurface {
+pub(crate) struct OffsetSurface {
     /// Cross-reference index of the offset surface record.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Serialized `V`, `I`, or `U` discriminator.
-    pub discriminator: OffsetSurfaceDiscriminator,
+    pub(crate) discriminator: OffsetSurfaceDiscriminator,
     /// Serialized true-offset flag.
-    pub true_offset: bool,
+    pub(crate) true_offset: bool,
     /// Checked support reference and signed model distance.
-    pub state: OffsetSurfaceState,
+    pub(crate) state: OffsetSurfaceState,
     /// Record type-tag offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// A type-56 rolling-ball blend surface.
 #[derive(Debug, Clone, Copy)]
-pub struct BlendSurface {
+pub(crate) struct BlendSurface {
     /// Cross-reference index of the blend surface record.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Checked supports, source-admitted offsets, and thumb weights.
-    pub state: BlendSurfaceState,
+    pub(crate) state: BlendSurfaceState,
     /// Record type-tag offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// A type-38 surface-intersection construction record.
 #[derive(Debug, Clone, Copy)]
-pub struct CompositeCurve {
+pub(crate) struct CompositeCurve {
     /// Cross-reference index of the curve record.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Five ordered common-header references.
-    pub header_references: [Option<XmtTarget>; 5],
+    pub(crate) header_references: [Option<XmtTarget>; 5],
     /// Serialized orientation sense.
-    pub sense: bool,
+    pub(crate) sense: bool,
     /// Six ordered construction references.
-    pub references: [Option<XmtTarget>; 6],
+    pub(crate) references: [Option<XmtTarget>; 6],
     /// Whether the record uses the single-byte delta-twin tag.
-    pub delta_twin: bool,
+    pub(crate) delta_twin: bool,
     /// Record type-tag offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// Decode validated type-38 surface-intersection construction records.
-pub fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
+pub(crate) fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     Graph::parse(stream).composite_curves()
 }
 
@@ -598,7 +598,7 @@ impl Graph {
 }
 
 /// Decode single-byte `0x5a` intersection-data construction records.
-pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
+pub(crate) fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     let mut out = Vec::new();
     let mut seen = BTreeSet::new();
     let mut schema_anchor_seen = false;
@@ -673,7 +673,7 @@ pub(crate) fn intersection_data_curve_at(
 }
 
 /// Decode validated type-56 rolling-ball blend surfaces.
-pub fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
+pub(crate) fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
     Graph::parse(stream).blend_surfaces()
 }
 
@@ -709,7 +709,7 @@ impl Graph {
 }
 
 /// Decode validated type-60 offset-surface records.
-pub fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
+pub(crate) fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
     Graph::parse(stream).offset_surfaces()
 }
 
@@ -743,7 +743,7 @@ impl Graph {
 }
 
 /// Decode type-137 surface-curve records as aliases of their 3D basis curves.
-pub fn surface_curves(stream: &[u8]) -> Vec<SurfaceCurve> {
+pub(crate) fn surface_curves(stream: &[u8]) -> Vec<SurfaceCurve> {
     Graph::parse(stream).surface_curves()
 }
 
@@ -768,7 +768,7 @@ impl Graph {
 ///
 /// The result retains the basis-curve reference and parameter range. Topological
 /// endpoints come from the corresponding edge and vertex records.
-pub fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
+pub(crate) fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
     Graph::parse(stream).trimmed_curves()
 }
 
@@ -795,7 +795,7 @@ impl Graph {
 
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
-    pub fn parse(stream: &[u8]) -> Self {
+    pub(crate) fn parse(stream: &[u8]) -> Self {
         let mut baseline = Self::parse_fixed_records(stream, false);
         let full_domain = Self::parse_fixed_records(stream, true);
         let preserves_baseline = baseline.nodes.iter().all(|(key, node)| {
@@ -1057,7 +1057,7 @@ impl Graph {
     }
 
     /// Look up a node by record type and XMT identifier.
-    pub fn get(&self, kind: NodeKind, xmt: u32) -> Option<&Node> {
+    pub(crate) fn get(&self, kind: NodeKind, xmt: u32) -> Option<&Node> {
         self.nodes.get(&(kind, xmt))
     }
 
@@ -1066,13 +1066,13 @@ impl Graph {
     }
 
     /// Look up the node whose type tag starts at `pos`.
-    pub fn at_pos(&self, pos: usize) -> Option<&Node> {
+    pub(crate) fn at_pos(&self, pos: usize) -> Option<&Node> {
         let &(kind, xmt) = self.by_pos.get(&pos)?;
         self.get(kind, xmt)
     }
 
     /// Iterate nodes of one record type in physical record order.
-    pub fn of_kind(&self, kind: NodeKind) -> impl Iterator<Item = &Node> {
+    pub(crate) fn of_kind(&self, kind: NodeKind) -> impl Iterator<Item = &Node> {
         self.by_kind
             .get(&kind)
             .into_iter()
@@ -1092,7 +1092,7 @@ impl Graph {
 
     /// Curve identities occupying typed curve-reference slots in the fixed
     /// topology and procedural graph.
-    pub fn referenced_curve_xmts(&self) -> BTreeSet<u32> {
+    pub(crate) fn referenced_curve_xmts(&self) -> BTreeSet<u32> {
         let mut references = BTreeSet::new();
         references.extend(
             self.of_kind(NodeKind::Edge)
@@ -1143,7 +1143,7 @@ impl Graph {
     }
 
     /// Resolve the exact witnesses of the unique edge carrying a curve.
-    pub fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
+    pub(crate) fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
         let edges = self
             .of_kind(NodeKind::Edge)
             .filter_map(Node::edge_fields)
@@ -1171,7 +1171,7 @@ impl Graph {
     }
 
     /// Carrier identities required by the surviving fixed topology image.
-    pub fn referenced_carrier_xmts(&self) -> BTreeSet<u32> {
+    pub(crate) fn referenced_carrier_xmts(&self) -> BTreeSet<u32> {
         let mut references = self.referenced_curve_xmts();
         references.extend(
             self.of_kind(NodeKind::Face)
@@ -1189,7 +1189,7 @@ impl Graph {
     }
 
     /// Return SHELL nodes whose ownership fields define a body shape.
-    pub fn body_shape_shells(&self) -> Vec<&Node> {
+    pub(crate) fn body_shape_shells(&self) -> Vec<&Node> {
         self.of_kind(NodeKind::Shell)
             .filter(|shell| self.is_body_shape_shell(shell))
             .collect()
@@ -1198,7 +1198,7 @@ impl Graph {
     /// Return whether every body-shape face has a non-empty valid loop chain
     /// and every non-null radial FIN partner belongs to the same reachable
     /// body topology.
-    pub fn has_complete_body_topology(&self) -> bool {
+    pub(crate) fn has_complete_body_topology(&self) -> bool {
         let shells = self.body_shape_shells();
         if shells.is_empty() {
             return false;
@@ -1230,7 +1230,7 @@ impl Graph {
     }
 
     /// Count faces owned by validated body-shape shells.
-    pub fn body_shape_face_count(&self) -> usize {
+    pub(crate) fn body_shape_face_count(&self) -> usize {
         self.body_shape_shells()
             .into_iter()
             .filter_map(|shell| self.shell_face_xmts(shell).map(|faces| faces.len()))
@@ -1243,7 +1243,7 @@ impl Graph {
     /// points back to the face. Each FIN cycle closes at its first FIN, stays in
     /// the loop, and has reciprocal forward/backward links. Every FIN resolves
     /// its edge and vertex.
-    pub fn face_loop_rings(&self, face_xmt: u32) -> Option<Vec<(u32, Vec<u32>)>> {
+    pub(crate) fn face_loop_rings(&self, face_xmt: u32) -> Option<Vec<(u32, Vec<u32>)>> {
         let face = self.get(NodeKind::Face, face_xmt)?.face_fields()?;
         let mut loop_xmt = face.loop_xmt;
         let mut seen_loops = BTreeSet::new();

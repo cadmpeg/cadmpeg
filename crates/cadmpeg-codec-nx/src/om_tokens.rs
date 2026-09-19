@@ -4,17 +4,17 @@
 use crate::om::ExpressionUnit;
 
 /// Root OM entity marker.
-pub const ROOT_MARKER: &[u8] = b"\x04\x01\x0eNX ";
+pub(crate) const ROOT_MARKER: &[u8] = b"\x04\x01\x0eNX ";
 /// Section marker required before numeric expressions are decoded.
-pub const HOST_GLOBALS: &[u8] = b"hostglobalvariables";
+pub(crate) const HOST_GLOBALS: &[u8] = b"hostglobalvariables";
 /// Registered class-definition name prefix.
-pub const CLASS_NAME_PREFIX: &[u8] = b"UGS::";
+pub(crate) const CLASS_NAME_PREFIX: &[u8] = b"UGS::";
 /// Numeric-expression payload prefix.
-pub const NUMBER_PREFIX: &[u8] = b"(Number [";
+pub(crate) const NUMBER_PREFIX: &[u8] = b"(Number [";
 
 /// Resolve a numeric-expression unit token.
 #[must_use]
-pub fn unit_for(token: &str) -> Option<ExpressionUnit> {
+pub(crate) fn unit_for(token: &str) -> Option<ExpressionUnit> {
     if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
         return None;
     }

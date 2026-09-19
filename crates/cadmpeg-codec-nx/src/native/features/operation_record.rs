@@ -2,14 +2,14 @@
 //! Labeled operation records with one checked record and payload span.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OperationRecordSpan {
+pub(in crate::native) struct OperationRecordSpan {
     source_offset: u64,
     payload_source_offset: u64,
     payload_byte_len: u64,
 }
 
 impl OperationRecordSpan {
-    pub(crate) fn new(
+    pub(in crate::native) fn new(
         source_offset: u64,
         payload_source_offset: u64,
         payload_byte_len: u64,
@@ -23,24 +23,24 @@ impl OperationRecordSpan {
         })
     }
 
-    pub(crate) fn source_offset(self) -> u64 {
+    pub(in crate::native) fn source_offset(self) -> u64 {
         self.source_offset
     }
-    pub(crate) fn byte_len(self) -> u64 {
+    pub(super) fn byte_len(self) -> u64 {
         self.payload_source_offset - self.source_offset + self.payload_byte_len
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "OperationRecordWire", into = "OperationRecordWire")]
-pub(crate) struct FeatureOperationRecord {
-    pub(crate) id: String,
-    pub(crate) operation_label: String,
-    pub(crate) ordinal: u32,
-    pub(crate) sha256: crate::native::hex::Sha256Hex,
-    pub(crate) payload_sha256: crate::native::hex::Sha256Hex,
-    pub(crate) stable_identity: Option<String>,
-    pub(crate) span: OperationRecordSpan,
+pub(in crate::native) struct FeatureOperationRecord {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    pub(in crate::native) ordinal: u32,
+    pub(in crate::native) sha256: crate::native::hex::Sha256Hex,
+    pub(in crate::native) payload_sha256: crate::native::hex::Sha256Hex,
+    pub(in crate::native) stable_identity: Option<String>,
+    pub(in crate::native) span: OperationRecordSpan,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

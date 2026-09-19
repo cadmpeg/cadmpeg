@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// One of the eight topology-coder contexts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum TopologyContext {
+pub(super) enum TopologyContext {
     C0,
     C1,
     C2,
@@ -20,7 +20,7 @@ pub enum TopologyContext {
 }
 
 impl TopologyContext {
-    pub const ALL: [Self; 8] = [
+    pub(super) const ALL: [Self; 8] = [
         Self::C0,
         Self::C1,
         Self::C2,
@@ -49,7 +49,7 @@ impl TopologyContext {
 /// Semantic lane carried by one compressed topology packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub enum TopologyPacketRole {
+pub(super) enum TopologyPacketRole {
     FaceDegrees(TopologyContext),
     VertexValences,
     VertexGroups,

@@ -36,25 +36,25 @@ use crate::om::draft_leading::DraftLeadingLane;
 
 /// Ordered construction reference carried by a bounded draft-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDraftConstructionReference {
+pub(in crate::native) struct FeatureDraftConstructionReference {
     /// Globally unique draft-construction-reference identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DRAFT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Zero-based slot order in the exact construction graph.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::PayloadIndexToken,
+    pub(in crate::native) token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    pub(in crate::native) data_block: Option<String>,
     /// Absolute file offset of the width marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Counted compact-index lane preceding a bounded draft construction graph.
@@ -63,14 +63,14 @@ pub struct FeatureDraftConstructionReference {
     try_from = "FeatureDraftConstructionIndexLaneWire",
     into = "FeatureDraftConstructionIndexLaneWire"
 )]
-pub struct FeatureDraftConstructionIndexLane {
-    pub id: String,
-    pub operation_label: String,
-    pub indices: FeatureDraftConstructionIndices,
+pub(in crate::native) struct FeatureDraftConstructionIndexLane {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    indices: FeatureDraftConstructionIndices,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeatureDraftConstructionIndices {
+enum FeatureDraftConstructionIndices {
     Unresolved(DraftLeadingLane<(), u64>),
     Resolved(DraftLeadingLane<String, u64>),
 }
@@ -211,18 +211,18 @@ impl TryFrom<FeatureDraftConstructionIndexLaneWire> for FeatureDraftConstruction
 
 /// Exact logical payload reconstructed from the ordered draft construction graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDraftConstructionGraphPayload {
+pub(in crate::native) struct FeatureDraftConstructionGraphPayload {
     /// Globally unique reconstructed-payload identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DRAFT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Counted index lane establishing the common offset store.
-    pub index_lane: String,
+    index_lane: String,
     /// Ordered construction-reference records.
-    pub construction_references: [String; 4],
+    construction_references: [String; 4],
     /// Ordered source blocks and the hash of their concatenated bytes.
     #[serde(flatten)]
-    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 4]>,
+    content: FeaturePayloadContent<[FeaturePayloadBlock; 4]>,
 }
 
 /// Complete signed Q1.55 lane in a reconstructed draft graph payload.
@@ -231,19 +231,19 @@ pub struct FeatureDraftConstructionGraphPayload {
     try_from = "FeatureDraftConstructionFixedLaneWire",
     into = "FeatureDraftConstructionFixedLaneWire"
 )]
-pub struct FeatureDraftConstructionFixedLane {
+pub(in crate::native) struct FeatureDraftConstructionFixedLane {
     /// Globally unique lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DRAFT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Reconstructed graph payload carrying the lane.
-    pub graph_payload: String,
+    graph_payload: String,
     /// Zero-based lane order in the reconstructed payload.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Framed scalar run with absolute source locations.
-    pub lane: FramedScalarRun<Q155LaneFrame, u64>,
+    lane: FramedScalarRun<Q155LaneFrame, u64>,
     /// Absolute source offset of the fixed discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -360,19 +360,19 @@ impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstruction
     try_from = "FeatureDraftConstructionBinary32LaneWire",
     into = "FeatureDraftConstructionBinary32LaneWire"
 )]
-pub struct FeatureDraftConstructionBinary32Lane {
+pub(in crate::native) struct FeatureDraftConstructionBinary32Lane {
     /// Globally unique lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DRAFT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Reconstructed graph payload carrying the lane.
-    pub graph_payload: String,
+    graph_payload: String,
     /// Zero-based lane order in the reconstructed payload.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Typed branch and contiguous atoms with absolute source locations.
-    pub lane: FramedScalarRun<DraftBinary32Branch, u64>,
+    lane: FramedScalarRun<DraftBinary32Branch, u64>,
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -479,21 +479,21 @@ impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstruct
 
 /// Canonical printable string in a reconstructed draft graph payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDraftConstructionGraphString {
+pub(in crate::native) struct FeatureDraftConstructionGraphString {
     /// Globally unique string identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DRAFT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Reconstructed graph payload carrying the string.
-    pub graph_payload: String,
+    graph_payload: String,
     /// Zero-based string order in the reconstructed payload.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Exact printable value.
-    pub value: PrintableString<String>,
+    value: PrintableString<String>,
     /// Payload-relative offset of the `66 32 03` marker.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Absolute source offset of the marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Complete identity frame in a reconstructed draft construction payload.
@@ -502,21 +502,21 @@ pub struct FeatureDraftConstructionGraphString {
     try_from = "FeatureDraftConstructionIdentityFrameWire",
     into = "FeatureDraftConstructionIdentityFrameWire"
 )]
-pub struct FeatureDraftConstructionIdentityFrame {
+pub(in crate::native) struct FeatureDraftConstructionIdentityFrame {
     /// Globally unique frame identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DRAFT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Reconstructed payload carrying the frame.
-    pub draft_construction_payload: String,
+    draft_construction_payload: String,
     /// Zero-based frame order in the reconstructed payload.
-    pub ordinal: u32,
+    pub(in crate::native) ordinal: u32,
     /// Exact prefix tokens, identity, and bounded payload position.
-    pub frame: DraftIdentityFrame,
+    frame: DraftIdentityFrame,
     /// Absolute source offset of the opening marker.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute source offset of the identity.
-    pub identity_source_offset: u64,
+    identity_source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -598,13 +598,13 @@ impl TryFrom<FeatureDraftConstructionIdentityFrameWire> for FeatureDraftConstruc
     try_from = "FeatureDraftConstructionTerminalLaneWire",
     into = "FeatureDraftConstructionTerminalLaneWire"
 )]
-pub struct FeatureDraftConstructionTerminalLane {
+pub(in crate::native) struct FeatureDraftConstructionTerminalLane {
     /// Globally unique lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DRAFT` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Checked terminal indices and tail with absolute source offsets.
-    pub lane: crate::om::draft_terminal::DraftTerminalLane<u64>,
+    lane: crate::om::draft_terminal::DraftTerminalLane<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -667,7 +667,7 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
 }
 
 /// Decode exact ordered draft construction references without assigning semantic roles.
-pub fn feature_draft_construction_references(
+pub(in crate::native) fn feature_draft_construction_references(
     container: &Container,
 ) -> Vec<FeatureDraftConstructionReference> {
     resolved_feature_payload_references(container, |record, base| {
@@ -697,7 +697,7 @@ pub fn feature_draft_construction_references(
 }
 
 /// Decode exact counted compact-index lanes preceding draft construction graphs.
-pub fn feature_draft_construction_index_lanes(
+pub(in crate::native) fn feature_draft_construction_index_lanes(
     container: &Container,
 ) -> Vec<FeatureDraftConstructionIndexLane> {
     let indexed = container.indexed_om_sections();
@@ -746,7 +746,7 @@ pub fn feature_draft_construction_index_lanes(
 }
 
 /// Reconstruct ordered logical payloads from resolved draft index lanes.
-pub fn feature_draft_construction_payloads(
+pub(in crate::native) fn feature_draft_construction_payloads(
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
 ) -> Vec<FeatureConstructionPayload> {
@@ -779,7 +779,7 @@ pub fn feature_draft_construction_payloads(
 }
 
 /// Reconstruct ordered logical payloads from complete draft construction graphs.
-pub fn feature_draft_construction_graph_payloads(
+pub(in crate::native) fn feature_draft_construction_graph_payloads(
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
     references: &[FeatureDraftConstructionReference],
@@ -831,7 +831,7 @@ pub fn feature_draft_construction_graph_payloads(
 }
 
 /// Decode complete signed Q1.55 lanes from reconstructed draft graph payloads.
-pub fn feature_draft_construction_fixed_lanes(
+pub(in crate::native) fn feature_draft_construction_fixed_lanes(
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
 ) -> Vec<FeatureDraftConstructionFixedLane> {
@@ -864,7 +864,7 @@ pub fn feature_draft_construction_fixed_lanes(
 }
 
 /// Decode complete shifted-binary32 lanes from reconstructed draft graph payloads.
-pub fn feature_draft_construction_binary32_lanes(
+pub(in crate::native) fn feature_draft_construction_binary32_lanes(
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
 ) -> Vec<FeatureDraftConstructionBinary32Lane> {
@@ -897,7 +897,7 @@ pub fn feature_draft_construction_binary32_lanes(
 }
 
 /// Decode canonical printable strings from reconstructed draft graph payloads.
-pub fn feature_draft_construction_graph_strings(
+pub(in crate::native) fn feature_draft_construction_graph_strings(
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
 ) -> Vec<FeatureDraftConstructionGraphString> {
@@ -930,7 +930,7 @@ pub fn feature_draft_construction_graph_strings(
 }
 
 /// Decode complete identity frames from reconstructed draft construction payloads.
-pub fn feature_draft_construction_identity_frames(
+pub(in crate::native) fn feature_draft_construction_identity_frames(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureDraftConstructionIdentityFrame> {
@@ -964,7 +964,7 @@ pub fn feature_draft_construction_identity_frames(
 }
 
 /// Decode complete end-anchored terminal lanes from draft construction payloads.
-pub fn feature_draft_construction_terminal_lanes(
+pub(in crate::native) fn feature_draft_construction_terminal_lanes(
     container: &Container,
 ) -> Vec<FeatureDraftConstructionTerminalLane> {
     let mut lanes = Vec::new();

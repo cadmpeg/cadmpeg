@@ -11,7 +11,7 @@ mod wire;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "wire::EncodingWire", into = "wire::EncodingWire")]
-pub(crate) enum RmDisplayColorAssignmentEncoding {
+pub(in crate::native) enum RmDisplayColorAssignmentEncoding {
     Linked(LinkedRow<(), u64>),
     Target(TargetRow<(), u64>),
 }
@@ -27,13 +27,13 @@ impl RmDisplayColorAssignmentEncoding {
 
 /// The color token and its following row share one checked position.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DisplayColorFrame {
+pub(in crate::native) struct DisplayColorFrame {
     encoding: RmDisplayColorAssignmentEncoding,
     color_index: PaletteIndex,
 }
 
 impl DisplayColorFrame {
-    pub(crate) fn new(
+    pub(in crate::native) fn new(
         encoding: RmDisplayColorAssignmentEncoding,
         color_index: PaletteIndex,
     ) -> Option<Self> {
@@ -46,10 +46,10 @@ impl DisplayColorFrame {
             color_index,
         })
     }
-    pub(crate) fn encoding(&self) -> &RmDisplayColorAssignmentEncoding {
+    pub(in crate::native) fn encoding(&self) -> &RmDisplayColorAssignmentEncoding {
         &self.encoding
     }
-    pub(crate) fn offset(&self) -> u64 {
+    pub(in crate::native) fn offset(&self) -> u64 {
         self.encoding.offset() - u64::from(self.color_index.display_byte_len())
     }
 }
@@ -59,17 +59,17 @@ impl DisplayColorFrame {
     try_from = "wire::RmDisplayColorAssignmentWire",
     into = "wire::RmDisplayColorAssignmentWire"
 )]
-pub(crate) struct RmDisplayColorAssignment {
-    pub(crate) id: String,
-    pub(crate) ordinal: u32,
-    pub(crate) frame: DisplayColorFrame,
-    pub(crate) target_object_id: Option<String>,
-    pub(crate) color_definition: String,
-    pub(crate) source_entry: String,
+pub(in crate::native) struct RmDisplayColorAssignment {
+    pub(in crate::native) id: String,
+    pub(in crate::native) ordinal: u32,
+    pub(in crate::native) frame: DisplayColorFrame,
+    pub(in crate::native) target_object_id: Option<String>,
+    pub(in crate::native) color_definition: String,
+    pub(in crate::native) source_entry: String,
 }
 
 /// Decode explicit display-color assignments from `RMFastLoad` linked rows.
-pub fn rm_display_color_assignments(
+pub(in crate::native) fn rm_display_color_assignments(
     container: &Container,
     color_definitions: &[PartColorDefinition],
     object_ids: &[RmFastLoadObjectId],

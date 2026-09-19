@@ -7,23 +7,23 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Canonical UUID text spanning one or more contiguous bounded OM records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ObjectUuidValue {
+pub(in crate::native) struct ObjectUuidValue {
     /// Globally unique value identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Zero-based indexed-section ordinal within the container.
-    pub section_ordinal: u32,
+    pub(in crate::native) section_ordinal: u32,
     /// Exact UUID text.
-    pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
+    pub(in crate::native) uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Bounded OM records intersected by the complete UUID frame.
     #[serde(
         serialize_with = "serialize_records",
         deserialize_with = "deserialize_records"
     )]
-    pub records: NonEmpty<String>,
+    pub(in crate::native) records: NonEmpty<String>,
     /// Directory entry containing the OM section.
-    pub source_entry: String,
+    pub(in crate::native) source_entry: String,
     /// Absolute file offset of the `03 26` marker.
-    pub source_offset: u64,
+    pub(in crate::native) source_offset: u64,
 }
 
 fn serialize_records<S: Serializer>(
@@ -43,7 +43,7 @@ fn deserialize_records<'de, D: Deserializer<'de>>(
 
 /// Decode canonical UUID frames across the contiguous storage of ID-bounded
 /// OM records. A value retains every physical record intersected by its frame.
-pub fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
+pub(in crate::native) fn object_uuid_values(container: &Container) -> Vec<ObjectUuidValue> {
     const FRAME_LEN: usize = 2 + 36 + 1;
     container
         .indexed_om_sections()

@@ -7,7 +7,7 @@ use crate::topology::Graph;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GroupNodeFamily {
+pub(in crate::native) enum GroupNodeFamily {
     Body,
     Shell,
     Face,
@@ -42,7 +42,7 @@ impl GroupNodeFamily {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GroupMemberTarget {
+pub(in crate::native) enum GroupMemberTarget {
     Fin,
     Node {
         family: GroupNodeFamily,

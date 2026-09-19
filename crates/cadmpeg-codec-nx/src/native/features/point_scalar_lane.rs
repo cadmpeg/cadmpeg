@@ -10,24 +10,24 @@ use serde::{Deserialize, Serialize};
     try_from = "FeaturePointConstructionScalarLaneWire",
     into = "FeaturePointConstructionScalarLaneWire"
 )]
-pub struct FeaturePointConstructionScalarLane {
-    pub id: String,
-    pub operation_label: String,
-    pub construction_header: String,
-    pub data_blocks: [String; 2],
-    pub scalars: [ShiftedBinary64; 6],
-    pub positions: PointScalarPositions,
+pub(in crate::native) struct FeaturePointConstructionScalarLane {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    pub(super) construction_header: String,
+    pub(super) data_blocks: [String; 2],
+    pub(super) scalars: [ShiftedBinary64; 6],
+    pub(super) positions: PointScalarPositions,
 }
 
 /// Physical positions of the preceding block tail and the target block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PointScalarPositions {
+pub(super) struct PointScalarPositions {
     first_source_offset: u64,
     target_source_offset: u64,
 }
 
 impl PointScalarPositions {
-    pub fn new(first_source_offset: u64, target_source_offset: u64) -> Result<Self, String> {
+    pub(super) fn new(first_source_offset: u64, target_source_offset: u64) -> Result<Self, String> {
         first_source_offset
             .checked_add(3)
             .ok_or("source_offsets[0]: span overflow")?;

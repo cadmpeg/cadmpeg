@@ -5,9 +5,9 @@ use super::ParasolidAttributeFieldNames;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NamedField {
-    pub(crate) value_record: String,
-    pub(crate) name: String,
+pub(in crate::native) struct NamedField {
+    pub(in crate::native) value_record: String,
+    pub(in crate::native) name: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

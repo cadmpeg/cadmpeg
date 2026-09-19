@@ -7,12 +7,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Wire", into = "Wire")]
-pub(crate) struct OmOperationStateJournalGroup {
-    pub(crate) id: String,
-    pub(crate) section_link: String,
-    pub(crate) ordinal: u32,
-    pub(crate) frame: JournalGroup,
-    pub(crate) source_entry: String,
+pub(in crate::native) struct OmOperationStateJournalGroup {
+    pub(in crate::native) id: String,
+    pub(in crate::native) section_link: String,
+    pub(in crate::native) ordinal: u32,
+    pub(in crate::native) frame: JournalGroup,
+    pub(in crate::native) source_entry: String,
 }
 
 #[derive(Serialize, Deserialize)]

@@ -30,17 +30,17 @@ use std::num::NonZeroU8;
     try_from = "FeatureSymbolicThreadTextFrameWire",
     into = "FeatureSymbolicThreadTextFrameWire"
 )]
-pub struct FeatureSymbolicThreadTextFrame {
+struct FeatureSymbolicThreadTextFrame {
     /// Globally unique text-frame identity.
-    pub id: String,
+    id: String,
     /// Owning typed `SYMBOLIC_THREAD` record.
-    pub symbolic_thread: String,
+    symbolic_thread: String,
     /// Zero-based order among the operation's type-`03` text frames.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact UTF-8 text value.
-    pub value: crate::payload_text::PayloadText<String>,
+    value: crate::payload_text::PayloadText<String>,
     /// Absolute file offset of the text-frame marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -85,55 +85,55 @@ impl TryFrom<FeatureSymbolicThreadTextFrameWire> for FeatureSymbolicThreadTextFr
 
 /// Typed text-frame payload retained from one `SYMBOLIC_THREAD` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSymbolicThread {
+pub(in crate::native) struct FeatureSymbolicThread {
     /// Globally unique symbolic-thread identity.
-    pub id: String,
+    id: String,
     /// Owning `SYMBOLIC_THREAD` operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Owning exact feature-operation record.
-    pub operation_record: String,
+    operation_record: String,
     /// Ordered complete type-`03` text frames in the payload.
-    pub text_frames: Vec<FeatureSymbolicThreadTextFrame>,
+    text_frames: Vec<FeatureSymbolicThreadTextFrame>,
     /// Absolute file offset of the operation record's fixed header marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Typed operation template carried by a hole payload string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSimpleHoleTemplate {
+pub(in crate::native) struct FeatureSimpleHoleTemplate {
     /// Globally unique template identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `SIMPLE HOLE`, `CBORE_HOLE`, or `CSUNK_HOLE` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Source string in the native payload-string arena.
-    pub payload_string: String,
+    pub(in crate::native) payload_string: String,
     /// Hole construction family token.
-    pub family: SimpleHoleFamily,
+    pub(in crate::native) family: SimpleHoleFamily,
     /// Hole cross-section token.
-    pub form: SimpleHoleForm,
+    pub(in crate::native) form: SimpleHoleForm,
     /// Axial extent token.
-    pub extent: SimpleHoleExtent,
+    pub(in crate::native) extent: SimpleHoleExtent,
     /// Entry treatment token.
-    pub start_treatment: SimpleHoleEndTreatment,
+    pub(in crate::native) start_treatment: SimpleHoleEndTreatment,
     /// Exit treatment token.
-    pub end_treatment: SimpleHoleEndTreatment,
+    pub(in crate::native) end_treatment: SimpleHoleEndTreatment,
 }
 
 /// Exact threaded-hole template retained from a `SIMPLE HOLE` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureThreadedHoleTemplate {
+pub(in crate::native) struct FeatureThreadedHoleTemplate {
     /// Globally unique template identity.
-    pub id: String,
+    id: String,
     /// Owning `SIMPLE HOLE` operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Source string in the native payload-string arena.
-    pub payload_string: String,
+    payload_string: String,
     /// Thread-standard family token.
-    pub family: ThreadedHoleFamily,
+    family: ThreadedHoleFamily,
     /// Axial extent token.
-    pub extent: SimpleHoleExtent,
+    extent: SimpleHoleExtent,
     /// Absolute file offset of the template string marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Exact nonempty redundantly witnessed scalar lane in a simple-hole payload.
@@ -142,13 +142,13 @@ pub struct FeatureThreadedHoleTemplate {
     try_from = "FeatureSimpleHoleRepeatedScalarLaneWire",
     into = "FeatureSimpleHoleRepeatedScalarLaneWire"
 )]
-pub struct FeatureSimpleHoleRepeatedScalarLane {
+pub(in crate::native) struct FeatureSimpleHoleRepeatedScalarLane {
     /// Globally unique repeated-lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `SIMPLE HOLE` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Ordered scalars with both source witnesses.
-    pub values: NonEmpty<RepeatedScalar<u64>>,
+    pub(in crate::native) values: NonEmpty<RepeatedScalar<u64>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -224,23 +224,23 @@ impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneWire> for FeatureSimpleHoleRepea
     try_from = "FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire",
     into = "FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire"
 )]
-pub struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
-    pub id: String,
-    pub operation_label: String,
-    pub first: SimpleHoleReferencePair,
-    pub second: SimpleHoleReferencePair,
+pub(in crate::native) struct FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    pub(in crate::native) first: SimpleHoleReferencePair,
+    pub(in crate::native) second: SimpleHoleReferencePair,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SimpleHoleReferencePair {
-    pub references: [SimpleHoleBlockReference; 2],
-    pub wrapped: bool,
+pub(in crate::native) struct SimpleHoleReferencePair {
+    pub(in crate::native) references: [SimpleHoleBlockReference; 2],
+    pub(in crate::native) wrapped: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SimpleHoleBlockReference {
-    pub data_block: String,
-    pub source_offset: u64,
+pub(in crate::native) struct SimpleHoleBlockReference {
+    pub(in crate::native) data_block: String,
+    pub(in crate::native) source_offset: u64,
 }
 
 /// Offset-store blocks linked after both repeated scalar-lane witnesses.
@@ -372,30 +372,34 @@ impl TryFrom<FeatureSimpleHoleRepeatedScalarLaneBlockReferencesWire>
     try_from = "FeatureSimpleHoleConstructionGroupWire",
     into = "FeatureSimpleHoleConstructionGroupWire"
 )]
-pub struct FeatureSimpleHoleConstructionGroup {
+pub(in crate::native) struct FeatureSimpleHoleConstructionGroup {
     /// Globally unique group identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Shared first-witness block pair.
-    pub first_data_blocks: [String; 2],
+    pub(in crate::native) first_data_blocks: [String; 2],
     /// Shared repeated-witness block pair.
-    pub second_data_blocks: [String; 2],
+    pub(in crate::native) second_data_blocks: [String; 2],
     /// Operations and their construction lanes in feature-history order.
-    pub members: SimpleHoleConstructionMembers,
+    pub(in crate::native) members: SimpleHoleConstructionMembers,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSimpleHoleConstructionMember {
-    pub operation_label: String,
-    pub scalar_lane: String,
-    pub block_reference: String,
+pub(in crate::native) struct FeatureSimpleHoleConstructionMember {
+    pub(in crate::native) operation_label: String,
+    pub(in crate::native) scalar_lane: String,
+    pub(in crate::native) block_reference: String,
 }
 
 /// At least two distinct operations in retained feature-history order.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SimpleHoleConstructionMembers(Vec<FeatureSimpleHoleConstructionMember>);
+pub(in crate::native) struct SimpleHoleConstructionMembers(
+    Vec<FeatureSimpleHoleConstructionMember>,
+);
 
 impl SimpleHoleConstructionMembers {
-    pub fn new(members: Vec<FeatureSimpleHoleConstructionMember>) -> Result<Self, &'static str> {
+    pub(in crate::native) fn new(
+        members: Vec<FeatureSimpleHoleConstructionMember>,
+    ) -> Result<Self, &'static str> {
         if members.len() < 2 {
             return Err("operation_labels must contain at least two members");
         }
@@ -490,21 +494,21 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
     try_from = "FeatureHolePackageConstructionGroupLaneWire",
     into = "FeatureHolePackageConstructionGroupLaneWire"
 )]
-pub struct FeatureHolePackageConstructionGroupLane {
+pub(in crate::native) struct FeatureHolePackageConstructionGroupLane {
     /// Globally unique lane identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `HOLE PACKAGE` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Compact selector preceding the repeated branch byte.
-    pub selector: NonZeroU8,
+    selector: NonZeroU8,
     /// Branch byte repeated between the two reference pairs.
-    pub branch: NonZeroU8,
+    branch: NonZeroU8,
     /// Four checked references with their resolved targets and source offsets.
-    pub references: [ConstructionReference<String>; 4],
+    references: [ConstructionReference<String>; 4],
     /// Payload-relative offset of the lane prefix.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Absolute file offset of the lane prefix.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -594,23 +598,23 @@ impl TryFrom<FeatureHolePackageConstructionGroupLaneWire>
 
 /// Exact relation between one hole package and one simple-hole construction group.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureHolePackageConstructionGroupUse {
+pub(in crate::native) struct FeatureHolePackageConstructionGroupUse {
     /// Globally unique relation identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `HOLE PACKAGE` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Exact package lane carrying the group identity.
-    pub construction_group_lane: String,
+    pub(in crate::native) construction_group_lane: String,
     /// Uniquely matched simple-hole construction group.
-    pub simple_hole_construction_group: String,
+    pub(in crate::native) simple_hole_construction_group: String,
     /// Absolute file offset of the package lane.
-    pub source_offset: u64,
+    pub(in crate::native) source_offset: u64,
 }
 
 /// Construction family named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SimpleHoleFamily {
+pub(in crate::native) enum SimpleHoleFamily {
     /// General-hole construction family.
     GeneralHole,
 }
@@ -618,7 +622,7 @@ pub enum SimpleHoleFamily {
 /// Thread-standard family named by a threaded-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ThreadedHoleFamily {
+enum ThreadedHoleFamily {
     /// Metric profile family named by the `M Profile` token.
     MProfile,
     /// Unified National Coarse family named by the `UNC` token.
@@ -628,7 +632,7 @@ pub enum ThreadedHoleFamily {
 /// Cross-section named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SimpleHoleForm {
+pub(in crate::native) enum SimpleHoleForm {
     /// Plain cylindrical cross-section.
     Simple,
     /// Counterbored cross-section.
@@ -640,7 +644,7 @@ pub enum SimpleHoleForm {
 /// Axial termination named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SimpleHoleExtent {
+pub(in crate::native) enum SimpleHoleExtent {
     /// Continue through all intersected material.
     Through,
     /// Stop at a blind termination whose distance is carried by another field.
@@ -650,7 +654,7 @@ pub enum SimpleHoleExtent {
 /// End treatment named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SimpleHoleEndTreatment {
+pub(in crate::native) enum SimpleHoleEndTreatment {
     /// No separate end treatment is named.
     None,
     /// Chamfer the circular end edge.
@@ -671,7 +675,9 @@ fn symbolic_thread_text_frames(
 }
 
 /// Decode complete typed text frames from symbolic-thread operations.
-pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThread> {
+pub(in crate::native) fn feature_symbolic_threads(
+    container: &Container,
+) -> Vec<FeatureSymbolicThread> {
     let mut threads = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -712,7 +718,7 @@ pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThr
 }
 
 /// Join exact hole payload templates to their operation identities.
-pub fn feature_simple_hole_templates(
+pub(in crate::native) fn feature_simple_hole_templates(
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     strings: &[FeaturePayloadString],
@@ -770,7 +776,7 @@ pub fn feature_simple_hole_templates(
 }
 
 /// Join exact threaded-hole payload templates to their operation identities.
-pub fn feature_threaded_hole_templates(
+pub(in crate::native) fn feature_threaded_hole_templates(
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     strings: &[FeaturePayloadString],
@@ -821,7 +827,7 @@ pub fn feature_threaded_hole_templates(
 }
 
 /// Decode exact nonempty duplicated scalar lanes from simple-hole operations.
-pub fn feature_simple_hole_repeated_scalar_lanes(
+pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
     container: &Container,
 ) -> Vec<FeatureSimpleHoleRepeatedScalarLane> {
     let mut pairs = Vec::new();
@@ -851,7 +857,7 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
 
 /// Resolve the tagged block-index pairs following both repeated scalar-lane
 /// witnesses through the unique offset store that owns the operation inputs.
-pub fn feature_simple_hole_repeated_scalar_lane_block_references(
+pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_references(
     container: &Container,
 ) -> Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences> {
     let inputs = feature_input_blocks(container);
@@ -915,7 +921,7 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
 }
 
 /// Group distinct simple-hole operations that address the same four construction blocks.
-pub fn feature_simple_hole_construction_groups(
+pub(in crate::native) fn feature_simple_hole_construction_groups(
     labels: &[FeatureOperationLabel],
     lanes: &[FeatureSimpleHoleRepeatedScalarLane],
     references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
@@ -1016,7 +1022,7 @@ pub fn feature_simple_hole_construction_groups(
 }
 
 /// Decode and resolve exact four-block lanes from `HOLE PACKAGE` operations.
-pub fn feature_hole_package_construction_group_lanes(
+pub(in crate::native) fn feature_hole_package_construction_group_lanes(
     container: &Container,
 ) -> Vec<FeatureHolePackageConstructionGroupLane> {
     let indexed = container.indexed_om_sections();
@@ -1057,7 +1063,7 @@ pub fn feature_hole_package_construction_group_lanes(
 }
 
 /// Join one package lane to one simple-hole group only by exact four-block identity.
-pub fn feature_hole_package_construction_group_uses(
+pub(in crate::native) fn feature_hole_package_construction_group_uses(
     lanes: &[FeatureHolePackageConstructionGroupLane],
     groups: &[FeatureSimpleHoleConstructionGroup],
 ) -> Vec<FeatureHolePackageConstructionGroupUse> {
@@ -1111,7 +1117,7 @@ pub fn feature_hole_package_construction_group_uses(
         .collect()
 }
 
-pub(crate) fn parse_simple_hole_template(
+pub(in crate::native) fn parse_simple_hole_template(
     value: &str,
 ) -> Option<(
     SimpleHoleForm,
@@ -1152,9 +1158,7 @@ pub(crate) fn parse_simple_hole_template(
     Some((form, extent, start_treatment, end_treatment))
 }
 
-pub(crate) fn parse_threaded_hole_template(
-    value: &str,
-) -> Option<(ThreadedHoleFamily, SimpleHoleExtent)> {
+fn parse_threaded_hole_template(value: &str) -> Option<(ThreadedHoleFamily, SimpleHoleExtent)> {
     match value {
         "Hole_ThreadedHole_M Profile_Blind" => {
             Some((ThreadedHoleFamily::MProfile, SimpleHoleExtent::Blind))

@@ -31,20 +31,20 @@ const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1.0e-9;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 /// Two ordered optional support-surface parameter lanes.
-pub type SupportUv = [Option<SupportUvLane>; 2];
+pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 
 /// Support parameters checked against their chart sample count.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SupportUvLane(Vec<[f64; 2]>);
+pub(crate) struct SupportUvLane(Vec<[f64; 2]>);
 
 impl SupportUvLane {
     /// Construct one parameter pair per chart sample.
-    pub fn new(values: Vec<[f64; 2]>, sample_count: usize) -> Option<Self> {
+    pub(crate) fn new(values: Vec<[f64; 2]>, sample_count: usize) -> Option<Self> {
         (values.len() == sample_count).then_some(Self(values))
     }
 
     /// Ordered support parameter pairs.
-    pub fn as_slice(&self) -> &[[f64; 2]] {
+    pub(crate) fn as_slice(&self) -> &[[f64; 2]] {
         &self.0
     }
 }
@@ -60,7 +60,7 @@ impl std::ops::Deref for SupportUvLane {
 /// Serialized framing of one `CHART_s` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ChartFraming {
+pub(crate) enum ChartFraming {
     /// Direct `0x0028` tag.
     Direct,
     /// `0x0028ff` escaped tag.
@@ -70,7 +70,7 @@ pub enum ChartFraming {
 /// Serialized Hvec layout of one `CHART_s` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ChartPointLayout {
+pub(crate) enum ChartPointLayout {
     /// Three model-space coordinates per point.
     Xyz3,
     /// Eleven scalars containing point, two UV lanes, tangent, and parameter.
@@ -80,7 +80,7 @@ pub enum ChartPointLayout {
 /// Serialized framing of one type-59 blend-bound record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum BlendBoundFraming {
+pub(crate) enum BlendBoundFraming {
     /// Partition-style fields following a direct `0x003b` tag.
     PartitionDirect,
     /// Partition-style fields following an escaped `0x003bff` tag.
@@ -93,33 +93,33 @@ pub enum BlendBoundFraming {
 
 /// One complete physical `CHART_s` source record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ChartSourceRecord {
+pub(crate) struct ChartSourceRecord {
     /// Cross-reference index of the chart.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Checked chart preamble.
-    pub preamble: ChartPreamble,
+    pub(crate) preamble: ChartPreamble,
     /// Points with exactly the fields admitted by their Hvec layout.
-    pub data: SourceChartData,
+    pub(crate) data: SourceChartData,
     /// Serialized record framing.
-    pub framing: ChartFraming,
+    pub(crate) framing: ChartFraming,
     /// Type-tag offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// A complete type-59 second-support bridge record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BlendBound {
-    pub state: BlendBoundState,
+pub(crate) struct BlendBound {
+    pub(crate) state: BlendBoundState,
     /// Serialized partition/deltas and direct/escaped framing.
-    pub framing: BlendBoundFraming,
+    pub(crate) framing: BlendBoundFraming,
     /// Type-tag offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// Serialized framing of one `term_use` endpoint record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TermUseFraming {
+pub(crate) enum TermUseFraming {
     /// Direct `0x0029` tag.
     Direct,
     /// `0x0029ff` escaped tag.
@@ -130,7 +130,7 @@ pub enum TermUseFraming {
 
 /// Admitted endpoint-form encodings and their required leading counts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TermUseForm {
+pub(crate) enum TermUseForm {
     #[serde(rename = "L?")]
     LQuestion,
     #[serde(rename = "TF")]
@@ -140,7 +140,7 @@ pub enum TermUseForm {
 }
 
 impl TermUseForm {
-    pub fn count(self) -> u32 {
+    pub(crate) fn count(self) -> u32 {
         match self {
             Self::LQuestion => 1,
             Self::Tf | Self::Ts => 2,
@@ -150,23 +150,23 @@ impl TermUseForm {
 
 /// A complete `term_use` endpoint record.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TermUse {
+pub(crate) struct TermUse {
     /// Cross-reference index of the endpoint record.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Endpoint form, including its required leading count.
-    pub form: TermUseForm,
+    pub(crate) form: TermUseForm,
     /// Endpoint position in millimetres.
-    pub point: FinitePoint,
+    pub(crate) point: FinitePoint,
     /// Serialized record framing.
-    pub framing: TermUseFraming,
+    pub(crate) framing: TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// Serialized framing of one support-UV values array.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SupportUvFraming {
+pub(crate) enum SupportUvFraming {
     /// Direct `0x00cc` tag.
     Direct,
     /// `0x00ccff` escaped tag.
@@ -177,43 +177,43 @@ pub enum SupportUvFraming {
 
 /// A complete support-UV values-array record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SupportUvRecord {
+pub(crate) struct SupportUvRecord {
     /// Cross-reference index of the values array.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Exact finite packed support tuples.
-    pub values: SupportUvValues,
+    pub(crate) values: SupportUvValues,
     /// Serialized record framing.
-    pub framing: SupportUvFraming,
+    pub(crate) framing: SupportUvFraming,
     /// Tag or inline-payload offset in the inflated stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
 }
 
 /// A decoded surface-intersection construction and its solved chart cache.
 #[derive(Debug, Clone)]
-pub struct IntersectionCurve {
+pub(crate) struct IntersectionCurve {
     /// Six ordered construction references.
-    pub references: [Option<XmtTarget>; 6],
+    pub(crate) references: [Option<XmtTarget>; 6],
     /// Cross-reference index of the construction record.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Resolved primary support-surface reference.
-    pub primary_support: NonNullXmt,
+    pub(crate) primary_support: NonNullXmt,
     /// Resolved secondary support-surface reference.
-    pub secondary_support: Option<NonNullXmt>,
+    pub(crate) secondary_support: Option<NonNullXmt>,
     /// Type-tag offset of the construction record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Paired chart points in millimetres and native parameters.
-    pub samples: ChartSamples,
+    pub(crate) samples: ChartSamples,
     /// Chart chordal error in millimetres.
-    pub fit_tolerance: f64,
+    pub(crate) fit_tolerance: f64,
     /// Ordered support UV values in native Parasolid parameter units.
-    pub support_uv: SupportUv,
+    pub(crate) support_uv: SupportUv,
     /// Two ext11 UV lanes awaiting assignment to the ordered supports.
-    pub ext_support_uv: SupportUv,
+    pub(crate) ext_support_uv: SupportUv,
 }
 
 /// Two distinct non-null support-surface references.
 #[derive(Debug, Clone, Copy)]
-pub struct DistinctSupports([NonNullXmt; 2]);
+pub(crate) struct DistinctSupports([NonNullXmt; 2]);
 
 impl DistinctSupports {
     fn new(first: NonNullXmt, second: NonNullXmt) -> Option<Self> {
@@ -227,38 +227,38 @@ impl DistinctSupports {
 
 /// A bounded intersection relation without a solved chart cache.
 #[derive(Debug, Clone, Copy)]
-pub struct UnchartedIntersection {
+pub(crate) struct UnchartedIntersection {
     /// Cross-reference index of the construction record.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Two exact, distinct support-surface references.
-    pub supports: DistinctSupports,
+    pub(crate) supports: DistinctSupports,
     /// Ordered endpoints of the unique topology edge in millimetres.
-    pub endpoints: [Point3; 2],
+    pub(crate) endpoints: [Point3; 2],
     /// Edge tolerance in Parasolid metres.
-    pub tolerance: f64,
+    pub(crate) tolerance: f64,
 }
 
 /// Rejection census for structurally decoded intersection constructions whose
 /// solved chart carrier is incomplete or inconsistent.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RejectionCounts {
+pub(crate) struct RejectionCounts {
     /// The construction did not resolve a valid primary support relation.
-    pub missing_support: usize,
+    missing_support: usize,
     /// Two construction forms used one stream-local XMT identity.
-    pub duplicate_identity: usize,
+    duplicate_identity: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
-    pub missing_chart: usize,
+    pub(crate) missing_chart: usize,
     /// The start term-use reference did not resolve.
-    pub missing_start_term: usize,
+    pub(crate) missing_start_term: usize,
     /// The end term-use reference did not resolve.
-    pub missing_end_term: usize,
+    pub(crate) missing_end_term: usize,
     /// A term-use endpoint lies outside the chart's chordal-error contract.
-    pub endpoint_mismatch: usize,
+    pub(crate) endpoint_mismatch: usize,
 }
 
 impl RejectionCounts {
     /// Total rejected construction count.
-    pub fn total(self) -> usize {
+    pub(crate) fn total(self) -> usize {
         self.missing_support
             + self.duplicate_identity
             + self.missing_chart
@@ -279,7 +279,7 @@ impl RejectionCounts {
     }
 
     /// Add another stream's rejection census.
-    pub fn extend(&mut self, other: Self) {
+    pub(crate) fn extend(&mut self, other: Self) {
         self.missing_support += other.missing_support;
         self.duplicate_identity += other.duplicate_identity;
         self.missing_chart += other.missing_chart;
@@ -291,20 +291,20 @@ impl RejectionCounts {
 
 /// Complete chart-carrier scan result.
 #[derive(Debug, Clone, Default)]
-pub struct CurveScan {
+pub(crate) struct CurveScan {
     /// Every structurally valid construction found in the source graph before
     /// chart enrichment filters it. Native record extraction reuses this lane
     /// so it does not parse the same graph a second time.
     pub(crate) source_constructions: Vec<CompositeCurve>,
     /// Structurally valid constructions with a solved chart or a typed inbound
     /// curve reference.
-    pub constructions: Vec<CompositeCurve>,
+    pub(crate) constructions: Vec<CompositeCurve>,
     /// Constructions with a complete solved 3D chart carrier.
-    pub curves: Vec<IntersectionCurve>,
+    pub(crate) curves: Vec<IntersectionCurve>,
     /// Constructions bounded by exact topology witnesses but lacking a chart.
-    pub uncharted: Vec<UnchartedIntersection>,
+    pub(crate) uncharted: Vec<UnchartedIntersection>,
     /// Exact rejection census for the remaining parsed constructions.
-    pub rejected: RejectionCounts,
+    pub(crate) rejected: RejectionCounts,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -326,12 +326,12 @@ struct Chart {
 
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
 /// endpoint witnesses form a complete solved cache.
-pub fn curves(stream: &[u8], point_layout: ChartPointLayout) -> Vec<IntersectionCurve> {
+pub(crate) fn curves(stream: &[u8], point_layout: ChartPointLayout) -> Vec<IntersectionCurve> {
     scan(stream, point_layout).curves
 }
 
 /// Decode chart-backed constructions and classify every rejected construction.
-pub fn scan(stream: &[u8], point_layout: ChartPointLayout) -> CurveScan {
+fn scan(stream: &[u8], point_layout: ChartPointLayout) -> CurveScan {
     let graph = topology::Graph::parse(stream);
     scan_with_graph(stream, &graph, point_layout)
 }
@@ -625,7 +625,7 @@ fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
 }
 
 /// Decode complete type-59 second-support bridge records.
-pub fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
+pub(crate) fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 59]) {
@@ -784,7 +784,7 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
 }
 
 /// Decode every complete physical direct or escaped `CHART_s` source record.
-pub fn chart_source_records(
+pub(crate) fn chart_source_records(
     stream: &[u8],
     point_layout: ChartPointLayout,
 ) -> Vec<ChartSourceRecord> {
@@ -937,7 +937,7 @@ fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
 }
 
 /// Decode complete direct, escaped, and descriptor-inline `term_use` records.
-pub fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
+pub(crate) fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 41]) {
@@ -1013,7 +1013,7 @@ fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUvValues> {
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
-pub fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
+pub(crate) fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     let mut tag = 0usize;

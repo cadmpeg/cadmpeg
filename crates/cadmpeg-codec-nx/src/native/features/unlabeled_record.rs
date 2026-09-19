@@ -7,8 +7,8 @@ use crate::om::UnlabeledOperationRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "UnlabeledRecordWire", into = "UnlabeledRecordWire")]
-pub(crate) struct FeatureUnlabeledOperationRecord {
-    pub(crate) id: String,
+pub(in crate::native) struct FeatureUnlabeledOperationRecord {
+    pub(in crate::native) id: String,
     ordinal: u32,
     header: OperationHeader<u64>,
     sha256: crate::native::hex::Sha256Hex,
@@ -17,7 +17,7 @@ pub(crate) struct FeatureUnlabeledOperationRecord {
 }
 
 impl FeatureUnlabeledOperationRecord {
-    pub(crate) fn from_source(
+    pub(super) fn from_source(
         id: String,
         ordinal: u32,
         entry_offset: u64,
@@ -39,7 +39,7 @@ impl FeatureUnlabeledOperationRecord {
         })
     }
 
-    pub(crate) fn source_offset(&self) -> u64 {
+    pub(in crate::native) fn source_offset(&self) -> u64 {
         self.header.offset()
     }
 }

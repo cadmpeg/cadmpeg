@@ -5,20 +5,20 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FeaturePayloadBlock {
-    pub id: String,
-    pub byte_len: u64,
-    pub source_offset: u64,
+pub(super) struct FeaturePayloadBlock {
+    pub(super) id: String,
+    pub(super) byte_len: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FeaturePayloadContent<B> {
+pub(super) struct FeaturePayloadContent<B> {
     blocks: B,
     sha256: crate::native::hex::Sha256Hex,
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
-    pub(crate) fn new(blocks: B, sha256: crate::native::hex::Sha256Hex) -> Result<Self, String> {
+    pub(super) fn new(blocks: B, sha256: crate::native::hex::Sha256Hex) -> Result<Self, String> {
         blocks
             .as_ref()
             .iter()
@@ -27,21 +27,21 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
         Ok(Self { blocks, sha256 })
     }
 
-    pub(crate) fn byte_len(&self) -> u64 {
+    pub(super) fn byte_len(&self) -> u64 {
         self.blocks().iter().map(|block| block.byte_len).sum()
     }
 
-    pub(crate) fn blocks(&self) -> &[FeaturePayloadBlock] {
+    pub(super) fn blocks(&self) -> &[FeaturePayloadBlock] {
         self.blocks.as_ref()
     }
 
-    pub(crate) fn block_ids(&self) -> impl ExactSizeIterator<Item = &String> + Clone {
+    pub(super) fn block_ids(&self) -> impl ExactSizeIterator<Item = &String> + Clone {
         self.blocks().iter().map(|block| &block.id)
     }
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> FeaturePayloadContent<B> {
-    pub(crate) fn from_source(
+    pub(super) fn from_source(
         ids: impl IntoIterator<Item = String>,
         blocks: &BTreeMap<String, (&[u8], u64)>,
     ) -> Option<(Vec<u8>, Self)> {
