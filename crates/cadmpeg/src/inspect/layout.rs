@@ -136,10 +136,10 @@ enum FieldKind {
 
 impl FieldKind {
     /// Returns how many bytes the field consumes.
-    const fn width(self) -> NonZeroUsize {
+    const fn width(self) -> usize {
         match self {
             Self::Scalar(ty, _) => ty.width(),
-            Self::Bytes(count) => count,
+            Self::Bytes(count) => count.get(),
         }
     }
 }
@@ -151,10 +151,10 @@ enum Field {
 }
 
 impl Field {
-    fn width(&self) -> NonZeroUsize {
+    fn width(&self) -> usize {
         match self {
             Self::Named { kind, .. } => kind.width(),
-            Self::Pad(count) => *count,
+            Self::Pad(count) => count.get(),
         }
     }
 }
@@ -182,7 +182,7 @@ impl Layout {
             return Err(LayoutError::EmptySpec);
         }
         let mut fields = Vec::new();
-        let mut size: Option<NonZeroUsize> = None;
+        let mut size = 0usize;
         for (index, raw_token) in spec.split(',').enumerate() {
             let token = raw_token.trim();
             if token.is_empty() {
@@ -203,20 +203,16 @@ impl Layout {
                     name: name.unwrap_or_else(|| format!("f{index}")),
                 }
             };
-            let width = field.width();
-            size = Some(match size {
-                None => width,
-                Some(total) => {
-                    total
-                        .checked_add(width.get())
-                        .ok_or_else(|| LayoutError::SizeOverflow {
-                            token: token.to_string(),
-                        })?
-                }
-            });
+            size = size
+                .checked_add(field.width())
+                .ok_or_else(|| LayoutError::SizeOverflow {
+                    token: token.to_string(),
+                })?;
             fields.push(field);
         }
-        let Some(size) = size else {
+        // A spec with no field is refused above, and every field is at least one
+        // byte wide, so the size of a parsed layout is not zero.
+        let Some(size) = NonZeroUsize::new(size) else {
             return Err(LayoutError::EmptySpec);
         };
         Ok(Self { fields, size })
@@ -246,7 +242,7 @@ impl Layout {
     fn fields_with_offsets(&self) -> impl Iterator<Item = (usize, &Field)> {
         self.fields.iter().scan(0, |offset, field| {
             let start = *offset;
-            *offset += field.width().get();
+            *offset += field.width();
             Some((start, field))
         })
     }
@@ -272,7 +268,7 @@ impl<'a> Record<'a> {
                 // `bytes` spans the whole layout: `split` is the only mint.
                 let value = match *kind {
                     FieldKind::Scalar(ty, endian) => {
-                        let width = ty.width().get();
+                        let width = ty.width();
                         let mut raw = [0u8; ScalarType::MAX_WIDTH];
                         raw[..width].copy_from_slice(&bytes[offset..offset + width]);
                         DecodedValue::Scalar {
