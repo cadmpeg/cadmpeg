@@ -278,7 +278,7 @@ pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{attribute_slot_count, refs, scan_entities, scan_metadata, FACE_COLOR_FAMILY};
 
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: &[u16]) -> Vec<u8> {
         let mut bytes = vec![0, 0x51];

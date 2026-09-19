@@ -6,8 +6,6 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::classify::is_history_metadata_record;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
 use crate::records::operand_tag::NativeOperandTag;
-#[cfg(test)]
-use crate::records::FeatureSource;
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputOperand,
     FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
@@ -472,7 +470,18 @@ pub(super) fn relation_instances(
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod relation_records_tests {
-    use super::*;
+    use super::{
+        circle_dimension_handle_driver, feature_intervals, is_solver_point_operand,
+        relation_declaration_candidates, relation_instances, relation_signature,
+        relation_uses_dynamic_operands, UNKNOWN_FEATURE_SPAN,
+    };
+    use crate::records::operand_tag::NativeOperandTag;
+    use crate::records::FeatureInputOperand;
+    use crate::records::FeatureInputOperandKind;
+    use crate::records::FeatureInputRelationFamily;
+    use crate::records::FeatureInputScalar;
+    use crate::records::FeatureInputScalarRole;
+    use crate::records::FeatureSource;
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
         FeatureInputRelationBinding,

@@ -3754,9 +3754,16 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 
 #[cfg(test)]
 mod nurbs_write_tests {
-    use super::*;
+    use super::{
+        check_semantic_support, pmi_local_sha256, typed_ref, unique_knots, write_nurbs_surface,
+        PMI_LOCAL_DIGEST_ATTRIBUTE,
+    };
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::Annotations;
 
     #[test]
     fn retained_swift_pmi_requires_an_unchanged_semantic_baseline() {

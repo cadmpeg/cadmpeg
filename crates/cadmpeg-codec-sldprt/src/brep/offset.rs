@@ -95,7 +95,7 @@ pub(crate) fn scan(body: &[u8]) -> HashMap<u16, OffsetCarrier> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{scan, TAG};
 
     fn partition(discriminator: u8, flag: u8, support: u16, distance: f64) -> Vec<u8> {
         let mut bytes = TAG.to_vec();

@@ -338,13 +338,13 @@ mod literal_tests {
     use super::literals::{
         dimension_display, format_f64_literal, parse_length_mm, parse_parameter_literal,
     };
+    use super::parameters;
     use super::parameters::eval::{
         compare_parameter_values, exact_integer_f64, exponentiate_parameter_value,
         ParameterExpressionParser,
     };
     use super::parameters::{bare_text_parameter_literal, formatted_text_dimension_literal};
     use super::write::parameters::rewrite_parameter_expression;
-    use super::*;
     use cadmpeg_ir::features::{DimensionDisplay, ParameterValue};
 
     #[test]

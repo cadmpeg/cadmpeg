@@ -544,7 +544,15 @@ pub(super) fn scan_intersection_carriers(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::LEN_TO_MM;
+    use super::{
+        chart_candidates, chart_records, scan_intersection_carriers, uv_at, uv_records, UvWidth,
+        MISSING_PARAMETER,
+    };
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::Point3;
 
     const POINTS: [[f64; 3]; 3] = [[0.0, 0.0, 0.0], [0.01, 0.0, 0.0], [0.01, 0.01, 0.0]];
 

@@ -399,7 +399,10 @@ pub(crate) fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        definition_table, definitions, integer_lists, named_definitions, scan, scan_body_modifiers,
+        ATOM_ID, LAST_BODY_MODIFIER,
+    };
 
     fn append_definition(out: &mut Vec<u8>, family: &str, name_node: u16, definition: u16) {
         out.extend([0x00, 0x4f]);

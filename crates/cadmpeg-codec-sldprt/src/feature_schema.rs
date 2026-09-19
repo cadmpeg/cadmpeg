@@ -78,7 +78,8 @@ pub(crate) fn surface_extension_token(value: SurfaceExtension) -> Option<&'stati
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::surface_extension_token;
+    use cadmpeg_ir::features::SurfaceExtension;
 
     #[test]
     fn surface_extension_token_rejects_unrepresented_method() {

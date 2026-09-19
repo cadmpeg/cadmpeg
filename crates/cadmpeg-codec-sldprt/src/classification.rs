@@ -3,8 +3,6 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::records::Feature;
-#[cfg(test)]
-use crate::records::FeatureSource;
 use crate::records::{FeatureInputClassRole, FeatureInputRelationFamily};
 use cadmpeg_ir::features::{FeatureTreeNodeRole, PrincipalPlane};
 
@@ -496,7 +494,15 @@ pub(crate) fn classify_type_token(kind: &str) -> Option<FeatureClass> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
+    };
+    use crate::records::Feature;
+    use crate::records::FeatureInputClassRole;
+    use crate::records::FeatureInputRelationFamily;
+    use crate::records::FeatureSource;
+    use cadmpeg_ir::features::FeatureTreeNodeRole;
+    use cadmpeg_ir::features::PrincipalPlane;
     use std::collections::BTreeMap;
 
     fn feature(xml_tag: &str, name: &str, kind: &str, input_class: Option<&str>) -> Feature {

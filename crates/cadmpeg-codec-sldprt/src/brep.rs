@@ -463,7 +463,12 @@ pub(crate) fn patch_nurbs_by_attr(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::index::scan_carriers;
+    use super::{blend, index, parse_carrier, tag, Carrier};
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::Vector3;
 
     fn compact_carrier(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
         let mut bytes = vec![0, tag];

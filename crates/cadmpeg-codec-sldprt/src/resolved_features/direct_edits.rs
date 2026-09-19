@@ -6,10 +6,6 @@ use super::axes::{
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
-#[cfg(test)]
-use crate::records::FeatureSource;
-#[cfg(test)]
-use crate::records::ObjectId;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
@@ -361,11 +357,18 @@ pub(crate) fn enrich_history_move_body_translations(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        enrich_history_move_face_translations, move_body_translation_record,
+        MoveBodyTranslationRecord,
+    };
+    use crate::records::FeatureInputLane;
+    use crate::records::FeatureSource;
+    use crate::records::ObjectId;
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputName, FeatureInputScalar,
         FeatureInputScalarRole,
     };
+    use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::{
         features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation},
         scalar::Length,

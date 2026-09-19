@@ -7,24 +7,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
 use std::collections::{HashMap, HashSet};
 
-#[cfg(test)]
-use super::component_paths::{
-    is_profile_feature_object, profile_owns_intervening_sketch_blocks,
-    project_adjacent_extrusion_profiles,
-};
-#[cfg(test)]
-use super::reference_geometry::enrich_history_reference_planes;
-#[cfg(test)]
-use super::terminations::is_extrusion_end_spec_owner;
-#[cfg(test)]
-use crate::records::FeatureInputClass;
-#[cfg(test)]
-use crate::records::FeatureSource;
 use crate::records::ObjectId;
-#[cfg(test)]
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, LinearTermination};
-#[cfg(test)]
-use std::collections::BTreeMap;
 
 /// Recognize the source-less legacy plane/origin/sketch/extrusion prefix.
 fn idless_legacy_startup_shape(records: &[crate::records::Feature]) -> bool {
@@ -559,8 +542,24 @@ fn cosmetic_thread_parameter_shape(feature: &crate::records::Feature) -> bool {
 
 #[cfg(test)]
 mod idless_history_binding_tests {
-    use super::*;
+    use super::super::component_paths::is_profile_feature_object;
+    use super::super::component_paths::profile_owns_intervening_sketch_blocks;
+    use super::super::component_paths::project_adjacent_extrusion_profiles;
+    use super::super::reference_geometry::enrich_history_reference_planes;
+    use super::super::terminations::is_extrusion_end_spec_owner;
+    use super::{
+        bind_history_classes, classless_dimension_schema_class, legacy_repeated_hole_wizard_classes,
+    };
+    use crate::records::FeatureInputClass;
+    use crate::records::FeatureInputLane;
+    use crate::records::FeatureSource;
+    use crate::records::ObjectId;
     use crate::records::{Feature, FeatureContent, FeatureHistory, FeatureInputName};
+    use cadmpeg_ir::features::BooleanOp;
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::features::LinearTermination;
+    use std::collections::BTreeMap;
 
     fn feature(ordinal: u32, kind: &str) -> Feature {
         Feature {

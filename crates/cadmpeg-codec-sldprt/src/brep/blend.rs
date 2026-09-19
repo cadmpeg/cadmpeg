@@ -172,7 +172,7 @@ pub(crate) fn scan(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, Su
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{scan, BlendSupportRef};
 
     #[test]
     fn parses_constant_radius_support_and_spine_payload() {

@@ -1,8 +1,6 @@
 //! Sketch profile projection from marker and compact records.
 
 use super::assembly::is_supplemental_config_lane;
-#[cfg(test)]
-use super::bindings::bind_detached_legacy_sketch_objects;
 use super::bindings::history_metadata_ids;
 use super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::curves::{
@@ -69,14 +67,8 @@ use cadmpeg_ir::{
 };
 use std::collections::{HashMap, HashSet};
 
-#[cfg(test)]
-use crate::records::FeatureSource;
-#[cfg(test)]
-use crate::records::ObjectId;
 use cadmpeg_core::decode::index_from_u64;
 use cadmpeg_core::decode::u64_from_index;
-#[cfg(test)]
-use std::collections::BTreeMap;
 
 /// Reconcile profile streams with uniquely enclosing sketch feature records.
 // All sketch arenas and their annotations must be updated in one operation.
@@ -2905,12 +2897,40 @@ fn legacy_config_collinear_sketch(
 
 #[cfg(test)]
 mod detached_legacy_sketch_tests {
-    use super::*;
+    use super::super::bindings::bind_detached_legacy_sketch_objects;
+    use super::{
+        assemble_sketch_block_profile, legacy_config_collinear_sketch, legacy_config_hex_sketch,
+        project_marker_backed_sketches, terminal_relation_display_carrier,
+        SketchBlockInstancePlacement, SketchBlockProfileInput,
+    };
     use crate::layout::current_terminal_relation_carrier as terminal;
+    use crate::records::FeatureInputLane;
+    use crate::records::FeatureSource;
+    use crate::records::ObjectId;
+    use crate::records::SketchInputEntity;
+    use crate::records::SketchInputKind;
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputRelationFamily,
         FeatureInputRelationInstance,
     };
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::sketches::Sketch;
+    use cadmpeg_ir::sketches::SketchEntity;
+    use cadmpeg_ir::sketches::SketchEntityId;
+    use cadmpeg_ir::sketches::SketchEntityUse;
+    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    use cadmpeg_ir::sketches::SketchId;
+    use cadmpeg_ir::sketches::SketchPlacement;
+    use cadmpeg_ir::transform::Transform;
+    use std::collections::BTreeMap;
+    use std::collections::HashMap;
+    use std::collections::HashSet;
 
     fn feature() -> Feature {
         Feature {

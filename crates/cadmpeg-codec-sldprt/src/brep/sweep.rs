@@ -374,7 +374,13 @@ mod tests {
 
     use cadmpeg_ir::eval::nurbs_curve_point;
 
-    use super::*;
+    use super::{profile_nurbs, scan_sweep_carriers, spun_nurbs, swept_nurbs, SweepKind};
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::NurbsCurve;
+    use cadmpeg_ir::geometry::NurbsSurface;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::Vector3;
 
     fn header(tt: u8, attr: u16, profile: u16) -> Vec<u8> {
         let mut bytes = vec![0x00, tt];

@@ -151,8 +151,9 @@ pub(crate) fn native_parameter_hash(histories: &[FeatureHistory]) -> Result<Stri
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::hash_records;
     use crate::records::Configuration;
+    use crate::records::FeatureHistory;
     use std::collections::BTreeMap;
 
     fn history(part_name: &str) -> FeatureHistory {
