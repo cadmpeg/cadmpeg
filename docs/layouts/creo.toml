@@ -281,7 +281,7 @@ note = "The specification states no byte order for this lane."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-creo/src/scalar.rs"
-contains = "pub fn decode_explicit_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]>"
+contains = "pub(crate) fn decode_explicit_local_system_slots( body: &[u8], cache: &ScalarCache, ) -> Option<[f64; 12]>"
 note = "The parser expands the local-system support frame as twelve `f64` slots."
 
 # --- Not tabulated -----------------------------------------------------------
