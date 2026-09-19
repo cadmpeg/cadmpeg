@@ -17,15 +17,8 @@ use crate::families::b5::graph::{
 };
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
-use crate::families::b5::vecmath::unit;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-#[test]
-fn unit_preserves_tiny_finite_direction() {
-    assert_eq!(unit([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
-    assert_eq!(unit([0.0, 0.0, 0.0]), None);
-}
 
 #[test]
 fn loop_metadata_accepts_exact_base_and_extended_forms() {

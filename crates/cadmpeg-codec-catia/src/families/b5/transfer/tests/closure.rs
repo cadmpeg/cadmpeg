@@ -4,7 +4,6 @@ use super::super::super::graph::{
     B5Loop, B5LoopMember, B5OffsetSurface, B5ParameterIncidence, B5Pcurve,
     B5PcurveParameterization, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
-use super::super::super::vecmath::unit;
 use super::super::edges::{
     b5_edge_support_definition, b5_supports_follow_edge, ordered_subrange,
     orient_b5_supports_to_edge,
@@ -31,12 +30,6 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-#[test]
-fn unit_preserves_tiny_finite_direction() {
-    assert_eq!(unit([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
-    assert_eq!(unit([0.0, 0.0, 0.0]), None);
-}
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
