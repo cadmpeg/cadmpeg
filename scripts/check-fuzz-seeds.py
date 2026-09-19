@@ -34,6 +34,8 @@ COMMITTED_SEEDS = CRATE / "seeds"
 SEED_ROOT_ENV = "CADMPEG_FUZZ_SEED_ROOT"
 
 # The order fixes the container targets that more than one generator writes.
+# `generate_fcstd_seeds` removes its seven seed directories before it writes, so
+# it must stay after every generator that writes into them.
 GENERATORS = (
     "generate_seeds",
     "generate_comprehensive_seeds",

@@ -31,7 +31,7 @@ pub fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
     Ok(r)
 }
 
-pub fn partition_stream() -> Result<Vec<u8>, CodecError> {
+fn partition_stream() -> Result<Vec<u8>, CodecError> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00");
     s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
