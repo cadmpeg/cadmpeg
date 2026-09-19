@@ -1381,3 +1381,86 @@ fn every_payload_free_feature_variant_the_freecad_sweep_reached_refuses_an_unkno
         serde_json::json!({"kind": "kernel_default"})
     );
 }
+
+#[test]
+fn a_hole_drilling_direction_admits_only_a_finite_nonzero_vector() {
+    use crate::features::holes::{HoleConstruction, HoleKind, HoleShape};
+    use crate::features::{FeatureDirection3, FeatureOperation};
+
+    for vector in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::NAN, 0.0, 1.0),
+        Vector3::new(f64::INFINITY, 0.0, 1.0),
+        Vector3::new(0.0, f64::NEG_INFINITY, 1.0),
+    ] {
+        assert!(FeatureDirection3::new(vector).is_none(), "{vector:?}");
+    }
+
+    let direction = FeatureDirection3::new(Vector3::new(0.0, 0.0, -2.0)).unwrap();
+    let shape = HoleShape::new(
+        HoleConstruction::Form {
+            kind: HoleKind::Simple,
+            specification: None,
+        },
+        None,
+        None,
+    )
+    .unwrap();
+    let hole = FeatureOperation::Hole {
+        profile: None,
+        profile_filter: None,
+        face: None,
+        direction: Some(direction),
+        placements: None,
+        shape,
+        extent: None,
+        bottom: None,
+        taper_angle: None,
+        allow_multi_profile_faces: None,
+    };
+    assert!(matches!(
+        hole,
+        FeatureOperation::Hole {
+            direction: Some(value),
+            ..
+        } if value.get() == Vector3::new(0.0, 0.0, -2.0)
+    ));
+}
+
+#[test]
+fn a_hole_wire_refuses_a_degenerate_drilling_direction() {
+    use crate::features::{FeatureDefinition, FeatureOperation};
+
+    // JSON itself states no infinity: `1e400` is out of range for the number
+    // it would be read into, and the parser refuses it before the field is
+    // reached. The zero vector is spellable and carries the same refusal,
+    // because one `FeatureDirection3::new` backs both the constructor and the
+    // deserializer.
+    let wire = |direction: serde_json::Value| {
+        serde_json::json!({
+            "definition": "hole",
+            "shape": {"construction": {"construction": "form", "kind": {"kind": "simple"}}},
+            "direction": direction
+        })
+    };
+
+    let degenerate = wire(serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0}));
+    let error = serde_json::from_value::<FeatureOperation>(degenerate.clone())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("FeatureDirection3 norm"), "{error}");
+    // `FeatureDefinition::Operation` is untagged, so it reports only that no
+    // variant matched; the refusal above is the one it carries.
+    assert!(serde_json::from_value::<FeatureDefinition>(degenerate).is_err());
+
+    let admitted = wire(serde_json::json!({"x": 0.0, "y": 0.0, "z": -2.0}));
+    let definition: FeatureDefinition = serde_json::from_value(admitted.clone()).unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            direction: Some(_),
+            ..
+        })
+    ));
+    assert_eq!(serde_json::to_value(&definition).unwrap(), admitted);
+}

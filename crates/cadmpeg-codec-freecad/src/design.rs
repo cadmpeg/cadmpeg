@@ -5404,8 +5404,10 @@ fn hole_definition(
             }
         }))
     };
-    let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
-        .map(|(_, direction)| direction);
+    let direction = match axis_reference(properties, "Profile", objects, properties_by_owner) {
+        Some((_, direction)) => Some(cadmpeg_ir::features::FeatureDirection3::new(direction)?),
+        None => None,
+    };
     Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: Some(profile.planar().cloned()?),
         profile_filter: Some(profile_filter),
