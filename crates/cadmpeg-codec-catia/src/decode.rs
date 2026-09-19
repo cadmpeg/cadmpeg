@@ -52,7 +52,7 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 /// predicate accepts the scanned variant is tried in table order; the first to
 /// return a model wins, a `None` falls through to the next applicable route, and
 /// exhausting the table yields the metadata-only fallback.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     // The sink outlives every route exit: a route that answers `None` after a
     // refusal has already stated the refusal here, and `finish_decode` drains
     // the sink into the report before its first fallible step and again after
@@ -3596,7 +3596,7 @@ impl ModelingGraphScope {
     }
 
     /// Returns the number of scoped graphs among `decoded` decoded graphs.
-    pub(crate) fn graph_count(&self, decoded: usize) -> usize {
+    fn graph_count(&self, decoded: usize) -> usize {
         match self {
             Self::Unscoped => decoded,
             Self::Unresolved => 0,

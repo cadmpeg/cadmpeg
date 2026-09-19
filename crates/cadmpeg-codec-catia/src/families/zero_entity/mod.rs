@@ -1,9 +1,9 @@
 //! `zero_entity` family record decoders.
 
-pub mod decode;
-pub mod records;
+pub(super) mod decode;
+pub(crate) mod records;
 pub(crate) mod topology;
-pub(crate) mod topology_transfer;
+mod topology_transfer;
 
 #[cfg(test)]
 mod tests;

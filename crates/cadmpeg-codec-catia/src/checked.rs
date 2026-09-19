@@ -6,16 +6,16 @@ use serde::{Deserialize, Serialize};
 /// A finite, strictly positive scalar.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(try_from = "f64", into = "f64")]
-pub struct PositiveFinite(f64);
+pub(crate) struct PositiveFinite(f64);
 
 impl PositiveFinite {
     /// Constructs a finite, strictly positive scalar.
-    pub fn new(value: f64) -> Option<Self> {
+    pub(crate) fn new(value: f64) -> Option<Self> {
         (value.is_finite() && value > 0.0).then_some(Self(value))
     }
 
     /// Returns the scalar.
-    pub fn get(self) -> f64 {
+    pub(crate) fn get(self) -> f64 {
         self.0
     }
 }
@@ -50,15 +50,15 @@ const EPS_UNIT_DEVIATION_E9: f64 = 1.0e-9;
 const EPS_UNIT_DEVIATION_E12: f64 = 1.0e-12;
 
 /// Measures a direction's length as the sum of its squared components.
-pub const MEASURE_SQUARED: u8 = 0;
+const MEASURE_SQUARED: u8 = 0;
 
 /// Measures a direction's length as the square root of that sum, the way
 /// `Vector3::norm` does.
-pub const MEASURE_NORM: u8 = 1;
+const MEASURE_NORM: u8 = 1;
 
 /// Measures a direction's length as a chain of `hypot` calls, the way the
 /// records that store a planar pair do.
-pub const MEASURE_HYPOT: u8 = 2;
+const MEASURE_HYPOT: u8 = 2;
 
 /// A finite direction admitted by `MEASUREMENT` of its length deviating from
 /// one by at most `10^-TOLERANCE_EXPONENT`. Both the measurement and the
@@ -66,26 +66,26 @@ pub const MEASURE_HYPOT: u8 = 2;
 /// construction, derivation and serde — admits exactly the same directions.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
-pub struct UnitVector3<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>([f64; 3]);
+pub(crate) struct UnitVector3<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>([f64; 3]);
 
 /// A direction whose squared length is one to `1e-12`.
-pub type ExactUnitVector3 = UnitVector3<12, MEASURE_SQUARED>;
+pub(crate) type ExactUnitVector3 = UnitVector3<12, MEASURE_SQUARED>;
 
 /// A direction whose norm is one to `1e-12`.
-pub type ExactNormUnitVector3 = UnitVector3<12, MEASURE_NORM>;
+pub(crate) type ExactNormUnitVector3 = UnitVector3<12, MEASURE_NORM>;
 
 /// A direction whose `hypot` length is one to `1e-12`.
-pub type ExactHypotUnitVector3 = UnitVector3<12, MEASURE_HYPOT>;
+pub(crate) type ExactHypotUnitVector3 = UnitVector3<12, MEASURE_HYPOT>;
 
 /// A direction whose squared length is one to `1e-9`.
-pub type RelaxedUnitVector3 = UnitVector3<9, MEASURE_SQUARED>;
+pub(crate) type RelaxedUnitVector3 = UnitVector3<9, MEASURE_SQUARED>;
 
 /// A direction whose `hypot` length is one to `1e-9`.
-pub type RelaxedHypotUnitVector3 = UnitVector3<9, MEASURE_HYPOT>;
+pub(crate) type RelaxedHypotUnitVector3 = UnitVector3<9, MEASURE_HYPOT>;
 
 /// A coordinate plane a planar direction is placed in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CoordinatePlane {
+pub(crate) enum CoordinatePlane {
     /// First component on X, second on Y.
     Xy,
     /// First component on X, second on Z.
@@ -96,35 +96,36 @@ pub enum CoordinatePlane {
 /// `10^-TOLERANCE_EXPONENT`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
-pub struct UnitVector2<const TOLERANCE_EXPONENT: u32>([f64; 2]);
+pub(crate) struct UnitVector2<const TOLERANCE_EXPONENT: u32>([f64; 2]);
 
 /// A planar direction stored loosely, to a deviation tolerance of `1e-9`.
-pub type RelaxedUnitVector2 = UnitVector2<9>;
+pub(crate) type RelaxedUnitVector2 = UnitVector2<9>;
 
 impl<const TOLERANCE_EXPONENT: u32> UnitVector2<TOLERANCE_EXPONENT> {
     /// Tolerance on this direction's `hypot` length deviating from one.
-    pub const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
+    const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
 
     /// Constructs a planar direction whose `hypot` length is one within the
     /// tolerance.
-    pub fn from_hypot(value: [f64; 2]) -> Option<Self> {
+    pub(crate) fn from_hypot(value: [f64; 2]) -> Option<Self> {
         (value.iter().all(|component| component.is_finite())
             && (value[0].hypot(value[1]) - 1.0).abs() <= Self::TOLERANCE)
             .then_some(Self(value))
     }
 
     /// Returns the direction components.
-    pub fn get(self) -> [f64; 2] {
+    #[cfg(test)]
+    pub(crate) fn get(self) -> [f64; 2] {
         self.0
     }
 
     /// Turns the direction a quarter turn, to `[-second, first]`.
-    pub fn quarter_turn(self) -> Self {
+    pub(crate) fn quarter_turn(self) -> Self {
         Self([-self.0[1], self.0[0]])
     }
 
     /// Turns the direction a quarter turn the other way, to `[second, -first]`.
-    pub fn reverse_quarter_turn(self) -> Self {
+    pub(crate) fn reverse_quarter_turn(self) -> Self {
         Self([self.0[1], -self.0[0]])
     }
 
@@ -132,7 +133,7 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector2<TOLERANCE_EXPONENT> {
     /// zero. `hypot` of a component with zero is that component's magnitude, so
     /// the spatial direction's `hypot` length is this one's, bit for bit: it
     /// inherits this direction's admission and needs no second test.
-    pub fn in_plane(
+    pub(crate) fn in_plane(
         self,
         plane: CoordinatePlane,
     ) -> UnitVector3<TOLERANCE_EXPONENT, MEASURE_HYPOT> {
@@ -163,13 +164,13 @@ impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
     UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>
 {
     /// Tolerance on this direction's measured length deviating from one.
-    pub const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
+    const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
 
     /// The +X direction.
-    pub const X: Self = Self([1.0, 0.0, 0.0]);
+    pub(crate) const X: Self = Self([1.0, 0.0, 0.0]);
 
     /// The +Y direction.
-    pub const Y: Self = Self([0.0, 1.0, 0.0]);
+    pub(crate) const Y: Self = Self([0.0, 1.0, 0.0]);
 
     /// This direction's measured length, by the measurement the type names.
     fn measured_length(value: [f64; 3]) -> f64 {
@@ -183,7 +184,7 @@ impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
 
     /// Constructs a unit direction whose measured length is one within the
     /// tolerance.
-    pub fn new(value: [f64; 3]) -> Option<Self> {
+    pub(crate) fn new(value: [f64; 3]) -> Option<Self> {
         (value.iter().all(|component| component.is_finite())
             && (Self::measured_length(value) - 1.0).abs() <= Self::TOLERANCE)
             .then_some(Self(value))
@@ -191,7 +192,7 @@ impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
 
     /// Normalizes a direction whose norm is above [`f64::EPSILON`], dividing
     /// each component by that norm.
-    pub fn normalized(value: [f64; 3]) -> Option<Self> {
+    pub(crate) fn normalized(value: [f64; 3]) -> Option<Self> {
         let length = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
         (length > f64::EPSILON)
             .then(|| Self([value[0] / length, value[1] / length, value[2] / length]))
@@ -199,14 +200,14 @@ impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
 
     /// Constructs a unit direction from a `scale`-scaled stored vector whose
     /// `hypot` length is `scale` within the tolerance.
-    pub fn from_scaled(stored: [f64; 3], scale: f64) -> Option<Self> {
+    pub(crate) fn from_scaled(stored: [f64; 3], scale: f64) -> Option<Self> {
         let length = stored[0].hypot(stored[1]).hypot(stored[2]);
         (length.is_finite() && ((length / scale) - 1.0).abs() <= Self::TOLERANCE)
             .then(|| Self(stored.map(|component| component / scale)))
     }
 
     /// Returns the direction components.
-    pub fn get(self) -> [f64; 3] {
+    pub(crate) fn get(self) -> [f64; 3] {
         self.0
     }
 }
@@ -232,26 +233,26 @@ impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
 /// A finite, strictly increasing scalar interval.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
-pub struct OrderedInterval([f64; 2]);
+pub(crate) struct OrderedInterval([f64; 2]);
 
 impl OrderedInterval {
     /// Constructs a finite interval whose lower bound is below its upper bound.
-    pub fn new(value: [f64; 2]) -> Option<Self> {
+    pub(crate) fn new(value: [f64; 2]) -> Option<Self> {
         (value.iter().all(|bound| bound.is_finite()) && value[0] < value[1]).then_some(Self(value))
     }
 
     /// Returns the interval bounds.
-    pub fn get(self) -> [f64; 2] {
+    pub(crate) fn get(self) -> [f64; 2] {
         self.0
     }
 
     /// Returns the lower bound.
-    pub fn lower(self) -> f64 {
+    pub(crate) fn lower(self) -> f64 {
         self.0[0]
     }
 
     /// Returns the upper bound.
-    pub fn upper(self) -> f64 {
+    pub(crate) fn upper(self) -> f64 {
         self.0[1]
     }
 }

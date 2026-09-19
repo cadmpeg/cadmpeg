@@ -18,22 +18,22 @@ use crate::wire::records::scan_vertex_records;
 
 /// A directly decoded E5 circle carrier.
 #[derive(Debug, Clone)]
-pub struct E5Circle {
+pub(in crate::families::e5) struct E5Circle {
     /// Offset of the `e5 0d 03` record in the source buffer.
-    pub pos: usize,
+    pub(super) pos: usize,
     /// The complete circle carrier.
-    pub geometry: CurveGeometry,
+    pub(super) geometry: CurveGeometry,
 }
 
 /// Partial class-`0xc8` plane carrier containing the fields stored directly.
 #[derive(Debug, Clone)]
-pub struct E5Plane {
+pub(in crate::families::e5) struct E5Plane {
     /// Offset of the framed record.
-    pub pos: usize,
+    pub(super) pos: usize,
     /// Stream-assigned record identifier.
-    pub record_id: u32,
+    pub(super) record_id: u32,
     /// Stored plane origin.
-    pub origin: [f64; 3],
+    pub(super) origin: [f64; 3],
     /// Natural U-coordinate bounds.
     #[cfg(test)]
     pub u_range: [f64; 2],
@@ -44,36 +44,36 @@ pub struct E5Plane {
 
 /// A directly decoded E5 analytic surface carrier.
 #[derive(Debug, Clone)]
-pub struct E5Surface {
+pub(in crate::families) struct E5Surface {
     /// Offset of the `e5 0d 03` record in the source buffer.
-    pub pos: usize,
+    pub(super) pos: usize,
     /// Persistent E5 record id.
-    pub record_id: u32,
+    pub(in crate::families) record_id: u32,
     /// The complete analytic surface carrier.
-    pub geometry: SurfaceGeometry,
+    pub(in crate::families) geometry: SurfaceGeometry,
     /// Component-wise scale from native E5 UV coordinates to neutral UV.
-    pub uv_scale: [f64; 2],
+    pub(super) uv_scale: [f64; 2],
 }
 
 /// A class-`0xd8` E5 rolling-ball surface carrier.
 #[derive(Debug, Clone, PartialEq)]
-pub struct E5RollingBallJet {
+pub(in crate::families) struct E5RollingBallJet {
     /// Offset of the framed record.
-    pub pos: usize,
+    pub(super) pos: usize,
     /// Persistent E5 record id.
-    pub record_id: u32,
+    pub(in crate::families) record_id: u32,
     /// Knots, multiplicities, and complete derivative channels in native order.
-    pub stations: Vec<cadmpeg_ir::geometry::RollingBallJetStation>,
+    stations: Vec<cadmpeg_ir::geometry::RollingBallJetStation>,
     /// Native surface-sense flag retained without reinterpretation.
-    pub sense: Sign,
+    pub(in crate::families) sense: Sign,
 }
 
 impl E5RollingBallJet {
     /// Degree of every scalar jet channel.
-    pub const DEGREE: u32 = 5;
+    const DEGREE: u32 = 5;
 
     /// Convert the admitted carrier payload to the exact neutral jet form.
-    pub fn definition(&self) -> Option<ProceduralSurfaceDefinition> {
+    pub(in crate::families) fn definition(&self) -> Option<ProceduralSurfaceDefinition> {
         Some(ProceduralSurfaceDefinition::RollingBallJet(
             cadmpeg_ir::geometry::RollingBallJetStations::try_new(
                 Self::DEGREE,
@@ -91,19 +91,19 @@ impl E5RollingBallJet {
 /// the remaining references and tail are retained structurally by the frame
 /// but are not assigned a separate meaning here.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct E5SurfaceWrapper {
+pub(in crate::families) struct E5SurfaceWrapper {
     /// Offset of the framed record.
-    pub pos: usize,
+    pos: usize,
     /// Persistent E5 record id.
-    pub record_id: u32,
+    pub(in crate::families) record_id: u32,
     /// Five references in serialized order.
-    pub references: [u32; 5],
+    references: [u32; 5],
 }
 
 impl E5SurfaceWrapper {
     /// The first reference, which names the wrapped geometric carrier.
     #[must_use]
-    pub fn underlying_surface(&self) -> u32 {
+    pub(in crate::families) fn underlying_surface(&self) -> u32 {
         self.references[0]
     }
 }
@@ -159,7 +159,7 @@ fn e5_records(data: &[u8]) -> Vec<E5Record> {
 /// referenced vertex population. The roster may be split into multiple runs;
 /// marker-like bytes inside framed payloads are not vertex rows.
 #[must_use]
-pub fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<Point3> {
+pub(super) fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<Point3> {
     if vertex_count == 0 {
         return Vec::new();
     }
@@ -205,7 +205,7 @@ fn vertex_runs(bytes: &[u8]) -> Vec<Vec<Point3>> {
 
 /// Walk an E5 record stream and decode its inline `0xc9` circle carriers.
 /// Record strides are derived from the little-endian size field at `+5`.
-pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
+pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -246,7 +246,7 @@ pub fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
 /// The record does not store a complete in-plane frame, so this function does not
 /// synthesize plane axes or a [`SurfaceGeometry`].
 #[must_use]
-pub fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
+pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -281,15 +281,15 @@ pub fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
 /// A directly framed E5 edge-use record.  The endpoint ids are E5 vertex
 /// records, not point-table indexes.
 #[derive(Debug, Clone)]
-pub struct E5Edge {
+pub(in crate::families::e5) struct E5Edge {
     /// Referenced start-vertex (class `0xfe`) record id.
-    pub start_vertex_id: u32,
+    pub(super) start_vertex_id: u32,
     /// Referenced end-vertex (class `0xfe`) record id.
-    pub end_vertex_id: u32,
+    pub(super) end_vertex_id: u32,
 }
 
 /// Decode E5 `0xff` five-reference edge records.
-pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
+pub(super) fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -312,7 +312,10 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
 /// records. The E5 plane class does not serialize a standalone normal.
-pub fn e5_surfaces(data: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Vec<E5Surface> {
+pub(in crate::families) fn e5_surfaces(
+    data: &[u8],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Vec<E5Surface> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -366,7 +369,7 @@ pub fn e5_surfaces(data: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Vec
 /// the native record; the neutral definition contains the complete value and
 /// derivative jets.
 #[must_use]
-pub fn e5_rolling_ball_jets(data: &[u8]) -> Vec<E5RollingBallJet> {
+pub(in crate::families) fn e5_rolling_ball_jets(data: &[u8]) -> Vec<E5RollingBallJet> {
     e5_records(data)
         .into_iter()
         .filter(|record| record.class == 0xd8)
@@ -581,7 +584,7 @@ fn relative_close(left: f64, right: f64, tolerance: f64) -> bool {
 /// remains opaque. Only the exact frame and reference lane are needed to join
 /// a face wrapper to a directly decoded geometric carrier.
 #[must_use]
-pub fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
+pub(in crate::families) fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         if record.class != 0xf1 || record.size != 44 {

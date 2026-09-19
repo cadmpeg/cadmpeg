@@ -9,25 +9,25 @@ use serde::{Deserialize, Serialize};
 use crate::value_block;
 /// One source-schema selector in a complete `7C06` definition prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DefinitionSchemaSelector {
+pub(crate) struct DefinitionSchemaSelector {
     /// Stored zero-based source-schema ordinal following `0x32`.
-    pub value: u32,
+    pub(crate) value: u32,
     /// Byte offset of `0x32` within the definition prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One fully consumed nullable numeric-pair production in a nested `7C07` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NumericPair {
+pub(crate) struct NumericPair {
     /// Two one-byte compact atoms preceding the nested value frame.
-    pub prefix_atoms: [u32; 2],
+    prefix_atoms: [u32; 2],
     /// Two source-ordered nullable scalar slots.
-    pub slots: [NumericPairSlot; 2],
+    pub(crate) slots: [NumericPairSlot; 2],
 }
 
 /// One slot in a complete [`NumericPair`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NumericPairSlot {
+pub(crate) enum NumericPairSlot {
     /// `0xE6` followed by the exact IEEE-754 binary64 bits.
     Binary64 {
         /// Stored little-endian binary64 bits.
@@ -44,7 +44,7 @@ pub enum NumericPairSlot {
 
 /// Prefix atom of one complete schema-selected `Range` interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RangeIntervalPrefix {
+pub(crate) enum RangeIntervalPrefix {
     /// One compact atom with its exact serialized width.
     Compact {
         /// Decoded compact-atom value.
@@ -61,7 +61,7 @@ pub enum RangeIntervalPrefix {
 
 /// One slot in a complete schema-selected `Range` interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RangeIntervalSlot {
+pub(crate) enum RangeIntervalSlot {
     /// `E6` followed by one finite IEEE-754 binary64 value.
     Binary64 {
         /// Exact stored bits.
@@ -78,9 +78,9 @@ pub enum RangeIntervalSlot {
 
 /// Complete encoded value selected by a source-schema entry named `Range`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RangeInterval {
+pub(crate) struct RangeInterval {
     /// Atom preceding the fixed range type frame.
-    pub prefix: RangeIntervalPrefix,
+    pub(crate) prefix: RangeIntervalPrefix,
     /// Source-ordered lower and upper slots. An absent pair uses one of the
     /// no-slot productions.
     #[serde(
@@ -88,12 +88,12 @@ pub struct RangeInterval {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_slots"
     )]
-    pub slots: Option<[RangeIntervalSlot; 2]>,
+    pub(crate) slots: Option<[RangeIntervalSlot; 2]>,
 }
 
 /// One item in an embedded numeric value packet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NumericPacketItem {
+pub(crate) enum NumericPacketItem {
     /// `0xE6` followed by the exact IEEE-754 binary64 bits.
     Binary64 {
         /// Stored little-endian binary64 bits.
@@ -112,7 +112,7 @@ pub enum NumericPacketItem {
 
 /// Symbol in a reference-signature descriptor program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ReferenceSignatureSymbol {
+pub(crate) enum ReferenceSignatureSymbol {
     /// Symbol `E`.
     E,
     /// Symbol `S`.
@@ -123,7 +123,7 @@ pub enum ReferenceSignatureSymbol {
 
 /// Variable prefix form of a complete reference-signature packet.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ReferenceSignaturePrefix {
+pub(crate) enum ReferenceSignaturePrefix {
     /// Compact atom `2`.
     #[default]
     Atom2,
@@ -133,7 +133,7 @@ pub enum ReferenceSignaturePrefix {
 
 /// One instruction in a complete reference-signature descriptor program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ReferenceSignatureInstruction {
+pub(crate) enum ReferenceSignatureInstruction {
     /// One descriptor symbol: `E`, `S`, or `T`.
     Symbol {
         /// Decoded descriptor symbol.
@@ -182,7 +182,7 @@ pub enum ReferenceSignatureInstruction {
 /// One fully consumed reference-signature production in a nested `7C07` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ReferenceSignatureWire", into = "ReferenceSignatureWire")]
-pub struct ReferenceSignature {
+pub(crate) struct ReferenceSignature {
     references: ConsecutiveReferences,
     prefix: ReferenceSignaturePrefix,
     tokens: Vec<ReferenceSignatureToken>,
@@ -278,35 +278,35 @@ impl ReferenceSignature {
         self.references
     }
     /// First reference identity.
-    pub fn first_reference(&self) -> u32 {
+    pub(crate) fn first_reference(&self) -> u32 {
         self.references.first()
     }
     /// Second reference identity.
-    pub fn second_reference(&self) -> u32 {
+    pub(crate) fn second_reference(&self) -> u32 {
         self.references.second()
     }
     /// Exact signature text.
-    pub fn signature(&self) -> String {
+    pub(crate) fn signature(&self) -> String {
         self.tokens
             .iter()
             .map(ReferenceSignatureToken::text)
             .collect()
     }
     /// Variable compact atom preceding the nested signature frame.
-    pub fn prefix(&self) -> ReferenceSignaturePrefix {
+    pub(crate) fn prefix(&self) -> ReferenceSignaturePrefix {
         self.prefix
     }
     /// Offset of the first signature byte.
     #[cfg(test)]
-    pub fn signature_offset(&self) -> usize {
+    pub(crate) fn signature_offset(&self) -> usize {
         self.signature_offset
     }
     /// Byte offset of the second reference marker within the value payload.
-    pub fn second_reference_offset(&self) -> usize {
+    pub(crate) fn second_reference_offset(&self) -> usize {
         self.second_reference_offset
     }
     /// Source-ordered signature instructions.
-    pub fn signature_program(&self) -> Vec<ReferenceSignatureInstruction> {
+    pub(crate) fn signature_program(&self) -> Vec<ReferenceSignatureInstruction> {
         let mut offset = self.signature_offset;
         self.tokens
             .iter()
@@ -513,7 +513,7 @@ fn reference_signature_has_one_outer_call(program: &[ReferenceSignatureInstructi
 
 /// One exact packet in a tokenized `7C07` value program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum EntityValuePacket {
+pub(crate) enum EntityValuePacket {
     /// `<compact_atom> <compact_atom> E8 <selector:u16le> 37 <atom> <atom>
     /// (<E6:f64>|<E7..E9>)+ FE+`.
     Numeric {
@@ -586,7 +586,10 @@ impl EntityValuePacket {
 
 /// Decode every exact packet in source order from a `7C07` value payload.
 #[must_use]
-pub fn value_packets(payload: &[u8], fields: &[value_block::ValueField]) -> Vec<EntityValuePacket> {
+pub(crate) fn value_packets(
+    payload: &[u8],
+    fields: &[value_block::ValueField],
+) -> Vec<EntityValuePacket> {
     let opcode_offsets = fields
         .iter()
         .filter_map(|field| match field {
@@ -777,20 +780,20 @@ fn parse_numeric_value_packet(
 
 /// One length-closed `7C05` entity-table record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EntityRecord {
+pub(crate) struct EntityRecord {
     /// Byte offset of the `7C05` marker.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Byte between the `7C05` length and nested `7C06` marker.
-    pub lead: u8,
+    pub(crate) lead: u8,
     /// Stored entity identity.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Inline body or nested definition/value frames.
-    pub body: EntityBody,
+    pub(crate) body: EntityBody,
 }
 
 /// Body of a length-closed `7C05` entity-table record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EntityBody {
+pub(crate) enum EntityBody {
     /// Complete alternate inline body, including its lead byte.
     Inline(Vec<u8>),
     /// Nested `7C06` definition and `7C07` value frames.
@@ -808,7 +811,7 @@ pub enum EntityBody {
 
 impl EntityRecord {
     /// Total framed byte length.
-    pub fn total_len(&self) -> usize {
+    pub(crate) fn total_len(&self) -> usize {
         match &self.body {
             EntityBody::Inline(bytes) => 6 + bytes.len(),
             EntityBody::Nested {
@@ -822,7 +825,7 @@ impl EntityRecord {
 
     /// Complete reference-signature view when the entire value payload has that production.
     #[must_use]
-    pub fn reference_signature(&self) -> Option<ReferenceSignature> {
+    pub(crate) fn reference_signature(&self) -> Option<ReferenceSignature> {
         match &self.body {
             EntityBody::Nested { value_payload, .. } => parse_reference_signature(value_payload),
             EntityBody::Inline(_) => None,
@@ -832,7 +835,7 @@ impl EntityRecord {
 
 /// Parse every maximal contiguous run of length-closed `7C05` records.
 #[must_use]
-pub fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
+pub(crate) fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
     let mut roots = Vec::new();
     let mut enclosing_end = 0usize;
     for pos in data
@@ -1312,7 +1315,11 @@ fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
 /// entry. `start` begins after the selector word and `end` is the next
 /// catalog-valid selector or the `7C07` payload end.
 #[must_use]
-pub fn parse_range_interval(payload: &[u8], start: usize, end: usize) -> Option<RangeInterval> {
+pub(crate) fn parse_range_interval(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<RangeInterval> {
     let bytes = payload.get(start..end)?;
     let (prefix, mut at) = if bytes.first() == Some(&0x80) && bytes.get(5) == Some(&0xe8) {
         (

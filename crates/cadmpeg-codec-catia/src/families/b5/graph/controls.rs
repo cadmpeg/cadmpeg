@@ -1,7 +1,7 @@
 /// Counted face and loop framing controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum B5FramingControl {
+pub(in crate::families) enum B5FramingControl {
     /// Control byte `03`.
     Control03 = 0x03,
     /// Control byte `05`.
@@ -10,7 +10,7 @@ pub enum B5FramingControl {
 
 impl B5FramingControl {
     /// Admit a declared control byte.
-    pub const fn from_byte(byte: u8) -> Option<Self> {
+    pub(super) const fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0x03 => Some(Self::Control03),
             0x05 => Some(Self::Control05),
@@ -20,7 +20,7 @@ impl B5FramingControl {
 
     #[cfg(test)]
     /// Native control byte.
-    pub const fn as_byte(self) -> u8 {
+    pub(in crate::families::b5) const fn as_byte(self) -> u8 {
         self as u8
     }
 }
@@ -28,7 +28,7 @@ impl B5FramingControl {
 /// Physical-edge terminal controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum B5EdgeTerminalControl {
+pub(in crate::families) enum B5EdgeTerminalControl {
     /// Control byte `01`.
     Control01 = 0x01,
     /// Control byte `02`.
@@ -49,7 +49,7 @@ pub enum B5EdgeTerminalControl {
 
 impl B5EdgeTerminalControl {
     /// Admit a declared control byte.
-    pub const fn from_byte(byte: u8) -> Option<Self> {
+    pub(super) const fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0x01 => Some(Self::Control01),
             0x02 => Some(Self::Control02),
@@ -65,7 +65,7 @@ impl B5EdgeTerminalControl {
 
     #[cfg(test)]
     /// Native control byte.
-    pub const fn as_byte(self) -> u8 {
+    pub(super) const fn as_byte(self) -> u8 {
         self as u8
     }
 }
@@ -73,7 +73,7 @@ impl B5EdgeTerminalControl {
 /// Vertex-incidence terminal controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum B5VertexIncidenceControl {
+pub(in crate::families) enum B5VertexIncidenceControl {
     /// Control byte `00`.
     Control00 = 0x00,
     /// Control byte `04`.
@@ -82,7 +82,7 @@ pub enum B5VertexIncidenceControl {
 
 impl B5VertexIncidenceControl {
     /// Admit a declared control byte.
-    pub const fn from_byte(byte: u8) -> Option<Self> {
+    pub(super) const fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0x00 => Some(Self::Control00),
             0x04 => Some(Self::Control04),
@@ -92,7 +92,7 @@ impl B5VertexIncidenceControl {
 
     #[cfg(test)]
     /// Native control byte.
-    pub const fn as_byte(self) -> u8 {
+    pub(super) const fn as_byte(self) -> u8 {
         self as u8
     }
 }

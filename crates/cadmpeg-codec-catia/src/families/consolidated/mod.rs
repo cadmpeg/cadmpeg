@@ -1,6 +1,6 @@
 //! `consolidated` family record decoders.
 
-pub mod records;
+pub(crate) mod records;
 
 #[cfg(test)]
 mod tests;

@@ -24,19 +24,19 @@ const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
 
 /// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
-pub struct FreeformSurface {
+pub(crate) struct FreeformSurface {
     /// Source offset of the framed record.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Inline persistent object id for an A8 carrier. `None` for an A5
     /// carrier identified only by [`Self::pos`].
-    pub identity: Option<u32>,
+    pub(in crate::families) identity: Option<u32>,
     /// The decoded NURBS carrier.
-    pub geometry: NurbsSurface,
+    pub(in crate::families) geometry: NurbsSurface,
 }
 
 /// Whether an `a8 <flag> 34` surface stores poles inline or in an external grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PoleStorage {
+pub(super) enum PoleStorage {
     /// Pole and weight grid occupy the payload after the mode byte.
     Inline,
     /// The fixed 141-byte surface tail begins immediately after the mode byte.
@@ -46,7 +46,7 @@ pub enum PoleStorage {
 impl FreeformSurface {
     /// Return the inline persistent object id when this is an A8 carrier.
     #[must_use]
-    pub fn object_id(&self) -> Option<u32> {
+    pub(in crate::families) fn object_id(&self) -> Option<u32> {
         self.identity
     }
 }
@@ -168,7 +168,7 @@ fn closed_a8_child_run(data: &[u8], start: usize, end: usize) -> bool {
 /// inline pole representation or after the fixed elided-pole tail. A marker
 /// shaped byte sequence elsewhere in a surface payload is payload data and is
 /// not a child run.
-pub(crate) fn a8_nested_b5_run_start(
+pub(in crate::families) fn a8_nested_b5_run_start(
     data: &[u8],
     frame_start: usize,
     frame_end: usize,
@@ -389,75 +389,75 @@ fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
 /// Parameter lattice decoded from an `a8 <flag> 34` surface record independently
 /// of its pole representation.
 #[derive(Debug, Clone, PartialEq)]
-pub struct A8SurfaceHeader {
+pub(in crate::families) struct A8SurfaceHeader {
     /// Source offset of the framed record.
-    pub pos: usize,
+    pos: usize,
     /// Inline persistent object id.
-    pub object_id: u32,
+    pub(in crate::families) object_id: u32,
     /// U degree.
-    pub u_degree: u32,
+    pub(super) u_degree: u32,
     /// V degree.
-    pub v_degree: u32,
+    pub(super) v_degree: u32,
     /// U knots and multiplicities.
-    pub u_knots: A8KnotLane,
+    pub(super) u_knots: A8KnotLane,
     /// V knots and multiplicities.
-    pub v_knots: A8KnotLane,
+    pub(super) v_knots: A8KnotLane,
     /// Whether the record selects rational weights.
-    pub rational: bool,
+    rational: bool,
     /// Whether poles occupy the payload or an external grid.
-    pub pole_storage: PoleStorage,
+    pub(super) pole_storage: PoleStorage,
 }
 
 impl A8SurfaceHeader {
     /// U pole count derived from degree and knot multiplicities.
-    pub fn u_count(&self) -> Option<u32> {
+    pub(super) fn u_count(&self) -> Option<u32> {
         self.u_knots.pole_count(self.u_degree)
     }
 
     /// V pole count derived from degree and knot multiplicities.
-    pub fn v_count(&self) -> Option<u32> {
+    pub(super) fn v_count(&self) -> Option<u32> {
         self.v_knots.pole_count(self.v_degree)
     }
 }
 
 #[derive(Debug, Clone)]
 /// Degree-5 UV jet stored in an `a8 <flag> 20` object record.
-pub struct A8Pcurve {
+pub(crate) struct A8Pcurve {
     /// Inline object identifier.
-    pub object_id: u32,
+    pub(in crate::families) object_id: u32,
     /// Referenced support-surface object identifier.
-    pub support_id: u32,
+    pub(in crate::families) support_id: u32,
     /// Stored UV-jet channel-mode byte.
     #[cfg(test)]
     pub mode: u8,
     /// Knot-aligned UV jet sites.
-    pub sites: Vec<A8PcurveSite>,
+    pub(in crate::families) sites: Vec<A8PcurveSite>,
     /// Native parameter range.
-    pub range: [f64; 2],
+    pub(in crate::families) range: [f64; 2],
 }
 
 /// One knot and its complete UV jet.
 #[derive(Debug, Clone, PartialEq)]
-pub struct A8PcurveSite {
-    pub knot: f64,
-    pub point: [f64; 2],
-    pub first_derivative: [f64; 2],
-    pub second_derivative: [f64; 2],
+pub(in crate::families) struct A8PcurveSite {
+    knot: f64,
+    point: [f64; 2],
+    first_derivative: [f64; 2],
+    second_derivative: [f64; 2],
 }
 
 impl A8Pcurve {
-    pub const DEGREE: u32 = 5;
+    pub(in crate::families) const DEGREE: u32 = 5;
 
-    pub fn knots(&self) -> Vec<f64> {
+    pub(in crate::families) fn knots(&self) -> Vec<f64> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 
     #[cfg(test)]
-    pub fn points(&self) -> Vec<[f64; 2]> {
+    pub(super) fn points(&self) -> Vec<[f64; 2]> {
         self.sites.iter().map(|site| site.point).collect()
     }
 
-    pub fn bspline(&self) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
+    pub(in crate::families) fn bspline(&self) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
         crate::nurbs::quintic_jet_bspline(
             Self::DEGREE,
             &self.knots(),
@@ -479,7 +479,7 @@ impl A8Pcurve {
 /// Decode framed `a5 03 20` consolidated UV jets.
 #[must_use]
 #[cfg(test)]
-pub fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
+pub(super) fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
     a5_pcurves_from_records(data, &records)
 }
@@ -496,60 +496,60 @@ pub(crate) fn a5_pcurves_from_records(
 
 /// One knot-site value in an `a5 03 32` rolling-ball program.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RollingBallSite {
+pub(in crate::families) struct RollingBallSite {
     /// First limiting curve point.
-    pub limit1: [f64; 3],
+    pub(in crate::families) limit1: [f64; 3],
     /// Second limiting curve point.
-    pub limit2: [f64; 3],
+    pub(in crate::families) limit2: [f64; 3],
     /// Rolling-ball centre.
-    pub center: [f64; 3],
+    pub(in crate::families) center: [f64; 3],
     /// Stored opening angle.
-    pub theta: f64,
+    pub(in crate::families) theta: f64,
 }
 
 #[cfg(test)]
 impl RollingBallSite {
     /// Radius from the centre to the first limit.
-    pub fn radius(&self) -> f64 {
+    pub(super) fn radius(&self) -> f64 {
         distance3(self.center, self.limit1)
     }
 }
 
 /// One knot of a degree-5 rolling-ball jet.
 #[derive(Debug, Clone, PartialEq)]
-pub struct A5FreeformJet {
+pub(in crate::families) struct A5FreeformJet {
     /// Distinct knot.
-    pub knot: f64,
+    pub(in crate::families) knot: f64,
     /// Position channels at this knot.
-    pub site: RollingBallSite,
+    pub(in crate::families) site: RollingBallSite,
     /// Ten first-derivative channels.
-    pub first_derivatives: [f64; 10],
+    pub(in crate::families) first_derivatives: [f64; 10],
     /// Ten second-derivative channels.
-    pub second_derivatives: [f64; 10],
+    pub(in crate::families) second_derivatives: [f64; 10],
 }
 
 /// Consolidated degree-5 rolling-ball jet.
 #[derive(Debug, Clone)]
-pub struct A5FreeformCurve {
+pub(crate) struct A5FreeformCurve {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Schema token immediately before the payload.
-    pub header_token: u32,
+    pub(in crate::families) header_token: u32,
     /// Knot-aligned jet samples.
-    pub sites: Vec<A5FreeformJet>,
+    pub(in crate::families) sites: Vec<A5FreeformJet>,
 }
 
 impl A5FreeformCurve {
-    pub const DEGREE: u32 = 5;
+    pub(in crate::families) const DEGREE: u32 = 5;
 
-    pub fn knots(&self) -> Vec<f64> {
+    pub(super) fn knots(&self) -> Vec<f64> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 }
 
 /// Lower either limiting locus of a complete rolling-ball jet to its exact
 /// degree-5 NURBS representation.
-pub(crate) fn rolling_ball_limit_curve(
+pub(in crate::families) fn rolling_ball_limit_curve(
     jet: &A5FreeformCurve,
     second_limit: bool,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -620,58 +620,58 @@ pub(crate) fn rolling_ball_limit_curve(
 
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
 #[derive(Debug, Clone, PartialEq)]
-pub struct GuideCurveSite {
+pub(in crate::families) struct GuideCurveSite {
     /// Parameter knot.
-    pub knot: f64,
+    knot: f64,
     /// Six first-derivative channels.
-    pub first_derivative: [f64; 6],
+    pub(in crate::families) first_derivative: [f64; 6],
     /// Six second-derivative channels.
-    pub second_derivative: [f64; 6],
+    pub(in crate::families) second_derivative: [f64; 6],
     /// Guide-curve point.
-    pub point: [f64; 3],
+    pub(in crate::families) point: [f64; 3],
     /// Unit direction from the first stored triple to the second.
-    pub direction: [f64; 3],
+    pub(super) direction: [f64; 3],
 }
 
 /// Width-coded guide-curve and reference-direction jet.
 #[derive(Debug, Clone)]
-pub struct A5GuideCurve {
+pub(crate) struct A5GuideCurve {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Width-coded header token.
-    pub header_token: u32,
+    pub(in crate::families) header_token: u32,
     /// Parametric degree.
-    pub degree: u32,
+    pub(in crate::families) degree: u32,
     /// Position and unit-direction values at the knot sites.
-    pub sites: Vec<GuideCurveSite>,
+    pub(in crate::families) sites: Vec<GuideCurveSite>,
 }
 
 impl A5GuideCurve {
-    pub fn knots(&self) -> Vec<f64> {
+    pub(in crate::families) fn knots(&self) -> Vec<f64> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 }
 
 /// One non-rational degree-5 NURBS curve stored in an `a5 13 16` frame.
 #[derive(Debug, Clone, PartialEq)]
-pub struct A5NurbsCurve {
+pub(crate) struct A5NurbsCurve {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Width-coded record token.
-    pub header_token: u32,
+    pub(in crate::families) header_token: u32,
     /// Exact neutral curve.
-    pub geometry: NurbsCurve,
+    pub(in crate::families) geometry: NurbsCurve,
 }
 
 /// Decode length-closed `a5/a6/a7 13 16` non-rational NURBS curves.
 #[must_use]
 #[cfg(test)]
-pub fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
+pub(super) fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
     let records = consolidated_records(data);
     a5_nurbs_curves_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
 
-pub(crate) fn a5_nurbs_curves_from_records(
+pub(in crate::families) fn a5_nurbs_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -766,12 +766,12 @@ fn parse_a5_nurbs_curve(
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[must_use]
 #[cfg(test)]
-pub fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
+pub(super) fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
     let records = consolidated_records(data);
     a5_guide_curves_from_records(data, &records)
 }
 
-pub(crate) fn a5_guide_curves_from_records(
+pub(in crate::families) fn a5_guide_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<A5GuideCurve> {
@@ -858,41 +858,41 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
 
 /// One knot of a common-form degree-5 rolling-ball jet.
 #[derive(Debug, Clone, PartialEq)]
-pub struct A8FreeformJet {
+pub(super) struct A8FreeformJet {
     /// Distinct knot.
-    pub knot: f64,
+    knot: f64,
     /// Multiplicity of this distinct knot.
-    pub multiplicity: u32,
+    multiplicity: u32,
     /// Position channels at this knot.
-    pub site: RollingBallSite,
+    pub(super) site: RollingBallSite,
     /// Ten first-derivative channels.
-    pub first_derivatives: [f64; 10],
+    first_derivatives: [f64; 10],
     /// Ten second-derivative channels.
-    pub second_derivatives: [f64; 10],
+    second_derivatives: [f64; 10],
 }
 
 /// Common-form degree-5 rolling-ball jet stored in an `a8 <flag> 32` object record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct A8FreeformCurve {
+pub(in crate::families) struct A8FreeformCurve {
     /// Record byte offset.
-    pub pos: usize,
+    pub(in crate::families) pos: usize,
     /// Inline persistent object identifier.
-    pub object_id: u32,
+    pub(in crate::families) object_id: u32,
     /// Knot-aligned jet samples.
-    pub sites: Vec<A8FreeformJet>,
+    pub(super) sites: Vec<A8FreeformJet>,
 }
 
 impl A8FreeformCurve {
-    pub const DEGREE: u32 = 5;
+    const DEGREE: u32 = 5;
 
-    pub fn multiplicities(&self) -> Vec<u32> {
+    pub(in crate::families) fn multiplicities(&self) -> Vec<u32> {
         self.sites.iter().map(|site| site.multiplicity).collect()
     }
 }
 
 /// Convert a complete common-form rolling-ball jet to its exact neutral
 /// procedural carrier.
-pub(crate) fn rolling_ball_jet_definition(
+pub(in crate::families) fn rolling_ball_jet_definition(
     jet: &A8FreeformCurve,
 ) -> Option<ProceduralSurfaceDefinition> {
     if jet.sites.is_empty() {
@@ -940,7 +940,7 @@ pub(crate) fn rolling_ball_jet_definition(
 
 /// Decode framed `a8 <flag> 32` common-form rolling-ball jet records.
 #[must_use]
-pub fn a8_freeform_curves(data: &[u8]) -> Vec<A8FreeformCurve> {
+pub(in crate::families) fn a8_freeform_curves(data: &[u8]) -> Vec<A8FreeformCurve> {
     a8_frames(data, 0x32)
         .into_iter()
         .filter_map(|frame| parse_a8_curve(data, frame))
@@ -1036,12 +1036,12 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
 /// Decode framed `a5 03 32` rolling-ball jet records.
 #[must_use]
 #[cfg(test)]
-pub fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
+pub(super) fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
     let records = consolidated_records(data);
     a5_freeform_curves_from_records(data, &records)
 }
 
-pub(crate) fn a5_freeform_curves_from_records(
+pub(in crate::families) fn a5_freeform_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<A5FreeformCurve> {
@@ -1159,7 +1159,7 @@ fn distance3(a: [f64; 3], b: [f64; 3]) -> f64 {
 /// Decode framed `a8 <flag> 20` UV jet records.
 #[must_use]
 #[cfg(test)]
-pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
+pub(super) fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     object_stream_frames(data)
         .into_iter()
         .filter(|frame| frame.class == 0x20 && data.get(frame.pos) == Some(&0xa8))
@@ -1171,7 +1171,7 @@ pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
 
 /// Decode framed `a8 <flag> 20` and `b5 <flag> 20` object-stream UV jet records.
 #[must_use]
-pub fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
+pub(in crate::families) fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     object_stream_frames(data)
         .into_iter()
         .filter(|frame| frame.class == 0x20)
@@ -1286,7 +1286,10 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
-pub fn a8_surfaces(data: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Vec<FreeformSurface> {
+pub(crate) fn a8_surfaces(
+    data: &[u8],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Vec<FreeformSurface> {
     a8_frames(data, 0x34)
         .into_iter()
         .filter_map(|frame| {
@@ -1299,7 +1302,7 @@ pub fn a8_surfaces(data: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Vec
 /// parameter records whose pole grids occupy a uniquely bounded external
 /// allocation.
 #[must_use]
-pub fn resolved_a8_surfaces(
+pub(in crate::families) fn resolved_a8_surfaces(
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Vec<FreeformSurface> {
@@ -1320,7 +1323,7 @@ pub fn resolved_a8_surfaces(
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
 /// records whose pole representation is not inline.
 #[must_use]
-pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
+pub(super) fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
     a8_frames(data, 0x34)
         .into_iter()
         .filter_map(|frame| {
@@ -1330,7 +1333,7 @@ pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
 }
 
 /// Decode one selected `a8 <flag> 34` frame's parameter lattice.
-pub(crate) fn a8_surface_header_from_object_frame(
+pub(in crate::families) fn a8_surface_header_from_object_frame(
     data: &[u8],
     start: usize,
     end: usize,
@@ -1340,7 +1343,7 @@ pub(crate) fn a8_surface_header_from_object_frame(
 }
 
 /// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
-pub(crate) fn resolved_a8_surface_from_object_frame(
+pub(in crate::families) fn resolved_a8_surface_from_object_frame(
     data: &[u8],
     start: usize,
     end: usize,
@@ -1360,7 +1363,7 @@ pub(crate) fn resolved_a8_surface_from_object_frame(
 /// between a length-closed `b5 <flag> 21` pcurve and the following A/B-family
 /// frame; its pcurve support reference must equal the surface object id.
 #[must_use]
-pub fn a8_surface_from_external_grid(
+pub(super) fn a8_surface_from_external_grid(
     data: &[u8],
     header: &A8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1412,7 +1415,7 @@ pub fn a8_surface_from_external_grid(
 }
 
 /// Return every complete support-bound external A8 pole allocation.
-pub(crate) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usize>> {
+pub(in crate::families) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usize>> {
     let mut ranges = a8_surface_headers(data)
         .into_iter()
         .flat_map(|header| {
@@ -1530,12 +1533,15 @@ fn a8_external_grid_candidates(
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
-pub fn a5_surfaces(data: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Vec<FreeformSurface> {
+pub(crate) fn a5_surfaces(
+    data: &[u8],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Vec<FreeformSurface> {
     let records = consolidated_records(data);
     a5_surfaces_from_records(data, &records, refusal)
 }
 
-pub(crate) fn a5_surfaces_from_records(
+pub(in crate::families) fn a5_surfaces_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,

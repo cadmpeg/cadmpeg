@@ -14,47 +14,47 @@ use super::{
 
 /// One structurally complete width-coded class-`0x5e` edge node.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CatiaConsolidatedEdgeNode {
+pub(crate) struct CatiaConsolidatedEdgeNode {
     /// Stable native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Record byte offset.
-    pub byte_offset: u64,
+    pub(super) byte_offset: u64,
     /// Zero-based bounded record-source ordinal.
-    pub source_index: usize,
+    pub(super) source_index: usize,
     /// Header-token width in bytes.
-    pub width: ConsolidatedFrameWidth,
+    pub(super) width: ConsolidatedFrameWidth,
     /// Independent framing flag.
-    pub flag: ConsolidatedFrameFlag,
+    pub(super) flag: ConsolidatedFrameFlag,
     /// Width-coded header token.
-    pub header_token: u32,
+    pub(super) header_token: u32,
     /// Owning compact class-`0x62` packet and frame ordinal.
-    pub allocation: Option<(String, u32)>,
+    pub(super) allocation: Option<(String, u32)>,
     /// Allocation-local curve-support reference.
-    pub curve_ref: u32,
+    pub(super) curve_ref: u32,
     /// Middle reference pair. These are endpoint addresses only when an
     /// allocation walk or complete edge-use run proves that layout.
-    pub vertex_refs: [u32; 2],
+    pub(super) vertex_refs: [u32; 2],
     /// Resolved structural endpoint records in edge direction.
-    pub endpoint_records: Option<[u64; 2]>,
+    pub(super) endpoint_records: Option<[u64; 2]>,
     /// Final reference pair. Complete edge-use runs interpret these as
     /// allocation-local side selectors; other layouts retain them untyped.
-    pub parameter_selectors: [u32; 2],
+    pub(super) parameter_selectors: [u32; 2],
     /// Wire addressing forms of curve, vertex, and parameter references.
-    pub reference_encodings: [CatiaAllocationReferenceEncoding; 5],
+    pub(super) reference_encodings: [CatiaAllocationReferenceEncoding; 5],
     /// Decoded value of the one-byte terminal allocation reference.
-    pub terminal_value: u32,
+    pub(super) terminal_value: u32,
     /// Wire addressing form of the terminal allocation reference.
-    pub terminal_encoding: CatiaAllocationReferenceEncoding,
+    pub(super) terminal_encoding: CatiaAllocationReferenceEncoding,
     /// Terminal layout byte.
-    pub tail: u8,
+    pub(super) tail: u8,
     /// Adjacent class-`0x23..=0x25` edge-definition frame.
-    pub definition: Option<CatiaConsolidatedEdgeDefinition>,
+    pub(crate) definition: Option<CatiaConsolidatedEdgeDefinition>,
     /// Adjacent oriented uses whose references close on this edge node.
-    pub uses: Option<CatiaConsolidatedEdgeUses>,
+    pub(super) uses: Option<CatiaConsolidatedEdgeUses>,
     /// Analytic circle carrier structurally bound by an adjacent six-record run.
-    pub analytic_circle: Option<CatiaConsolidatedAnalyticCircleBinding>,
+    pub(crate) analytic_circle: Option<CatiaConsolidatedAnalyticCircleBinding>,
     /// Typed class-`0x18` descriptor bound to a class-`0x25` edge run.
-    pub class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
+    pub(crate) class25_descriptor: Option<CatiaConsolidatedClass25Descriptor>,
 }
 
 #[derive(Serialize, Deserialize)]

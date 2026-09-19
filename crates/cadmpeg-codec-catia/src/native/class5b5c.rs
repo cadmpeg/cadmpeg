@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Record class of a consolidated B-family class-`0x5b` or class-`0x5c` frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum CatiaClass5b5c {
+pub(crate) enum CatiaClass5b5c {
     /// Class `0x5b`.
     Class5b,
     /// Class `0x5c`.
@@ -38,17 +38,17 @@ impl TryFrom<u8> for CatiaClass5b5c {
 /// Complete consolidated class-`0x5b` or class-`0x5c` source-local control record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Class5b5cWire", into = "Class5b5cWire")]
-pub struct CatiaConsolidatedClass5b5cRecord {
+pub(crate) struct CatiaConsolidatedClass5b5cRecord {
     /// Stable native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Complete framed record.
-    pub frame: ConsolidatedRawFrame<u64>,
+    pub(super) frame: ConsolidatedRawFrame<u64>,
     /// Zero-based bounded record-source ordinal.
-    pub source_index: u64,
+    pub(super) source_index: u64,
     /// Logical offset within the bounded record source.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
     /// Record class.
-    pub class: CatiaClass5b5c,
+    pub(super) class: CatiaClass5b5c,
 }
 
 impl CatiaConsolidatedClass5b5cRecord {

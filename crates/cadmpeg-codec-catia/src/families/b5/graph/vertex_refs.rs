@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 /// An endpoint in the raw or logical vertex table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum B5VertexRef {
+pub(in crate::families) enum B5VertexRef {
     /// Raw `05 08 01` vertex-table index.
     Raw(usize),
     /// Native `5d` logical-vertex index.
@@ -14,7 +14,7 @@ pub enum B5VertexRef {
 
 impl B5VertexRef {
     /// Combined ordinal used by emitted point and vertex identities.
-    pub const fn combined_index(self, raw_count: usize) -> usize {
+    pub(in crate::families::b5) const fn combined_index(self, raw_count: usize) -> usize {
         match self {
             Self::Raw(index) => index,
             Self::Logical(index) => raw_count + index,
@@ -31,7 +31,7 @@ impl B5VertexRef {
 
 /// Vertex coordinates and edge references admitted against their table bounds.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B5Vertices {
+pub(in crate::families) struct B5Vertices {
     raw: Vec<[f64; 3]>,
     logical: Vec<B5LogicalVertex>,
     edges: BTreeMap<u32, [B5VertexRef; 2]>,
@@ -39,7 +39,7 @@ pub struct B5Vertices {
 
 impl B5Vertices {
     /// Admit vertex tables and references that select existing rows.
-    pub fn try_new(
+    pub(in crate::families) fn try_new(
         raw: Vec<[f64; 3]>,
         logical: Vec<B5LogicalVertex>,
         edges: BTreeMap<u32, [B5VertexRef; 2]>,
@@ -69,28 +69,28 @@ impl B5Vertices {
     }
 
     /// Raw vertex coordinates in source order.
-    pub fn raw_points(&self) -> &[[f64; 3]] {
+    pub(in crate::families) fn raw_points(&self) -> &[[f64; 3]] {
         &self.raw
     }
 
     /// Logical vertices in native identity order.
-    pub fn logical_vertices(&self) -> &[B5LogicalVertex] {
+    pub(in crate::families) fn logical_vertices(&self) -> &[B5LogicalVertex] {
         &self.logical
     }
 
     /// Admitted per-edge endpoint references.
-    pub fn edges(&self) -> &BTreeMap<u32, [B5VertexRef; 2]> {
+    pub(in crate::families::b5) fn edges(&self) -> &BTreeMap<u32, [B5VertexRef; 2]> {
         &self.edges
     }
 
     /// Endpoint coordinates for an admitted edge binding.
-    pub fn edge_points(&self, edge: u32) -> Option<[[f64; 3]; 2]> {
+    pub(in crate::families::b5) fn edge_points(&self, edge: u32) -> Option<[[f64; 3]; 2]> {
         Some(self.edges.get(&edge)?.map(|vertex| vertex.point(self)))
     }
 
     #[cfg(test)]
     /// Insert an edge only when both references select existing rows.
-    pub fn insert_edge(
+    pub(in crate::families::b5) fn insert_edge(
         &mut self,
         edge: u32,
         vertices: [B5VertexRef; 2],
@@ -107,13 +107,13 @@ impl B5Vertices {
 
     #[cfg(test)]
     /// Remove an edge binding.
-    pub fn remove_edge(&mut self, edge: u32) {
+    pub(in crate::families::b5) fn remove_edge(&mut self, edge: u32) {
         self.edges.remove(&edge);
     }
 
     #[cfg(test)]
     /// Append a raw vertex row without changing existing reference slots.
-    pub fn push_raw(&mut self, point: [f64; 3]) {
+    pub(in crate::families::b5) fn push_raw(&mut self, point: [f64; 3]) {
         self.raw.push(point);
     }
 }

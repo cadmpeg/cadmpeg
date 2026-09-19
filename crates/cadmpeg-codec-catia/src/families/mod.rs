@@ -8,14 +8,14 @@ use cadmpeg_ir::{Annotations, CadIr};
 use crate::container::ContainerScan;
 use crate::variant::Variant;
 
-pub mod a5a8;
-pub mod b2;
-pub mod b5;
-pub mod consolidated;
-pub mod e5;
-pub mod freeform;
-pub mod standard;
-pub mod zero_entity;
+pub(crate) mod a5a8;
+pub(crate) mod b2;
+pub(crate) mod b5;
+pub(crate) mod consolidated;
+pub(crate) mod e5;
+mod freeform;
+pub(crate) mod standard;
+pub(crate) mod zero_entity;
 
 /// Model layers a family route emits for one decoded storage stream.
 pub(crate) struct FamilyOutput {

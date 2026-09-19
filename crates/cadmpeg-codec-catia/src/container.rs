@@ -33,15 +33,15 @@ use crate::variant::Variant;
 use crate::wire::records::SourceExtent;
 
 /// The outer and inner container magic.
-pub const OUTER_MAGIC: &[u8; 8] = &outer_hdr::MAGIC_VALUE;
+pub(crate) const OUTER_MAGIC: &[u8; 8] = &outer_hdr::MAGIC_VALUE;
 /// The nested-container stream-directory magic.
-pub const DIR_MAGIC: &[u8; 16] = b"CATIA_V5 CB0001\0";
+pub(crate) const DIR_MAGIC: &[u8; 16] = b"CATIA_V5 CB0001\0";
 /// Marker opening a FINJPL named outer-body segment.
-pub const FINJPL_MARKER: &[u8; 8] = &crate::layout::token::NAMED_STREAM_BLOCK;
+const FINJPL_MARKER: &[u8; 8] = &crate::layout::token::NAMED_STREAM_BLOCK;
 
 /// Semantic family of a FINJPL segment's big-endian type word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FinjplKind {
+pub(crate) enum FinjplKind {
     /// `CATStorageProperty` carrier.
     Storage,
     /// `CATProjectFlags` or `CATSummaryInformation` carrier.
@@ -52,18 +52,18 @@ pub enum FinjplKind {
 
 /// One FINJPL segment bounded by the next marker or the supplied body end.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FinjplSegment {
+pub(crate) struct FinjplSegment {
     /// Complete byte range beginning at the marker.
-    pub range: Range<usize>,
+    pub(crate) range: Range<usize>,
     /// Big-endian type word immediately following the marker.
-    pub type_word: u32,
+    pub(crate) type_word: u32,
     /// Primary length-prefixed ASCII block name, when present.
-    pub name: Option<String>,
+    pub(crate) name: Option<String>,
 }
 
 impl FinjplSegment {
     /// Classified type family.
-    pub fn kind(&self) -> FinjplKind {
+    pub(crate) fn kind(&self) -> FinjplKind {
         match self.type_word {
             0x0000_0080 | 0x0000_0082 | 0x0000_0084 | 0x0000_0086 | 0x0000_008e | 0x0000_0090
             | 0x0000_0092 => FinjplKind::Storage,
@@ -75,54 +75,54 @@ impl FinjplSegment {
 
 /// One complete JPEG preview embedded in a summary-information segment.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreviewImage {
+pub(crate) struct PreviewImage {
     /// Exact file range from JPEG SOI through EOI.
-    pub range: Range<usize>,
+    pub(crate) range: Range<usize>,
     /// Pixel width from the JPEG start-of-frame segment.
-    pub width: u16,
+    pub(crate) width: u16,
     /// Pixel height from the JPEG start-of-frame segment.
-    pub height: u16,
+    pub(crate) height: u16,
     /// Component count from the JPEG start-of-frame segment.
-    pub components: u8,
+    pub(crate) components: u8,
 }
 
 /// CATIA application version stored by the summary-information record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LastSaveVersion {
+pub(crate) struct LastSaveVersion {
     /// CATIA generation number.
-    pub version: u16,
+    pub(crate) version: u16,
     /// CATIA release number.
-    pub release: u16,
+    pub(crate) release: u16,
     /// Installed service-pack number.
-    pub service_pack: u16,
+    pub(crate) service_pack: u16,
     /// Installed hot-fix number.
-    pub hot_fix: u16,
+    pub(crate) hot_fix: u16,
     /// Source build-date string.
-    pub build_date: String,
+    pub(crate) build_date: String,
 }
 
 /// One external CATIA document named by a storage-property record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExternalReference {
+pub(crate) struct ExternalReference {
     /// File offset of the length-prefixed target string.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Referenced CATIA document name or path.
-    pub target: String,
+    pub(crate) target: String,
 }
 
 /// One model-container declaration from the outer `Data` logical stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OuterContainerDeclaration {
+pub(crate) struct OuterContainerDeclaration {
     /// Byte offset within the reconstructed `Data` stream.
-    pub data_offset: usize,
+    pub(crate) data_offset: usize,
     /// Source ordinal stored by the declaration.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Concrete container class.
-    pub class_name: String,
+    pub(crate) class_name: String,
     /// Declared base container class.
-    pub base_class: String,
+    pub(crate) base_class: String,
     /// UUID-derived outer stream name selected by the declaration.
-    pub stream_name: String,
+    pub(crate) stream_name: String,
 }
 
 /// A body extent proved to lie inside the container image it indexes.
@@ -132,7 +132,7 @@ pub struct OuterContainerDeclaration {
 /// constructor of this type admits one: the type cannot state an overrun, so a
 /// scan over it never reads a silently shortened region.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BodyExtent<'a> {
+pub(crate) struct BodyExtent<'a> {
     image: &'a [u8],
     range: Range<usize>,
 }
@@ -140,7 +140,7 @@ pub struct BodyExtent<'a> {
 impl<'a> BodyExtent<'a> {
     /// The complete image.
     #[must_use]
-    pub fn whole(image: &'a [u8]) -> Self {
+    pub(crate) fn whole(image: &'a [u8]) -> Self {
         Self {
             range: 0..image.len(),
             image,
@@ -169,20 +169,20 @@ impl<'a> BodyExtent<'a> {
 
     /// The proved byte range within the image.
     #[must_use]
-    pub fn range(&self) -> Range<usize> {
+    fn range(&self) -> Range<usize> {
         self.range.clone()
     }
 
     /// The bytes of the extent.
     #[must_use]
-    pub fn bytes(&self) -> &'a [u8] {
+    fn bytes(&self) -> &'a [u8] {
         &self.image[self.range.start..self.range.end]
     }
 }
 
 /// Split FINJPL segments within a bounded outer-body extent.
 #[must_use]
-pub fn finjpl_segments(body: &BodyExtent<'_>) -> Vec<FinjplSegment> {
+pub(crate) fn finjpl_segments(body: &BodyExtent<'_>) -> Vec<FinjplSegment> {
     let data = body.image;
     let body_start = body.range.start;
     let end = body.range.end;
@@ -223,7 +223,7 @@ fn finjpl_primary_name(data: &[u8], pos: usize, end: usize) -> Option<String> {
 /// segments. JPEG marker framing supplies both dimensions and the exact image
 /// boundary; incidental JPEG signatures outside this segment family are ignored.
 #[must_use]
-pub fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
+pub(crate) fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
     let segments = finjpl_segments(&BodyExtent::whole(data));
     preview_images_in_segments(data, &segments)
 }
@@ -262,7 +262,7 @@ fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<Pr
 /// the version instead of selecting by position.
 #[must_use]
 #[cfg(test)]
-pub fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
+fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
     let segments = finjpl_segments(&BodyExtent::whole(data));
     last_save_version_in_segments(data, &segments)
 }
@@ -283,7 +283,7 @@ fn last_save_version_in_segments(
 /// Enumerate exact `CATStorageProperty` external-document references from
 /// project-flags segments.
 #[must_use]
-pub fn external_references(data: &[u8]) -> Vec<ExternalReference> {
+pub(crate) fn external_references(data: &[u8]) -> Vec<ExternalReference> {
     let segments = finjpl_segments(&BodyExtent::whole(data));
     external_references_in_segments(data, &segments)
 }
@@ -461,7 +461,7 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 /// storage type `0x0000_008e` breaking ties. An unresolved tie rejects E5
 /// selection.
 #[must_use]
-pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
+pub(crate) fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
     let body = outer_body_range(data)?;
     let segments = finjpl_segments(&body);
     e5_record_stream_in_segments(data, body.range(), &segments)
@@ -547,7 +547,7 @@ fn coherent_e5_record_count(data: &[u8]) -> usize {
 /// records. No other gap is part of the walk: accepting arbitrary bytes here
 /// would turn an incidental marker into a record and could select the wrong
 /// family before the route decoder sees the data.
-pub(crate) fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
+fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
     let mut best = Vec::new();
     let mut search = 0;
     while search < data.len() {
@@ -659,30 +659,30 @@ pub(crate) const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
 /// One physical extent of a logical stream. `phys_off` is measured from the
 /// directory's physical storage base.
 #[derive(Debug, Clone)]
-pub struct Extent {
+struct Extent {
     /// Physical byte offset from the storage base. The base is zero for an
     /// outer directory and the nested magic offset for an inner directory.
-    pub phys_off: u32,
+    phys_off: u32,
     /// Physical byte length of this extent.
-    pub phys_len: u32,
+    phys_len: u32,
     /// Raw trailing extent flags word.
-    pub flags: u32,
+    flags: u32,
 }
 
 /// One catalogued logical stream.
 #[derive(Debug, Clone)]
-pub struct Descriptor {
+pub(crate) struct Descriptor {
     /// UTF-16LE ASCII name (`MainDataStream`, `SurfacicReps`, …).
-    pub name: String,
+    name: String,
     /// Offset of the descriptor header within the directory region.
-    pub desc_offset: usize,
+    desc_offset: usize,
     /// Physical extents, in `log_off` order.
-    pub extents: Vec<Extent>,
+    extents: Vec<Extent>,
 }
 
 impl Descriptor {
     /// Logical stream length from the physical extents.
-    pub fn logical_length(&self) -> u64 {
+    fn logical_length(&self) -> u64 {
         self.extents
             .iter()
             .map(|extent| u64::from(extent.phys_len))
@@ -693,63 +693,63 @@ impl Descriptor {
 /// A parsed stream directory. `inner` is the physical storage base: zero for
 /// the outer directory and the nested `V5_CFV2` offset for an inner directory.
 #[derive(Debug, Clone)]
-pub struct InnerDir {
+pub(crate) struct InnerDir {
     /// File offset of the inner `V5_CFV2` magic.
-    pub inner: usize,
+    pub(crate) inner: usize,
     /// Catalogued streams.
-    pub descriptors: Vec<Descriptor>,
+    pub(crate) descriptors: Vec<Descriptor>,
 }
 
 /// Census counts used for variant identification and reporting.
 #[derive(Debug, Clone, Default)]
-pub struct Census {
+pub(crate) struct Census {
     /// Contiguous stride-8 FBB runs in the BREP stream.
-    pub fbb_runs: usize,
+    pub(crate) fbb_runs: usize,
     /// Stride-8 FBB face rows in the BREP stream.
-    pub fbb_face_rows: usize,
+    pub(crate) fbb_face_rows: usize,
     /// `10 24 04 ff ff 00 00 00` standard edge-table delimiters in the BREP stream.
-    pub edge_delimiters: usize,
+    pub(crate) edge_delimiters: usize,
     /// `05 08 01` vertex-record signatures in the BREP stream.
-    pub vertex_markers: usize,
+    pub(crate) vertex_markers: usize,
     /// Complete `a9 03` records in the outer preamble.
-    pub a9_records: usize,
+    pub(crate) a9_records: usize,
     /// `e5 0d 03` record-family markers in the outer body.
-    pub e5_markers: usize,
+    e5_markers: usize,
 }
 
 /// Everything read from a `.CATPart`, shared by `inspect` and `decode`.
-pub struct ContainerScan<'a> {
+pub(crate) struct ContainerScan<'a> {
     /// The whole file image.
-    pub data: Cow<'a, [u8]>,
+    pub(crate) data: Cow<'a, [u8]>,
     /// Outer directory offset (big-endian, from `+8`).
-    pub outer_dir_offset: u32,
+    pub(crate) outer_dir_offset: u32,
     /// Outer directory length (big-endian, from `+12`).
-    pub outer_dir_length: u32,
+    outer_dir_length: u32,
     /// Parsed outer stream directory. Its descriptor physical offsets are
     /// absolute because `inner == 0`.
-    pub outer: Option<InnerDir>,
+    outer: Option<InnerDir>,
     /// Parsed inner directory, when the file is nested and cataloguable.
-    pub inner: Option<InnerDir>,
+    pub(crate) inner: Option<InnerDir>,
     /// Reconstructed BREP stream (largest `MainDataStream` + `SurfacicReps`).
-    pub brep: Option<Vec<u8>>,
+    pub(crate) brep: Option<Vec<u8>>,
     /// Reconstructed canonical `MainDataStream`, which owns the standard FBB spine.
-    pub main_data_stream: Option<Vec<u8>>,
+    pub(crate) main_data_stream: Option<Vec<u8>>,
     /// Exact JPEG previews extracted from summary-information framing.
-    pub previews: Vec<PreviewImage>,
+    pub(crate) previews: Vec<PreviewImage>,
     /// Unique saved-by application version from summary information.
-    pub last_save_version: Option<LastSaveVersion>,
+    pub(crate) last_save_version: Option<LastSaveVersion>,
     /// External CATIA documents named by storage properties.
-    pub external_references: Vec<ExternalReference>,
+    pub(crate) external_references: Vec<ExternalReference>,
     /// Every bounded outer FINJPL block in source order.
-    pub finjpl_segments: Vec<FinjplSegment>,
+    pub(crate) finjpl_segments: Vec<FinjplSegment>,
     /// Exact model-container declarations from the outer `Data` stream.
-    pub outer_container_declarations: Vec<OuterContainerDeclaration>,
+    pub(crate) outer_container_declarations: Vec<OuterContainerDeclaration>,
     /// Canonical outer persistent-surface aliases available to geometry routes.
     pub(crate) surface_alias_tags: HashMap<u32, Option<u32>>,
     /// Record-family census.
-    pub census: Census,
+    pub(crate) census: Census,
     /// Identified storage variant.
-    pub variant: Variant,
+    pub(crate) variant: Variant,
 }
 
 /// Return the logical record sources that can carry consolidated A/B records.
@@ -852,7 +852,7 @@ pub(crate) fn logical_record_streams(scan: &ContainerScan<'_>) -> Vec<Vec<u8>> {
 
 /// Whether a byte prefix is a `.CATPart`: the `V5_CFV2\0` outer magic is unique
 /// to Dassault's container and is a conclusive signal on its own.
-pub fn looks_like_catia(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_catia(prefix: &[u8]) -> bool {
     prefix.starts_with(OUTER_MAGIC)
 }
 
@@ -893,7 +893,7 @@ fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
 /// documented in the format spec ([§3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Returns `None` when there is no nested
 /// container or no parseable directory (the non-nested `a9 03` variant, and the
 /// contiguous-body exception whose directory catalogues no BREP streams).
-pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
+pub(crate) fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
     if data.len() < inner_hdr::LEN {
         return None;
     }
@@ -915,13 +915,13 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
 /// Parse the outer `CATIA_V5 CB0001` stream directory. Physical extent offsets
 /// in its descriptors are absolute file offsets.
 #[must_use]
-pub fn parse_outer_stream_directory(data: &[u8]) -> Option<InnerDir> {
+pub(crate) fn parse_outer_stream_directory(data: &[u8]) -> Option<InnerDir> {
     parse_outer_stream_directory_with_range(data).map(|(_, directory)| directory)
 }
 
 /// Parse and return the exact outer stream-directory byte range.
 #[must_use]
-pub fn outer_stream_directory_range(data: &[u8]) -> Option<Range<usize>> {
+pub(crate) fn outer_stream_directory_range(data: &[u8]) -> Option<Range<usize>> {
     parse_outer_stream_directory_with_range(data).map(|(range, _)| range)
 }
 
@@ -1090,7 +1090,7 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
 }
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
-pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
+fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
     let Some(logical_length) =
         descriptor
             .extents
@@ -1116,7 +1116,7 @@ pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: u
 
 /// Decode model-container declarations whose UUIDs select named outer streams.
 #[must_use]
-pub fn outer_container_declarations(
+pub(crate) fn outer_container_declarations(
     data: &[u8],
     outer: &InnerDir,
 ) -> Vec<OuterContainerDeclaration> {
@@ -1142,7 +1142,7 @@ pub fn outer_container_declarations(
 /// Select the unique declared outer container whose physical extent contains
 /// the complete file range.
 #[must_use]
-pub fn outer_container_for_extent<'a>(
+pub(crate) fn outer_container_for_extent<'a>(
     outer: &InnerDir,
     declarations: &'a [OuterContainerDeclaration],
     byte_offset: u64,
@@ -1265,7 +1265,7 @@ fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
 /// ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
 /// catalogues the BREP body carries both canonical streams; the contiguous-body
 /// exception has neither and returns `None`.
-pub fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
+fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
     let mut out = main_data_stream(data, dir)?;
     let surf = unique_largest_descriptor(
         dir.descriptors
@@ -1280,7 +1280,7 @@ pub fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
 /// topology spine. The surface stream is deliberately excluded: its numeric
 /// payload may contain byte sequences that resemble FBB rows but cannot assign
 /// topology faces.
-pub(crate) fn main_data_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
+fn main_data_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
     let main = unique_largest_descriptor(
         dir.descriptors
             .iter()
@@ -1369,7 +1369,7 @@ fn identify_fbb_variant(brep: &[u8], census: &Census) -> Variant {
 }
 
 /// Identify a whole `.CATPart` byte image.
-pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
+pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let outer_dir_offset = View::u32_be_at(&data, outer_hdr::DIRECTORY_OFFSET).unwrap_or(0);
     let outer_dir_length = View::u32_be_at(&data, outer_hdr::DIRECTORY_LENGTH).unwrap_or(0);
@@ -1444,7 +1444,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
 
 /// Build a [`ContainerSummary`] enumerating the outer and inner directories'
 /// streams and the identified variant.
-pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
+pub(crate) fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut entries = Vec::new();
 
     for (directory, dir) in [

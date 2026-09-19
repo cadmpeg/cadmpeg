@@ -21,7 +21,7 @@ const TYPE_OPEN: &[u8] = b"\xfe\x84\x92\x82";
 
 /// Length production used by one legacy schema text field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LegacyTextEncoding {
+pub(crate) enum LegacyTextEncoding {
     /// Nonzero one-byte inclusive length followed by the text and `FE`.
     U8InclusiveLength,
     /// Zero selector, little-endian `u32` byte length, text, and `FE`.
@@ -32,7 +32,7 @@ pub enum LegacyTextEncoding {
 
 /// Framing production used by one legacy role selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LegacyRoleSelectorEncoding {
+pub(crate) enum LegacyRoleSelectorEncoding {
     /// `80` followed by a nonzero little-endian `u32`.
     FixedU32,
     /// Page byte `D1..E4` followed by one low byte.
@@ -41,7 +41,7 @@ pub enum LegacyRoleSelectorEncoding {
 
 /// Stored representation of one legacy schema role name.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LegacyRoleName {
+pub(crate) enum LegacyRoleName {
     /// Inclusive-length UTF-8 role name.
     Literal(String),
     /// Unresolved one-byte schema selector.
@@ -66,65 +66,65 @@ impl LegacyRoleName {
 
 /// One length-framed schema role and its selector.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyRoleSelector {
+pub(crate) struct LegacyRoleSelector {
     /// Offset of the literal length or schema-selector byte.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stored identity whose interval contains the role.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Stored literal or unresolved role name.
-    pub name: LegacyRoleName,
+    pub(crate) name: LegacyRoleName,
     /// Selector framing production.
-    pub encoding: LegacyRoleSelectorEncoding,
+    pub(crate) encoding: LegacyRoleSelectorEncoding,
     /// Stored selector following the role name.
-    pub selector: u32,
+    pub(crate) selector: u32,
     /// Field code when an `E8 <field-code:u16le> 01` opener follows immediately.
-    pub field_code: Option<u16>,
+    pub(crate) field_code: Option<u16>,
 }
 
 /// One complete UTF-8 text field in an identity interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyTextField {
+pub(crate) struct LegacyTextField {
     /// Offset of the `E8 00 12 01` field opener.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stored identity whose interval contains the field.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Text framing production.
-    pub encoding: LegacyTextEncoding,
+    pub(crate) encoding: LegacyTextEncoding,
     /// Immediately preceding length-framed role and selector.
-    pub role: Option<LegacyRoleSelector>,
+    pub(crate) role: Option<LegacyRoleSelector>,
     /// Decoded UTF-8 value.
-    pub value: String,
+    pub(crate) value: String,
 }
 
 /// One schema field bounded by consecutive role selectors.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacySchemaField {
+pub(crate) struct LegacySchemaField {
     /// Offset of the `E8 <field-code:u16le> 01` opener.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stored identity whose interval contains the field.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Role selector that binds this field.
-    pub role_offset: usize,
+    pub(crate) role_offset: usize,
     /// Following role selector that closes the payload.
-    pub boundary_role_offset: usize,
+    pub(crate) boundary_role_offset: usize,
     /// Stored schema field code.
-    pub field_code: u16,
+    pub(crate) field_code: u16,
     /// Exact bytes after the opener and before the boundary role.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
 }
 
 /// One typed parameter clause in a legacy relation signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyRelationParameter {
+pub(crate) struct LegacyRelationParameter {
     /// Expression-local parameter.
-    pub parameter: String,
+    pub(crate) parameter: String,
     /// Source value type.
-    pub value_type: String,
+    pub(crate) value_type: String,
 }
 
 /// Result of a complete legacy relation signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LegacyRelationResult {
+enum LegacyRelationResult {
     /// `VoidType` result with a named output parameter.
     Void {
         /// Output parameter for the void relation.
@@ -136,11 +136,11 @@ pub enum LegacyRelationResult {
 
 /// Parsed roles in a complete legacy relation signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyRelationSignature {
+pub(crate) struct LegacyRelationSignature {
     /// Ordered input parameters.
-    pub inputs: Vec<LegacyRelationParameter>,
+    pub(crate) inputs: Vec<LegacyRelationParameter>,
     /// Result type and optional void output.
-    pub result: LegacyRelationResult,
+    result: LegacyRelationResult,
 }
 
 impl LegacyRelationSignature {
@@ -161,43 +161,43 @@ impl LegacyRelationSignature {
 
 /// Paired expression and type-signature fields owned by one identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyRelation {
+pub(crate) struct LegacyRelation {
     /// Stored owner identity.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Selector carried by the expression field's `body` role.
-    pub body_selector: Option<u32>,
+    pub(crate) body_selector: Option<u32>,
     /// Selector carried by the type-signature field's `param` role.
-    pub parameter_selector: Option<u32>,
+    pub(crate) parameter_selector: Option<u32>,
     /// Parameter identity selected by exact self-`body` and target-`param` roles.
-    pub parameter_entity_id: Option<u32>,
+    pub(crate) parameter_entity_id: Option<u32>,
     /// Expression-field opener offset.
-    pub expression_offset: usize,
+    pub(crate) expression_offset: usize,
     /// Exact expression or rule program.
-    pub expression: String,
+    pub(crate) expression: String,
     /// Signature-field opener offset.
-    pub signature_offset: usize,
+    pub(crate) signature_offset: usize,
     /// Exact stored type signature.
-    pub type_signature: String,
+    pub(crate) type_signature: String,
     /// Parsed input, output, and result roles.
-    pub signature: LegacyRelationSignature,
+    pub(crate) signature: LegacyRelationSignature,
 }
 
 /// One complete `synchrone` relation-update field.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyRelationSynchronousState {
+pub(crate) struct LegacyRelationSynchronousState {
     /// Offset of the `synchrone` role-name length byte.
-    pub role_offset: usize,
+    pub(crate) role_offset: usize,
     /// Stored identity whose interval contains the field.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Selector carried by the `synchrone` role.
-    pub selector: u32,
+    pub(crate) selector: u32,
     /// Whether the relation updates synchronously.
-    pub synchronous: bool,
+    pub(crate) synchronous: bool,
 }
 
 /// Value selected by one legacy type descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LegacyTypeValue {
+pub(crate) enum LegacyTypeValue {
     /// Inclusive-length UTF-8 type name.
     Name(String),
     /// Compact selector identity.
@@ -206,18 +206,18 @@ pub enum LegacyTypeValue {
 
 /// One complete legacy type descriptor in an identity interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyTypeDescriptor {
+pub(crate) struct LegacyTypeDescriptor {
     /// Offset of the fixed descriptor prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stored identity whose interval contains the descriptor.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Stored literal name or unresolved selector.
-    pub value: LegacyTypeValue,
+    pub(crate) value: LegacyTypeValue,
 }
 
 /// Evaluation stored by a complete legacy scalar packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LegacyScalarEvaluation {
+pub(crate) enum LegacyScalarEvaluation {
     /// `E6` followed by finite binary64 bits.
     Value(u64),
     /// `E7` without a scalar payload.
@@ -226,7 +226,7 @@ pub enum LegacyScalarEvaluation {
 
 /// Fixed prefix selecting one legacy scalar production.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LegacyScalarEncoding {
+pub(crate) enum LegacyScalarEncoding {
     /// `FE 84 88 82 FE`.
     Named84,
     /// `FE 85 88 82 FE`.
@@ -235,39 +235,39 @@ pub enum LegacyScalarEncoding {
 
 /// One complete typed scalar packet in an identity interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyScalarValue {
+pub(crate) struct LegacyScalarValue {
     /// Offset of the fixed packet prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stored identity whose interval contains the packet.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Fixed scalar-prefix production.
-    pub encoding: LegacyScalarEncoding,
+    pub(crate) encoding: LegacyScalarEncoding,
     /// Unique co-owned `name` text-field opener.
-    pub name_offset: Option<usize>,
+    pub(crate) name_offset: Option<usize>,
     /// Unique co-owned stored name.
-    pub name: Option<String>,
+    pub(crate) name: Option<String>,
     /// Stored evaluation.
-    pub evaluation: LegacyScalarEvaluation,
+    pub(crate) evaluation: LegacyScalarEvaluation,
 }
 
 /// One complete UTF-8 string-value packet in an identity interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyStringValue {
+pub(crate) struct LegacyStringValue {
     /// Offset of the fixed packet prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stored identity whose interval contains the packet.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Unique co-owned `name` text-field opener.
-    pub name_offset: Option<usize>,
+    pub(crate) name_offset: Option<usize>,
     /// Unique co-owned stored name.
-    pub name: Option<String>,
+    pub(crate) name: Option<String>,
     /// Stored UTF-8 value.
-    pub value: String,
+    pub(crate) value: String,
 }
 
 /// Stored encoding of one legacy signed integer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LegacyIntegerEncoding {
+pub(crate) enum LegacyIntegerEncoding {
     /// One byte stores values zero through 126 as `value + 0x81`.
     Inline,
     /// `80` introduces one signed little-endian 32-bit value.
@@ -276,25 +276,25 @@ pub enum LegacyIntegerEncoding {
 
 /// One complete signed-integer packet in an identity interval.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyIntegerValue {
+pub(crate) struct LegacyIntegerValue {
     /// Offset of the fixed packet prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stored identity whose interval contains the packet.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Stored integer encoding.
-    pub encoding: LegacyIntegerEncoding,
+    pub(crate) encoding: LegacyIntegerEncoding,
     /// Unique co-owned `name` text-field opener.
-    pub name_offset: Option<usize>,
+    pub(crate) name_offset: Option<usize>,
     /// Unique co-owned stored name.
-    pub name: Option<String>,
+    pub(crate) name: Option<String>,
     /// Stored signed value.
-    pub value: i32,
+    pub(crate) value: i32,
 }
 
 /// Stored legacy identity record lead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum CatiaLegacyIdentityLead {
+pub(crate) enum CatiaLegacyIdentityLead {
     /// Lead `0x81`.
     Lead81,
     /// Lead `0x82`.
@@ -332,33 +332,33 @@ impl From<CatiaLegacyIdentityLead> for u8 {
 
 /// One stored entity identity in a legacy identity run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LegacyEntityIdentity {
+pub(crate) struct LegacyEntityIdentity {
     /// Offset of the `EA` identity delimiter.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Little-endian identity following the delimiter.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Stored record lead following the identity.
-    pub lead: CatiaLegacyIdentityLead,
+    pub(crate) lead: CatiaLegacyIdentityLead,
 }
 
 /// One complete compact schema program following a legacy catalog opener.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacySchemaProgram {
+pub(crate) struct LegacySchemaProgram {
     /// Offset of the first program byte after the fixed prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Offset of the production following the program.
-    pub boundary_offset: usize,
+    pub(crate) boundary_offset: usize,
     /// Production that closes the program.
-    pub boundary: LegacySchemaProgramBoundary,
+    pub(crate) boundary: LegacySchemaProgramBoundary,
     /// Exact program bytes, including the terminal `FE`.
-    pub bytes: Vec<u8>,
+    pub(crate) bytes: Vec<u8>,
     /// Complete inclusive-length identifier packets in source order.
-    pub identifiers: Vec<LegacySchemaIdentifier>,
+    pub(crate) identifiers: Vec<LegacySchemaIdentifier>,
 }
 
 /// Production that closes a compact legacy schema program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LegacySchemaProgramBoundary {
+pub(crate) enum LegacySchemaProgramBoundary {
     /// Fixed vendor footer preceded by the terminal `FE`.
     VendorFooter,
     /// Validated outer stream directory preceded by the terminal `FE`.
@@ -367,54 +367,54 @@ pub enum LegacySchemaProgramBoundary {
 
 /// One complete inclusive-length identifier packet in a compact schema program.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacySchemaIdentifier {
+pub(crate) struct LegacySchemaIdentifier {
     /// Offset of the inclusive-length byte.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stored identifier.
-    pub value: String,
+    pub(crate) value: String,
 }
 
 /// A monotonically identified legacy run terminated by its schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyEntityRun {
+pub(crate) struct LegacyEntityRun {
     /// Offset of the fixed catalog opening production.
-    pub catalog_offset: usize,
+    pub(crate) catalog_offset: usize,
     /// Complete compact schema program following the catalog opener.
-    pub schema_program: Option<LegacySchemaProgram>,
+    pub(crate) schema_program: Option<LegacySchemaProgram>,
     /// First stored identity in the run.
-    pub first_identity: LegacyEntityIdentity,
+    pub(crate) first_identity: LegacyEntityIdentity,
     /// Remaining identities in source order.
     following_identities: Vec<LegacyEntityIdentity>,
     /// Complete length-framed role selectors in identity-interval order.
-    pub role_selectors: Vec<LegacyRoleSelector>,
+    pub(crate) role_selectors: Vec<LegacyRoleSelector>,
     /// Complete schema text fields contained by the identity intervals.
-    pub text_fields: Vec<LegacyTextField>,
+    pub(crate) text_fields: Vec<LegacyTextField>,
     /// Complete role-bounded schema fields.
-    pub schema_fields: Vec<LegacySchemaField>,
+    pub(crate) schema_fields: Vec<LegacySchemaField>,
     /// Complete expression/signature pairs.
-    pub relations: Vec<LegacyRelation>,
+    pub(crate) relations: Vec<LegacyRelation>,
     /// Complete `synchrone` relation-update fields.
-    pub synchronous_states: Vec<LegacyRelationSynchronousState>,
+    pub(crate) synchronous_states: Vec<LegacyRelationSynchronousState>,
     /// Complete literal or selector type descriptors.
-    pub type_descriptors: Vec<LegacyTypeDescriptor>,
+    pub(crate) type_descriptors: Vec<LegacyTypeDescriptor>,
     /// Complete typed scalar packets.
-    pub scalar_values: Vec<LegacyScalarValue>,
+    pub(crate) scalar_values: Vec<LegacyScalarValue>,
     /// Complete UTF-8 string-value packets.
-    pub string_values: Vec<LegacyStringValue>,
+    pub(crate) string_values: Vec<LegacyStringValue>,
     /// Complete signed-integer packets.
-    pub integer_values: Vec<LegacyIntegerValue>,
+    pub(crate) integer_values: Vec<LegacyIntegerValue>,
 }
 
 impl LegacyEntityRun {
     /// Stored identities in source order.
-    pub fn identities(&self) -> impl Iterator<Item = &LegacyEntityIdentity> {
+    pub(crate) fn identities(&self) -> impl Iterator<Item = &LegacyEntityIdentity> {
         std::iter::once(&self.first_identity).chain(&self.following_identities)
     }
 }
 
 /// Parse complete legacy identity runs terminated by the fixed schema-catalog opener.
 #[must_use]
-pub fn parse_runs(data: &[u8]) -> Vec<LegacyEntityRun> {
+pub(crate) fn parse_runs(data: &[u8]) -> Vec<LegacyEntityRun> {
     let directory_offset = container::outer_stream_directory_range(data).map(|range| range.start);
     parse_runs_with_directory_offset(data, directory_offset)
 }
@@ -1062,7 +1062,7 @@ fn relation_parameter_entity(
 
 /// Parse a complete legacy relation type signature.
 #[must_use]
-pub fn parse_relation_signature(source: &str) -> Option<LegacyRelationSignature> {
+pub(crate) fn parse_relation_signature(source: &str) -> Option<LegacyRelationSignature> {
     let source = source.strip_suffix('\n').unwrap_or(source);
     let (clauses, result_type) = source.rsplit_once(") : ")?;
     let clauses = clauses.strip_prefix('(')?;

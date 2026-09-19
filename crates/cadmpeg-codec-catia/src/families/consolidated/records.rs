@@ -43,96 +43,96 @@ const EPS_CIRCLE_ENDPOINT: f64 = 1.0e-9;
 
 /// Serialized consolidated edge block formed by two pcurves and one range packet.
 #[derive(Debug, Clone)]
-pub struct ConsolidatedEdgeBlock {
+pub(crate) struct ConsolidatedEdgeBlock {
     /// The two face-side UV definitions in serialization order.
-    pub pcurves: [ConsolidatedPcurve; 2],
+    pub(crate) pcurves: [ConsolidatedPcurve; 2],
     /// Shared parameter range and tolerance packet.
-    pub parameters: B2EdgeParameters,
+    pub(crate) parameters: B2EdgeParameters,
 }
 
 /// Complete consolidated edge run serialized as two side pcurves, their shared
 /// parameter packet, two oriented uses, and one native edge node.
 #[derive(Debug, Clone)]
-pub struct ConsolidatedTopologyEdgeRun {
+pub(crate) struct ConsolidatedTopologyEdgeRun {
     /// Co-parametric side definitions and shared range packet.
-    pub edge: ConsolidatedEdgeBlock,
+    pub(crate) edge: ConsolidatedEdgeBlock,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
-    pub node: B2EdgeNode,
+    pub(crate) node: B2EdgeNode,
 }
 
 /// Complete analytic-circle edge run serialized as a class-`0x18` descriptor,
 /// circle carrier, scalar definition, two oriented uses, and one edge node.
 #[derive(Debug, Clone)]
-pub struct ConsolidatedAnalyticCircleEdgeRun {
+pub(crate) struct ConsolidatedAnalyticCircleEdgeRun {
     /// Class-`0x18` descriptor immediately preceding the circle carrier.
-    pub descriptor: ConsolidatedRawFrame,
+    pub(crate) descriptor: ConsolidatedRawFrame,
     /// Arc-length circle carrier.
-    pub circle: B2Circle,
+    pub(crate) circle: B2Circle,
     /// Eight-scalar class-`0x23` edge definition.
     #[cfg(test)]
     pub definition: ConsolidatedEdgeDefinition,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
-    pub node: B2EdgeNode,
+    pub(crate) node: B2EdgeNode,
 }
 
 /// Complete class-`0x25` edge run with its adjacent class-`0x18` descriptor.
 #[derive(Debug, Clone)]
-pub struct ConsolidatedClass25EdgeRun {
+pub(crate) struct ConsolidatedClass25EdgeRun {
     /// Typed class-`0x18` descriptor.
-    pub descriptor: B2Class25Descriptor,
+    pub(crate) descriptor: B2Class25Descriptor,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
-    pub node: B2EdgeNode,
+    pub(crate) node: B2EdgeNode,
 }
 
 /// Two adjacent oriented uses and their terminal native edge node.
 #[derive(Debug, Clone)]
-pub struct ConsolidatedEdgeUseRun {
+pub(crate) struct ConsolidatedEdgeUseRun {
     /// Immediately preceding edge-definition frame in classes `0x23..=0x25`.
-    pub definition: Option<ConsolidatedEdgeDefinition>,
+    pub(crate) definition: Option<ConsolidatedEdgeDefinition>,
     /// The two serialized edge uses, in side order.
-    pub uses: [B2UseMetadata; 2],
+    pub(crate) uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
-    pub node: B2EdgeNode,
+    pub(crate) node: B2EdgeNode,
 }
 
 /// Compact edge node selected by its zero-based ordinal in one face-owner allocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConsolidatedOwnedEdgeNode {
+pub(crate) struct ConsolidatedOwnedEdgeNode {
     /// Byte offset of the owning class-`0x62` packet.
-    pub owner_pos: usize,
+    pub(crate) owner_pos: usize,
     /// Zero-based frame ordinal after the owner packet.
-    pub allocation_ordinal: u32,
+    pub(crate) allocation_ordinal: u32,
     /// Selected compact edge node.
-    pub node: B2EdgeNode,
+    pub(crate) node: B2EdgeNode,
 }
 
 /// Compact edge endpoints resolved through structural allocation references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConsolidatedCompactEdgeEndpoints {
+pub(crate) struct ConsolidatedCompactEdgeEndpoints {
     /// Edge node whose endpoint references closed under the local allocation grammar.
-    pub node: B2EdgeNode,
+    pub(crate) node: B2EdgeNode,
     /// Byte offsets of the resolved endpoint records, in edge order.
-    pub endpoint_records: [usize; 2],
+    pub(crate) endpoint_records: [usize; 2],
 }
 
 /// One fixed-nine owner boundary closed by four resolved class-`0x5e` edges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ConsolidatedOwnerBoundaryCycle {
     /// Bounded record source containing the owner and its local targets.
-    pub source_index: usize,
+    pub(crate) source_index: usize,
     /// Class-`0x62` owner-record offset.
-    pub owner_pos: usize,
+    pub(crate) owner_pos: usize,
     /// Source-scoped class-`0x5f` face node associated with this boundary
     /// allocation, when the cycle prelude closes its checked identity.
-    pub face_node: Option<B2FaceNode5f>,
+    pub(crate) face_node: Option<B2FaceNode5f>,
     /// Four edge targets in fixed-nine slot order.
-    pub edges: [crate::families::b2::records::B2OwnerBoundaryEdge; 4],
+    pub(crate) edges: [crate::families::b2::records::B2OwnerBoundaryEdge; 4],
 }
 
 /// Class of a consolidated edge-definition frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum ConsolidatedEdgeDefinitionClass {
+pub(crate) enum ConsolidatedEdgeDefinitionClass {
     Class23,
     Class24,
     Class25,
@@ -164,15 +164,15 @@ impl TryFrom<u8> for ConsolidatedEdgeDefinitionClass {
 
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ConsolidatedEdgeDefinition {
+pub(crate) struct ConsolidatedEdgeDefinition {
     /// Framed record.
-    pub frame: ConsolidatedRawFrame,
+    pub(crate) frame: ConsolidatedRawFrame,
     /// Edge-definition class in `0x23..=0x25`.
-    pub class: ConsolidatedEdgeDefinitionClass,
+    pub(crate) class: ConsolidatedEdgeDefinitionClass,
 }
 
 impl ConsolidatedEdgeDefinition {
-    pub fn data(&self) -> Option<ConsolidatedEdgeDefinitionData> {
+    pub(super) fn data(&self) -> Option<ConsolidatedEdgeDefinitionData> {
         consolidated_edge_definition_data(self.class.into(), &self.frame.payload)
     }
 }
@@ -180,7 +180,7 @@ impl ConsolidatedEdgeDefinition {
 /// Persistent operand encoding in a class-25 definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Option<u8>", into = "Option<u8>")]
-pub enum Class25PersistentLead {
+pub(crate) enum Class25PersistentLead {
     Compact,
     Lead0a,
     Lead0b,
@@ -208,7 +208,7 @@ impl From<Class25PersistentLead> for Option<u8> {
 /// Boundary marker in a class-25 scalar lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum Class25ScalarMarker {
+enum Class25ScalarMarker {
     M82,
     M83,
     M89,
@@ -242,7 +242,7 @@ impl From<Class25ScalarMarker> for u8 {
     try_from = "Class25ScalarSegmentWire",
     into = "Class25ScalarSegmentWire"
 )]
-pub enum Class25ScalarSegment {
+pub(crate) enum Class25ScalarSegment {
     M82Five(Box<[f64; 5]>),
     M82Six(Box<[f64; 6]>),
     M82Seven(Box<[f64; 7]>),
@@ -297,7 +297,7 @@ impl From<Class25ScalarSegment> for Class25ScalarSegmentWire {
 /// Closed payload grammar of a consolidated edge-definition frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
-pub enum ConsolidatedEdgeDefinitionData {
+pub(crate) enum ConsolidatedEdgeDefinitionData {
     /// Compact class-`0x24` payload `81 <operand> 0f 87`.
     Compact24 {
         /// Width-coded operand.
@@ -336,7 +336,7 @@ pub enum ConsolidatedEdgeDefinitionData {
 /// Decode a complete class-specific edge-definition payload without inferring
 /// geometric meanings for its operand or scalar lanes.
 #[must_use]
-pub fn consolidated_edge_definition_data(
+pub(crate) fn consolidated_edge_definition_data(
     class: u8,
     payload: &[u8],
 ) -> Option<ConsolidatedEdgeDefinitionData> {
@@ -423,7 +423,7 @@ fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Class25P
 /// Native endpoint-incidence graph of complete consolidated edge runs.
 #[derive(Debug, Clone)]
 #[cfg(test)]
-pub struct ConsolidatedNativeEdgeGraph {
+pub(in crate::families::consolidated) struct ConsolidatedNativeEdgeGraph {
     /// Persistent native vertex identities in first-incidence order.
     pub vertex_identities: Vec<u32>,
     /// Edge runs in serialization order, with endpoints indexing
@@ -436,14 +436,14 @@ pub struct ConsolidatedNativeEdgeGraph {
 /// One edge in a consolidated native endpoint-incidence graph.
 #[derive(Debug, Clone)]
 #[cfg(test)]
-pub struct ConsolidatedNativeGraphEdge {
+pub(super) struct ConsolidatedNativeGraphEdge {
     /// Compact endpoint indices into [`ConsolidatedNativeEdgeGraph::vertex_identities`].
     pub vertices: [usize; 2],
 }
 
 /// Uniquely resolved carrier for one side of a consolidated edge block.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ConsolidatedSupportBinding {
+pub(crate) enum ConsolidatedSupportBinding {
     /// Standalone `b2 03 28` cylinder record.
     Cylinder {
         /// Carrier record byte offset.
@@ -492,17 +492,17 @@ pub enum ConsolidatedSupportBinding {
 
 /// Consolidated edge block with uniquely resolved side carriers.
 #[derive(Debug, Clone)]
-pub struct ResolvedConsolidatedEdgeBlock {
+pub(crate) struct ResolvedConsolidatedEdgeBlock {
     /// Parsed pcurve pair and shared edge packet.
-    pub block: ConsolidatedEdgeBlock,
+    pub(crate) block: ConsolidatedEdgeBlock,
     /// Carrier binding for each pcurve side.
-    pub supports: [Option<ConsolidatedSupportBinding>; 2],
+    pub(crate) supports: [Option<ConsolidatedSupportBinding>; 2],
     /// Shared lifted 3D definition sites when every liftable side agrees
     /// pointwise in the common edge parameterization.
-    pub shared_loci: Option<Vec<Point3>>,
+    pub(crate) shared_loci: Option<Vec<Point3>>,
     /// Unordered 3D endpoint loci when at least one uniquely bound side can be
     /// lifted and every liftable side agrees.
-    pub endpoint_loci: Option<[Point3; 2]>,
+    pub(crate) endpoint_loci: Option<[Point3; 2]>,
 }
 
 struct ConsolidatedCarriers<'a> {
@@ -519,12 +519,12 @@ struct ConsolidatedCarriers<'a> {
 /// B-family class-`0x23` range packet.
 #[must_use]
 #[cfg(test)]
-pub fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
+pub(super) fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
     consolidated_edge_blocks_from_records(data, &records)
 }
 
-pub(crate) fn consolidated_edge_blocks_from_records(
+fn consolidated_edge_blocks_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<ConsolidatedEdgeBlock> {
@@ -573,7 +573,7 @@ pub(crate) fn consolidated_edge_blocks_from_records(
 /// other framed record do not form a run.
 #[must_use]
 #[cfg(test)]
-pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
+pub(super) fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
     let records = consolidated_records(data);
     consolidated_topology_edge_runs_from_records(data, &records)
 }
@@ -627,7 +627,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
 /// class-`0x23` definition must close under the eight-scalar grammar.
 #[must_use]
 #[cfg(test)]
-pub fn consolidated_analytic_circle_edge_runs(
+pub(super) fn consolidated_analytic_circle_edge_runs(
     data: &[u8],
 ) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
     let records = consolidated_records(data);
@@ -694,7 +694,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
 /// both close under their typed grammars.
 #[must_use]
 #[cfg(test)]
-pub fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
+pub(super) fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
     let records = consolidated_records(data);
     consolidated_class25_edge_runs_from_records(data, &records)
 }
@@ -756,7 +756,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
 /// availability. Records separated by another framed record do not form a run.
 #[must_use]
 #[cfg(test)]
-pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
+pub(super) fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
     let records = consolidated_records(data);
     consolidated_edge_use_runs_from_records(data, &records)
 }
@@ -1166,7 +1166,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
 /// edge runs. A broken use/edge allocation chain invalidates the graph.
 #[must_use]
 #[cfg(test)]
-pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeGraph> {
+pub(super) fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeGraph> {
     let runs = consolidated_topology_edge_runs(data);
     if runs.is_empty() {
         return None;
@@ -1224,7 +1224,7 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 /// families, remain unresolved.
 #[must_use]
 #[cfg(test)]
-pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
+pub(super) fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
     resolve_consolidated_edge_blocks_from_records(
         data,
@@ -1726,12 +1726,12 @@ fn pcurve_endpoints_match_vertices(
 /// A/B or B5/A8 record. Marker-like bytes inside record payloads are not
 /// vertices.
 #[must_use]
-pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
+pub(in crate::families) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
     let records = consolidated_records(data);
     object_stream_vertices_from_records(data, &records)
 }
 
-pub(crate) fn object_stream_vertices_from_records(
+fn object_stream_vertices_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Vec<Point3> {

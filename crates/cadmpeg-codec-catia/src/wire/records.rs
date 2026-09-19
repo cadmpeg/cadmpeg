@@ -24,53 +24,53 @@ use super::bytes::{compact_int, f64_le};
 
 /// One knot of a degree-5 consolidated UV jet.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ConsolidatedPcurveSite {
+pub(crate) struct ConsolidatedPcurveSite {
     /// Global parameter at this site.
-    pub knot: f64,
+    pub(crate) knot: f64,
     /// UV position.
-    pub point: [f64; 2],
+    pub(crate) point: [f64; 2],
     /// UV first derivative.
-    pub first_derivatives: [f64; 2],
+    pub(crate) first_derivatives: [f64; 2],
     /// UV second derivative.
-    pub second_derivatives: [f64; 2],
+    pub(crate) second_derivatives: [f64; 2],
 }
 
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
 #[derive(Debug, Clone)]
-pub struct ConsolidatedPcurve {
+pub(crate) struct ConsolidatedPcurve {
     /// Record byte offset.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Referenced support-surface identifier.
-    pub support_id: u32,
+    pub(crate) support_id: u32,
     /// Number of leading extrapolation sites encoded by the array marker.
-    pub extrapolation_sites: u32,
+    pub(crate) extrapolation_sites: u32,
     /// Knot-aligned UV jet samples.
-    pub sites: Vec<ConsolidatedPcurveSite>,
+    pub(crate) sites: Vec<ConsolidatedPcurveSite>,
     /// Native parameter range.
-    pub range: [f64; 2],
+    pub(crate) range: [f64; 2],
     /// Bytes following the native range inside the framed record.
-    pub tail: Vec<u8>,
+    pub(crate) tail: Vec<u8>,
 }
 
 impl ConsolidatedPcurve {
-    pub const DEGREE: u32 = 5;
+    pub(crate) const DEGREE: u32 = 5;
 
-    pub fn knots(&self) -> Vec<f64> {
+    pub(crate) fn knots(&self) -> Vec<f64> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 
-    pub fn points(&self) -> Vec<[f64; 2]> {
+    pub(crate) fn points(&self) -> Vec<[f64; 2]> {
         self.sites.iter().map(|site| site.point).collect()
     }
 
-    pub fn first_derivatives(&self) -> Vec<[f64; 2]> {
+    pub(crate) fn first_derivatives(&self) -> Vec<[f64; 2]> {
         self.sites
             .iter()
             .map(|site| site.first_derivatives)
             .collect()
     }
 
-    pub fn second_derivatives(&self) -> Vec<[f64; 2]> {
+    pub(crate) fn second_derivatives(&self) -> Vec<[f64; 2]> {
         self.sites
             .iter()
             .map(|site| site.second_derivatives)
@@ -185,7 +185,7 @@ pub(crate) fn parse_consolidated_pcurve(
 /// Header-token width of a length-closed A/B-family frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum ConsolidatedFrameWidth {
+pub(crate) enum ConsolidatedFrameWidth {
     /// One-byte header token.
     One,
     /// Two-byte header token.
@@ -226,7 +226,7 @@ impl TryFrom<u8> for ConsolidatedFrameWidth {
 /// Independent framing flag of a length-closed A/B-family frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub enum ConsolidatedFrameFlag {
+pub(crate) enum ConsolidatedFrameFlag {
     /// Flag `0x03`.
     Flag03,
     /// Flag `0x13`.
@@ -266,18 +266,18 @@ impl TryFrom<u8> for ConsolidatedFrameFlag {
 
 /// Length-closed A/B-family frame shared by edge-definition and descriptor records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConsolidatedRawFrame<Offset = usize> {
+pub(crate) struct ConsolidatedRawFrame<Offset = usize> {
     /// Record byte offset.
     #[serde(rename = "byte_offset")]
-    pub pos: Offset,
+    pub(crate) pos: Offset,
     /// Header-token width in bytes.
-    pub width: ConsolidatedFrameWidth,
+    pub(crate) width: ConsolidatedFrameWidth,
     /// Independent framing flag.
-    pub flag: ConsolidatedFrameFlag,
+    pub(crate) flag: ConsolidatedFrameFlag,
     /// Width-coded header token.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
     /// Complete class-specific payload.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
 }
 
 impl ConsolidatedRawFrame {
@@ -314,7 +314,7 @@ pub(crate) struct ConsolidatedFrame {
 
 /// Width-coded consolidated record family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConsolidatedFamily {
+pub(crate) enum ConsolidatedFamily {
     /// U32-length A family (`a5/a6/a7`).
     A,
     /// U8-length B family (`b2/b3/b4`).
@@ -323,28 +323,28 @@ pub enum ConsolidatedFamily {
 
 /// One length-closed record in a consolidated A/B cluster.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConsolidatedRecord {
+pub(crate) struct ConsolidatedRecord {
     /// Zero-based logical record-source ordinal supplied by the container.
-    pub source_index: usize,
+    pub(crate) source_index: usize,
     /// Byte range in the reconstructed logical record source.
-    pub source_range: Range<usize>,
+    pub(crate) source_range: Range<usize>,
     /// Physical placement of the frame.
-    pub placement: ConsolidatedPlacement,
+    placement: ConsolidatedPlacement,
     /// Record family.
-    pub family: ConsolidatedFamily,
+    pub(crate) family: ConsolidatedFamily,
     /// Header-token width in bytes.
-    pub width: ConsolidatedFrameWidth,
+    pub(crate) width: ConsolidatedFrameWidth,
     /// Independent flag byte (`0x03`, `0x13`, or `0x83`).
-    pub flag: ConsolidatedFrameFlag,
+    pub(crate) flag: ConsolidatedFrameFlag,
     /// Record class byte.
-    pub class: u8,
+    pub(crate) class: u8,
     /// Little-endian width-coded header token.
-    pub header_token: u32,
+    pub(crate) header_token: u32,
 }
 
 /// Physical placement of a consolidated frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConsolidatedPlacement {
+enum ConsolidatedPlacement {
     /// A frame contained in one physical extent.
     Contiguous {
         /// Complete physical frame range.
@@ -402,7 +402,7 @@ pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
 /// [`consolidated_records_in_sources`] so directory and unrelated-file bytes
 /// cannot seed the inventory.
 #[must_use]
-pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
+pub(crate) fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
     consolidated_records_in_sources(
         data,
         std::iter::once(std::iter::once(SourceExtent::whole(data))),
@@ -422,7 +422,7 @@ pub(crate) struct SourceExtent(Range<usize>);
 impl SourceExtent {
     /// The complete image.
     #[must_use]
-    pub(crate) fn whole(data: &[u8]) -> Self {
+    fn whole(data: &[u8]) -> Self {
         Self(0..data.len())
     }
 
@@ -787,7 +787,7 @@ pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
 /// vertex points in stream order.
-pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
+pub(crate) fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
     scan_vertex_record_ranges(bytes)
         .into_iter()
         .map(|range| {

@@ -24,56 +24,56 @@ use crate::wire::bytes::{f64_le, f64_point, f64_vector};
 
 /// A directly decoded analytic carrier in the zero-entity `a9 03` stream.
 #[derive(Debug, Clone)]
-pub struct ZeroEntitySurface {
+pub(crate) struct ZeroEntitySurface {
     /// Offset of the framed record in the file.
-    pub pos: usize,
+    pub(super) pos: usize,
     /// The decoded surface carrier.
-    pub geometry: SurfaceGeometry,
+    pub(super) geometry: SurfaceGeometry,
 }
 
 /// One face-local support occurrence owned by a zero-entity surface carrier.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZeroEntitySupportOccurrence {
+pub(crate) struct ZeroEntitySupportOccurrence {
     /// Offset of the framed `21xx` record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    pub tag: [u8; 2],
+    pub(crate) tag: [u8; 2],
     /// Face-local support slot stored by the framed token at record offset 12.
-    pub face_local_slot: u32,
+    pub(crate) face_local_slot: u32,
     /// Stored UV endpoints when this support family carries them inline.
-    pub uv_endpoints: Option<[[f64; 2]; 2]>,
+    pub(crate) uv_endpoints: Option<[[f64; 2]; 2]>,
     /// Complete parameter-space curve carried by the support record.
-    pub pcurve: Option<PcurveGeometry>,
+    pub(crate) pcurve: Option<PcurveGeometry>,
     /// Exact model-space carrier derived from the pcurve and owning surface.
-    pub model_curve: Option<CurveGeometry>,
+    pub(crate) model_curve: Option<CurveGeometry>,
     /// Exact procedural model-space carrier derived from the pcurve and owning surface.
-    pub model_curve_construction: Option<ProceduralCurveDefinition>,
+    pub(crate) model_curve_construction: Option<ProceduralCurveDefinition>,
     /// Model-carrier parameters at the two stored UV endpoints.
-    pub model_parameters: Option<[f64; 2]>,
+    pub(crate) model_parameters: Option<[f64; 2]>,
     /// Surface point at the midpoint of the bounded pcurve parameter interval.
-    pub model_midpoint: Option<Point3>,
+    pub(crate) model_midpoint: Option<Point3>,
     /// UV endpoints lifted through the owning surface carrier.
-    pub model_endpoints: Option<[Point3; 2]>,
+    pub(crate) model_endpoints: Option<[Point3; 2]>,
 }
 
 /// One surface carrier and its maximal following `21xx` support run.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZeroEntitySupportRun {
+pub(crate) struct ZeroEntitySupportRun {
     /// Offset of the owning surface-carrier record.
-    pub carrier_pos: usize,
+    pub(crate) carrier_pos: usize,
     /// One-based global record ordinal of the owning surface carrier.
-    pub carrier_record_ordinal: u32,
+    pub(crate) carrier_record_ordinal: u32,
     /// Positionally aligned face record when the complete rosters agree.
-    pub face: Option<ZeroEntityFace>,
+    pub(crate) face: Option<ZeroEntityFace>,
     /// Face-local support occurrences in storage order.
-    pub supports: Vec<ZeroEntitySupportOccurrence>,
+    pub(crate) supports: Vec<ZeroEntitySupportOccurrence>,
 }
 
 /// Terminal control byte following a zero-entity face allocation lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ZeroEntityFaceControl {
+pub(crate) enum ZeroEntityFaceControl {
     /// Control byte `0x03`.
     Control03,
     /// Control byte `0x05`.
@@ -81,7 +81,7 @@ pub enum ZeroEntityFaceControl {
 }
 
 impl ZeroEntityFaceControl {
-    pub fn from_byte(value: u8) -> Option<Self> {
+    fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x03 => Some(Self::Control03),
             0x05 => Some(Self::Control05),
@@ -89,7 +89,7 @@ impl ZeroEntityFaceControl {
         }
     }
 
-    pub fn as_byte(self) -> u8 {
+    pub(crate) fn as_byte(self) -> u8 {
         match self {
             Self::Control03 => 0x03,
             Self::Control05 => 0x05,
@@ -99,23 +99,23 @@ impl ZeroEntityFaceControl {
 
 /// One counted zero-entity `5fxx` face record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZeroEntityFace {
+pub(crate) struct ZeroEntityFace {
     /// Offset of the framed face record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    pub tag: [u8; 2],
+    pub(crate) tag: [u8; 2],
     /// Counted allocation values in storage order.
-    pub allocations: Vec<u32>,
+    pub(crate) allocations: Vec<u32>,
     /// Positionally aligned loop records when the complete flattened roster agrees.
-    pub loops: Option<Vec<ZeroEntityLoop>>,
+    pub(crate) loops: Option<Vec<ZeroEntityLoop>>,
     /// Terminal control byte following the allocation lane.
-    pub terminal_control: ZeroEntityFaceControl,
+    pub(crate) terminal_control: ZeroEntityFaceControl,
 }
 
 impl ZeroEntityFace {
-    pub fn loop_terminals(&self) -> Vec<u32> {
+    pub(crate) fn loop_terminals(&self) -> Vec<u32> {
         let Some(first) = self.allocations.first().copied() else {
             return Vec::new();
         };
@@ -128,7 +128,7 @@ impl ZeroEntityFace {
 
 /// A nonempty descending run of logical loop members below its terminal.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityLoopMembers {
+pub(crate) struct ZeroEntityLoopMembers {
     terminal_id: u32,
     gap: u32,
     member_count: NonZeroUsize,
@@ -136,7 +136,7 @@ pub struct ZeroEntityLoopMembers {
 
 impl ZeroEntityLoopMembers {
     /// Admit a nonempty run with a positive gap and no identifier underflow.
-    pub fn try_new(terminal_id: u32, gap: u32, member_count: NonZeroUsize) -> Option<Self> {
+    pub(super) fn try_new(terminal_id: u32, gap: u32, member_count: NonZeroUsize) -> Option<Self> {
         if gap == 0 {
             return None;
         }
@@ -151,23 +151,23 @@ impl ZeroEntityLoopMembers {
     }
 
     /// Terminal even-lane logical identifier.
-    pub const fn terminal_id(&self) -> u32 {
+    pub(crate) const fn terminal_id(&self) -> u32 {
         self.terminal_id
     }
 
     /// Difference between the terminal and first member identifiers.
-    pub const fn gap(&self) -> u32 {
+    pub(crate) const fn gap(&self) -> u32 {
         self.gap
     }
 
     /// Nonterminal identifiers in source order.
-    pub fn member_ids(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(crate) fn member_ids(&self) -> impl Iterator<Item = u32> + '_ {
         std::iter::successors(Some(self.terminal_id - self.gap), |id| id.checked_sub(1))
             .take(self.member_count.get())
     }
 
     /// Face-local support slots in member order.
-    pub fn support_slots(&self) -> impl Iterator<Item = u32> + '_ {
+    fn support_slots(&self) -> impl Iterator<Item = u32> + '_ {
         (self.gap..=self.terminal_id).take(self.member_count.get())
     }
 }
@@ -175,7 +175,7 @@ impl ZeroEntityLoopMembers {
 /// Admitted zero-entity loop classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum ZeroEntityLoopClass {
+pub(crate) enum ZeroEntityLoopClass {
     /// Outer loop with forward face sense.
     Outer41 = 0x41,
     /// Inner bound loop.
@@ -186,7 +186,7 @@ pub enum ZeroEntityLoopClass {
 
 impl ZeroEntityLoopClass {
     /// Admit a declared loop-class byte.
-    pub const fn from_byte(byte: u8) -> Option<Self> {
+    const fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0x41 => Some(Self::Outer41),
             0x50 => Some(Self::Bound50),
@@ -196,48 +196,48 @@ impl ZeroEntityLoopClass {
     }
 
     /// Native loop-class byte.
-    pub const fn as_byte(self) -> u8 {
+    pub(crate) const fn as_byte(self) -> u8 {
         self as u8
     }
 }
 
 /// One counted zero-entity `62xx` loop record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ZeroEntityLoop {
+pub(crate) struct ZeroEntityLoop {
     /// Offset of the framed loop record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    pub tag: [u8; 2],
+    pub(crate) tag: [u8; 2],
     /// Nonterminal even-lane arithmetic run.
-    pub members: ZeroEntityLoopMembers,
+    pub(crate) members: ZeroEntityLoopMembers,
     /// Odd-lane typed references in member order.
-    pub typed_references: Vec<u32>,
+    pub(crate) typed_references: Vec<u32>,
     /// Face-local support record ordinals selected by the logical members.
-    pub support_record_ordinals: Vec<u32>,
+    pub(crate) support_record_ordinals: Vec<u32>,
     /// Stored loop-class byte.
-    pub loop_class: ZeroEntityLoopClass,
+    pub(crate) loop_class: ZeroEntityLoopClass,
     /// Absolute coedge senses in member order; `true` is forward.
-    pub forward_senses: Vec<bool>,
+    pub(crate) forward_senses: Vec<bool>,
     /// Complete sense-oriented model-space endpoint pairs in member order.
-    pub oriented_model_endpoints: Vec<[Point3; 2]>,
+    pub(crate) oriented_model_endpoints: Vec<[Point3; 2]>,
 }
 
 /// One `5e1a` allocation tuple.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityEdgeStride {
+pub(crate) struct ZeroEntityEdgeStride {
     /// Offset of the framed record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
-    pub allocations: [u32; 5],
+    pub(crate) allocations: [u32; 5],
 }
 
 impl ZeroEntityEdgeStride {
     /// Topology allocations in source order.
-    pub const fn topology_refs(&self) -> [u32; 3] {
+    pub(crate) const fn topology_refs(&self) -> [u32; 3] {
         [
             self.allocations[0],
             self.allocations[3],
@@ -246,23 +246,23 @@ impl ZeroEntityEdgeStride {
     }
 
     /// Adjacent surface-support allocations in source order.
-    pub const fn surface_support_refs(&self) -> [u32; 2] {
+    pub(crate) const fn surface_support_refs(&self) -> [u32; 2] {
         [self.allocations[1], self.allocations[2]]
     }
 }
 
 /// One positional `0638` oriented use.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityOrientedUse {
+pub(crate) struct ZeroEntityOrientedUse {
     /// Offset of the framed record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
 }
 
 /// Position within an oriented-use pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ZeroEntityUseSlot {
+pub(crate) enum ZeroEntityUseSlot {
     /// First use in source order.
     First,
     /// Second use in source order.
@@ -271,7 +271,7 @@ pub enum ZeroEntityUseSlot {
 
 impl ZeroEntityUseSlot {
     /// One-based positional side number.
-    pub const fn side(self) -> u32 {
+    pub(crate) const fn side(self) -> u32 {
         match self {
             Self::First => 1,
             Self::Second => 2,
@@ -281,24 +281,24 @@ impl ZeroEntityUseSlot {
 
 /// One `2569` header and its two immediately following positional uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityOrientedUsePair {
+pub(crate) struct ZeroEntityOrientedUsePair {
     /// Offset of the `2569` header.
-    pub header_pos: usize,
+    pub(crate) header_pos: usize,
     /// One-based global record ordinal of the `2569` header.
-    pub header_record_ordinal: u32,
+    pub(crate) header_record_ordinal: u32,
     base_columns: [u32; 2],
     /// Side-one then side-two oriented uses.
-    pub uses: [ZeroEntityOrientedUse; 2],
+    pub(crate) uses: [ZeroEntityOrientedUse; 2],
 }
 
 impl ZeroEntityOrientedUsePair {
     /// Stored base columns.
-    pub const fn base_columns(&self) -> [u32; 2] {
+    pub(crate) const fn base_columns(&self) -> [u32; 2] {
         self.base_columns
     }
 
     /// Allocation columns for the selected use slot.
-    pub const fn allocations(&self, slot: ZeroEntityUseSlot) -> [u32; 2] {
+    pub(crate) const fn allocations(&self, slot: ZeroEntityUseSlot) -> [u32; 2] {
         let side = slot.side();
         [self.base_columns[0] + side, self.base_columns[1] + side]
     }
@@ -306,7 +306,7 @@ impl ZeroEntityOrientedUsePair {
 
 /// Counted allocation vector of a zero-entity vertex-incidence record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ZeroEntityVertexAllocations {
+pub(crate) enum ZeroEntityVertexAllocations {
     /// Tag `050b`: two allocations.
     Two([u32; 2]),
     /// Tag `0510`: three allocations.
@@ -317,7 +317,7 @@ pub enum ZeroEntityVertexAllocations {
 
 impl ZeroEntityVertexAllocations {
     /// Complete two-byte record tag for this allocation arity.
-    pub fn tag(&self) -> [u8; 2] {
+    fn tag(&self) -> [u8; 2] {
         match self {
             Self::Two(_) => [0x05, 0x0b],
             Self::Three(_) => [0x05, 0x10],
@@ -325,7 +325,7 @@ impl ZeroEntityVertexAllocations {
         }
     }
 
-    pub fn as_slice(&self) -> &[u32] {
+    pub(crate) fn as_slice(&self) -> &[u32] {
         match self {
             Self::Two(allocations) => allocations,
             Self::Three(allocations) => allocations,
@@ -336,60 +336,60 @@ impl ZeroEntityVertexAllocations {
 
 /// One counted zero-entity vertex-incidence record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityVertexIncidence {
+pub(crate) struct ZeroEntityVertexIncidence {
     /// Offset of the framed `05xx` record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
     /// Stored allocation values whose length selects the record tag.
-    pub allocations: ZeroEntityVertexAllocations,
+    pub(crate) allocations: ZeroEntityVertexAllocations,
 }
 
 impl ZeroEntityVertexIncidence {
     /// Complete two-byte record tag selected by allocation arity.
-    pub fn tag(&self) -> [u8; 2] {
+    pub(crate) fn tag(&self) -> [u8; 2] {
         self.allocations.tag()
     }
 }
 
 /// The terminal zero-entity body hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityOwnershipRoot {
+pub(crate) struct ZeroEntityOwnershipRoot {
     /// Offset of the counted `6142` face-roster record.
-    pub face_roster_pos: usize,
+    pub(crate) face_roster_pos: usize,
     /// One-based global record ordinal of the face-roster record.
-    pub face_roster_record_ordinal: u32,
+    pub(crate) face_roster_record_ordinal: u32,
     /// Descending one-based face-allocation slots.
-    pub face_slots: Vec<u32>,
+    pub(crate) face_slots: Vec<u32>,
     /// Offset of the immediately following `6006` shell root.
-    pub shell_pos: usize,
+    pub(crate) shell_pos: usize,
     /// Offset of the immediately following `6508` body root.
-    pub body_pos: usize,
+    pub(crate) body_pos: usize,
 }
 
 impl ZeroEntityOwnershipRoot {
     /// One-based ordinal of the immediately following `6006` shell root.
-    pub fn shell_record_ordinal(&self) -> u32 {
+    pub(crate) fn shell_record_ordinal(&self) -> u32 {
         self.face_roster_record_ordinal.saturating_add(1)
     }
 
     /// One-based ordinal of the immediately following `6508` body root.
-    pub fn body_record_ordinal(&self) -> u32 {
+    pub(crate) fn body_record_ordinal(&self) -> u32 {
         self.face_roster_record_ordinal.saturating_add(2)
     }
 }
 
 /// One framed record in the zero-entity global identity namespace.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ZeroEntityRecordIdentity {
+pub(crate) struct ZeroEntityRecordIdentity {
     /// Offset of the framed record.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Exclusive logical end, including any inline continuation.
-    pub end: usize,
+    pub(crate) end: usize,
     /// Complete two-byte record tag.
-    pub tag: [u8; 2],
+    pub(crate) tag: [u8; 2],
     /// One-based global record ordinal.
-    pub record_ordinal: u32,
+    pub(crate) record_ordinal: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -654,7 +654,7 @@ fn zero_entity_nurbs_knot_lane(
 
 /// Inventory every complete framed record in the one-based global namespace.
 #[must_use]
-pub fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity> {
+pub(crate) fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity> {
     zero_entity_record_inventory_in_range(data, 0..data.len())
 }
 
@@ -678,20 +678,20 @@ pub(crate) fn zero_entity_record_inventory_in_range(
 /// Decode the terminal face-roster, shell, and body ownership roots.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
+fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot> {
     zero_entity_ownership_root_in_range(data, 0..data.len())
 }
 
 /// Decode every complete ownership hierarchy in the zero-entity stream.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_ownership_roots(data: &[u8]) -> Vec<ZeroEntityOwnershipRoot> {
+fn zero_entity_ownership_roots(data: &[u8]) -> Vec<ZeroEntityOwnershipRoot> {
     zero_entity_ownership_roots_in_range(data, 0..data.len())
 }
 
 /// Decode ownership roots whose records stay inside `range`.
 #[must_use]
-pub(crate) fn zero_entity_ownership_root_in_range(
+pub(super) fn zero_entity_ownership_root_in_range(
     data: &[u8],
     range: Range<usize>,
 ) -> Option<ZeroEntityOwnershipRoot> {
@@ -748,13 +748,13 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
 /// record's second tag byte is also its length code (`length = tag + 12`), so
 /// the decoder walks framed records.
 #[cfg(test)]
-pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
+fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
     zero_entity_surfaces_in_range(data, 0..data.len(), &mut crate::nurbs::LaneRefusals::new())
 }
 
 /// Decode surface carriers whose records stay inside `range`.
 #[must_use]
-pub(crate) fn zero_entity_surfaces_in_range(
+pub(super) fn zero_entity_surfaces_in_range(
     data: &[u8],
     range: Range<usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -773,7 +773,7 @@ pub(crate) fn zero_entity_surfaces_in_range(
 /// Decode surface-carrier ownership and exact face-local support occurrences.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
+fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
     zero_entity_support_runs_in_range(data, 0..data.len(), &mut crate::nurbs::LaneRefusals::new())
 }
 
@@ -1364,7 +1364,7 @@ fn zero_entity_support_pcurve(
 /// the neutral IR chart.  The support records store cylindrical and toroidal
 /// coordinates as arc lengths and conical latitude as slant length; IR
 /// analytic surfaces use angles and axial distance respectively.
-pub(crate) fn zero_entity_neutral_pcurve(
+pub(super) fn zero_entity_neutral_pcurve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
     record: &dyn std::fmt::Display,
@@ -1860,7 +1860,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
 /// Decode complete `5e1a` allocation tuples.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
+fn zero_entity_edge_strides(data: &[u8]) -> Vec<ZeroEntityEdgeStride> {
     zero_entity_edge_strides_in_range(data, 0..data.len())
 }
 
@@ -1907,7 +1907,7 @@ pub(crate) fn zero_entity_edge_strides_in_range(
 /// Decode complete `2569` headers with their adjacent `(1, 2)` oriented uses.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
+fn zero_entity_oriented_use_pairs(data: &[u8]) -> Vec<ZeroEntityOrientedUsePair> {
     zero_entity_oriented_use_pairs_in_range(data, 0..data.len())
 }
 
@@ -1972,7 +1972,7 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
 /// Decode complete counted `050b`, `0510`, and `0515` incidence records.
 #[cfg(test)]
 #[must_use]
-pub fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
+fn zero_entity_vertex_incidences(data: &[u8]) -> Vec<ZeroEntityVertexIncidence> {
     zero_entity_vertex_incidences_in_range(data, 0..data.len())
 }
 
@@ -2047,7 +2047,7 @@ fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
     (data.get(at) == Some(&0x10)).then(|| View::u32_le_at(data, at + 1))?
 }
 
-pub(crate) fn zero_entity_surface_at(
+fn zero_entity_surface_at(
     data: &[u8],
     record: usize,
     refusal: &mut crate::nurbs::LaneRefusals,

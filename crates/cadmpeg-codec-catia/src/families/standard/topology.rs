@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 /// physical edge rows and, for the standard family, the `05 08 01` vertex
 /// coordinate table ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#5-standard-nested-v5_cfv2-topology-spine)).
 #[derive(Debug, Clone, PartialEq)]
-pub struct StandardTopology {
+pub(crate) struct StandardTopology {
     pub(crate) faces: Vec<FaceTopology>,
     pub(crate) edge_rows: Vec<EdgeRow>,
     pub(crate) vertex_points: Vec<[f64; 3]>,
@@ -99,21 +99,21 @@ impl StandardTopology {
     /// Number of faces, equal to the largest contiguous `30 04 04 ff` FBB
     /// run's row count ([spec §5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
     #[must_use]
-    pub fn face_count(&self) -> usize {
+    pub(super) fn face_count(&self) -> usize {
         self.faces.len()
     }
 
     /// Per-face reconstructed boundaries, in FBB row order ([spec §5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#51-positional-binding): face
     /// ordinal `i` binds to FBB row `i`).
     #[must_use]
-    pub fn faces(&self) -> &[FaceTopology] {
+    pub(crate) fn faces(&self) -> &[FaceTopology] {
         &self.faces
     }
 
     /// Face-index components connected through shared physical edge rows, in
     /// first-face order.
     #[must_use]
-    pub fn face_components(&self) -> Vec<Vec<usize>> {
+    pub(super) fn face_components(&self) -> Vec<Vec<usize>> {
         let mut union = UnionFind::new(self.faces.len());
         let mut first_face_by_edge = HashMap::<usize, usize>::new();
         for (face, topology) in self.faces.iter().enumerate() {
@@ -144,7 +144,7 @@ impl StandardTopology {
 
     /// The counted spine's physical edge rows, in table order ([spec §5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
     #[must_use]
-    pub fn edge_rows(&self) -> &[EdgeRow] {
+    pub(super) fn edge_rows(&self) -> &[EdgeRow] {
         &self.edge_rows
     }
 
@@ -152,7 +152,7 @@ impl StandardTopology {
     /// topology built by [`parse_fbb`], whose coordinate records are not
     /// part of the counted spine.
     #[must_use]
-    pub fn vertex_points(&self) -> &[[f64; 3]] {
+    pub(super) fn vertex_points(&self) -> &[[f64; 3]] {
         &self.vertex_points
     }
 
@@ -160,14 +160,14 @@ impl StandardTopology {
     /// separate stored table and are not assigned to these classes here.
     #[must_use]
     #[cfg(test)]
-    pub fn logical_vertex_count(&self) -> usize {
+    pub(crate) fn logical_vertex_count(&self) -> usize {
         self.logical_vertex_count
     }
 
     /// Classify each consecutive FBB face group from physical-edge incidence.
     /// An edge cannot belong to faces in two different groups.
     #[must_use]
-    pub fn body_kinds(&self, face_groups: &[usize]) -> Option<Vec<BodyKind>> {
+    pub(super) fn body_kinds(&self, face_groups: &[usize]) -> Option<Vec<BodyKind>> {
         let mut remaining = self.faces.as_slice();
         let mut groups = Vec::new();
         for &count in face_groups {
@@ -183,7 +183,7 @@ impl StandardTopology {
 
     /// Orient every incidence-closed FBB face group independently. Open sheet
     /// and non-manifold general groups retain their reconstructed loop senses.
-    pub fn orient_solid_body_cycles(&mut self, face_groups: &[usize]) -> Option<()> {
+    pub(super) fn orient_solid_body_cycles(&mut self, face_groups: &[usize]) -> Option<()> {
         let mut remaining = self.faces.as_mut_slice();
         let mut groups = Vec::new();
         for &count in face_groups {
@@ -207,7 +207,7 @@ impl StandardTopology {
     /// exact unordered endpoint pair per physical edge. A result is returned
     /// only when the induced bijection is unique.
     #[must_use]
-    pub fn bind_vertex_points(&self, edge_point_pairs: &[[usize; 2]]) -> Option<Vec<usize>> {
+    pub(super) fn bind_vertex_points(&self, edge_point_pairs: &[[usize; 2]]) -> Option<Vec<usize>> {
         if edge_point_pairs.len() != self.edge_rows.len()
             || self.logical_vertex_count != self.vertex_points.len()
         {
@@ -239,7 +239,7 @@ impl StandardTopology {
 
     /// Logical endpoint components in physical edge-row direction.
     #[must_use]
-    pub fn edge_vertices(&self) -> Option<Vec<[usize; 2]>> {
+    pub(crate) fn edge_vertices(&self) -> Option<Vec<[usize; 2]>> {
         let mut edge_vertices =
             alloc_filled(self.edge_rows.len(), None, "catia standard edge vertices").ok()?;
         for face in &self.faces {
@@ -269,7 +269,7 @@ impl StandardTopology {
     /// collapse face-local corners even when adjacent faces use different trim
     /// handles. The pair order is the physical edge-row direction.
     #[must_use]
-    pub fn with_native_edge_vertices(&self, edge_ports: &[[u32; 2]]) -> Option<Self> {
+    fn with_native_edge_vertices(&self, edge_ports: &[[u32; 2]]) -> Option<Self> {
         if edge_ports.len() != self.edge_rows.len() {
             return None;
         }
@@ -302,7 +302,7 @@ impl StandardTopology {
 
 /// The boundary meaning of an edge-row handle sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum EdgeBoundaryLayout {
+pub(crate) enum EdgeBoundaryLayout {
     /// The first and last handles are endpoint ports in the global trim-handle
     /// namespace; the handles between them match the boundary.
     InteriorWithFlankingCorners,
@@ -312,14 +312,14 @@ pub enum EdgeBoundaryLayout {
 
 /// One row of a counted standard/FBB edge table, with handles read big-endian.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EdgeRow {
+pub(crate) struct EdgeRow {
     /// Table-kind byte the row was parsed under (`0x01` or `0x02`; spec
     /// §5.2 `count_header`).
-    pub kind: u8,
+    pub(crate) kind: u8,
     /// The row's BE handle sequence.
-    pub handles: Vec<u32>,
+    pub(crate) handles: Vec<u32>,
     /// How the handle sequence maps onto a trim boundary.
-    pub boundary_layout: EdgeBoundaryLayout,
+    pub(crate) boundary_layout: EdgeBoundaryLayout,
 }
 
 impl EdgeRow {
@@ -353,21 +353,21 @@ impl EdgeRow {
 /// One face's reconstructed boundary cycles ([spec §5.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#53-trim-records-indexed-triangle-mesh-packets)): one outer cycle
 /// plus one per hole, in the order recovered from the trim mesh.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FaceTopology {
+pub(crate) struct FaceTopology {
     /// The face's boundary cycles; loop count equals boundary-cycle count.
-    pub boundaries: Vec<Boundary>,
+    pub(crate) boundaries: Vec<Boundary>,
 }
 
 /// One closed boundary cycle of a face's trim mesh, covered end-to-end by
 /// matched edge rows ([spec §5.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#53-trim-records-indexed-triangle-mesh-packets)–[§5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Boundary {
+pub(crate) struct Boundary {
     /// The physical edge uses covering this cycle, in cycle order.
-    pub coedges: NonEmptyCoedges,
+    pub(crate) coedges: NonEmptyCoedges,
 }
 
 /// A face boundary cycle admitted with at least one matched coedge use.
-pub type NonEmptyCoedges = NonEmptyMembers<CoedgeUse>;
+pub(crate) type NonEmptyCoedges = NonEmptyMembers<CoedgeUse>;
 
 impl Boundary {
     /// Admit one reconstructed cycle after its source matching has completed.
@@ -381,26 +381,26 @@ impl Boundary {
 /// One physical edge's use within a face boundary, oriented by its match
 /// against the recovered boundary cycle ([spec §5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CoedgeUse {
+pub(crate) struct CoedgeUse {
     /// Index into [`StandardTopology::edge_rows`] for the matched edge
     /// row.
-    pub edge_row: usize,
+    pub(crate) edge_row: usize,
     /// `true` when the edge row's handle sequence matched the boundary
     /// cycle in reverse; orientation comes from this match, not a stored
     /// sense bit ([spec §5.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#54-physical-edge-identity-and-portvertex-collapse)).
-    pub reversed: bool,
+    pub(crate) reversed: bool,
     /// Logical-vertex (union-find component) index at this coedge's start,
     /// in boundary-cycle traversal direction.
-    pub start_vertex: usize,
+    pub(crate) start_vertex: usize,
     /// Logical-vertex (union-find component) index at this coedge's end,
     /// in boundary-cycle traversal direction.
-    pub end_vertex: usize,
+    pub(crate) end_vertex: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecord {
     pub(crate) packet: TrimPacket,
-    pub(crate) frame_vector: Option<[f64; 3]>,
+    pub(super) frame_vector: Option<[f64; 3]>,
     pub(crate) kind: u8,
 }
 
@@ -440,7 +440,7 @@ fn reconstruct_incidence_with_edge_classes(
     )
 }
 
-pub(crate) fn reconstruct_incidence_with_edge_classes_and_mesh(
+pub(super) fn reconstruct_incidence_with_edge_classes_and_mesh(
     edge_rows: Vec<EdgeRow>,
     vertex_points: Vec<[f64; 3]>,
     edge_faces: &[[usize; 2]],
@@ -499,7 +499,7 @@ pub(crate) fn reconstruct_incidence_with_edge_classes_and_mesh(
     })
 }
 
-pub(crate) fn complete_duplicate_face_slots(
+pub(super) fn complete_duplicate_face_slots(
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
     edge_points: &[[usize; 2]],
@@ -518,7 +518,7 @@ pub(crate) fn complete_duplicate_face_slots(
         mesh_bytes: Option<&'a [u8]>,
     }
 
-    pub(crate) fn search(
+    fn search(
         inputs: &SearchInputs<'_>,
         degrees: &mut [BTreeMap<usize, u8>],
         assignment: &mut [usize],
@@ -990,7 +990,7 @@ pub(crate) fn incidence_cycles(
 /// big-endian width; the
 /// following counted `05 08 01` table supplies vertex coordinates.
 #[must_use]
-pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
+pub(crate) fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
     let face_run = largest_fbb_run(bytes)?;
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
@@ -1007,14 +1007,14 @@ pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
 /// This closes the cross-face quotient independently of face-local trim-handle
 /// names.
 #[must_use]
-pub fn parse_fbb_with_native_vertices(
+pub(super) fn parse_fbb_with_native_vertices(
     bytes: &[u8],
     edge_ports: &[[u32; 2]],
 ) -> Option<StandardTopology> {
     parse_fbb(bytes)?.with_native_edge_vertices(edge_ports)
 }
 
-pub(crate) fn reconstruct(
+pub(super) fn reconstruct(
     edge_rows: Vec<EdgeRow>,
     vertex_points: Vec<[f64; 3]>,
     trims: &[TrimRecord],

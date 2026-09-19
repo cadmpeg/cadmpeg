@@ -9,23 +9,23 @@ use crate::layout::value_block_7c0b as value_block;
 /// One exact `7C0B` value block immediately preceding a schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ValueBlockWire", into = "ValueBlockWire")]
-pub struct ValueBlock {
+pub(crate) struct ValueBlock {
     /// Byte offset of the `7C0B` marker.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Value payload between the six-byte header and terminator.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
 }
 
 impl ValueBlock {
-    pub fn declared_len(&self) -> usize {
+    fn declared_len(&self) -> usize {
         value_block::LEN + self.payload.len()
     }
 
-    pub fn total_len(&self) -> usize {
+    pub(crate) fn total_len(&self) -> usize {
         self.declared_len() + 1
     }
 
-    pub fn fields(&self) -> Vec<ValueField> {
+    pub(crate) fn fields(&self) -> Vec<ValueField> {
         tokenize(&self.payload)
     }
 }
@@ -65,15 +65,15 @@ impl TryFrom<ValueBlockWire> for ValueBlock {
 /// One through eight inline bytes with a derived length code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "InlineBytesWire", into = "InlineBytesWire")]
-pub struct InlineBytes(Vec<u8>);
+pub(crate) struct InlineBytes(Vec<u8>);
 
 impl InlineBytes {
     /// Exact inline bytes.
-    pub fn as_slice(&self) -> &[u8] {
+    pub(crate) fn as_slice(&self) -> &[u8] {
         &self.0
     }
     /// Inline length code.
-    pub fn code(&self) -> u8 {
+    pub(crate) fn code(&self) -> u8 {
         0xe7 + self.0.len() as u8
     }
 }
@@ -116,7 +116,7 @@ impl TryFrom<InlineBytesWire> for InlineBytes {
 
 /// One token in a `7C0B` value payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ValueField {
+pub(crate) enum ValueField {
     /// `0x32` followed by a source-schema ordinal or terminal absent sentinel.
     SchemaSelector {
         /// Source-schema entry ordinal or its terminal absent-schema sentinel.
@@ -191,7 +191,7 @@ pub enum ValueField {
 
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
 #[must_use]
-pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
+pub(crate) fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
     let mut blocks = Vec::<ValueBlock>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, bytes) {
