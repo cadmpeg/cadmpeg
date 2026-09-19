@@ -200,7 +200,11 @@ pub(crate) fn thru_curve_payload_references(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::{
+        surface_feature_payload_references, thru_curve_payload_references, TRAILING_PREFIX,
+        TRAILING_SUFFIX,
+    };
 
     #[test]
     fn surface_positions_keep_the_independent_trailing_group_and_both_span_bounds() {

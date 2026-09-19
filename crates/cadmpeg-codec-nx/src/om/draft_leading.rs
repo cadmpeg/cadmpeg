@@ -122,7 +122,8 @@ pub(crate) fn scan(record: OperationPayload<'_>) -> Option<DraftLeadingLane> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::scan;
 
     #[test]
     fn draft_leading_positions_follow_token_widths_and_checked_frame_extent() {

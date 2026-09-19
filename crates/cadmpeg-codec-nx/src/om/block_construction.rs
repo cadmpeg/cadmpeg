@@ -79,7 +79,8 @@ pub(crate) fn block_construction_references(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::{block_construction_references, TRAILER};
 
     #[test]
     fn block_frame_positions_include_token_widths_and_terminal_separator() {

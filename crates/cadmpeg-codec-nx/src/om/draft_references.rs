@@ -86,7 +86,8 @@ pub(crate) fn draft_feature_payload_references(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::{draft_feature_payload_references, GRAPH_PREFIX, MIDDLE, PAYLOAD_PREFIX};
 
     #[test]
     fn draft_graph_positions_follow_fixed_separators_and_token_widths() {

@@ -35,7 +35,7 @@ impl Swp104StateLane {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Swp104StateLane;
 
     #[test]
     fn state_lane_preserves_witness_presence_for_zero_bytes() {

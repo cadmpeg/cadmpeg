@@ -207,7 +207,7 @@ impl PayloadScalarAtom {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{PayloadScalarAtom, ShiftedBinary32, ShiftedBinary64};
 
     #[test]
     fn payload_atoms_derive_width_and_reject_inconsistent_wire_data() {

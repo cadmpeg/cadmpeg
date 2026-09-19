@@ -84,7 +84,10 @@ impl<O> MultiInstanceOutputs<O> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::compact::LocatedCompactIndex;
+    use super::super::reference_index::FeatureReferenceToken;
+    use super::super::PayloadObjectReference;
+    use super::MultiInstanceOutputs;
     use crate::om::compact::CompactIndexAtom;
 
     #[test]

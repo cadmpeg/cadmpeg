@@ -680,7 +680,7 @@ mod tests {
 
     use crate::NxCodec;
 
-    use super::*;
+    use crate::native::om::OmSchemaRole;
 
     #[test]
     fn decode_retains_ordered_ug_part_segment_index_rows() {

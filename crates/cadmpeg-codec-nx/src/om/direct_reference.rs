@@ -123,7 +123,9 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     mod operation_data_block_references;
     mod tagged_references;
-    use super::*;
+    use super::super::reference_index::CanonicalFeatureReferenceToken;
+    use super::{DirectReferenceFrame, ReferenceFieldKind};
+    use crate::om::operation_record::OperationPayload;
 
     fn record(payload: &[u8], payload_offset: usize) -> OperationPayload<'_> {
         OperationPayload::new(payload, payload_offset, "EXTRUDE").unwrap()

@@ -285,7 +285,7 @@ impl<T> TerminalFrame<u64, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
 
     #[test]
     fn suffix_requires_exact_repetition_canonical_indices_and_terminator() {

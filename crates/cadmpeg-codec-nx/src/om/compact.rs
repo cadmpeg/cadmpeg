@@ -228,7 +228,7 @@ impl<T, const RESERVED: u8> IntoIterator for CountedIndexMembers<T, RESERVED> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CompactIndexAtom, CountedIndexMembers, WrappedCompactIndex};
 
     #[test]
     fn compact_atoms_preserve_direct_and_extended_spellings() {

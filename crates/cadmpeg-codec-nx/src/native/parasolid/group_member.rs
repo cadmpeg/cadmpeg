@@ -185,7 +185,7 @@ impl TryFrom<MemberWire> for ParasolidGroupMember {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::ParasolidGroupMember;
 
     #[test]
     fn family_owns_the_node_identity_on_the_wire() {

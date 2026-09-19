@@ -137,7 +137,9 @@ fn name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::compact::CompactIndexAtom;
+    use super::super::compact::CompactIndexTarget;
+    use super::{scan, NameField};
 
     #[test]
     fn native_name_frames_bound_text_and_full_extent() {

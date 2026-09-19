@@ -69,7 +69,8 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::operation_record::OperationPayload;
+    use super::{ReferencePair, FIRST_PREFIX};
 
     #[test]
     fn reference_pairs_derive_positions_from_exact_tagged_widths() {
