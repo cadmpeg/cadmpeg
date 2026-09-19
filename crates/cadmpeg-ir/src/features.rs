@@ -3382,7 +3382,7 @@ pub enum FeatureOperation {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_direction"
         )]
-        direction: Option<Vector3>,
+        direction: Option<FeatureDirection3>,
         /// Complete one-or-many hole placements, when resolved.
         #[serde(
             default,
@@ -8787,7 +8787,7 @@ cadmpeg_core::named_optional_field!(
     "profile_filter"
 );
 cadmpeg_core::named_optional_field!(deserialize_face, FaceSelection, "face");
-cadmpeg_core::named_optional_field!(deserialize_direction, Vector3, "direction");
+cadmpeg_core::named_optional_field!(deserialize_direction, FeatureDirection3, "direction");
 cadmpeg_core::named_optional_field!(deserialize_placements, Vec<HolePlacement>, "placements");
 cadmpeg_core::named_optional_field!(
     deserialize_feature_operation_extent,
