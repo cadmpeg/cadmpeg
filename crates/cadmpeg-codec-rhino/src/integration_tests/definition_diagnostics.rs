@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use crate::chunks::ArchiveVersion;
 use crate::test_support::test_dump as bytes;
+use crate::RhinoCodec;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::Severity;
+use std::io::Cursor;
 
 #[test]
 fn definition_fixture_families_have_valid_nested_checksums() {

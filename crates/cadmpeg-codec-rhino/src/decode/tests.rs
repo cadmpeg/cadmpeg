@@ -1,14 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::*;
+use super::{
+    append_record_links, c2_curve_to_nurbs_join, coedge_sense, edge_param_range, edge_vertices,
+    face_sense, finite_tolerance, hatch_plane_transform, region_shell_groups,
+    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
+    stage_brep, stage_extrusion_caps, transform_decoded_curve, with_expand, with_expand_bytes,
+    BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError, CommittedExtrusionBoundary,
+    DecodeContext, ReportBuckets,
+};
+use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
+use crate::loss::RhinoLossCode;
+use crate::objects::ObjectRecord;
+use crate::settings::MillimeterScale;
 use crate::test_support::test_dump::{
     minimal_document, object_record, object_record_with_payload, point_payload, scan_with_objects,
     set_test_units, table, POINT_CLASS, REV_SURFACE_CLASS,
 };
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::draft::ModelCheckpoint;
+use cadmpeg_ir::geometry::{Curve, PcurveGeometry, SolvedSurfaceGeometry, Surface};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::topology::{Body, BodyKind, Point, Sense};
+use cadmpeg_ir::unknown::NativeUnknownRecord;
+use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
     NurbsCurve::from_lanes(

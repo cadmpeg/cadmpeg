@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::*;
+use super::{
+    decode, periodic_knots, read_knots, read_nurbs_curve, read_nurbs_curve_2d, read_nurbs_surface,
+    read_plane_surface_with_parameterization, read_poles, reconstruct_knots, revolution_nurbs,
+    sum_nurbs, DecodedSurface, TypedSurface, CLIPPING_PLANE_SURFACE,
+};
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+use crate::curves::GeometryError;
+use crate::settings::MillimeterScale;
 use crate::test_support::test_dump::{crc_chunk, long_chunk, push_f64, push_i32};
+use crate::wire::Uuid;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
