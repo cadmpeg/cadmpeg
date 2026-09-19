@@ -166,13 +166,11 @@ fn malformed(name: &str, message: impl std::fmt::Display) -> CodecError {
     crate::error::malformed(format!("T-spline cage {name}: {message}"))
 }
 
-fn parse_usize(name: &str, value: Option<&str>, field: &str) -> Result<usize, CodecError> {
-    value
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| malformed(name, format!("invalid {field}")))
-}
-
-fn parse_i64(name: &str, value: Option<&str>, field: &str) -> Result<i64, CodecError> {
+fn parse_int<T: std::str::FromStr>(
+    name: &str,
+    value: Option<&str>,
+    field: &str,
+) -> Result<T, CodecError> {
     value
         .and_then(|value| value.parse().ok())
         .ok_or_else(|| malformed(name, format!("invalid {field}")))
@@ -308,7 +306,7 @@ fn parse_pairs<'a>(
     record: &str,
 ) -> Result<BTreeMap<usize, usize>, CodecError> {
     let values = fields
-        .map(|value| parse_usize(name, Some(value), record))
+        .map(|value| parse_int::<usize>(name, Some(value), record))
         .collect::<Result<Vec<_>, _>>()?;
     if values.len() % 2 != 0 {
         return Err(malformed(name, format!("{record} has an unpaired index")));
@@ -780,7 +778,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 return Err(malformed(name, format!("duplicate {label} record")));
             }
             let values = fields
-                .map(|value| parse_usize(name, Some(value), label))
+                .map(|value| parse_int::<usize>(name, Some(value), label))
                 .collect::<Result<BTreeSet<_>, _>>()?;
             match selection {
                 EditorSelectionKind::Edges => selected_edges = values,
@@ -792,7 +790,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         match record_kind {
             Some("#TS0200") => require_end(name, fields, "header")?,
             Some("degree") => {
-                if parse_usize(name, fields.next(), "degree")? != 3 {
+                if parse_int::<usize>(name, fields.next(), "degree")? != 3 {
                     return Err(malformed(name, "unsupported degree"));
                 }
                 require_end(name, fields, "degree declaration")?;
@@ -823,8 +821,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             Some("f") => match fields.next() {
                 None => face_roots.push(None),
                 root => {
-                    face_roots.push(Some(parse_usize(name, root, "face root")?));
-                    parse_i64(name, fields.next(), "face flags")?;
+                    face_roots.push(Some(parse_int::<usize>(name, root, "face root")?));
+                    parse_int::<i64>(name, fields.next(), "face flags")?;
                     require_end(name, fields, "face")?;
                 }
             },
@@ -834,7 +832,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     edge_knot_intervals.push(None);
                 }
                 root => {
-                    edge_roots.push(Some(parse_usize(name, root, "edge root")?));
+                    edge_roots.push(Some(parse_int::<usize>(name, root, "edge root")?));
                     let knot_interval = parse_f64(name, fields.next(), "edge knot interval")?;
                     if knot_interval <= 0.0 {
                         return Err(malformed(name, "edge knot interval is not positive"));
@@ -853,7 +851,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     vertex_roots.push(None);
                 }
                 root => {
-                    let root = parse_usize(name, root, "vertex root")?;
+                    let root = parse_int::<usize>(name, root, "vertex root")?;
                     let direction = parse_direction(name, fields.next())?;
                     require_end(name, fields, "vertex")?;
                     vertex_live.push(true);
@@ -864,14 +862,18 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 None => half_edges.push(None),
                 next => {
                     let half = ParsedHalfEdge {
-                        next: parse_usize(name, next, "half-edge next index")?,
-                        previous: parse_usize(name, fields.next(), "half-edge previous index")?,
-                        mate: parse_usize(name, fields.next(), "half-edge mate index")?,
-                        vertex: parse_usize(name, fields.next(), "half-edge vertex index")?,
-                        face: parse_i64(name, fields.next(), "half-edge face index")?,
+                        next: parse_int::<usize>(name, next, "half-edge next index")?,
+                        previous: parse_int::<usize>(
+                            name,
+                            fields.next(),
+                            "half-edge previous index",
+                        )?,
+                        mate: parse_int::<usize>(name, fields.next(), "half-edge mate index")?,
+                        vertex: parse_int::<usize>(name, fields.next(), "half-edge vertex index")?,
+                        face: parse_int::<i64>(name, fields.next(), "half-edge face index")?,
                     };
-                    parse_i64(name, fields.next(), "half-edge edge index")?;
-                    parse_i64(name, fields.next(), "half-edge flags")?;
+                    parse_int::<i64>(name, fields.next(), "half-edge edge index")?;
+                    parse_int::<i64>(name, fields.next(), "half-edge flags")?;
                     if fields.next().is_some() {
                         return Err(malformed(name, "half-edge has trailing fields"));
                     }
@@ -879,8 +881,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             },
             Some("ec") => {
-                crease_edges.insert(parse_usize(name, fields.next(), "crease edge index")?);
-                parse_i64(name, fields.next(), "crease flags")?;
+                crease_edges.insert(parse_int::<usize>(
+                    name,
+                    fields.next(),
+                    "crease edge index",
+                )?);
+                parse_int::<i64>(name, fields.next(), "crease flags")?;
                 require_end(name, fields, "crease")?;
             }
             Some("0m") => match fields.next() {
@@ -889,7 +895,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     in_grip_map = true;
                 }
                 Some("gvp") if in_grip_map => {
-                    grip_vertices.push(GripVertexMarker::Primary(parse_usize(
+                    grip_vertices.push(GripVertexMarker::Primary(parse_int::<usize>(
                         name,
                         fields.next(),
                         "grip vertex index",
@@ -897,7 +903,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     require_end(name, fields, "primary grip map")?;
                 }
                 Some("gv") if in_grip_map => {
-                    let vertex = parse_i64(name, fields.next(), "secondary grip vertex index")?;
+                    let vertex =
+                        parse_int::<i64>(name, fields.next(), "secondary grip vertex index")?;
                     if vertex < -1 {
                         return Err(malformed(name, "secondary grip vertex is below -1"));
                     }
@@ -907,10 +914,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     require_end(name, fields, "secondary grip map")?;
                 }
                 Some("cg") if in_grip_map => {
-                    let vertex = parse_usize(name, fields.next(), "derived-grip vertex")?;
-                    let wedges = parse_usize(name, fields.next(), "derived-grip wedge count")?;
+                    let vertex = parse_int::<usize>(name, fields.next(), "derived-grip vertex")?;
+                    let wedges =
+                        parse_int::<usize>(name, fields.next(), "derived-grip wedge count")?;
                     let spoke_lengths = (0..wedges)
-                        .map(|_| parse_usize(name, fields.next(), "derived-grip spoke length"))
+                        .map(|_| {
+                            parse_int::<usize>(name, fields.next(), "derived-grip spoke length")
+                        })
                         .collect::<Result<Vec<_>, _>>()?;
                     if spoke_lengths.is_empty() {
                         return Err(malformed(name, "derived-grip wedge count is zero"));
@@ -928,14 +938,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         },
                     )?;
                     let grip_indices = (0..grip_count)
-                        .map(
-                            |_| match parse_i64(name, fields.next(), "derived-grip index")? {
+                        .map(|_| {
+                            match parse_int::<i64>(name, fields.next(), "derived-grip index")? {
                                 -1 => Ok(None),
                                 index => usize::try_from(index).map(Some).map_err(|_| {
                                     malformed(name, "derived-grip index is negative or overflows")
                                 }),
-                            },
-                        )
+                            }
+                        })
                         .collect::<Result<Vec<_>, _>>()?;
                     require_end(name, fields, "derived-grip connectivity")?;
                     derived_grips.push(DerivedGripConnectivity {
@@ -962,7 +972,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             },
             Some("105sym") => {
-                let mode = match parse_i64(name, fields.next(), "symmetry flags")? {
+                let mode = match parse_int::<i64>(name, fields.next(), "symmetry flags")? {
                     0 => SymmetryMode::Correspondence,
                     1 => SymmetryMode::Radial,
                     _ => return Err(malformed(name, "unsupported symmetry flags")),
@@ -1036,7 +1046,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 match kind {
                     "segments" => {
                         let segments =
-                            parse_usize(name, fields.next(), "radial symmetry segments")?;
+                            parse_int::<usize>(name, fields.next(), "radial symmetry segments")?;
                         block.radial_segments = Some(
                             std::num::NonZeroU32::new(u32::try_from(segments).map_err(|_| {
                                 malformed(name, "radial symmetry segments exceed u32")
