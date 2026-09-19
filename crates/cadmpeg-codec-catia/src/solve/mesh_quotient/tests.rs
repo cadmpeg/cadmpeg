@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work-estimate tests for the mesh quotient search.
 
-use super::*;
+use super::{direction_work_estimate, MeshQuotient, MeshSelectionSearch, SearchOutcome};
+use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
+use cadmpeg_core::decode::WorkBudget;
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::sync::Arc;
 
 #[test]
 fn direction_work_estimate_states_no_figure_the_work_counter_cannot_hold() {

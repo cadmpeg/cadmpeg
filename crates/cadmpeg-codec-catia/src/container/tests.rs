@@ -5,7 +5,11 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use super::*;
+use super::{
+    identify_variant, outer_container_declarations, outer_container_for_extent,
+    parse_directory_region, parse_extents, reconstruct_logical_stream, scan_bytes, summarize,
+    Census, ContainerScan, Descriptor, Extent, InnerDir, EDGE_DELIMITER, OUTER_MAGIC,
+};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence};

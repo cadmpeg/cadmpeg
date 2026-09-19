@@ -1,4 +1,12 @@
-use super::*;
+use crate::native::{
+    zero_entity_endpoint_locus_candidates, zero_entity_endpoint_pair_candidates,
+    zero_entity_record, zero_entity_vertex_owner, CatiaZeroEntityEdgeStride,
+    CatiaZeroEntityEndpointLocusCandidate, CatiaZeroEntityEndpointPairCandidate,
+    CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord,
+    CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
+};
+use cadmpeg_ir::geometry::knots_nondecreasing;
+use std::collections::HashSet;
 
 pub(super) fn validate_zero_entity_support_runs(
     runs: &[CatiaZeroEntitySupportRun],

@@ -3,7 +3,7 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use super::*;
+use super::{tokenize, InlineBytes, ValueBlock, ValueField};
 use crate::test_support::test_object_graph::{catalog_stream, value_block_stream};
 
 #[test]

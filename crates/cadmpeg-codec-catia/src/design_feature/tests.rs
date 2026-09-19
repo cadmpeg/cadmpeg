@@ -3,18 +3,27 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    assign_native_operation_parameter_values, normalize_parameter_names, transfer_design_features,
+    DesignFeatureTransfer,
+};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId, UnresolvedFamily,
+};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Cursor;
 
 use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
 use crate::native::{
-    CatiaDesignClass, CatiaDesignObjectRelation, CatiaDesignObjectRelationSource, CatiaObjectGraph,
-    CatiaObjectOwner, CatiaObjectRecordReferenceSource,
+    CatiaDesignClass, CatiaDesignObject, CatiaDesignObjectRelation,
+    CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectGraph, CatiaObjectOwner,
+    CatiaObjectRecord, CatiaObjectRecordReferenceSource,
 };
 use crate::object_graph::HeadToken;
 use crate::object_graph::ObjectPayload;
+use crate::object_graph::PayloadField;
 use crate::test_support::test_formula::standard_catpart_with_definition_value;
 use crate::test_support::test_object_graph::{
     catalog_stream, design_object, entity_backed_object_graph, object_graph_from_records,

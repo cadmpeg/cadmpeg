@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use crate::families::e5::decode::{
+    fit_e5_plane_axes, fit_rank_one_e5_plane_axes, EPS_E5_DECODE_EXACT_GEOMETRY,
+};
+use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology};
+use crate::families::e5::tests::e5_loop_members;
+use cadmpeg_ir::math::{Point3, Vector3};
+use std::collections::BTreeMap;
 
 #[test]
 fn plane_axis_fit_is_uv_scale_independent() {

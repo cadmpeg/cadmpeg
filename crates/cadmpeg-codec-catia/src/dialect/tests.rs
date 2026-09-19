@@ -5,9 +5,14 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    classify, dialect_loss, matched, DECLARED_BUILD_DATE, DECLARED_HOT_FIX, DECLARED_RELEASE,
+    DECLARED_SERVICE_PACK, DECLARED_VERSION, FORMAT,
+};
 use crate::container;
 use crate::test_support::test_container::{outer_body_catpart, summary_preview_segment};
+use crate::variant::Variant;
+use cadmpeg_core::dialect::Admission;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

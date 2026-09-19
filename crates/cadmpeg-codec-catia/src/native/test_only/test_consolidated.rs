@@ -1,5 +1,16 @@
-use super::*;
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
+use crate::native::{
+    CatiaConsolidatedCircle, CatiaConsolidatedClass61Payload, CatiaConsolidatedClass61Record,
+    CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
+    CatiaConsolidatedCylinderPayload, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
+    CatiaConsolidatedLineProfile, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
+    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedPlaneCarrierPayload,
+    CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
+    CatiaConsolidatedTorus,
+};
+use cadmpeg_ir::geometry::knots_strictly_increasing;
+use std::collections::HashMap;
+use std::mem::size_of;
 
 pub(super) fn validate_consolidated_class61_records(
     records: &[CatiaConsolidatedClass61Record],
