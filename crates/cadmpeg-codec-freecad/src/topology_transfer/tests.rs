@@ -1,8 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::{
+    bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
+    is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
+    pcurve_geometry, select_exact_curve_representation, select_pcurve_representation,
+    source_topology_indices, unique_fallback_polygon_representation, IndexedPolygon, OccurrenceKey,
+    SourceOccurrenceKey, Tables,
+};
+use crate::brep::{
+    surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation,
+    TextOrientation, TextShapeKind, TextShapeUse, TextSurface, TextTShape, TextTShapeGeometry,
+};
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::{PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{Coedge, Sense};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Codec, DecodeOptions};
+use std::collections::HashSet;
 use std::io::Cursor;
 
 fn translation(x: f64, y: f64, z: f64) -> Transform {
