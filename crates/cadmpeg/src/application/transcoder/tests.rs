@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+#[cfg(any(feature = "iges", feature = "step"))]
+use std::path::Path;
+use std::path::PathBuf;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::CadIr;
@@ -8,9 +10,10 @@ use crate::application::artifact_store::FileDestination;
 use crate::application::document::LoadedDocument;
 use crate::application::refusal::ConversionRefusal;
 
+#[cfg(any(feature = "iges", feature = "rhino", feature = "step"))]
+use super::export_target;
 use super::{
-    export_target, DestinationPolicy, LossPolicy, PreparedConversion, ResolvedDestination,
-    TargetSelection,
+    DestinationPolicy, LossPolicy, PreparedConversion, ResolvedDestination, TargetSelection,
 };
 
 #[test]
