@@ -28,60 +28,60 @@ cadmpeg_core::named_optional_field!(deserialize_width_factor, f64, "width_factor
 /// One text entity in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "SketchTextSerde", into = "SketchTextSerde")]
-pub struct SketchText {
+pub(crate) struct SketchText {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Index of this text record within the `BulkStream` tree.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Owning sketch record index.
-    pub owner_reference: u32,
+    pub(crate) owner_reference: u32,
     /// Source per-file dynamic ASCII class tag naming this record's type.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Record version of this record's class, from its Design `MetaStream` type
     /// table. It selects the member sequence the record was written under.
-    pub class_version: u32,
+    pub(crate) class_version: u32,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Optional `EntityGenesis` origin bitfield.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_genesis: Option<u64>,
+    pub(crate) entity_genesis: Option<u64>,
     /// Persistent identity of the text entity. A `txt_tag` record below class
     /// version 4 writes no identity key and stores none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub persistent_id: Option<u64>,
+    pub(crate) persistent_id: Option<u64>,
     /// Persistent base identity, a property key absent from some records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_id: Option<u64>,
+    pub(crate) base_id: Option<u64>,
     /// Unicode text content.
-    pub text: String,
+    pub(crate) text: String,
     /// Font-family name.
-    pub font_family: String,
+    pub(crate) font_family: String,
     /// Numeric font weight stored by the sketch-text class.
-    pub font_weight: i32,
+    pub(crate) font_weight: i32,
     /// Nominal text height in millimetres.
-    pub height: f64,
+    pub(crate) height: f64,
     /// Display colour of the glyphs. Both identity forms store it, so it is
     /// never absent. `SketchGeometry` carries no display attribute on any
     /// variant, so the colour stays on the native record.
-    pub color: Color,
+    pub(crate) color: Color,
     /// Identity-form layout: `txt_tag` placement or `textex_tag` width, alignment,
     /// and parameter references.
-    pub layout: SketchTextLayout,
+    pub(crate) layout: SketchTextLayout,
     /// Complete source record bytes for native replay and rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
-    pub raw_bytes: Vec<u8>,
+    pub(crate) raw_bytes: Vec<u8>,
 }
 
 /// Horizontal and vertical alignment members of a sketch-text record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SketchTextAlignment {
-    pub horizontal: u32,
-    pub vertical: u32,
+pub(crate) struct SketchTextAlignment {
+    pub(crate) horizontal: u32,
+    pub(crate) vertical: u32,
 }
 
 /// `txt_tag` versus `textex_tag` member layout of one sketch-text record.
 #[derive(Debug, Clone, PartialEq)]
-pub enum SketchTextLayout {
+pub(crate) enum SketchTextLayout {
     TxtTag {
         placement: TextPlacement,
     },
@@ -311,7 +311,7 @@ impl From<SketchText> for SketchTextSerde {
 
 /// Selector and state following a three-coordinate sketch point payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SketchPointClosure {
+pub(crate) enum SketchPointClosure {
     Selector0State0,
     Selector0State1,
     Selector1State0,
@@ -349,7 +349,7 @@ impl SketchPointClosure {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct SketchPointClosureSerde {
+struct SketchPointClosureSerde {
     selector: u64,
     state: u8,
 }
@@ -378,7 +378,7 @@ impl From<SketchPointClosure> for SketchPointClosureSerde {
 
 /// Version-10 same-segment closure: selector `0` and state `0` or `1`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SketchPointClosure10 {
+pub(crate) enum SketchPointClosure10 {
     State0,
     State1,
 }
@@ -402,7 +402,7 @@ impl SketchPointClosure10 {
 
 /// Version-10 inline-typed closure: `(0, 0)`, `(0, 1)`, or `(2, 1)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SketchPointClosure10Inline {
+pub(crate) enum SketchPointClosure10Inline {
     Selector0State0,
     Selector0State1,
     Selector2State1,
@@ -429,7 +429,7 @@ impl SketchPointClosure10Inline {
 
 /// Serialized member sequence of one sketch-point record.
 #[derive(Debug, Clone, PartialEq)]
-pub enum SketchPointRecordForm {
+pub(crate) enum SketchPointRecordForm {
     /// Class version 0: one flag, two coordinates, and no persistent identity.
     Version0 { flag: bool },
     /// Class version 8: seven flags and an eight-zero closure lane.
@@ -526,7 +526,7 @@ impl SketchPointRecordForm {
         }
     }
 
-    pub(crate) fn companion_prefix_present_zero(&self) -> bool {
+    fn companion_prefix_present_zero(&self) -> bool {
         match *self {
             Self::Version11 {
                 companion_prefix_present_zero,
@@ -633,7 +633,7 @@ impl SketchPointRecordForm {
 
 /// Encoding of every reference owned by a point companion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SketchPointCompanionReferenceEncoding {
+pub(crate) enum SketchPointCompanionReferenceEncoding {
     /// Target entity ID followed directly by the same-segment flags.
     SameSegment,
     /// Target entity ID followed by the target type GUID and same-segment flags.
@@ -653,9 +653,9 @@ impl SketchPointCompanionReferenceEncoding {
 
 /// Reverse curve-incidence record paired with a version-11 sketch point.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SketchPointCompanion {
+pub(crate) struct SketchPointCompanion {
     /// Incident sketch-curve record indexes in serialized order.
-    pub incident_curves: Vec<u32>,
+    pub(crate) incident_curves: Vec<u32>,
 }
 
 impl SketchPointCompanion {
@@ -671,12 +671,12 @@ impl SketchPointCompanion {
 /// Borrowed companion payload with the prefix derived for older point forms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SketchPointCompanionRef<'a> {
-    pub prefix_present_zero: bool,
-    pub incident_curves: &'a [u32],
+    pub(crate) prefix_present_zero: bool,
+    pub(crate) incident_curves: &'a [u32],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct SketchPointCompanionWire {
+struct SketchPointCompanionWire {
     #[serde(default)]
     incident_curves: Vec<u32>,
 }
@@ -690,25 +690,25 @@ fn sketch_point_flags_are_zero(flags: &[u8; 8]) -> bool {
 /// One point in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "SketchPointSerde", into = "SketchPointSerde")]
-pub struct SketchPoint {
+pub(crate) struct SketchPoint {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Index of this point record within the `BulkStream` tree.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Resolved owning-sketch reference from a direct backlink, typed relation,
     /// or sketch-container member run.
-    pub owner_reference: Option<u32>,
+    pub(crate) owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Byte offset of the first coordinate relative to the record start.
-    pub coordinate_offset: u32,
+    pub(crate) coordinate_offset: u32,
     /// Serialized point-record member sequence, identity, flags, and closure.
     record_form: SketchPointRecordForm,
     companion: SketchPointCompanion,
     /// Record index of the paired reverse curve-incidence companion.
-    pub paired_reference: u32,
+    pub(crate) paired_reference: u32,
     /// First two sketch coordinates in millimetres.
     coordinates: Point2,
 }
@@ -716,25 +716,25 @@ pub struct SketchPoint {
 #[derive(Debug, Clone)]
 pub(crate) struct SketchPointDraft {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Index of this point record within the `BulkStream` tree.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Resolved owning-sketch reference from a direct backlink, typed relation,
     /// or sketch-container member run.
-    pub owner_reference: Option<u32>,
+    pub(crate) owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Byte offset of the first coordinate relative to the record start.
-    pub coordinate_offset: u32,
+    pub(crate) coordinate_offset: u32,
     /// Serialized point-record member sequence, identity, flags, and closure.
-    pub record_form: SketchPointRecordForm,
-    pub companion: SketchPointCompanion,
+    pub(crate) record_form: SketchPointRecordForm,
+    pub(crate) companion: SketchPointCompanion,
     /// Record index of the paired reverse curve-incidence companion.
-    pub paired_reference: u32,
+    pub(crate) paired_reference: u32,
     /// First two sketch coordinates in millimetres.
-    pub coordinates: Point2,
+    pub(crate) coordinates: Point2,
 }
 
 impl TryFrom<SketchPointDraft> for SketchPoint {
@@ -834,7 +834,7 @@ impl SketchPoint {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(super) enum SketchPointRecordFormSerde {
+enum SketchPointRecordFormSerde {
     Version0,
     Version8,
     Version10,
@@ -855,35 +855,35 @@ pub(super) enum SketchPointRecordFormSerde {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct SketchPointSerde {
-    pub(super) id: String,
-    pub(super) record_index: u32,
+    id: String,
+    record_index: u32,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_owner_reference"
     )]
-    pub(super) owner_reference: Option<u32>,
-    pub(super) class_tag: String,
-    pub(super) byte_offset: u64,
-    pub(super) coordinate_offset: u32,
+    owner_reference: Option<u32>,
+    class_tag: String,
+    byte_offset: u64,
+    coordinate_offset: u32,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_entity_genesis"
     )]
-    pub(super) entity_genesis: Option<u64>,
+    entity_genesis: Option<u64>,
     #[serde(default)]
-    pub(super) record_form: SketchPointRecordFormSerde,
+    record_form: SketchPointRecordFormSerde,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_persistent_id"
     )]
-    pub(super) persistent_id: Option<u64>,
-    pub(super) paired_reference: u32,
+    persistent_id: Option<u64>,
+    paired_reference: u32,
     #[serde(default, skip_serializing_if = "sketch_point_flags_are_zero")]
-    pub(super) flags: [u8; 8],
-    pub(super) coordinates: Point2,
+    flags: [u8; 8],
+    coordinates: Point2,
     #[serde(default)]
     pub(super) depth: f64,
     #[serde(
@@ -891,8 +891,8 @@ pub(super) struct SketchPointSerde {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_closure"
     )]
-    pub(super) closure: Option<SketchPointClosureSerde>,
-    pub(super) companion: SketchPointCompanionWire,
+    closure: Option<SketchPointClosureSerde>,
+    companion: SketchPointCompanionWire,
 }
 
 impl Default for SketchPointRecordFormSerde {
@@ -1093,36 +1093,36 @@ impl From<SketchPoint> for SketchPointSerde {
 
 /// Persistent identity pair attached to one source sketch-curve record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SketchCurveIdentity {
+pub(crate) struct SketchCurveIdentity {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Index of this identity record within the `BulkStream` tree.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Direct owning-sketch backlink when the curve record form carries one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_owner_reference"
     )]
-    pub owner_reference: Option<u32>,
+    pub(crate) owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Byte offset of the fixed analytic geometry payload relative to the record start.
-    pub geometry_offset: u32,
+    pub(crate) geometry_offset: u32,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the curve identities.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_entity_genesis"
     )]
-    pub entity_genesis: Option<u64>,
+    pub(crate) entity_genesis: Option<u64>,
     /// Primary persistent identifier of the source sketch curve.
-    pub primary_id: std::num::NonZeroU64,
+    pub(crate) primary_id: std::num::NonZeroU64,
     /// Secondary persistent identifier of the source sketch curve (e.g. its
     /// complementary endpoint or paired-curve identity).
-    pub secondary_id: u64,
+    pub(crate) secondary_id: u64,
     /// Exact analytic geometry carried by this sketch-curve record, when the
     /// decoder recovered one; `None` when the geometry subtype was not decoded.
     #[serde(
@@ -1130,52 +1130,52 @@ pub struct SketchCurveIdentity {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_geometry"
     )]
-    pub geometry: Option<SketchCurveGeometry>,
+    pub(crate) geometry: Option<SketchCurveGeometry>,
 }
 
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SketchSurface {
+pub(crate) struct SketchSurface {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Index of this surface record within the `BulkStream` tree.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Owning sketch entity derived from relations using this surface.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_owner_reference"
     )]
-    pub owner_reference: Option<u32>,
+    pub(crate) owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the surface identity.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_entity_genesis"
     )]
-    pub entity_genesis: Option<u64>,
+    pub(crate) entity_genesis: Option<u64>,
     /// Persistent Fusion identifier for the sketch surface.
-    pub persistent_id: std::num::NonZeroU64,
+    pub(crate) persistent_id: std::num::NonZeroU64,
     /// Degree in the first surface parameter.
-    pub u_degree: u32,
+    pub(crate) u_degree: u32,
     /// Degree in the second surface parameter.
-    pub v_degree: u32,
+    pub(crate) v_degree: u32,
     /// Full knot vector in the first parameter.
-    pub u_knots: Vec<f64>,
+    pub(crate) u_knots: Vec<f64>,
     /// Full knot vector in the second parameter.
-    pub v_knots: Vec<f64>,
+    pub(crate) v_knots: Vec<f64>,
     /// Rectangular control grid in first-parameter-major order, in millimetres.
-    pub control_points: Vec<Vec<Point3>>,
+    pub(crate) control_points: Vec<Vec<Point3>>,
 }
 
 /// Exact analytic geometry carried by a source sketch-curve record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "SketchCurveGeometryWire", into = "SketchCurveGeometryWire")]
-pub enum SketchCurveGeometry {
+pub(crate) enum SketchCurveGeometry {
     /// A straight line segment.
     Line {
         /// Start point in sketch space, millimetres.
@@ -1400,15 +1400,15 @@ impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
 
 /// Control data for a polynomial or rational sketch spline.
 #[derive(Debug, Clone)]
-pub enum SketchNurbsPoles {
+pub(crate) enum SketchNurbsPoles {
     Polynomial(Vec<Point3>),
     Rational(Vec<SketchNurbsPole>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SketchNurbsPole {
-    pub point: Point3,
-    pub weight: f64,
+pub(crate) struct SketchNurbsPole {
+    pub(crate) point: Point3,
+    pub(crate) weight: f64,
 }
 
 impl PartialEq for SketchNurbsPoles {
@@ -1434,14 +1434,14 @@ impl SketchNurbsPoles {
         ))
     }
 
-    pub fn point_count(&self) -> usize {
+    pub(crate) fn point_count(&self) -> usize {
         match self {
             Self::Polynomial(points) => points.len(),
             Self::Rational(poles) => poles.len(),
         }
     }
 
-    pub fn points(&self) -> impl DoubleEndedIterator<Item = &Point3> {
+    pub(crate) fn points(&self) -> impl DoubleEndedIterator<Item = &Point3> {
         let (points, poles): (&[Point3], &[SketchNurbsPole]) = match self {
             Self::Polynomial(points) => (points, &[]),
             Self::Rational(poles) => (&[], poles),
@@ -1449,7 +1449,7 @@ impl SketchNurbsPoles {
         points.iter().chain(poles.iter().map(|pole| &pole.point))
     }
 
-    pub fn weights(&self) -> impl ExactSizeIterator<Item = &f64> {
+    pub(crate) fn weights(&self) -> impl ExactSizeIterator<Item = &f64> {
         let poles: &[SketchNurbsPole] = match self {
             Self::Polynomial(_) => &[],
             Self::Rational(poles) => poles,
@@ -1458,7 +1458,7 @@ impl SketchNurbsPoles {
     }
 
     #[cfg(test)]
-    pub fn points_mut(&mut self) -> impl Iterator<Item = &mut Point3> {
+    pub(crate) fn points_mut(&mut self) -> impl Iterator<Item = &mut Point3> {
         let (points, poles): (&mut [Point3], &mut [SketchNurbsPole]) = match self {
             Self::Polynomial(points) => (points, &mut []),
             Self::Rational(poles) => (&mut [], poles),

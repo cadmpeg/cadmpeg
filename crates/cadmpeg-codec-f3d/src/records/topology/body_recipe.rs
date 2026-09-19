@@ -14,21 +14,21 @@ use serde::Serialize;
     try_from = "DesignBodyRecipeOperandWire",
     into = "DesignBodyRecipeOperandWire"
 )]
-pub struct DesignBodyRecipeOperand {
+pub(crate) struct DesignBodyRecipeOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Exact feature-scope ownership form.
     #[serde(flatten)]
-    pub owner: DesignOperandOwner,
+    pub(crate) owner: DesignOperandOwner,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the persistent selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     /// Raw four-byte selector-tail member after the fixed `u32 2`.
@@ -40,19 +40,19 @@ pub struct DesignBodyRecipeOperand {
     /// Counted persistent Design references carried by this operand.
     references: Vec<DesignBodyRecipeReference>,
     /// Body construction recipe contained by this operand record.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Unique input-state face selected by this operand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_face_slot: Option<i64>,
+    pub(crate) resolved_face_slot: Option<i64>,
     /// Exact ASM input state containing the resolved body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_body_state_id: Option<i64>,
+    pub(crate) resolved_body_state_id: Option<i64>,
     /// Unique input-state body containing every reference's candidate faces.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_body_slot: Option<i64>,
+    pub(crate) resolved_body_slot: Option<i64>,
     /// Complete boundary-face set of the resolved body in its input state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub resolved_body_face_slots: Vec<i64>,
+    pub(crate) resolved_body_face_slots: Vec<i64>,
     /// Byte offset of the indexed record immediately following this operand.
     next_byte_offset: u64,
 }
@@ -165,7 +165,7 @@ impl DesignBodyRecipeOperand {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.frame.offset(0)
     }
-    pub(crate) fn asset_id_offset(&self) -> u64 {
+    fn asset_id_offset(&self) -> u64 {
         self.nested_record_index_offset() + 18
     }
     pub(crate) fn context_id_offset(&self) -> u64 {
@@ -177,7 +177,7 @@ impl DesignBodyRecipeOperand {
     pub(crate) fn nested_record_index(&self) -> u64 {
         u64::from(self.frame.index(3))
     }
-    pub(crate) fn nested_record_index_offset(&self) -> u64 {
+    fn nested_record_index_offset(&self) -> u64 {
         self.frame.offset(26 + self.references.len() as u64 * 12)
     }
     pub(crate) fn next_record_index(&self) -> u32 {
@@ -192,50 +192,50 @@ impl DesignBodyRecipeOperand {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignBodyRecipeOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Exact feature-scope ownership form.
-    pub owner: DesignOperandOwner,
+    pub(crate) owner: DesignOperandOwner,
     /// Primary indexed-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Primary indexed-header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the persistent selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Raw four-byte selector-tail member after the fixed `u32 2`.
     ///
     /// Class `365` varies this member without a settled neutral meaning;
     /// class `367` stores `01 00 00 00`.
-    pub selector_tail: Option<Located<[u8; 4]>>,
+    pub(crate) selector_tail: Option<Located<[u8; 4]>>,
     /// Counted persistent Design references carried by this operand.
-    pub references: Vec<DesignBodyRecipeReference>,
+    pub(crate) references: Vec<DesignBodyRecipeReference>,
     /// Tagged nested record reference following the Design reference.
-    pub nested_record_index: u64,
+    pub(crate) nested_record_index: u64,
     /// Byte offset of `nested_record_index`.
-    pub nested_record_index_offset: u64,
+    pub(crate) nested_record_index_offset: u64,
     /// Body construction recipe contained by this operand record.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Unique input-state face selected by this operand.
-    pub resolved_face_slot: Option<i64>,
+    pub(crate) resolved_face_slot: Option<i64>,
     /// Exact ASM input state containing the resolved body.
-    pub resolved_body_state_id: Option<i64>,
+    pub(crate) resolved_body_state_id: Option<i64>,
     /// Unique input-state body containing every reference's candidate faces.
-    pub resolved_body_slot: Option<i64>,
+    pub(crate) resolved_body_slot: Option<i64>,
     /// Complete boundary-face set of the resolved body in its input state.
-    pub resolved_body_face_slots: Vec<i64>,
+    pub(crate) resolved_body_face_slots: Vec<i64>,
     /// Identity of the indexed record immediately following this operand.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record immediately following this operand.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -381,17 +381,17 @@ impl From<DesignBodyRecipeOperand> for DesignBodyRecipeOperandWire {
 
 /// Construction-operand group record and member position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct DesignOperandGroup {
+pub(crate) struct DesignOperandGroup {
     /// Owning construction-operand group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    pub(crate) group_member_ordinal: u32,
 }
 
 /// Exact owner of a construction operand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum DesignOperandOwner {
+pub(crate) enum DesignOperandOwner {
     /// Operand named by a counted construction-operand group.
     Group {
         /// Owning construction-operand group record.
@@ -408,7 +408,7 @@ pub enum DesignOperandOwner {
 
 impl DesignOperandOwner {
     /// Return the construction-group record and member position, when grouped.
-    pub const fn group(self) -> Option<(u32, u32)> {
+    pub(crate) const fn group(self) -> Option<(u32, u32)> {
         match self {
             Self::Group {
                 group_record_index,
@@ -421,30 +421,30 @@ impl DesignOperandOwner {
 
 /// One counted persistent reference inside a whole-body recipe operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignBodyRecipeReference {
+pub(crate) struct DesignBodyRecipeReference {
     /// Persistent Design reference.
-    pub design_reference: u64,
+    pub(crate) design_reference: u64,
     /// Byte offset of `design_reference`.
-    pub design_reference_offset: u64,
+    pub(crate) design_reference_offset: u64,
     /// Reference-local serialized form discriminator.
-    pub form: u32,
+    pub(crate) form: u32,
     /// Byte offset of `form`.
-    pub form_offset: u64,
+    pub(crate) form_offset: u64,
     /// Solved faces carrying this reference, ordered by face identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub candidate_faces: Vec<cadmpeg_ir::ids::FaceId>,
+    pub(crate) candidate_faces: Vec<cadmpeg_ir::ids::FaceId>,
     /// Candidate faces present in the owning feature's input topology.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_candidate_faces: Vec<cadmpeg_ir::ids::FaceId>,
+    pub(crate) preceding_candidate_faces: Vec<cadmpeg_ir::ids::FaceId>,
     /// Input-state bodies containing at least one candidate face.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_body_slots: Vec<i64>,
+    pub(crate) preceding_body_slots: Vec<i64>,
 }
 
 /// Stable ASM entity family named by a Design persistent identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AsmHistoricalEntityKind {
+pub(crate) enum AsmHistoricalEntityKind {
     /// Body topology slot.
     Body,
     /// Region topology slot.
@@ -473,11 +473,11 @@ pub enum AsmHistoricalEntityKind {
 
 /// Mutable binding evidence for one fixed body-recipe reference.
 pub(crate) struct DesignBodyRecipeReferenceBindings<'a> {
-    pub design_reference: u64,
-    pub form: u32,
-    pub candidate_faces: &'a mut Vec<FaceId>,
-    pub preceding_candidate_faces: &'a mut Vec<FaceId>,
-    pub preceding_body_slots: &'a mut Vec<i64>,
+    pub(crate) design_reference: u64,
+    pub(crate) form: u32,
+    pub(crate) candidate_faces: &'a mut Vec<FaceId>,
+    pub(crate) preceding_candidate_faces: &'a mut Vec<FaceId>,
+    pub(crate) preceding_body_slots: &'a mut Vec<i64>,
 }
 
 impl DesignBodyRecipeOperand {

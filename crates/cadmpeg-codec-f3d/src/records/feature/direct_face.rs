@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Exact fixed-form construction data of a direct-face feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "operation")]
-pub enum DesignDirectFaceOperation {
+pub(crate) enum DesignDirectFaceOperation {
     /// Signed normal offset applied to selected faces.
     OffsetFaces(DesignOffsetFacesOperation),
     /// Thin-wall shell applied after removing selected faces.
@@ -18,60 +18,60 @@ pub enum DesignDirectFaceOperation {
 
 /// Exact `OffsetFaces` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignOffsetFacesOperation {
+pub(crate) struct DesignOffsetFacesOperation {
     /// Signed distance in source centimetres.
-    pub distance: f64,
+    pub(crate) distance: f64,
     /// Referenced scalar record.
-    pub distance_record_index: u32,
+    pub(crate) distance_record_index: u32,
     /// Byte offset of the scalar.
-    pub distance_offset: u64,
+    pub(crate) distance_offset: u64,
 }
 
 /// Exact `Shell` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignShellOperation {
+pub(crate) struct DesignShellOperation {
     /// Positive wall thickness in source centimetres.
-    pub thickness: f64,
+    pub(crate) thickness: f64,
     /// Referenced scalar record.
-    pub thickness_record_index: u32,
+    pub(crate) thickness_record_index: u32,
     /// Byte offset of the scalar.
-    pub thickness_offset: u64,
+    pub(crate) thickness_offset: u64,
     /// Whether the wall grows outward from the original boundary.
-    pub outward: bool,
+    pub(crate) outward: bool,
     /// Byte offset of the outward Boolean.
-    pub outward_offset: u64,
+    pub(crate) outward_offset: u64,
 }
 
 /// Exact `Thicken` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignThickenOperation {
+pub(crate) struct DesignThickenOperation {
     /// Signed thickness in source centimetres.
-    pub signed_thickness: f64,
+    pub(crate) signed_thickness: f64,
     /// Referenced scalar record.
-    pub thickness_record_index: u32,
+    pub(crate) thickness_record_index: u32,
     /// Byte offset of the scalar.
-    pub thickness_offset: u64,
+    pub(crate) thickness_offset: u64,
 }
 
 /// Exact rigid transform carried by a Move feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignMoveOperation {
+pub(crate) struct DesignMoveOperation {
     /// Row-major model-space rigid transform in source centimetres.
-    pub transform: SketchPlacementMatrix,
+    pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
-    pub transform_offset: u64,
+    pub(crate) transform_offset: u64,
     /// Indexed class-349 record carrying `transform`.
-    pub transform_record_index: u32,
+    pub(crate) transform_record_index: u32,
     /// Source transform-form discriminator.
-    pub form: DesignMoveForm,
+    pub(crate) form: DesignMoveForm,
     /// Byte offset of `form`.
-    pub form_offset: u64,
+    pub(crate) form_offset: u64,
 }
 
 /// Source Move transform-form code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
-pub enum DesignMoveForm {
+pub(crate) enum DesignMoveForm {
     /// Source form 1.
     Form1,
     /// Source form 5.
@@ -100,15 +100,15 @@ impl From<DesignMoveForm> for u32 {
 
 /// Exact signed-angle lanes carried by a `Draft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignDraftOperation {
+pub(crate) struct DesignDraftOperation {
     /// Signed draft angle in radians.
-    pub angle: DesignFiniteScalar,
+    pub(crate) angle: DesignFiniteScalar,
     /// Referenced draft-angle scalar record.
-    pub angle_record_index: u32,
+    pub(crate) angle_record_index: u32,
     /// Byte offset of the draft-angle scalar.
-    pub angle_offset: u64,
+    pub(crate) angle_offset: u64,
     /// Zero-valued opposite-side angle scalar record.
-    pub opposite_angle_record_index: u32,
+    pub(crate) opposite_angle_record_index: u32,
     /// Byte offset of the opposite-side angle scalar.
-    pub opposite_angle_offset: u64,
+    pub(crate) opposite_angle_offset: u64,
 }

@@ -17,41 +17,41 @@ use serde::Serialize;
     try_from = "DesignEntitySelectionOperandWire",
     into = "DesignEntitySelectionOperandWire"
 )]
-pub struct DesignEntitySelectionOperand {
+pub(crate) struct DesignEntitySelectionOperand {
     selection: EntitySelectionFrame,
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Owning construction-operand group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    pub(crate) group_member_ordinal: u32,
     /// Source per-file dynamic primary class tag.
     class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    context_id_offset: u64,
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Primary entity identity in the nested identity pair; for a Sketch
     /// curve selection, this is the owning Sketch entity suffix.
-    pub primary_identity: u64,
+    pub(crate) primary_identity: u64,
     /// Input-state edge proofs derived from the two serialized identities.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
+    pub(crate) historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
     /// History-qualified face proofs derived from the primary identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
+    pub(crate) historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
     /// Unique input-state edge selected by every available identity proof.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_edge_slot: Option<i64>,
+    pub(crate) resolved_edge_slot: Option<i64>,
 }
 
 impl DesignEntitySelectionOperand {
@@ -183,7 +183,7 @@ impl DesignEntitySelectionOperand {
     pub(crate) fn class_tag(&self) -> &DesignClassTag {
         &self.class_tag
     }
-    pub(crate) fn identity_record_index(&self) -> u32 {
+    fn identity_record_index(&self) -> u32 {
         self.frame.index(3)
     }
     pub(crate) fn primary_identity_offset(&self) -> u64 {
@@ -207,48 +207,48 @@ impl DesignEntitySelectionOperand {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignEntitySelectionOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Owning construction-operand group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    pub(crate) group_member_ordinal: u32,
     /// Primary indexed-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Primary indexed-header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Nested indexed record that carries the persistent entity identity.
-    pub identity_record_index: u32,
+    pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
-    pub identity_record_offset: u64,
+    pub(crate) identity_record_offset: u64,
     /// Primary entity identity in the nested identity pair; for a Sketch
     /// curve selection, this is the owning Sketch entity suffix.
-    pub primary_identity: u64,
+    pub(crate) primary_identity: u64,
     /// Byte offset of `primary_identity`.
-    pub primary_identity_offset: u64,
+    pub(crate) primary_identity_offset: u64,
     /// Secondary identity and any dependent curve identity, with their source locations.
-    pub secondary: Option<DesignSecondaryIdentity<Located<u64>>>,
+    pub(crate) secondary: Option<DesignSecondaryIdentity<Located<u64>>>,
     /// Input-state edge proofs derived from the two serialized identities.
-    pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
+    pub(crate) historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
     /// History-qualified face proofs derived from the primary identity.
-    pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
+    pub(crate) historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
     /// Unique input-state edge selected by every available identity proof.
-    pub resolved_edge_slot: Option<i64>,
+    pub(crate) resolved_edge_slot: Option<i64>,
     /// Identity of the indexed record immediately following the identity record.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record immediately following the identity record.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -412,14 +412,14 @@ impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
 
 /// Face proof for one persistent identity in one ASM history namespace.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignEntitySelectionFaceCandidate {
+pub(crate) struct DesignEntitySelectionFaceCandidate {
     /// Native ASM history containing the selected identity.
-    pub history_id: String,
+    pub(crate) history_id: String,
     /// Stable ASM family, entity slot, and states containing the selected identity.
     #[serde(flatten)]
-    pub historical: HistoricalBinding,
+    pub(crate) historical: HistoricalBinding,
     /// Face incident to the identity in every listed state.
-    pub face_slot: i64,
+    pub(crate) face_slot: i64,
 }
 
 /// Legacy Boolean-Loft body carrier paired with a role-`0x8` body group.
@@ -432,51 +432,51 @@ pub struct DesignEntitySelectionFaceCandidate {
     try_from = "DesignLoftLegacyBodyCarrierSerde",
     into = "DesignLoftLegacyBodyCarrierSerde"
 )]
-pub struct DesignLoftLegacyBodyCarrier {
+pub(crate) struct DesignLoftLegacyBodyCarrier {
     /// Globally unique deterministic identifier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning Loft feature scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Primary indexed-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Primary indexed-header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Per-file dynamic primary class tag (`322` or `411`).
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of `owner_scope_record_index`.
-    pub owner_scope_record_index_offset: u64,
+    pub(crate) owner_scope_record_index_offset: u64,
     /// The one member reference carried by this fixed legacy frame.
-    pub member: u32,
+    pub(crate) member: u32,
     /// Byte offset of `member`.
-    pub member_offset: u64,
+    pub(crate) member_offset: u64,
     /// Byte offset of the on-wire member count (always 1).
-    pub member_count_offset: u64,
+    pub(crate) member_count_offset: u64,
     /// Opaque nonzero ordinal in the legacy scalar lane.
-    pub opaque_index: std::num::NonZeroU8,
+    pub(crate) opaque_index: std::num::NonZeroU8,
     /// Byte offset of the first `opaque_index` copy.
-    pub opaque_index_offset: u64,
+    pub(crate) opaque_index_offset: u64,
     /// Opaque finite scalar in the legacy scalar lane.
-    pub opaque_scalar: f64,
+    pub(crate) opaque_scalar: f64,
     /// Byte offset of `opaque_scalar`.
-    pub opaque_scalar_offset: u64,
+    pub(crate) opaque_scalar_offset: u64,
     /// Byte offset of the repeated `opaque_index` copy.
-    pub repeated_opaque_index_offset: u64,
+    pub(crate) repeated_opaque_index_offset: u64,
     /// Record named by the marked `N+2` reference.
-    pub next_next_record_index: u32,
+    pub(crate) next_next_record_index: u32,
     /// Byte offset of the marked `N+2` reference.
-    pub next_next_reference_offset: u64,
+    pub(crate) next_next_reference_offset: u64,
     /// Byte offset of `flags`.
-    pub flags_offset: u64,
+    pub(crate) flags_offset: u64,
     /// Record named by the marked `N+1` reference.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the marked `N+1` reference.
-    pub next_reference_offset: u64,
+    pub(crate) next_reference_offset: u64,
     /// Source location of the additional owning-scope reference, when present.
-    pub trailing_scope_reference_offset: Option<u64>,
+    pub(crate) trailing_scope_reference_offset: Option<u64>,
     /// Per-file dynamic paired class tag (`262` or `266`).
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
-    pub paired_byte_offset: u64,
+    pub(crate) paired_byte_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -623,17 +623,17 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
 
 /// Historical edge proof carried by one nested entity-selection identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignEntitySelectionEdgeCandidate {
+pub(crate) struct DesignEntitySelectionEdgeCandidate {
     /// Zero for the first identity and one for the second identity.
-    pub identity_ordinal: u32,
+    pub(crate) identity_ordinal: u32,
     /// Serialized persistent identity.
-    pub local_id: u64,
+    pub(crate) local_id: u64,
     /// Stable ASM history family containing the identity.
-    pub historical_entity_kind: AsmHistoricalEntityKind,
+    pub(crate) historical_entity_kind: AsmHistoricalEntityKind,
     /// Stable ASM entity slot after record-revision normalization.
-    pub historical_entity_ref: i64,
+    pub(crate) historical_entity_ref: i64,
     /// Edges incident to the stable entity in the feature-input topology.
-    pub edge_slots: Vec<i64>,
+    pub(crate) edge_slots: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

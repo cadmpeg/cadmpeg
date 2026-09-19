@@ -4,19 +4,19 @@
 use serde::{Deserialize, Serialize};
 /// Fixed construction carried by a planar sheet-metal `BaseFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignBaseFlangeOperation {
+pub(crate) struct DesignBaseFlangeOperation {
     /// Positive sheet thickness in centimetres.
-    pub thickness: DesignPositiveScalar,
+    pub(crate) thickness: DesignPositiveScalar,
     /// Byte offset of `thickness`.
-    pub thickness_offset: u64,
+    pub(crate) thickness_offset: u64,
     /// Counted sketch-profile operand group.
-    pub profile_group_record_index: u32,
+    pub(crate) profile_group_record_index: u32,
     /// Sketch-profile record contained by the profile group.
-    pub profile_record_index: u32,
+    pub(crate) profile_record_index: u32,
     /// Indexed thickness-construction record.
-    pub thickness_record_index: u32,
+    pub(crate) thickness_record_index: u32,
     /// Indexed operation-settings record.
-    pub settings_record_index: u32,
+    pub(crate) settings_record_index: u32,
 }
 
 /// Bend position used by sheet-metal edge operations.
@@ -27,7 +27,7 @@ pub struct DesignBaseFlangeOperation {
 /// reference plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignBendPosition {
+pub(crate) enum DesignBendPosition {
     /// The bend lies outside the selected edge.
     Outside,
     /// The bend lies inside the selected edge.
@@ -43,7 +43,7 @@ pub enum DesignBendPosition {
 impl DesignBendPosition {
     /// Decode the serialized bend-position discriminator without discarding unknown values.
     #[must_use]
-    pub fn from_code(code: u32) -> Self {
+    pub(crate) fn from_code(code: u32) -> Self {
         match code {
             1 => Self::Outside,
             2 => Self::Inside,
@@ -57,7 +57,7 @@ impl DesignBendPosition {
 /// Face pair an `EdgeFlange` height is measured from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignSheetMetalHeightDatum {
+pub(crate) enum DesignSheetMetalHeightDatum {
     /// The height is measured from the inner faces of the sheet.
     InnerFaces,
     /// The height is measured from the outer faces of the sheet.
@@ -69,7 +69,7 @@ pub enum DesignSheetMetalHeightDatum {
 impl DesignSheetMetalHeightDatum {
     /// Decode the serialized height-datum discriminator without discarding unknown values.
     #[must_use]
-    pub fn from_code(code: u32) -> Self {
+    pub(crate) fn from_code(code: u32) -> Self {
         match code {
             1 => Self::InnerFaces,
             2 => Self::OuterFaces,
@@ -85,7 +85,7 @@ impl DesignSheetMetalHeightDatum {
 /// explicit mode when that count has per-edge meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignEdgeWidthMode {
+pub(crate) enum DesignEdgeWidthMode {
     /// The flange spans the complete selected edge and adds no width owner.
     FullEdge,
     /// The flange is centred on the edge and adds one width owner.
@@ -104,14 +104,14 @@ pub enum DesignEdgeWidthMode {
 
 /// A selected flange edge and its width parameter owners.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignFlangeEdgeWidth<T> {
-    pub edge: DesignEdgeFlangeEdge,
-    pub owners: T,
+pub(crate) struct DesignFlangeEdgeWidth<T> {
+    pub(crate) edge: DesignEdgeFlangeEdge,
+    pub(crate) owners: T,
 }
 
 /// Flange extent, with width owners attached to the edges they describe.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DesignEdgeFlangeShape {
+pub(crate) enum DesignEdgeFlangeShape {
     FullEdge {
         edges: Vec<DesignEdgeFlangeEdge>,
         height: DesignEdgeFlangeHeightExtent,
@@ -240,7 +240,7 @@ impl DesignEdgeFlangeShape {
 /// Parameter source used by a typed `EdgeFlange` width law.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignEdgeFlangeWidthParameterSource {
+pub(crate) enum DesignEdgeFlangeWidthParameterSource {
     /// Width parameters use the ordinary positive `EdgeWidth` source kinds.
     #[default]
     EdgeWidth,
@@ -251,7 +251,7 @@ pub enum DesignEdgeFlangeWidthParameterSource {
 /// Height extent law carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum DesignEdgeFlangeHeightExtent {
+pub(crate) enum DesignEdgeFlangeHeightExtent {
     /// The flange height is a direct distance from the selected sheet datum.
     #[default]
     Distance,
@@ -271,13 +271,13 @@ pub enum DesignEdgeFlangeHeightExtent {
 /// A group record index with a representable recipe index three records later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
-pub struct DesignRecipeGroupIndex(u32);
+pub(crate) struct DesignRecipeGroupIndex(u32);
 
 impl DesignRecipeGroupIndex {
     pub(crate) fn get(self) -> u32 {
         self.0
     }
-    pub(crate) fn operand(self) -> u32 {
+    pub(super) fn operand(self) -> u32 {
         self.0 + 3
     }
 }
@@ -302,10 +302,10 @@ impl From<DesignRecipeGroupIndex> for u32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
-pub struct DesignEdgeFlangeEdge {
-    pub wrapper_record_index: u32,
-    pub group_record_index: DesignRecipeGroupIndex,
-    pub aggregate_operand_record_index: u32,
+pub(crate) struct DesignEdgeFlangeEdge {
+    pub(crate) wrapper_record_index: u32,
+    pub(crate) group_record_index: DesignRecipeGroupIndex,
+    pub(crate) aggregate_operand_record_index: u32,
 }
 
 impl DesignEdgeFlangeEdge {
@@ -354,16 +354,16 @@ impl DesignEdgeFlangeEdge {
 /// A positive finite source scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "f64", into = "f64")]
-pub struct DesignPositiveScalar(f64);
+pub(crate) struct DesignPositiveScalar(f64);
 
 impl DesignPositiveScalar {
     /// Admit a positive finite scalar.
-    pub fn new(value: f64) -> Option<Self> {
+    pub(crate) fn new(value: f64) -> Option<Self> {
         (value.is_finite() && value > 0.0).then_some(Self(value))
     }
 
     /// The source scalar value.
-    pub fn get(self) -> f64 {
+    pub(crate) fn get(self) -> f64 {
         self.0
     }
 }
@@ -384,15 +384,15 @@ impl From<DesignPositiveScalar> for f64 {
 /// A finite source scalar with unrestricted sign.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "f64", into = "f64")]
-pub struct DesignFiniteScalar(f64);
+pub(crate) struct DesignFiniteScalar(f64);
 
 impl DesignFiniteScalar {
     /// Admit a finite scalar.
-    pub fn new(value: f64) -> Option<Self> {
+    pub(crate) fn new(value: f64) -> Option<Self> {
         value.is_finite().then_some(Self(value))
     }
     /// The source scalar value.
-    pub fn get(self) -> f64 {
+    pub(crate) fn get(self) -> f64 {
         self.0
     }
 }
@@ -416,32 +416,32 @@ impl From<DesignFiniteScalar> for f64 {
     try_from = "DesignEdgeFlangeOperationSerde",
     into = "DesignEdgeFlangeOperationSerde"
 )]
-pub struct DesignEdgeFlangeOperation {
+pub(crate) struct DesignEdgeFlangeOperation {
     /// Selected flange edges and their aggregate operand group.
-    pub selection: DesignEdgeFlangeSelection,
+    pub(crate) selection: DesignEdgeFlangeSelection,
     /// Height parameter-owner record.
-    pub height_owner_record_index: u32,
+    pub(crate) height_owner_record_index: u32,
     /// Angle parameter-owner record.
-    pub angle_owner_record_index: u32,
+    pub(crate) angle_owner_record_index: u32,
     /// Scope references retained by a classed layout after typed roles and
     /// width owners have been claimed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub auxiliary_reference_record_indices: Vec<u32>,
+    pub(crate) auxiliary_reference_record_indices: Vec<u32>,
     /// Indexed operation-settings record.
-    pub settings_record_index: u32,
+    pub(crate) settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub bend_radius: DesignPositiveScalar,
+    pub(crate) bend_radius: DesignPositiveScalar,
     /// Byte offset of `bend_radius`.
-    pub bend_radius_offset: u64,
+    pub(crate) bend_radius_offset: u64,
     /// Face pair the flange height is measured from.
-    pub height_datum: DesignSheetMetalHeightDatum,
+    pub(crate) height_datum: DesignSheetMetalHeightDatum,
     /// Bend position relative to the selected edge.
-    pub bend_position: DesignBendPosition,
+    pub(crate) bend_position: DesignBendPosition,
 }
 
 /// Flange edge shape paired with its aggregate operand group.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignEdgeFlangeSelection {
+pub(crate) struct DesignEdgeFlangeSelection {
     shape: DesignEdgeFlangeShape,
     aggregate_group_record_index: u32,
 }
@@ -604,7 +604,7 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
 /// Parameter-owner layout carried by a sheet-metal `Hem` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignHemParameterOwners {
+pub(crate) enum DesignHemParameterOwners {
     /// Flat and open forms own a gap and a length.
     GapLength {
         /// Gap parameter-owner record.
@@ -634,21 +634,21 @@ pub enum DesignHemParameterOwners {
 /// `Hem` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignHemOperationWire", into = "DesignHemOperationWire")]
-pub struct DesignHemOperation {
+pub(crate) struct DesignHemOperation {
     /// Selection-wrapper record for the hem edge.
-    pub edge_wrapper_record_index: u32,
+    pub(crate) edge_wrapper_record_index: u32,
     /// Role-`0x08` operand-group record.
-    pub edge_group_record_index: DesignRecipeGroupIndex,
+    pub(crate) edge_group_record_index: DesignRecipeGroupIndex,
     /// Role-`0x43` aggregate operand-group record.
-    pub aggregate_group_record_index: DesignRecipeGroupIndex,
+    pub(crate) aggregate_group_record_index: DesignRecipeGroupIndex,
     /// Parameter-owner layout selected by the owned source kinds.
-    pub parameter_owners: DesignHemParameterOwners,
+    pub(crate) parameter_owners: DesignHemParameterOwners,
     /// Indexed operation-settings record.
-    pub settings_record_index: u32,
+    pub(crate) settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub bend_radius: DesignPositiveScalar,
+    pub(crate) bend_radius: DesignPositiveScalar,
     /// Byte offset of `bend_radius`.
-    pub bend_radius_offset: u64,
+    pub(crate) bend_radius_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]

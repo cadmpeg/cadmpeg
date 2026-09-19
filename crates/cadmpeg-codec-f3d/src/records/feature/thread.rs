@@ -18,7 +18,7 @@ cadmpeg_core::named_optional_field!(
 );
 /// Thread construction form selected by the scope prefix and payload marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignThreadForm {
+pub(crate) enum DesignThreadForm {
     /// Standard prefix, construction marker, and trailer layout.
     Standard,
     /// Compact prefix, construction marker, and trailer layout.
@@ -32,28 +32,28 @@ pub enum DesignThreadForm {
 /// Exact form and size construction carried by a `Thread` scope.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "DesignThreadConstructionWire")]
-pub struct DesignThreadConstruction {
+pub(crate) struct DesignThreadConstruction {
     /// Standard, compact, or class-specific legacy construction form.
-    pub form: DesignThreadForm,
+    pub(crate) form: DesignThreadForm,
     /// Byte offset of the designation LP-UTF16 field.
-    pub designation_offset: u64,
+    pub(crate) designation_offset: u64,
     /// Standard thread designation.
-    pub designation: cadmpeg_core::text::NonBlankString,
+    pub(crate) designation: cadmpeg_core::text::NonBlankString,
     /// Validated nominal-size spelling; its numeric value is derived on read.
-    pub nominal_size: DesignThreadNominalSize,
+    pub(crate) nominal_size: DesignThreadNominalSize,
     /// Thread profile name.
-    pub profile: cadmpeg_core::text::NonBlankString,
+    pub(crate) profile: cadmpeg_core::text::NonBlankString,
     /// Ordered physical thread diameters in Design length units.
-    pub diameters: DesignThreadDiameters,
+    pub(crate) diameters: DesignThreadDiameters,
     /// Thread pitch in Design length units.
-    pub pitch: DesignPositiveScalar,
+    pub(crate) pitch: DesignPositiveScalar,
     /// Ordered counted face-selection groups referenced by the scope.
-    pub face_group_record_indices: Vec<u32>,
+    pub(crate) face_group_record_indices: Vec<u32>,
 }
 
 /// Positive finite thread diameters ordered from minor through pitch to major.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DesignThreadDiameters {
+pub(crate) struct DesignThreadDiameters {
     major: DesignPositiveScalar,
     minor: DesignPositiveScalar,
     pitch: DesignPositiveScalar,
@@ -61,7 +61,7 @@ pub struct DesignThreadDiameters {
 
 impl DesignThreadDiameters {
     /// Admit strictly ordered positive finite thread diameters.
-    pub fn new(major: f64, minor: f64, pitch: f64) -> Option<Self> {
+    pub(crate) fn new(major: f64, minor: f64, pitch: f64) -> Option<Self> {
         let major = DesignPositiveScalar::new(major)?;
         let minor = DesignPositiveScalar::new(minor)?;
         let pitch = DesignPositiveScalar::new(pitch)?;
@@ -72,22 +72,22 @@ impl DesignThreadDiameters {
         })
     }
     /// Physical major diameter in Design length units.
-    pub fn major(self) -> f64 {
+    pub(crate) fn major(self) -> f64 {
         self.major.get()
     }
     /// Physical minor diameter in Design length units.
-    pub fn minor(self) -> f64 {
+    pub(crate) fn minor(self) -> f64 {
         self.minor.get()
     }
     /// Physical pitch diameter in Design length units.
-    pub fn pitch(self) -> f64 {
+    pub(crate) fn pitch(self) -> f64 {
         self.pitch.get()
     }
 }
 
 /// Original spelling of a finite positive nominal thread size.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignThreadNominalSize(String);
+pub(crate) struct DesignThreadNominalSize(String);
 
 impl TryFrom<String> for DesignThreadNominalSize {
     type Error = String;
@@ -105,11 +105,11 @@ impl TryFrom<String> for DesignThreadNominalSize {
 impl DesignThreadNominalSize {
     #[must_use]
     #[cfg(test)]
-    pub fn text(&self) -> &str {
+    pub(crate) fn text(&self) -> &str {
         &self.0
     }
 
-    pub fn value(&self) -> Result<f64, std::num::ParseFloatError> {
+    pub(crate) fn value(&self) -> Result<f64, std::num::ParseFloatError> {
         self.0.parse()
     }
 }
@@ -124,7 +124,7 @@ impl Serialize for DesignThreadConstruction {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum DesignThreadFormWire {
+enum DesignThreadFormWire {
     /// Standard prefix, construction marker, and trailer layout.
     Standard,
     /// Compact prefix, construction marker, and trailer layout.
@@ -138,17 +138,17 @@ pub(super) enum DesignThreadFormWire {
 #[derive(Serialize, Deserialize)]
 pub(super) struct DesignThreadConstructionWire {
     /// Standard, compact, or class-specific legacy construction form.
-    pub(super) form: DesignThreadFormWire,
+    form: DesignThreadFormWire,
     /// Byte offset of the designation LP-UTF16 field.
-    pub(super) designation_offset: u64,
+    designation_offset: u64,
     /// Standard thread designation.
-    pub(super) designation: String,
+    designation: String,
     /// Exact nominal-size text interpreted into `nominal_size`.
-    pub(super) nominal_size_text: String,
+    nominal_size_text: String,
     /// Numeric nominal size interpreted by `profile`.
-    pub(super) nominal_size: f64,
+    nominal_size: f64,
     /// Thread profile name.
-    pub(super) profile: String,
+    profile: String,
     /// Physical major diameter in Design length units.
     pub(super) major_diameter: f64,
     /// Physical minor diameter in Design length units.
@@ -163,16 +163,16 @@ pub(super) struct DesignThreadConstructionWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_trailing_reference_record_index"
     )]
-    pub(super) trailing_reference_record_index: Option<u32>,
+    trailing_reference_record_index: Option<u32>,
     /// Byte offset of `trailing_reference_record_index`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_trailing_reference_offset"
     )]
-    pub(super) trailing_reference_offset: Option<u64>,
+    trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
-    pub(super) face_group_record_indices: Vec<u32>,
+    face_group_record_indices: Vec<u32>,
 }
 
 impl TryFrom<DesignThreadConstruction> for DesignThreadConstructionWire {

@@ -20,39 +20,39 @@ cadmpeg_core::named_optional_field!(
 );
 /// Exact construction carried by a fixed circular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignCircularPatternConstruction {
+pub(crate) struct DesignCircularPatternConstruction {
     /// Positive total instance count, including the seed.
-    pub count: u32,
+    pub(crate) count: u32,
     /// Referenced compact count-parameter owner.
-    pub count_record_index: u32,
+    pub(crate) count_record_index: u32,
     /// Byte offset of the evaluated count scalar.
-    pub count_offset: u64,
+    pub(crate) count_offset: u64,
     /// Positive angular span in radians.
-    pub angle: f64,
+    pub(crate) angle: f64,
     /// Referenced total-angle scalar.
-    pub angle_record_index: u32,
+    pub(crate) angle_record_index: u32,
     /// Byte offset of the total-angle scalar.
-    pub angle_offset: u64,
+    pub(crate) angle_offset: u64,
     /// Serialized axis construction and its resolved placement.
-    pub axis: DesignCircularPatternAxis,
+    pub(crate) axis: DesignCircularPatternAxis,
     /// Referenced axis record.
-    pub axis_record_index: u32,
+    pub(crate) axis_record_index: u32,
     /// Referenced persistent selection operand.
-    pub selection_record_index: u32,
+    pub(crate) selection_record_index: u32,
 }
 
 /// Proven origin and unit direction.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DesignAxis {
-    pub origin: Point3,
-    pub direction: Vector3,
+pub(crate) struct DesignAxis {
+    pub(crate) origin: Point3,
+    pub(crate) direction: Vector3,
 }
 
 /// Proven origin and unit normal.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DesignPlane {
-    pub origin: Point3,
-    pub normal: Vector3,
+pub(crate) struct DesignPlane {
+    pub(crate) origin: Point3,
+    pub(crate) normal: Vector3,
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
@@ -61,7 +61,7 @@ pub struct DesignPlane {
     try_from = "DesignCircularPatternAxisWire",
     into = "DesignCircularPatternAxisWire"
 )]
-pub enum DesignCircularPatternAxis {
+pub(crate) enum DesignCircularPatternAxis {
     /// Axis coordinates stored directly in the Design record.
     Inline {
         /// Axis origin in source centimetres.
@@ -86,9 +86,9 @@ pub enum DesignCircularPatternAxis {
 
 /// One historical axis wrapper and the location of its persistent identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignPatternAxisWrapper {
-    pub record_index: u32,
-    pub identity_offset: u64,
+pub(crate) struct DesignPatternAxisWrapper {
+    pub(crate) record_index: u32,
+    pub(crate) identity_offset: u64,
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
@@ -221,7 +221,7 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
     try_from = "DesignRectangularPatternConstructionWire",
     into = "DesignRectangularPatternConstructionWire"
 )]
-pub struct DesignRectangularPatternConstruction {
+pub(crate) struct DesignRectangularPatternConstruction {
     /// Positive U-direction instance count, including the seed.
     u_count: NonZeroU32,
     /// Positive V-direction instance count, including the seed.
@@ -231,35 +231,35 @@ pub struct DesignRectangularPatternConstruction {
     /// Signed V-direction seed-to-final-instance span in source centimetres.
     v_extent: f64,
     /// Parameter-owner records for U count, V count, U extent, and V extent.
-    pub owner_record_indices: [u32; 4],
+    pub(crate) owner_record_indices: [u32; 4],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub value_offsets: [u64; 4],
+    pub(crate) value_offsets: [u64; 4],
     /// Exact serialized instance sequence when one pattern direction is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub instances: Option<DesignRectangularPatternInstances>,
+    pub(crate) instances: Option<DesignRectangularPatternInstances>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct DesignRectangularPatternConstructionWire {
     /// Positive U-direction instance count, including the seed.
-    pub u_count: u32,
+    pub(crate) u_count: u32,
     /// Positive V-direction instance count, including the seed.
-    pub v_count: u32,
+    pub(crate) v_count: u32,
     /// Signed U-direction seed-to-final-instance span in source centimetres.
-    pub u_extent: f64,
+    pub(crate) u_extent: f64,
     /// Signed V-direction seed-to-final-instance span in source centimetres.
-    pub v_extent: f64,
+    pub(crate) v_extent: f64,
     /// Parameter-owner records for U count, V count, U extent, and V extent.
-    pub owner_record_indices: [u32; 4],
+    pub(crate) owner_record_indices: [u32; 4],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub value_offsets: [u64; 4],
+    pub(crate) value_offsets: [u64; 4],
     /// Exact serialized instance sequence when one pattern direction is active.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_instances"
     )]
-    pub instances: Option<DesignRectangularPatternInstances>,
+    pub(crate) instances: Option<DesignRectangularPatternInstances>,
 }
 
 impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatternConstruction {
@@ -323,7 +323,7 @@ impl DesignRectangularPatternConstruction {
     try_from = "DesignRectangularPatternInstancesWire",
     into = "DesignRectangularPatternInstancesWire"
 )]
-pub enum DesignRectangularPatternInstances {
+pub(crate) enum DesignRectangularPatternInstances {
     Bodies(Vec<DesignPatternInstance>),
     Components {
         component_guid: DesignRelaxedGuidText,
@@ -333,26 +333,26 @@ pub enum DesignRectangularPatternInstances {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DesignPatternInstance {
-    pub record_index: u32,
-    pub transform: Located<SketchPlacementMatrix>,
+pub(crate) struct DesignPatternInstance {
+    pub(crate) record_index: u32,
+    pub(crate) transform: Located<SketchPlacementMatrix>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignPatternComponentInstance {
-    pub instance: DesignPatternInstance,
-    pub occurrence_guid: DesignRelaxedGuidText,
+pub(crate) struct DesignPatternComponentInstance {
+    pub(crate) instance: DesignPatternInstance,
+    pub(crate) occurrence_guid: DesignRelaxedGuidText,
 }
 
 impl DesignRectangularPatternInstances {
-    pub fn instance_count(&self) -> usize {
+    pub(crate) fn instance_count(&self) -> usize {
         match self {
             Self::Bodies(instances) => instances.len(),
             Self::Components { generated, .. } => generated.len() + 1,
         }
     }
 
-    pub fn frames(&self) -> impl DoubleEndedIterator<Item = &DesignPatternInstance> {
+    pub(crate) fn frames(&self) -> impl DoubleEndedIterator<Item = &DesignPatternInstance> {
         let (bodies, seed, generated): (
             &[DesignPatternInstance],
             Option<&DesignPatternInstance>,
@@ -374,23 +374,23 @@ impl DesignRectangularPatternInstances {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct DesignRectangularPatternInstancesWire {
     /// Seed record followed by the generated-instance records in pattern order.
-    pub(super) record_indices: Vec<u32>,
+    record_indices: Vec<u32>,
     /// Row-major local-to-model placements parallel to `record_indices`.
-    pub(super) transforms: Vec<SketchPlacementMatrix>,
+    transforms: Vec<SketchPlacementMatrix>,
     /// Byte offsets of the first transform scalar parallel to `record_indices`.
-    pub(super) transform_offsets: Vec<u64>,
+    transform_offsets: Vec<u64>,
     /// Component occurrences carried by this run when the pattern repeats a component.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_component_occurrences"
     )]
-    pub(super) component_occurrences: Option<DesignComponentPatternOccurrencesWire>,
+    component_occurrences: Option<DesignComponentPatternOccurrencesWire>,
 }
 
 /// Component seed and generated occurrences carried by a rectangular pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct DesignComponentPatternOccurrencesWire {
+struct DesignComponentPatternOccurrencesWire {
     /// Reusable local component definition shared by every occurrence.
     component_guid: DesignRelaxedGuidText,
     /// Existing seed occurrence.

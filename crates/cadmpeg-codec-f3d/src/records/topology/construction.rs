@@ -16,7 +16,7 @@ use std::num::NonZeroU32;
 
 /// A construction role classified in its owning scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignConstructionOperandRole {
+pub(crate) enum DesignConstructionOperandRole {
     /// A source role without an Extrude classification.
     Other(DesignOperandRole),
     /// Extrude body operand run A.
@@ -36,7 +36,7 @@ pub enum DesignConstructionOperandRole {
 
 impl DesignConstructionOperandRole {
     /// The source role code.
-    pub fn source(self) -> DesignOperandRole {
+    fn source(self) -> DesignOperandRole {
         match self {
             Self::Other(role) => role,
             Self::ExtrudeBodiesA => DesignOperandRole::BODIES_A,
@@ -51,7 +51,7 @@ impl DesignConstructionOperandRole {
     }
 
     /// The Extrude role of a scope-classified source encoding.
-    pub fn extrude(self) -> Option<DesignExtrudeOperandRole> {
+    fn extrude(self) -> Option<DesignExtrudeOperandRole> {
         match self {
             Self::Other(_) => None,
             Self::ExtrudeBodiesA | Self::ExtrudeBodiesB => Some(DesignExtrudeOperandRole::Bodies),
@@ -67,48 +67,48 @@ impl DesignConstructionOperandRole {
     try_from = "DesignConstructionOperandGroupSerde",
     into = "DesignConstructionOperandGroupSerde"
 )]
-pub struct DesignConstructionOperandGroup {
+pub(crate) struct DesignConstructionOperandGroup {
     /// Globally unique deterministic identifier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning feature scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Position in the scope reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Primary indexed-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Primary indexed-header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Ordered operand-record references.
     members: Vec<Located<u32>>,
     /// Ordered unresolved-edge records whose run terminates at this group's identity.
-    pub lost_edge_references: Vec<String>,
+    pub(crate) lost_edge_references: Vec<String>,
     /// Exact framing of the operand-member run and its auxiliary fields.
-    pub frame: DesignConstructionOperandGroupFrame,
+    pub(crate) frame: DesignConstructionOperandGroupFrame,
     /// Source role classified in its owning scope.
-    pub operand_role: DesignConstructionOperandRole,
+    pub(crate) operand_role: DesignConstructionOperandRole,
     /// Per-file dynamic paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
-    pub paired_byte_offset: u64,
+    pub(crate) paired_byte_offset: u64,
 }
 
 /// Unchecked construction-group input.
 pub(crate) struct DesignConstructionOperandGroupDraft {
-    pub id: String,
-    pub scope_record_index: u32,
-    pub scope_reference_ordinal: u32,
-    pub record_index: u32,
-    pub byte_offset: u64,
-    pub class_tag: DesignClassTag,
-    pub members: Vec<Located<u32>>,
-    pub lost_edge_references: Vec<String>,
-    pub frame: DesignConstructionOperandGroupFrame,
-    pub operand_role: DesignConstructionOperandRole,
-    pub role_offset: u64,
-    pub paired_class_tag: DesignClassTag,
-    pub paired_byte_offset: u64,
+    pub(crate) id: String,
+    pub(crate) scope_record_index: u32,
+    pub(crate) scope_reference_ordinal: u32,
+    pub(crate) record_index: u32,
+    pub(crate) byte_offset: u64,
+    pub(crate) class_tag: DesignClassTag,
+    pub(crate) members: Vec<Located<u32>>,
+    pub(crate) lost_edge_references: Vec<String>,
+    pub(crate) frame: DesignConstructionOperandGroupFrame,
+    pub(crate) operand_role: DesignConstructionOperandRole,
+    pub(crate) role_offset: u64,
+    pub(crate) paired_class_tag: DesignClassTag,
+    pub(crate) paired_byte_offset: u64,
 }
 
 impl TryFrom<DesignConstructionOperandGroupDraft> for DesignConstructionOperandGroup {
@@ -149,7 +149,7 @@ impl DesignConstructionOperandGroup {
     }
 
     /// Ordered operand references with checked strides.
-    pub fn members(&self) -> &[Located<u32>] {
+    pub(crate) fn members(&self) -> &[Located<u32>] {
         &self.members
     }
 
@@ -161,17 +161,17 @@ impl DesignConstructionOperandGroup {
     }
 
     /// Role offset derived from the opaque-index location.
-    pub fn role_offset(&self) -> u64 {
+    pub(crate) fn role_offset(&self) -> u64 {
         self.frame.role_offset()
     }
 
     /// The source role code.
-    pub fn role(&self) -> DesignOperandRole {
+    pub(crate) fn role(&self) -> DesignOperandRole {
         self.operand_role.source()
     }
 
     /// The Extrude role derived from the scope-classified source encoding.
-    pub fn extrude_role(&self) -> Option<DesignExtrudeOperandRole> {
+    pub(crate) fn extrude_role(&self) -> Option<DesignExtrudeOperandRole> {
         self.operand_role.extrude()
     }
 
@@ -314,12 +314,12 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
     try_from = "DesignConstructionOperandGroupFrameWire",
     into = "DesignConstructionOperandGroupFrameWire"
 )]
-pub struct DesignConstructionOperandGroupFrame {
+pub(crate) struct DesignConstructionOperandGroupFrame {
     /// Byte offset of the member count.
-    pub member_count_offset: u64,
+    pub(crate) member_count_offset: u64,
     /// Auxiliary records named by the two optional references that follow the
     /// member run; an absent reference contributes no entry.
-    pub auxiliary_records: Vec<Located<u32>>,
+    pub(crate) auxiliary_records: Vec<Located<u32>>,
     /// Exact selection-path records selected by the optional references.
     auxiliary_paths: Vec<DesignConstructionOperandPath>,
     /// Indexed records named by the counted trailing-reference run. The target
@@ -337,29 +337,29 @@ pub struct DesignConstructionOperandGroupFrame {
     trailing_flags: Vec<DesignConstructionOperandFlag>,
     /// Opaque ordinal: nonzero and below 256, repeated after `opaque_scalar` in
     /// every container generation but one.
-    pub opaque_index: NonZeroU32,
+    pub(crate) opaque_index: NonZeroU32,
     /// Byte offset of the first `opaque_index` copy.
     opaque_index_offset: u64,
     /// Opaque nonnegative finite f64.
     opaque_scalar: f64,
     /// Boolean tail variant.
-    pub variant: bool,
+    pub(crate) variant: bool,
 }
 
 /// Unchecked construction-frame input.
 pub(crate) struct DesignConstructionOperandGroupFrameDraft {
-    pub member_count_offset: u64,
-    pub auxiliary_records: Vec<Located<u32>>,
-    pub auxiliary_paths: Vec<DesignConstructionOperandPath>,
-    pub trailing_records: Vec<Located<u32>>,
-    pub trailing_transforms: Vec<DesignConstructionOperandTransform>,
-    pub trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
-    pub trailing_flags: Vec<DesignConstructionOperandFlag>,
-    pub opaque_index: u32,
-    pub opaque_index_offset: u64,
-    pub opaque_scalar: f64,
-    pub opaque_scalar_offset: u64,
-    pub variant: bool,
+    pub(crate) member_count_offset: u64,
+    pub(crate) auxiliary_records: Vec<Located<u32>>,
+    pub(crate) auxiliary_paths: Vec<DesignConstructionOperandPath>,
+    pub(crate) trailing_records: Vec<Located<u32>>,
+    pub(crate) trailing_transforms: Vec<DesignConstructionOperandTransform>,
+    pub(crate) trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
+    pub(crate) trailing_flags: Vec<DesignConstructionOperandFlag>,
+    pub(crate) opaque_index: u32,
+    pub(crate) opaque_index_offset: u64,
+    pub(crate) opaque_scalar: f64,
+    pub(crate) opaque_scalar_offset: u64,
+    pub(crate) variant: bool,
 }
 
 impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOperandGroupFrame {
@@ -437,27 +437,27 @@ fn distinct_construction_records(
 
 impl DesignConstructionOperandGroupFrame {
     /// Role offset derived from the opaque-index location.
-    pub fn role_offset(&self) -> u64 {
+    fn role_offset(&self) -> u64 {
         self.opaque_index_offset - 18
     }
     /// First opaque-index location.
-    pub fn opaque_index_offset(&self) -> u64 {
+    fn opaque_index_offset(&self) -> u64 {
         self.opaque_index_offset
     }
     /// Scalar location following the opaque index.
-    pub fn opaque_scalar_offset(&self) -> u64 {
+    pub(crate) fn opaque_scalar_offset(&self) -> u64 {
         self.opaque_index_offset + 4
     }
     /// Finite nonnegative scalar.
-    pub fn opaque_scalar(&self) -> f64 {
+    pub(crate) fn opaque_scalar(&self) -> f64 {
         self.opaque_scalar
     }
     /// Zero or one trailing reference.
-    pub fn trailing_records(&self) -> &[Located<u32>] {
+    pub(crate) fn trailing_records(&self) -> &[Located<u32>] {
         self.trailing_records.as_slice()
     }
     /// Distinct auxiliary path records.
-    pub fn auxiliary_paths(&self) -> &[DesignConstructionOperandPath] {
+    pub(crate) fn auxiliary_paths(&self) -> &[DesignConstructionOperandPath] {
         &self.auxiliary_paths
     }
     /// Checked replacement of auxiliary path records.
@@ -475,7 +475,7 @@ impl DesignConstructionOperandGroupFrame {
         Ok(())
     }
     /// Distinct trailing affine transforms.
-    pub fn trailing_transforms(&self) -> &[DesignConstructionOperandTransform] {
+    pub(crate) fn trailing_transforms(&self) -> &[DesignConstructionOperandTransform] {
         &self.trailing_transforms
     }
     /// Checked replacement of trailing affine transforms.
@@ -493,7 +493,7 @@ impl DesignConstructionOperandGroupFrame {
         Ok(())
     }
     /// Distinct trailing dual transforms.
-    pub fn trailing_dual_transforms(&self) -> &[DesignConstructionOperandDualTransform] {
+    pub(crate) fn trailing_dual_transforms(&self) -> &[DesignConstructionOperandDualTransform] {
         &self.trailing_dual_transforms
     }
     /// Checked replacement of trailing dual transforms.
@@ -509,7 +509,7 @@ impl DesignConstructionOperandGroupFrame {
         Ok(())
     }
     /// Distinct trailing flag records.
-    pub fn trailing_flags(&self) -> &[DesignConstructionOperandFlag] {
+    pub(crate) fn trailing_flags(&self) -> &[DesignConstructionOperandFlag] {
         &self.trailing_flags
     }
     /// Checked replacement of trailing flag records.
@@ -631,17 +631,17 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
 
 /// Compact boolean record named by a construction-operand group's trailing run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignConstructionOperandFlag {
+pub(crate) struct DesignConstructionOperandFlag {
     /// Indexed flag-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Flag-record header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Per-file dynamic flag-record class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Stored boolean value.
-    pub value: bool,
+    pub(crate) value: bool,
     /// Byte offset of the stored boolean.
-    pub value_offset: u64,
+    pub(crate) value_offset: u64,
 }
 
 /// Affine placement named by a construction-operand group's trailing run.
@@ -650,14 +650,14 @@ pub struct DesignConstructionOperandFlag {
     try_from = "DesignConstructionOperandTransformDraft",
     into = "DesignConstructionOperandTransformDraft"
 )]
-pub struct DesignConstructionOperandTransform {
+pub(crate) struct DesignConstructionOperandTransform {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Per-file dynamic transform-record class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Row-major local-to-model affine transform.
-    pub transform: SketchPlacementMatrix,
+    pub(crate) transform: SketchPlacementMatrix,
     /// Per-file dynamic following-record class tag.
-    pub following_class_tag: DesignClassTag,
+    pub(crate) following_class_tag: DesignClassTag,
 }
 
 impl DesignConstructionOperandTransform {
@@ -685,7 +685,7 @@ impl DesignConstructionOperandTransform {
         }
         Ok(value)
     }
-    pub(crate) fn into_draft(self) -> DesignConstructionOperandTransformDraft {
+    fn into_draft(self) -> DesignConstructionOperandTransformDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
         let following_record_index = self.following_record_index();
@@ -723,21 +723,21 @@ impl DesignConstructionOperandTransform {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignConstructionOperandTransformDraft {
     /// Indexed transform-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Transform-record header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Per-file dynamic transform-record class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Row-major local-to-model affine transform.
-    pub transform: SketchPlacementMatrix,
+    pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
-    pub transform_offset: u64,
+    pub(crate) transform_offset: u64,
     /// Indexed record immediately following the transform.
-    pub following_record_index: u32,
+    pub(crate) following_record_index: u32,
     /// Following-record header byte offset.
-    pub following_byte_offset: u64,
+    pub(crate) following_byte_offset: u64,
     /// Per-file dynamic following-record class tag.
-    pub following_class_tag: DesignClassTag,
+    pub(crate) following_class_tag: DesignClassTag,
 }
 
 impl TryFrom<DesignConstructionOperandTransformDraft> for DesignConstructionOperandTransform {
@@ -765,21 +765,21 @@ impl From<DesignConstructionOperandTransform> for DesignConstructionOperandTrans
 
 /// Two ordered affine placements named by an operand group's trailing run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignConstructionOperandDualTransform {
+pub(crate) struct DesignConstructionOperandDualTransform {
     /// Indexed transform-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Transform-record header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Per-file dynamic transform-record class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// First row-major affine transform.
-    pub first_transform: SketchPlacementMatrix,
+    pub(crate) first_transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
-    pub first_transform_offset: u64,
+    pub(crate) first_transform_offset: u64,
     /// Second row-major affine transform.
-    pub second_transform: SketchPlacementMatrix,
+    pub(crate) second_transform: SketchPlacementMatrix,
     /// Byte offset of the second matrix scalar.
-    pub second_transform_offset: u64,
+    pub(crate) second_transform_offset: u64,
 }
 
 /// One persistent-entity step in a construction operand's selection path.
@@ -788,18 +788,18 @@ pub struct DesignConstructionOperandDualTransform {
     try_from = "DesignConstructionOperandPathWire",
     into = "DesignConstructionOperandPathWire"
 )]
-pub struct DesignConstructionOperandPath {
+pub(crate) struct DesignConstructionOperandPath {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Per-file dynamic path-record class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Persistent entity identity carried by this path step.
-    pub entity_ref: u64,
+    pub(crate) entity_ref: u64,
     /// Transform or compact selection-path layout.
     placement: DesignConstructionPathPlacement,
     /// Owning feature-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Per-file dynamic following-record class tag.
-    pub following_class_tag: DesignClassTag,
+    pub(crate) following_class_tag: DesignClassTag,
 }
 
 impl DesignConstructionOperandPath {
@@ -876,7 +876,7 @@ impl DesignConstructionOperandPath {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.frame.offset(0)
     }
-    pub(crate) fn entity_ref_offset(&self) -> u64 {
+    fn entity_ref_offset(&self) -> u64 {
         self.frame.offset(22)
     }
     pub(crate) fn scope_record_index_offset(&self) -> u64 {
@@ -909,31 +909,31 @@ impl DesignConstructionOperandPath {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignConstructionOperandPathDraft {
     /// Indexed path-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Path-record header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Per-file dynamic path-record class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Persistent entity identity carried by this path step.
-    pub entity_ref: u64,
+    pub(crate) entity_ref: u64,
     /// Byte offset of `entity_ref`.
-    pub entity_ref_offset: u64,
+    pub(crate) entity_ref_offset: u64,
     /// Transform or compact selection-path layout.
-    pub placement: DesignConstructionPathPlacement,
+    pub(crate) placement: DesignConstructionPathPlacement,
     /// Owning feature-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Byte offset of the owning-scope reference.
-    pub scope_record_index_offset: u64,
+    pub(crate) scope_record_index_offset: u64,
     /// Nested record selected after the owning scope.
-    pub nested_record_index: u32,
+    pub(crate) nested_record_index: u32,
     /// Byte offset of the nested-record reference.
-    pub nested_record_index_offset: u64,
+    pub(crate) nested_record_index_offset: u64,
     /// Indexed record immediately following this path frame.
-    pub following_record_index: u32,
+    pub(crate) following_record_index: u32,
     /// Following-record header byte offset.
-    pub following_byte_offset: u64,
+    pub(crate) following_byte_offset: u64,
     /// Per-file dynamic following-record class tag.
-    pub following_class_tag: DesignClassTag,
+    pub(crate) following_class_tag: DesignClassTag,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1041,7 +1041,7 @@ impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
 
 /// Placement layout carried by a persistent-entity selection path.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum DesignConstructionPathPlacement {
+pub(crate) enum DesignConstructionPathPlacement {
     Transform(SketchPlacementMatrix),
     Compact(bool),
 }
@@ -1052,11 +1052,11 @@ pub enum DesignConstructionPathPlacement {
     try_from = "DesignConstructionOperandIdentityWire",
     into = "DesignConstructionOperandIdentityWire"
 )]
-pub struct DesignConstructionOperandIdentity {
+pub(crate) struct DesignConstructionOperandIdentity {
     /// Globally unique deterministic identifier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning operand-group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Ordered identity-wrapper indexed records.
     wrappers: Vec<DesignIdentityWrapper>,
     /// Indexed identity of the record physically following the wrappers.
@@ -1160,63 +1160,63 @@ impl DesignConstructionOperandIdentity {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignConstructionOperandIdentityDraft {
     /// Globally unique deterministic identifier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning operand-group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Ordered identity-wrapper indexed records.
-    pub wrappers: Vec<DesignIdentityWrapper>,
+    pub(crate) wrappers: Vec<DesignIdentityWrapper>,
     /// Indexed identity of the record physically following the wrappers.
-    pub following_record_index: u32,
+    pub(crate) following_record_index: u32,
     /// Indexed-header byte offset of the record following the wrappers.
-    pub following_byte_offset: u64,
+    pub(crate) following_byte_offset: u64,
     /// Per-file dynamic class tag of the record following the wrappers.
-    pub following_class_tag: DesignClassTag,
+    pub(crate) following_class_tag: DesignClassTag,
     /// Entity-tracking path between the outer wrappers and persistent identity.
-    pub tracking_path: Option<DesignConstructionTrackingPath>,
+    pub(crate) tracking_path: Option<DesignConstructionTrackingPath>,
     /// Fixed-width persistent identity, when the following record has that grammar.
-    pub persistent_identity: Option<DesignConstructionPersistentIdentity>,
+    pub(crate) persistent_identity: Option<DesignConstructionPersistentIdentity>,
 }
 
 /// Identity and location of one indexed construction wrapper.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignIdentityWrapper {
-    pub record_index: u32,
-    pub byte_offset: u64,
-    pub class_tag: DesignClassTag,
+pub(crate) struct DesignIdentityWrapper {
+    pub(crate) record_index: u32,
+    pub(crate) byte_offset: u64,
+    pub(crate) class_tag: DesignClassTag,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct DesignConstructionOperandIdentityWire {
     /// Globally unique deterministic identifier.
-    pub id: String,
+    id: String,
     /// Owning operand-group record.
-    pub group_record_index: u32,
+    group_record_index: u32,
     /// Ordered identity-wrapper indexed-record identities.
-    pub wrapper_record_indices: Vec<u32>,
+    wrapper_record_indices: Vec<u32>,
     /// Indexed-header byte offsets parallel to `wrapper_record_indices`.
-    pub wrapper_byte_offsets: Vec<u64>,
+    wrapper_byte_offsets: Vec<u64>,
     /// Per-file dynamic class tags parallel to `wrapper_record_indices`.
-    pub wrapper_class_tags: Vec<String>,
+    wrapper_class_tags: Vec<String>,
     /// Indexed identity of the record physically following the wrappers.
-    pub following_record_index: u32,
+    following_record_index: u32,
     /// Indexed-header byte offset of the record following the wrappers.
-    pub following_byte_offset: u64,
+    following_byte_offset: u64,
     /// Per-file dynamic class tag of the record following the wrappers.
-    pub following_class_tag: String,
+    following_class_tag: String,
     /// Entity-tracking path between the outer wrappers and persistent identity.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_tracking_path"
     )]
-    pub tracking_path: Option<DesignConstructionTrackingPath>,
+    tracking_path: Option<DesignConstructionTrackingPath>,
     /// Fixed-width persistent identity, when the following record has that grammar.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_persistent_identity"
     )]
-    pub persistent_identity: Option<DesignConstructionPersistentIdentity>,
+    persistent_identity: Option<DesignConstructionPersistentIdentity>,
 }
 
 impl TryFrom<DesignConstructionOperandIdentityWire> for DesignConstructionOperandIdentity {
@@ -1288,18 +1288,18 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
     try_from = "DesignConstructionTrackingPathWire",
     into = "DesignConstructionTrackingPathWire"
 )]
-pub struct DesignConstructionTrackingPath {
+pub(crate) struct DesignConstructionTrackingPath {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Outer tracking-wrapper dynamic class tag.
-    pub wrapper_class_tag: DesignClassTag,
+    pub(crate) wrapper_class_tag: DesignClassTag,
     /// Nested tracking-carrier dynamic class tag.
-    pub carrier_class_tag: DesignClassTag,
+    pub(crate) carrier_class_tag: DesignClassTag,
     /// Primary persistent identity stored by the carrier.
-    pub primary_identity: u64,
+    pub(crate) primary_identity: u64,
     /// Signed carrier selector.
-    pub selector: i32,
+    pub(crate) selector: i32,
     /// Carrier-kind discriminator.
-    pub kind: u32,
+    pub(crate) kind: u32,
     /// First optional related persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     first_related_identity: Option<u64>,
@@ -1307,7 +1307,7 @@ pub struct DesignConstructionTrackingPath {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     second_related_identity: Option<u64>,
     /// Following-record dynamic class tag.
-    pub following_class_tag: DesignClassTag,
+    pub(crate) following_class_tag: DesignClassTag,
 }
 
 impl DesignConstructionTrackingPath {
@@ -1363,7 +1363,7 @@ impl DesignConstructionTrackingPath {
         }
         Ok(value)
     }
-    pub(crate) fn into_draft(self) -> DesignConstructionTrackingPathDraft {
+    fn into_draft(self) -> DesignConstructionTrackingPathDraft {
         let first_related_identity = self.first_related_identity();
         let second_related_identity = self.second_related_identity();
         let wrapper_record_index = self.wrapper_record_index();
@@ -1410,10 +1410,10 @@ impl DesignConstructionTrackingPath {
     pub(crate) fn primary_identity_offset(&self) -> u64 {
         self.frame.offset(70)
     }
-    pub(crate) fn selector_offset(&self) -> u64 {
+    fn selector_offset(&self) -> u64 {
         self.frame.offset(90)
     }
-    pub(crate) fn kind_offset(&self) -> u64 {
+    fn kind_offset(&self) -> u64 {
         self.frame.offset(94)
     }
     pub(crate) fn first_related_identity(&self) -> Option<Located<u64>> {
@@ -1445,39 +1445,39 @@ impl DesignConstructionTrackingPath {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignConstructionTrackingPathDraft {
     /// Outer tracking-wrapper record identity.
-    pub wrapper_record_index: u32,
+    pub(crate) wrapper_record_index: u32,
     /// Outer tracking-wrapper header byte offset.
-    pub wrapper_byte_offset: u64,
+    pub(crate) wrapper_byte_offset: u64,
     /// Outer tracking-wrapper dynamic class tag.
-    pub wrapper_class_tag: DesignClassTag,
+    pub(crate) wrapper_class_tag: DesignClassTag,
     /// Nested tracking-carrier record identity.
-    pub carrier_record_index: u32,
+    pub(crate) carrier_record_index: u32,
     /// Nested tracking-carrier header byte offset.
-    pub carrier_byte_offset: u64,
+    pub(crate) carrier_byte_offset: u64,
     /// Nested tracking-carrier dynamic class tag.
-    pub carrier_class_tag: DesignClassTag,
+    pub(crate) carrier_class_tag: DesignClassTag,
     /// Primary persistent identity stored by the carrier.
-    pub primary_identity: u64,
+    pub(crate) primary_identity: u64,
     /// Byte offset of `primary_identity`.
-    pub primary_identity_offset: u64,
+    pub(crate) primary_identity_offset: u64,
     /// Signed carrier selector.
-    pub selector: i32,
+    pub(crate) selector: i32,
     /// Byte offset of `selector`.
-    pub selector_offset: u64,
+    pub(crate) selector_offset: u64,
     /// Carrier-kind discriminator.
-    pub kind: u32,
+    pub(crate) kind: u32,
     /// Byte offset of `kind`.
-    pub kind_offset: u64,
+    pub(crate) kind_offset: u64,
     /// First optional related persistent identity.
-    pub first_related_identity: Option<Located<u64>>,
+    pub(crate) first_related_identity: Option<Located<u64>>,
     /// Second optional related persistent identity.
-    pub second_related_identity: Option<Located<u64>>,
+    pub(crate) second_related_identity: Option<Located<u64>>,
     /// Indexed record immediately following the carrier.
-    pub following_record_index: u32,
+    pub(crate) following_record_index: u32,
     /// Following-record header byte offset.
-    pub following_byte_offset: u64,
+    pub(crate) following_byte_offset: u64,
     /// Following-record dynamic class tag.
-    pub following_class_tag: DesignClassTag,
+    pub(crate) following_class_tag: DesignClassTag,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1593,23 +1593,23 @@ impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire
     try_from = "DesignConstructionPersistentIdentityDraft",
     into = "DesignConstructionPersistentIdentityDraft"
 )]
-pub struct DesignConstructionPersistentIdentity {
+pub(crate) struct DesignConstructionPersistentIdentity {
     tail: PersistentIdentityTail,
     /// Local persistent identity preceding the two UUID fields.
-    pub local_id: u64,
+    pub(crate) local_id: u64,
     /// Byte offset of `local_id`.
     local_id_offset: u64,
     /// Asset UUID qualifying the local identity.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// UUID of the local identity context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     /// Whether the fixed tail's optional slot is present.
     #[serde(default)]
-    pub tail_slot_present: bool,
+    tail_slot_present: bool,
     /// Identity of the indexed record immediately following this identity.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
 }
 
 impl DesignConstructionPersistentIdentity {
@@ -1695,27 +1695,27 @@ impl DesignConstructionPersistentIdentity {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignConstructionPersistentIdentityDraft {
     /// Local persistent identity preceding the two UUID fields.
-    pub local_id: u64,
+    pub(crate) local_id: u64,
     /// Byte offset of `local_id`.
-    pub local_id_offset: u64,
+    pub(crate) local_id_offset: u64,
     /// Asset UUID qualifying the local identity.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// UUID of the local identity context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Whether the fixed tail's optional slot is present.
     #[serde(default)]
-    pub tail_slot_present: bool,
+    pub(crate) tail_slot_present: bool,
     /// Byte offset of the optional-slot marker.
     #[serde(default)]
-    pub tail_slot_offset: u64,
+    pub(crate) tail_slot_offset: u64,
     /// Identity of the indexed record immediately following this identity.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record immediately following this identity.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 impl TryFrom<DesignConstructionPersistentIdentityDraft> for DesignConstructionPersistentIdentity {

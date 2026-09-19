@@ -33,7 +33,7 @@ cadmpeg_core::named_optional_field!(
 /// Serialized prologue form of a `Combine` scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignCombineForm {
+pub(crate) enum DesignCombineForm {
     /// Nine zero bytes followed by the operation at offset 20.
     Standard,
     /// Class-387 form with the operation at offset 21.
@@ -44,9 +44,9 @@ pub enum DesignCombineForm {
 
 /// Version identity carried by a cross-document reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignExternalVersion {
-    pub property_key: Located<DesignRelaxedGuidText>,
-    pub version_urn: Located<String>,
+pub(crate) struct DesignExternalVersion {
+    pub(crate) property_key: Located<DesignRelaxedGuidText>,
+    pub(crate) version_urn: Located<String>,
 }
 
 /// Cross-document persistent body identity carried by a `Combine` tool selector.
@@ -55,7 +55,7 @@ pub struct DesignExternalVersion {
     try_from = "DesignCombineExternalBodyIdentityWire",
     into = "DesignCombineExternalBodyIdentityWire"
 )]
-pub struct DesignCombineExternalBodyIdentity {
+pub(crate) struct DesignCombineExternalBodyIdentity {
     /// Asset GUID of the enclosing body selector.
     selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
@@ -94,69 +94,69 @@ pub struct DesignCombineExternalBodyIdentity {
 
 /// Wire fields for an external Combine body identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignCombineExternalBodyIdentityWire {
+pub(crate) struct DesignCombineExternalBodyIdentityWire {
     /// Asset GUID of the enclosing body selector.
-    pub selector_asset_id: DesignRelaxedGuidText,
+    pub(crate) selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
-    pub selector_asset_id_offset: u64,
+    pub(crate) selector_asset_id_offset: u64,
     /// Context GUID of the enclosing body selector.
-    pub selector_context_id: DesignRelaxedGuidText,
+    pub(crate) selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
-    pub selector_context_id_offset: u64,
+    pub(crate) selector_context_id_offset: u64,
     /// Same-segment occurrence reference preceding the external body reference.
-    pub occurrence_reference: u64,
+    pub(crate) occurrence_reference: u64,
     /// Byte offset of `occurrence_reference`.
-    pub occurrence_reference_offset: u64,
+    pub(crate) occurrence_reference_offset: u64,
     /// Entity reference of the body in the referenced document.
-    pub external_body_reference: u64,
+    pub(crate) external_body_reference: u64,
     /// Byte offset of `external_body_reference`.
-    pub external_body_reference_offset: u64,
+    pub(crate) external_body_reference_offset: u64,
     /// Segment carried by the cross-document body reference.
-    pub external_segment: u32,
+    pub(crate) external_segment: u32,
     /// Byte offset of `external_segment`.
-    pub external_segment_offset: u64,
+    pub(crate) external_segment_offset: u64,
     /// Asset GUID carried by the cross-document body reference.
-    pub external_asset_id: DesignRelaxedGuidText,
+    pub(crate) external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
-    pub external_asset_id_offset: u64,
+    pub(crate) external_asset_id_offset: u64,
     /// Link name carried by the cross-document body reference.
-    pub external_link_name: String,
+    pub(crate) external_link_name: String,
     /// Byte offset of `external_link_name`.
-    pub external_link_name_offset: u64,
+    pub(crate) external_link_name_offset: u64,
     /// Optional property key preceding the version identity.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_external_property_key"
     )]
-    pub external_property_key: Option<DesignRelaxedGuidText>,
+    pub(crate) external_property_key: Option<DesignRelaxedGuidText>,
     /// Byte offset of `external_property_key` when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_external_property_key_offset"
     )]
-    pub external_property_key_offset: Option<u64>,
+    pub(crate) external_property_key_offset: Option<u64>,
     /// Optional referenced-document version identity.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_external_version_urn"
     )]
-    pub external_version_urn: Option<String>,
+    pub(crate) external_version_urn: Option<String>,
     /// Byte offset of `external_version_urn` when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_external_version_urn_offset"
     )]
-    pub external_version_urn_offset: Option<u64>,
+    pub(crate) external_version_urn_offset: Option<u64>,
     /// Retained u64 values around the fixed `u32 48` member in the selector tail.
     #[serde(default)]
-    pub tail_values: [u64; 2],
+    pub(crate) tail_values: [u64; 2],
     /// Byte offsets of `tail_values` in source order.
     #[serde(default)]
-    pub tail_value_offsets: [u64; 2],
+    pub(crate) tail_value_offsets: [u64; 2],
 }
 
 impl DesignCombineExternalBodyIdentity {
@@ -383,16 +383,16 @@ impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdenti
 
 /// One target or tool body selector owned by a `Combine` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignCombineBodySelection {
+pub(crate) struct DesignCombineBodySelection {
     /// Body-selection record index.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Complete external body identity when the selector crosses a document boundary.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_external_identity"
     )]
-    pub external_identity: Option<DesignCombineExternalBodyIdentity>,
+    pub(crate) external_identity: Option<DesignCombineExternalBodyIdentity>,
 }
 
 /// Exact Boolean construction carried by a `Combine` scope.
@@ -401,32 +401,32 @@ pub struct DesignCombineBodySelection {
     try_from = "DesignCombineOperationWire",
     into = "DesignCombineOperationWire"
 )]
-pub struct DesignCombineOperation {
+pub(crate) struct DesignCombineOperation {
     /// Serialized scope-prologue form.
-    pub form: DesignCombineForm,
+    pub(crate) form: DesignCombineForm,
     /// Join, cut, or intersect operation.
-    pub operation: cadmpeg_ir::features::BooleanKind,
+    pub(crate) operation: cadmpeg_ir::features::BooleanKind,
     /// Byte offset of the operation u32.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
     /// Whether the source operation retains its tool bodies.
-    pub keep_tools: bool,
+    pub(crate) keep_tools: bool,
     /// Byte offset of the keep-tools Boolean.
-    pub keep_tools_offset: u64,
+    pub(crate) keep_tools_offset: u64,
     /// Boolean target body selector.
-    pub target_record_index: u32,
+    pub(crate) target_record_index: u32,
     /// Boolean tool body selectors in source order.
-    pub tools: DesignCombineTools,
+    pub(crate) tools: DesignCombineTools,
 }
 
 /// Ordered nonempty tools of a Combine operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignCombineTools {
-    pub first: DesignCombineBodySelection,
-    pub additional: Vec<DesignCombineBodySelection>,
+pub(crate) struct DesignCombineTools {
+    pub(crate) first: DesignCombineBodySelection,
+    pub(crate) additional: Vec<DesignCombineBodySelection>,
 }
 
 impl DesignCombineTools {
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &DesignCombineBodySelection> {
+    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &DesignCombineBodySelection> {
         std::iter::once(&self.first).chain(&self.additional)
     }
 }

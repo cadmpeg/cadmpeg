@@ -17,63 +17,63 @@ use serde::Serialize;
 /// Face-selection operand owned by a parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignFaceOperandWire", into = "DesignFaceOperandWire")]
-pub struct DesignFaceOperand {
+pub(crate) struct DesignFaceOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Owning construction-operand group, absent for a direct scope operand.
-    pub group: Option<DesignOperandGroup>,
+    pub(crate) group: Option<DesignOperandGroup>,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     paired_byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    paired_class_tag: DesignClassTag,
     /// Byte offset of the recipe record's indexed header.
     recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Complete recipe-specific prefix before the length-prefixed family name.
-    pub recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference entries decoded from the prefix.
-    pub recipe_references: Vec<DesignRecipeReference>,
+    pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Exact face-recipe family.
-    pub recipe_kind: ConstructionRecipeKind,
+    pub(crate) recipe_kind: ConstructionRecipeKind,
     /// Byte offset of the first i32 after the framed recipe-family name.
-    pub recipe_program_offset: u64,
+    pub(crate) recipe_program_offset: u64,
     /// Complete post-name i32 program ending at the next indexed record.
-    pub recipe_program: Vec<i32>,
+    pub(crate) recipe_program: Vec<i32>,
     /// Ordered nodes partitioning the program after its three-word header.
-    pub recipe_nodes: Vec<DesignFaceRecipeNode>,
+    pub(crate) recipe_nodes: Vec<DesignFaceRecipeNode>,
     /// Active solved faces carrying the recipe's persistent Design reference.
-    pub candidate_faces: Vec<FaceId>,
+    pub(crate) candidate_faces: Vec<FaceId>,
     /// Candidate faces not explicitly named as topology context by a prefix
     /// selector carrying the recipe's own Design reference.
-    pub unreferenced_candidate_faces: Vec<FaceId>,
+    pub(crate) unreferenced_candidate_faces: Vec<FaceId>,
     /// Faces named by a prefix operand carrying the recipe's own token and
     /// Design reference under a different native selector.
-    pub alternate_selector_candidate_faces: Vec<FaceId>,
+    pub(crate) alternate_selector_candidate_faces: Vec<FaceId>,
     /// Candidate faces present in the ASM topology immediately preceding the
     /// owning feature.
-    pub preceding_candidate_faces: Vec<FaceId>,
+    pub(crate) preceding_candidate_faces: Vec<FaceId>,
     /// Preceding candidate faces deleted or updated by the owning feature's
     /// exact ASM state transition.
-    pub changed_candidate_faces: Vec<FaceId>,
+    pub(crate) changed_candidate_faces: Vec<FaceId>,
     /// Active candidates mapped through an invariant surface carrier to face
     /// owners in the immediately preceding historical topology.
-    pub historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
+    pub(crate) historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
     /// Ordered stable historical face slots proven by the preceding topology
     /// or exact feature transition.
-    pub resolved_face_slots: Vec<i64>,
+    pub(crate) resolved_face_slots: Vec<i64>,
     /// Current active-BREP face identity proven by a legacy Extrude recipe
     /// when no preceding historical slot exists.
-    pub resolved_active_face: Option<FaceId>,
+    pub(crate) resolved_active_face: Option<FaceId>,
     /// Identity of the indexed record following the operand frame.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     next_byte_offset: u64,
 }
@@ -196,70 +196,70 @@ impl DesignFaceOperand {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignFaceOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Owning construction-operand group, absent for a direct scope operand.
-    pub group: Option<DesignOperandGroup>,
+    pub(crate) group: Option<DesignOperandGroup>,
     /// Primary indexed-record identity named by a face operand group.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the primary indexed-record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
-    pub paired_byte_offset: u64,
+    pub(crate) paired_byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Indexed record containing the face regeneration recipe.
-    pub recipe_record_index: u32,
+    pub(crate) recipe_record_index: u32,
     /// Byte offset of the recipe record's indexed header.
-    pub recipe_record_byte_offset: u64,
+    pub(crate) recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Byte offset of the recipe-specific prefix after the indexed header.
-    pub recipe_prefix_offset: u64,
+    pub(crate) recipe_prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
-    pub recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference entries decoded from the prefix.
-    pub recipe_references: Vec<DesignRecipeReference>,
+    pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Exact face-recipe family.
-    pub recipe_kind: ConstructionRecipeKind,
+    pub(crate) recipe_kind: ConstructionRecipeKind,
     /// Byte offset of the first i32 after the framed recipe-family name.
-    pub recipe_program_offset: u64,
+    pub(crate) recipe_program_offset: u64,
     /// Complete post-name i32 program ending at the next indexed record.
-    pub recipe_program: Vec<i32>,
+    pub(crate) recipe_program: Vec<i32>,
     /// Ordered nodes partitioning the program after its three-word header.
-    pub recipe_nodes: Vec<DesignFaceRecipeNode>,
+    pub(crate) recipe_nodes: Vec<DesignFaceRecipeNode>,
     /// Active solved faces carrying the recipe's persistent Design reference.
-    pub candidate_faces: Vec<FaceId>,
+    pub(crate) candidate_faces: Vec<FaceId>,
     /// Candidate faces not explicitly named as topology context by a prefix
     /// selector carrying the recipe's own Design reference.
-    pub unreferenced_candidate_faces: Vec<FaceId>,
+    pub(crate) unreferenced_candidate_faces: Vec<FaceId>,
     /// Faces named by a prefix operand carrying the recipe's own token and
     /// Design reference under a different native selector.
-    pub alternate_selector_candidate_faces: Vec<FaceId>,
+    pub(crate) alternate_selector_candidate_faces: Vec<FaceId>,
     /// Candidate faces present in the ASM topology immediately preceding the
     /// owning feature.
-    pub preceding_candidate_faces: Vec<FaceId>,
+    pub(crate) preceding_candidate_faces: Vec<FaceId>,
     /// Preceding candidate faces deleted or updated by the owning feature's
     /// exact ASM state transition.
-    pub changed_candidate_faces: Vec<FaceId>,
+    pub(crate) changed_candidate_faces: Vec<FaceId>,
     /// Active candidates mapped through an invariant surface carrier to face
     /// owners in the immediately preceding historical topology.
-    pub historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
+    pub(crate) historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
     /// Ordered stable historical face slots proven by the preceding topology
     /// or exact feature transition.
-    pub resolved_face_slots: Vec<i64>,
+    pub(crate) resolved_face_slots: Vec<i64>,
     /// Current active-BREP face identity proven by a legacy Extrude recipe
     /// when no preceding historical slot exists.
-    pub resolved_active_face: Option<FaceId>,
+    pub(crate) resolved_active_face: Option<FaceId>,
     /// Identity of the indexed record following the operand frame.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 /// Face-selection operand owned by a parameter scope.
@@ -475,25 +475,25 @@ impl DesignFaceOperand {
     try_from = "DesignFaceSourceGroupWire",
     into = "DesignFaceSourceGroupWire"
 )]
-pub struct DesignFaceSourceGroup {
+pub(crate) struct DesignFaceSourceGroup {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning `Face` parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Zero-based position of the source carrier in the scope reference table.
-    pub carrier_reference_ordinal: u32,
+    pub(crate) carrier_reference_ordinal: u32,
     /// Indexed record carrying the ordered source-shape references.
-    pub carrier_record_index: u32,
+    pub(crate) carrier_record_index: u32,
     /// Source interval from the carrier header to its paired header.
-    pub carrier_span: NonEmptyByteSpan,
+    pub(crate) carrier_span: NonEmptyByteSpan,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub carrier_class_tag: DesignClassTag,
+    pub(crate) carrier_class_tag: DesignClassTag,
     /// Indexed record paired with the source carrier.
-    pub paired_record_index: u32,
+    pub(crate) paired_record_index: u32,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Ordered persistent source-shape identities.
-    pub source_members: Vec<Located<DesignFaceSourceMember>>,
+    pub(crate) source_members: Vec<Located<DesignFaceSourceMember>>,
 }
 
 /// Native source-shape carrier owned by a `Face` parameter scope.
@@ -583,39 +583,39 @@ impl From<DesignFaceSourceGroup> for DesignFaceSourceGroupWire {
 
 /// Persistent source-shape identity named by a `Face` source carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFaceSourceMember {
+pub(crate) struct DesignFaceSourceMember {
     /// Indexed record named by the carrier's source-reference slot.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the persistent-identity record's indexed header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII identity class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Fixed persistent identity carried by the source record.
-    pub persistent_identity: DesignConstructionPersistentIdentity,
+    pub(crate) persistent_identity: DesignConstructionPersistentIdentity,
 }
 
 /// One length-delimited node in a face regeneration recipe program.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFaceRecipeNode {
+pub(crate) struct DesignFaceRecipeNode {
     /// Byte offset of the node's `[-1, -1, 2]` opener.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Exclusive byte offset of the next node or the operand's following record.
-    pub end_byte_offset: u64,
+    pub(crate) end_byte_offset: u64,
     /// Complete node words, including the three-word opener.
-    pub program: Vec<i32>,
+    pub(crate) program: Vec<i32>,
     /// Shared two-side topology recipe structure following the node opener.
-    pub recipe_structure: Option<DesignFaceRecipeStructure>,
+    pub(crate) recipe_structure: Option<DesignFaceRecipeStructure>,
 }
 
 /// Structured topology program following a face-recipe node opener.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFaceRecipeStructure {
+pub(crate) struct DesignFaceRecipeStructure {
     /// Scalar before the prelude delimiters.
-    pub root: i32,
+    pub(crate) root: i32,
     /// Two scalar prelude runs before the first side clause.
-    pub prelude: [i32; 2],
+    pub(crate) prelude: [i32; 2],
     /// Two ordered topology side clauses.
-    pub sides: [DesignTopologyRecipeSide; 2],
+    pub(crate) sides: [DesignTopologyRecipeSide; 2],
     /// Scalar carried by the optional `[-1, value, -1, 0, 0, -1]` postlude.
     #[serde(
         default,
@@ -624,7 +624,7 @@ pub struct DesignFaceRecipeStructure {
         serialize_with = "serialize_face_recipe_postlude",
         deserialize_with = "deserialize_face_recipe_postlude"
     )]
-    pub postlude_value: Option<i32>,
+    pub(crate) postlude_value: Option<i32>,
 }
 
 // The wire adapter receives the optional field by reference, including its absence.

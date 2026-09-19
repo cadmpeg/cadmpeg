@@ -15,16 +15,16 @@ cadmpeg_core::named_optional_field!(deserialize_visibility, DesignSketchVisibili
     try_from = "DesignSketchVisibilityWire",
     into = "DesignSketchVisibilityWire"
 )]
-pub struct DesignSketchVisibility {
+pub(crate) struct DesignSketchVisibility {
     /// One-based ordinal among sketch Geometry members in the Design stream.
-    pub stream_ordinal: NonZeroU32,
+    pub(crate) stream_ordinal: NonZeroU32,
     stream_ordinal_offset: u64,
     /// Direct display visibility.
-    pub visible: bool,
+    pub(crate) visible: bool,
 }
 
 impl DesignSketchVisibility {
-    pub fn new(
+    pub(crate) fn new(
         stream_ordinal: NonZeroU32,
         stream_ordinal_offset: u64,
         visible: bool,
@@ -39,11 +39,11 @@ impl DesignSketchVisibility {
         })
     }
 
-    pub fn stream_ordinal_offset(&self) -> u64 {
+    pub(crate) fn stream_ordinal_offset(&self) -> u64 {
         self.stream_ordinal_offset
     }
 
-    pub fn visible_offset(&self) -> u64 {
+    pub(crate) fn visible_offset(&self) -> u64 {
         self.stream_ordinal_offset + 5
     }
 }
@@ -89,23 +89,23 @@ impl From<DesignSketchVisibility> for DesignSketchVisibilityWire {
     try_from = "DesignSketchPlacementWire",
     into = "DesignSketchPlacementWire"
 )]
-pub struct DesignSketchPlacement {
+pub(crate) struct DesignSketchPlacement {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning parameter scope, when the sketch has a parameter scope.
-    pub scope_record_index: Option<u32>,
+    pub(crate) scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
-    pub entity_id: DesignEntityId,
+    pub(crate) entity_id: DesignEntityId,
     /// Typed sketch-container visibility for the placed sketch entity.
-    pub visibility: Option<DesignSketchVisibility>,
+    pub(crate) visibility: Option<DesignSketchVisibility>,
     /// Source dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Shared logical record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Source dynamic class tag of the paired header.
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Source layout and its checked placement matrix and byte extent.
-    pub frame: DesignSketchFrame,
+    pub(crate) frame: DesignSketchFrame,
 }
 
 pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
@@ -142,17 +142,17 @@ pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
 /// A finite affine placement with orthonormal basis columns.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
-pub struct SketchPlacementMatrix(DesignAffineTransform);
+pub(crate) struct SketchPlacementMatrix(DesignAffineTransform);
 
 impl SketchPlacementMatrix {
     /// The identity placement.
-    pub const IDENTITY: Self = Self(DesignAffineTransform(IDENTITY_MATRIX));
+    pub(crate) const IDENTITY: Self = Self(DesignAffineTransform(IDENTITY_MATRIX));
     /// The row-major matrix coefficients.
-    pub fn rows(self) -> [[f64; 4]; 4] {
+    pub(crate) fn rows(self) -> [[f64; 4]; 4] {
         self.0.rows()
     }
     /// The matrix rows in storage order.
-    pub fn iter(&self) -> std::slice::Iter<'_, [f64; 4]> {
+    pub(crate) fn iter(&self) -> std::slice::Iter<'_, [f64; 4]> {
         self.0.iter()
     }
 }
@@ -189,7 +189,7 @@ impl TryFrom<[[f64; 4]; 4]> for SketchPlacementMatrix {
 
 /// The matrix-bearing payload of each source placement layout.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DesignSketchFrameForm {
+pub(crate) enum DesignSketchFrameForm {
     ScopeCompact,
     ScopeGenesisCompact,
     ScopeLegacy305(SketchPlacementMatrix),
@@ -207,7 +207,7 @@ pub enum DesignSketchFrameForm {
 
 /// A placement layout whose complete byte extent fits in its address space.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignSketchFrame {
+pub(crate) struct DesignSketchFrame {
     byte_offset: u64,
     form: DesignSketchFrameForm,
 }

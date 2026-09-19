@@ -20,7 +20,7 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_source, DesignWorkAxisSource, "source");
 /// Source form for an exact solved `WorkAxis` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum DesignWorkAxisSource {
+pub(crate) enum DesignWorkAxisSource {
     /// The axis carrier and two endpoint point carriers are cross-checked.
     TwoPoint {
         /// Ordered endpoint carrier record indices.
@@ -40,22 +40,22 @@ pub enum DesignWorkAxisSource {
 
 /// Exact solved construction carried by a `WorkAxis` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignWorkAxisConstruction {
+pub(crate) struct DesignWorkAxisConstruction {
     /// First construction point in model centimetres.
-    pub origin: [f64; 3],
+    pub(crate) origin: [f64; 3],
     /// Displacement from the first construction point to the second, in centimetres.
-    pub displacement: [f64; 3],
+    pub(crate) displacement: [f64; 3],
     /// Byte offset of the first origin coordinate.
-    pub origin_offset: u64,
+    pub(crate) origin_offset: u64,
     /// Byte offset of the first displacement component.
-    pub displacement_offset: u64,
+    pub(crate) displacement_offset: u64,
     /// Native record form that supplied or corroborated the axis geometry.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_source"
     )]
-    pub source: Option<DesignWorkAxisSource>,
+    pub(crate) source: Option<DesignWorkAxisSource>,
 }
 
 /// One source-record reference used by a `WorkPoint` construction rule.
@@ -64,11 +64,11 @@ pub struct DesignWorkAxisConstruction {
     try_from = "DesignWorkPointInputDraft",
     into = "DesignWorkPointInputDraft"
 )]
-pub struct DesignWorkPointInput {
+pub(crate) struct DesignWorkPointInput {
     /// Referenced Design record index.
     record_index: u32,
     /// Byte offset of the serialized reference target.
-    pub reference_offset: u64,
+    pub(crate) reference_offset: u64,
     /// Exact source carrier selected by this reference, when decoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     carrier: Option<Box<DesignWorkPointInputCarrier>>,
@@ -97,7 +97,7 @@ impl DesignWorkPointInput {
         };
         Ok(value)
     }
-    pub(crate) fn into_draft(self) -> DesignWorkPointInputDraft {
+    pub(super) fn into_draft(self) -> DesignWorkPointInputDraft {
         DesignWorkPointInputDraft {
             record_index: self.record_index,
             reference_offset: self.reference_offset,
@@ -116,16 +116,16 @@ impl DesignWorkPointInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignWorkPointInputDraft {
     /// Referenced Design record index.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the serialized reference target.
-    pub reference_offset: u64,
+    pub(crate) reference_offset: u64,
     /// Exact source carrier selected by this reference, when decoded.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_carrier"
     )]
-    pub carrier: Option<Box<DesignWorkPointInputCarrier>>,
+    pub(crate) carrier: Option<Box<DesignWorkPointInputCarrier>>,
 }
 
 impl TryFrom<DesignWorkPointInputDraft> for DesignWorkPointInput {
@@ -149,7 +149,7 @@ impl From<DesignWorkPointInput> for DesignWorkPointInputDraft {
 /// Exact source carrier selected by one `WorkPoint` construction input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignWorkPointInputCarrier {
+pub(crate) enum DesignWorkPointInputCarrier {
     /// Persistent edge recipe retained in the native edge-operand arena.
     EdgeRecipe {
         /// Native `DesignEdgeOperand` identifier.
@@ -174,21 +174,21 @@ pub enum DesignWorkPointInputCarrier {
 
 /// Historical state and a nonnegative stable vertex slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignVertexResolution {
+pub(crate) struct DesignVertexResolution {
     /// Historical topology state against which the vertex recipe was evaluated.
-    pub state_id: i64,
+    pub(crate) state_id: i64,
     vertex_slot: i64,
 }
 
 impl DesignVertexResolution {
-    pub fn new(state_id: i64, vertex_slot: i64) -> Option<Self> {
+    pub(crate) fn new(state_id: i64, vertex_slot: i64) -> Option<Self> {
         (vertex_slot >= 0).then_some(Self {
             state_id,
             vertex_slot,
         })
     }
 
-    pub fn vertex_slot(self) -> i64 {
+    pub(crate) fn vertex_slot(self) -> i64 {
         self.vertex_slot
     }
 }
@@ -196,28 +196,28 @@ impl DesignVertexResolution {
 /// Exact persistent `vertex_recipe_data` envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DesignVertexRecipeWire", into = "DesignVertexRecipeWire")]
-pub struct DesignVertexRecipe {
+pub(crate) struct DesignVertexRecipe {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     paired_byte_offset: u64,
     /// Source per-file dynamic paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    paired_class_tag: DesignClassTag,
     /// Byte offset of the vertex-recipe record header.
     recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Complete prefix before the length-prefixed recipe-family name.
-    pub recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: Vec<u8>,
     /// Persistent selector/reference entries decoded from the prefix.
-    pub recipe_references: Vec<DesignRecipeReference>,
+    pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first post-name i32.
-    pub recipe_program_offset: u64,
+    pub(crate) recipe_program_offset: u64,
     /// Complete post-name i32 program.
-    pub recipe_program: Vec<i32>,
+    pub(crate) recipe_program: Vec<i32>,
     /// Historical state and proven stable vertex slot.
-    pub resolution: Option<DesignVertexResolution>,
+    pub(crate) resolution: Option<DesignVertexResolution>,
     /// Byte offset of the indexed record closing the envelope.
     next_byte_offset: u64,
 }
@@ -320,37 +320,37 @@ impl DesignVertexRecipe {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignVertexRecipeDraft {
     /// Indexed record that owns the vertex-recipe envelope.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the owning indexed-record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
-    pub paired_byte_offset: u64,
+    pub(crate) paired_byte_offset: u64,
     /// Source per-file dynamic paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Indexed record containing the vertex recipe.
-    pub recipe_record_index: u32,
+    pub(crate) recipe_record_index: u32,
     /// Byte offset of the vertex-recipe record header.
-    pub recipe_record_byte_offset: u64,
+    pub(crate) recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Byte offset of the recipe-specific prefix after the indexed header.
-    pub recipe_prefix_offset: u64,
+    pub(crate) recipe_prefix_offset: u64,
     /// Complete prefix before the length-prefixed recipe-family name.
-    pub recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: Vec<u8>,
     /// Persistent selector/reference entries decoded from the prefix.
-    pub recipe_references: Vec<DesignRecipeReference>,
+    pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first post-name i32.
-    pub recipe_program_offset: u64,
+    pub(crate) recipe_program_offset: u64,
     /// Complete post-name i32 program.
-    pub recipe_program: Vec<i32>,
+    pub(crate) recipe_program: Vec<i32>,
     /// Historical state and proven stable vertex slot.
-    pub resolution: Option<DesignVertexResolution>,
+    pub(crate) resolution: Option<DesignVertexResolution>,
     /// Identity of the indexed record closing the envelope.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record closing the envelope.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -466,19 +466,19 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
 
 /// Corner-vertex recipe carried as one member of an edge-treatment group.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignEdgeTreatmentVertexOperand {
+pub(crate) struct DesignEdgeTreatmentVertexOperand {
     /// Globally unique deterministic identifier for this group member.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning edge-treatment scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Owning counted construction group.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Zero-based position in the group's member run.
-    pub group_member_ordinal: u32,
+    pub(crate) group_member_ordinal: u32,
     /// Exact persistent vertex-recipe envelope and resolved historical corner.
-    pub recipe: DesignVertexRecipe,
+    pub(crate) recipe: DesignVertexRecipe,
 }
 
 /// Plane through three persistent B-rep vertices.
@@ -487,16 +487,16 @@ pub struct DesignEdgeTreatmentVertexOperand {
     try_from = "DesignWorkPlaneConstructionWire",
     into = "DesignWorkPlaneConstructionWire"
 )]
-pub struct DesignWorkPlaneConstruction {
+pub(crate) struct DesignWorkPlaneConstruction {
     /// Solved placement-frame record named by the scope.
-    pub placement_record_index: u32,
+    pub(crate) placement_record_index: u32,
     /// Persistent vertex inputs in source order.
     inputs: Box<[DesignVertexRecipe; 3]>,
 }
 
 impl DesignWorkPlaneConstruction {
     /// Admit an unresolved triple or three distinct vertices from one history state.
-    pub fn try_new(
+    pub(crate) fn try_new(
         placement_record_index: u32,
         inputs: Box<[DesignVertexRecipe; 3]>,
     ) -> Result<Self, String> {
@@ -508,7 +508,7 @@ impl DesignWorkPlaneConstruction {
     }
 
     /// Persistent vertex recipes in source order.
-    pub fn inputs(&self) -> &[DesignVertexRecipe; 3] {
+    pub(crate) fn inputs(&self) -> &[DesignVertexRecipe; 3] {
         &self.inputs
     }
 
@@ -606,15 +606,15 @@ impl TryFrom<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
     try_from = "DesignWorkPointPlaneSelectionDraft",
     into = "DesignWorkPointPlaneSelectionDraft"
 )]
-pub struct DesignWorkPointPlaneSelection {
+pub(crate) struct DesignWorkPointPlaneSelection {
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
@@ -622,9 +622,9 @@ pub struct DesignWorkPointPlaneSelection {
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Serialized primary identity immediately preceding the `WorkPlane` scope.
-    pub primary_identity: u64,
+    pub(crate) primary_identity: u64,
     /// Selected `WorkPlane` scope record index.
-    pub work_plane_scope_record_index: u32,
+    pub(crate) work_plane_scope_record_index: u32,
     /// Identity of the indexed record closing the selection envelope.
     next_record_index: u32,
 }
@@ -662,7 +662,7 @@ impl DesignWorkPointPlaneSelection {
         }
         Ok(value)
     }
-    pub(crate) fn into_draft(self) -> DesignWorkPointPlaneSelectionDraft {
+    fn into_draft(self) -> DesignWorkPointPlaneSelectionDraft {
         let next_byte_offset = self.next_byte_offset();
         let primary_identity_offset = self.primary_identity_offset();
         DesignWorkPointPlaneSelectionDraft {
@@ -683,13 +683,13 @@ impl DesignWorkPointPlaneSelection {
     pub(crate) fn asset_id_offset(&self) -> u64 {
         self.asset_id_offset
     }
-    pub(crate) fn identity_record_index(&self) -> u32 {
+    fn identity_record_index(&self) -> u32 {
         self.identity_record_index
     }
-    pub(crate) fn primary_identity_offset(&self) -> u64 {
+    fn primary_identity_offset(&self) -> u64 {
         self.identity_record_offset + 21
     }
-    pub(crate) fn next_byte_offset(&self) -> u64 {
+    fn next_byte_offset(&self) -> u64 {
         self.identity_record_offset + 29
     }
 }
@@ -698,29 +698,29 @@ impl DesignWorkPointPlaneSelection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignWorkPointPlaneSelectionDraft {
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
-    pub identity_record_index: u32,
+    pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
-    pub identity_record_offset: u64,
+    pub(crate) identity_record_offset: u64,
     /// Serialized primary identity immediately preceding the `WorkPlane` scope.
-    pub primary_identity: u64,
+    pub(crate) primary_identity: u64,
     /// Byte offset of the primary identity.
-    pub primary_identity_offset: u64,
+    pub(crate) primary_identity_offset: u64,
     /// Selected `WorkPlane` scope record index.
-    pub work_plane_scope_record_index: u32,
+    pub(crate) work_plane_scope_record_index: u32,
     /// Identity of the indexed record closing the selection envelope.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record closing the selection envelope.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 impl TryFrom<DesignWorkPointPlaneSelectionDraft> for DesignWorkPointPlaneSelection {
@@ -756,15 +756,15 @@ impl From<DesignWorkPointPlaneSelection> for DesignWorkPointPlaneSelectionDraft 
     try_from = "DesignWorkPointSketchPointSelectionDraft",
     into = "DesignWorkPointSketchPointSelectionDraft"
 )]
-pub struct DesignWorkPointSketchPointSelection {
+pub(crate) struct DesignWorkPointSketchPointSelection {
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
@@ -772,11 +772,11 @@ pub struct DesignWorkPointSketchPointSelection {
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Record identity of the owning Sketch entity.
-    pub sketch_record_index: u32,
+    pub(crate) sketch_record_index: u32,
     /// Persistent identity of the selected sketch point.
-    pub point_persistent_id: u64,
+    pub(crate) point_persistent_id: u64,
     /// Native id of the decoded sketch-point record selected by this frame.
-    pub point_native_id: String,
+    pub(crate) point_native_id: String,
     /// Identity of the indexed record closing the selection envelope.
     next_record_index: u32,
 }
@@ -818,7 +818,7 @@ impl DesignWorkPointSketchPointSelection {
         }
         Ok(value)
     }
-    pub(crate) fn into_draft(self) -> DesignWorkPointSketchPointSelectionDraft {
+    fn into_draft(self) -> DesignWorkPointSketchPointSelectionDraft {
         let next_byte_offset = self.next_byte_offset();
         let sketch_record_index_offset = self.sketch_record_index_offset();
         let point_persistent_id_offset = self.point_persistent_id_offset();
@@ -842,21 +842,21 @@ impl DesignWorkPointSketchPointSelection {
     pub(crate) fn asset_id_offset(&self) -> u64 {
         self.asset_id_offset
     }
-    pub(crate) fn identity_record_index(&self) -> u32 {
+    fn identity_record_index(&self) -> u32 {
         self.identity_record_index
     }
-    pub(crate) fn sketch_record_index_offset(&self) -> u64 {
+    fn sketch_record_index_offset(&self) -> u64 {
         self.identity_record_offset
             + crate::layout::work_point_sketch_point_identity::SKETCH_RECORD_INDEX as u64
     }
-    pub(crate) fn point_persistent_id_offset(&self) -> u64 {
+    fn point_persistent_id_offset(&self) -> u64 {
         self.identity_record_offset
             + crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID as u64
     }
-    pub(crate) fn next_record_index(&self) -> u32 {
+    fn next_record_index(&self) -> u32 {
         self.next_record_index
     }
-    pub(crate) fn next_byte_offset(&self) -> u64 {
+    fn next_byte_offset(&self) -> u64 {
         self.identity_record_offset + crate::layout::work_point_sketch_point_identity::LEN as u64
     }
 }
@@ -865,33 +865,33 @@ impl DesignWorkPointSketchPointSelection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
-    pub identity_record_index: u32,
+    pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
-    pub identity_record_offset: u64,
+    pub(crate) identity_record_offset: u64,
     /// Record identity of the owning Sketch entity.
-    pub sketch_record_index: u32,
+    pub(crate) sketch_record_index: u32,
     /// Byte offset of the Sketch entity identity.
-    pub sketch_record_index_offset: u64,
+    pub(crate) sketch_record_index_offset: u64,
     /// Persistent identity of the selected sketch point.
-    pub point_persistent_id: u64,
+    pub(crate) point_persistent_id: u64,
     /// Byte offset of the sketch-point identity.
-    pub point_persistent_id_offset: u64,
+    pub(crate) point_persistent_id_offset: u64,
     /// Native id of the decoded sketch-point record selected by this frame.
-    pub point_native_id: String,
+    pub(crate) point_native_id: String,
     /// Identity of the indexed record closing the selection envelope.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record closing the selection envelope.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 impl TryFrom<DesignWorkPointSketchPointSelectionDraft> for DesignWorkPointSketchPointSelection {
@@ -926,7 +926,7 @@ impl From<DesignWorkPointSketchPointSelection> for DesignWorkPointSketchPointSel
 /// Construction rule whose input arity and decoded carrier roles agree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DesignWorkPointRuleForm", into = "DesignWorkPointRuleForm")]
-pub struct DesignWorkPointRule {
+pub(crate) struct DesignWorkPointRule {
     form: DesignWorkPointRuleForm,
 }
 
@@ -999,15 +999,15 @@ impl DesignWorkPointRule {
         Ok(Self { form })
     }
 
-    pub fn form(&self) -> &DesignWorkPointRuleForm {
+    pub(crate) fn form(&self) -> &DesignWorkPointRuleForm {
         &self.form
     }
 
-    pub fn reference_type(&self) -> u32 {
+    pub(crate) fn reference_type(&self) -> u32 {
         self.form.reference_type()
     }
 
-    pub fn inputs(&self) -> &[DesignWorkPointInput] {
+    pub(crate) fn inputs(&self) -> &[DesignWorkPointInput] {
         self.form.inputs()
     }
 
@@ -1045,7 +1045,7 @@ impl TryFrom<DesignWorkPointRuleForm> for DesignWorkPointRule {
 /// Construction rule and exact input arity carried by a `WorkPoint` point-data record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignWorkPointRuleForm {
+pub(crate) enum DesignWorkPointRuleForm {
     /// Center of one selected circular edge.
     CircleCenter {
         /// Selected circular-edge carrier.
@@ -1087,7 +1087,7 @@ pub enum DesignWorkPointRuleForm {
 
 impl DesignWorkPointRuleForm {
     /// Return the serialized `refType` value.
-    pub fn reference_type(&self) -> u32 {
+    fn reference_type(&self) -> u32 {
         match self {
             Self::CircleCenter { .. } => 5,
             Self::TwoEdgeIntersection { .. } => 7,
@@ -1100,7 +1100,7 @@ impl DesignWorkPointRuleForm {
     }
 
     /// Return the source input references in serialized order.
-    pub fn inputs(&self) -> &[DesignWorkPointInput] {
+    fn inputs(&self) -> &[DesignWorkPointInput] {
         match self {
             Self::CircleCenter { input }
             | Self::Vertex { input }
@@ -1125,19 +1125,19 @@ impl DesignWorkPointRuleForm {
 
 /// Exact solved construction carried by a `WorkPoint` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignWorkPointConstruction {
+pub(crate) struct DesignWorkPointConstruction {
     /// Point-data record selected by the scope.
-    pub point_record_index: u32,
+    pub(crate) point_record_index: u32,
     /// Byte offset of the point-data record header.
-    pub point_record_byte_offset: u64,
+    pub(crate) point_record_byte_offset: u64,
     /// Solved point in source model centimetres.
-    pub position: [f64; 3],
+    pub(crate) position: [f64; 3],
     /// Byte offset of the first position coordinate.
-    pub position_offset: u64,
+    pub(crate) position_offset: u64,
     /// Typed construction rule and its source inputs.
-    pub rule: DesignWorkPointRule,
+    pub(crate) rule: DesignWorkPointRule,
     /// Byte offset of the serialized `refType` value.
-    pub reference_type_offset: u64,
+    pub(crate) reference_type_offset: u64,
 }
 
 impl DesignWorkPointInput {

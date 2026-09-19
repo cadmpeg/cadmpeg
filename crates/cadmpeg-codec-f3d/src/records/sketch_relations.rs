@@ -35,7 +35,7 @@ const SKETCH_CONSTRAINT_DEFINITIONS: [(u64, SketchConstraintKind); 20] = [
     (0x200_0000_0000, SketchConstraintKind::TextPath),
 ];
 
-pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = {
+pub(super) const SKETCH_CONSTRAINT_MASK: u64 = {
     let mut mask = 0;
     let mut index = 0;
     while index < SKETCH_CONSTRAINT_DEFINITIONS.len() {
@@ -63,7 +63,7 @@ pub(crate) fn constraint_kinds_from_state(state: u64) -> (Vec<SketchConstraintKi
 
 /// An indexed relation reference before or after sketch identity resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SketchRelationReference {
+pub(crate) enum SketchRelationReference {
     /// Indexed Design record whose identity has not been resolved.
     Index(u32),
     /// Resolved identity, which contains its indexed Design record reference.
@@ -73,7 +73,7 @@ pub enum SketchRelationReference {
 impl SketchRelationReference {
     /// Indexed Design record referenced by this member.
     #[must_use]
-    pub fn record_index(&self) -> u32 {
+    pub(crate) fn record_index(&self) -> u32 {
         match self {
             Self::Index(index) => *index,
             Self::Resolved(operand) => operand.record_index(),
@@ -82,7 +82,7 @@ impl SketchRelationReference {
 
     /// Identity after resolution, including a record with no sketch identity.
     #[must_use]
-    pub fn resolved(&self) -> Option<&SketchRelationOperand> {
+    pub(super) fn resolved(&self) -> Option<&SketchRelationOperand> {
         match self {
             Self::Index(_) => None,
             Self::Resolved(operand) => Some(operand),
@@ -106,20 +106,20 @@ impl SketchRelationReference {
 
 /// One first-run sketch-relation member with its offset and ordinal.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SketchRelationMember {
+pub(crate) struct SketchRelationMember {
     /// Indexed record or its resolved sketch identity.
-    pub reference: SketchRelationReference,
+    pub(crate) reference: SketchRelationReference,
     /// Payload offset of the member, relative to the record.
-    pub offset: u32,
+    pub(crate) offset: u32,
     /// Count of relations already recorded on this member, when retained by the wire.
-    pub relation_ordinal: Option<u32>,
+    pub(crate) relation_ordinal: Option<u32>,
 }
 
 impl SketchRelationMember {
     /// An unresolved member with zero offset and no retained ordinal.
     #[must_use]
     #[cfg(test)]
-    pub fn from_index(record_index: u32) -> Self {
+    pub(crate) fn from_index(record_index: u32) -> Self {
         Self {
             reference: SketchRelationReference::Index(record_index),
             offset: 0,
@@ -130,18 +130,18 @@ impl SketchRelationMember {
 
 /// One return-run sketch-relation member with its offset.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SketchRelationReturnMember {
+pub(crate) struct SketchRelationReturnMember {
     /// Indexed record or its resolved sketch identity.
-    pub reference: SketchRelationReference,
+    pub(crate) reference: SketchRelationReference,
     /// Payload offset of the return member, relative to the record.
-    pub offset: u32,
+    pub(crate) offset: u32,
 }
 
 impl SketchRelationReturnMember {
     /// An unresolved return member with zero offset.
     #[must_use]
     #[cfg(test)]
-    pub fn from_index(record_index: u32) -> Self {
+    pub(crate) fn from_index(record_index: u32) -> Self {
         Self {
             reference: SketchRelationReference::Index(record_index),
             offset: 0,
@@ -151,7 +151,7 @@ impl SketchRelationReturnMember {
 
 /// A complete first member run, either unresolved or resolved throughout.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct SketchRelationMembers(pub(super) Vec<SketchRelationMember>);
+pub(crate) struct SketchRelationMembers(pub(super) Vec<SketchRelationMember>);
 
 impl SketchRelationMembers {
     /// Construct the unresolved source run with its member locations.
@@ -216,7 +216,7 @@ impl std::ops::Deref for SketchRelationMembers {
 
 /// A complete return member run, either unresolved or resolved throughout.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct SketchRelationReturnMembers(Vec<SketchRelationReturnMember>);
+pub(crate) struct SketchRelationReturnMembers(Vec<SketchRelationReturnMember>);
 
 impl SketchRelationReturnMembers {
     /// Construct the unresolved source run with its member locations.
@@ -232,7 +232,7 @@ impl SketchRelationReturnMembers {
     }
 
     /// Resolve every member while retaining its position metadata.
-    pub(crate) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
+    pub(super) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
         self.0 = self
             .0
             .iter()
@@ -271,12 +271,12 @@ impl std::ops::Deref for SketchRelationReturnMembers {
 /// Finite row-major native glyph placement in centimetres.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
-pub struct SketchGlyphTransform([[f64; 4]; 4]);
+pub(crate) struct SketchGlyphTransform([[f64; 4]; 4]);
 
 impl SketchGlyphTransform {
     /// Native coefficients, without an affine or invertibility restriction.
     #[must_use]
-    pub fn rows(self) -> [[f64; 4]; 4] {
+    pub(crate) fn rows(self) -> [[f64; 4]; 4] {
         self.0
     }
 }
@@ -302,7 +302,7 @@ impl From<SketchGlyphTransform> for [[f64; 4]; 4] {
 
 /// Constraint mask and its matching pattern or text payload.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SketchRelationDefinition {
+pub(crate) struct SketchRelationDefinition {
     state: u64,
     pattern: Option<SketchPatternDefinition>,
 }
@@ -348,20 +348,20 @@ impl SketchRelationDefinition {
 
     /// Source sketch-constraint bitmask.
     #[must_use]
-    pub fn state(&self) -> u64 {
+    pub(crate) fn state(&self) -> u64 {
         self.state
     }
 
     /// Pattern or text payload selected by the mask.
     #[must_use]
-    pub fn pattern(&self) -> Option<&SketchPatternDefinition> {
+    pub(crate) fn pattern(&self) -> Option<&SketchPatternDefinition> {
         self.pattern.as_ref()
     }
 }
 
 /// Rejected sketch-relation payload or inconsistent native wire columns.
 #[derive(Debug)]
-pub struct SketchRelationPayloadError(String);
+pub(crate) struct SketchRelationPayloadError(String);
 
 impl std::fmt::Display for SketchRelationPayloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -374,37 +374,37 @@ impl std::error::Error for SketchRelationPayloadError {}
 /// Counted constraint relation owned by a sketch container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "SketchRelationSerde", into = "SketchRelationSerde")]
-pub struct SketchRelation {
+pub(crate) struct SketchRelation {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Index of this relation record within the `BulkStream` tree.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Byte offset of the constraint mask relative to the record start.
-    pub state_offset: u32,
+    pub(crate) state_offset: u32,
     /// Numeric design-entity suffix of the sketch container that owns this relation.
-    pub owner_reference: u32,
+    pub(crate) owner_reference: u32,
     /// Full Design entity id resolved from `owner_reference`.
     #[serde(default)]
-    pub owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
+    pub(crate) owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
     /// Nullable or role-specific references stored before the owner reference.
     auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
     /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
     /// for other relation classes and native data that did not retain it.
-    pub rectangular_counted_reference_count: Option<u32>,
+    pub(crate) rectangular_counted_reference_count: Option<u32>,
     /// First reference run, interleaved with per-member relation ordinals.
     /// Its order does not define relation operand order.
     members: SketchRelationMembers,
     /// Payload offset of `owner_reference`, relative to the record.
     owner_reference_offset: u32,
     /// Constraint mask and the payload it selects.
-    pub definition: SketchRelationDefinition,
+    pub(crate) definition: SketchRelationDefinition,
     /// `EntityGenesis` origin bitfield stored by the relation record, when present.
-    pub entity_genesis: Option<u64>,
+    pub(crate) entity_genesis: Option<u64>,
     /// Second reference run in semantic member order.
     return_members: SketchRelationReturnMembers,
     /// Complete variable-width source record for native replay/write.
@@ -413,45 +413,45 @@ pub struct SketchRelation {
 
 /// Unchecked sketch relation payload and byte frame.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SketchRelationDraft {
+pub(crate) struct SketchRelationDraft {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Index of this relation record within the `BulkStream` tree.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Byte offset of the constraint mask relative to the record start.
-    pub state_offset: u32,
+    pub(crate) state_offset: u32,
     /// Numeric design-entity suffix of the sketch container that owns this relation.
-    pub owner_reference: u32,
+    pub(crate) owner_reference: u32,
     /// Full Design entity id resolved from `owner_reference`.
-    pub owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
+    pub(crate) owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
     /// Nullable or role-specific references stored before the owner reference.
-    pub auxiliary_references: ReferenceRun<u32, u32>,
+    pub(crate) auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
     /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
     /// for other relation classes and native data that did not retain it.
-    pub rectangular_counted_reference_count: Option<u32>,
+    pub(crate) rectangular_counted_reference_count: Option<u32>,
     /// First reference run, interleaved with per-member relation ordinals.
     /// Its order does not define relation operand order.
-    pub members: SketchRelationMembers,
+    pub(crate) members: SketchRelationMembers,
     /// Payload offset of `owner_reference`, relative to the record.
-    pub owner_reference_offset: u32,
+    pub(crate) owner_reference_offset: u32,
     /// Constraint mask and the payload it selects.
-    pub definition: SketchRelationDefinition,
+    pub(crate) definition: SketchRelationDefinition,
     /// `EntityGenesis` origin bitfield stored by the relation record, when present.
-    pub entity_genesis: Option<u64>,
+    pub(crate) entity_genesis: Option<u64>,
     /// Second reference run in semantic member order.
-    pub return_members: SketchRelationReturnMembers,
+    pub(crate) return_members: SketchRelationReturnMembers,
     /// Complete variable-width source record for native replay/write.
-    pub raw_bytes: Vec<u8>,
+    pub(crate) raw_bytes: Vec<u8>,
 }
 
 impl SketchRelation {
     /// Admit a relation whose reference offsets fit its retained bytes.
-    pub fn try_new(draft: SketchRelationDraft) -> Result<Self, SketchRelationPayloadError> {
+    pub(crate) fn try_new(draft: SketchRelationDraft) -> Result<Self, SketchRelationPayloadError> {
         if draft.raw_bytes.len() < 24 {
             return Err(SketchRelationPayloadError(
                 "sketch relation raw_bytes is shorter than 24 bytes".into(),
@@ -513,7 +513,7 @@ impl SketchRelation {
     }
 
     /// Return the unchecked payload for a checked edit.
-    pub fn into_draft(self) -> SketchRelationDraft {
+    pub(super) fn into_draft(self) -> SketchRelationDraft {
         SketchRelationDraft {
             id: self.id,
             record_index: self.record_index,
@@ -534,7 +534,7 @@ impl SketchRelation {
     }
 
     /// Apply an edit only when the resulting byte frame is valid.
-    pub fn try_edit(
+    pub(crate) fn try_edit(
         &mut self,
         edit: impl FnOnce(&mut SketchRelationDraft),
     ) -> Result<(), SketchRelationPayloadError> {
@@ -554,45 +554,45 @@ impl SketchRelation {
     }
 
     /// Retained auxiliary references.
-    pub fn auxiliary_references(&self) -> &ReferenceRun<u32, u32> {
+    pub(crate) fn auxiliary_references(&self) -> &ReferenceRun<u32, u32> {
         &self.auxiliary_references
     }
 
     /// Retained members.
-    pub fn members(&self) -> &SketchRelationMembers {
+    pub(crate) fn members(&self) -> &SketchRelationMembers {
         &self.members
     }
 
     /// Retained return members.
-    pub fn return_members(&self) -> &SketchRelationReturnMembers {
+    pub(crate) fn return_members(&self) -> &SketchRelationReturnMembers {
         &self.return_members
     }
 
     /// Retained raw bytes.
-    pub fn raw_bytes(&self) -> &[u8] {
+    pub(crate) fn raw_bytes(&self) -> &[u8] {
         &self.raw_bytes
     }
 
     /// Owner reference offset within the retained bytes.
-    pub fn owner_reference_offset(&self) -> u32 {
+    pub(crate) fn owner_reference_offset(&self) -> u32 {
         self.owner_reference_offset
     }
 
     /// Constraint kinds selected by `state`.
     #[must_use]
-    pub fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
+    pub(crate) fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
         constraint_kinds_from_state(self.definition.state()).0
     }
 
     /// Bits in `state` outside the defined constraint mask.
     #[must_use]
-    pub fn unknown_constraint_bits(&self) -> u64 {
+    pub(crate) fn unknown_constraint_bits(&self) -> u64 {
         constraint_kinds_from_state(self.definition.state()).1
     }
 
     /// The single constraint kind `state` selects, when it selects exactly one and no unknown bits.
     #[must_use]
-    pub fn sole_constraint_kind(&self) -> Option<SketchConstraintKind> {
+    pub(crate) fn sole_constraint_kind(&self) -> Option<SketchConstraintKind> {
         let (kinds, unknown) = constraint_kinds_from_state(self.definition.state());
         if unknown != 0 {
             return None;
@@ -605,7 +605,7 @@ impl SketchRelation {
 
     /// Record indices of the first reference run.
     #[must_use]
-    pub fn member_indices(&self) -> Vec<u32> {
+    pub(crate) fn member_indices(&self) -> Vec<u32> {
         self.members
             .iter()
             .map(|member| member.reference.record_index())
@@ -614,7 +614,7 @@ impl SketchRelation {
 
     /// Record indices of the return reference run.
     #[must_use]
-    pub fn return_member_indices(&self) -> Vec<u32> {
+    pub(crate) fn return_member_indices(&self) -> Vec<u32> {
         self.return_members
             .iter()
             .map(|member| member.reference.record_index())
@@ -622,7 +622,7 @@ impl SketchRelation {
     }
 
     /// First-run then return-run record indices.
-    pub fn all_member_indices(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(crate) fn all_member_indices(&self) -> impl Iterator<Item = u32> + '_ {
         self.members
             .iter()
             .map(|member| member.reference.record_index())
@@ -635,7 +635,7 @@ impl SketchRelation {
 
     /// Resolved first-run members, empty for an unresolved run.
     #[must_use]
-    pub fn resolved_members(&self) -> Vec<SketchRelationOperand> {
+    pub(crate) fn resolved_members(&self) -> Vec<SketchRelationOperand> {
         self.members
             .iter()
             .filter_map(|member| member.reference.resolved().cloned())
@@ -644,7 +644,7 @@ impl SketchRelation {
 
     /// Resolved return-run members, empty for an unresolved run.
     #[must_use]
-    pub fn resolved_return_members(&self) -> Vec<SketchRelationOperand> {
+    pub(crate) fn resolved_return_members(&self) -> Vec<SketchRelationOperand> {
         self.return_members
             .iter()
             .filter_map(|member| member.reference.resolved().cloned())
@@ -755,49 +755,49 @@ fn pad_resolved(
 /// Wire form of [`SketchRelation`] with the historical flat field set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct SketchRelationSerde {
-    pub id: String,
-    pub record_index: u32,
-    pub class_tag: String,
-    pub byte_offset: u64,
-    pub state_offset: u32,
-    pub owner_reference: u32,
+    id: String,
+    record_index: u32,
+    class_tag: String,
+    byte_offset: u64,
+    state_offset: u32,
+    owner_reference: u32,
     #[serde(default)]
-    pub owner_entity_id: String,
+    owner_entity_id: String,
     #[serde(default)]
-    pub auxiliary_references: Vec<u32>,
+    auxiliary_references: Vec<u32>,
     #[serde(default)]
-    pub auxiliary_reference_offsets: Vec<u32>,
+    auxiliary_reference_offsets: Vec<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_rectangular_counted_reference_count"
     )]
-    pub rectangular_counted_reference_count: Option<u32>,
-    pub members: Vec<u32>,
+    rectangular_counted_reference_count: Option<u32>,
+    members: Vec<u32>,
     #[serde(default)]
-    pub resolved_members: Vec<SketchRelationOperand>,
+    resolved_members: Vec<SketchRelationOperand>,
     #[serde(default)]
-    pub member_offsets: Vec<u32>,
+    member_offsets: Vec<u32>,
     #[serde(default)]
-    pub owner_reference_offset: u32,
-    pub state: u64,
+    owner_reference_offset: u32,
+    state: u64,
     #[serde(default)]
-    pub constraint_kinds: Vec<SketchConstraintKind>,
+    constraint_kinds: Vec<SketchConstraintKind>,
     #[serde(default)]
-    pub unknown_constraint_bits: u64,
+    unknown_constraint_bits: u64,
     #[serde(default)]
-    pub member_relation_ordinals: Vec<u32>,
+    member_relation_ordinals: Vec<u32>,
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-    pub entity_genesis: Option<u64>,
+    entity_genesis: Option<u64>,
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-    pub pattern: Option<SketchPatternDefinition>,
-    pub return_members: Vec<u32>,
+    pattern: Option<SketchPatternDefinition>,
+    return_members: Vec<u32>,
     #[serde(default)]
-    pub resolved_return_members: Vec<SketchRelationOperand>,
+    resolved_return_members: Vec<SketchRelationOperand>,
     #[serde(default)]
-    pub return_member_offsets: Vec<u32>,
+    return_member_offsets: Vec<u32>,
     #[serde(with = "cadmpeg_ir::bytes")]
-    pub raw_bytes: Vec<u8>,
+    raw_bytes: Vec<u8>,
 }
 
 impl TryFrom<SketchRelationSerde> for SketchRelation {
@@ -926,7 +926,7 @@ impl From<SketchRelation> for SketchRelationSerde {
 /// One sketch-relation reference resolved against the indexed Design record graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SketchRelationOperand {
+pub(crate) enum SketchRelationOperand {
     /// A sketch point.
     Point {
         /// Indexed Design record referenced by the relation.
@@ -961,7 +961,7 @@ pub enum SketchRelationOperand {
 impl SketchRelationOperand {
     /// Indexed Design record that owns this identity.
     #[must_use]
-    pub fn record_index(&self) -> u32 {
+    fn record_index(&self) -> u32 {
         match self {
             Self::Point { record_index, .. }
             | Self::Curve { record_index, .. }
@@ -974,7 +974,7 @@ impl SketchRelationOperand {
 /// One bit in a Fusion sketch-constraint state mask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SketchConstraintKind {
+pub(crate) enum SketchConstraintKind {
     /// Points or endpoints occupy the same position.
     Coincident,
     /// Two line-bearing entities lie on one infinite line.
@@ -1020,7 +1020,7 @@ pub enum SketchConstraintKind {
 /// A sketch pattern instance count in 1..=100000.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
-pub struct SketchPatternCount(u32);
+pub(crate) struct SketchPatternCount(u32);
 
 impl TryFrom<u32> for SketchPatternCount {
     type Error = &'static str;
@@ -1047,7 +1047,7 @@ impl SketchPatternCount {
 /// Class-specific auxiliary payload of a pattern or text sketch relation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SketchPatternDefinition {
+pub(crate) enum SketchPatternDefinition {
     /// A circular-pattern relation's auxiliary operands.
     Circular {
         /// Record index of the total-angle parameter value record.
@@ -1081,17 +1081,17 @@ pub enum SketchPatternDefinition {
 
 /// One direction clause of a rectangular-pattern sketch relation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SketchPatternDirection {
+pub(crate) struct SketchPatternDirection {
     /// Evaluated instance count along this direction.
-    pub evaluated_count: SketchPatternCount,
+    pub(crate) evaluated_count: SketchPatternCount,
     /// Record index of the count parameter value record.
-    pub count_parameter: u32,
+    pub(crate) count_parameter: u32,
     /// Unit direction vector in sketch coordinates.
-    pub direction: [f64; 3],
+    pub(crate) direction: [f64; 3],
     /// Evaluated source distance along this direction, in source units. The
     /// owning relation's [`SketchRelation::rectangular_counted_reference_count`]
     /// gives its meaning.
-    pub evaluated_distance: f64,
+    pub(crate) evaluated_distance: f64,
     /// Record index of the distance parameter value record.
-    pub distance_parameter: u32,
+    pub(crate) distance_parameter: u32,
 }

@@ -54,37 +54,37 @@ cadmpeg_core::named_optional_field!(
     try_from = "DesignMirrorConstructionWire",
     into = "DesignMirrorConstructionWire"
 )]
-pub struct DesignMirrorConstruction {
+pub(crate) struct DesignMirrorConstruction {
     /// Parameter-owner record carrying the fixed count two.
-    pub count_record_index: u32,
+    pub(crate) count_record_index: u32,
     /// Byte offset of the evaluated count scalar.
-    pub count_offset: u64,
+    pub(crate) count_offset: u64,
     /// Positive model-space stitch tolerance in source centimetres.
-    pub stitch_tolerance: f64,
+    pub(crate) stitch_tolerance: f64,
     /// Byte offset of the evaluated stitch-tolerance scalar.
-    pub stitch_tolerance_offset: u64,
+    pub(crate) stitch_tolerance_offset: u64,
     /// Owner-backed or inline scope-frame tolerance carrier.
-    pub tolerance_source: DesignMirrorToleranceSource,
+    pub(crate) tolerance_source: DesignMirrorToleranceSource,
     /// Seed group selected by the source operation.
-    pub seed_group_record_index: u32,
+    pub(crate) seed_group_record_index: u32,
     /// Role-`0x5` mirror-plane group.
-    pub plane_group_record_index: u32,
+    pub(crate) plane_group_record_index: u32,
     /// Referenced seed feature scope when the seed is a complete feature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seed_feature_scope_record_index: Option<Located<u32>>,
+    pub(crate) seed_feature_scope_record_index: Option<Located<u32>>,
     /// Referenced `WorkPlane` scope, when the plane operand names one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plane_scope_record_index: Option<Located<u32>>,
+    pub(crate) plane_scope_record_index: Option<Located<u32>>,
     /// Persistent entity-selection record used as the mirror plane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plane_selection_record_index: Option<u32>,
+    pub(crate) plane_selection_record_index: Option<u32>,
     /// Proven selected-face mirror plane, when exact.
-    pub plane: Option<DesignPlane>,
+    pub(crate) plane: Option<DesignPlane>,
 }
 
 /// Native carrier of a Mirror stitch tolerance.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DesignMirrorToleranceSource {
+pub(crate) enum DesignMirrorToleranceSource {
     Owner { record_index: u32 },
     Scope(DesignMirrorScopeTolerance),
 }
@@ -243,24 +243,24 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
     try_from = "DesignMirrorScopeToleranceWire",
     into = "DesignMirrorScopeToleranceWire"
 )]
-pub struct DesignMirrorScopeTolerance {
+pub(crate) struct DesignMirrorScopeTolerance {
     /// Fixed scalar-lane marker preceding the tolerance value.
-    pub marker: DesignMirrorToleranceMarker,
+    pub(crate) marker: DesignMirrorToleranceMarker,
     /// Byte offset of the first scalar-lane marker.
-    pub marker_offset: u64,
+    pub(crate) marker_offset: u64,
     /// First marked reference in the scalar lane.
-    pub first_reference: u32,
+    pub(crate) first_reference: u32,
     /// Byte offset of the first marked reference.
-    pub first_reference_offset: u64,
+    pub(crate) first_reference_offset: u64,
     /// Second marked reference in the scalar lane.
-    pub second_reference: u32,
+    pub(crate) second_reference: u32,
     /// Byte offset of the second marked reference.
-    pub second_reference_offset: u64,
+    pub(crate) second_reference_offset: u64,
 }
 
 /// Scalar-lane marker and its required repeated location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignMirrorToleranceMarker {
+pub(crate) enum DesignMirrorToleranceMarker {
     Single61,
     Repeated89(u64),
     Repeated94(u64),
@@ -269,7 +269,7 @@ pub enum DesignMirrorToleranceMarker {
 
 impl DesignMirrorToleranceMarker {
     #[must_use]
-    pub fn code(self) -> u32 {
+    pub(crate) fn code(self) -> u32 {
         match self {
             Self::Single61 => 61,
             Self::Repeated89(_) => 89,
@@ -279,7 +279,7 @@ impl DesignMirrorToleranceMarker {
     }
 
     #[must_use]
-    pub fn repeated_offset(self) -> Option<u64> {
+    pub(crate) fn repeated_offset(self) -> Option<u64> {
         match self {
             Self::Single61 => None,
             Self::Repeated89(offset) | Self::Repeated94(offset) | Self::Repeated100(offset) => {

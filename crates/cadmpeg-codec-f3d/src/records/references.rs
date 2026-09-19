@@ -19,7 +19,7 @@ cadmpeg_core::named_optional_field!(
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PersistentReferenceKind {
+pub(crate) enum PersistentReferenceKind {
     /// Reference identifies a persistent point.
     Point,
     /// Reference identifies the primary id of a persistent curve.
@@ -30,23 +30,23 @@ pub enum PersistentReferenceKind {
 
 /// One byte-stored persistent point or curve identifier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PersistentReference {
+pub(crate) struct PersistentReference {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Byte offset of the persistent-reference field name in its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Byte offset of the u64 value relative to `byte_offset`.
-    pub value_offset: u32,
+    pub(crate) value_offset: u32,
     /// Whether this reference identifies a persistent point or one end of a curve.
-    pub kind: PersistentReferenceKind,
+    pub(crate) kind: PersistentReferenceKind,
     /// Raw persistent point/curve identifier as stored in the `Design` construction stream.
-    pub value: u64,
+    pub(crate) value: u64,
 }
 
 /// A per-file dynamic class tag encoded as three ASCII digits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct DesignClassTag(String);
+pub(crate) struct DesignClassTag(String);
 
 impl TryFrom<String> for DesignClassTag {
     type Error = String;
@@ -87,19 +87,19 @@ impl DesignClassTag {
 /// A construction-history edge selection that Fusion could not re-resolve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "LostEdgeReferenceWire", into = "LostEdgeReferenceWire")]
-pub struct LostEdgeReference {
+pub(crate) struct LostEdgeReference {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Byte offset of the unresolved record's indexed header.
     record_byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag of the unresolved record.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Source `BulkStream` record index of the unresolved edge selection.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Per-file dynamic class tag of the following indexed record.
-    pub next_class_tag: DesignClassTag,
+    pub(crate) next_class_tag: DesignClassTag,
     /// Record index of the following indexed record.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
 }
 
 impl LostEdgeReference {
@@ -145,25 +145,25 @@ impl LostEdgeReference {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct LostEdgeReferenceWire {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: String,
     /// Byte offset of the unresolved record's indexed header.
-    pub record_byte_offset: u64,
+    record_byte_offset: u64,
     /// Byte offset of the unresolved record's three-byte class tag.
-    pub class_tag_offset: u64,
+    class_tag_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag of the unresolved record.
-    pub class_tag: String,
+    class_tag: String,
     /// Source `BulkStream` record index of the unresolved edge selection.
-    pub record_index: u32,
+    record_index: u32,
     /// Byte offset of `record_index`.
-    pub record_index_offset: u64,
+    record_index_offset: u64,
     /// Byte offset of the `EDGE_REFERENCE_LOST` marker in its Design `BulkStream`.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// Byte offset of the indexed header immediately following this record.
-    pub next_byte_offset: u64,
+    next_byte_offset: u64,
     /// Per-file dynamic class tag of the following indexed record.
-    pub next_class_tag: String,
+    next_class_tag: String,
     /// Record index of the following indexed record.
-    pub next_record_index: u32,
+    next_record_index: u32,
 }
 
 impl TryFrom<LostEdgeReferenceWire> for LostEdgeReference {
@@ -219,7 +219,7 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
 /// A complete serialized visual-appearance identity.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct DesignVisualToken(cadmpeg_ir::ids::IdentityKey);
+pub(crate) struct DesignVisualToken(cadmpeg_ir::ids::IdentityKey);
 
 impl TryFrom<String> for DesignVisualToken {
     type Error = &'static str;
@@ -268,76 +268,76 @@ impl DesignVisualToken {
     try_from = "DesignMaterialAssignmentWire",
     into = "DesignMaterialAssignmentWire"
 )]
-pub struct DesignMaterialAssignment {
+pub(crate) struct DesignMaterialAssignment {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// ASM body key resolved through the Design body map.
-    pub asm_body_key: u64,
+    pub(crate) asm_body_key: u64,
     /// Byte offset of the body-map ASM key.
-    pub asm_body_key_offset: u64,
+    pub(crate) asm_body_key_offset: u64,
     /// Byte offset of the body-map entity suffix.
-    pub entity_suffix_offset: u64,
+    pub(crate) entity_suffix_offset: u64,
     /// UTF-16 design-entity id.
-    pub entity_id: DesignEntityId,
+    pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the UTF-16 entity-id code units.
-    pub entity_id_offset: u64,
+    pub(crate) entity_id_offset: u64,
     /// Complete serialized visual token.
-    pub visual_guid: DesignVisualToken,
+    pub(crate) visual_guid: DesignVisualToken,
     /// Byte offset of the UTF-16 visual-token code units.
-    pub visual_guid_offset: u64,
+    pub(crate) visual_guid_offset: u64,
     /// Physical-material token, when present.
-    pub physical_token: Option<RecordedValue<String>>,
+    pub(crate) physical_token: Option<RecordedValue<String>>,
     /// Visual preset name, when present.
-    pub visual_preset: Option<RecordedValue<String>>,
+    pub(crate) visual_preset: Option<RecordedValue<String>>,
 }
 
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct DesignMaterialAssignmentWire {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: String,
     /// ASM body key resolved through the Design body map.
-    pub asm_body_key: u64,
+    asm_body_key: u64,
     /// Byte offset of the body-map ASM key.
-    pub asm_body_key_offset: u64,
+    asm_body_key_offset: u64,
     /// Byte offset of the body-map entity suffix.
-    pub entity_suffix_offset: u64,
+    entity_suffix_offset: u64,
     /// UTF-16 design-entity id.
-    pub entity_id: String,
+    entity_id: String,
     /// Byte offset of the UTF-16 entity-id code units.
-    pub entity_id_offset: u64,
+    entity_id_offset: u64,
     /// Complete serialized visual token.
-    pub visual_guid: DesignVisualToken,
+    visual_guid: DesignVisualToken,
     /// Byte offset of the UTF-16 visual-token code units.
-    pub visual_guid_offset: u64,
+    visual_guid_offset: u64,
     /// Physical-material token, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_physical_token"
     )]
-    pub physical_token: Option<String>,
+    physical_token: Option<String>,
     /// Byte offset of the UTF-16 physical token, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_physical_token_offset"
     )]
-    pub physical_token_offset: Option<u64>,
+    physical_token_offset: Option<u64>,
     /// Visual preset name, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_visual_preset"
     )]
-    pub visual_preset: Option<String>,
+    visual_preset: Option<String>,
     /// Byte offset of the UTF-16 preset name, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_visual_preset_offset"
     )]
-    pub visual_preset_offset: Option<u64>,
+    visual_preset_offset: Option<u64>,
 }
 
 impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {

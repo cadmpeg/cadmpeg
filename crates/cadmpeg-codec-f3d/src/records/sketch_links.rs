@@ -13,14 +13,14 @@ pub(crate) const SKETCH_LINK_SENSE_UNCONSTRAINED: i64 = 0xFFFF_FFFF;
 /// tagged-field form spells the value as the unsigned decimal of `0xFFFFFFFF`
 /// and the integer forms as the signed `-1` of that same 32-bit pattern, so a
 /// reader that accepts one spelling keeps the other as a stored sense.
-pub(crate) fn sketch_link_sense_is_unconstrained(sense: i64) -> bool {
+fn sketch_link_sense_is_unconstrained(sense: i64) -> bool {
     sense == SKETCH_LINK_SENSE_UNCONSTRAINED || sense == -1
 }
 
 /// A stored sketch-link sense excluding the unconstrained sentinels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "i64", into = "i64")]
-pub struct SketchLinkSense(i64);
+pub(crate) struct SketchLinkSense(i64);
 
 impl TryFrom<i64> for SketchLinkSense {
     type Error = &'static str;
@@ -40,17 +40,17 @@ impl From<SketchLinkSense> for i64 {
 
 /// Provenance link from a solved B-rep entity to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SketchCurveLink {
+pub(crate) struct SketchCurveLink {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Solved B-rep entity this link provenances back to a sketch curve.
-    pub target: AttributeTarget,
+    pub(crate) target: AttributeTarget,
     /// Numeric design-entity id of the source sketch-curve record.
-    pub sketch_curve_id: i64,
+    pub(crate) sketch_curve_id: i64,
     /// Second member of the source tuple, retained in the spelling the source
     /// writes. It is `0` in most links; what a non-zero value names is open as
     /// `DR-30`.
-    pub ref_b: u64,
+    pub(crate) ref_b: u64,
     /// Which of the sketch curve's two senses this link takes, `0` or `1`.
     /// Absent when the source record leaves the sense unconstrained.
     #[serde(
@@ -58,22 +58,22 @@ pub struct SketchCurveLink {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_sense"
     )]
-    pub sense: Option<SketchLinkSense>,
+    pub(crate) sense: Option<SketchLinkSense>,
     /// Source role tag distinguishing how the sketch curve participates in the link
     /// (e.g. profile edge vs. construction reference).
-    pub role: i64,
+    pub(crate) role: i64,
     /// Source closure/continuity tag of the sketch curve at this link.
-    pub closure: i64,
+    pub(crate) closure: i64,
 }
 
 /// Nonempty decimal text identifying a persistent Design entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct DesignPersistentIdText(String);
+pub(crate) struct DesignPersistentIdText(String);
 
 impl DesignPersistentIdText {
     /// Original decimal spelling of the identifier.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -100,17 +100,17 @@ impl From<DesignPersistentIdText> for String {
     try_from = "PersistentDesignLinkWire",
     into = "PersistentDesignLinkWire"
 )]
-pub struct PersistentDesignLink {
+pub(crate) struct PersistentDesignLink {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Solved B-rep entity this persistent Fusion design id is attached to.
-    pub target: AttributeTarget,
+    pub(crate) target: AttributeTarget,
     /// Fusion persistent design-entity id string, stable across regeneration.
-    pub design_id: DesignPersistentIdText,
+    pub(crate) design_id: DesignPersistentIdText,
     /// Design-stream reference paired with this persistent identifier.
-    pub design_reference: i64,
+    pub(crate) design_reference: i64,
     /// Position of this id in the entity's persistent-id history, in assignment order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
 }
 
 /// The active persistent design link of every target: the highest-ordinal link
@@ -181,20 +181,20 @@ impl From<PersistentDesignLink> for PersistentDesignLinkWire {
 
 /// Native face/edge tag group linking a solved subentity to design records.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PersistentSubentityTag {
+pub(crate) struct PersistentSubentityTag {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Solved B-rep face or edge carrying this tag group.
-    pub target: AttributeTarget,
+    pub(crate) target: AttributeTarget,
     /// Native selector stored before the tag token.
-    pub selector: i64,
+    pub(crate) selector: i64,
     /// Native UTF-8 tag token. Numeric strings and `-1` retain their spelling.
     #[serde(deserialize_with = "deserialize_persistent_tag_token")]
-    pub token: cadmpeg_core::text::NonBlankString,
+    pub(crate) token: cadmpeg_core::text::NonBlankString,
     /// Ordered signed Design-stream references carried by this group.
-    pub design_references: Vec<i64>,
+    pub(crate) design_references: Vec<i64>,
     /// Position of this group in the owning attribute record.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
 }
 
 fn deserialize_persistent_tag_token<'de, D: Deserializer<'de>>(

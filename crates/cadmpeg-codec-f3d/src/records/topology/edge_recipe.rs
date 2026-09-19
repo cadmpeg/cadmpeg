@@ -11,22 +11,22 @@ use std::num::NonZeroU32;
     try_from = "DesignEdgeRecipeSelectorContextWire",
     into = "DesignEdgeRecipeSelectorContextWire"
 )]
-pub struct DesignEdgeRecipeSelectorContext {
-    pub selector: i32,
-    pub clauses: Vec<Option<DesignEdgeRecipeSelectorClause>>,
-    pub incidence_matching_edge_slots: Vec<i64>,
-    pub boundary_count_matching_edge_slots: Vec<i64>,
+pub(crate) struct DesignEdgeRecipeSelectorContext {
+    pub(crate) selector: i32,
+    pub(crate) clauses: Vec<Option<DesignEdgeRecipeSelectorClause>>,
+    pub(crate) incidence_matching_edge_slots: Vec<i64>,
+    pub(crate) boundary_count_matching_edge_slots: Vec<i64>,
 }
 
 /// One selector entry and the historical edge slots selected by its triplets.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignEdgeRecipeSelectorClause {
-    pub entry: DesignTopologyRecipeEntry,
-    pub triplet_edge_slots: [Vec<i64>; 2],
+pub(crate) struct DesignEdgeRecipeSelectorClause {
+    pub(crate) entry: DesignTopologyRecipeEntry,
+    pub(crate) triplet_edge_slots: [Vec<i64>; 2],
 }
 
 impl DesignEdgeRecipeSelectorContext {
-    pub fn unique_incidence_edge_slot(&self) -> Option<i64> {
+    pub(crate) fn unique_incidence_edge_slot(&self) -> Option<i64> {
         match self.incidence_matching_edge_slots.as_slice() {
             [edge] => Some(*edge),
             _ => None,
@@ -126,11 +126,11 @@ impl From<DesignEdgeRecipeSelectorContext> for DesignEdgeRecipeSelectorContextWi
 
 /// Standard delimiter structure following an edge recipe's common prologue.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignEdgeRecipeStructure {
+pub(crate) struct DesignEdgeRecipeStructure {
     /// Number of ordered side clauses.
-    pub root: i32,
+    pub(crate) root: i32,
     /// Ordered side clauses.
-    pub sides: Vec<DesignTopologyRecipeSide>,
+    pub(crate) sides: Vec<DesignTopologyRecipeSide>,
 }
 
 /// The alternate two-clause structure used by a fixed-path `SurfacePatch`
@@ -140,9 +140,9 @@ pub struct DesignEdgeRecipeStructure {
     try_from = "DesignSurfacePatchRecipeStructureWire",
     into = "DesignSurfacePatchRecipeStructureWire"
 )]
-pub struct DesignSurfacePatchRecipeStructure {
+pub(crate) struct DesignSurfacePatchRecipeStructure {
     /// Ordered clauses in the recipe program.
-    pub clauses: [DesignSurfacePatchRecipeClause; 2],
+    pub(crate) clauses: [DesignSurfacePatchRecipeClause; 2],
 }
 
 #[derive(Serialize, Deserialize)]
@@ -180,15 +180,15 @@ impl From<DesignSurfacePatchRecipeStructure> for DesignSurfacePatchRecipeStructu
     try_from = "DesignSurfacePatchRecipeClauseWire",
     into = "DesignSurfacePatchRecipeClauseWire"
 )]
-pub struct DesignSurfacePatchRecipeClause {
+pub(crate) struct DesignSurfacePatchRecipeClause {
     /// Six delimiter-bounded fields before the counted topology payload.
-    pub fields: Vec<Vec<i32>>,
+    pub(crate) fields: Vec<Vec<i32>>,
     /// Zero-based face-reference ordinals named by the first two fields.
-    pub face_reference_ordinals: [u32; 2],
+    pub(crate) face_reference_ordinals: [u32; 2],
     /// Zero-based edge-reference ordinals named by the third and fifth fields.
-    pub edge_reference_ordinals: [u32; 2],
+    pub(crate) edge_reference_ordinals: [u32; 2],
     /// Ordered topology entries in the payload.
-    pub entries: Vec<DesignTopologyRecipeEntry>,
+    pub(crate) entries: Vec<DesignTopologyRecipeEntry>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -238,15 +238,15 @@ impl From<DesignSurfacePatchRecipeClause> for DesignSurfacePatchRecipeClauseWire
     try_from = "DesignTopologyRecipeSideWire",
     into = "DesignTopologyRecipeSideWire"
 )]
-pub struct DesignTopologyRecipeSide {
+pub(crate) struct DesignTopologyRecipeSide {
     /// Second word of the side header.
-    pub header_value: i32,
+    pub(crate) header_value: i32,
     /// Ordered scalar fields following the side header.
-    pub scalars: Vec<i32>,
+    pub(crate) scalars: Vec<i32>,
     /// Exact field program preceding the topology-entry count.
-    pub payload_prefix: Vec<i32>,
+    pub(crate) payload_prefix: Vec<i32>,
     /// Ordered eight-word payload entries.
-    pub entries: Vec<DesignTopologyRecipeEntry>,
+    pub(crate) entries: Vec<DesignTopologyRecipeEntry>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -308,13 +308,13 @@ impl DesignTopologyRecipeSide {
     try_from = "DesignTopologyRecipeEntryWire",
     into = "DesignTopologyRecipeEntryWire"
 )]
-pub struct DesignTopologyRecipeEntry {
+pub(crate) struct DesignTopologyRecipeEntry {
     /// Nonnegative clause-local selector, strictly increasing within one clause.
-    pub selector: i32,
+    pub(crate) selector: i32,
     /// Number of boundary edges on the referenced face loop.
-    pub boundary_edge_count: NonZeroU32,
+    pub(crate) boundary_edge_count: NonZeroU32,
     /// Two ordered topology triplets.
-    pub topology_triplets: [DesignTopologyRecipeTriplet; 2],
+    pub(crate) topology_triplets: [DesignTopologyRecipeTriplet; 2],
 }
 
 #[derive(Serialize, Deserialize)]
@@ -336,7 +336,7 @@ struct DesignTopologyRecipeEntryWire {
 
 impl DesignTopologyRecipeEntry {
     /// Return the incident edge ordinal shared by both triplets.
-    pub fn common_incident_edge_ordinal(&self) -> Option<u32> {
+    pub(crate) fn common_incident_edge_ordinal(&self) -> Option<u32> {
         self.topology_triplets[0]
             .incident
             .map(|incident| incident.ordinal)
@@ -382,14 +382,14 @@ impl From<DesignTopologyRecipeEntry> for DesignTopologyRecipeEntryWire {
     try_from = "DesignTopologyRecipeTripletWire",
     into = "DesignTopologyRecipeTripletWire"
 )]
-pub struct DesignTopologyRecipeTriplet {
+pub(crate) struct DesignTopologyRecipeTriplet {
     /// Equal positive first and third words, not exceeding the containing
     /// entry's boundary-edge count.
-    pub outer: NonZeroU32,
+    pub(crate) outer: NonZeroU32,
     /// Signed middle word retained from the source triplet.
-    pub middle: i32,
+    pub(crate) middle: i32,
     /// Incident edge and its side at the encoded vertex, when derived.
-    pub incident: Option<DesignTopologyIncident>,
+    pub(crate) incident: Option<DesignTopologyIncident>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -419,7 +419,7 @@ struct DesignTopologyRecipeTripletWire {
 
 impl DesignTopologyRecipeTriplet {
     /// Return the zero-based vertex ordinal encoded by the outer word.
-    pub fn vertex_ordinal(&self) -> u32 {
+    pub(crate) fn vertex_ordinal(&self) -> u32 {
         self.outer.get() - 1
     }
 }
@@ -459,15 +459,15 @@ impl From<DesignTopologyRecipeTriplet> for DesignTopologyRecipeTripletWire {
 
 /// One incident boundary edge and its side at the selected vertex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignTopologyIncident {
-    pub ordinal: u32,
-    pub side: DesignTopologyIncidentSide,
+pub(crate) struct DesignTopologyIncident {
+    pub(crate) ordinal: u32,
+    pub(crate) side: DesignTopologyIncidentSide,
 }
 
 /// Which loop edge incident to a recipe vertex is named by a topology triplet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignTopologyIncidentSide {
+pub(crate) enum DesignTopologyIncidentSide {
     /// Edge immediately preceding the vertex in cyclic loop order.
     Preceding,
     /// Edge immediately following the vertex in cyclic loop order.

@@ -16,7 +16,7 @@ cadmpeg_core::named_optional_field!(
 /// Boolean result operation stored by an Extrude parameter scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignExtrudeOperation {
+pub(crate) enum DesignExtrudeOperation {
     /// Union the swept volume with the selected bodies.
     Join,
     /// Subtract the swept volume from the selected bodies.
@@ -30,7 +30,7 @@ pub enum DesignExtrudeOperation {
 /// Decoded Extrude travel form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignExtrudeExtent {
+pub(crate) enum DesignExtrudeExtent {
     /// Travel a signed fixed distance on the first side of the profile.
     OneSidedDistance,
     /// Travel on the first side until reaching a selected face or shape.
@@ -54,7 +54,7 @@ pub enum DesignExtrudeExtent {
 /// Starting support selected by the fixed Extrude prologue enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignExtrudeStart {
+pub(crate) enum DesignExtrudeStart {
     /// Start on the selected sketch's plane.
     ProfilePlane,
     /// Start on a parallel offset from the selected sketch's plane.
@@ -69,15 +69,15 @@ pub enum DesignExtrudeStart {
     try_from = "DesignExtrudePrologueReferenceWire",
     into = "DesignExtrudePrologueReferenceWire"
 )]
-pub struct DesignExtrudePrologueReference {
+pub(crate) struct DesignExtrudePrologueReference {
     /// Referenced Design record.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of `record_index`.
-    pub record_index_offset: u64,
+    pub(crate) record_index_offset: u64,
     /// Number of zero bytes between `record_index` and the operation or its marker.
-    pub trailing_zero_count: u8,
+    pub(crate) trailing_zero_count: u8,
     /// Byte offset of the optional marker 1 before the operation.
-    pub operation_prefix_marker_offset: Option<u64>,
+    pub(crate) operation_prefix_marker_offset: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,11 +134,11 @@ impl From<DesignExtrudePrologueReference> for DesignExtrudePrologueReferenceWire
 
 /// Scope-reference ordinal repeated before a whole-body Extrude target extent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignExtrudeTargetOrdinal {
+pub(crate) struct DesignExtrudeTargetOrdinal {
     /// Zero-based ordinal in the enclosing scope reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Byte offset of `scope_reference_ordinal`.
-    pub scope_reference_ordinal_offset: u64,
+    pub(crate) scope_reference_ordinal_offset: u64,
 }
 
 /// Fixed fields preceding an Extrude parameter scope's reference table.
@@ -147,7 +147,7 @@ pub struct DesignExtrudeTargetOrdinal {
     try_from = "DesignExtrudePrologueWire",
     into = "DesignExtrudePrologueWire"
 )]
-pub enum DesignExtrudePrologue {
+pub(crate) enum DesignExtrudePrologue {
     /// Early distance-only layout with a nullable prefix field.
     LegacyDistance {
         /// Byte offset of the fixed zero prefix when its marker is present.
@@ -573,7 +573,7 @@ impl From<DesignExtrudePrologue> for DesignExtrudePrologueWire {
 
 impl DesignExtrudePrologue {
     /// Boolean result operation.
-    pub fn operation(self) -> DesignExtrudeOperation {
+    pub(crate) fn operation(self) -> DesignExtrudeOperation {
         match self {
             Self::LegacyDistance { operation, .. }
             | Self::ReferenceAware { operation, .. }
@@ -583,7 +583,7 @@ impl DesignExtrudePrologue {
     }
 
     /// Decoded extent form.
-    pub fn extent(self) -> Option<DesignExtrudeExtent> {
+    pub(crate) fn extent(self) -> Option<DesignExtrudeExtent> {
         match self {
             Self::LegacyDistance { .. } => Some(DesignExtrudeExtent::OneSidedDistance),
             Self::ReferenceAware { extent, .. } => Some(extent),
@@ -593,7 +593,7 @@ impl DesignExtrudePrologue {
     }
 
     /// Direction-reversal state.
-    pub fn direction_reversed(self) -> bool {
+    pub(crate) fn direction_reversed(self) -> bool {
         match self {
             Self::LegacyDistance {
                 direction_reversed, ..
@@ -611,7 +611,7 @@ impl DesignExtrudePrologue {
     }
 
     /// Whether the operation creates solid rather than sheet geometry.
-    pub fn solid_operation(self) -> bool {
+    pub(crate) fn solid_operation(self) -> bool {
         match self {
             Self::LegacyDistance {
                 solid_operation, ..
@@ -629,7 +629,7 @@ impl DesignExtrudePrologue {
     }
 
     /// Starting support.
-    pub fn start(self) -> DesignExtrudeStart {
+    pub(crate) fn start(self) -> DesignExtrudeStart {
         match self {
             Self::LegacyDistance { .. } => DesignExtrudeStart::ProfilePlane,
             Self::ReferenceAware { start, .. }

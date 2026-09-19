@@ -17,18 +17,18 @@ cadmpeg_core::named_optional_field!(
     try_from = "DesignScaleOperationWire",
     into = "DesignScaleOperationWire"
 )]
-pub struct DesignScaleOperation {
+pub(crate) struct DesignScaleOperation {
     /// Counted construction group selecting the transformed bodies.
-    pub body_group_record_index: u32,
+    pub(crate) body_group_record_index: u32,
     /// Native reference selecting the fixed scale center.
-    pub center_record_index: u32,
+    pub(crate) center_record_index: u32,
     /// Explicit center position carried by legacy point-data centers, in source
     /// model centimetres.
-    pub center_position: Option<Located<[f64; 3]>>,
+    pub(crate) center_position: Option<Located<[f64; 3]>>,
     /// Positive uniform scale factor.
-    pub uniform_factor: f64,
+    pub(crate) uniform_factor: f64,
     /// Byte offset of `uniform_factor`.
-    pub uniform_factor_offset: u64,
+    pub(crate) uniform_factor_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,27 +94,27 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
     try_from = "DesignCopyPasteBodiesOperationWire",
     into = "DesignCopyPasteBodiesOperationWire"
 )]
-pub struct DesignCopyPasteBodiesOperation {
+pub(crate) struct DesignCopyPasteBodiesOperation {
     bodies: Vec<DesignCopiedBody>,
     /// Counted body-selection group named by the scope prefix and reference table.
-    pub body_group_record_index: u32,
+    pub(crate) body_group_record_index: u32,
     /// Dynamic class tag of the body group's primary header.
-    pub body_group_class_tag: DesignClassTag,
+    pub(crate) body_group_class_tag: DesignClassTag,
     /// Byte offset of the body group's primary header.
     body_group_byte_offset: u64,
     /// Indexed source-to-copy relation record named by the scope prefix.
-    pub relation_record_index: u32,
+    pub(crate) relation_record_index: u32,
     /// Dynamic class tag of the relation record's primary header.
-    pub relation_class_tag: DesignClassTag,
+    pub(crate) relation_class_tag: DesignClassTag,
     /// Byte offset of the relation record's primary header.
     relation_byte_offset: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignCopiedBody {
-    pub operand: Located<u32>,
-    pub source: Located<u32>,
-    pub copied: Located<u32>,
+pub(crate) struct DesignCopiedBody {
+    pub(crate) operand: Located<u32>,
+    pub(crate) source: Located<u32>,
+    pub(crate) copied: Located<u32>,
 }
 
 /// Source and copied Design body identities carried by `CopyPasteBodies`.
