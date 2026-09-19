@@ -9,6 +9,8 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
+use crate::pmdc::PmDcReference;
+
 pub(crate) fn u8(view: &mut View<'_>, field: &'static str) -> Result<u8, CodecError> {
     Ok(view.req_u8().map_err(|error| error.during(field))?)
 }
@@ -74,6 +76,19 @@ pub(crate) fn u32_array<const N: usize>(
     Ok(values)
 }
 
+/// Reads the packed reference word: the low 31 bits are the index and the top
+/// bit states whether the index is qualified.
+pub(crate) fn pmdc_reference(
+    view: &mut View<'_>,
+    field: &'static str,
+) -> Result<PmDcReference, CodecError> {
+    let value = u32(view, field)?;
+    Ok(PmDcReference {
+        index: value & 0x7fff_ffff,
+        qualified: value & 0x8000_0000 != 0,
+    })
+}
+
 pub(crate) fn take<'a>(
     view: &mut View<'a>,
     len: usize,
@@ -117,35 +132,22 @@ pub(crate) fn at<'a>(
 #[cfg(test)]
 mod tests {
     use super::{array, at, u16_array};
+    use crate::test_support::truncation::located_truncation;
     use cadmpeg_core::decode::View;
-    use cadmpeg_core::CodecError;
-
-    /// The truncation a read reports, as its variant, field and offset,
-    /// without an unwrap on the route.
-    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
-        match result {
-            Ok(value) => format!("the read succeeded with {value:?}"),
-            Err(CodecError::Truncated {
-                location,
-                operation,
-            }) => format!("Truncated {operation} at offset {}", location.offset),
-            Err(error) => error.to_string(),
-        }
-    }
 
     #[test]
     fn a_short_array_read_names_the_array_start_and_a_short_element_read_names_the_element() {
         let bytes = [0_u8; 6];
         let mut view = View::over_retained(&bytes);
         assert_eq!(
-            truncation(array::<8>(&mut view, "identifier")),
+            located_truncation(array::<8>(&mut view, "identifier")),
             "Truncated identifier at offset 0"
         );
         assert_eq!(view.read_len(), 0, "a refused array read does not advance");
 
         let mut view = View::over_retained(&bytes);
         assert_eq!(
-            truncation(u16_array::<4>(&mut view, "prefix")),
+            located_truncation(u16_array::<4>(&mut view, "prefix")),
             "Truncated prefix at offset 6"
         );
     }
@@ -155,7 +157,7 @@ mod tests {
         let bytes = [0_u8; 6];
         let view = View::over_retained(&bytes);
         assert_eq!(
-            truncation(at(view, 7, "section size")),
+            located_truncation(at(view, 7, "section size")),
             "Truncated section size at offset 7"
         );
         assert_eq!(

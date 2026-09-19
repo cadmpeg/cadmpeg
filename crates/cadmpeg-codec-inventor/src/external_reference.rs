@@ -912,6 +912,7 @@ mod tests {
         parse_embedded_references, parse_occurrences, parse_schema_table, parse_stream, Cursor,
     };
     use crate::rse::DocumentKind;
+    use crate::test_support::truncation::{displayed_truncation, located_truncation};
     use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
@@ -1256,33 +1257,29 @@ mod tests {
         push_u32(bytes, 0);
     }
 
-    /// The diagnostic a truncated read produces, without an unwrap on the route.
-    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
-        match result {
-            Ok(value) => format!("the read succeeded with {value:?}"),
-            Err(error) => error.to_string(),
-        }
-    }
-
     #[test]
     fn truncated_ufrxdoc_scalar_reads_name_the_field() {
         let empty = &[];
         for (field, text) in [
             (
                 "header state 1",
-                truncation(Cursor::new(View::over_retained(empty)).u16("header state 1")),
+                displayed_truncation(Cursor::new(View::over_retained(empty)).u16("header state 1")),
             ),
             (
                 "reference version",
-                truncation(Cursor::new(View::over_retained(empty)).u32("reference version")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).u32("reference version"),
+                ),
             ),
             (
                 "reference library id",
-                truncation(Cursor::new(View::over_retained(empty)).i32("reference library id")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).i32("reference library id"),
+                ),
             ),
             (
                 "embedded-reference FILETIME",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty)).u64("embedded-reference FILETIME"),
                 ),
             ),
@@ -1291,19 +1288,6 @@ mod tests {
                 text,
                 format!("truncated input during {field} at space 0 offset 0")
             );
-        }
-    }
-
-    /// The truncation a read reports, as its variant, field and offset,
-    /// without an unwrap on the route.
-    fn located_truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
-        match result {
-            Ok(value) => format!("the read succeeded with {value:?}"),
-            Err(CodecError::Truncated {
-                location,
-                operation,
-            }) => format!("Truncated {operation} at offset {}", location.offset),
-            Err(error) => error.to_string(),
         }
     }
 
@@ -1362,7 +1346,7 @@ mod tests {
         let bytes = 11_u16.to_le_bytes();
         let arena = DecodeArena::new();
         let text = match DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()) {
-            Ok((ctx, root)) => truncation(parse_schema_table(&ctx, root)),
+            Ok((ctx, root)) => displayed_truncation(parse_schema_table(&ctx, root)),
             Err(error) => error.to_string(),
         };
         assert_eq!(

@@ -653,8 +653,8 @@ mod tests {
     };
     use crate::layout::meta_body_prefix as meta_prefix;
     use crate::test_support::test_fixtures::push_u32;
+    use crate::test_support::truncation::located_truncation;
     use cadmpeg_core::decode::{DecodeContext, View};
-    use cadmpeg_core::CodecError;
 
     #[test]
     fn metadata_tables_frame_forward_and_backward_sections() {
@@ -755,40 +755,31 @@ mod tests {
         });
     }
 
-    /// The truncation a read reports, as its variant, field and offset,
-    /// without an unwrap on the route.
-    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
-        match result {
-            Ok(value) => format!("the read succeeded with {value:?}"),
-            Err(CodecError::Truncated {
-                location,
-                operation,
-            }) => format!("Truncated {operation} at offset {}", location.offset),
-            Err(error) => error.to_string(),
-        }
-    }
-
     #[test]
     fn a_truncated_rse_record_read_is_located_and_names_its_field() {
         let short = [0_u8; 1];
         for (field, text) in [
             (
                 "record trailer list type",
-                truncation(
+                located_truncation(
                     Cursor::new(View::over_retained(&short)).u16("record trailer list type"),
                 ),
             ),
             (
                 "record type selector",
-                truncation(Cursor::new(View::over_retained(&short)).u32("record type selector")),
+                located_truncation(
+                    Cursor::new(View::over_retained(&short)).u32("record type selector"),
+                ),
             ),
             (
                 "record payload",
-                truncation(Cursor::new(View::over_retained(&short)).view(2, "record payload")),
+                located_truncation(
+                    Cursor::new(View::over_retained(&short)).view(2, "record payload"),
+                ),
             ),
             (
                 "record trailer presence",
-                truncation(Cursor::new(View::over_retained(&[])).record_trailer_presence()),
+                located_truncation(Cursor::new(View::over_retained(&[])).record_trailer_presence()),
             ),
         ] {
             assert_eq!(text, format!("Truncated {field} at offset 0"));
@@ -803,7 +794,7 @@ mod tests {
             (vec![0; 16], "Truncated block-size table at offset 14"),
         ] {
             with_view(&bytes, |ctx, view| {
-                assert_eq!(truncation(parse_meta_tables(ctx, view)), expected);
+                assert_eq!(located_truncation(parse_meta_tables(ctx, view)), expected);
             });
         }
     }
@@ -814,7 +805,7 @@ mod tests {
         with_view(&bytes, |ctx, view| {
             let body = view.child(10, 24).expect("a 14-byte child of 30 bytes");
             assert_eq!(
-                truncation(parse_meta_tables(ctx, body)),
+                located_truncation(parse_meta_tables(ctx, body)),
                 "Truncated metadata terminal id at offset 8"
             );
         });
