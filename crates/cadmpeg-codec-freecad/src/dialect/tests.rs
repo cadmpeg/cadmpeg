@@ -4,8 +4,12 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
-use cadmpeg_core::dialect::Grammar;
+use super::{
+    FcstdDialect, DECLARED_FILE_VERSION, DECLARED_PROGRAM_VERSION, DECLARED_SCHEMA_VERSION, FORMAT,
+};
+use crate::loss::FreecadLossCode;
+use crate::native::DocumentFacts;
+use cadmpeg_core::dialect::{Admission, Grammar};
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
