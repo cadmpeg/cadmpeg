@@ -6073,42 +6073,6 @@ pub(crate) enum CatiaLegacyRoleSelectorEncoding {
     Paged,
 }
 
-/// Stored representation of one legacy schema role name.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum CatiaLegacyRoleName {
-    /// Inclusive-length UTF-8 role name.
-    Literal(String),
-    /// Unresolved one-byte schema selector.
-    Selector(u8),
-}
-
-impl CatiaLegacyRoleName {
-    #[cfg(test)]
-    pub(crate) fn literal(&self) -> Option<&str> {
-        match self {
-            Self::Literal(value) => Some(value),
-            Self::Selector(_) => None,
-        }
-    }
-
-    fn byte_len(&self) -> usize {
-        match self {
-            Self::Literal(value) => 1 + value.len(),
-            Self::Selector(_) => 1,
-        }
-    }
-}
-
-impl From<legacy_entity::LegacyRoleName> for CatiaLegacyRoleName {
-    fn from(value: legacy_entity::LegacyRoleName) -> Self {
-        match value {
-            legacy_entity::LegacyRoleName::Literal(value) => Self::Literal(value),
-            legacy_entity::LegacyRoleName::Selector(value) => Self::Selector(value),
-        }
-    }
-}
-
 /// One length-framed legacy schema role and its selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaLegacyRoleSelector {
@@ -6118,7 +6082,7 @@ pub(crate) struct CatiaLegacyRoleSelector {
     #[serde(default)]
     pub(crate) entity_id: u32,
     /// Stored literal or unresolved role name.
-    pub(crate) name: CatiaLegacyRoleName,
+    pub(crate) name: legacy_entity::LegacyRoleName,
     /// Selector framing production.
     pub(crate) encoding: CatiaLegacyRoleSelectorEncoding,
     /// Stored selector following the role name.
@@ -7087,7 +7051,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                     .map(|role| CatiaLegacyRoleSelector {
                         byte_offset: role.offset as u64,
                         entity_id: role.entity_id,
-                        name: role.name.into(),
+                        name: role.name,
                         encoding: match role.encoding {
                             legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
                                 CatiaLegacyRoleSelectorEncoding::FixedU32
@@ -7120,7 +7084,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         role: field.role.map(|role| CatiaLegacyRoleSelector {
                             byte_offset: role.offset as u64,
                             entity_id: role.entity_id,
-                            name: role.name.into(),
+                            name: role.name,
                             encoding: match role.encoding {
                                 legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
                                     CatiaLegacyRoleSelectorEncoding::FixedU32
@@ -7621,15 +7585,23 @@ fn consolidated_pcurves(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<CatiaConsolidatedPcurve> {
-    let mut pcurves = crate::families::a5a8::records::a5_pcurves_from_records(bytes, records)
-        .into_iter()
-        .map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
-        .chain(
-            crate::families::b2::records::b2_pcurves_from_records(bytes, records)
-                .into_iter()
-                .map(|pcurve| (pcurve, CatiaConsolidatedFamily::B)),
+    let mut pcurves = crate::wire::records::family_pcurves_from_records(
+        bytes,
+        records,
+        crate::wire::records::ConsolidatedFamily::A,
+    )
+    .into_iter()
+    .map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
+    .chain(
+        crate::wire::records::family_pcurves_from_records(
+            bytes,
+            records,
+            crate::wire::records::ConsolidatedFamily::B,
         )
-        .collect::<Vec<_>>();
+        .into_iter()
+        .map(|pcurve| (pcurve, CatiaConsolidatedFamily::B)),
+    )
+    .collect::<Vec<_>>();
     pcurves.sort_by_key(|(pcurve, _)| pcurve.pos);
     pcurves
         .into_iter()

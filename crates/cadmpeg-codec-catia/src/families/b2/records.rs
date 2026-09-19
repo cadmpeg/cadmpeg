@@ -5,6 +5,8 @@
 //! parameter-space packets, consolidated plane carriers, and consolidated UV
 //! pcurves.
 
+#[cfg(test)]
+use crate::wire::records::ConsolidatedPcurve;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -28,9 +30,8 @@ use crate::wire::bytes::{
 #[cfg(test)]
 use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
-    family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFamily, ConsolidatedFrame,
-    ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPcurve, ConsolidatedRawFrame,
-    ConsolidatedRecord,
+    family_frames_from_records, ConsolidatedFamily, ConsolidatedFrame, ConsolidatedFrameFlag,
+    ConsolidatedFrameWidth, ConsolidatedRawFrame, ConsolidatedRecord,
 };
 
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -3274,15 +3275,5 @@ pub(in crate::families) fn offset_support_carriers(
 #[cfg(test)]
 pub(super) fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
-    b2_pcurves_from_records(data, &records)
-}
-
-pub(crate) fn b2_pcurves_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedPcurve> {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x20)
-        .into_iter()
-        .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
-        .collect()
+    crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::B)
 }

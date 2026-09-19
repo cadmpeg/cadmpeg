@@ -52,6 +52,18 @@ pub(crate) struct ConsolidatedPcurve {
     pub(crate) tail: Vec<u8>,
 }
 
+/// Decode class-`0x20` UV jets from one framed record family.
+pub(crate) fn family_pcurves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    family: ConsolidatedFamily,
+) -> Vec<ConsolidatedPcurve> {
+    family_frames_from_records(records, family, 0x20)
+        .into_iter()
+        .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
+        .collect()
+}
+
 impl ConsolidatedPcurve {
     pub(crate) const DEGREE: u32 = 5;
 

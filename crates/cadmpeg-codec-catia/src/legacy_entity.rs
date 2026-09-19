@@ -40,7 +40,8 @@ pub(crate) enum LegacyRoleSelectorEncoding {
 }
 
 /// Stored representation of one legacy schema role name.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub(crate) enum LegacyRoleName {
     /// Inclusive-length UTF-8 role name.
     Literal(String),
@@ -49,14 +50,14 @@ pub(crate) enum LegacyRoleName {
 }
 
 impl LegacyRoleName {
-    fn literal(&self) -> Option<&str> {
+    pub(crate) fn literal(&self) -> Option<&str> {
         match self {
             Self::Literal(value) => Some(value),
             Self::Selector(_) => None,
         }
     }
 
-    fn byte_len(&self) -> usize {
+    pub(crate) fn byte_len(&self) -> usize {
         match self {
             Self::Literal(value) => 1 + value.len(),
             Self::Selector(_) => 1,
