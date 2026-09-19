@@ -619,9 +619,16 @@ fn take<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u8; N]> {
 mod tests {
     #![allow(clippy::unwrap_used)] // A failed synthetic decode is the test failure.
 
-    use std::io::Write;
+    use std::io::{Cursor, Write};
 
-    use super::*;
+    use cadmpeg_core::CodecError;
+
+    use super::{
+        decode_detailed, framing, instance_property_serializes, read_connections, read_texture_uri,
+        read_value, ValueCarrier, CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN,
+        TERMINAL_MARKER,
+    };
+    use crate::property::{PropertyContent, PropertyValue};
 
     #[test]
     fn inherited_property_selection_drops_the_header_slot_and_texture_swatch() {
