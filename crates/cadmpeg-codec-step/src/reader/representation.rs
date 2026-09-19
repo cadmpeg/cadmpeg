@@ -40,8 +40,8 @@ fn value_list(value: &Value) -> Option<&[Value]> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::parse::{PartialRecord, RawRecord};
+    use super::{items, parameters};
+    use crate::parse::{PartialRecord, RawRecord, Value};
 
     #[test]
     fn shape_representation_with_parameters_uses_inherited_attributes() {
