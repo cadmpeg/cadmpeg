@@ -1119,10 +1119,9 @@ fn compare_incidence(
         .collect::<BTreeSet<_>>();
     let empty = BTreeSet::new();
     if &serialized != derived.unwrap_or(&empty) {
-        return Err(malformed(
-            0,
-            format!("SubD {label} incidence is not reciprocal"),
-        ));
+        return Err(unpositioned(format!(
+            "SubD {label} incidence is not reciprocal"
+        )));
     }
     Ok(())
 }
@@ -1134,8 +1133,7 @@ fn resolve_all(
 ) -> Result<(), SubdError> {
     for pointer in pointers {
         if types.get(&pointer.archive_id) != Some(&expected) {
-            return Err(malformed(
-                0,
+            return Err(unpositioned(
                 "SubD component pointer does not resolve within its partition",
             ));
         }
@@ -1641,6 +1639,12 @@ fn finish_payload(reader: &mut BoundedReader<'_>) -> Result<(), SubdError> {
 fn malformed(offset: usize, message: impl Into<String>) -> SubdError {
     SubdError::Malformed {
         offset,
+        message: message.into(),
+    }
+}
+
+fn unpositioned(message: impl Into<String>) -> SubdError {
+    SubdError::Unpositioned {
         message: message.into(),
     }
 }
