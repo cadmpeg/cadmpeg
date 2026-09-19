@@ -7026,7 +7026,7 @@ fn invariant_face_carrier_bindings(
 }
 
 fn owner_matches_a5_carrier(
-    tail: &crate::native::CatiaOwnerNumericTail,
+    tail: &crate::native::owner_numeric_tail::CatiaOwnerNumericTail,
     surface: &NurbsSurface,
 ) -> bool {
     let Some(domain) = nurbs_surface_parameter_domain(surface) else {
@@ -7059,7 +7059,7 @@ fn owner_matches_a5_carrier(
 
 fn owner_contains_face_bounds(
     reference_encoding: crate::families::b2::records::B2OwnerReferenceEncoding,
-    tail: &crate::native::CatiaOwnerNumericTail,
+    tail: &crate::native::owner_numeric_tail::CatiaOwnerNumericTail,
     bounds: crate::families::standard::records::StandardFaceBounds,
 ) -> bool {
     if reference_encoding != crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact {

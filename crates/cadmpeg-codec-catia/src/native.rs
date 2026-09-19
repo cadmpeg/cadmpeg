@@ -33,17 +33,17 @@ use schema_configuration_chain::{
 };
 
 pub(crate) mod owner_chart;
-mod owner_numeric_tail;
+pub(crate) mod owner_numeric_tail;
 use owner_chart::{
     CatiaOwnerChartAddress, CatiaOwnerChartAliasBinding, CatiaOwnerChartBridge,
     CatiaOwnerChartBridgeReference, CatiaOwnerChartCarrier, CatiaOwnerChartRelation,
 };
-pub(crate) use owner_numeric_tail::CatiaOwnerNumericTail;
+use owner_numeric_tail::CatiaOwnerNumericTail;
 
 use crate::catalog;
 use crate::container;
 use crate::entity_table;
-pub(crate) use crate::families::zero_entity::topology::EdgeEnd;
+use crate::families::zero_entity::topology::EdgeEnd;
 use crate::legacy_entity;
 use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,

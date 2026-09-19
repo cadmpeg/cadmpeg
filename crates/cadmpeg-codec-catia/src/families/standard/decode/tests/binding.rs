@@ -36,7 +36,7 @@ use crate::families::standard::records::StandardCurveGeometry;
 use crate::families::standard::records::StandardCurveSupport;
 use crate::families::standard::records::StandardFaceBounds;
 use crate::families::standard::records::StandardSurfaceRecord;
-use crate::native::CatiaOwnerNumericTail;
+use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::test_support::test_e5::{append_e5_record, e5_d8_rolling_ball_stream, e5_torus_stream};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
