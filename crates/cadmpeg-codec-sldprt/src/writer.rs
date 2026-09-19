@@ -2380,7 +2380,9 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
         ));
     }
     let mut out = b"moVisualProperties_c".to_vec();
-    let component = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+    // Every `Color` construction path admits components in [0, 1], so the
+    // product is in [0, 255] and the cast is exact.
+    let component = |value: f32| (value * 255.0).round() as u8;
     out.extend_from_slice(&[
         component(color.r()),
         component(color.g()),
