@@ -133,7 +133,7 @@ impl TryFrom<String> for TopologyPacketRole {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::TopologyPacketRole;
 
     #[test]
     fn packet_role_wire_preserves_indexed_and_fixed_labels() {

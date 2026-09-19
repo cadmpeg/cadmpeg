@@ -237,7 +237,8 @@ impl SourceChartData {
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
+    use cadmpeg_ir::math::Point3;
 
     #[test]
     fn chart_sample_constructor_rejects_truncation_in_both_directions() {

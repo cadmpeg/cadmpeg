@@ -2766,7 +2766,9 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
 
 #[cfg(test)]
 mod type_67_record_tests {
-    use super::*;
+    use super::census::walk;
+    use super::record_family::RecordFamily;
+    use super::{consume_type_67, select_enveloped_layout, Record};
 
     fn record(escaped: bool) -> Vec<u8> {
         let mut bytes = 67u16.to_be_bytes().to_vec();
@@ -2861,7 +2863,7 @@ mod type_67_record_tests {
 
 #[cfg(test)]
 mod type_45_record_tests {
-    use super::*;
+    use super::consume_type_45;
 
     #[test]
     fn declared_lane_ends_before_an_unknown_successor() {
@@ -2881,7 +2883,7 @@ mod type_45_record_tests {
 
 #[cfg(test)]
 mod type_150_state_packet_tests {
-    use super::*;
+    use super::census::walk;
 
     fn packet() -> Vec<u8> {
         let mut bytes = vec![150];
@@ -2925,7 +2927,13 @@ mod type_150_state_packet_tests {
 
 #[cfg(test)]
 mod schema_reference_preamble_tests {
-    use super::*;
+    use super::census::walk;
+    use super::inline_schema_fields::InlineSchemaFields;
+    use super::preamble_state::PreambleState;
+    use super::{
+        schema_reference_preamble, InlineSchemaDeclaration, SchemaReferencePreamble,
+        BODY_SCHEMA_HEADER,
+    };
     use crate::test_support::test_deltas::push_xmt;
 
     fn preamble() -> Vec<u8> {
@@ -3040,7 +3048,20 @@ mod schema_reference_preamble_tests {
 
 #[cfg(test)]
 mod inline_schema_tests {
-    use super::*;
+    use super::census::walk;
+    use super::inline_schema_fields::InlineBodyStateFields;
+    use super::inline_schema_fields::InlineSchemaFields;
+    use super::precision_state::PrecisionState;
+    use super::type101_state;
+    use super::type38_state::IntersectionMarker;
+    use super::type38_state::Type38State;
+    use super::{
+        inline_schema_declaration, InlineBodyState, InlineSchemaDeclaration,
+        ATTDEF_LIST_SCHEMA_HEADER, BODY_SCHEMA_HEADER, TYPE_100_SCHEMA_HEADER,
+        TYPE_101_COMPACT_STATE_LEN, TYPE_101_SCHEMA_HEADER, TYPE_101_SCHEMA_STATE_PREFIX,
+        TYPE_41_SCHEMA_HEADER, TYPE_70_SCHEMA_HEADER,
+    };
+    use crate::framing::xmt_reference::NonNullXmt;
     use crate::test_support::test_deltas::push_xmt;
 
     #[test]
@@ -3670,7 +3691,7 @@ mod inline_schema_tests {
 
 #[cfg(test)]
 mod nurbs_auxiliary_tests {
-    use super::*;
+    use super::census::walk;
 
     fn status_framed_curve_descriptor() -> Vec<u8> {
         vec![
@@ -3745,7 +3766,10 @@ mod nurbs_auxiliary_tests {
 
 #[cfg(test)]
 mod reference_type_map_tests {
-    use super::*;
+    use super::census::walk;
+    use super::record_kind::RecordKind;
+    use super::{ReferenceTypeMap, Tombstone};
+    use std::num::NonZeroU16;
 
     fn map_bytes() -> Vec<u8> {
         vec![
@@ -3986,7 +4010,7 @@ mod reference_type_map_tests {
 
 #[cfg(test)]
 mod terminal_null_reference_tests {
-    use super::*;
+    use super::census::walk;
 
     #[test]
     fn retains_two_or_four_null_references_at_the_stream_boundary() {
@@ -4025,7 +4049,7 @@ mod terminal_null_reference_tests {
 
 #[cfg(test)]
 mod transmit_header_tests {
-    use super::*;
+    use super::census::walk;
 
     fn header(references: &[u8]) -> Vec<u8> {
         let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";

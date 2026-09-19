@@ -2307,7 +2307,23 @@ pub(crate) fn normalize_pcurve_parameters(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::geometry_work::GeometryWorkBudget;
+    use super::super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
+    use super::sample_count::CoarseSampleCount;
+    use super::{
+        certified_offset_cache_fit_with_budget, coarse_surface_sample_counts,
+        offset_support_control_hull_excludes_point, offset_surface_parameters_with_tolerance,
+        point_distance, refine_offset_surface_parameters_with_index_and_budget,
+    };
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::NurbsSurface;
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::Point3;
+    use std::collections::BTreeSet;
 
     #[test]
     fn a_surface_the_index_does_not_hold_and_the_depth_limit_both_sample_at_the_ceiling() {

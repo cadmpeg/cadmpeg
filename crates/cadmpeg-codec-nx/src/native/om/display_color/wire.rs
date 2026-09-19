@@ -247,7 +247,8 @@ impl From<RmDisplayColorAssignment> for RmDisplayColorAssignmentWire {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::RmDisplayColorAssignment;
+    use super::super::RmDisplayColorAssignmentEncoding;
     use crate::test_support::test_wire::check_wire;
 
     #[test]

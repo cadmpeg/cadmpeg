@@ -116,7 +116,7 @@ impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructio
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::FeaturePointConstructionScalarLane;
 
     #[test]
     fn point_scalar_lane_requires_derived_positions_and_complete_physical_spans() {

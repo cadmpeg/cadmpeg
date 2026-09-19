@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-model, data-block, expression, and external-reference extractors and record types.
 
-#[cfg(test)]
-use crate::decode::feature_completeness;
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -4304,8 +4301,9 @@ mod tests {
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-    use super::*;
     use crate::container;
+    use crate::decode::feature_completeness;
+    use std::collections::BTreeMap;
 
     use crate::NxCodec;
 

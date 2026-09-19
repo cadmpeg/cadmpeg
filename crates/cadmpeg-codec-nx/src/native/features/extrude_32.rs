@@ -332,7 +332,7 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{FeatureExtrude32Construction, FeatureExtrudePayload32Branch};
 
     #[test]
     fn construction_keeps_paired_nonempty_profiles_and_the_exact_wire() {

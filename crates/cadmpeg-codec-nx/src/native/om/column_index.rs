@@ -84,7 +84,7 @@ impl TryFrom<ColumnIndexRowsWire> for ColumnIndexRows {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ColumnIndexRows;
 
     #[test]
     fn column_row_bounds_derive_the_last_index_and_reject_disagreement() {

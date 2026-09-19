@@ -1559,7 +1559,14 @@ pub(crate) fn source_meta(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::geometry_work::GeometryWorkBudget;
+    use super::{unknown_stream, CurvePointCache};
+    use crate::parasolid::Stream;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::math::Point3;
 
     #[test]
     fn unknown_stream_copy_refuses_when_retained_budget_is_exhausted() {

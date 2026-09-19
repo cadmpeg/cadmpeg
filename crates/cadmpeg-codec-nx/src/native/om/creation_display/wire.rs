@@ -196,7 +196,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::RmCreationDisplayDataRelation;
 
     #[test]
     fn creation_display_rejects_fields_inconsistent_with_its_row() {

@@ -114,7 +114,7 @@ impl TryFrom<BodyWriteWire> for FeatureOperationBodyWrite {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::FeatureOperationBodyWrite;
 
     const WIRE: &str = r#"{"id":"write","operation_record":"record","ordinal":0,"body_identity":255,"group_node":0,"raw_group_node":[160,0,0],"group_node_source_offset":103,"endpoint_tag":21,"body_image_object_index":0,"body_image_data_block":"block","raw_body_image_object_index":[241,0,0],"body_image_object_index_source_offset":111,"byte_len":15,"source_offset":100}"#;
 

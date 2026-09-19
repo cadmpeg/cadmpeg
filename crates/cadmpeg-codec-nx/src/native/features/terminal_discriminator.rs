@@ -124,7 +124,7 @@ impl TryFrom<FeatureOperationTerminalDiscriminatorWire> for FeatureOperationTerm
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::FeatureOperationTerminalDiscriminator;
 
     #[test]
     fn terminal_wire_derives_positions_and_keeps_empty_trailing_arrays() {

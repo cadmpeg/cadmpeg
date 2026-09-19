@@ -61,7 +61,7 @@ impl CoarseSampleCount {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::CoarseSampleCount;
 
     #[test]
     fn the_coarse_sample_count_holds_the_floor_the_range_and_the_ceiling() {
