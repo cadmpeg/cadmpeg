@@ -495,20 +495,19 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
     type Error = &'static str;
 
     fn try_from(definition: SketchGeometryDefinition) -> Result<Self, Self::Error> {
-        let finite_point = |point: &Point2| point.u.is_finite() && point.v.is_finite();
         let positive = |length: &Length| length.get() > 0.0;
         match &definition {
-            SketchGeometryDefinition::Point { position } if !finite_point(position) => {
+            SketchGeometryDefinition::Point { position } if !position.is_finite() => {
                 return Err("sketch point position must be finite");
             }
             SketchGeometryDefinition::Line { start, end }
-                if !finite_point(start) || !finite_point(end) =>
+                if !start.is_finite() || !end.is_finite() =>
             {
                 return Err("sketch line endpoints must be finite");
             }
             SketchGeometryDefinition::ReferenceLine { origin, direction }
-                if !finite_point(origin)
-                    || !finite_point(direction)
+                if !origin.is_finite()
+                    || !direction.is_finite()
                     || direction.u.hypot(direction.v) <= f64::EPSILON =>
             {
                 return Err(
@@ -517,7 +516,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
             }
             SketchGeometryDefinition::Circle { center, radius }
             | SketchGeometryDefinition::Arc { center, radius, .. }
-                if !finite_point(center) || !positive(radius) =>
+                if !center.is_finite() || !positive(radius) =>
             {
                 return Err(
                     "sketch circular geometry requires finite center and positive finite radius",
@@ -530,7 +529,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                 minor_radius,
                 bounds: _,
             } => {
-                if !finite_point(center) {
+                if !center.is_finite() {
                     return Err("sketch ellipse center and major_angle must be finite");
                 }
                 if !positive(major_radius) || !positive(minor_radius) {
@@ -547,7 +546,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                 minor_radius,
                 bounds,
             } => {
-                if !finite_point(center) {
+                if !center.is_finite() {
                     return Err("sketch hyperbola center and major_angle must be finite");
                 }
                 if !positive(major_radius) || !positive(minor_radius) {
@@ -563,7 +562,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                 focal_length,
                 bounds,
             } => {
-                if !finite_point(vertex) {
+                if !vertex.is_finite() {
                     return Err("sketch parabola vertex and axis_angle must be finite");
                 }
                 if !positive(focal_length) {
@@ -585,7 +584,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
                 if width_factor.is_some_and(|value| !value.is_finite() || value <= 0.0) {
                     return Err("sketch text width_factor must be positive and finite");
                 }
-                if placement.is_some_and(|placement| !finite_point(&placement.anchor)) {
+                if placement.is_some_and(|placement| !placement.anchor.is_finite()) {
                     return Err("sketch text anchor and rotation must be finite");
                 }
             }

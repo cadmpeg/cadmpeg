@@ -160,7 +160,7 @@ pub fn analytic_surface_parameters_solved(
         }
         _ => return None,
     };
-    (result.u.is_finite() && result.v.is_finite()).then_some(result)
+    result.is_finite().then_some(result)
 }
 
 #[derive(Clone)]
@@ -668,9 +668,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     parameters: [Point2; 2],
     chord: [Point3; 2],
 ) -> Option<f64> {
-    if parameters
-        .iter()
-        .any(|point| !point.u.is_finite() || !point.v.is_finite())
+    if parameters.iter().any(|point| !point.is_finite())
         || chord.iter().any(|point| !point.is_finite())
     {
         return None;
@@ -1168,7 +1166,7 @@ fn solve_nurbs_surface_parameter(
     fit_tolerance: Option<f64>,
     budget: &WorkBudget<'_>,
 ) -> Option<(Point2, f64)> {
-    let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
+    let seed = seed.filter(Point2::is_finite);
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
     let u_count = surface.u_count();
@@ -1308,7 +1306,7 @@ pub fn nurbs_surface_parameter_near_point(
     {
         return None;
     }
-    let mut parameters = match seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite()) {
+    let mut parameters = match seed.filter(Point2::is_finite) {
         Some(seed) => Point2::new(
             seed.u.clamp(u_domain[0], u_domain[1]),
             seed.v.clamp(v_domain[0], v_domain[1]),
@@ -2184,14 +2182,13 @@ fn nurbs_pcurve_differential(
         (ddv - point.v * weight_second_derivative - 2.0 * weight_derivative * tangent.v)
             / weight_sum,
     );
-    if !point.u.is_finite() || !point.v.is_finite() {
+    if !point.is_finite() {
         return None;
     }
     Some(PcurveDifferential {
         point,
-        tangent: (tangent.u.is_finite() && tangent.v.is_finite()).then_some(tangent),
-        acceleration: (acceleration.u.is_finite() && acceleration.v.is_finite())
-            .then_some(acceleration),
+        tangent: tangent.is_finite().then_some(tangent),
+        acceleration: acceleration.is_finite().then_some(acceleration),
     })
 }
 
@@ -2219,8 +2216,7 @@ pub fn nurbs_pcurve_contains_point(
         || knots.len() < count.checked_add(degree_usize)?.checked_add(1)?
         || !tolerance.is_finite()
         || tolerance < 0.0
-        || !point.u.is_finite()
-        || !point.v.is_finite()
+        || !point.is_finite()
     {
         return None;
     }
@@ -2233,9 +2229,11 @@ pub fn nurbs_pcurve_contains_point(
             &owned_weights
         }
     };
-    if control_points.iter().zip(weights).any(|(control, weight)| {
-        !control.u.is_finite() || !control.v.is_finite() || !weight.is_finite() || *weight <= 0.0
-    }) || knots.iter().any(|knot| !knot.is_finite())
+    if control_points
+        .iter()
+        .zip(weights)
+        .any(|(control, weight)| !control.is_finite() || !weight.is_finite() || *weight <= 0.0)
+        || knots.iter().any(|knot| !knot.is_finite())
         || !knots_nondecreasing(knots)
     {
         return None;
@@ -7581,7 +7579,7 @@ fn pcurve_uv_differential_inner(
         });
         return Some(PcurveDifferential {
             point,
-            tangent: tangent.filter(|tangent| tangent.u.is_finite() && tangent.v.is_finite()),
+            tangent: tangent.filter(Point2::is_finite),
             acceleration: None,
         });
     }
@@ -7808,7 +7806,7 @@ fn pcurve_uv_differential_inner(
                         axial_tangent.u,
                     )
                 })
-                .filter(|tangent| tangent.u.is_finite() && tangent.v.is_finite());
+                .filter(Point2::is_finite);
             let acceleration = radial
                 .tangent
                 .zip(radial.acceleration)
@@ -7830,7 +7828,7 @@ fn pcurve_uv_differential_inner(
                         )
                     },
                 )
-                .filter(|acceleration| acceleration.u.is_finite() && acceleration.v.is_finite());
+                .filter(Point2::is_finite);
             return Some(PcurveDifferential {
                 point,
                 tangent,
@@ -7859,11 +7857,10 @@ fn pcurve_uv_differential_inner(
                 (numerator_derivative * denominator - numerator * denominator_derivative)
                     / (denominator * denominator),
             );
-            return (point.u.is_finite() && point.v.is_finite()).then_some(PcurveDifferential {
+            return point.is_finite().then_some(PcurveDifferential {
                 point,
-                tangent: (tangent.u.is_finite() && tangent.v.is_finite()).then_some(tangent),
-                acceleration: (acceleration.u.is_finite() && acceleration.v.is_finite())
-                    .then_some(acceleration),
+                tangent: tangent.is_finite().then_some(tangent),
+                acceleration: acceleration.is_finite().then_some(acceleration),
             });
         }
         PcurveGeometry::Nurbs { nurbs } => {
@@ -7882,12 +7879,9 @@ fn pcurve_uv_differential_inner(
             let acceleration = basis
                 .acceleration
                 .map(|acceleration| transform.apply_vector(acceleration));
-            return (point.u.is_finite()
-                && point.v.is_finite()
-                && tangent.is_none_or(|tangent| tangent.u.is_finite() && tangent.v.is_finite())
-                && acceleration.is_none_or(|acceleration| {
-                    acceleration.u.is_finite() && acceleration.v.is_finite()
-                }))
+            return (point.is_finite()
+                && tangent.is_none_or(|tangent| tangent.is_finite())
+                && acceleration.is_none_or(|acceleration| acceleration.is_finite()))
             .then_some(PcurveDifferential {
                 point,
                 tangent,
@@ -7900,13 +7894,13 @@ fn pcurve_uv_differential_inner(
         }
         PcurveGeometry::Offset(_) => return None,
     };
-    if !pair.0.u.is_finite() || !pair.0.v.is_finite() {
+    if !pair.0.is_finite() {
         return None;
     }
     Some(PcurveDifferential {
         point: pair.0,
-        tangent: (pair.1.u.is_finite() && pair.1.v.is_finite()).then_some(pair.1),
-        acceleration: (pair.2.u.is_finite() && pair.2.v.is_finite()).then_some(pair.2),
+        tangent: pair.1.is_finite().then_some(pair.1),
+        acceleration: pair.2.is_finite().then_some(pair.2),
     })
 }
 
