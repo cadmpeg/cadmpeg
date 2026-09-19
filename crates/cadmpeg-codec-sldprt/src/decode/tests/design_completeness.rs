@@ -501,7 +501,7 @@ fn design_completeness_recurses_through_pattern_operands() {
             2,
             PatternKind::new(PatternTransform::Scale {
                 center: cadmpeg_ir::features::patterns::PatternScaleCenter::Native("center".into()),
-                final_factor: 2.0,
+                final_factor: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
                 count: 2,
             })
             .unwrap(),
@@ -528,8 +528,10 @@ fn design_completeness_recurses_through_pattern_operands() {
         (
             4,
             PatternKind::new(PatternTransform::Circular {
-                axis_origin: Point3::new(0.0, 0.0, 0.0),
-                axis_dir: Vector3::new(0.0, 0.0, 1.0),
+                axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                    .unwrap(),
                 angle: Angle::new(std::f64::consts::TAU).unwrap(),
                 count: 4,
             })

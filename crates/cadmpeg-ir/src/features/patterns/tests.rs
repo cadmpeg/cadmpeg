@@ -6,11 +6,23 @@ use crate::{
             CompositePattern, LinearPatternDirection, PatternKind, PatternScaleCenter,
             PatternStage, PatternTransform,
         },
-        FaceSelection,
+        FaceSelection, FeatureDirection3, FinitePoint3,
     },
-    scalar::{Angle, Length},
+    scalar::{Angle, Length, PositiveReal},
 };
 use serde_json::json;
+
+fn direction(x: f64, y: f64, z: f64) -> FeatureDirection3 {
+    FeatureDirection3::new(Vector3::new(x, y, z)).unwrap()
+}
+
+fn point(x: f64, y: f64, z: f64) -> FinitePoint3 {
+    FinitePoint3::new(Point3::new(x, y, z)).unwrap()
+}
+
+fn factor(value: f64) -> PositiveReal {
+    PositiveReal::new(value).unwrap()
+}
 
 fn linear<C>(count: u32) -> PatternTransform<C> {
     PatternTransform::Linear {
@@ -31,19 +43,13 @@ fn stage(
 
 #[test]
 fn pattern_admission_rejects_invalid_numeric_operands() {
-    let origin = Point3::new(0.0, 0.0, 0.0);
-    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let origin = point(0.0, 0.0, 0.0);
+    let axis = direction(0.0, 0.0, 1.0);
     for transform in [
         linear::<CompositePattern>(0),
         PatternTransform::Linear {
             direction: None,
             spacing: Length::ZERO,
-            count: 1,
-            second: None,
-        },
-        PatternTransform::Linear {
-            direction: Some(Vector3::new(0.0, 0.0, 0.0)),
-            spacing: Length::new(1.0).unwrap(),
             count: 1,
             second: None,
         },
@@ -74,35 +80,27 @@ fn pattern_admission_rejects_invalid_numeric_operands() {
             spacing: Length::new(-1.0).unwrap(),
             count: 1,
         },
-        PatternTransform::Mirror {
-            plane_origin: Point3::new(f64::NAN, 0.0, 0.0),
-            plane_normal: axis,
-        },
-        PatternTransform::Mirror {
-            plane_origin: origin,
-            plane_normal: Vector3::new(f64::MAX, 0.0, 0.0),
-        },
         PatternTransform::MirrorReference {
             plane: FaceSelection::Native(String::new()),
         },
         PatternTransform::Scale {
             center: PatternScaleCenter::FirstSeedCentroid,
-            final_factor: 2.0,
+            final_factor: factor(2.0),
             count: 1,
-        },
-        PatternTransform::Scale {
-            center: PatternScaleCenter::FirstSeedCentroid,
-            final_factor: f64::INFINITY,
-            count: 2,
-        },
-        PatternTransform::Scale {
-            center: PatternScaleCenter::Point(Point3::new(0.0, f64::INFINITY, 0.0)),
-            final_factor: 2.0,
-            count: 2,
         },
     ] {
         assert!(PatternKind::new(transform).is_err());
     }
+    // A degenerate direction, a non-finite point and a non-positive scale
+    // factor have no spelling as a `PatternTransform`: the field carries
+    // `FeatureDirection3`, `FinitePoint3` or `PositiveReal`, which is where
+    // those values are refused.
+    assert!(FeatureDirection3::new(Vector3::new(0.0, 0.0, 0.0)).is_none());
+    assert!(FeatureDirection3::new(Vector3::new(f64::MAX, 0.0, 0.0)).is_none());
+    assert!(FinitePoint3::new(Point3::new(f64::NAN, 0.0, 0.0)).is_none());
+    assert!(FinitePoint3::new(Point3::new(0.0, f64::INFINITY, 0.0)).is_none());
+    assert!(PositiveReal::new(f64::INFINITY).is_none());
+    assert!(PositiveReal::new(0.0).is_none());
 }
 
 #[test]
@@ -125,8 +123,8 @@ fn pattern_locations_start_at_zero_and_increase() {
         );
         assert!(
             PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
-                axis_origin: Point3::new(0.0, 0.0, 0.0),
-                axis_dir: Vector3::new(0.0, 0.0, 1.0),
+                axis_origin: point(0.0, 0.0, 0.0),
+                axis_dir: direction(0.0, 0.0, 1.0),
                 angles,
             })
             .is_err()
@@ -141,8 +139,8 @@ fn pattern_locations_start_at_zero_and_increase() {
     );
     assert!(
         PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_dir: Vector3::new(0.0, 0.0, 1.0),
+            axis_origin: point(0.0, 0.0, 0.0),
+            axis_dir: direction(0.0, 0.0, 1.0),
             angles: vec![Angle::ZERO],
         })
         .is_ok()
@@ -154,8 +152,8 @@ fn pattern_admission_preserves_singletons_and_unresolved_references() {
     for transform in [
         linear::<CompositePattern>(1),
         PatternTransform::Mirror {
-            plane_origin: Point3::new(0.0, 0.0, 0.0),
-            plane_normal: Vector3::new(f64::EPSILON / 2.0, 0.0, 0.0),
+            plane_origin: point(0.0, 0.0, 0.0),
+            plane_normal: direction(f64::EPSILON / 2.0, 0.0, 0.0),
         },
         PatternTransform::MirrorReference {
             plane: FaceSelection::Native(" ".into()),
@@ -165,7 +163,7 @@ fn pattern_admission_preserves_singletons_and_unresolved_references() {
         },
         PatternTransform::Scale {
             center: PatternScaleCenter::Native(String::new()),
-            final_factor: 2.0,
+            final_factor: factor(2.0),
             count: 2,
         },
     ] {
@@ -177,7 +175,7 @@ fn pattern_admission_preserves_singletons_and_unresolved_references() {
 fn composite_pattern_admission_enforces_stage_structure_and_counts() {
     let scale = || PatternTransform::Scale {
         center: PatternScaleCenter::FirstSeedCentroid,
-        final_factor: 2.0,
+        final_factor: factor(2.0),
         count: 2,
     };
     // A stage's combination rule is its position and its transform, so a
@@ -256,14 +254,14 @@ fn composite_pattern_counts_use_primary_instance_counts() {
         spacing: Length::new(1.0).unwrap(),
         count: 2,
         second: Some(LinearPatternDirection {
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            direction: direction(0.0, 1.0, 0.0),
             spacing: Length::new(1.0).unwrap(),
             count: 3,
         }),
     };
     let scale = PatternTransform::Scale {
         center: PatternScaleCenter::FirstSeedCentroid,
-        final_factor: 2.0,
+        final_factor: factor(2.0),
         count: 3,
     };
     assert!(CompositePattern::new(vec![stage(first), stage(scale),]).is_err());
@@ -276,4 +274,41 @@ fn pattern_wire_error_identifies_the_rejected_field() {
     }))
     .unwrap_err();
     assert!(error.to_string().contains("count"));
+}
+
+#[test]
+fn pattern_wire_refuses_a_degenerate_direction_point_or_scale_factor() {
+    for wire in [
+        json!({"kind":"linear","direction":{"x":0.0,"y":0.0,"z":0.0},"spacing":1.0,"count":1}),
+        json!({"kind":"linear_offsets","direction":{"x":0.0,"y":0.0,"z":0.0},"offsets":[0.0]}),
+        json!({"kind":"linear","spacing":1.0,"count":1,"second":{"direction":{"x":0.0,"y":0.0,"z":0.0},"spacing":1.0,"count":1}}),
+        json!({"kind":"circular","axis_origin":{"x":0.0,"y":0.0,"z":0.0},"axis_dir":{"x":0.0,"y":0.0,"z":0.0},"angle":1.0,"count":1}),
+        json!({"kind":"circular_angles","axis_origin":{"x":0.0,"y":0.0,"z":0.0},"axis_dir":{"x":0.0,"y":0.0,"z":0.0},"angles":[0.0]}),
+        json!({"kind":"mirror","plane_origin":{"x":0.0,"y":0.0,"z":0.0},"plane_normal":{"x":0.0,"y":0.0,"z":0.0}}),
+        json!({"kind":"scale","center":{"kind":"first_seed_centroid"},"final_factor":-1.0,"count":2}),
+    ] {
+        assert!(serde_json::from_value::<PatternKind>(wire.clone()).is_err());
+        assert!(serde_json::from_value::<PatternTransform>(wire).is_err());
+    }
+    // JSON states no infinity, so a non-finite coordinate is refused on the
+    // constructor route, which calls the same `FinitePoint3::new` the derived
+    // reader calls.
+    assert!(FinitePoint3::new(Point3::new(0.0, f64::NAN, 0.0)).is_none());
+}
+
+#[test]
+fn admitted_pattern_wire_round_trips_every_carried_field() {
+    for wire in [
+        json!({"kind":"linear","direction":{"x":0.0,"y":0.0,"z":1.0},"spacing":1.0,"count":2,"second":{"direction":{"x":0.0,"y":1.0,"z":0.0},"spacing":2.0,"count":3}}),
+        json!({"kind":"linear_offsets","direction":{"x":1.0,"y":0.0,"z":0.0},"offsets":[0.0,1.0]}),
+        json!({"kind":"circular","axis_origin":{"x":1.0,"y":2.0,"z":3.0},"axis_dir":{"x":0.0,"y":0.0,"z":1.0},"angle":1.0,"count":2}),
+        json!({"kind":"circular_angles","axis_origin":{"x":1.0,"y":2.0,"z":3.0},"axis_dir":{"x":0.0,"y":0.0,"z":1.0},"angles":[0.0,1.0]}),
+        json!({"kind":"mirror","plane_origin":{"x":1.0,"y":2.0,"z":3.0},"plane_normal":{"x":0.0,"y":0.0,"z":1.0}}),
+        json!({"kind":"scale","center":{"kind":"point","value":{"x":1.0,"y":2.0,"z":3.0}},"final_factor":2.0,"count":2}),
+    ] {
+        let pattern: PatternKind = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&pattern).unwrap(), wire);
+        let transform: PatternTransform = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&transform).unwrap(), wire);
+    }
 }

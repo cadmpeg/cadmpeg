@@ -6604,8 +6604,8 @@ fn project_circular_pattern(
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds: vec![seed],
         pattern: PatternKind::new(PatternTransform::Circular {
-            axis_origin,
-            axis_dir,
+            axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
+            axis_dir: cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?,
             angle: Angle::new(construction.angle)?,
             count: construction.count,
         })
@@ -6750,6 +6750,10 @@ fn project_rectangular_pattern_scalars(
         })
     });
     let seeds = component_seed.or(group_seed).into_iter().collect();
+    let direction = match direction {
+        Some(direction) => Some(cadmpeg_ir::features::FeatureDirection3::new(direction)?),
+        None => None,
+    };
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
         pattern: PatternKind::new(PatternTransform::Linear {
@@ -6865,12 +6869,12 @@ fn project_mirror(
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds: vec![seed],
         pattern: PatternKind::new(PatternTransform::Mirror {
-            plane_origin: Point3::new(
+            plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 plane_origin.x * origin_scale,
                 plane_origin.y * origin_scale,
                 plane_origin.z * origin_scale,
-            ),
-            plane_normal,
+            ))?,
+            plane_normal: cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?,
         })
         .ok()?,
     }))

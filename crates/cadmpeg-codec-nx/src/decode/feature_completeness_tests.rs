@@ -377,7 +377,9 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
     };
 
     let linear = PatternKind::new(PatternTransform::Linear {
-        direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+        direction: Some(
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+        ),
         spacing: Length::new(10.0).unwrap(),
         count: 3,
         second: None,
@@ -398,7 +400,10 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
     assert!(pattern_is_incomplete(
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::Linear {
-                direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+                direction: Some(
+                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                        .unwrap()
+                ),
                 spacing: Length::new(10.0).unwrap(),
                 count: 1,
                 second: None,
@@ -441,8 +446,14 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
             PatternStage {
                 pattern: Box::new(
                     PatternKind::new(PatternTransform::Mirror {
-                        plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                        plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                        plane_origin: cadmpeg_ir::features::FinitePoint3::new(
+                            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                        plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                            1.0, 0.0, 0.0,
+                        ))
+                        .unwrap(),
                     })
                     .unwrap(),
                 ),
@@ -635,8 +646,14 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
     let seed = cadmpeg_ir::features::patterns::PatternSeed::Feature(seed_id.clone());
     let pattern = cadmpeg_ir::features::patterns::PatternKind::new(
         cadmpeg_ir::features::patterns::PatternTransform::Mirror {
-            plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            plane_origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .unwrap(),
+            plane_normal: cadmpeg_ir::features::FeatureDirection3::new(
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
         },
     )
     .unwrap();

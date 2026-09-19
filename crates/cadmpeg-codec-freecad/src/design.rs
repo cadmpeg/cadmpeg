@@ -5854,8 +5854,8 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
                 plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
             {
                 PatternKind::new(PatternTransform::Mirror {
-                    plane_origin,
-                    plane_normal,
+                    plane_origin: cadmpeg_ir::features::FinitePoint3::new(plane_origin)?,
+                    plane_normal: cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?,
                 })
                 .ok()?
             } else {
@@ -5882,8 +5882,9 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     let mode = enumeration_selector(properties, "Mode", 0)?;
 
     if kind.ends_with("Scaled") {
-        let final_factor = scalar_named(properties, "Factor")?;
-        return (final_factor.is_finite() && final_factor > 0.0 && count >= 2).then_some(
+        let final_factor =
+            cadmpeg_ir::scalar::PositiveReal::new(scalar_named(properties, "Factor")?)?;
+        return (count >= 2).then_some(
             PatternKind::new(PatternTransform::Scale {
                 center: PatternScaleCenter::FirstSeedCentroid,
                 final_factor,
@@ -5939,6 +5940,8 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         if bool_selector(properties, "Reversed", false)? {
             axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
         }
+        let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
+        let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
         let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset", entries)?;
         if let Some(step) = uniform_step(&angles) {
             PatternKind::new(PatternTransform::Circular {
@@ -5982,6 +5985,10 @@ fn linear_pattern_axis(
         direction =
             direction.map(|direction| Vector3::new(-direction.x, -direction.y, -direction.z));
     }
+    let direction = match direction {
+        Some(direction) => Some(cadmpeg_ir::features::FeatureDirection3::new(direction)?),
+        None => None,
+    };
     let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset", entries)?;
     if let Some(spacing) = uniform_step(&offsets) {
         Some(

@@ -572,24 +572,25 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             };
             match candidates.as_slice() {
-                [first] if direction.is_none() => *direction = Some(*first),
+                [first] if direction.is_none() => *direction = Some(admitted_direction(*first)?),
                 [first, second_direction] => {
-                    let secondary = native.and_then(|feature| {
-                        Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                            direction: *second_direction,
-                            spacing: Length::new(feature.parameters.get("D4").and_then(
-                                |value| {
-                                    crate::history::literals::parse_positive_dimension_length_mm(
-                                        value,
-                                    )
-                                },
-                            )?)?,
-                            count: feature.parameters.get("D2")?.parse::<u32>().ok()?,
-                        })
+                    let parameters = native.and_then(|feature| {
+                        Some((
+                            Length::new(feature.parameters.get("D4").and_then(|value| {
+                                crate::history::literals::parse_positive_dimension_length_mm(value)
+                            })?)?,
+                            feature.parameters.get("D2")?.parse::<u32>().ok()?,
+                        ))
                     });
-                    if direction.is_none() && second.is_none() && secondary.is_some() {
-                        *direction = Some(*first);
-                        *second = secondary;
+                    if let (true, true, Some((spacing, count))) =
+                        (direction.is_none(), second.is_none(), parameters)
+                    {
+                        *direction = Some(admitted_direction(*first)?);
+                        *second = Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
+                            direction: admitted_direction(*second_direction)?,
+                            spacing,
+                            count,
+                        });
                     }
                 }
                 _ => {}
@@ -616,8 +617,8 @@ pub(crate) fn bind_pattern_inputs(
         {
             if pattern.is_unresolved() {
                 *pattern = PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: *origin,
-                    plane_normal: *normal,
+                    plane_origin: admitted_point(*origin)?,
+                    plane_normal: admitted_direction(*normal)?,
                 })
                 .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
             }
@@ -698,8 +699,8 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             }
             *slot = PatternKind::new(PatternTransform::Circular {
-                axis_origin: *axis_origin,
-                axis_dir: *axis_dir,
+                axis_origin: admitted_point(*axis_origin)?,
+                axis_dir: admitted_direction(*axis_dir)?,
                 angle: Angle::new(angle).ok_or_else(|| {
                     cadmpeg_core::CodecError::Malformed(
                         "SolidWorks projected angle must be finite".into(),
@@ -713,6 +714,26 @@ pub(crate) fn bind_pattern_inputs(
     }
 
     Ok(())
+}
+
+/// Admits a pattern axis or plane point read from solved `SolidWorks` geometry.
+fn admitted_point(
+    point: Point3,
+) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_core::CodecError> {
+    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+        cadmpeg_core::CodecError::Malformed("SolidWorks pattern point must be finite".into())
+    })
+}
+
+/// Admits a pattern direction or plane normal read from solved `SolidWorks` geometry.
+fn admitted_direction(
+    direction: Vector3,
+) -> Result<cadmpeg_ir::features::FeatureDirection3, cadmpeg_core::CodecError> {
+    cadmpeg_ir::features::FeatureDirection3::new(direction).ok_or_else(|| {
+        cadmpeg_core::CodecError::Malformed(
+            "SolidWorks pattern direction must have a finite nonzero norm".into(),
+        )
+    })
 }
 
 fn mirror_plane_from_surface(geometry: &SolvedSurfaceGeometry) -> Option<(Point3, Vector3)> {
@@ -830,11 +851,16 @@ pub(crate) fn bind_mirror_surface_planes(
             let [(origin, normal)] = candidates.as_slice() else {
                 break 'feature_edit;
             };
-            if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
-                plane_origin: *origin,
-                plane_normal: *normal,
-            }) {
-                *pattern = admitted;
+            if let (Some(plane_origin), Some(plane_normal)) = (
+                cadmpeg_ir::features::FinitePoint3::new(*origin),
+                cadmpeg_ir::features::FeatureDirection3::new(*normal),
+            ) {
+                if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
+                    plane_origin,
+                    plane_normal,
+                }) {
+                    *pattern = admitted;
+                }
             }
         }
         feature.evaluation.set_definition(definition);

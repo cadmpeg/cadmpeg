@@ -617,9 +617,9 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             pattern: admitted_pattern,
             ..
         }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
-                direction: Some(Vector3 { x, y, z }),
+                direction: Some(actual_direction),
                 ..
-            } if *x == -1.0 && *y == 0.0 && *z == 0.0)
+            } if *actual_direction == Vector3::new(-1.0, 0.0, 0.0))
     ));
 
     let updated_features_evaluation = &mut features[0].evaluation;
@@ -648,10 +648,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ref seeds,
             pattern: admitted_pattern,
         }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
-                direction: Some(Vector3 { x, y, z }),
+                direction: Some(actual_direction),
                 ..
             } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && *x == -1.0 && *y == 0.0 && *z == 0.0)
+            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0))
     ));
 
     let mut derived_history = linear_history.clone();
@@ -697,10 +697,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ref seeds,
             pattern: admitted_pattern,
         }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
-                direction: Some(Vector3 { x, y, z }),
+                direction: Some(actual_direction),
                 ..
             } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && *x == -1.0 && *y == 0.0 && *z == 0.0)
+            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0))
     ));
     derived_history.features[2].parameters = BTreeMap::from([
         (cadmpeg_core::nonblank_literal!("z"), "3".into()),
@@ -743,12 +743,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ref seeds,
             pattern: admitted_pattern,
         }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
-                direction: Some(Vector3 { x, y, z }),
+                direction: Some(actual_direction),
                 spacing: actual_spacing,
                 count: 3,
                 ..
             } if (seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && *x == -1.0 && *y == 0.0 && *z == 0.0) && actual_spacing.get() == 19.0)
+            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0)) && actual_spacing.get() == 19.0)
     ));
 
     let mut mirror_history = history.clone();
@@ -814,11 +814,11 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             ref seeds,
             pattern: admitted_pattern,
         }) if matches!(admitted_pattern.definition(), PatternTransform::Mirror {
-                plane_origin: Point3 { x, y, z },
-                plane_normal: Vector3 { x: nx, y: ny, z: nz },
+                plane_origin,
+                plane_normal,
             } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && *x == 12.0 && *y == -25.0 && *z == 0.0
-            && *nx == 0.0 && *ny == 1.0 && *nz == 0.0)
+            && *plane_origin == Point3::new(12.0, -25.0, 0.0)
+            && *plane_normal == Vector3::new(0.0, 1.0, 0.0))
     ));
 
     features[0].dependencies.clear();
@@ -827,8 +827,14 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::new(PatternTransform::Mirror {
-                plane_origin: Point3::new(12.0, -25.0, 0.0),
-                plane_normal: Vector3::new(0.0, 1.0, 0.0),
+                plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    12.0, -25.0, 0.0,
+                ))
+                .unwrap(),
+                plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 1.0, 0.0,
+                ))
+                .unwrap(),
             })
             .unwrap(),
         }));

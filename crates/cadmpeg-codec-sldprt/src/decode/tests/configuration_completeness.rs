@@ -271,8 +271,14 @@ fn active_configuration_inherits_late_feature_resolutions() {
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![seed.clone()],
                 pattern: PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: Point3::new(1.0, 2.0, 3.0),
-                    plane_normal: Vector3::new(0.0, 0.0, 1.0),
+                    plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                        1.0, 2.0, 3.0,
+                    ))
+                    .unwrap(),
+                    plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                 })
                 .unwrap(),
             }),
