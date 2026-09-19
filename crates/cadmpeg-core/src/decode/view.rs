@@ -317,7 +317,7 @@ impl<'a> View<'a> {
     /// [`View::end`] is the position it reached, and [`View::location`] of the
     /// result is that beginning. No bound is recomputed against the parent and
     /// no sum is formed, so the operation is total wherever the take is.
-    pub fn take_child(&mut self, count: usize) -> Option<View<'a>> {
+    fn take_child(&mut self, count: usize) -> Option<View<'a>> {
         let start = self.position();
         let window = self.take(count)?;
         Some(View {
@@ -391,10 +391,13 @@ impl<'a> View<'a> {
         }
     }
 
-    /// Required-read mirror of [`View::take_child`].
+    /// Takes `count` bytes as a bounded child window, or states the truncation.
     ///
-    /// States the same located truncation as [`View::req_take`] for the same
-    /// count, and leaves the view unmoved when it does.
+    /// The child window carries the same bounds and space as the optional take
+    /// this mirrors: [`View::start`] of the result is the position the take
+    /// began at and [`View::end`] is the position it reached. The view states
+    /// the same located truncation as [`View::req_take`] for the same count,
+    /// and leaves the view unmoved when it does.
     pub fn req_take_child(&mut self, count: usize) -> Result<View<'a>, ParseError> {
         match self.take_child(count) {
             Some(view) => Ok(view),
