@@ -625,7 +625,8 @@ fn scope_named_values(value: &mut Value, names: &[&str], occurrence: &str) {
 mod tests {
     mod fidelity;
 
-    use super::*;
+    use super::{apply_occurrence_transform, compose_transforms};
+    use cadmpeg_ir::document::Model;
 
     #[test]
     fn occurrence_translation_overflow_is_rejected() {

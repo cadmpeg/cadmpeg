@@ -1230,8 +1230,12 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        body_bindings, body_bound_candidates, parse_body_map_frame, snapshot_body_map_records,
+        typed_browser_node_hidden_flags,
+    };
     use crate::bytes::lp_utf16_bytes;
+    use crate::bytes::take_reference;
     use crate::design::presentation::{
         APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID, BODY_PRESENTATION_TYPE_GUID,
         BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
@@ -1239,6 +1243,7 @@ mod tests {
         BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, PHYSICAL_MATERIAL_LIBRARY_ID,
     };
     use crate::design::test_support::{design_type, primary_record};
+    use crate::records::entity_header::DESIGN_MODULE_BODY;
     use crate::records::entity_header::DESIGN_MODULE_FUSION;
     use crate::test_support::indexed_header;
     use crate::test_support::push_reference_u64;

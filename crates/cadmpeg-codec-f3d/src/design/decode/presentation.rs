@@ -603,8 +603,20 @@ fn preceding_lp_utf16(bytes: &[u8], start: usize, marker_at: usize) -> Option<(u
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        bare_presentation_material, body_presentations, browser_node_records, BodyPresentationOwner,
+    };
+    use crate::bytes::lp_utf16_bytes;
+    use crate::design::presentation::{
+        APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
+        BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
+        BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
+        BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_BASE_TYPE_GUID,
+        BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION, MODERN_APPEARANCE_LIBRARY_IDS,
+        PHYSICAL_MATERIAL_LIBRARY_ID,
+    };
     use crate::design::test_support::{design_type, primary_record};
+    use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
     use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
 
     #[test]

@@ -181,7 +181,10 @@ pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
+    use super::{
+        decode_modeling_length_unit, CUSTOM_SYSTEM, ENTRY_NAMESPACE, LENGTH_UNIT_NAMES,
+        SYSTEM_NAMESPACE, UNIT_ENTRY_COUNT, UNIT_SYSTEM_COUNT,
+    };
     use crate::test_support::{lp_ascii, lp_utf16};
 
     /// The six systems in collection order.

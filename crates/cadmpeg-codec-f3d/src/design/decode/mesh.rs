@@ -1539,9 +1539,44 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        mesh_body_transform, parse_mesh_collection_owner_record, parse_mesh_design_records,
+        parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record,
+        parse_scene_node_record, resolve_mesh_body, MeshBody, COMMON_DATA_MODULE,
+        DATA_MODEL_MODULE, FUSION_MODULE, MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID,
+        MESH_BODY_OWNER_BASE_TYPE_GUID, MESH_BODY_OWNER_TYPE_GUID, MESH_BODY_OWNER_TYPE_VERSION,
+        MESH_BODY_TYPE_GUID, MESH_BODY_TYPE_VERSION, MESH_COLLECTION_BASE_BASE_TYPE_GUID,
+        MESH_COLLECTION_BASE_TYPE_GUID, MESH_COLLECTION_BASE_TYPE_VERSION,
+        MESH_COLLECTION_OWNER_BASE_TYPE_GUID, MESH_COLLECTION_OWNER_TYPE_GUID,
+        MESH_COLLECTION_OWNER_TYPE_VERSIONS, MESH_COLLECTION_TYPE_GUID,
+        MESH_COLLECTION_TYPE_VERSION, MESH_ENTRY_NAME_BASE_TYPE_GUID, MESH_ENTRY_NAME_TYPE_GUID,
+        MESH_ENTRY_NAME_TYPE_VERSION, MESH_FEATURE_SCOPE_BASE_TYPE_GUID,
+        MESH_FEATURE_SCOPE_TYPE_GUID, MESH_FEATURE_SCOPE_TYPE_VERSION, MESH_GUID_BASE_TYPE_GUID,
+        MESH_GUID_TYPE_GUID, MESH_GUID_TYPE_VERSION, MESH_SCENE_STATE_BASE_TYPE_GUID,
+        MESH_SCENE_STATE_TYPE_GUID, MESH_SCENE_STATE_TYPE_VERSION,
+        MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID, MESH_SCOPE_BASE_RECORD_TYPE_GUID,
+        MESH_SCOPE_BASE_RECORD_TYPE_VERSION, MESH_TEXTURE_FILENAME_BASE_TYPE_GUID,
+        MESH_TEXTURE_FILENAME_TYPE_GUID, MESH_TEXTURE_FILENAME_TYPE_VERSION,
+        MESH_TEXTURE_TABLE_BASE_TYPE_GUID, MESH_TEXTURE_TABLE_TYPE_GUID,
+        MESH_TEXTURE_TABLE_TYPE_VERSION, MESH_WRAPPER_BASE_TYPE_GUID, MESH_WRAPPER_TYPE_GUID,
+        MESH_WRAPPER_TYPE_VERSION, PARAMESH_MODULE, SAME_SEGMENT_REFERENCE_BYTES,
+        SCENE_AUXILIARY_BASE_TYPE_GUID, SCENE_AUXILIARY_TYPE_GUID, SCENE_AUXILIARY_TYPE_VERSION,
+        SCENE_MODULE, SCENE_NODE_BASE_TYPE_GUID, SCENE_NODE_TYPE_GUID, SCENE_NODE_TYPE_VERSION,
+    };
+    use crate::design::decode::meta::{typed_primary_frames, TypedPrimaryFrame};
     use crate::design::test_support::{design_type, primary_record};
+    use crate::layout::{
+        paramesh_collection_owner_backlink_prefix as collection_owner,
+        paramesh_collection_owner_v17 as collection_owner_v17,
+        paramesh_mesh_body_join_prefix as mesh_body,
+        paramesh_mesh_collection_base_prefix as mesh_collection_base,
+        paramesh_mesh_collection_prefix as mesh_collection, paramesh_scene_node as scene_node,
+        paramesh_scene_node_placed as placed_scene_node,
+        paramesh_texture_table_prefix as texture_table,
+    };
+    use crate::paramesh::MeshContainer;
     use crate::test_support::{lp_ascii, lp_utf16};
+    use cadmpeg_core::CodecError;
 
     fn matrix(cells: [f64; 16]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(MATRIX_BYTES);
