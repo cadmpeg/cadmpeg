@@ -330,7 +330,9 @@ impl TryFrom<JointRecordWire> for JointRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::BTreeMap;
+
+    use super::{JointBody, JointConnectorRecord, JointRecord, JointRecordWire, PairedJointFamily};
 
     #[test]
     fn wire_admission_rejects_nonfinite_connector_frames() {

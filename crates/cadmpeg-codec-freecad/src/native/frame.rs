@@ -60,7 +60,9 @@ impl FiniteVec3 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use cadmpeg_ir::transform::Transform;
+
+    use super::{FiniteFrame, FiniteVec3};
 
     #[test]
     fn frames_reject_nonfinite_cells_and_nonorthonormal_axes() {

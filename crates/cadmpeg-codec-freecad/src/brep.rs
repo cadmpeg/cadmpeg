@@ -5731,7 +5731,20 @@ pub(crate) fn append_text_surface(
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
+    use std::collections::BTreeMap;
+
+    use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::transform::Transform;
+
+    use super::{
+        normalize_periodic_surface, parse_analytic_surface, parse_binary_edge_representation,
+        parse_binary_prefix, parse_edge_representation, parse_payloads, parse_text,
+        AnalyticSurfaceKind, BinaryCursor, LocationRef, ShapePayload, ShapePayloadRecord, TableRef,
+        TextCurve, TextCurve2d, TextEdgeRepresentation, TextShapeKind, TextSurface, TextTShape,
+        TextTShapeGeometry, TextTShapeWire, TextTShapes, TokenCursor,
+    };
+    use crate::native::{EntryRecord, PropertyRecord};
     use crate::test_support::test_archive::archive_entries;
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};

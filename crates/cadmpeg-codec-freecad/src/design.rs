@@ -6611,7 +6611,17 @@ pub(crate) fn census(
 
 #[cfg(test)]
 mod profile_tests {
-    use super::*;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
+        SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
+    };
+    use cadmpeg_ir::spreadsheets::{CellAddress, SpreadsheetRange};
+
+    use super::{
+        build_profiles, endpoints_match_by_roundoff, merged_range, range_contains_address,
+    };
 
     #[test]
     fn ignores_nonpositive_spans_in_the_neutral_spreadsheet_projection() {
