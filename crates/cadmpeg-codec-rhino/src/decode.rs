@@ -324,12 +324,12 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Returns the source archive version.
-    pub(crate) fn archive(&self) -> ArchiveVersion {
+    fn archive(&self) -> ArchiveVersion {
         self.scan.archive
     }
 
     /// Returns the source coordinate binding.
-    pub(crate) fn unit_binding(&self) -> crate::settings::UnitBinding {
+    fn unit_binding(&self) -> crate::settings::UnitBinding {
         crate::settings::UnitBinding::from_units(self.scan.metadata.settings.units.as_ref())
     }
 
@@ -364,7 +364,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Appends a later geometry-phase link to an object record.
-    pub(crate) fn append_link(&mut self, source_order: usize, link: String) -> bool {
+    fn append_link(&mut self, source_order: usize, link: String) -> bool {
         let Some(record) = self.unknowns.get_mut(source_order) else {
             return false;
         };
@@ -467,7 +467,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Marks one framed object as failed after a skippable payload error.
-    pub(crate) fn mark_failed(&mut self, source_order: usize) -> bool {
+    fn mark_failed(&mut self, source_order: usize) -> bool {
         self.transition(source_order, GeometryOutcome::Failed)
     }
 
@@ -750,7 +750,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Decode semantic dimensions independently of shape carriers.
-    pub(crate) fn decode_dimensions(&mut self) {
+    fn decode_dimensions(&mut self) {
         if !self.archive().is_chunked() {
             return;
         }
@@ -2154,7 +2154,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Mints the stable unknown-record ID for source order.
-    pub fn mint_unknown_id(source_order: usize) -> UnknownId {
+    fn mint_unknown_id(source_order: usize) -> UnknownId {
         UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "record"),
             cadmpeg_ir::ids::IdentityKey::zero_padded(source_order as u64, 6),
