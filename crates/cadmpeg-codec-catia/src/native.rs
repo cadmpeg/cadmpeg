@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
+use crate::checked::extents_overlap;
 use crate::object_graph::extent_contains;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
@@ -8530,13 +8531,6 @@ fn zero_entity_vertex_owner(
     let incidence = zero_entity_record(records, incidence_ordinal)?;
     let owner = zero_entity_record(records, incidence_ordinal.checked_add(1)?)?;
     (incidence.logical_end == owner.byte_offset && owner.tag == [0x5d, 0x06]).then_some(owner)
-}
-
-fn extents_overlap(first_start: u64, first_len: u64, second_start: u64, second_len: u64) -> bool {
-    first_start
-        .checked_add(first_len)
-        .zip(second_start.checked_add(second_len))
-        .is_some_and(|(first_end, second_end)| first_start < second_end && second_start < first_end)
 }
 
 fn finjpl_family(kind: container::FinjplKind) -> &'static str {

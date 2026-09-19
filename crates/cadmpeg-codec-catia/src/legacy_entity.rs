@@ -500,7 +500,7 @@ fn parse_run_before(
             parse_scalar_values(data, start, end, identity.entity_id)
         })
         .collect::<Vec<_>>();
-    bind_scalar_names(data, &role_selectors, &text_fields, &mut scalar_values);
+    bind_value_names(data, &role_selectors, &text_fields, &mut scalar_values);
     let mut string_values = identities
         .iter()
         .enumerate()
@@ -512,7 +512,7 @@ fn parse_run_before(
             parse_string_values(data, start, end, identity.entity_id)
         })
         .collect::<Vec<_>>();
-    bind_string_names(data, &role_selectors, &text_fields, &mut string_values);
+    bind_value_names(data, &role_selectors, &text_fields, &mut string_values);
     let mut integer_values = identities
         .iter()
         .enumerate()
@@ -524,7 +524,7 @@ fn parse_run_before(
             parse_integer_values(data, start, end, identity.entity_id)
         })
         .collect::<Vec<_>>();
-    bind_integer_names(data, &role_selectors, &text_fields, &mut integer_values);
+    bind_value_names(data, &role_selectors, &text_fields, &mut integer_values);
     Some(LegacyEntityRun {
         catalog_offset,
         schema_program: parse_schema_program(data, catalog_offset, directory_offset),
@@ -749,23 +749,81 @@ fn parse_scalar_values(
     values
 }
 
-fn bind_scalar_names(
+/// A stored value packet that can carry a unique co-owned `name` text field.
+trait LegacyNamedValue {
+    /// Stored identity whose interval contains the packet.
+    fn entity_id(&self) -> u32;
+    /// Offset of the fixed packet prefix.
+    fn offset(&self) -> usize;
+    /// Record the unique co-owned name opener and text.
+    fn bind_name(&mut self, name_offset: usize, name: String);
+}
+
+impl LegacyNamedValue for LegacyScalarValue {
+    fn entity_id(&self) -> u32 {
+        self.entity_id
+    }
+
+    fn offset(&self) -> usize {
+        self.offset
+    }
+
+    fn bind_name(&mut self, name_offset: usize, name: String) {
+        self.name_offset = Some(name_offset);
+        self.name = Some(name);
+    }
+}
+
+impl LegacyNamedValue for LegacyStringValue {
+    fn entity_id(&self) -> u32 {
+        self.entity_id
+    }
+
+    fn offset(&self) -> usize {
+        self.offset
+    }
+
+    fn bind_name(&mut self, name_offset: usize, name: String) {
+        self.name_offset = Some(name_offset);
+        self.name = Some(name);
+    }
+}
+
+impl LegacyNamedValue for LegacyIntegerValue {
+    fn entity_id(&self) -> u32 {
+        self.entity_id
+    }
+
+    fn offset(&self) -> usize {
+        self.offset
+    }
+
+    fn bind_name(&mut self, name_offset: usize, name: String) {
+        self.name_offset = Some(name_offset);
+        self.name = Some(name);
+    }
+}
+
+/// Bind the unique co-owned `name` text field onto every value packet that is
+/// the sole packet of its stored identity.
+fn bind_value_names<Value: LegacyNamedValue>(
     data: &[u8],
     roles: &[LegacyRoleSelector],
     fields: &[LegacyTextField],
-    values: &mut [LegacyScalarValue],
+    values: &mut [Value],
 ) {
     let mut counts = std::collections::HashMap::new();
     for value in values.iter() {
-        *counts.entry(value.entity_id).or_insert(0usize) += 1;
+        *counts.entry(value.entity_id()).or_insert(0usize) += 1;
     }
     for value in values {
-        if counts.get(&value.entity_id) != Some(&1) {
+        if counts.get(&value.entity_id()) != Some(&1) {
             continue;
         }
-        if let Some(name) = unique_value_name(data, roles, fields, value.entity_id, value.offset) {
-            value.name_offset = Some(name.offset);
-            value.name = Some(name.value.clone());
+        if let Some(name) =
+            unique_value_name(data, roles, fields, value.entity_id(), value.offset())
+        {
+            value.bind_name(name.offset, name.value.clone());
         }
     }
 }
@@ -798,27 +856,6 @@ fn parse_string_values(
             })
         })
         .collect()
-}
-
-fn bind_string_names(
-    data: &[u8],
-    roles: &[LegacyRoleSelector],
-    fields: &[LegacyTextField],
-    values: &mut [LegacyStringValue],
-) {
-    let mut counts = std::collections::HashMap::new();
-    for value in values.iter() {
-        *counts.entry(value.entity_id).or_insert(0usize) += 1;
-    }
-    for value in values {
-        if counts.get(&value.entity_id) != Some(&1) {
-            continue;
-        }
-        if let Some(name) = unique_value_name(data, roles, fields, value.entity_id, value.offset) {
-            value.name_offset = Some(name.offset);
-            value.name = Some(name.value.clone());
-        }
-    }
 }
 
 fn parse_integer_values(
@@ -859,27 +896,6 @@ fn parse_integer_values(
             })
         })
         .collect()
-}
-
-fn bind_integer_names(
-    data: &[u8],
-    roles: &[LegacyRoleSelector],
-    fields: &[LegacyTextField],
-    values: &mut [LegacyIntegerValue],
-) {
-    let mut counts = std::collections::HashMap::new();
-    for value in values.iter() {
-        *counts.entry(value.entity_id).or_insert(0usize) += 1;
-    }
-    for value in values {
-        if counts.get(&value.entity_id) != Some(&1) {
-            continue;
-        }
-        if let Some(name) = unique_value_name(data, roles, fields, value.entity_id, value.offset) {
-            value.name_offset = Some(name.offset);
-            value.name = Some(name.value.clone());
-        }
-    }
 }
 
 fn unique_value_name<'a>(

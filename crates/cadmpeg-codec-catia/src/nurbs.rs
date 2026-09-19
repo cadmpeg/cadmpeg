@@ -707,29 +707,8 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
 }
 
 /// Convert degree-5 position/first/second-derivative knot jets into an exact
-/// piecewise Bézier B-spline control net.
-pub(crate) fn quintic_jet_bspline(
-    degree: u32,
-    knots: &[f64],
-    points: &[[f64; 2]],
-    first: &[[f64; 2]],
-    second: &[[f64; 2]],
-) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
-    quintic_jet_bspline_nd(degree, knots, points, first, second)
-}
-
-/// Convert a 3D degree-5 position/derivative jet to an exact B-spline.
-pub(crate) fn quintic_jet_bspline3(
-    degree: u32,
-    knots: &[f64],
-    points: &[[f64; 3]],
-    first: &[[f64; 3]],
-    second: &[[f64; 3]],
-) -> Option<(Vec<f64>, Vec<[f64; 3]>)> {
-    quintic_jet_bspline_nd(degree, knots, points, first, second)
-}
-
-fn quintic_jet_bspline_nd<const N: usize>(
+/// piecewise Bézier B-spline control net, in any point dimension.
+pub(crate) fn quintic_jet_bspline<const N: usize>(
     degree: u32,
     knots: &[f64],
     points: &[[f64; N]],

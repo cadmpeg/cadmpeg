@@ -2,10 +2,11 @@
 //! Byte-identical `[f64; 3]` vector helpers shared by the b5 parse graph and
 //! its IR transfer passes.
 //!
-//! `add`, `scale`, and `cross` go through [`cadmpeg_ir::math::Vector3`]. Each
-//! side keeps its own `unit` because they normalize by bit-level-distinct
-//! arithmetic (reciprocal-multiply on the graph side, per-component division
-//! on the transfer side) that must not be unified.
+//! `add`, `scale`, and `cross` go through [`cadmpeg_ir::math::Vector3`].
+//! Normalization is not shared: the graph side has
+//! `unit_by_reciprocal_multiply` and the transfer side has
+//! `unit_by_component_division`. They have the same refusal set but different
+//! last-bit results, so each side keeps its own.
 
 use cadmpeg_ir::math::Vector3;
 

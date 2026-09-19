@@ -1210,7 +1210,7 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
         .map(|site| site.point)
         .collect::<Vec<_>>();
     let derivatives = vec![[0.0; 3]; 2];
-    let (knots, controls) = crate::nurbs::quintic_jet_bspline3(
+    let (knots, controls) = crate::nurbs::quintic_jet_bspline(
         curves[0].degree,
         &curves[0].knots(),
         &points,
