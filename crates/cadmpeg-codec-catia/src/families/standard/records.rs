@@ -983,7 +983,6 @@ fn all_finite(vs: &[f32]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::axis_from_xy;
-    use cadmpeg_ir::math::Vector3;
 
     #[test]
     fn support_predecessor_requires_the_row_marker() {
