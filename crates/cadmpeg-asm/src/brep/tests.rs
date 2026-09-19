@@ -2,19 +2,26 @@
 #![allow(clippy::default_trait_access)]
 //! Unit tests for B-rep topology decode, geometry recognition, and
 //! procedural carrier classification.
+use super::emit::{emit_attributes, emit_edges};
 use super::geometry::{
     analytic_procedural_surface, edge_pcurve_parameter_ranges, is_asm_stream_delimiter,
     is_known_record_head, pcurve_ranges_on_domain, point_vector, rational_four_arc_circle,
 };
+use super::records::{self, BodyNativeKey};
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
-use super::*;
+use super::{
+    decode_with_purpose, id, inherited_attribute_target, AsmBrep, DecodePurpose, Reachable,
+};
+use crate::ids::IdFormat;
 use crate::kernel_header::RefWidth;
 use crate::nurbs;
 use crate::sab::{Record, Token};
+use cadmpeg_ir::attributes::SourceAttribute;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Loop, Shell};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");

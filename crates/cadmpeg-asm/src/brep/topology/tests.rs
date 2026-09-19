@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{keep_faces_and_carriers, walk_reachable_topology};
+use crate::brep::{AsmBrep, Carriers, DecodePurpose, Reachable};
 use crate::kernel_header::RefWidth;
+use crate::nurbs;
 use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
+use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::RevisionCacheForm;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use std::collections::HashSet;
 
 fn ident(bytes: &mut Vec<u8>, name: &str) {
     bytes.extend_from_slice(&[0x0d, u8::try_from(name.len()).unwrap()]);
