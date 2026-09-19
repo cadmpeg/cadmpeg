@@ -20,8 +20,9 @@ use vertex_refs::{B5VertexRef, B5Vertices};
 
 use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl};
 
-use super::vecmath::{add, cross, scale, unit};
+use super::vecmath::{add, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
+use crate::math::unit_vector;
 use crate::wire;
 
 const EPS_B5_GRAPH_GEOMETRY: f64 = 1.0e-9;
@@ -2787,8 +2788,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && v_range[0] < v_range[1])
                 .then_some(B5Surface::Cylinder {
                     origin: point(&record.payload, 1)?,
-                    reference_x: unit(stored_u)?,
-                    axis: unit(cross(stored_u, stored_v))?,
+                    reference_x: unit_vector(stored_u)?,
+                    axis: unit_vector(cross(stored_u, stored_v))?,
                     radius,
                     u_range,
                     v_range,
@@ -2849,9 +2850,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let azimuth_range = [azimuth_lo, azimuth_hi];
             let latitude_range = [latitude_lo, latitude_hi];
             let vector_length = |value: [f64; 3]| value[0].hypot(value[1]).hypot(value[2]);
-            let direction_x = unit(stored_x)?;
-            let direction_y = unit(stored_y)?;
-            let axis = unit(stored_axis)?;
+            let direction_x = unit_vector(stored_x)?;
+            let direction_y = unit_vector(stored_y)?;
+            let axis = unit_vector(stored_axis)?;
             let expected_chart_angle =
                 (azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI;
             let expected_chart_origin = construction_radius * expected_chart_angle;
@@ -3233,8 +3234,8 @@ fn analytic_offset_magnitude_agrees(
             },
         ) => {
             let (Some(carrier_normal), Some(source_normal)) = (
-                unit(cross(*carrier_u, *carrier_v)),
-                unit(cross(*source_u, *source_v)),
+                unit_vector(cross(*carrier_u, *carrier_v)),
+                unit_vector(cross(*source_u, *source_v)),
             ) else {
                 return false;
             };

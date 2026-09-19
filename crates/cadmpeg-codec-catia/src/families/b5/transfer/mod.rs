@@ -1198,14 +1198,6 @@ fn length(value: [f64; 3]) -> f64 {
     Vector3::from(value).norm()
 }
 
-fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
-    left.into_iter()
-        .zip(right)
-        .map(|(left, right)| (left - right) * (left - right))
-        .sum::<f64>()
-        .sqrt()
-}
-
 fn circle_contains_points(geometry: &CurveGeometry, points: &[[f64; 3]]) -> bool {
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return false;

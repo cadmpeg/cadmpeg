@@ -17,12 +17,13 @@ use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{B5Graph, B5Profile, B5Surface};
-use super::super::vecmath::{add, cross, scale, unit};
+use super::super::vecmath::{add, cross, scale};
 use super::{
     annotate, dot, length, point3, subtract, vector, RevolutionPlan, SurfacePlan, SurfaceProcedure,
     TransferPlan,
 };
 use crate::assemble::cgm_source;
+use crate::math::unit_vector;
 
 const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 
@@ -548,8 +549,8 @@ pub(super) fn orthonormal_plane(
     direction_u: [f64; 3],
     direction_v: [f64; 3],
 ) -> Option<SurfaceGeometry> {
-    let u = unit(direction_u)?;
-    let v = unit(direction_v)?;
+    let u = unit_vector(direction_u)?;
+    let v = unit_vector(direction_v)?;
     if (length(direction_u) - 1.0).abs() > EPS_FRAME_ORTHONORMAL
         || (length(direction_v) - 1.0).abs() > EPS_FRAME_ORTHONORMAL
         || dot(u, v).abs() > EPS_FRAME_ORTHONORMAL
@@ -559,7 +560,7 @@ pub(super) fn orthonormal_plane(
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             point3(origin),
-            vector(unit(cross(u, v))?),
+            vector(unit_vector(cross(u, v))?),
             vector(u),
         )
         .ok()?,

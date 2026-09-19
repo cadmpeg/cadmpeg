@@ -9,7 +9,6 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::assemble::unit_vector;
 use crate::families::standard::fbb::FbbPopulationLayout;
 use crate::layout::analytic_surface_cone as analytic_cone;
 use crate::layout::analytic_surface_cylinder as analytic_cylinder;
@@ -18,6 +17,7 @@ use crate::layout::analytic_surface_sphere as analytic_sphere;
 use crate::layout::analytic_surface_torus as analytic_torus;
 use crate::layout::freeform_surface_core as freeform_core;
 use crate::layout::vertex_roster_row as vertex_roster;
+use crate::math::unit_vector;
 
 /// Binary32 multiplication and addition can leave a unit XY direction just
 /// below the unit circle.  Treat that deficit as roundoff instead of creating
@@ -982,7 +982,8 @@ fn all_finite(vs: &[f32]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{axis_from_xy, unit_vector};
+    use super::axis_from_xy;
+    use crate::math::unit_vector;
     use cadmpeg_ir::math::Vector3;
 
     #[test]
@@ -1013,7 +1014,10 @@ mod tests {
             Some(Vector3::new(1.0, 0.0, 0.0))
         );
         assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
-        assert_eq!(unit_vector(Vector3::new(f64::from_bits(1), 0.0, 0.0)), None);
+        assert_eq!(
+            unit_vector(Vector3::new(f64::from_bits(1), 0.0, 0.0)),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
     }
 
     #[test]

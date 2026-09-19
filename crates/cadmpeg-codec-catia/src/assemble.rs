@@ -360,15 +360,6 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     (end.is_finite() && end != start).then_some([start, end])
 }
 
-pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.x.hypot(vector.y).hypot(vector.z);
-    if !norm.is_finite() || norm == 0.0 {
-        return None;
-    }
-    let unit = vector.scale(1.0 / norm);
-    unit.is_finite().then_some(unit)
-}
-
 /// Counts of each typed analytic surface kind decoded.
 #[derive(Debug, Default)]
 pub(crate) struct TypedCounts {
@@ -996,20 +987,16 @@ mod route_tests {
     #[test]
     fn unit_vector_preserves_tiny_finite_direction() {
         assert_eq!(
-            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(1e-200, 0.0, 0.0)),
+            crate::math::unit_vector(cadmpeg_ir::math::Vector3::new(1e-200, 0.0, 0.0)),
             Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
         );
         assert_eq!(
-            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
+            crate::math::unit_vector(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
             None
         );
         assert_eq!(
-            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(
-                f64::from_bits(1),
-                0.0,
-                0.0,
-            )),
-            None
+            crate::math::unit_vector(cadmpeg_ir::math::Vector3::new(f64::from_bits(1), 0.0, 0.0,)),
+            Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
         );
     }
 

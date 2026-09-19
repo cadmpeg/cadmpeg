@@ -5,6 +5,7 @@
 //! analytic surface carriers.
 
 use crate::families::freeform::rolling_ball_derivative;
+use crate::math::distance;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsSurface, CurveGeometry, ProceduralSurfaceDefinition, RollingBallJetSite,
@@ -461,8 +462,8 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
             let first_limit = Point3::new(position[0], position[1], position[2]);
             let second_limit = Point3::new(position[3], position[4], position[5]);
             let center = Point3::new(position[6], position[7], position[8]);
-            let radius = d8_distance(center, first_limit);
-            let second_radius = d8_distance(center, second_limit);
+            let radius = distance(center, first_limit);
+            let second_radius = distance(center, second_limit);
             let expected_angle = if radius > 0.0 && second_radius > 0.0 {
                 first_limit
                     .vector_from(center)
@@ -564,12 +565,6 @@ fn read_d8_channel_rows(view: &mut View<'_>, station_count_u64: u64) -> Option<V
         }
         Some(row)
     })
-}
-
-fn d8_distance(left: Point3, right: Point3) -> f64 {
-    (left.x - right.x)
-        .hypot(left.y - right.y)
-        .hypot(left.z - right.z)
 }
 
 fn relative_close(left: f64, right: f64, tolerance: f64) -> bool {

@@ -16,8 +16,9 @@ use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{bounded_occurrence_range, B5Graph};
-use super::{annotate, distance, B5Support, CurvePlan, SurfacePlan, TransferPlan};
+use super::{annotate, B5Support, CurvePlan, SurfacePlan, TransferPlan};
 use crate::assemble::cgm_source;
+use crate::math::distance;
 
 const EPS_SUPPORT_ENDPOINT: f64 = 1.0e-6;
 
