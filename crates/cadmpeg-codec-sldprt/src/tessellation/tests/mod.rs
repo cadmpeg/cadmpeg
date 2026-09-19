@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-
 use super::analytic_surface_normal;
 use super::analytic_surface_residual;
 use super::assign_persistent_owners;
