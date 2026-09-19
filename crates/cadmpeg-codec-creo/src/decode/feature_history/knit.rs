@@ -58,7 +58,7 @@ pub(in super::super) fn filled_surface_feature_definition(
 
 pub(in super::super) fn class_100_operand_producers(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
 ) -> Option<Vec<(u32, u32)>> {
     let consumer_tables = tables
         .iter()
@@ -125,7 +125,7 @@ pub(in super::super) fn class_100_operand_producers(
 
 pub(in super::super) fn knit_class_100_operand_entity_ids(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
 ) -> Option<Vec<u32>> {
     class_100_operand_producers(feature_id, tables).map(|operands| {
         operands
@@ -291,7 +291,7 @@ pub(in super::super) fn draft_neutral_plane_selection(
 
 pub(in super::super) fn feature_surface_transitions(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Option<Vec<(u32, u32)>> {
     let owned = tables
@@ -367,7 +367,7 @@ pub(in super::super) fn feature_surface_transitions(
 
 pub(in super::super) fn surface_transition_dependencies(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Vec<u32> {
     feature_surface_transitions(feature_id, tables, surface_rows)
@@ -442,7 +442,7 @@ pub(in super::super) fn thicken_plane_offset(
 /// owning feature. Duplicate identifiers or malformed materialized rows
 /// invalidate the complete result state for that feature.
 pub(in super::super) fn feature_result_surface_ids(
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
 ) -> Option<Vec<u32>> {
@@ -461,7 +461,7 @@ pub(in super::super) fn feature_result_surface_ids(
 }
 
 pub(in super::super) fn feature_result_surface_ids_by_feature(
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> BTreeMap<u32, Vec<u32>> {
     tables
@@ -477,7 +477,7 @@ pub(in super::super) fn feature_result_surface_ids_by_feature(
 }
 
 pub(in super::super) fn feature_result_topology(
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
     curve_rows: &[crate::curve::CurveTopologyRow],
     feature_id: u32,

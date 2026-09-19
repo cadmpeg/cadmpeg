@@ -24,7 +24,7 @@ const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
 /// the byte offset of its entity label. A saved section states the entity
 /// identifier only for entities the solver kept, so the byte offset is the
 /// identity for the rest.
-fn saved_spline_record(spline: &crate::feature::FeatureSavedSpline) -> String {
+fn saved_spline_record(spline: &crate::feature::definitions::FeatureSavedSpline) -> String {
     match spline.entity_id {
         Some(entity_id) => format!(
             "creo saved-spline entity {entity_id} at offset {}",
@@ -232,7 +232,7 @@ pub(in super::super) fn interpolation_curve_data(
 }
 
 pub(in super::super) fn saved_spline_nurbs(
-    spline: &crate::feature::FeatureSavedSpline,
+    spline: &crate::feature::definitions::FeatureSavedSpline,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsCurve> {
     (usize::try_from(spline.declared_point_count?).ok()? == spline.interpolation_points.len())
@@ -267,7 +267,7 @@ pub(in super::super) fn saved_spline_nurbs(
 /// points on it. A control point off the plane therefore states an input off
 /// the plane, and the input is the number the record's bytes carry.
 fn saved_spline_off_plane_input(
-    spline: &crate::feature::FeatureSavedSpline,
+    spline: &crate::feature::definitions::FeatureSavedSpline,
 ) -> Option<(String, f64)> {
     let point = spline
         .interpolation_points
@@ -286,7 +286,7 @@ fn saved_spline_off_plane_input(
 }
 
 pub(in super::super) fn saved_spline_sketch_geometry(
-    spline: &crate::feature::FeatureSavedSpline,
+    spline: &crate::feature::definitions::FeatureSavedSpline,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<SketchGeometry> {
     if let Some((subject, z)) = saved_spline_off_plane_input(spline) {
@@ -929,8 +929,8 @@ mod tests {
         assert!(translated_nurbs_curve(&curve, [f64::MAX, 0.0, 0.0]).is_none());
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
     }
-    fn planar_or_offset_spline(z: f64) -> crate::feature::FeatureSavedSpline {
-        crate::feature::FeatureSavedSpline {
+    fn planar_or_offset_spline(z: f64) -> crate::feature::definitions::FeatureSavedSpline {
+        crate::feature::definitions::FeatureSavedSpline {
             entity_id: Some(11),
             declared_point_count: Some(2),
             interpolation_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, z]],
@@ -997,7 +997,7 @@ mod tests {
 
     #[test]
     fn saved_spline_records_name_the_entity_and_its_offset() {
-        let mut spline = crate::feature::FeatureSavedSpline {
+        let mut spline = crate::feature::definitions::FeatureSavedSpline {
             entity_id: Some(7),
             declared_point_count: Some(2),
             interpolation_points: Vec::new(),

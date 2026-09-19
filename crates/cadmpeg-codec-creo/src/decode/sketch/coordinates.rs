@@ -40,7 +40,7 @@ const EPS_SECTION_COORDINATE: f64 = 1.0e-9;
 const EPS_POINT_ON_LINE_COEFFICIENT: f64 = 1.0e-12;
 
 pub(in crate::decode) fn saved_section_coordinate_witnesses(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(u32, [f64; 2])> {
     let mut witnesses = definition
@@ -172,7 +172,7 @@ fn append_unique_auxiliary_coordinate_constraints(
 }
 
 fn solve_section_coordinates_with_derived_constraints(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     equations: &mut Vec<SectionCoordinateEquation>,
     stored_coordinates: &BTreeMap<(u32, SectionAxis), f64>,
     point_on_line_constraints: &[(u32, u32, u32)],
@@ -228,7 +228,7 @@ fn solve_section_coordinates_with_derived_constraints(
 }
 
 pub(in crate::decode) fn resolved_section_coordinates(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<u32, [Option<f64>; 2]> {
     let (points, ambiguous_point_ids) = match &definition.variables {
         Some(variables) if variables.is_complete() => variables.reconciled_points(),
@@ -248,7 +248,12 @@ pub(in crate::decode) fn resolved_section_coordinates(
         .segments
         .iter()
         .flat_map(|table| table.rows.ordinary())
-        .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
+        .filter(|segment| {
+            matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Line(_)
+            )
+        })
         .filter(|segment| segment_counts[&segment.external_id] == 1)
         .filter(|segment| {
             segment
@@ -672,8 +677,8 @@ pub(in crate::decode) fn resolved_section_coordinates(
 }
 
 pub(in crate::decode) fn section_linear_distance_coordinate(
-    definition: &crate::feature::FeatureDefinition,
-    segments: &[&crate::feature::FeatureSegment],
+    definition: &crate::feature::definitions::FeatureDefinition,
+    segments: &[&crate::feature::definitions::FeatureSegment],
     first: u32,
     second: u32,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
@@ -749,8 +754,10 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
         }) || table.rows.points().any(|segment| {
             segment.point_id == point_id && table.rows.get(segment.external_id).is_some()
         }) || table.rows.ordinary().any(|segment| {
-            matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
-                && segment.center_id == Some(point_id)
+            matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Arc(_)
+            ) && segment.center_id == Some(point_id)
                 && table.rows.get(segment.external_id).is_some()
         }) || table.rows.circles().any(|segment| {
             segment.center_id == point_id && table.rows.get(segment.external_id).is_some()
@@ -788,7 +795,7 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
 }
 
 pub(in crate::decode) fn resolved_section_points(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<u32, [f64; 2]> {
     resolved_section_coordinates(definition)
         .into_iter()
@@ -804,7 +811,7 @@ mod tests {
     use super::resolved_section_points;
     use crate::feature::definitions::FeatureSolverTableHeader;
     use crate::feature::definitions::FeatureVariableTable;
-    use crate::feature::{
+    use crate::feature::definitions::{
         FeatureCircleSegment, FeatureDefinition, FeatureDimension, FeatureDimensionTable,
         FeaturePointSegment, FeatureRelation, FeatureRelationTable, FeatureSectionPoint,
         FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,

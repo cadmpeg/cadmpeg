@@ -163,7 +163,7 @@ fn boundary_circle_rejects_duplicate_surface_rows() {
 
 #[test]
 fn radius_anchored_counterbore_accepts_signed_depth() {
-    let table = crate::feature::FeatureDimensionTable {
+    let table = crate::feature::definitions::FeatureDimensionTable {
         declared_count: 4,
         entity_ref: Some(88),
         rows: [
@@ -174,7 +174,7 @@ fn radius_anchored_counterbore_accepts_signed_depth() {
         ]
         .into_iter()
         .map(
-            |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
+            |(dimension_type, value, external_id)| crate::feature::definitions::FeatureDimension {
                 dimension_type,
                 value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),

@@ -61,8 +61,8 @@ const EPS_REVOLUTION_CONE_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() {
-    let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+    let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -73,7 +73,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         body: Vec::new(),
         offset: 0,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -82,7 +82,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: None,
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
@@ -129,7 +129,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
     endpoint_segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(
-            crate::feature::FeatureReferenceLineSegment {
+            crate::feature::definitions::FeatureReferenceLineSegment {
                 directions: [None; 3],
                 point_ids: [Some(1), Some(3)],
                 vertical_horizontal: None,
@@ -140,7 +140,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
     endpoint_segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::BoundedCurve(
-            crate::feature::FeatureBoundedCurveSegment {
+            crate::feature::definitions::FeatureBoundedCurveSegment {
                 directions: [None; 3],
                 point_ids: [2, 4],
                 center_id: None,
@@ -174,7 +174,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
     centered_segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::CenteredLine(
-            crate::feature::FeatureCenteredLineSegment {
+            crate::feature::definitions::FeatureCenteredLineSegment {
                 center_id: 2,
                 external_id: 22,
                 offset: 0,
@@ -474,18 +474,19 @@ fn dependency_reconciliation_preserves_typed_history_edges() {
 
 #[test]
 fn class_100_entity_reference_depends_on_its_unique_generator() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        };
     let table = |feature_id: u32,
                  table_class_id: u32,
-                 entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable::new(
+                 entries: Vec<crate::feature::entity::FeatureEntityTableEntry>| {
+        crate::feature::entity::FeatureEntityTable::new(
             feature_id,
             table_class_id,
             entries,
@@ -607,16 +608,17 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
 
 #[test]
 fn owned_output_entity_depends_on_its_prior_surface_target() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: true,
-        offset: 0,
-        end_offset: 0,
-    };
-    let table = |table_class_id, entries: Vec<crate::feature::FeatureEntityTableEntry>| {
-        crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = |table_class_id, entries: Vec<crate::feature::entity::FeatureEntityTableEntry>| {
+        crate::feature::entity::FeatureEntityTable::new(
             2976,
             table_class_id,
             entries,
@@ -651,7 +653,7 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
 
 #[test]
 fn surface_merge_quilt_roster_links_every_unique_generator() {
-    let entry = |entity_id, offset| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, offset| crate::feature::entity::FeatureEntityTableEntry {
         entity_id,
         payload: crate::feature::entity::entry_payload(200, None, None, None),
         prefixed: true,
@@ -659,7 +661,7 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         end_offset: offset + 1,
     };
     let producer = |feature_id, entity_id, offset| {
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             feature_id,
             67,
             vec![entry(entity_id, offset + 1)],
@@ -668,14 +670,14 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         )
         .with_surface_ids([])
     };
-    let replay = crate::feature::FeatureSurfaceMergeAffectedIds {
+    let replay = crate::feature::rows::FeatureSurfaceMergeAffectedIds {
         feature_id: 416,
         geometry_ids: vec![98, 145, 157, 184, 321],
         edge_ids: vec![241],
         quilt_ids: vec![103, 192, 329],
-        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-        edge_extent: crate::feature::ReplayExtentSource::Explicit,
-        quilt_extent: crate::feature::ReplayExtentSource::Inherited,
+        geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        quilt_extent: crate::feature::rows::ReplayExtentSource::Inherited,
         offset: 100,
     };
     let tables = [
@@ -692,10 +694,10 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         surface_merge_quilt_ids(&[], std::slice::from_ref(&replay), 416),
         Some([103, 192, 329].as_slice())
     );
-    let wrong_class = crate::feature::FeatureEntityTable::new(
+    let wrong_class = crate::feature::entity::FeatureEntityTable::new(
         175,
         67,
-        vec![crate::feature::FeatureEntityTableEntry {
+        vec![crate::feature::entity::FeatureEntityTableEntry {
             entity_id: 192,
             payload: crate::feature::entity::entry_payload(201, Some(175), None, None),
             prefixed: true,
@@ -717,14 +719,14 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
     );
 
     let future = producer(400, 777, 200);
-    let future_replay = crate::feature::FeatureSurfaceMergeAffectedIds {
+    let future_replay = crate::feature::rows::FeatureSurfaceMergeAffectedIds {
         feature_id: 417,
         geometry_ids: Vec::new(),
         edge_ids: Vec::new(),
         quilt_ids: vec![777],
-        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-        edge_extent: crate::feature::ReplayExtentSource::Explicit,
-        quilt_extent: crate::feature::ReplayExtentSource::Explicit,
+        geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+        quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
         offset: 100,
     };
     assert!(surface_merge_entity_dependencies(
@@ -795,15 +797,16 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         next_surface: 0,
         offset: 0,
     };
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
-    let table = crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = crate::feature::entity::FeatureEntityTable::new(
         97,
         29,
         vec![entry(98, 200, Some(1)), entry(145, 203, None)],
@@ -861,7 +864,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     missing.mark_surface_id(146);
     assert!(feature_result_surface_ids(&[missing], &rows, 97).is_none());
 
-    let foreign = crate::feature::FeatureEntityTable::new(
+    let foreign = crate::feature::entity::FeatureEntityTable::new(
         97,
         29,
         vec![entry(145, 203, None)],
@@ -931,20 +934,21 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
 
 #[test]
 fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
-    let entry =
-        |entity_id, class_id, source_entity_id, offset| crate::feature::FeatureEntityTableEntry {
+    let entry = |entity_id, class_id, source_entity_id, offset| {
+        crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
             entity_id,
             prefixed: true,
             offset,
             end_offset: offset + 1,
-        };
+        }
+    };
     let table = |feature_id: u32,
                  table_class_id: u32,
-                 entries: Vec<crate::feature::FeatureEntityTableEntry>,
+                 entries: Vec<crate::feature::entity::FeatureEntityTableEntry>,
                  offset: usize| {
-        crate::feature::FeatureEntityTable::new(
+        crate::feature::entity::FeatureEntityTable::new(
             feature_id,
             table_class_id,
             entries,
@@ -962,16 +966,17 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
         next_surface: 0,
         offset: 0,
     };
-    let replay = |feature_id, quilt_ids, offset| crate::feature::FeatureSurfaceMergeAffectedIds {
-        feature_id,
-        geometry_ids: Vec::new(),
-        edge_ids: Vec::new(),
-        quilt_ids,
-        geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-        edge_extent: crate::feature::ReplayExtentSource::Explicit,
-        quilt_extent: crate::feature::ReplayExtentSource::Explicit,
-        offset,
-    };
+    let replay =
+        |feature_id, quilt_ids, offset| crate::feature::rows::FeatureSurfaceMergeAffectedIds {
+            feature_id,
+            geometry_ids: Vec::new(),
+            edge_ids: Vec::new(),
+            quilt_ids,
+            geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            offset,
+        };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables = vec![
         table(97, 67, vec![entry(103, 200, Some(97), 11)], 10),
@@ -1060,9 +1065,9 @@ fn mixed_current_and_generated_edges_remain_native() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: vec![45, 46],
             offset: 0,
         });
@@ -1128,15 +1133,15 @@ fn mixed_current_and_generated_edges_remain_native() {
 fn agreed_empty_edge_selection_is_resolved() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.affected_ids.extend([
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: Vec::new(),
             offset: 0,
         },
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: Vec::new(),
             offset: 1,
         },
@@ -1154,12 +1159,12 @@ fn agreed_empty_edge_selection_is_resolved() {
     replay_scan
         .features
         .replay_affected_ids
-        .push(crate::feature::FeatureReplayAffectedIds {
+        .push(crate::feature::rows::FeatureReplayAffectedIds {
             feature_id: 10,
             geometry_ids: vec![1, 2, 3],
             edge_ids: Vec::new(),
-            geometry_extent: crate::feature::ReplayExtentSource::Explicit,
-            edge_extent: crate::feature::ReplayExtentSource::Explicit,
+            geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
             offset: 0,
         });
     assert_eq!(
@@ -1175,15 +1180,15 @@ fn agreed_empty_edge_selection_is_resolved() {
 fn conflicting_empty_and_nonempty_edge_selections_remain_unresolved() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.affected_ids.extend([
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: Vec::new(),
             offset: 0,
         },
-        crate::feature::FeatureAffectedIds {
+        crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: vec![45],
             offset: 1,
         },
@@ -1230,7 +1235,7 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
 #[test]
 fn model_feature_ids_include_row_backed_generated_producers() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 50,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
@@ -1294,9 +1299,9 @@ fn model_feature_ids_include_row_backed_generated_producers() {
     );
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 10,
-            kind: crate::feature::AffectedIdKind::Edges,
+            kind: crate::feature::rows::AffectedIdKind::Edges,
             ids: vec![59],
             offset: 0,
         });
@@ -1319,8 +1324,8 @@ fn model_feature_ids_include_row_backed_generated_producers() {
 
 #[test]
 fn closed_fallback_profile_selects_revolution_segments() {
-    let segment = |external_id| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+    let segment = |external_id| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,

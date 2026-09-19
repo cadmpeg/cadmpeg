@@ -4,8 +4,8 @@ use super::sketch_profiles_cover_generated_extrusion_sides;
 use crate::decode::tests::surface_row;
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, SketchPlacement};
 
-fn definition() -> crate::feature::FeatureDefinition {
-    crate::feature::FeatureDefinition {
+fn definition() -> crate::feature::definitions::FeatureDefinition {
+    crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(7),
             owner_feature_id: Some(7),
@@ -26,11 +26,11 @@ fn definition() -> crate::feature::FeatureDefinition {
     }
 }
 
-fn generated_side_table() -> crate::feature::FeatureEntityTable {
-    crate::feature::FeatureEntityTable::new(
+fn generated_side_table() -> crate::feature::entity::FeatureEntityTable {
+    crate::feature::entity::FeatureEntityTable::new(
         7,
         29,
-        vec![crate::feature::FeatureEntityTableEntry {
+        vec![crate::feature::entity::FeatureEntityTableEntry {
             entity_id: 31,
             payload: crate::feature::entity::entry_payload(200, Some(11), None, None),
             prefixed: false,
@@ -107,7 +107,7 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
     let definition = definition();
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     let mut table = generated_side_table();
-    let cap = |entity_id, class_id| crate::feature::FeatureEntityTableEntry {
+    let cap = |entity_id, class_id| crate::feature::entity::FeatureEntityTableEntry {
         payload: crate::feature::entity::entry_payload(class_id, None, None, None),
 
         entity_id,
@@ -115,7 +115,7 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         offset: 0,
         end_offset: 0,
     };
-    let materialized = crate::feature::FeatureEntityTableEntry {
+    let materialized = crate::feature::entity::FeatureEntityTableEntry {
         entity_id: 32,
         payload: crate::feature::entity::entry_payload(200, Some(13), None, None),
         prefixed: false,

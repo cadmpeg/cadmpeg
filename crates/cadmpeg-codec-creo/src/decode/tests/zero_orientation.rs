@@ -65,8 +65,8 @@ const EPS_CONIC_INTERSECTION: f64 = 1.0e-12;
 
 #[test]
 fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Arc([1, 2]),
         directions: [None; 3],
         center_id: Some(3),
         arc_orientation: Some(0),
@@ -96,7 +96,7 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
 
 #[test]
 fn profile_chain_follows_trim_vertex_incidence() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: Some(40),
@@ -106,7 +106,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         outlines: Vec::new(),
         variables: None,
         segments: None,
-        trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+        trim_entities: Some(crate::feature::definitions::FeatureTrimEntityTable {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
@@ -114,11 +114,11 @@ fn profile_chain_follows_trim_vertex_incidence() {
             rows: [(10, [1, 2]), (11, [3, 2]), (12, [3, 4]), (13, [4, 1])]
                 .into_iter()
                 .map(
-                    |(external_id, vertices)| crate::feature::FeatureTrimEntity {
+                    |(external_id, vertices)| crate::feature::definitions::FeatureTrimEntity {
                         external_id,
                         mode: None,
                         vertices,
-                        kind: crate::feature::TrimEntityKind::Line,
+                        kind: crate::feature::definitions::TrimEntityKind::Line,
                         offset: external_id as usize,
                     },
                 )
@@ -151,12 +151,14 @@ fn profile_chain_follows_trim_vertex_incidence() {
     let mut incomplete = definition.clone();
     let table = incomplete.trim_entities.as_mut().expect("trim table");
     table.declared_count = Some(1);
-    table.buckets.push(crate::feature::FeatureTrimBucket {
-        index: 0,
-        declared_entry_count: 4,
-        decoded_entry_count: Some(3),
-        offset: 5,
-    });
+    table
+        .buckets
+        .push(crate::feature::definitions::FeatureTrimBucket {
+            index: 0,
+            declared_entry_count: 4,
+            decoded_entry_count: Some(3),
+            offset: 5,
+        });
     assert!(resolved_profile_chains(
         &incomplete,
         &SketchId::mint("creo:model:sketch#40".to_string()).expect("valid test fixture"),
@@ -179,24 +181,26 @@ fn profile_chain_follows_trim_vertex_incidence() {
     .is_empty());
 
     let mut incomplete_trim_graph = definition.clone();
-    incomplete_trim_graph.segments = Some(crate::feature::FeatureSegmentTable {
+    incomplete_trim_graph.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 4,
         has_elided_prototype: false,
         entity_ref: None,
         rows: ([(10, [1, 2]), (11, [2, 3]), (12, [3, 4]), (13, [4, 1])]
             .into_iter()
-            .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line(point_ids),
-                directions: [None; 3],
-                center_id: None,
-                arc_orientation: None,
-                vertical_horizontal: None,
-                radius_ref: None,
-                radius2_ref: None,
-                external_id,
-                body: Vec::new(),
-                offset: external_id as usize,
-            })
+            .map(
+                |(external_id, point_ids)| crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
+                    directions: [None; 3],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id,
+                    body: Vec::new(),
+                    offset: external_id as usize,
+                },
+            )
             .collect::<Vec<_>>())
         .into_iter()
         .map(crate::feature::segment_rows::SegmentRow::Ordinary)
@@ -218,7 +222,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
     assert_eq!(profiles[0].len(), 3);
 
     let mut arcs = definition.clone();
-    arcs.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+    arcs.trim_entities = Some(crate::feature::definitions::FeatureTrimEntityTable {
         declared_count: None,
         entity_ref: None,
         entry_ref: None,
@@ -226,11 +230,11 @@ fn profile_chain_follows_trim_vertex_incidence() {
         rows: [(10, [1, 2]), (11, [2, 1])]
             .into_iter()
             .map(
-                |(external_id, vertices)| crate::feature::FeatureTrimEntity {
+                |(external_id, vertices)| crate::feature::definitions::FeatureTrimEntity {
                     external_id,
                     mode: None,
                     vertices,
-                    kind: crate::feature::TrimEntityKind::Arc { center_vertex: 3 },
+                    kind: crate::feature::definitions::TrimEntityKind::Arc { center_vertex: 3 },
                     offset: external_id as usize,
                 },
             )
@@ -238,14 +242,14 @@ fn profile_chain_follows_trim_vertex_incidence() {
         solved_external_ids: vec![10, 11],
         offset: 5,
     });
-    arcs.segments = Some(crate::feature::FeatureSegmentTable {
+    arcs.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 2,
         has_elided_prototype: false,
         entity_ref: None,
         rows: ([10, 11]
             .into_iter()
-            .map(|external_id| crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+            .map(|external_id| crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
                 center_id: Some(3),
                 arc_orientation: Some(0),
@@ -272,7 +276,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
     let mut segment_graph = definition;
     segment_graph.trim_entities = None;
-    segment_graph.segments = Some(crate::feature::FeatureSegmentTable {
+    segment_graph.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 5,
         has_elided_prototype: false,
         entity_ref: None,
@@ -284,18 +288,20 @@ fn profile_chain_follows_trim_vertex_incidence() {
             (20, [8, 9]),
         ]
         .into_iter()
-        .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line(point_ids),
-            directions: [None; 3],
-            center_id: None,
-            arc_orientation: None,
-            vertical_horizontal: None,
-            radius_ref: None,
-            radius2_ref: None,
-            external_id,
-            body: Vec::new(),
-            offset: external_id as usize,
-        })
+        .map(
+            |(external_id, point_ids)| crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
+                directions: [None; 3],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id,
+                body: Vec::new(),
+                offset: external_id as usize,
+            },
+        )
         .collect::<Vec<_>>())
         .into_iter()
         .map(crate::feature::segment_rows::SegmentRow::Ordinary)
@@ -342,7 +348,7 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
 
 #[test]
 fn revolution_axis_uses_the_unique_complete_section_centerline() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: Some(40),
@@ -358,24 +364,24 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
                 offset: 1,
             },
             vec![
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
                     v: Some(-2.0),
                 },
-                crate::feature::FeatureSectionPoint {
+                crate::feature::definitions::FeatureSectionPoint {
                     point_id: 2,
                     u: Some(0.0),
                     v: Some(3.0),
                 },
             ],
         )),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+            rows: (vec![crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
                 arc_orientation: None,
@@ -494,7 +500,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             reference: None,
         })
     );
-    let carrier_only_definition = crate::feature::FeatureDefinition {
+    let carrier_only_definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(7),
             owner_feature_id: Some(7),
@@ -611,7 +617,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
 
 #[test]
 fn named_revolve_transfers_profile_axis() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(822),
             owner_feature_id: Some(822),
@@ -624,8 +630,8 @@ fn named_revolve_transfers_profile_axis() {
             entity_ref: None,
             rows: [(1, 1, 0.0), (2, 1, 0.0), (1, 2, 0.0), (2, 2, 10.0)]
                 .into_iter()
-                .map(
-                    |(variable_type, key, value)| crate::feature::FeatureVariableRow {
+                .map(|(variable_type, key, value)| {
+                    crate::feature::definitions::FeatureVariableRow {
                         variable_type: crate::feature::definitions::VariableType::from(
                             variable_type,
                         ),
@@ -640,17 +646,17 @@ fn named_revolve_transfers_profile_axis() {
                         uvar_id: None,
 
                         offset: 0,
-                    },
-                )
+                    }
+                })
                 .collect(),
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+            rows: (vec![crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
                 arc_orientation: None,
@@ -669,12 +675,12 @@ fn named_revolve_transfers_profile_axis() {
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
-        section_3d: Some(crate::feature::FeatureSection3d {
+        section_3d: Some(crate::feature::definitions::FeatureSection3d {
             sketch_plane_entity_id: None,
             sketch_plane_flip: None,
             reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
             reference_plane_datum_geometry_id: None,
-            orientation: crate::feature::FeatureSectionOrientation::default(),
+            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
             offset: 90,
         }),
@@ -697,7 +703,7 @@ fn named_revolve_transfers_profile_axis() {
     scan.features.section_transforms.push(transform);
     scan.features
         .revolution_extents
-        .push(crate::feature::FeatureRevolutionExtent {
+        .push(crate::feature::rows::FeatureRevolutionExtent {
             feature_id: 822,
             offset: 1,
         });
@@ -782,15 +788,15 @@ fn conflicting_section_sweep_names_remain_unresolved() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 822,
-            kind: crate::feature::OperationKind::Extrude,
+            kind: crate::feature::operations::OperationKind::Extrude,
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Extrude id 822".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeResolution::Conflicting,
+            recipe: crate::feature::operations::RecipeResolution::Conflicting,
             display_state_conflict: false,
             depdb: None,
             offset: 0,
@@ -798,7 +804,7 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         });
     scan.features
         .reference_names
-        .push(crate::feature::FeatureReferenceName {
+        .push(crate::feature::operations::FeatureReferenceName {
             feature_id: 822,
             name_bytes: b"Revolve 822".to_vec(),
             own_reference_id: 1,
@@ -834,11 +840,11 @@ fn conflicting_display_states_do_not_select_reference_family() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
-        .push(crate::feature::FeatureOperation {
+        .push(crate::feature::operations::FeatureOperation {
             feature_id: 822,
-            kind: crate::feature::OperationKind::Native,
+            kind: crate::feature::operations::OperationKind::Native,
             name: crate::feature::operations::OperationName::Derived,
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: true,
             depdb: None,
             offset: 0,
@@ -846,7 +852,7 @@ fn conflicting_display_states_do_not_select_reference_family() {
         });
     scan.features
         .reference_names
-        .push(crate::feature::FeatureReferenceName {
+        .push(crate::feature::operations::FeatureReferenceName {
             feature_id: 822,
             name_bytes: b"Thicken 1".to_vec(),
             own_reference_id: 1,
@@ -864,7 +870,7 @@ fn conflicting_display_states_do_not_select_reference_family() {
 
 #[test]
 fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
-    let spline = crate::feature::FeatureSavedSpline {
+    let spline = crate::feature::definitions::FeatureSavedSpline {
         entity_id: Some(7),
         declared_point_count: Some(3),
         interpolation_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
@@ -928,7 +934,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
             Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
         )
     );
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(917),
             owner_feature_id: Some(40),
@@ -937,11 +943,11 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: None,
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureOpaqueSegment {
+            rows: (vec![crate::feature::definitions::FeatureOpaqueSegment {
                 kind: 25,
                 directions: [None; 3],
                 point_ids: [Some(1), Some(2)],
@@ -961,11 +967,11 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         }),
         trim_entities: None,
         trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
+        order_table: Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 42,
                 internal_id: 7,
                 bitmask: 0,
@@ -976,8 +982,10 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         section_3d: None,
         dimensions: None,
         relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Spline(spline.clone())],
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Spline(
+                spline.clone(),
+            )],
             offset: 40,
         }),
         offset: 1,
@@ -1007,7 +1015,9 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .as_mut()
         .expect("saved section")
         .entities
-        .push(crate::feature::FeatureSavedEntity::Spline(incomplete));
+        .push(crate::feature::definitions::FeatureSavedEntity::Spline(
+            incomplete,
+        ));
     assert!(materialized_saved_section_external_ids(
         &duplicate_saved_id,
         &mut crate::lane_refusal::LaneRefusals::new()

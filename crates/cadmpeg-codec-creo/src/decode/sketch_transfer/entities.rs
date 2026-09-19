@@ -37,10 +37,10 @@ pub(super) fn transfer_section_entities(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     transform: Option<&crate::placement::FeatureSectionTransform>,
     sketch_id: &SketchId,
-    segments: &[&crate::feature::FeatureSegment],
+    segments: &[&crate::feature::definitions::FeatureSegment],
     unique_segment_ids: &BTreeSet<u32>,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
@@ -57,7 +57,7 @@ pub(super) fn transfer_section_entities(
     profile_entities: &BTreeSet<SketchEntityId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
-    let segment_geometry = |segment: &crate::feature::FeatureSegment| {
+    let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| {
         if section_degenerate_axis_line(definition, segment) {
             return segment_geometries
                 .get(&segment.offset)
@@ -91,9 +91,15 @@ pub(super) fn transfer_section_entities(
                     (SketchGeometryDefinition::ReferenceLine { .. }, _) => {
                         "solved_section_axis_reference_line"
                     }
-                    (_, crate::feature::FeatureSegmentKind::Line(_)) => "solved_section_line",
-                    (_, crate::feature::FeatureSegmentKind::Arc(_)) => "solved_section_arc",
-                    (_, crate::feature::FeatureSegmentKind::Point(_)) => "solved_section_point",
+                    (_, crate::feature::definitions::FeatureSegmentKind::Line(_)) => {
+                        "solved_section_line"
+                    }
+                    (_, crate::feature::definitions::FeatureSegmentKind::Arc(_)) => {
+                        "solved_section_arc"
+                    }
+                    (_, crate::feature::definitions::FeatureSegmentKind::Point(_)) => {
+                        "solved_section_point"
+                    }
                 },
                 if matches!(
                     geometry.definition(),
@@ -118,11 +124,13 @@ pub(super) fn transfer_section_entities(
                 {
                     vec![segment.point_ids()[0]]
                 }
-                (_, crate::feature::FeatureSegmentKind::Arc(_)) => {
+                (_, crate::feature::definitions::FeatureSegmentKind::Arc(_)) => {
                     vec![segment.point_ids()[1], segment.point_ids()[0]]
                 }
-                (_, crate::feature::FeatureSegmentKind::Line(_)) => segment.point_ids().to_vec(),
-                (_, crate::feature::FeatureSegmentKind::Point(_)) => {
+                (_, crate::feature::definitions::FeatureSegmentKind::Line(_)) => {
+                    segment.point_ids().to_vec()
+                }
+                (_, crate::feature::definitions::FeatureSegmentKind::Point(_)) => {
                     vec![segment.point_ids()[0]]
                 }
             }
@@ -158,11 +166,15 @@ pub(super) fn transfer_section_entities(
             Exactness::ByteExact,
         );
         let endpoint_refs = match segment.kind {
-            crate::feature::FeatureSegmentKind::Arc(_) => {
+            crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
                 vec![segment.point_ids()[1], segment.point_ids()[0]]
             }
-            crate::feature::FeatureSegmentKind::Line(_) => segment.point_ids().to_vec(),
-            crate::feature::FeatureSegmentKind::Point(_) => vec![segment.point_ids()[0]],
+            crate::feature::definitions::FeatureSegmentKind::Line(_) => {
+                segment.point_ids().to_vec()
+            }
+            crate::feature::definitions::FeatureSegmentKind::Point(_) => {
+                vec![segment.point_ids()[0]]
+            }
         }
         .into_iter()
         .map(|point| sketch_point_ref(sketch_id, point))
@@ -174,9 +186,9 @@ pub(super) fn transfer_section_entities(
                 SketchGeometry::native(
                     cadmpeg_core::text::NonBlankString::new(
                         match segment.kind {
-                            crate::feature::FeatureSegmentKind::Line(_) => "line",
-                            crate::feature::FeatureSegmentKind::Arc(_) => "arc",
-                            crate::feature::FeatureSegmentKind::Point(_) => "point",
+                            crate::feature::definitions::FeatureSegmentKind::Line(_) => "line",
+                            crate::feature::definitions::FeatureSegmentKind::Arc(_) => "arc",
+                            crate::feature::definitions::FeatureSegmentKind::Point(_) => "point",
                         }
                         .to_string(),
                     )
@@ -665,7 +677,7 @@ pub(super) fn transfer_section_entities(
         saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
     }
     for spline in semantic_saved_section_entities(definition).filter_map(|entity| match entity {
-        crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+        crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
         _ => None,
     }) {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();

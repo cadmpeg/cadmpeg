@@ -52,7 +52,7 @@ fn feature_output_bodies_with_history(
                     .entity_tables
                     .iter()
                     .filter(|table| table.feature_id == feature_id)
-                    .flat_map(crate::feature::FeatureEntityTable::surface_ids)
+                    .flat_map(crate::feature::entity::FeatureEntityTable::surface_ids)
                     .map(|surface_id| {
                         SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id)
                     }),
@@ -245,7 +245,7 @@ pub(in super::super) fn evaluated_sweep_body_kind(
 
 pub(in super::super) fn new_sheet_output_surface_id(
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
 ) -> Option<u32> {
     let owned = tables
@@ -309,26 +309,26 @@ pub(in super::super) fn sweep_solid(output_kind: Option<BodyKind>) -> Option<boo
 }
 
 pub(in super::super) fn feature_field_text(
-    value: &crate::feature::FeatureFieldValue,
+    value: &crate::feature::rows::FeatureFieldValue,
 ) -> Option<String> {
     match value {
-        crate::feature::FeatureFieldValue::Empty => Some("empty".to_string()),
-        crate::feature::FeatureFieldValue::CompactInt(value) => Some(value.to_string()),
-        crate::feature::FeatureFieldValue::CompactIntArray(values) => Some(
+        crate::feature::rows::FeatureFieldValue::Empty => Some("empty".to_string()),
+        crate::feature::rows::FeatureFieldValue::CompactInt(value) => Some(value.to_string()),
+        crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => Some(
             values
                 .iter()
                 .map(u32::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
         ),
-        crate::feature::FeatureFieldValue::EntityReference {
+        crate::feature::rows::FeatureFieldValue::EntityReference {
             entity_id,
             terminated,
         } => Some(format!(
             "entity:{entity_id}{}",
             if *terminated { ":terminated" } else { "" }
         )),
-        crate::feature::FeatureFieldValue::ScalarArray {
+        crate::feature::rows::FeatureFieldValue::ScalarArray {
             decoded_values: Some(values),
             ..
         } => Some(
@@ -338,11 +338,11 @@ pub(in super::super) fn feature_field_text(
                 .collect::<Vec<_>>()
                 .join(","),
         ),
-        crate::feature::FeatureFieldValue::ScalarArray {
+        crate::feature::rows::FeatureFieldValue::ScalarArray {
             decoded_values: None,
             ..
         }
-        | crate::feature::FeatureFieldValue::Raw(_) => None,
+        | crate::feature::rows::FeatureFieldValue::Raw(_) => None,
     }
 }
 
@@ -393,12 +393,12 @@ pub(in super::super) fn feature_parameters(
         .filter(|record| record.feature_id == feature_id)
     {
         let name = match affected.kind {
-            crate::feature::AffectedIdKind::Geometry => "affected_geometry_ids",
-            crate::feature::AffectedIdKind::Edges => "affected_edge_ids",
-            crate::feature::AffectedIdKind::StrongParents => "strong_parent_feature_ids",
-            crate::feature::AffectedIdKind::Parents => "parent_feature_ids",
-            crate::feature::AffectedIdKind::Contours => "contour_ids",
-            crate::feature::AffectedIdKind::Quilts => "affected_quilt_ids",
+            crate::feature::rows::AffectedIdKind::Geometry => "affected_geometry_ids",
+            crate::feature::rows::AffectedIdKind::Edges => "affected_edge_ids",
+            crate::feature::rows::AffectedIdKind::StrongParents => "strong_parent_feature_ids",
+            crate::feature::rows::AffectedIdKind::Parents => "parent_feature_ids",
+            crate::feature::rows::AffectedIdKind::Contours => "contour_ids",
+            crate::feature::rows::AffectedIdKind::Quilts => "affected_quilt_ids",
         };
         insert_feature_parameter(
             &mut parameters,
@@ -441,8 +441,8 @@ pub(in super::super) fn feature_parameters(
             &mut parameters,
             "replay_geometry_extent",
             match affected.geometry_extent {
-                crate::feature::ReplayExtentSource::Explicit => "explicit",
-                crate::feature::ReplayExtentSource::Inherited => "inherited",
+                crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
+                crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
             }
             .to_string(),
         );
@@ -450,8 +450,8 @@ pub(in super::super) fn feature_parameters(
             &mut parameters,
             "replay_edge_extent",
             match affected.edge_extent {
-                crate::feature::ReplayExtentSource::Explicit => "explicit",
-                crate::feature::ReplayExtentSource::Inherited => "inherited",
+                crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
+                crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
             }
             .to_string(),
         );
@@ -491,8 +491,8 @@ pub(in super::super) fn feature_parameters(
                 &mut parameters,
                 name,
                 match extent {
-                    crate::feature::ReplayExtentSource::Explicit => "explicit",
-                    crate::feature::ReplayExtentSource::Inherited => "inherited",
+                    crate::feature::rows::ReplayExtentSource::Explicit => "explicit",
+                    crate::feature::rows::ReplayExtentSource::Inherited => "inherited",
                 }
                 .to_string(),
             );
@@ -505,8 +505,8 @@ pub(in super::super) fn feature_parameters(
         .filter(|record| record.feature_id == feature_id)
     {
         let name = match direction.lane {
-            crate::feature::LoopRestoreDirectionLane::Primary => "direction",
-            crate::feature::LoopRestoreDirectionLane::Secondary => "direction2",
+            crate::feature::rows::LoopRestoreDirectionLane::Primary => "direction",
+            crate::feature::rows::LoopRestoreDirectionLane::Secondary => "direction2",
         };
         insert_feature_parameter(
             &mut parameters,
@@ -586,7 +586,9 @@ pub(in super::super) fn feature_parameters(
             }
             .into_string(),
         );
-        if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude) {
+        if feature_recipe(scan, feature_id)
+            == Some(crate::feature::operations::FeatureRecipeKind::Extrude)
+        {
             insert_feature_parameter(
                 &mut parameters,
                 "sweep_direction",
@@ -664,7 +666,7 @@ pub(in super::super) fn owned_section_feature_id(
 pub(in super::super) fn section_definition_for_history_feature<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<&'a crate::feature::FeatureDefinition> {
+) -> Option<&'a crate::feature::definitions::FeatureDefinition> {
     let rows = scan
         .features
         .rows

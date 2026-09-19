@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchI
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn section_entity_external_ids(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeSet<u32> {
     let mut ids = unique_section_segment_external_ids(definition);
     let Some(order) = &definition.order_table else {
@@ -36,7 +36,7 @@ pub(in super::super) fn section_entity_external_ids(
 /// A saved-section entity may stand in for one opaque segment row, but it
 /// must not override a decoded segment family with a different identity.
 pub(in super::super) fn saved_section_entity_fallback_allowed(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     external_id: u32,
 ) -> bool {
     let Some(segments) = definition.segments.as_ref() else {
@@ -49,8 +49,8 @@ pub(in super::super) fn saved_section_entity_fallback_allowed(
 /// A saved line or arc may reconcile one ordinary row, but not a different
 /// decoded segment family carrying the same external identifier.
 pub(in super::super) fn saved_section_ordinary_geometry_allowed(
-    definition: &crate::feature::FeatureDefinition,
-    segment: &crate::feature::FeatureSegment,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> bool {
     let Some(segments) = definition.segments.as_ref() else {
         return true;
@@ -64,7 +64,7 @@ pub(in super::super) fn saved_section_ordinary_geometry_allowed(
 /// identified ordinary line row.  Special-family and conflicting identities
 /// remain unresolved.
 pub(in super::super) fn saved_section_line_witness_allowed(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     external_id: u32,
 ) -> bool {
     let Some(segments) = definition.segments.as_ref() else {
@@ -73,11 +73,11 @@ pub(in super::super) fn saved_section_line_witness_allowed(
     !segments.rows.contains_id(external_id)
         || matches!(segments.rows.get(external_id), Some(SegmentRow::Opaque(_)))
         || matches!(segments.rows.get(external_id), Some(SegmentRow::Ordinary(segment))
-            if matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
+            if matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)))
 }
 
 pub(in super::super) fn unique_section_segment_external_ids(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeSet<u32> {
     definition
         .segments
@@ -87,7 +87,7 @@ pub(in super::super) fn unique_section_segment_external_ids(
 }
 
 pub(in super::super) fn ambiguous_section_segment_external_ids(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeSet<u32> {
     definition
         .segments
@@ -120,42 +120,42 @@ impl SavedSectionEntityKind {
 }
 
 pub(in super::super) fn saved_section_entity_identity(
-    entity: &crate::feature::FeatureSavedEntity,
+    entity: &crate::feature::definitions::FeatureSavedEntity,
 ) -> (Option<u32>, usize, SavedSectionEntityKind) {
     match entity {
-        crate::feature::FeatureSavedEntity::Line(line) => (
+        crate::feature::definitions::FeatureSavedEntity::Line(line) => (
             Some(line.entity_id),
             line.offset,
             SavedSectionEntityKind::Line,
         ),
-        crate::feature::FeatureSavedEntity::Arc(arc) => {
+        crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
             (Some(arc.entity_id), arc.offset, SavedSectionEntityKind::Arc)
         }
-        crate::feature::FeatureSavedEntity::Circle(circle) => (
+        crate::feature::definitions::FeatureSavedEntity::Circle(circle) => (
             Some(circle.entity_id),
             circle.offset,
             SavedSectionEntityKind::Circle,
         ),
-        crate::feature::FeatureSavedEntity::Conic(conic) => (
+        crate::feature::definitions::FeatureSavedEntity::Conic(conic) => (
             Some(conic.entity_id),
             conic.offset,
             SavedSectionEntityKind::Conic,
         ),
-        crate::feature::FeatureSavedEntity::Spline(spline) => (
+        crate::feature::definitions::FeatureSavedEntity::Spline(spline) => (
             spline.entity_id,
             spline.offset,
             SavedSectionEntityKind::Spline,
         ),
-        crate::feature::FeatureSavedEntity::Dummy(dummy) => {
+        crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
             (dummy.entity_id, dummy.offset, SavedSectionEntityKind::Dummy)
         }
     }
 }
 
 pub(in super::super) fn unresolved_saved_section_entity(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-    saved: &crate::feature::FeatureSavedEntity,
+    saved: &crate::feature::definitions::FeatureSavedEntity,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
 ) -> Option<(SketchEntity, usize)> {
@@ -219,7 +219,7 @@ pub(in super::super) fn unresolved_saved_section_entity(
 }
 
 pub(in super::super) fn unique_saved_section_internal_ids(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeSet<u32> {
     semantic_saved_section_entities(definition)
         .filter_map(|entity| saved_section_entity_identity(entity).0)
@@ -233,8 +233,8 @@ pub(in super::super) fn unique_saved_section_internal_ids(
 }
 
 pub(in super::super) fn saved_section_entity_is_elided_prototype(
-    definition: &crate::feature::FeatureDefinition,
-    entity: &crate::feature::FeatureSavedEntity,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    entity: &crate::feature::definitions::FeatureSavedEntity,
 ) -> bool {
     let Some(internal_id) = saved_section_entity_identity(entity).0 else {
         return false;
@@ -257,8 +257,8 @@ pub(in super::super) fn saved_section_entity_is_elided_prototype(
 }
 
 pub(in super::super) fn semantic_saved_section_entities(
-    definition: &crate::feature::FeatureDefinition,
-) -> impl Iterator<Item = &crate::feature::FeatureSavedEntity> {
+    definition: &crate::feature::definitions::FeatureDefinition,
+) -> impl Iterator<Item = &crate::feature::definitions::FeatureSavedEntity> {
     definition
         .saved_section
         .iter()
@@ -267,7 +267,7 @@ pub(in super::super) fn semantic_saved_section_entities(
 }
 
 pub(in super::super) fn materialized_saved_section_external_ids(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> BTreeSet<u32> {
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
@@ -275,7 +275,7 @@ pub(in super::super) fn materialized_saved_section_external_ids(
     semantic_saved_section_entities(definition)
         .filter_map(|entity| {
             match entity {
-                crate::feature::FeatureSavedEntity::Spline(spline) => {
+                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
                     saved_spline_sketch_geometry(spline, refusal)?;
                 }
                 _ => {
@@ -297,7 +297,7 @@ pub(in super::super) fn materialized_saved_section_external_ids(
 }
 
 pub(in super::super) fn saved_section_external_id(
-    order: &crate::feature::FeatureOrderTable,
+    order: &crate::feature::definitions::FeatureOrderTable,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
     internal_id: u32,
@@ -309,7 +309,7 @@ pub(in super::super) fn saved_section_external_id(
 
 pub(in super::super) fn section_segment_identity_suffix(
     unique_external_ids: &BTreeSet<u32>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> String {
     if unique_external_ids.contains(&segment.external_id) {
         segment.external_id.to_string()
@@ -320,7 +320,7 @@ pub(in super::super) fn section_segment_identity_suffix(
 
 pub(in super::super) fn opaque_section_segment_identity_suffix(
     unique_external_ids: &BTreeSet<u32>,
-    segment: &crate::feature::FeatureOpaqueSegment,
+    segment: &crate::feature::definitions::FeatureOpaqueSegment,
 ) -> String {
     if unique_external_ids.contains(&segment.external_id) {
         segment.external_id.to_string()
@@ -338,9 +338,9 @@ mod tests {
     use crate::decode::tests::opaque;
 
     fn definition(
-        segments: Option<crate::feature::FeatureSegmentTable>,
-    ) -> crate::feature::FeatureDefinition {
-        crate::feature::FeatureDefinition {
+        segments: Option<crate::feature::definitions::FeatureSegmentTable>,
+    ) -> crate::feature::definitions::FeatureDefinition {
+        crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(917),
                 owner_feature_id: None,
@@ -361,8 +361,8 @@ mod tests {
         }
     }
 
-    fn segment_table() -> crate::feature::FeatureSegmentTable {
-        crate::feature::FeatureSegmentTable {
+    fn segment_table() -> crate::feature::definitions::FeatureSegmentTable {
+        crate::feature::definitions::FeatureSegmentTable {
             declared_count: 0,
             has_elided_prototype: false,
             entity_ref: None,
@@ -371,9 +371,9 @@ mod tests {
         }
     }
 
-    fn ordinary_line(external_id: u32) -> crate::feature::FeatureSegment {
-        crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+    fn ordinary_line(external_id: u32) -> crate::feature::definitions::FeatureSegment {
+        crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
             center_id: None,
             arc_orientation: None,
@@ -386,8 +386,8 @@ mod tests {
         }
     }
 
-    fn circle(external_id: u32) -> crate::feature::FeatureCircleSegment {
-        crate::feature::FeatureCircleSegment {
+    fn circle(external_id: u32) -> crate::feature::definitions::FeatureCircleSegment {
+        crate::feature::definitions::FeatureCircleSegment {
             center_id: 1,
             radius_ref: 2,
             external_id,
@@ -448,8 +448,8 @@ mod tests {
         ordinary_arc
             .rows
             .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
-                crate::feature::FeatureSegment {
-                    kind: crate::feature::FeatureSegmentKind::Arc(line.point_ids()),
+                crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Arc(line.point_ids()),
                     ..line.clone()
                 },
             ));

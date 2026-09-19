@@ -120,9 +120,9 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
         });
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 914,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![31],
             offset: 0,
         });

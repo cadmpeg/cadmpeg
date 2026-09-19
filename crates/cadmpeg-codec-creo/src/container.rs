@@ -31,11 +31,16 @@ use crate::curve::{
     PrototypePcurveEndpoints, TwoChartPcurveSamples,
 };
 use crate::datum::{self, DatumCylinder, DatumPlaneRecord};
-use crate::feature::{
-    self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
-    FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
-    FeatureLoopRestoreDirection, FeatureOperation, FeatureOperationState, FeatureRecipe,
-    FeatureReferenceName, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
+use crate::feature;
+use crate::feature::definitions::FeatureDefinition;
+use crate::feature::entity::{FeatureEntity, FeatureEntityReference, FeatureEntityTable};
+use crate::feature::operations::{
+    FeatureOperation, FeatureOperationState, FeatureRecipe, FeatureReferenceName,
+};
+use crate::feature::rows::{
+    FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureGeometryTable,
+    FeatureLoopHistoryEntry, FeatureLoopRestoreDirection, FeatureReplayAffectedIds,
+    FeatureRevolutionExtent, FeatureRow,
 };
 use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
@@ -562,7 +567,7 @@ pub(crate) struct FeatureScan {
     pub(crate) replay_affected_ids: Vec<FeatureReplayAffectedIds>,
     /// Affected geometry, edge, and quilt arrays from class-946 replay rows.
     pub(crate) surface_merge_replay_affected_ids:
-        Vec<crate::feature::FeatureSurfaceMergeAffectedIds>,
+        Vec<crate::feature::rows::FeatureSurfaceMergeAffectedIds>,
     /// Named compact direction values from loop-restoration records.
     pub(crate) loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
     /// Resolved angular termination from rotational feature rows.
@@ -1843,8 +1848,8 @@ fn stored_operation_schema_class(
                 .recipe
                 .resolved()
                 .map(|recipe| match recipe.effect() {
-                    feature::FeatureRecipeEffect::Cut => SchemaClass::Cut,
-                    feature::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
+                    feature::operations::FeatureRecipeEffect::Cut => SchemaClass::Cut,
+                    feature::operations::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
                 }),
         })
 }
@@ -1920,7 +1925,7 @@ fn feature_entity_tables(
     {
         let section_bytes = section.region;
         tables.extend(
-            feature::entity_tables(section_bytes, &feature_ids, &surface_ids)
+            feature::entity::entity_tables(section_bytes, &feature_ids, &surface_ids)
                 .into_iter()
                 .map(|mut table| {
                     table.offset += section.section.offset();
@@ -1944,7 +1949,7 @@ fn feature_rows(sections: &[ScannedSection<'_>], feature_ids: &[u32]) -> Vec<Fea
         .filter(|section| section.section.name() == "AllFeatur")
     {
         let section_bytes = section.region;
-        rows.extend(feature::rows(
+        rows.extend(feature::rows::rows(
             section_bytes,
             &feature_ids,
             section.section.offset(),
@@ -1968,7 +1973,8 @@ fn feature_entity_graph(
     // that newline carries no header, so the whole region is the payload.
     let header_length = find(section_bytes, b"\n", 0).map_or(0, |newline| newline + 1);
     let payload_start = section.section.offset() + header_length;
-    let (mut entities, mut references) = feature::entity_graph(&section_bytes[header_length..]);
+    let (mut entities, mut references) =
+        feature::entity::entity_graph(&section_bytes[header_length..]);
     for entity in &mut entities {
         entity.offset += payload_start;
     }
@@ -2045,12 +2051,22 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         saved.offset += section_offset;
         for entity in &mut saved.entities {
             match entity {
-                feature::FeatureSavedEntity::Line(line) => line.offset += section_offset,
-                feature::FeatureSavedEntity::Arc(arc) => arc.offset += section_offset,
-                feature::FeatureSavedEntity::Circle(circle) => circle.offset += section_offset,
-                feature::FeatureSavedEntity::Conic(conic) => conic.offset += section_offset,
-                feature::FeatureSavedEntity::Spline(spline) => spline.offset += section_offset,
-                feature::FeatureSavedEntity::Dummy(dummy) => dummy.offset += section_offset,
+                feature::definitions::FeatureSavedEntity::Line(line) => {
+                    line.offset += section_offset
+                }
+                feature::definitions::FeatureSavedEntity::Arc(arc) => arc.offset += section_offset,
+                feature::definitions::FeatureSavedEntity::Circle(circle) => {
+                    circle.offset += section_offset
+                }
+                feature::definitions::FeatureSavedEntity::Conic(conic) => {
+                    conic.offset += section_offset
+                }
+                feature::definitions::FeatureSavedEntity::Spline(spline) => {
+                    spline.offset += section_offset
+                }
+                feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
+                    dummy.offset += section_offset
+                }
             }
         }
     }
@@ -2064,9 +2080,9 @@ fn feature_definitions(sections: &[ScannedSection<'_>]) -> Vec<FeatureDefinition
         let payload = section.region;
         definitions.extend(
             (if section.section.name() == "DEPDB_DATA" {
-                feature::depdb_definitions(payload)
+                feature::definitions::depdb_definitions(payload)
             } else {
-                feature::definitions(payload)
+                feature::definitions::definitions(payload)
             })
             .into_iter()
             .map(|mut definition| {
@@ -2075,14 +2091,15 @@ fn feature_definitions(sections: &[ScannedSection<'_>]) -> Vec<FeatureDefinition
             }),
         );
         if section.section.name() == "DEPDB_DATA" {
-            let recipe_operations = feature::operations(payload)
+            let recipe_operations = feature::operations::operations(payload)
                 .into_iter()
                 .filter(|operation| operation.recipe.resolved().is_some())
                 .collect::<Vec<_>>();
             if let [operation] = recipe_operations.as_slice() {
-                if let Some(mut definition) =
-                    feature::depdb_section_definition(payload, Some(operation.feature_id))
-                {
+                if let Some(mut definition) = feature::definitions::depdb_section_definition(
+                    payload,
+                    Some(operation.feature_id),
+                ) {
                     offset_feature_definition(&mut definition, section.section.offset());
                     if let Some(existing) = definitions
                         .iter_mut()
@@ -2104,7 +2121,7 @@ fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
     let mut definitions = rows
         .iter()
         .filter_map(|row| {
-            let mut definition = feature::depdb_section_definition(&row.body, None)?;
+            let mut definition = feature::definitions::depdb_section_definition(&row.body, None)?;
             offset_feature_definition(&mut definition, row.body_offset);
             Some(definition)
         })
@@ -2139,7 +2156,7 @@ fn positional_replay_definitions(sections: &[ScannedSection<'_>]) -> Vec<Feature
     {
         let section_bytes = section.region;
         definitions.extend(
-            feature::positional_replay_definitions(section_bytes)
+            feature::definitions::positional_replay_definitions(section_bytes)
                 .into_iter()
                 .map(|mut definition| {
                     offset_feature_definition(&mut definition, section.section.offset());
@@ -2158,7 +2175,7 @@ fn feature_operations(sections: &[ScannedSection<'_>]) -> Vec<FeatureOperation> 
     }) {
         let section_bytes = section.region;
         records.extend(
-            feature::operations(section_bytes)
+            feature::operations::operations(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.section.offset();
@@ -2186,7 +2203,7 @@ fn feature_reference_names(sections: &[ScannedSection<'_>]) -> Vec<FeatureRefere
     {
         let section_bytes = section.region;
         records.extend(
-            feature::reference_names(section_bytes)
+            feature::operations::reference_names(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.section.offset();
@@ -2204,7 +2221,7 @@ fn feature_operation_states(sections: &[ScannedSection<'_>]) -> Vec<FeatureOpera
     }) {
         let section_bytes = section.region;
         records.extend(
-            feature::operation_states(section_bytes)
+            feature::operations::operation_states(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.section.offset();
@@ -2234,7 +2251,7 @@ fn depdb_recipe_rows(sections: &[ScannedSection<'_>]) -> Vec<FeatureRow> {
         .filter(|section| section.section.name() == "DEPDB_DATA")
     {
         let payload = section.region;
-        let mut recipe_operations = feature::operation_states(payload)
+        let mut recipe_operations = feature::operations::operation_states(payload)
             .into_iter()
             .filter_map(|operation| {
                 operation
@@ -2611,34 +2628,36 @@ pub(crate) fn scan_bytes<'a>(
     feature_ids.extend(feature_rows.iter().map(|row| row.feature_id));
     let feature_ids = feature_ids.into_iter().collect::<Vec<_>>();
     let feature_round_replay_scalars = feature::rows::round_replay_scalars(&feature_rows);
-    let feature_choices = feature::choices(&feature_rows);
-    let feature_choice_fields = feature::choice_fields(&feature_choices);
+    let feature_choices = feature::rows::choices(&feature_rows);
+    let feature_choice_fields = feature::rows::choice_fields(&feature_choices);
     let depdb_recipe_rows = depdb_recipe_rows(&sections);
-    let mut feature_geometry_tables = feature::geometry_tables(&feature_rows);
-    feature_geometry_tables.extend(feature::geometry_tables(&depdb_recipe_rows));
+    let mut feature_geometry_tables = feature::rows::geometry_tables(&feature_rows);
+    feature_geometry_tables.extend(feature::rows::geometry_tables(&depdb_recipe_rows));
     feature_geometry_tables.sort_by_key(|table| table.offset);
     let feature_loop_history_entries =
-        feature::loop_history_entries(&feature_rows, &feature_geometry_tables);
-    let mut feature_affected_ids = feature::affected_ids(&feature_rows);
-    feature_affected_ids.extend(feature::affected_ids(&depdb_recipe_rows));
+        feature::rows::loop_history_entries(&feature_rows, &feature_geometry_tables);
+    let mut feature_affected_ids = feature::rows::affected_ids(&feature_rows);
+    feature_affected_ids.extend(feature::rows::affected_ids(&depdb_recipe_rows));
     feature_affected_ids.sort_by_key(|record| record.offset);
-    let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
+    let feature_replay_affected_ids = feature::rows::replay_affected_ids(&feature_rows);
     let surface_merge_replay_affected_ids =
-        feature::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
-    let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
+        feature::rows::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
+    let feature_loop_restore_directions = feature::rows::loop_restore_directions(&feature_rows);
     let feature_entity_tables = feature_entity_tables(&sections, &feature_ids, &surface_rows);
     let feature_definitions = feature_definitions(&sections);
     let feature_definitions =
-        feature::bind_definition_owners(feature_definitions, &feature_geometry_tables);
-    let mut feature_definitions =
-        feature::bind_trimmed_definition_owners(feature_definitions, &feature_entity_tables);
+        feature::definitions::bind_definition_owners(feature_definitions, &feature_geometry_tables);
+    let mut feature_definitions = feature::definitions::bind_trimmed_definition_owners(
+        feature_definitions,
+        &feature_entity_tables,
+    );
     feature_definitions.extend(feature_row_definitions(&feature_rows));
     feature_definitions.sort_by_key(|definition| definition.offset);
     let claimed_definition_owners = feature_definitions
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
         .collect();
-    let replay_definitions = feature::bind_replay_definition_owners(
+    let replay_definitions = feature::definitions::bind_replay_definition_owners(
         positional_replay_definitions(&sections),
         &feature_entity_tables,
         &claimed_definition_owners,
@@ -2646,7 +2665,7 @@ pub(crate) fn scan_bytes<'a>(
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
     let section_owner_ranges = section_owner_ranges(&sections, &feature_rows);
-    let feature_definitions = feature::bind_section_owners(
+    let feature_definitions = feature::definitions::bind_section_owners(
         feature_definitions,
         &feature_operations,
         &section_owner_ranges,
@@ -2661,9 +2680,15 @@ pub(crate) fn scan_bytes<'a>(
             .value
             .resolved()
             .map(|value| match dimension.unit() {
-                feature::DimensionUnit::Radians => CurveExpressionValue::Angle(value.to_degrees()),
-                feature::DimensionUnit::Millimeters => CurveExpressionValue::Length(value),
-                feature::DimensionUnit::SchemaDefined => CurveExpressionValue::Number(value),
+                feature::definitions::DimensionUnit::Radians => {
+                    CurveExpressionValue::Angle(value.to_degrees())
+                }
+                feature::definitions::DimensionUnit::Millimeters => {
+                    CurveExpressionValue::Length(value)
+                }
+                feature::definitions::DimensionUnit::SchemaDefined => {
+                    CurveExpressionValue::Number(value)
+                }
             });
         relation_dimension_symbols.observe(&format!("d{}", dimension.external_id), value);
     }
@@ -2674,8 +2699,8 @@ pub(crate) fn scan_bytes<'a>(
             .and_then(|model| relation_model_name(&model.name)),
         &relation_dimension_symbols,
     );
-    let mut feature_revolution_extents = feature::revolution_extents(&feature_rows);
-    feature_revolution_extents.extend(feature::definition_revolution_extents(
+    let mut feature_revolution_extents = feature::rows::revolution_extents(&feature_rows);
+    feature_revolution_extents.extend(feature::definitions::definition_revolution_extents(
         &feature_definitions,
         &feature_operations,
     ));
@@ -2989,7 +3014,8 @@ mod feature_row_definition_tests {
     };
     use crate::curve::CurveTopologyRow;
     use crate::feature;
-    use crate::feature::{FeatureOperation, FeatureRecipe, FeatureReferenceName, FeatureRow};
+    use crate::feature::operations::{FeatureOperation, FeatureRecipe, FeatureReferenceName};
+    use crate::feature::rows::FeatureRow;
     use crate::surface::SurfaceRow;
 
     #[test]
@@ -3030,13 +3056,13 @@ mod feature_row_definition_tests {
     fn stored_feature_identities_require_compatible_allfeatur_rows() {
         let operation = FeatureOperation {
             feature_id: 42,
-            kind: crate::feature::OperationKind::Stored("Round".to_string()),
+            kind: crate::feature::operations::OperationKind::Stored("Round".to_string()),
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Round id 42".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeResolution::None,
+            recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
             depdb: None,
             offset: 0,
@@ -3140,9 +3166,9 @@ mod feature_row_definition_tests {
         let definitions = feature_row_definitions(std::slice::from_ref(&row));
         let operation = |feature_id, recipe, offset| FeatureOperation {
             feature_id,
-            kind: crate::feature::OperationKind::Stored(String::new()),
+            kind: crate::feature::operations::OperationKind::Stored(String::new()),
             name: crate::feature::operations::OperationName::Derived,
-            recipe: crate::feature::RecipeResolution::from(recipe),
+            recipe: crate::feature::operations::RecipeResolution::from(recipe),
             display_state_conflict: false,
             depdb: None,
             offset,
@@ -3159,7 +3185,7 @@ mod feature_row_definition_tests {
             Some(249)
         );
 
-        let definitions = feature::bind_section_owners(
+        let definitions = feature::definitions::bind_section_owners(
             definitions,
             &[
                 operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),

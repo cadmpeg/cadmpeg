@@ -62,9 +62,9 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         });
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 4,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![31],
             offset: 0,
         });
@@ -123,9 +123,9 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         });
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 914,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![31],
             offset: 0,
         });
@@ -268,9 +268,9 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
         });
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 914,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![31],
             offset: 0,
         });
@@ -320,9 +320,9 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 913,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });
@@ -442,9 +442,9 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .affected_ids
-        .push(crate::feature::FeatureAffectedIds {
+        .push(crate::feature::rows::FeatureAffectedIds {
             feature_id: 913,
-            kind: crate::feature::AffectedIdKind::Geometry,
+            kind: crate::feature::rows::AffectedIdKind::Geometry,
             ids: vec![1, 2, 3, 4],
             offset: 0,
         });

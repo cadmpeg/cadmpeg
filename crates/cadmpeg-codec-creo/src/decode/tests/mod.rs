@@ -46,7 +46,9 @@ pub(super) fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T
     run(&ctx)
 }
 
-pub(super) fn synchronize_skamp_count(definition: &mut crate::feature::FeatureDefinition) {
+pub(super) fn synchronize_skamp_count(
+    definition: &mut crate::feature::definitions::FeatureDefinition,
+) {
     let relations = definition.relations.as_mut().expect("relations");
     let count = u32::try_from(relations.skamps().len()).expect("skamp count");
     relations
@@ -67,7 +69,9 @@ pub(super) fn declared_solver_rows<T>(
     }
 }
 
-pub(super) fn synchronize_segment_count(definition: &mut crate::feature::FeatureDefinition) {
+pub(super) fn synchronize_segment_count(
+    definition: &mut crate::feature::definitions::FeatureDefinition,
+) {
     let segments = definition.segments.as_mut().expect("segments");
     segments.declared_count =
         u32::try_from(segments.rows.ordinary().count()).expect("segment count");
@@ -97,15 +101,18 @@ pub(super) fn surface_row(
     }
 }
 
-pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::FeatureEntityTable {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+pub(super) fn simple_drilled_recipe_table(
+    feature_id: u32,
+) -> crate::feature::entity::FeatureEntityTable {
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
     let entries = vec![
         entry(21, 204, None),
         entry(22, 203, None),
@@ -127,7 +134,7 @@ pub(super) fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::Fe
         entry(35, 200, Some(3)),
         entry(36, 200, Some(4)),
     ];
-    crate::feature::FeatureEntityTable::new(
+    crate::feature::entity::FeatureEntityTable::new(
         feature_id,
         29,
         entries,
@@ -150,8 +157,8 @@ pub(super) fn simple_drilled_recipe_surface_rows(
 
 #[cfg(test)]
 pub(super) fn section_axis_line_carrier(
-    definition: &crate::feature::FeatureDefinition,
-    segment: &crate::feature::FeatureSegment,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
     let variable_points = definition.variables.as_ref()?.reconciled_points().0;
     section_axis_line_carrier_with_points(&variable_points, segment)
@@ -159,10 +166,10 @@ pub(super) fn section_axis_line_carrier(
 
 #[cfg(test)]
 pub(super) fn section_segment_intersection_carrier(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
     let missing_line = saved_section_missing_line_geometry(definition);
     let variable_points = definition
@@ -184,7 +191,7 @@ pub(super) fn section_segment_intersection_carrier(
 pub(super) fn extruded_segment_surface(
     transform: &crate::placement::FeatureSectionTransform,
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SurfaceGeometry> {
     extruded_geometry_surface(transform, &section_segment_geometry(points, segment)?)
 }
@@ -193,21 +200,21 @@ pub(super) fn extruded_segment_surface(
 pub(super) fn placed_section_curve_geometry(
     transform: &crate::placement::FeatureSectionTransform,
     points: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
+    segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<CurveGeometry> {
     placed_section_geometry_curve(transform, &section_segment_geometry(points, segment)?)
 }
 
 #[cfg(test)]
 pub(super) fn section_skamp_constraints(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
     section_skamp_constraints_for_geometry(definition, sketch, None)
 }
 
-pub(super) fn opaque(external_id: u32) -> crate::feature::FeatureOpaqueSegment {
-    crate::feature::FeatureOpaqueSegment {
+pub(super) fn opaque(external_id: u32) -> crate::feature::definitions::FeatureOpaqueSegment {
+    crate::feature::definitions::FeatureOpaqueSegment {
         kind: 25,
         directions: [None; 3],
         point_ids: [None; 2],

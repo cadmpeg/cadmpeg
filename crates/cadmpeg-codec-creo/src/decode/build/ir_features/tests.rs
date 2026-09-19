@@ -5,7 +5,7 @@ use super::ordered_row_feature_ids;
 #[test]
 fn row_feature_ids_preserve_first_source_order() {
     let rows = [
-        crate::feature::FeatureRow {
+        crate::feature::rows::FeatureRow {
             feature_id: 40,
             root_schema_class: None,
             stream_offset: 0,
@@ -13,7 +13,7 @@ fn row_feature_ids_preserve_first_source_order() {
             body_offset: 30,
             offset: 20,
         },
-        crate::feature::FeatureRow {
+        crate::feature::rows::FeatureRow {
             feature_id: 12,
             root_schema_class: None,
             stream_offset: 0,
@@ -21,7 +21,7 @@ fn row_feature_ids_preserve_first_source_order() {
             body_offset: 50,
             offset: 40,
         },
-        crate::feature::FeatureRow {
+        crate::feature::rows::FeatureRow {
             feature_id: 40,
             root_schema_class: None,
             stream_offset: 0,

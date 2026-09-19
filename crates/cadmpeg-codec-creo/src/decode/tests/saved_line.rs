@@ -44,8 +44,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn saved_line_joins_through_order_table() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -56,7 +56,7 @@ fn saved_line_joins_through_order_table() {
         body: Vec::new(),
         offset: 40,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(5),
             owner_feature_id: Some(6),
@@ -68,11 +68,11 @@ fn saved_line_joins_through_order_table() {
         segments: None,
         trim_entities: None,
         trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
+        order_table: Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 42,
                 internal_id: 3,
                 bitmask: 0,
@@ -83,9 +83,9 @@ fn saved_line_joins_through_order_table() {
         section_3d: None,
         dimensions: None,
         relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Line(
-                crate::feature::FeatureSavedLine {
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+                crate::feature::definitions::FeatureSavedLine {
                     entity_id: 3,
                     references: Vec::new(),
                     attributes: Vec::new(),
@@ -144,19 +144,19 @@ fn saved_line_joins_through_order_table() {
             offset: 30,
         },
         vec![
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 7,
                 u: None,
                 v: None,
             },
-            crate::feature::FeatureSectionPoint {
+            crate::feature::definitions::FeatureSectionPoint {
                 point_id: 9,
                 u: None,
                 v: None,
             },
         ],
     ));
-    coordinate_definition.segments = Some(crate::feature::FeatureSegmentTable {
+    coordinate_definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
@@ -181,7 +181,7 @@ fn saved_line_joins_through_order_table() {
         BTreeMap::from([(7, [Some(7.0), Some(-0.85)]), (9, [Some(8.0), Some(-0.85)]),])
     );
     let mut incomplete = definition.clone();
-    let crate::feature::FeatureSavedEntity::Line(incomplete_line) = &mut incomplete
+    let crate::feature::definitions::FeatureSavedEntity::Line(incomplete_line) = &mut incomplete
         .saved_section
         .as_mut()
         .expect("saved section")
@@ -233,7 +233,7 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("order table")
         .rows
-        .push(crate::feature::FeatureOrderRow {
+        .push(crate::feature::definitions::FeatureOrderRow {
             external_id: 42,
             internal_id: 4,
             bitmask: 0,
@@ -270,17 +270,17 @@ fn saved_line_joins_through_order_table() {
         Some(42)
     );
     let mut constrained = definition.clone();
-    constrained.segments = Some(crate::feature::FeatureSegmentTable {
+    constrained.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 0,
         has_elided_prototype: false,
         entity_ref: None,
         rows: crate::feature::segment_rows::SegmentRows::default(),
         offset: 0,
     });
-    constrained.dimensions = Some(crate::feature::FeatureDimensionTable {
+    constrained.dimensions = Some(crate::feature::definitions::FeatureDimensionTable {
         declared_count: 1,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureDimension {
+        rows: vec![crate::feature::definitions::FeatureDimension {
             dimension_type: 1,
             value: crate::feature::definitions::DimensionValue::Resolved(2.0),
             value_body: Vec::new(),
@@ -293,10 +293,10 @@ fn saved_line_joins_through_order_table() {
         }],
         offset: 26,
     });
-    constrained.relations = Some(crate::feature::FeatureRelationTable {
+    constrained.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 3,
         entity_ref: None,
-        rows: vec![crate::feature::FeatureRelation {
+        rows: vec![crate::feature::definitions::FeatureRelation {
             relation_id: 7,
             used: 1,
             operands: Vec::new(),
@@ -317,17 +317,17 @@ fn saved_line_joins_through_order_table() {
                 entity_ref: 1,
                 offset: 29,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 5,
                 kind: 99,
                 flags: 0,
                 status: 1,
                 items: vec![
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 42,
                         sense: 4,
                     },
-                    crate::feature::FeatureSkampItem {
+                    crate::feature::definitions::FeatureSkampItem {
                         entity_id: 99,
                         sense: 0,
                     },
@@ -341,7 +341,7 @@ fn saved_line_joins_through_order_table() {
                 entity_ref: 2,
                 offset: 31,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: Some(7),
                 equation_id: Some(11),
                 skamp_id: Some(5),
@@ -424,7 +424,7 @@ fn saved_line_joins_through_order_table() {
     let mut duplicate_equation = equation_only_incidence.clone();
     let duplicate_equation_relations = duplicate_equation.relations.as_mut().expect("relations");
     declared_solver_rows(&mut duplicate_equation_relations.triples).push(
-        crate::feature::FeatureRelationTriple {
+        crate::feature::definitions::FeatureRelationTriple {
             relation_id: None,
             equation_id: Some(11),
             skamp_id: Some(5),
@@ -502,7 +502,7 @@ fn saved_line_joins_through_order_table() {
             && operand.object_index == Some(11)
     }));
     declared_solver_rows(&mut native_join.relations.as_mut().expect("relations").triples).push(
-        crate::feature::FeatureRelationTriple {
+        crate::feature::definitions::FeatureRelationTriple {
             relation_id: Some(7),
             equation_id: None,
             skamp_id: Some(5),
@@ -536,23 +536,24 @@ fn saved_line_joins_through_order_table() {
     }));
     let mut solver_families = constrained.clone();
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
-        id: 6,
-        kind: 0,
-        flags: 0,
-        status: 0,
-        items: vec![
-            crate::feature::FeatureSkampItem {
-                entity_id: 99,
-                sense: 2,
-            },
-            crate::feature::FeatureSkampItem {
-                entity_id: 100,
-                sense: 3,
-            },
-        ],
-        offset: 32,
-    }];
+    *declared_solver_rows(&mut family_relations.skamps) =
+        vec![crate::feature::definitions::FeatureSkamp {
+            id: 6,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::definitions::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 2,
+                },
+                crate::feature::definitions::FeatureSkampItem {
+                    entity_id: 100,
+                    sense: 3,
+                },
+            ],
+            offset: 32,
+        }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
         Some(SectionEntityIncidenceFamily::BoundedCurve)
@@ -566,11 +567,11 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp table")
         .rows_mut()[0]
         .items = vec![
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 99,
             sense: 0,
         },
-        crate::feature::FeatureSkampItem {
+        crate::feature::definitions::FeatureSkampItem {
             entity_id: 12,
             sense: 2,
         },
@@ -626,17 +627,18 @@ fn saved_line_joins_through_order_table() {
         Some(SectionEntityIncidenceFamily::BoundedCurve)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
-        id: 6,
-        kind: 1,
-        flags: 0,
-        status: 0,
-        items: vec![crate::feature::FeatureSkampItem {
-            entity_id: 99,
-            sense: 0,
-        }],
-        offset: 32,
-    }];
+    *declared_solver_rows(&mut family_relations.skamps) =
+        vec![crate::feature::definitions::FeatureSkamp {
+            id: 6,
+            kind: 1,
+            flags: 0,
+            status: 0,
+            items: vec![crate::feature::definitions::FeatureSkampItem {
+                entity_id: 99,
+                sense: 0,
+            }],
+            offset: 32,
+        }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
         Some(SectionEntityIncidenceFamily::Line)
@@ -682,23 +684,24 @@ fn saved_line_joins_through_order_table() {
         SketchConstraintDefinitionInput::Vertical { .. }
     ));
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
-        id: 6,
-        kind: 0,
-        flags: 0,
-        status: 0,
-        items: vec![
-            crate::feature::FeatureSkampItem {
-                entity_id: 99,
-                sense: 0,
-            },
-            crate::feature::FeatureSkampItem {
-                entity_id: 42,
-                sense: 2,
-            },
-        ],
-        offset: 32,
-    }];
+    *declared_solver_rows(&mut family_relations.skamps) =
+        vec![crate::feature::definitions::FeatureSkamp {
+            id: 6,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::definitions::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+                crate::feature::definitions::FeatureSkampItem {
+                    entity_id: 42,
+                    sense: 2,
+                },
+            ],
+            offset: 32,
+        }];
     assert_eq!(
         solver_only_section_entity_family(&solver_families, 99),
         Some(SectionEntityIncidenceFamily::Point)
@@ -771,23 +774,24 @@ fn saved_line_joins_through_order_table() {
         solver_constraints[0].0.definition
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    *declared_solver_rows(&mut family_relations.skamps) = vec![crate::feature::FeatureSkamp {
-        id: 6,
-        kind: 6,
-        flags: 0,
-        status: 1,
-        items: vec![
-            crate::feature::FeatureSkampItem {
-                entity_id: 99,
-                sense: 0,
-            },
-            crate::feature::FeatureSkampItem {
-                entity_id: 100,
-                sense: 0,
-            },
-        ],
-        offset: 33,
-    }];
+    *declared_solver_rows(&mut family_relations.skamps) =
+        vec![crate::feature::definitions::FeatureSkamp {
+            id: 6,
+            kind: 6,
+            flags: 0,
+            status: 1,
+            items: vec![
+                crate::feature::definitions::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+                crate::feature::definitions::FeatureSkampItem {
+                    entity_id: 100,
+                    sense: 0,
+                },
+            ],
+            offset: 33,
+        }];
     family_relations
         .skamps
         .as_mut()
@@ -805,17 +809,17 @@ fn saved_line_joins_through_order_table() {
         .skamps
         .as_mut()
         .expect("skamp table")
-        .rows_mut()[0] = crate::feature::FeatureSkamp {
+        .rows_mut()[0] = crate::feature::definitions::FeatureSkamp {
         id: 7,
         kind: 5,
         flags: 0,
         status: 0,
         items: vec![
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 99,
                 sense: 0,
             },
-            crate::feature::FeatureSkampItem {
+            crate::feature::definitions::FeatureSkampItem {
                 entity_id: 101,
                 sense: 0,
             },
@@ -838,7 +842,7 @@ fn saved_line_joins_through_order_table() {
         .expect("segments")
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::Opaque(
-            crate::feature::FeatureOpaqueSegment {
+            crate::feature::definitions::FeatureOpaqueSegment {
                 kind: 25,
                 directions: [None; 3],
                 point_ids: [None; 2],
@@ -857,12 +861,12 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("relations");
     *declared_solver_rows(&mut disabled_circular_relations.skamps) =
-        vec![crate::feature::FeatureSkamp {
+        vec![crate::feature::definitions::FeatureSkamp {
             id: 8,
             kind: 99,
             flags: 0,
             status: 0,
-            items: vec![crate::feature::FeatureSkampItem {
+            items: vec![crate::feature::definitions::FeatureSkampItem {
                 entity_id: 101,
                 sense: 4,
             }],
@@ -880,23 +884,25 @@ fn saved_line_joins_through_order_table() {
         Some(SectionEntityIncidenceFamily::Circular)
     );
     let family_relations = solver_families.relations.as_mut().expect("relations");
-    declared_solver_rows(&mut family_relations.skamps).push(crate::feature::FeatureSkamp {
-        id: 7,
-        kind: 5,
-        flags: 0,
-        status: 1,
-        items: vec![
-            crate::feature::FeatureSkampItem {
-                entity_id: 99,
-                sense: 0,
-            },
-            crate::feature::FeatureSkampItem {
-                entity_id: 101,
-                sense: 0,
-            },
-        ],
-        offset: 34,
-    });
+    declared_solver_rows(&mut family_relations.skamps).push(
+        crate::feature::definitions::FeatureSkamp {
+            id: 7,
+            kind: 5,
+            flags: 0,
+            status: 1,
+            items: vec![
+                crate::feature::definitions::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+                crate::feature::definitions::FeatureSkampItem {
+                    entity_id: 101,
+                    sense: 0,
+                },
+            ],
+            offset: 34,
+        },
+    );
     family_relations
         .skamps
         .as_mut()
@@ -989,7 +995,7 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("test definition has an order table")
         .declared_count = 0;
-    completed.segments = Some(crate::feature::FeatureSegmentTable {
+    completed.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
@@ -999,16 +1005,16 @@ fn saved_line_joins_through_order_table() {
             .collect(),
         offset: 4,
     });
-    completed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+    completed.trim_entities = Some(crate::feature::definitions::FeatureTrimEntityTable {
         declared_count: None,
         entity_ref: None,
         entry_ref: None,
         buckets: Vec::new(),
-        rows: vec![crate::feature::FeatureTrimEntity {
+        rows: vec![crate::feature::definitions::FeatureTrimEntity {
             external_id: 42,
             mode: Some(0),
             vertices: [1, 2],
-            kind: crate::feature::TrimEntityKind::Line,
+            kind: crate::feature::definitions::TrimEntityKind::Line,
             offset: 6,
         }],
         solved_external_ids: vec![42],
@@ -1086,7 +1092,7 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("order table")
         .rows
-        .push(crate::feature::FeatureOrderRow {
+        .push(crate::feature::definitions::FeatureOrderRow {
             external_id: 42,
             internal_id: 3,
             bitmask: 0,
@@ -1094,7 +1100,7 @@ fn saved_line_joins_through_order_table() {
         });
     let mut omitted_segment = segment.clone();
     omitted_segment.external_id = 43;
-    omitted_segment.kind = crate::feature::FeatureSegmentKind::Line([11, 12]);
+    omitted_segment.kind = crate::feature::definitions::FeatureSegmentKind::Line([11, 12]);
     missing_line
         .segments
         .as_mut()
@@ -1113,11 +1119,11 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("trim table")
         .rows
-        .push(crate::feature::FeatureTrimEntity {
+        .push(crate::feature::definitions::FeatureTrimEntity {
             external_id: 43,
             mode: Some(0),
             vertices: [3, 4],
-            kind: crate::feature::TrimEntityKind::Line,
+            kind: crate::feature::definitions::TrimEntityKind::Line,
             offset: 7,
         });
     missing_line
@@ -1203,13 +1209,15 @@ fn saved_line_joins_through_order_table() {
 
 #[test]
 fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
-    let entity = crate::feature::FeatureSavedEntity::Circle(crate::feature::FeatureSavedCircle {
-        entity_id: 7,
-        center: [Some(2.0), Some(-3.0), Some(0.0)],
-        radius: Some(4.5),
-        body: Vec::new(),
-        offset: 19,
-    });
+    let entity = crate::feature::definitions::FeatureSavedEntity::Circle(
+        crate::feature::definitions::FeatureSavedCircle {
+            entity_id: 7,
+            center: [Some(2.0), Some(-3.0), Some(0.0)],
+            radius: Some(4.5),
+            body: Vec::new(),
+            offset: 19,
+        },
+    );
 
     assert_eq!(
         saved_section_entity_geometry(&entity),
@@ -1226,13 +1234,13 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     let (_, geometry, _) = saved_section_entity_geometry(&entity).expect("complete saved circle");
     assert!(is_full_circle_geometry(&geometry));
 
-    let circle = crate::feature::FeatureCircleSegment {
+    let circle = crate::feature::definitions::FeatureCircleSegment {
         center_id: 11,
         radius_ref: 12,
         external_id: 13,
         offset: 20,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(5),
             owner_feature_id: Some(6),
@@ -1247,13 +1255,13 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
                 rows: Vec::new(),
                 offset: 30,
             },
-            vec![crate::feature::FeatureSectionPoint {
+            vec![crate::feature::definitions::FeatureSectionPoint {
                 point_id: 11,
                 u: None,
                 v: None,
             }],
         )),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
@@ -1265,11 +1273,11 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         }),
         trim_entities: None,
         trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
+        order_table: Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 13,
                 internal_id: 7,
                 bitmask: 0,
@@ -1280,7 +1288,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         section_3d: None,
         dimensions: None,
         relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
             entities: vec![entity],
             offset: 18,
         }),
@@ -1301,20 +1309,22 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     let mut conflicting_radius = definition.clone();
     let variables = conflicting_radius.variables.as_mut().expect("variables");
     variables.declared_count += 1;
-    variables.rows.push(crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::Radius,
-        key: 12,
-        value: crate::feature::definitions::ScalarLane::Value(5.0),
-        value_body: Vec::new(),
-        guess: crate::feature::definitions::ScalarLane::Undefined,
-        guess_body: Vec::new(),
+    variables
+        .rows
+        .push(crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::Radius,
+            key: 12,
+            value: crate::feature::definitions::ScalarLane::Value(5.0),
+            value_body: Vec::new(),
+            guess: crate::feature::definitions::ScalarLane::Undefined,
+            guess_body: Vec::new(),
 
-        known: None,
-        homogeneity: None,
-        uvar_id: None,
+            known: None,
+            homogeneity: None,
+            uvar_id: None,
 
-        offset: 33,
-    });
+            offset: 33,
+        });
     assert!(resolved_section_radii(&conflicting_radius).is_empty());
     let mut conflicting = definition;
     conflicting.variables.as_mut().expect("variables").rows[0].value = ScalarLane::Value(3.0);
@@ -1398,8 +1408,8 @@ fn generated_saved_geometry_forms_closed_profiles() {
 
 #[test]
 fn saved_arc_joins_through_order_table() {
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc([7, 9]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Arc([7, 9]),
         directions: [None; 3],
         center_id: Some(8),
         arc_orientation: Some(0),
@@ -1410,7 +1420,7 @@ fn saved_arc_joins_through_order_table() {
         body: Vec::new(),
         offset: 40,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(5),
             owner_feature_id: Some(6),
@@ -1422,11 +1432,11 @@ fn saved_arc_joins_through_order_table() {
         segments: None,
         trim_entities: None,
         trim_vertices: None,
-        order_table: Some(crate::feature::FeatureOrderTable {
+        order_table: Some(crate::feature::definitions::FeatureOrderTable {
             declared_count: 1,
             has_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureOrderRow {
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
                 external_id: 42,
                 internal_id: 3,
                 bitmask: 0,
@@ -1437,9 +1447,9 @@ fn saved_arc_joins_through_order_table() {
         section_3d: None,
         dimensions: None,
         relations: None,
-        saved_section: Some(crate::feature::FeatureSavedSection {
-            entities: vec![crate::feature::FeatureSavedEntity::Arc(
-                crate::feature::FeatureSavedArc {
+        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Arc(
+                crate::feature::definitions::FeatureSavedArc {
                     entity_id: 3,
                     center: [Some(0.0), Some(0.0), Some(0.0)],
                     radius: Some(2.0),
@@ -1480,14 +1490,16 @@ fn saved_arc_joins_through_order_table() {
             offset: 30,
         },
         [7, 8, 9]
-            .map(|point_id| crate::feature::FeatureSectionPoint {
-                point_id,
-                u: None,
-                v: None,
-            })
+            .map(
+                |point_id| crate::feature::definitions::FeatureSectionPoint {
+                    point_id,
+                    u: None,
+                    v: None,
+                },
+            )
             .to_vec(),
     ));
-    coordinate_definition.segments = Some(crate::feature::FeatureSegmentTable {
+    coordinate_definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
@@ -1519,7 +1531,7 @@ fn saved_arc_joins_through_order_table() {
         .as_mut()
         .expect("order table")
         .rows
-        .push(crate::feature::FeatureOrderRow {
+        .push(crate::feature::definitions::FeatureOrderRow {
             external_id: 42,
             internal_id: 4,
             bitmask: 0,
@@ -1541,7 +1553,7 @@ fn saved_arc_joins_through_order_table() {
         .push(duplicate);
     assert_eq!(saved_section_arc(&duplicate_saved_arc, &segment), None);
 
-    let segment_table = crate::feature::FeatureSegmentTable {
+    let segment_table = crate::feature::definitions::FeatureSegmentTable {
         declared_count: 2,
         has_elided_prototype: true,
         entity_ref: None,
@@ -1562,7 +1574,7 @@ fn saved_arc_joins_through_order_table() {
         .expect("saved section")
         .entities[0]
         .clone();
-    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut prototype {
+    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut prototype {
         arc.center = [None; 3];
         arc.radius = None;
         arc.endpoints = [[None; 3]; 2];
@@ -1592,11 +1604,12 @@ fn saved_arc_joins_through_order_table() {
         .as_mut()
         .expect("saved section")
         .entities[0] = complete_arc;
-    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut complete_elided_prototype
-        .saved_section
-        .as_mut()
-        .expect("saved section")
-        .entities[0]
+    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) =
+        &mut complete_elided_prototype
+            .saved_section
+            .as_mut()
+            .expect("saved section")
+            .entities[0]
     {
         arc.offset = 18;
     }
@@ -1613,7 +1626,7 @@ fn saved_arc_joins_through_order_table() {
         .expect("order table");
     order.has_prototype = true;
     order.declared_count = 2;
-    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut unique_at_table_origin
+    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut unique_at_table_origin
         .saved_section
         .as_mut()
         .expect("saved section")
@@ -1624,7 +1637,7 @@ fn saved_arc_joins_through_order_table() {
     assert!(saved_section_arc(&unique_at_table_origin, &segment).is_some());
 
     let mut trimmed = definition;
-    trimmed.segments = Some(crate::feature::FeatureSegmentTable {
+    trimmed.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
@@ -1634,16 +1647,16 @@ fn saved_arc_joins_through_order_table() {
             .collect(),
         offset: 38,
     });
-    trimmed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+    trimmed.trim_entities = Some(crate::feature::definitions::FeatureTrimEntityTable {
         declared_count: None,
         entity_ref: None,
         entry_ref: None,
         buckets: Vec::new(),
-        rows: vec![crate::feature::FeatureTrimEntity {
+        rows: vec![crate::feature::definitions::FeatureTrimEntity {
             external_id: 42,
             mode: Some(0),
             vertices: [1, 2],
-            kind: crate::feature::TrimEntityKind::Arc { center_vertex: 3 },
+            kind: crate::feature::definitions::TrimEntityKind::Arc { center_vertex: 3 },
             offset: 30,
         }],
         solved_external_ids: vec![42],
@@ -1654,19 +1667,19 @@ fn saved_arc_joins_through_order_table() {
         BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
     );
     let mut conflicting_vertex = trimmed.clone();
-    conflicting_vertex.trim_vertices = Some(crate::feature::FeatureTrimVertexTable {
+    conflicting_vertex.trim_vertices = Some(crate::feature::definitions::FeatureTrimVertexTable {
         declared_count: None,
         entity_ref: None,
         entry_ref: None,
         buckets: Vec::new(),
         rows: vec![
-            crate::feature::FeatureTrimVertex {
+            crate::feature::definitions::FeatureTrimVertex {
                 vertex_id: 1,
                 entities: vec![42, 43],
                 section_coordinates: Some([0.0, -2.0]),
                 offset: 31,
             },
-            crate::feature::FeatureTrimVertex {
+            crate::feature::definitions::FeatureTrimVertex {
                 vertex_id: 1,
                 entities: vec![42, 44],
                 section_coordinates: Some([9.0, 9.0]),
@@ -1679,7 +1692,7 @@ fn saved_arc_joins_through_order_table() {
         resolved_trim_vertex_coordinates(&conflicting_vertex, &BTreeMap::new()),
         BTreeMap::from([(2, [-2.0, 0.0])])
     );
-    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
         .saved_section
         .as_mut()
         .expect("test definition has a saved section")
@@ -1700,7 +1713,7 @@ fn saved_arc_joins_through_order_table() {
         saved_section_arc_carrier(&trimmed, segment),
         Some(([0.0, 0.0], 2.0))
     );
-    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
         .saved_section
         .as_mut()
         .expect("test definition has a saved section")
@@ -1709,7 +1722,7 @@ fn saved_arc_joins_through_order_table() {
         arc.center[1] = Some(0.0);
         arc.radius = Some(2.0);
     }
-    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
         .saved_section
         .as_mut()
         .expect("test definition has a saved section")
@@ -1723,7 +1736,7 @@ fn saved_arc_joins_through_order_table() {
         resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
         BTreeMap::from([(2, [-2.0, 0.0])])
     );
-    if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
         .saved_section
         .as_mut()
         .expect("test definition has a saved section")
@@ -1770,8 +1783,8 @@ fn placed_extrusion_line_defines_plane() {
         7,
     )
     .expect("valid section frame");
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,

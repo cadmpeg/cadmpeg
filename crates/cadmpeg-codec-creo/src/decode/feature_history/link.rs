@@ -77,7 +77,7 @@ fn solved_surface_kind(geometry: &SolvedSurfaceGeometry) -> Option<crate::surfac
 }
 
 pub(in super::super) fn generated_surface_id_for_feature(
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
     source_entity_id: u32,
 ) -> Option<u32> {
@@ -98,8 +98,8 @@ pub(in super::super) fn generated_surface_id_for_feature(
 
 pub(in super::super) fn generated_profile_entry_is_admissible(
     feature_id: u32,
-    table: &crate::feature::FeatureEntityTable,
-    entry: &crate::feature::FeatureEntityTableEntry,
+    table: &crate::feature::entity::FeatureEntityTable,
+    entry: &crate::feature::entity::FeatureEntityTableEntry,
     expected_kinds: &[crate::surface::SurfaceKind],
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
@@ -130,7 +130,7 @@ pub(in super::super) fn section_entity_is_generated_profile(
     feature_id: Option<u32>,
     source_entity_id: u32,
     expected_kinds: &[crate::surface::SurfaceKind],
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
     if !segment_table_complete {
@@ -210,7 +210,7 @@ pub(in super::super) fn section_entity_is_generated_profile(
     blind_cylinders.next().is_some() && blind_cylinders.next().is_none()
 }
 
-fn generated_profile_table_shape(table: &crate::feature::FeatureEntityTable) -> bool {
+fn generated_profile_table_shape(table: &crate::feature::entity::FeatureEntityTable) -> bool {
     let [first, second, rest @ ..] = table.entries.as_slice() else {
         return false;
     };
@@ -267,9 +267,9 @@ pub(in super::super) fn section_generated_profile_surface_kinds(
 
 pub(in super::super) fn ordered_analytic_surface_id_for_feature(
     surface_rows: &[crate::surface::SurfaceRow],
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
-    order: &crate::feature::FeatureOrderTable,
+    order: &crate::feature::definitions::FeatureOrderTable,
     external_id: u32,
     geometry: &SurfaceGeometry,
 ) -> Option<u32> {
@@ -279,7 +279,7 @@ pub(in super::super) fn ordered_analytic_surface_id_for_feature(
 
 pub(in super::super) fn analytic_surface_id_for_feature(
     surface_rows: &[crate::surface::SurfaceRow],
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
     external_id: u32,
     geometry: &SurfaceGeometry,
@@ -294,8 +294,8 @@ pub(in super::super) fn analytic_surface_id_for_feature(
 pub(in super::super) fn ordered_family_surface_bindings_for_feature(
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
-    tables: &[crate::feature::FeatureEntityTable],
-    order: &crate::feature::FeatureOrderTable,
+    tables: &[crate::feature::entity::FeatureEntityTable],
+    order: &crate::feature::definitions::FeatureOrderTable,
     external_ids: impl IntoIterator<Item = u32>,
     expected_kind: crate::surface::SurfaceKind,
 ) -> BTreeMap<u32, u32> {
@@ -322,7 +322,7 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
 
 pub(in super::super) fn profile_segment_ids(
     definition_id: u32,
-    segments: &[&crate::feature::FeatureSegment],
+    segments: &[&crate::feature::definitions::FeatureSegment],
     profiles: &[Vec<SketchEntityUse>],
 ) -> BTreeSet<u32> {
     segments

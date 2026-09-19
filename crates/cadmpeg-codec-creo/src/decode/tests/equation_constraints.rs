@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 
 #[test]
 fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -92,7 +92,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     );
 
     let mut disabled = definition;
-    disabled.relations = Some(crate::feature::FeatureRelationTable {
+    disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -102,7 +102,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -117,7 +117,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(1),
                 skamp_id: Some(900),
@@ -139,22 +139,23 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
 
 #[test]
 fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let point = |external_id, point_id| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Point(point_id),
+            offset: 0,
+        };
+    let point = |external_id, point_id| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Point(point_id),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -165,7 +166,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         body: Vec::new(),
         offset: external_id as usize,
     };
-    let mut definition = crate::feature::FeatureDefinition {
+    let mut definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -190,7 +191,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 3,
             has_elided_prototype: false,
             entity_ref: None,
@@ -293,7 +294,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
 
 #[test]
 fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segment_table() {
-    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
+    let variable = |variable_type, key, value| crate::feature::definitions::FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
         value,
@@ -305,7 +306,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
         uvar_id: None,
         offset: 0,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -325,11 +326,11 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureCircleSegment {
+            rows: (vec![crate::feature::definitions::FeatureCircleSegment {
                 center_id: 11,
                 radius_ref: 42,
                 external_id: 13,
@@ -344,10 +345,10 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
         trim_vertices: None,
         order_table: None,
         section_3d: None,
-        dimensions: Some(crate::feature::FeatureDimensionTable {
+        dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
             declared_count: 1,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureDimension {
+            rows: vec![crate::feature::definitions::FeatureDimension {
                 dimension_type: 3,
                 value: crate::feature::definitions::DimensionValue::Resolved(5.0),
                 value_body: Vec::new(),
@@ -385,7 +386,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
     );
 
     let mut disabled = definition;
-    disabled.relations = Some(crate::feature::FeatureRelationTable {
+    disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -395,7 +396,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -410,7 +411,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(1),
                 skamp_id: Some(900),
@@ -426,22 +427,23 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
 
 #[test]
 fn equation_function_zero_emits_polar_distance_constraint() {
-    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let variable =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+            offset: 0,
+        };
+    let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -452,7 +454,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         body: Vec::new(),
         offset: external_id as usize,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -476,7 +478,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
@@ -565,7 +567,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
     );
 
     let mut disabled = definition;
-    disabled.relations = Some(crate::feature::FeatureRelationTable {
+    disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -575,7 +577,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -590,7 +592,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(1),
                 skamp_id: Some(900),
@@ -606,22 +608,23 @@ fn equation_function_zero_emits_polar_distance_constraint() {
 
 #[test]
 fn equation_function_six_emits_fixed_distance_constraint() {
-    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let variable =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+            offset: 0,
+        };
+    let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -632,7 +635,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         body: Vec::new(),
         offset: external_id as usize,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -655,7 +658,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
@@ -727,7 +730,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
     .is_empty());
 
     let mut disabled = definition;
-    disabled.relations = Some(crate::feature::FeatureRelationTable {
+    disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -737,7 +740,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -752,7 +755,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(1),
                 skamp_id: Some(900),
@@ -769,22 +772,23 @@ fn equation_function_six_emits_fixed_distance_constraint() {
 
 #[test]
 fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
-    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let variable =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+            offset: 0,
+        };
+    let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -797,7 +801,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
-    let function_forty_two = crate::feature::FeatureDefinition {
+    let function_forty_two = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -818,7 +822,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
@@ -921,7 +925,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .is_empty()
     );
 
-    let function_thirty_one = crate::feature::FeatureDefinition {
+    let function_thirty_one = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -943,7 +947,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
@@ -1044,7 +1048,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
 
 #[test]
 fn equation_function_thirty_three_emits_equal_distance_pairs() {
-    let row = |variable_type, key| crate::feature::FeatureVariableRow {
+    let row = |variable_type, key| crate::feature::definitions::FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
         value: ScalarLane::Value(0.0),
@@ -1058,8 +1062,8 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
 
         offset: 0,
     };
-    let line = |external_id, point_ids| crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line(point_ids),
+    let line = |external_id, point_ids| crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -1070,7 +1074,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
         body: Vec::new(),
         offset: external_id as usize,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -1097,7 +1101,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
@@ -1152,7 +1156,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
     );
 
     let mut disabled = definition;
-    disabled.relations = Some(crate::feature::FeatureRelationTable {
+    disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -1162,7 +1166,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -1177,7 +1181,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(1),
                 skamp_id: Some(900),
@@ -1193,21 +1197,22 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
 
 #[test]
 fn equation_function_thirty_five_emits_point_on_line() {
-    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let row =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let segment = |kind, external_id| crate::feature::FeatureSegment {
+            offset: 0,
+        };
+    let segment = |kind, external_id| crate::feature::definitions::FeatureSegment {
         kind,
         directions: [None; 3],
         center_id: None,
@@ -1219,7 +1224,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
         body: Vec::new(),
         offset: external_id as usize,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -1246,13 +1251,19 @@ fn equation_function_thirty_five_emits_point_on_line() {
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
             rows: (vec![
-                segment(crate::feature::FeatureSegmentKind::Line([1, 2]), 10),
-                segment(crate::feature::FeatureSegmentKind::Point(3), 12),
+                segment(
+                    crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+                    10,
+                ),
+                segment(
+                    crate::feature::definitions::FeatureSegmentKind::Point(3),
+                    12,
+                ),
             ])
             .into_iter()
             .map(crate::feature::segment_rows::SegmentRow::Ordinary)
@@ -1295,10 +1306,15 @@ fn equation_function_thirty_five_emits_point_on_line() {
         .as_mut()
         .expect("segments");
     segments.rows.edit_ordinary(|rows| {
-        rows.retain(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)));
+        rows.retain(|segment| {
+            matches!(
+                segment.kind,
+                crate::feature::definitions::FeatureSegmentKind::Point(_)
+            )
+        });
     });
     segments.rows.edit_reference_lines(|rows| {
-        *rows = vec![crate::feature::FeatureReferenceLineSegment {
+        *rows = vec![crate::feature::definitions::FeatureReferenceLineSegment {
             directions: [None; 3],
             point_ids: [Some(1), Some(2)],
             vertical_horizontal: None,
@@ -1315,7 +1331,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
     );
 
     let mut disabled = definition;
-    disabled.relations = Some(crate::feature::FeatureRelationTable {
+    disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -1325,7 +1341,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -1340,7 +1356,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(1),
                 skamp_id: Some(900),
@@ -1356,21 +1372,22 @@ fn equation_function_thirty_five_emits_point_on_line() {
 
 #[test]
 fn equation_function_three_emits_parameterized_coordinate_distance() {
-    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let variable =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let dimension = crate::feature::FeatureDimension {
+            offset: 0,
+        };
+    let dimension = crate::feature::definitions::FeatureDimension {
         dimension_type: 1,
         value: crate::feature::definitions::DimensionValue::Resolved(10.0),
         value_body: Vec::new(),
@@ -1381,7 +1398,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         references: None,
         offset: 0,
     };
-    let definition = crate::feature::FeatureDefinition {
+    let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
             owner_feature_id: None,
@@ -1402,12 +1419,12 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
             ],
             offset: 0,
         }),
-        segments: Some(crate::feature::FeatureSegmentTable {
+        segments: Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
+            rows: (vec![crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
                 arc_orientation: None,
@@ -1427,7 +1444,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         trim_vertices: None,
         order_table: None,
         section_3d: None,
-        dimensions: Some(crate::feature::FeatureDimensionTable {
+        dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
             declared_count: 1,
             entity_ref: None,
             rows: vec![dimension],
@@ -1475,7 +1492,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     ));
 
     let mut disabled = definition;
-    disabled.relations = Some(crate::feature::FeatureRelationTable {
+    disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -1485,7 +1502,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -1500,7 +1517,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(1),
                 skamp_id: Some(900),
@@ -1516,91 +1533,93 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
 
 #[test]
 fn equation_function_forty_three_emits_parameterized_axis_distance() {
-    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key,
-        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
-        guess_body: Vec::new(),
+    let variable =
+        |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            value_body: Vec::new(),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+            guess_body: Vec::new(),
 
-        known: Some(0),
-        homogeneity: Some(1),
-        uvar_id: None,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
 
-        offset: 0,
-    };
-    let definition = |second: [f64; 2], dimension_value| crate::feature::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(40),
-            owner_feature_id: None,
-        },
-        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+            offset: 0,
+        };
+    let definition =
+        |second: [f64; 2], dimension_value| crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(40),
+                owner_feature_id: None,
+            },
+            body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x2b\xf8\x08\x00\x01\x02\x03\x04\x05\x06\x07\xf6\xe2"
-            .to_vec(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: Some(crate::feature::definitions::FeatureVariableTable {
-            declared_count: 8,
-            entity_ref: None,
-            rows: vec![
-                variable(1, 1, Some(0.0)),
-                variable(2, 1, Some(0.0)),
-                variable(1, 2, Some(second[0])),
-                variable(2, 2, Some(second[1])),
-                variable(4, 0, Some(0.0)),
-                variable(5, 0, Some(0.0)),
-                variable(0, 0, Some(10.0)),
-                variable(5, 1, Some(0.0)),
-            ],
-            offset: 0,
-        }),
-        segments: Some(crate::feature::FeatureSegmentTable {
-            declared_count: 1,
-            has_elided_prototype: false,
-            entity_ref: None,
-            rows: (vec![crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
-                directions: [None; 3],
-                center_id: None,
-                arc_orientation: None,
-                vertical_horizontal: None,
-                radius_ref: None,
-                radius2_ref: None,
-                external_id: 10,
-                body: Vec::new(),
-                offset: 10,
-            }])
-            .into_iter()
-            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-            .collect(),
-            offset: 0,
-        }),
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: Some(crate::feature::FeatureDimensionTable {
-            declared_count: 1,
-            entity_ref: None,
-            rows: vec![crate::feature::FeatureDimension {
-                dimension_type: 1,
-                value: crate::feature::definitions::DimensionValue::Resolved(dimension_value),
-                value_body: Vec::new(),
-                direction_byte: 0,
-                auxiliary_value: None,
-                auxiliary_body: Vec::new(),
-                external_id: 27,
-                references: None,
+                .to_vec(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(crate::feature::definitions::FeatureVariableTable {
+                declared_count: 8,
+                entity_ref: None,
+                rows: vec![
+                    variable(1, 1, Some(0.0)),
+                    variable(2, 1, Some(0.0)),
+                    variable(1, 2, Some(second[0])),
+                    variable(2, 2, Some(second[1])),
+                    variable(4, 0, Some(0.0)),
+                    variable(5, 0, Some(0.0)),
+                    variable(0, 0, Some(10.0)),
+                    variable(5, 1, Some(0.0)),
+                ],
                 offset: 0,
-            }],
+            }),
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
+                declared_count: 1,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: (vec![crate::feature::definitions::FeatureSegment {
+                    kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+                    directions: [None; 3],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 10,
+                    body: Vec::new(),
+                    offset: 10,
+                }])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: Some(crate::feature::definitions::FeatureDimensionTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![crate::feature::definitions::FeatureDimension {
+                    dimension_type: 1,
+                    value: crate::feature::definitions::DimensionValue::Resolved(dimension_value),
+                    value_body: Vec::new(),
+                    direction_byte: 0,
+                    auxiliary_value: None,
+                    auxiliary_body: Vec::new(),
+                    external_id: 27,
+                    references: None,
+                    offset: 0,
+                }],
+                offset: 0,
+            }),
+            relations: None,
+            saved_section: None,
             offset: 0,
-        }),
-        relations: None,
-        saved_section: None,
-        offset: 0,
-    };
+        };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
     let horizontal =
@@ -1647,7 +1666,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
     );
 
     let mut disabled = definition([10.0, 0.0], 10.0);
-    disabled.relations = Some(crate::feature::FeatureRelationTable {
+    disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
@@ -1657,7 +1676,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
                 entity_ref: 901,
                 offset: 900,
             },
-            rows: vec![crate::feature::FeatureSkamp {
+            rows: vec![crate::feature::definitions::FeatureSkamp {
                 id: 900,
                 kind: 0,
                 flags: 0,
@@ -1672,7 +1691,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
                 entity_ref: 903,
                 offset: 902,
             },
-            rows: vec![crate::feature::FeatureRelationTriple {
+            rows: vec![crate::feature::definitions::FeatureRelationTriple {
                 relation_id: None,
                 equation_id: Some(1),
                 skamp_id: Some(900),

@@ -78,8 +78,8 @@ fn placed_extrusion_arc_defines_cylinder() {
         7,
     )
     .expect("valid section frame");
-    let segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Arc([1, 2]),
         directions: [None; 3],
         center_id: Some(3),
         arc_orientation: Some(0),
@@ -138,8 +138,8 @@ fn placed_extrusion_arc_defines_cylinder() {
 
 #[test]
 fn segment_verhor_projection_is_closed_and_lossless() {
-    let mut segment = crate::feature::FeatureSegment {
-        kind: crate::feature::FeatureSegmentKind::Line([7, 9]),
+    let mut segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([7, 9]),
         directions: [None; 3],
         center_id: None,
         arc_orientation: None,
@@ -183,7 +183,7 @@ fn segment_verhor_projection_is_closed_and_lossless() {
         Some("ext_id")
     );
     assert_eq!(operands[0].object_index, Some(12));
-    segment.kind = crate::feature::FeatureSegmentKind::Arc(segment.point_ids());
+    segment.kind = crate::feature::definitions::FeatureSegmentKind::Arc(segment.point_ids());
     segment.vertical_horizontal = Some(0);
     assert!(matches!(
         section_segment_verhor_definition(&segment, &sketch, entity),
@@ -253,7 +253,7 @@ fn dimension_identity_includes_its_feature_definition() {
         feature_dimension_parameter_row_id(&sketch_917, 3, Some(0)),
         feature_dimension_parameter_row_id(&sketch_917, 3, Some(1))
     );
-    let dimension = crate::feature::FeatureDimension {
+    let dimension = crate::feature::definitions::FeatureDimension {
         dimension_type: 2,
         value: crate::feature::definitions::DimensionValue::Resolved(5.0),
         value_body: Vec::new(),
@@ -264,13 +264,13 @@ fn dimension_identity_includes_its_feature_definition() {
         references: None,
         offset: 10,
     };
-    let mut table = crate::feature::FeatureDimensionTable {
+    let mut table = crate::feature::definitions::FeatureDimensionTable {
         declared_count: 1,
         entity_ref: None,
         rows: vec![dimension.clone()],
         offset: 9,
     };
-    let mut definition = crate::feature::FeatureDefinition {
+    let mut definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(917),
             owner_feature_id: Some(40),
@@ -301,11 +301,11 @@ fn dimension_identity_includes_its_feature_definition() {
                 .expect("identity grammar")
         ))
     );
-    definition.segments = Some(crate::feature::FeatureSegmentTable {
+    definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: (vec![crate::feature::FeatureCircleSegment {
+        rows: (vec![crate::feature::definitions::FeatureCircleSegment {
             center_id: 7,
             radius_ref: 0,
             external_id: 42,
@@ -411,7 +411,7 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("segment table")
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::Circle(
-            crate::feature::FeatureCircleSegment {
+            crate::feature::definitions::FeatureCircleSegment {
                 center_id: 8,
                 radius_ref: 0,
                 external_id: 42,
@@ -468,7 +468,7 @@ fn dimension_identity_includes_its_feature_definition() {
     segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::Opaque(
-            crate::feature::FeatureOpaqueSegment {
+            crate::feature::definitions::FeatureOpaqueSegment {
                 kind: 10,
                 directions: [None; 3],
                 point_ids: [None, Some(1)],
@@ -529,8 +529,8 @@ fn dimension_identity_includes_its_feature_definition() {
         .expect("segment table")
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
-            crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+            crate::feature::definitions::FeatureSegment {
+                kind: crate::feature::definitions::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
                 center_id: Some(7),
                 arc_orientation: Some(0),
@@ -601,13 +601,13 @@ fn dimension_identity_includes_its_feature_definition() {
             .expect("valid test fixture")
         )
     );
-    let unresolved_dimension = crate::feature::FeatureDimension {
+    let unresolved_dimension = crate::feature::definitions::FeatureDimension {
         value: crate::feature::definitions::DimensionValue::Undefined,
         value_body: Vec::new(),
         external_id: 4,
         ..dimension.clone()
     };
-    let unresolved_table = crate::feature::FeatureDimensionTable {
+    let unresolved_table = crate::feature::definitions::FeatureDimensionTable {
         rows: vec![unresolved_dimension.clone()],
         ..table.clone()
     };
@@ -619,7 +619,7 @@ fn dimension_identity_includes_its_feature_definition() {
                 .expect("identity grammar")
         ))
     );
-    let incomplete_table = crate::feature::FeatureDimensionTable {
+    let incomplete_table = crate::feature::definitions::FeatureDimensionTable {
         declared_count: 2,
         ..unresolved_table
     };

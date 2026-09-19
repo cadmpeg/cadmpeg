@@ -28,14 +28,14 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
     )
 }
 
-fn section() -> crate::feature::FeatureSection3d {
-    crate::feature::FeatureSection3d {
+fn section() -> crate::feature::definitions::FeatureSection3d {
+    crate::feature::definitions::FeatureSection3d {
         sketch_plane_entity_id: Some(30),
-        sketch_plane_flip: Some(crate::feature::BinaryFlag::Clear),
+        sketch_plane_flip: Some(crate::feature::definitions::BinaryFlag::Clear),
         reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![29]),
         reference_plane_datum_geometry_id: None,
-        orientation: crate::feature::FeatureSectionOrientation {
-            section_flip: Some(crate::feature::BinaryFlag::Set),
+        orientation: crate::feature::definitions::FeatureSectionOrientation {
+            section_flip: Some(crate::feature::definitions::BinaryFlag::Set),
             ..Default::default()
         },
         dimension_ids: Vec::new(),
@@ -71,7 +71,7 @@ fn generated_fixture(
 ) -> (
     crate::container::ContainerScan<'static>,
     CadIr,
-    crate::feature::FeatureSection3d,
+    crate::feature::definitions::FeatureSection3d,
 ) {
     let row = |id, reversed| crate::surface::SurfaceRow {
         id,
@@ -134,13 +134,13 @@ fn generated_fixture(
             row_offset: 0,
             offset: 0,
         });
-    let section = crate::feature::FeatureSection3d {
+    let section = crate::feature::definitions::FeatureSection3d {
         sketch_plane_entity_id: Some(30),
-        sketch_plane_flip: Some(crate::feature::BinaryFlag::Clear),
+        sketch_plane_flip: Some(crate::feature::definitions::BinaryFlag::Clear),
         reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![29]),
         reference_plane_datum_geometry_id: None,
-        orientation: crate::feature::FeatureSectionOrientation {
-            section_flip: Some(crate::feature::BinaryFlag::Clear),
+        orientation: crate::feature::definitions::FeatureSectionOrientation {
+            section_flip: Some(crate::feature::definitions::BinaryFlag::Clear),
             ..Default::default()
         },
         dimension_ids: Vec::new(),

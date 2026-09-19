@@ -378,12 +378,12 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
     assert_eq!(scan.features.choice_fields[0].name, "count");
     assert_eq!(
         scan.features.choice_fields[0].value,
-        crate::feature::FeatureFieldValue::CompactInt(7)
+        crate::feature::rows::FeatureFieldValue::CompactInt(7)
     );
     assert_eq!(scan.features.choice_fields[1].name, "refs");
     assert_eq!(
         scan.features.choice_fields[1].value,
-        crate::feature::FeatureFieldValue::CompactIntArray(vec![3, 4])
+        crate::feature::rows::FeatureFieldValue::CompactIntArray(vec![3, 4])
     );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -423,7 +423,7 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
 
     assert_eq!(
         scan.features.choice_fields[0].value,
-        crate::feature::FeatureFieldValue::ScalarArray {
+        crate::feature::rows::FeatureFieldValue::ScalarArray {
             dimensions: 1,
             count: 3,
             body: vec![0x0f, 0xe4, 0x46, 0x08, 0, 0, 0, 0, 0, 0],
@@ -467,17 +467,17 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     assert_eq!(scan.features.geometry_tables[0].feature_id, 4);
     assert_eq!(
         scan.features.geometry_tables[0].kind,
-        crate::feature::FeatureGeometryTableKind::EdgeIds
+        crate::feature::rows::FeatureGeometryTableKind::EdgeIds
     );
     assert_eq!(scan.features.geometry_tables[0].count, 3);
     assert_eq!(scan.features.geometry_tables[0].entity_class, 0x53);
     assert_eq!(
         scan.features.geometry_tables[1].kind,
-        crate::feature::FeatureGeometryTableKind::UsedBodies
+        crate::feature::rows::FeatureGeometryTableKind::UsedBodies
     );
     assert_eq!(
         scan.features.geometry_tables[2].kind,
-        crate::feature::FeatureGeometryTableKind::DatumIds(Some(vec![42, 43]))
+        crate::feature::rows::FeatureGeometryTableKind::DatumIds(Some(vec![42, 43]))
     );
     assert_eq!(
         scan.features.geometry_tables[2].kind.datum_ids(),
@@ -579,17 +579,17 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
     assert_eq!(scan.features.affected_ids.len(), 3);
     assert_eq!(
         scan.features.affected_ids[0].kind,
-        crate::feature::AffectedIdKind::Geometry
+        crate::feature::rows::AffectedIdKind::Geometry
     );
     assert_eq!(scan.features.affected_ids[0].ids, vec![7, 128, 9]);
     assert_eq!(
         scan.features.affected_ids[1].kind,
-        crate::feature::AffectedIdKind::Contours
+        crate::feature::rows::AffectedIdKind::Contours
     );
     assert_eq!(scan.features.affected_ids[1].ids, vec![42]);
     assert_eq!(
         scan.features.affected_ids[2].kind,
-        crate::feature::AffectedIdKind::Parents
+        crate::feature::rows::AffectedIdKind::Parents
     );
     assert_eq!(scan.features.affected_ids[2].ids, vec![1, 3]);
 
@@ -628,11 +628,11 @@ fn scan_partitions_allfeatur_positional_round_operands() {
     assert_eq!(scan.features.replay_affected_ids[0].edge_ids, vec![9]);
     assert_eq!(
         scan.features.replay_affected_ids[0].geometry_extent,
-        crate::feature::ReplayExtentSource::Explicit
+        crate::feature::rows::ReplayExtentSource::Explicit
     );
     assert_eq!(
         scan.features.replay_affected_ids[0].edge_extent,
-        crate::feature::ReplayExtentSource::Explicit
+        crate::feature::rows::ReplayExtentSource::Explicit
     );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -803,7 +803,7 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
         .find(|table| {
             matches!(
                 table.kind,
-                crate::feature::FeatureGeometryTableKind::DatumIds(_)
+                crate::feature::rows::FeatureGeometryTableKind::DatumIds(_)
             )
         })
         .expect("datum table");
@@ -814,7 +814,7 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
         .features
         .affected_ids
         .iter()
-        .find(|record| record.kind == crate::feature::AffectedIdKind::Parents)
+        .find(|record| record.kind == crate::feature::rows::AffectedIdKind::Parents)
         .expect("parent table");
     assert_eq!(parents.feature_id, 17);
     assert_eq!(parents.ids, [3, 5]);

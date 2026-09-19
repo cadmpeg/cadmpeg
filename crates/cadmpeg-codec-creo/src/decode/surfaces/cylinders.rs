@@ -74,7 +74,7 @@ const EPS_LENGTH_NONZERO: f64 = EPS_CYLINDER_GEOMETRY;
 
 pub(in super::super) fn rowless_round_cylinder_pairs(
     round_feature_ids: &BTreeSet<u32>,
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Vec<(u32, u32, usize)> {
     tables
@@ -177,12 +177,12 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         let named = agreed_feature_affected_ids(
             &scan.features.affected_ids,
             feature_id,
-            crate::feature::AffectedIdKind::Geometry,
+            crate::feature::rows::AffectedIdKind::Geometry,
         );
         let named_present = has_feature_affected_ids(
             &scan.features.affected_ids,
             feature_id,
-            crate::feature::AffectedIdKind::Geometry,
+            crate::feature::rows::AffectedIdKind::Geometry,
         );
         let replay =
             agreed_feature_replay_geometry_ids(&scan.features.replay_affected_ids, feature_id);
@@ -1064,7 +1064,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                 .entity_tables
                 .iter()
                 .filter(|table| table.feature_id == row.feature_id)
-                .flat_map(crate::feature::FeatureEntityTable::entry_ids)
+                .flat_map(crate::feature::entity::FeatureEntityTable::entry_ids)
                 .collect::<BTreeSet<_>>();
             let circles = scan
                 .references

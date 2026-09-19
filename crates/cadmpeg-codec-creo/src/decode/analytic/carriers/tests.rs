@@ -186,7 +186,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
 #[test]
 fn placed_carriers_keeps_non_inline_class913_model_carrier() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
-    scan.features.rows.push(crate::feature::FeatureRow {
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,

@@ -42,10 +42,10 @@ pub(in super::super) fn feature_dependencies(
 }
 
 pub(in super::super) fn native_feature_dependency_ids(
-    affected_ids: &[crate::feature::FeatureAffectedIds],
-    operations: &[crate::feature::FeatureOperation],
-    entity_tables: &[crate::feature::FeatureEntityTable],
-    surface_merge_replay_affected_ids: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    affected_ids: &[crate::feature::rows::FeatureAffectedIds],
+    operations: &[crate::feature::operations::FeatureOperation],
+    entity_tables: &[crate::feature::entity::FeatureEntityTable],
+    surface_merge_replay_affected_ids: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
     prototype_dependencies: &[u32],
@@ -80,7 +80,7 @@ pub(in super::super) fn native_feature_dependency_ids(
 }
 
 pub(in super::super) fn feature_output_surface_dependencies(
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
 ) -> Vec<u32> {
@@ -109,7 +109,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
 }
 
 pub(in super::super) fn feature_entity_dependencies(
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
 ) -> Vec<u32> {
     let mut dependencies = Vec::new();
@@ -134,7 +134,7 @@ pub(in super::super) fn feature_entity_dependencies(
 }
 
 fn feature_entity_producers(
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     entity_id: u32,
 ) -> Vec<u32> {
     tables
@@ -156,7 +156,7 @@ fn feature_entity_producers(
 }
 
 pub(in super::super) fn preceding_feature_entity_producers(
-    tables: &[crate::feature::FeatureEntityTable],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     entity_id: u32,
     consumer_offset: usize,
 ) -> Vec<u32> {
@@ -175,7 +175,7 @@ pub(in super::super) fn preceding_feature_entity_producers(
 }
 
 pub(in super::super) fn agreed_surface_merge_replay_quilt_ids(
-    records: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    records: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
 ) -> Option<&[u32]> {
     let mut matches = records
@@ -188,21 +188,21 @@ pub(in super::super) fn agreed_surface_merge_replay_quilt_ids(
 }
 
 pub(in super::super) fn surface_merge_quilt_ids<'a>(
-    affected_ids: &'a [crate::feature::FeatureAffectedIds],
-    replay: &'a [crate::feature::FeatureSurfaceMergeAffectedIds],
+    affected_ids: &'a [crate::feature::rows::FeatureAffectedIds],
+    replay: &'a [crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
 ) -> Option<&'a [u32]> {
     if let Some(ids) = agreed_feature_affected_ids(
         affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Quilts,
+        crate::feature::rows::AffectedIdKind::Quilts,
     ) {
         return (!ids.is_empty()).then_some(ids);
     }
     if has_feature_affected_ids(
         affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Quilts,
+        crate::feature::rows::AffectedIdKind::Quilts,
     ) {
         return None;
     }
@@ -210,15 +210,15 @@ pub(in super::super) fn surface_merge_quilt_ids<'a>(
 }
 
 pub(in super::super) fn surface_merge_quilt_state_offset(
-    affected_ids: &[crate::feature::FeatureAffectedIds],
-    replay: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    affected_ids: &[crate::feature::rows::FeatureAffectedIds],
+    replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
     quilt_ids: &[u32],
 ) -> Option<usize> {
     if let Some(ids) = agreed_feature_affected_ids(
         affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Quilts,
+        crate::feature::rows::AffectedIdKind::Quilts,
     ) {
         return (ids == quilt_ids)
             .then(|| {
@@ -226,7 +226,7 @@ pub(in super::super) fn surface_merge_quilt_state_offset(
                     .iter()
                     .filter(|record| {
                         record.feature_id == feature_id
-                            && record.kind == crate::feature::AffectedIdKind::Quilts
+                            && record.kind == crate::feature::rows::AffectedIdKind::Quilts
                             && record.ids == quilt_ids
                     })
                     .map(|record| record.offset)
@@ -237,7 +237,7 @@ pub(in super::super) fn surface_merge_quilt_state_offset(
     if has_feature_affected_ids(
         affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Quilts,
+        crate::feature::rows::AffectedIdKind::Quilts,
     ) {
         return None;
     }
@@ -252,9 +252,9 @@ pub(in super::super) fn surface_merge_quilt_state_offset(
 }
 
 pub(in super::super) fn surface_merge_entity_dependencies(
-    affected_ids: &[crate::feature::FeatureAffectedIds],
-    replay: &[crate::feature::FeatureSurfaceMergeAffectedIds],
-    tables: &[crate::feature::FeatureEntityTable],
+    affected_ids: &[crate::feature::rows::FeatureAffectedIds],
+    replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
+    tables: &[crate::feature::entity::FeatureEntityTable],
     feature_id: u32,
 ) -> Vec<u32> {
     let Some(ids) = surface_merge_quilt_ids(affected_ids, replay, feature_id) else {
@@ -282,9 +282,9 @@ pub(in super::super) fn surface_merge_entity_dependencies(
 }
 
 pub(in super::super) fn agreed_feature_affected_ids(
-    records: &[crate::feature::FeatureAffectedIds],
+    records: &[crate::feature::rows::FeatureAffectedIds],
     feature_id: u32,
-    kind: crate::feature::AffectedIdKind,
+    kind: crate::feature::rows::AffectedIdKind,
 ) -> Option<&[u32]> {
     let mut matches = records
         .iter()
@@ -296,9 +296,9 @@ pub(in super::super) fn agreed_feature_affected_ids(
 }
 
 pub(in super::super) fn has_feature_affected_ids(
-    records: &[crate::feature::FeatureAffectedIds],
+    records: &[crate::feature::rows::FeatureAffectedIds],
     feature_id: u32,
-    kind: crate::feature::AffectedIdKind,
+    kind: crate::feature::rows::AffectedIdKind,
 ) -> bool {
     records
         .iter()
@@ -306,7 +306,7 @@ pub(in super::super) fn has_feature_affected_ids(
 }
 
 pub(in super::super) fn agreed_feature_parent_ids(
-    records: &[crate::feature::FeatureAffectedIds],
+    records: &[crate::feature::rows::FeatureAffectedIds],
     feature_id: u32,
 ) -> Vec<u32> {
     let mut emitted_kinds = Vec::new();
@@ -315,8 +315,8 @@ pub(in super::super) fn agreed_feature_parent_ids(
         record.feature_id == feature_id
             && matches!(
                 record.kind,
-                crate::feature::AffectedIdKind::StrongParents
-                    | crate::feature::AffectedIdKind::Parents
+                crate::feature::rows::AffectedIdKind::StrongParents
+                    | crate::feature::rows::AffectedIdKind::Parents
             )
     }) {
         if emitted_kinds.contains(&record.kind) {
@@ -371,7 +371,7 @@ pub(in super::super) fn add_surface_prototype_feature_dependencies(
 }
 
 pub(in super::super) fn agreed_feature_replay_geometry_ids(
-    records: &[crate::feature::FeatureReplayAffectedIds],
+    records: &[crate::feature::rows::FeatureReplayAffectedIds],
     feature_id: u32,
 ) -> Option<&[u32]> {
     let mut matches = records
@@ -384,7 +384,7 @@ pub(in super::super) fn agreed_feature_replay_geometry_ids(
 }
 
 pub(in super::super) fn agreed_feature_replay_edge_ids(
-    records: &[crate::feature::FeatureReplayAffectedIds],
+    records: &[crate::feature::rows::FeatureReplayAffectedIds],
     feature_id: u32,
 ) -> Option<&[u32]> {
     let mut matches = records

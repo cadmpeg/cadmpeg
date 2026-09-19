@@ -677,17 +677,17 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-    section: Option<&crate::feature::FeatureSection3d>,
+    section: Option<&crate::feature::definitions::FeatureSection3d>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let section = section?;
     section.sketch_plane_entity_id?;
     let plane_flip = match section.sketch_plane_flip? {
-        crate::feature::BinaryFlag::Clear => false,
-        crate::feature::BinaryFlag::Set => true,
+        crate::feature::definitions::BinaryFlag::Clear => false,
+        crate::feature::definitions::BinaryFlag::Set => true,
     };
     let section_flip = match section.orientation.section_flip? {
-        crate::feature::BinaryFlag::Clear => false,
-        crate::feature::BinaryFlag::Set => true,
+        crate::feature::definitions::BinaryFlag::Clear => false,
+        crate::feature::definitions::BinaryFlag::Set => true,
     };
     let start_reversed = plane_flip ^ section_flip;
     let rows = scan
@@ -869,7 +869,7 @@ pub(in super::super) fn directed_blind_extrusion_span(
 }
 
 pub(in super::super) fn feature_id_for_section_transform(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<u32> {
     match (definition.identity.owner_feature_id(), transform.feature_id) {
@@ -904,7 +904,7 @@ pub(in super::super) fn derived_blind_extrusion_span(
 pub(in super::super) fn resolved_feature_extrusion_span(
     scan: &ContainerScan,
     ir: &CadIr,
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<ExtrusionSpan> {
     let feature_id = feature_id_for_section_transform(definition, transform)?;

@@ -2,15 +2,16 @@
 
 #[test]
 fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
-    let table = crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = crate::feature::entity::FeatureEntityTable::new(
         107,
         29,
         vec![
@@ -58,7 +59,7 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
 
 #[test]
 fn circular_sweep_requires_an_exact_materialized_surface_roster() {
-    let table = crate::feature::FeatureEntityTable::new(
+    let table = crate::feature::entity::FeatureEntityTable::new(
         40,
         29,
         vec![

@@ -63,7 +63,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
+        if feature_recipe(scan, feature_id)
+            != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
+        {
             continue;
         }
         if unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id).is_none()
@@ -124,7 +126,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                             generating_ids.contains(&segment.external_id)
                                 && matches!(
                                     segment.kind,
-                                    crate::feature::FeatureSegmentKind::Arc(_)
+                                    crate::feature::definitions::FeatureSegmentKind::Arc(_)
                                 )
                         })
                         .map(|segment| segment.external_id),
@@ -141,7 +143,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     &scan.features.entity_tables,
                     order,
                     semantic_saved_section_entities(definition).filter_map(|entity| match entity {
-                        crate::feature::FeatureSavedEntity::Spline(spline) => {
+                        crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
                             order.external_id(spline.entity_id?)
                         }
                         _ => None,
@@ -161,7 +163,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 continue;
             };
             let native_surface = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line(_) => {
+                crate::feature::definitions::FeatureSegmentKind::Line(_) => {
                     definition.order_table.as_ref().and_then(|order| {
                         ordered_analytic_surface_id_for_feature(
                             &scan.surfaces.rows,
@@ -173,10 +175,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         )
                     })
                 }
-                crate::feature::FeatureSegmentKind::Arc(_) => {
+                crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
                     arc_bindings.get(&segment.external_id).copied()
                 }
-                crate::feature::FeatureSegmentKind::Point(_) => None,
+                crate::feature::definitions::FeatureSegmentKind::Point(_) => None,
             };
             let surface_id = native_surface.map_or_else(
                 || {
@@ -286,7 +288,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         }
         for spline in
             semantic_saved_section_entities(definition).filter_map(|entity| match entity {
-                crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+                crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
         {
@@ -447,7 +449,9 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
+        if feature_recipe(scan, feature_id)
+            != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
+        {
             continue;
         }
         let Some(definition) =

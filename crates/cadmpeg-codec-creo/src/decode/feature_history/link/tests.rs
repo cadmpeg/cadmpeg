@@ -13,7 +13,7 @@ fn section_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .definitions
-        .push(crate::feature::FeatureDefinition {
+        .push(crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(7),
                 owner_feature_id: None,
@@ -26,12 +26,12 @@ fn section_scan() -> crate::container::ContainerScan<'static> {
             trim_entities: None,
             trim_vertices: None,
             order_table: None,
-            section_3d: Some(crate::feature::FeatureSection3d {
+            section_3d: Some(crate::feature::definitions::FeatureSection3d {
                 sketch_plane_entity_id: None,
                 sketch_plane_flip: None,
                 reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
                 reference_plane_datum_geometry_id: None,
-                orientation: crate::feature::FeatureSectionOrientation::default(),
+                orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),
                 offset: 20,
             }),
@@ -99,15 +99,16 @@ fn history_link_rejects_duplicate_sketch_feature_ids() {
 
 #[test]
 fn rowless_generated_profile_requires_a_framed_side_table() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
-    let table = crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = crate::feature::entity::FeatureEntityTable::new(
         7,
         29,
         vec![

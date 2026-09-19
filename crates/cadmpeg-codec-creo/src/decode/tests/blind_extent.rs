@@ -109,15 +109,16 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
 
 #[test]
 fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
-    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
-        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+    let entry =
+        |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
+            payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
 
-        entity_id,
-        prefixed: false,
-        offset: 0,
-        end_offset: 0,
-    };
-    let table = crate::feature::FeatureEntityTable::new(
+            entity_id,
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        };
+    let table = crate::feature::entity::FeatureEntityTable::new(
         7,
         29,
         vec![
@@ -231,13 +232,13 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         plane(36, Point3::new(0.0, 30.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
         plane(35, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
     ]);
-    let mut section = crate::feature::FeatureSection3d {
+    let mut section = crate::feature::definitions::FeatureSection3d {
         sketch_plane_entity_id: Some(30),
-        sketch_plane_flip: Some(crate::feature::BinaryFlag::Clear),
+        sketch_plane_flip: Some(crate::feature::definitions::BinaryFlag::Clear),
         reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![29]),
         reference_plane_datum_geometry_id: None,
-        orientation: crate::feature::FeatureSectionOrientation {
-            section_flip: Some(crate::feature::BinaryFlag::Set),
+        orientation: crate::feature::definitions::FeatureSectionOrientation {
+            section_flip: Some(crate::feature::definitions::BinaryFlag::Set),
             ..Default::default()
         },
         dimension_ids: Vec::new(),
@@ -259,7 +260,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             [0.0, -1.0, 0.0],
         ))
     );
-    section.sketch_plane_flip = Some(crate::feature::BinaryFlag::Set);
+    section.sketch_plane_flip = Some(crate::feature::definitions::BinaryFlag::Set);
     assert_eq!(
         generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
         Some((
@@ -275,7 +276,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             [0.0, 1.0, 0.0],
         ))
     );
-    section.orientation.section_flip = Some(crate::feature::BinaryFlag::Clear);
+    section.orientation.section_flip = Some(crate::feature::definitions::BinaryFlag::Clear);
     assert_eq!(
         generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
         Some((

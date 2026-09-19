@@ -21,7 +21,7 @@ use cadmpeg_ir::sketches::{
 use std::collections::BTreeMap;
 
 pub(in super::super) fn section_skamp_constraints_for_geometry(
-    definition: &crate::feature::FeatureDefinition,
+    definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Vec<(SketchConstraint, usize)> {
@@ -131,11 +131,11 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     operands,
                 })
             };
-            let item_geometry = |item: &crate::feature::FeatureSkampItem| {
+            let item_geometry = |item: &crate::feature::definitions::FeatureSkampItem| {
                 let entity = sketch_entity_id(sketch, item.entity_id)?;
                 geometry?.get(&entity)
             };
-            let inactive_curve_entity = |item: &crate::feature::FeatureSkampItem| {
+            let inactive_curve_entity = |item: &crate::feature::definitions::FeatureSkampItem| {
                 (!active && item.sense == 0 && item_geometry(item).is_some_and(|geometry| {
                     matches!(
                         geometry.definition(),
@@ -153,26 +153,31 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 .then(|| sketch_entity_id(sketch, item.entity_id))
                 .flatten()
             };
-            let inactive_incidence_locus = |item: &crate::feature::FeatureSkampItem| {
-                section_skamp_incidence_locus(definition, sketch, item, geometry).or_else(|| {
-                    (!active
-                        && item.sense == 4
-                        && item_geometry(item).is_some_and(|geometry| {
-                            matches!(
-                                geometry.definition(),
-                                SketchGeometryDefinition::Circle { .. }
-                                    | SketchGeometryDefinition::Arc { .. }
-                            ) || matches!((
-                                geometry).definition(),
-                                SketchGeometryDefinition::Native { native_kind }
-                                    if matches!(native_kind.as_str(), "arc" | "circle")
-                            )
-                        }))
-                    .then(|| sketch_entity_id(sketch, item.entity_id).map(SketchLocus::Center))
-                    .flatten()
-                })
-            };
-            let point_entity = |item: &crate::feature::FeatureSkampItem| {
+            let inactive_incidence_locus =
+                |item: &crate::feature::definitions::FeatureSkampItem| {
+                    section_skamp_incidence_locus(definition, sketch, item, geometry).or_else(
+                        || {
+                            (!active
+                                && item.sense == 4
+                                && item_geometry(item).is_some_and(|geometry| {
+                                    matches!(
+                                        geometry.definition(),
+                                        SketchGeometryDefinition::Circle { .. }
+                                            | SketchGeometryDefinition::Arc { .. }
+                                    ) || matches!((
+                                        geometry).definition(),
+                                        SketchGeometryDefinition::Native { native_kind }
+                                            if matches!(native_kind.as_str(), "arc" | "circle")
+                                    )
+                                }))
+                            .then(|| {
+                                sketch_entity_id(sketch, item.entity_id).map(SketchLocus::Center)
+                            })
+                            .flatten()
+                        },
+                    )
+                };
+            let point_entity = |item: &crate::feature::definitions::FeatureSkampItem| {
                 (item.sense == 0).then_some(())?;
                 if section_skamp_is_point(definition, item) {
                     return sketch_entity_id(sketch, item.entity_id);
@@ -189,7 +194,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 .then(|| sketch_entity_id(sketch, item.entity_id))
                 .flatten()
             };
-            let inactive_point_locus = |item: &crate::feature::FeatureSkampItem| {
+            let inactive_point_locus = |item: &crate::feature::definitions::FeatureSkampItem| {
                 section_skamp_point_locus(definition, sketch, item)
                     .or_else(|| point_entity(item).map(SketchLocus::Entity))
                     .or_else(|| inactive_incidence_locus(item))
