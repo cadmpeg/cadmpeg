@@ -21,7 +21,8 @@ pub enum Check {
     Identity,
     /// PMI targets and annotation-to-annotation references.
     Pmi,
-    /// Presentation-layer membership and references.
+    /// Presentation-layer membership and references, or a non-finite value in
+    /// an appearance texture mapping or bump map.
     Presentation,
     /// An arena is not sorted lexicographically by entity id.
     ArenaOrder,

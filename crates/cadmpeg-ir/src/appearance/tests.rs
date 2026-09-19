@@ -97,3 +97,56 @@ fn appearance_asset_and_binding_round_trip() {
         ir.model.appearance_bindings
     );
 }
+
+/// `TextureMap2d` carries nine plain public `f64` fields with no refusing
+/// constructor, so validation is the one route that states a non-finite
+/// mapping value is illegal.
+#[test]
+fn a_non_finite_texture_mapping_value_is_refused_by_validation() {
+    use crate::report::Check;
+    use crate::validate::validate_neutral;
+
+    let mut ir = CadIr::empty();
+    crate::test_support::push_texture_offset(&mut ir, 0.25);
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+
+    ir.model.appearances[0].textures[0].mapping.u_scale = f64::INFINITY;
+    let report = validate_neutral(&ir, Vec::new());
+    assert!(!report.is_ok());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::Presentation
+            && finding.message == "non-finite texture mapping value"));
+}
+
+/// `BumpMap::depth` and `BumpMap::normal_scale` are plain public `f64` fields
+/// on the same carrier chain and are refused by the same validation.
+#[test]
+fn a_non_finite_bump_map_value_is_refused_by_validation() {
+    use crate::appearance::BumpMap;
+    use crate::report::Check;
+    use crate::validate::validate_neutral;
+
+    let mut ir = CadIr::empty();
+    crate::test_support::push_texture_offset(&mut ir, 0.25);
+    ir.model.appearances[0].textures[0].bump = Some(BumpMap {
+        normal_map: false,
+        depth: 1.0,
+        normal_scale: 1.0,
+    });
+    assert!(validate_neutral(&ir, Vec::new()).is_ok());
+
+    ir.model.appearances[0].textures[0].bump = Some(BumpMap {
+        normal_map: false,
+        depth: f64::NAN,
+        normal_scale: 1.0,
+    });
+    let report = validate_neutral(&ir, Vec::new());
+    assert!(!report.is_ok());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::Presentation
+            && finding.message == "non-finite texture bump-map value"));
+}
