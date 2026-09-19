@@ -14,7 +14,7 @@ const FEM_NOTE_FORMS: &[i64] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 105];
 const FEM_RESULT_FORM_MAX: i64 = 34;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct NativeFemNodeSample {
+pub(in crate::native) struct NativeFemNodeSample {
     identifier: Option<i64>,
     node: Option<String>,
     translations: Vec<[Option<f64>; 3]>,
@@ -23,7 +23,7 @@ pub(crate) struct NativeFemNodeSample {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct NativeFemElementSample {
+pub(in crate::native) struct NativeFemElementSample {
     identifier: Option<i64>,
     element: Option<String>,
     topology_type: Option<i64>,
@@ -36,7 +36,7 @@ pub(crate) struct NativeFemElementSample {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum NativeFemEntity {
+pub(in crate::native) enum NativeFemEntity {
     Node {
         id: String,
         source_entity: String,
@@ -103,7 +103,7 @@ pub(crate) enum NativeFemEntity {
     },
 }
 
-pub(crate) fn build(
+pub(super) fn build(
     directory: &[DirectoryEntry],
     records: &BTreeMap<u32, &ParameterRecord>,
     resolver: &ParameterResolver<'_>,
