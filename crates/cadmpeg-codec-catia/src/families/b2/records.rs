@@ -28,7 +28,7 @@ use crate::wire::bytes::{
 #[cfg(test)]
 use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
-    b_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFamily, ConsolidatedFrame,
+    family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFamily, ConsolidatedFrame,
     ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPcurve, ConsolidatedRawFrame,
     ConsolidatedRecord,
 };
@@ -592,7 +592,7 @@ pub(in crate::families) fn b2_use_metadata_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2UseMetadata> {
-    b_family_frames_from_records(records, 0x06)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x06)
         .into_iter()
         .map(|frame| {
             let payload = data[frame.payload..frame.end].to_vec();
@@ -674,7 +674,7 @@ pub(crate) fn b2_edge_nodes_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2EdgeNode> {
-    b_family_frames_from_records(records, 0x5e)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x5e)
         .into_iter()
         .filter_map(|frame| {
             let token_start = frame.pos.checked_add(4)?;
@@ -795,7 +795,7 @@ pub(crate) fn b2_reference_lists_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2ReferenceList> {
-    b_family_frames_from_records(records, 0x37)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x37)
         .into_iter()
         .filter_map(|frame| {
             if frame.header_token != 5
@@ -1085,7 +1085,8 @@ fn owner_chart_bridge(
     record: &ConsolidatedRecord,
     carrier: B2OwnerChartCarrier,
 ) -> Option<B2OwnerChartBridge> {
-    let frames = b_family_frames_from_records(std::slice::from_ref(record), 0x37);
+    let frames =
+        family_frames_from_records(std::slice::from_ref(record), ConsolidatedFamily::B, 0x37);
     let [frame] = frames.as_slice() else {
         return None;
     };
@@ -1342,7 +1343,7 @@ pub(crate) fn b2_counted_61_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2Counted61> {
-    b_family_frames_from_records(records, 0x61)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x61)
         .into_iter()
         .filter_map(|frame| {
             let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
@@ -1380,7 +1381,7 @@ pub(crate) fn b2_long_61_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2Long61> {
-    b_family_frames_from_records(records, 0x61)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x61)
         .into_iter()
         .filter_map(|frame| {
             let payload_len = frame.end.checked_sub(frame.payload)?;
@@ -1475,7 +1476,7 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2FaceNode5f> {
-    b_family_frames_from_records(records, 0x5f)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x5f)
         .into_iter()
         .filter_map(|frame| {
             if data.get(frame.payload) != Some(&0x82) {
@@ -1600,7 +1601,7 @@ pub(crate) fn b2_parameter_points_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2ParameterPoint> {
-    b_family_frames_from_records(records, 0x18)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x18)
         .into_iter()
         .filter_map(|frame| {
             if frame.header_token != 5 {
@@ -1758,7 +1759,7 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2Class25Descriptor> {
-    b_family_frames_from_records(records, 0x18)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x18)
         .into_iter()
         .filter_map(|frame| {
             if frame.header_token != 5 {
@@ -1939,7 +1940,7 @@ pub(in crate::families) fn b2_spatial_circles_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2SpatialCircle> {
-    b_family_frames_from_records(records, 0x0f)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x0f)
         .into_iter()
         .filter_map(|frame| parse_b2_spatial_circle(data, frame))
         .collect()
@@ -1999,7 +2000,7 @@ pub(in crate::families) fn b2_nurbs_curves_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Vec<B2NurbsCurve> {
-    b_family_frames_from_records(records, 0x16)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x16)
         .into_iter()
         .filter_map(|frame| parse_b2_nurbs_curve(data, frame, refusal))
         .collect()
@@ -2382,7 +2383,7 @@ fn b2_construction_offset_supports_from_records(
     records: &[ConsolidatedRecord],
 ) -> Vec<B2OffsetSupport> {
     let mut out = Vec::new();
-    for frame in b_family_frames_from_records(records, 0x30) {
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x30) {
         let pos = frame.pos;
         let payload = frame.payload;
         if frame.header_token != 5 || data.get(payload) != Some(&0x05) {
@@ -2443,7 +2444,7 @@ pub(super) fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
 
 pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Cone> {
     let mut out = Vec::new();
-    for frame in b_family_frames_from_records(records, 0x29) {
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x29) {
         let pos = frame.pos;
         let p = frame.payload;
         if frame.end - p != 0xb8 {
@@ -2523,7 +2524,7 @@ pub(crate) fn b2_revolutions_from_records(
     records: &[ConsolidatedRecord],
 ) -> Vec<B2Revolution> {
     let mut out = Vec::new();
-    for frame in b_family_frames_from_records(records, 0x2d) {
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x2d) {
         let p = frame.payload;
         let Ok(reference_token) = data.get(p).copied().ok_or(()).and_then(|token| {
             crate::native::CatiaRevolutionReferenceToken::try_from(token).map_err(|_| ())
@@ -2672,7 +2673,7 @@ pub(crate) fn b2_line_profiles_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2LineProfile> {
-    b_family_frames_from_records(records, 0x0e)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x0e)
         .into_iter()
         .filter_map(|frame| {
             if frame.end - frame.payload != 9 * 8 {
@@ -2701,7 +2702,7 @@ pub(super) fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
 }
 
 pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Torus> {
-    b_family_frames_from_records(records, 0x2b)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x2b)
         .into_iter()
         .filter_map(|frame| {
             let p = frame.payload;
@@ -2779,7 +2780,7 @@ pub(crate) fn b2_spheres_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2Sphere> {
-    b_family_frames_from_records(records, 0x2a)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x2a)
         .into_iter()
         .filter_map(|frame| {
             let p = frame.payload;
@@ -2858,7 +2859,7 @@ pub(super) fn b2_groups(data: &[u8]) -> Vec<B2Group> {
 }
 
 fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Group> {
-    b_family_frames_from_records(records, 0x60)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x60)
         .into_iter()
         .filter_map(|frame| {
             let mut at = frame.payload;
@@ -2942,7 +2943,7 @@ pub(crate) fn b2_cylinders_from_records(
         .into_iter()
         .map(|embedded| embedded.pos)
         .collect::<HashSet<_>>();
-    b_family_frames_from_records(records, 0x28)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x28)
         .into_iter()
         .filter_map(|frame| parse_b2_cylinder(data, frame))
         .filter(|cylinder| !embedded_offsets.contains(&cylinder.pos))
@@ -3076,7 +3077,7 @@ pub(crate) fn b2_circles_from_records(
     records: &[ConsolidatedRecord],
 ) -> Vec<B2Circle> {
     let mut out = Vec::new();
-    for frame in b_family_frames_from_records(records, 0x19) {
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x19) {
         let pos = frame.pos;
         let Some(layout) = u8::try_from(frame.end - frame.payload)
             .ok()
@@ -3150,7 +3151,7 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
     records: &[ConsolidatedRecord],
 ) -> Vec<B2EdgeParameters> {
     let mut out = Vec::new();
-    for frame in b_family_frames_from_records(records, 0x23) {
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x23) {
         let pos = frame.pos;
         if frame.end - frame.payload != 0x4e {
             continue;
@@ -3189,7 +3190,7 @@ pub(in crate::families) fn b2_offset_supports_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2OffsetSupport> {
-    let mut offsets = b_family_frames_from_records(records, 0x31)
+    let mut offsets = family_frames_from_records(records, ConsolidatedFamily::B, 0x31)
         .into_iter()
         .filter_map(|frame| {
             if frame.header_token != 5 {
@@ -3284,7 +3285,7 @@ pub(crate) fn b2_pcurves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<ConsolidatedPcurve> {
-    b_family_frames_from_records(records, 0x20)
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x20)
         .into_iter()
         .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
         .collect()

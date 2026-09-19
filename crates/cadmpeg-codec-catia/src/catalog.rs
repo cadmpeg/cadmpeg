@@ -3,6 +3,8 @@
 
 use cadmpeg_core::decode::View;
 
+use crate::wire::tokens::compact_atom;
+
 const PREFIX: [&str; 4] = ["CATCatalogManager", "catalogManager", "catalogLinks", ""];
 
 /// One exact `7C02` string catalog.
@@ -65,7 +67,7 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
     if total_len < 8 || end > bytes.len() {
         return None;
     }
-    let (declared_count, mut at) = count_atom(bytes, pos + 6)?;
+    let (declared_count, mut at) = compact_atom(bytes, pos + 6)?;
     let entry_count = usize::try_from(declared_count.checked_sub(1)?).ok()?;
     if entry_count > end.checked_sub(at)? {
         return None;
@@ -106,18 +108,6 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
         total_len,
         entries,
     })
-}
-
-fn count_atom(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
-    let byte = *bytes.get(pos)?;
-    match byte {
-        0x80..=0xd0 => Some((u32::from(byte - 0x80), pos + 1)),
-        0xd1..=0xe4 => Some((
-            u32::from(byte - 0xd1) * 256 + u32::from(*bytes.get(pos + 1)?) + 1,
-            pos + 2,
-        )),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

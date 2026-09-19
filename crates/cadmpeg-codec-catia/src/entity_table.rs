@@ -7,6 +7,8 @@ use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 
 use crate::value_block;
+use crate::wire::tokens::compact_atom;
+
 /// One source-schema selector in a complete `7C06` definition prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DefinitionSchemaSelector {
@@ -1378,18 +1380,6 @@ pub(crate) fn parse_range_interval(
     };
     (!bytes[at..].is_empty() && bytes[at..].iter().all(|byte| *byte == 0xfe)).then_some(())?;
     Some(RangeInterval { prefix, slots })
-}
-
-fn compact_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
-    let byte = *data.get(at)?;
-    match byte {
-        0x80..=0xd0 => Some((u32::from(byte - 0x80), at + 1)),
-        0xd1..=0xe4 => Some((
-            u32::from(byte - 0xd1) * 256 + u32::from(*data.get(at + 1)?) + 1,
-            at + 2,
-        )),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

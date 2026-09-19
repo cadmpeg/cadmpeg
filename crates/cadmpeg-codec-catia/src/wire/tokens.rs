@@ -1,8 +1,7 @@
-//! Compact-int and reference-token readers shared by the `b5` and `e5`
-//! families.
+//! Compact-atom, compact-int, and reference-token readers.
 //!
-//! These free functions expose the `(&[u8], &mut usize)` signature the `b5` and
-//! `e5` scan loops read against. `object_ref` and `compact_uint` are thin
+//! `object_ref` and `compact_uint` expose the `(&[u8], &mut usize)` signature
+//! used by the `b5` and `e5` scan loops. `object_ref` and `compact_uint` are thin
 //! adapters over [`Cursor`], which owns the byte semantics; `counted_refs`
 //! composes `object_ref`. The free-function surface is the settled boundary
 //! between those position-threading loops and the cursor.
@@ -47,4 +46,20 @@ pub(crate) fn counted_refs(payload: &[u8], extended: bool) -> Option<(Vec<u32>, 
         references.push(object_ref(payload, &mut position, extended)?);
     }
     Some((references, position))
+}
+
+/// Read a catalog/entity compact atom and return its value and end offset.
+///
+/// Leads `0x80..=0xd0` encode `0..=80`. Leads `0xd1..=0xe4` encode
+/// `(lead - 0xd1) * 256 + tail + 1`. Other leads and truncated atoms fail.
+pub(crate) fn compact_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
+    let byte = *data.get(at)?;
+    match byte {
+        0x80..=0xd0 => Some((u32::from(byte - 0x80), at + 1)),
+        0xd1..=0xe4 => Some((
+            u32::from(byte - 0xd1) * 256 + u32::from(*data.get(at + 1)?) + 1,
+            at + 2,
+        )),
+        _ => None,
+    }
 }
