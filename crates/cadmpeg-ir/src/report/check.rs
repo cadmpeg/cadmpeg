@@ -17,42 +17,83 @@ use crate::report::{loss::LossNote, Severity};
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum Check {
-    /// Entity identifiers are empty, duplicated, or not globally unique.
+    /// An entity id does not match `<format>:<scope>:<kind>#<key>`, or is not
+    /// globally unique. A native validator reports a duplicated, unowned, or
+    /// uncovered source-native identity here as well.
     Identity,
-    /// PMI targets and annotation-to-annotation references.
+    /// A PMI target, datum reference, datum system, or semantic-annotation
+    /// reference does not resolve.
     Pmi,
-    /// Presentation-layer membership and references, or a non-finite value in
-    /// an appearance texture mapping or bump map.
+    /// A presentation-layer item does not resolve, or an appearance texture
+    /// mapping or bump map carries a non-finite value.
     Presentation,
-    /// An arena is not sorted lexicographically by entity id.
+    /// An arena is not strictly sorted by entity id.
     ArenaOrder,
-    /// A referenced id does not resolve in its arena.
+    /// A reference between entities is defective: a typed reference or id does
+    /// not resolve; an entity belongs to another owner or sketch; a dependency
+    /// or referenced feature does not precede its consumer, or the consumer
+    /// omits it from its dependencies; references form a cycle; an identity,
+    /// ordinal, address, or range is repeated or invalid; a constraint's
+    /// operands are not the kinds the constraint states; a configuration state
+    /// disagrees with the feature states it closes over; or an entity schema
+    /// cannot state its typed references.
     ReferentialIntegrity,
-    /// An edge's two coedges do not pair consistently.
+    /// A coedge radial ring does not close, crosses edges, or, with two
+    /// members, states equal coedge senses.
     CoedgePairing,
-    /// Wire edges, free vertices, or wire bodies violate topology ownership rules.
+    /// Wire topology ownership is violated: a coedge also references a wire
+    /// edge, an edge also references a free vertex, a wire edge or free vertex
+    /// does not belong to exactly one shell, or a wire body contains faces.
     WireTopology,
     /// A face-bearing shell is disconnected through shared edges or vertices.
     ShellTopology,
-    /// A geometry carrier cannot be reached from topology or retained construction data.
+    /// A surface, curve, pcurve, or point carrier is orphan: no topology or
+    /// retained construction data reaches it.
     CarrierReachability,
-    /// An annotation key or field path is invalid.
+    /// An annotation provenance or exactness key does not resolve to an entity,
+    /// an exactness field path does not resolve, or an entity cannot be
+    /// serialized to check its field paths.
     Annotations,
-    /// A source-native namespace record has an unresolved link.
+    /// A source-native link is defective: a `native_ref` or native-record link
+    /// does not resolve, or a link list is not an array of identity strings. A
+    /// codec's native validator also reports here a native record whose frame,
+    /// arena census, ordinal run, ownership, or identity disagrees with the
+    /// source container.
     NativeLinks,
-    /// An edge parameter range violates the carrier's canonical domain.
+    /// A parameter range is outside its carrier's canonical domain: an edge
+    /// range, a coedge use-curve range, or a coedge pcurve range; or a spatial
+    /// sketch NURBS surface states a zero degree.
     ParameterDomain,
-    /// A document-wide or per-entity tolerance is not sane.
+    /// A document-wide or per-entity tolerance is outside a sane canonical
+    /// range.
     Tolerances,
-    /// A preserved byte payload does not match its declared digest or length.
+    /// Preserved bytes do not account for their source: a ledger entry, owner,
+    /// or boundary is invalid, a nonempty entry is missing, ranges overlap or
+    /// leave a gap, a coverage report is stale or does not prove exact closure,
+    /// a preservation record disagrees with the authoritative bytes, or a
+    /// carrier census disagrees with the parsed payloads.
     PayloadIntegrity,
-    /// A tessellation payload is malformed.
+    /// A tessellation references a missing body, face, or texture asset.
     Tessellation,
-    /// Geometry disagrees with what it supports: an edge's curve endpoints or
-    /// a pcurve's surface image miss the edge's vertex positions, or a sketch
-    /// profile or a sketch constraint has no consistent solution.
+    /// Geometry disagrees with what it supports, or a feature's geometric
+    /// inputs are inconsistent: an edge curve, a coedge use-curve, or a pcurve
+    /// mapped through its face surface misses the vertex positions it must
+    /// meet; a procedural curve does not evaluate at its endpoints or misses
+    /// its endpoint or offset-distance contract; a sketch profile is
+    /// disconnected, or a sketch constraint, offset pair, locus, or projected
+    /// copy has no consistent solution; a feature reference does not name the
+    /// kind of geometry it must name, or does not precede its consumer; a
+    /// generated vertex, edge, face, body, profile, or region selection is
+    /// empty, repeated, out of range, or owned by another sketch; or a
+    /// configuration parameter, sheet-metal height, or scale transform is not a
+    /// usable value.
     GeometricConsistency,
-    /// Arena counts / cross-references are internally inconsistent.
+    /// A count or multiplicity is internally inconsistent: a parameter name or
+    /// ordinal repeats within its scope, a design repeats a configuration
+    /// ordinal, configuration source index, or feature ordinal, a design states
+    /// more than one active configuration, a feature states more than one input
+    /// or result topology state, a sketch constraint states the wrong number of
+    /// members, or a native record census disagrees with the source container.
     Counts,
 }
 
