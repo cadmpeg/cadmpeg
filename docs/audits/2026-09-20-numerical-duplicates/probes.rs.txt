@@ -1,0 +1,314 @@
+#![allow(dead_code,unused_imports)]
+pub use cadmpeg_ir::{geometry,scalar};
+use cadmpeg_ir::{math::{Point2,Point3,Vector3},transform::Transform,geometry::nurbs::*};
+mod ir {
+use super::*; use cadmpeg_core::decode::alloc_filled;
+pub fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<usize> { if knots . len () < count + degree + 1 || count <= degree { return None ; } if t >= knots [count] { return Some (count - 1) ; } if t <= knots [degree] { return Some (degree) ; } let mut lo = degree ; let mut hi = count ; while lo < hi { let mid = usize :: midpoint (lo , hi) ; if t < knots [mid] { hi = mid ; } else if t >= knots [mid + 1] { lo = mid + 1 ; } else { return Some (mid) ; } } Some (lo) }
+pub fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> { let mut values = vec ! [1.0] ; let mut left = alloc_filled (degree . checked_add (1) ? , 0.0 , "IR B-spline basis left") . ok () ? ; let mut right = alloc_filled (degree . checked_add (1) ? , 0.0 , "IR B-spline basis right") . ok () ? ; for j in 1 ..= degree { left [j] = t - knots [span + 1 - j] ; right [j] = knots [span + j] - t ; let mut saved = 0.0 ; let mut next = alloc_filled (j . checked_add (1) ? , 0.0 , "IR B-spline basis level") . ok () ? ; for (r , & value) in values . iter () . enumerate () . take (j) { let denominator = right [r + 1] + left [j - r] ; let factor = if denominator == 0.0 { 0.0 } else { value / denominator } ; next [r] = saved + right [r + 1] * factor ; saved = left [j - r] * factor ; } next [j] = saved ; values = next ; } Some (values) }
+pub fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> { if degree == 0 { return Some (vec ! [0.0]) ; } let lower = bspline_basis (knots , degree - 1 , span , t) ? ; let lower_start = span - (degree - 1) ; (0 ..= degree) . map (| local | { let index = span - degree + local ; let lower_at = | global : usize | { global . checked_sub (lower_start) . and_then (| at | lower . get (at)) . copied () . unwrap_or (0.0) } ; let left_denominator = knots [index + degree] - knots [index] ; let right_denominator = knots [index + degree + 1] - knots [index + 1] ; let left = if left_denominator == 0.0 { 0.0 } else { degree as f64 * lower_at (index) / left_denominator } ; let right = if right_denominator == 0.0 { 0.0 } else { degree as f64 * lower_at (index + 1) / right_denominator } ; left - right }) . collect :: < Vec < _ > > () . into () }
+pub fn nurbs_curve_point(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point3],
+    weights: Option<&[f64]>,
+    t: f64,
+) -> Option<Point3> { let degree = usize :: try_from (degree) . ok () ? ; let span = bspline_span (knots , degree , control_points . len () , t) ? ; let basis = bspline_basis (knots , degree , span , t) ? ; let mut x = 0.0 ; let mut y = 0.0 ; let mut z = 0.0 ; let mut weight_sum = 0.0 ; for (i , value) in basis . iter () . enumerate () { let index = span - degree + i ; let weight = weights . and_then (| weights | weights . get (index) . copied ()) . unwrap_or (1.0) ; let pole = control_points . get (index) ? ; x += value * weight * pole . x ; y += value * weight * pole . y ; z += value * weight * pole . z ; weight_sum += value * weight ; } (weight_sum != 0.0) . then (| | Point3 :: new (x / weight_sum , y / weight_sum , z / weight_sum)) }
+pub fn nurbs_curve_tangent(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point3],
+    weights: Option<&[f64]>,
+    t: f64,
+) -> Option<Vector3> { let degree = usize :: try_from (degree) . ok () ? ; let span = bspline_span (knots , degree , control_points . len () , t) ? ; let basis = bspline_basis (knots , degree , span , t) ? ; let derivatives = bspline_basis_derivative (knots , degree , span , t) ? ; let mut weighted = Vector3 :: new (0.0 , 0.0 , 0.0) ; let mut weighted_derivative = Vector3 :: new (0.0 , 0.0 , 0.0) ; let mut weight = 0.0 ; let mut weight_derivative = 0.0 ; for (local , (basis , derivative)) in basis . iter () . zip (& derivatives) . enumerate () { let index = span - degree + local ; let control = control_points . get (index) ? ; let control_weight = weights . and_then (| weights | weights . get (index) . copied ()) . unwrap_or (1.0) ; weighted . x += basis * control_weight * control . x ; weighted . y += basis * control_weight * control . y ; weighted . z += basis * control_weight * control . z ; weighted_derivative . x += derivative * control_weight * control . x ; weighted_derivative . y += derivative * control_weight * control . y ; weighted_derivative . z += derivative * control_weight * control . z ; weight += basis * control_weight ; weight_derivative += derivative * control_weight ; } if weight == 0.0 { return None ; } let tangent = Vector3 :: new ((weighted_derivative . x * weight - weighted . x * weight_derivative) / (weight * weight) , (weighted_derivative . y * weight - weighted . y * weight_derivative) / (weight * weight) , (weighted_derivative . z * weight - weighted . z * weight_derivative) / (weight * weight) ,) ; (tangent . is_finite ()) . then_some (tangent) }
+pub fn nurbs_surface_isocurve(
+    surface: &NurbsSurface,
+    fixed_axis: SurfaceParameterAxis,
+    fixed_parameter: f64,
+) -> Option<NurbsCurve> { let u_degree = usize :: try_from (surface . u_degree ()) . ok () ? ; let v_degree = usize :: try_from (surface . v_degree ()) . ok () ? ; let u_count = surface . u_count () ; let v_count = surface . v_count () ; let (fixed_degree , fixed_count , fixed_knots , fixed_periodic) = match fixed_axis { SurfaceParameterAxis :: U => (u_degree , u_count , surface . u_knots () , surface . u_periodic ()) , SurfaceParameterAxis :: V => (v_degree , v_count , surface . v_knots () , surface . v_periodic ()) , } ; let fixed_parameter = periodic_parameter (fixed_knots , fixed_degree , fixed_count , fixed_periodic , fixed_parameter ,) ? ; let fixed_span = bspline_span (fixed_knots , fixed_degree , fixed_count , fixed_parameter) ? ; let fixed_basis = bspline_basis (fixed_knots , fixed_degree , fixed_span , fixed_parameter) ? ; let varying_count = match fixed_axis { SurfaceParameterAxis :: U => v_count , SurfaceParameterAxis :: V => u_count , } ; let rational = surface . weights () . is_some () ; let mut control_points = Vec :: with_capacity (varying_count) ; let mut weighted_poles = Vec :: with_capacity (varying_count) ; for varying in 0 .. varying_count { let mut weighted = [0.0 ; 3] ; let mut weight_sum = 0.0 ; for (local , basis) in fixed_basis . iter () . copied () . enumerate () { let fixed = fixed_span - fixed_degree + local ; let (pole_u , pole_v) = match fixed_axis { SurfaceParameterAxis :: U => (fixed , varying) , SurfaceParameterAxis :: V => (varying , fixed) , } ; let weight = surface . weight (pole_u , pole_v) . unwrap_or (1.0) ; let factor = basis * weight ; let point = surface . pole (pole_u , pole_v) ? ; weighted [0] += factor * point . x ; weighted [1] += factor * point . y ; weighted [2] += factor * point . z ; weight_sum += factor ; } if ! weight_sum . is_finite () || weight_sum <= 0.0 { return None ; } let point = Point3 :: new (weighted [0] / weight_sum , weighted [1] / weight_sum , weighted [2] / weight_sum ,) ; control_points . push (point) ; if rational { weighted_poles . push (crate :: geometry :: nurbs :: WeightedPole3 { point , weight : crate :: scalar :: NonZeroReal :: new (weight_sum) ? , }) ; } } let (degree , knots , periodic) = match fixed_axis { SurfaceParameterAxis :: U => (surface . v_degree () , surface . v_knots () . to_vec () , surface . v_periodic () ,) , SurfaceParameterAxis :: V => (surface . u_degree () , surface . u_knots () . to_vec () , surface . u_periodic () ,) , } ; let poles = if rational { NurbsPoles3 :: Rational { points : weighted_poles , } } else { NurbsPoles3 :: Polynomial { points : control_points , } } ; NurbsCurve :: new (degree , knots , poles , periodic) . ok () }
+pub fn periodic_parameter(
+    knots: &[f64],
+    degree: usize,
+    count: usize,
+    periodic: bool,
+    parameter: f64,
+) -> Option<f64> { parameter . is_finite () . then_some (()) ? ; let start = * knots . get (degree) ? ; let end = * knots . get (count) ? ; if ! periodic || (start ..= end) . contains (& parameter) { return Some (parameter) ; } let period = end - start ; (period . is_finite () && period > 0.0) . then (| | start + (parameter - start) . rem_euclid (period)) }
+pub fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, f64)> { let [first , second , third , bottom] = transform . rows () ; let [matrix_00 , matrix_01 , matrix_02 , translate_x] = first ; let [matrix_10 , matrix_11 , matrix_12 , translate_y] = second ; let [matrix_20 , matrix_21 , matrix_22 , translate_z] = third ; if bottom != [0.0 , 0.0 , 0.0 , 1.0] { return None ; } let cofactors = [[matrix_11 * matrix_22 - matrix_12 * matrix_21 , matrix_02 * matrix_21 - matrix_01 * matrix_22 , matrix_01 * matrix_12 - matrix_02 * matrix_11 ,] , [matrix_12 * matrix_20 - matrix_10 * matrix_22 , matrix_00 * matrix_22 - matrix_02 * matrix_20 , matrix_02 * matrix_10 - matrix_00 * matrix_12 ,] , [matrix_10 * matrix_21 - matrix_11 * matrix_20 , matrix_01 * matrix_20 - matrix_00 * matrix_21 , matrix_00 * matrix_11 - matrix_01 * matrix_10 ,] ,] ; let determinant = matrix_00 * cofactors [0] [0] + matrix_01 * cofactors [1] [0] + matrix_02 * cofactors [2] [0] ; if ! determinant . is_finite () || determinant == 0.0 { return None ; } let inverse = cofactors . map (| row | row . map (| value | value / determinant)) ; if inverse . iter () . flatten () . any (| value | ! value . is_finite ()) { return None ; } let relative = [point . x - translate_x , point . y - translate_y , point . z - translate_z ,] ; let coordinates = inverse . map (| row | { row . into_iter () . zip (relative) . map (| (coefficient , coordinate) | coefficient * coordinate) . sum :: < f64 > () }) ; let tolerance_scale = inverse . iter () . flatten () . map (| value | value * value) . sum :: < f64 > () . sqrt () ; (coordinates . into_iter () . chain ([tolerance_scale]) . all (f64 :: is_finite)) . then_some ((Point3 :: new (coordinates [0] , coordinates [1] , coordinates [2]) , tolerance_scale ,)) }
+}
+mod f3d_rotation {
+use super::*; const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12:f64=1e-12;const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8:f64=1e-8;
+pub fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::AxisAngle> { use cadmpeg_ir :: features :: AxisAngle ; use cadmpeg_ir :: scalar :: Angle ; let trace = transform [0] [0] + transform [1] [1] + transform [2] [2] ; let angle = ((trace - 1.0) * 0.5) . clamp (- 1.0 , 1.0) . acos () ; if angle . abs () <= EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12 { return None ; } let (x , y , z) = if (std :: f64 :: consts :: PI - angle) . abs () <= EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8 { let x = ((transform [0] [0] + 1.0) * 0.5) . max (0.0) . sqrt () ; let y = ((transform [1] [1] + 1.0) * 0.5) . max (0.0) . sqrt () * (transform [0] [1] + transform [1] [0]) . signum () ; let z = ((transform [2] [2] + 1.0) * 0.5) . max (0.0) . sqrt () * (transform [0] [2] + transform [2] [0]) . signum () ; (x , y , z) } else { let scale = 2.0 * angle . sin () ; ((transform [2] [1] - transform [1] [2]) / scale , (transform [0] [2] - transform [2] [0]) / scale , (transform [1] [0] - transform [0] [1]) / scale ,) } ; let norm = x . hypot (y) . hypot (z) ; (norm > EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12) . then_some (AxisAngle { origin : cadmpeg_ir :: features :: FinitePoint3 :: new (Point3 :: new (0.0 , 0.0 , 0.0)) ? , direction : cadmpeg_ir :: features :: FeatureDirection3 :: new (Vector3 :: new (x / norm , y / norm , z / norm ,)) ? , angle : Angle :: new (angle) ? , }) }
+}
+mod f3d_intersection {
+use super::*; pub enum ProfileBoundarySegment {Line{start:Point2,end:Point2},Arc{center:Point2,radius:f64,start_angle:f64,end_angle:f64}}
+pub fn line_arc_intersection_points(
+    (start, end): (Point2, Point2),
+    arc: &ProfileBoundarySegment,
+) -> Option<Vec<Point2>> { let ProfileBoundarySegment :: Arc { center , radius , start_angle , end_angle , } = arc else { return None ; } ; let direction = Point2 :: new (end . u - start . u , end . v - start . v) ; let offset = Point2 :: new (start . u - center . u , start . v - center . v) ; let quadratic = direction . u * direction . u + direction . v * direction . v ; if quadratic == 0.0 { return Some (Vec :: new ()) ; } let linear = 2.0 * (offset . u * direction . u + offset . v * direction . v) ; let constant = offset . u * offset . u + offset . v * offset . v - radius * radius ; let discriminant = linear * linear - 4.0 * quadratic * constant ; let error = 64.0 * f64 :: EPSILON * (linear * linear + (4.0 * quadratic * constant) . abs ()) . max (1.0) ; if discriminant < - error { return Some (Vec :: new ()) ; } let root = discriminant . max (0.0) . sqrt () ; let mut points = Vec :: new () ; for signed_root in [- root , root] { let parameter = (- linear + signed_root) / (2.0 * quadratic) ; if (0.0 ..= 1.0) . contains (& parameter) { let point = Point2 :: new (start . u + parameter * direction . u , start . v + parameter * direction . v ,) ; if directed_angle_parameter ((point . v - center . v) . atan2 (point . u - center . u) , * start_angle , * end_angle ,) . is_some () && ! points . contains (& point) { points . push (point) ; } } } Some (points) }
+pub fn directed_angle_parameter(angle: f64, start: f64, end: f64) -> Option<f64> { let sweep = end - start ; if sweep == 0.0 || sweep . abs () > std :: f64 :: consts :: TAU { return None ; } let displacement = if sweep > 0.0 { (angle - start) . rem_euclid (std :: f64 :: consts :: TAU) } else { - (start - angle) . rem_euclid (std :: f64 :: consts :: TAU) } ; (displacement . abs () <= sweep . abs ()) . then_some (displacement / sweep) }
+}
+mod creo {
+const TRIM_INTERSECTION_EPS:f64=1e-12; const TRIM_COORDINATE_EPS:f64=1e-9;
+pub fn trim_line_circle_intersection(
+    start: [f64; 2],
+    end: [f64; 2],
+    center: [f64; 2],
+    radius: f64,
+) -> Option<[f64; 2]> { let direction = [end [0] - start [0] , end [1] - start [1]] ; let relative = [start [0] - center [0] , start [1] - center [1]] ; let quadratic = direction [0] . mul_add (direction [0] , direction [1] * direction [1]) ; if quadratic <= 0.0 || ! quadratic . is_finite () { return None ; } let linear = 2.0 * relative [0] . mul_add (direction [0] , relative [1] * direction [1]) ; let constant = relative [0] . mul_add (relative [0] , relative [1] * relative [1]) - radius * radius ; let discriminant = linear . mul_add (linear , - 4.0 * quadratic * constant) ; let scale = linear . abs () . max ((4.0 * quadratic * constant) . abs () . sqrt ()) . max (1.0) ; let tolerance = TRIM_INTERSECTION_EPS * scale * scale ; if ! discriminant . is_finite () || discriminant < - tolerance { return None ; } let in_segment = | parameter : f64 | (- TRIM_COORDINATE_EPS ..= 1.0 + TRIM_COORDINATE_EPS) . contains (& parameter) ; let point = | parameter : f64 | { let coordinate = [start [0] + parameter * direction [0] , start [1] + parameter * direction [1] ,] ; coordinate . into_iter () . all (f64 :: is_finite) . then_some (coordinate) } ; if discriminant . abs () <= tolerance { let parameter = - linear / (2.0 * quadratic) ; return in_segment (parameter) . then (| | point (parameter . clamp (0.0 , 1.0))) . flatten () ; } let root = discriminant . sqrt () ; let parameters = [(- linear + root) / (2.0 * quadratic) , (- linear - root) / (2.0 * quadratic) ,] ; let mut matching = parameters . into_iter () . filter (| parameter | in_segment (* parameter)) ; let parameter = matching . next () ? ; matching . next () . is_none () . then (| | point (parameter . clamp (0.0 , 1.0))) . flatten () }
+}
+mod freecad {
+use super::*;
+pub fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 { let [x , y , z , w] = quaternion ; let norm = (x * x + y * y + z * z + w * w) . sqrt () ; if ! norm . is_finite () || norm == 0.0 { return Vector3 :: new (vector [0] , vector [1] , vector [2]) ; } let (x , y , z , w) = (x / norm , y / norm , z / norm , w / norm) ; let [vx , vy , vz] = vector ; Vector3 :: new ((1.0 - 2.0 * (y * y + z * z)) * vx + 2.0 * (x * y - z * w) * vy + 2.0 * (x * z + y * w) * vz , 2.0 * (x * y + z * w) * vx + (1.0 - 2.0 * (x * x + z * z)) * vy + 2.0 * (y * z - x * w) * vz , 2.0 * (x * z - y * w) * vx + 2.0 * (y * z + x * w) * vy + (1.0 - 2.0 * (x * x + y * y)) * vz ,) }
+}
+mod nx {
+use super::*;
+pub fn unit_vector(vector: Vector3) -> Option<Vector3> { let norm = vector . norm () ; (norm . is_finite () && norm > 0.0) . then (| | vector . scale (1.0 / norm)) }
+}
+mod sat {
+
+pub fn parse_number(word: &str) -> Option<(f64, bool)> { let value : f64 = word . parse () . ok () ? ; let integral = ! word . contains (['.' , 'e' , 'E']) ; Some ((value , integral)) }
+}
+mod catia {
+use super::*; use cadmpeg_core::decode::alloc_filled;
+// Error-report adapter only. The successful arithmetic path is extracted unchanged.
+pub type LaneRefusals=Vec<String>;
+fn note_refusal<T>(result:Result<T,NurbsError>,r:&mut LaneRefusals,_record:&str)->Option<T>{match result{Ok(v)=>Some(v),Err(e)=>{r.push(e.to_string());None}}}
+
+pub fn nurbs_basis_values(
+    knots: &[f64],
+    degree: usize,
+    parameter: f64,
+    count: usize,
+) -> Option<Vec<f64>> { if knots . len () != count . checked_add (degree) ? . checked_add (1) ? || count == 0 { return None ; } if ! parameter . is_finite () || ! knots . iter () . copied () . all (f64 :: is_finite) || ! knots_nondecreasing (knots) { return None ; } let mut basis = alloc_filled (count + degree , 0.0 , "catia NURBS basis values") . ok () ? ; for (index , value) in basis . iter_mut () . enumerate () { if (knots . get (index) ? <= & parameter && & parameter < knots . get (index + 1) ?) || (parameter == * knots . last () ? && index + 1 == count) { * value = 1.0 ; } } for level in 1 ..= degree { for index in 0 .. count + degree - level { let left_denominator = knots [index + level] - knots [index] ; let right_denominator = knots [index + level + 1] - knots [index + 1] ; let left = if left_denominator == 0.0 { 0.0 } else { (parameter - knots [index]) / left_denominator * basis [index] } ; let right = if right_denominator == 0.0 { 0.0 } else { (knots [index + level + 1] - parameter) / right_denominator * basis [index + 1] } ; basis [index] = left + right ; } } basis . truncate (count) ; basis . iter () . all (| value | value . is_finite ()) . then_some (basis) }
+pub fn nurbs_surface_isocurve(
+    surface: &NurbsSurface,
+    parameter: f64,
+    fix_u: bool,
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> Option<NurbsCurve> { if ! parameter . is_finite () || ! surface . u_knots () . iter () . copied () . all (f64 :: is_finite) || ! surface . v_knots () . iter () . copied () . all (f64 :: is_finite) || ! surface . poles () . into_iter () . all (| point | point . is_finite ()) || surface . pole_weights () . is_some_and (| weights | { weights . into_iter () . any (| weight | ! weight . is_finite () || weight == 0.0) }) { return None ; } let u_count = surface . u_count () ; let v_count = surface . v_count () ; let u_degree = usize :: try_from (surface . u_degree ()) . ok () ? ; let v_degree = usize :: try_from (surface . v_degree ()) . ok () ? ; if ! knots_nondecreasing (surface . u_knots ()) || ! knots_nondecreasing (surface . v_knots ()) { return None ; } let (fixed_basis , varying_count , degree , knots) = if fix_u { (nurbs_basis_values (surface . u_knots () , u_degree , parameter , u_count) ? , v_count , surface . v_degree () , surface . v_knots () . to_vec () ,) } else { (nurbs_basis_values (surface . v_knots () , v_degree , parameter , v_count) ? , u_count , surface . u_degree () , surface . u_knots () . to_vec () ,) } ; let indices = | fixed , varying | { if fix_u { (fixed , varying) } else { (varying , fixed) } } ; let mut weight_scale = 0.0_f64 ; for varying in 0 .. varying_count { for (fixed , & basis) in fixed_basis . iter () . enumerate () { if basis != 0.0 { let (u , v) = indices (fixed , varying) ; weight_scale = weight_scale . max (surface . weight (u , v) . unwrap_or (1.0) . abs ()) ; } } } if weight_scale == 0.0 { return None ; } let mut control_points = Vec :: with_capacity (varying_count) ; let mut weights = Vec :: with_capacity (varying_count) ; for varying in 0 .. varying_count { let mut coordinate_scale = [0.0_f64 ; 3] ; for (fixed , & basis) in fixed_basis . iter () . enumerate () { if basis == 0.0 { continue ; } let (u , v) = indices (fixed , varying) ; let point : [f64 ; 3] = surface . pole (u , v) ? . into () ; for axis in 0 .. 3 { coordinate_scale [axis] = coordinate_scale [axis] . max (point [axis] . abs ()) ; } } let mut numerator = [0.0 ; 3] ; let mut denominator = 0.0 ; for (fixed , basis) in fixed_basis . iter () . copied () . enumerate () { if basis == 0.0 { continue ; } let (u , v) = indices (fixed , varying) ; let point : [f64 ; 3] = surface . pole (u , v) ? . into () ; let factor = basis * (surface . weight (u , v) . unwrap_or (1.0) / weight_scale) ; for axis in 0 .. 3 { if coordinate_scale [axis] != 0.0 { numerator [axis] += factor * (point [axis] / coordinate_scale [axis]) ; } } denominator += factor ; } if ! denominator . is_finite () || denominator == 0.0 { return None ; } let point : [f64 ; 3] = std :: array :: from_fn (| axis | { let quotient = numerator [axis] / denominator ; if quotient . is_finite () { quotient * coordinate_scale [axis] } else { (numerator [axis] * coordinate_scale [axis]) / denominator } }) ; let point = Point3 :: from (point) ; if ! point . is_finite () { return None ; } control_points . push (point) ; weights . push (denominator) ; } if weights . iter () . all (| weight | { let restored = weight * weight_scale ; restored . is_finite () && restored . abs () >= f64 :: MIN_POSITIVE }) { for weight in & mut weights { * weight *= weight_scale ; } } match NurbsCurve :: from_lanes (degree , knots , control_points , surface . weights () . is_some () . then_some (weights) , if fix_u { surface . v_periodic () } else { surface . u_periodic () } ,) { Ok (curve) => Some (curve) , Err (error) => note_refusal (Err (error) , refusal , record) , } }
+}
+mod loss {pub enum RhinoLossCode {PolycurveJoinGap}}
+mod rhino {
+use super::*; use cadmpeg_core::decode::alloc_filled;
+// Reporting adapters only; all geometric operations below are extracted unchanged.
+#[derive(Debug)] pub struct GeometryError(String);
+impl GeometryError {fn malformed(_:usize,s:impl Into<String>)->Self{Self(s.into())}}
+fn error(offset:usize,s:&str)->GeometryError{GeometryError::malformed(offset,s)}
+#[derive(Debug)]pub struct Diagnostics(Vec<String>);
+impl Diagnostics {fn new()->Self{Self(Vec::new())}fn push_coded(&mut self,_:crate::loss::RhinoLossCode,s:String){self.0.push(s);}}
+#[derive(Debug)]pub struct NurbsJoin{pub curve:NurbsCurve,pub warnings:Diagnostics}
+#[derive(Clone,Copy)]struct Homogeneous([f64;4]);
+impl Homogeneous {fn blend(self,other:Self,alpha:f64)->Self{Self(std::array::from_fn(|index|{(1.0-alpha)*self.0[index]+alpha*other.0[index]}))}}
+
+pub fn remap_nurbs_domain(
+    mut curve: NurbsCurve,
+    target: [f64; 2],
+    offset: usize,
+) -> Result<NurbsCurve, GeometryError> { let degree = usize :: try_from (curve . degree ()) . map_err (| _ | error (offset , "curve degree is too large")) ? ; let end_index = curve . knots () . len () . checked_sub (degree + 1) . ok_or_else (| | error (offset , "curve knot vector is invalid")) ? ; let source = [* curve . knots () . get (degree) . ok_or_else (| | error (offset , "curve knot vector is invalid")) ? , curve . knots () [end_index] ,] ; let denominator = source [1] - source [0] ; if ! denominator . is_finite () || denominator <= 0.0 { return Err (error (offset , "curve domain is invalid")) ; } let factor = (target [1] - target [0]) / denominator ; let remapped = curve . knots () . iter () . copied () . map (| knot | { let value = target [0] + (knot - source [0]) * factor ; value . is_finite () . then_some (value) . ok_or_else (| | error (offset , "curve knot remap overflowed")) }) . collect :: < Result < Vec < _ > , _ > > () ? ; curve . edit_knots (| knots | knots . copy_from_slice (& remapped)) . map_err (| error | GeometryError :: malformed (offset , error . to_string ())) ? ; Ok (curve) }
+pub fn elevate_bezier(mut values: Vec<Homogeneous>, target: usize) -> Vec<Homogeneous> { while values . len () - 1 < target { let degree = values . len () - 1 ; let mut elevated = Vec :: with_capacity (values . len () + 1) ; elevated . push (values [0]) ; for index in 1 ..= degree { elevated . push (values [index] . blend (values [index - 1] , index as f64 / (degree + 1) as f64)) ; } elevated . push (values [degree]) ; values = elevated ; } values }
+pub fn insert_knot_once(
+    knots: &mut Vec<f64>,
+    points: &mut Vec<Homogeneous>,
+    degree: usize,
+    value: f64,
+) -> Result<(), ()> { let n = points . len () - 1 ; let k = (degree ..= n) . find (| index | value < knots [index + 1]) . unwrap_or (n) ; let multiplicity = knots . iter () . filter (| knot | * * knot == value) . count () ; if multiplicity > degree { return Err (()) ; } let mut output = alloc_filled (points . len () . checked_add (1) . ok_or (()) ? , points [0] , "Rhino polycurve knot insertion points" ,) . map_err (| _ | ()) ? ; output [..= k - degree] . copy_from_slice (& points [..= k - degree]) ; output [k - multiplicity + 1 ..= n + 1] . copy_from_slice (& points [k - multiplicity ..= n]) ; for index in k - degree + 1 ..= k - multiplicity { let denominator = knots [index + degree] - knots [index] ; if denominator <= 0.0 || ! denominator . is_finite () { return Err (()) ; } let alpha = (value - knots [index]) / denominator ; output [index] = points [index - 1] . blend (points [index] , alpha) ; } knots . insert (k + 1 , value) ; * points = output ; Ok (()) }
+pub fn elevate_to_degree(
+    curve: &NurbsCurve,
+    target: usize,
+    offset: usize,
+) -> Result<NurbsCurve, GeometryError> { let degree = usize :: try_from (curve . degree ()) . map_err (| _ | error (offset , "curve degree overflow")) ? ; if degree > target || curve . periodic () { return Err (error (offset , "polycurve segment knot vector is invalid")) ; } let weights = match curve . weights () { Some (weights) => weights , None => alloc_filled (curve . control_points () . len () , 1.0 , "Rhino polycurve segment weights" ,) . map_err (| error | { GeometryError :: malformed (offset , format ! ("polycurve weight allocation refused: {error}") ,) }) ? , } ; let rational = weights . iter () . any (| weight | * weight != 1.0) ; let mut points = curve . control_points () . iter () . copied () . zip (weights) . map (| (point , weight) | { Homogeneous ([point . x * weight , point . y * weight , point . z * weight , weight]) }) . collect :: < Vec < _ > > () ; let mut knots = curve . knots () . to_vec () ; let domain = [knots [degree] , knots [knots . len () - degree - 1]] ; for endpoint in domain { while knots . iter () . filter (| value | * * value == endpoint) . count () < degree + 1 { insert_knot_once (& mut knots , & mut points , degree , endpoint) . map_err (| () | error (offset , "polycurve endpoint clamping failed")) ? ; } } let mut internal = knots [degree + 1 .. knots . len () - degree - 1] . to_vec () ; internal . dedup () ; for knot in internal { while knots . iter () . filter (| value | * * value == knot) . count () < degree { insert_knot_once (& mut knots , & mut points , degree , knot) . map_err (| () | error (offset , "polycurve knot insertion failed")) ? ; } } let boundaries = knots . windows (2) . filter_map (| pair | (pair [0] < pair [1]) . then_some ([pair [0] , pair [1]])) . collect :: < Vec < _ > > () ; if boundaries . is_empty () { return Err (error (offset , "polycurve segment has no nonempty span")) ; } let mut elevated = Vec :: new () ; for (span , _boundary) in boundaries . iter () . enumerate () { let start = span * degree ; let bezier = elevate_bezier (points [start ..= start + degree] . to_vec () , target) ; if span == 0 { elevated . extend (bezier) ; } else { elevated . extend (bezier . into_iter () . skip (1)) ; } } let mut elevated_knots = alloc_filled (target . checked_add (1) . ok_or_else (| | error (offset , "polycurve elevated knot count overflow")) ? , boundaries [0] [0] , "Rhino polycurve elevated knots" ,) . map_err (| error | { GeometryError :: malformed (offset , format ! ("polycurve knot allocation refused: {error}") ,) }) ? ; for boundary in boundaries . iter () . take (boundaries . len () - 1) { elevated_knots . extend (std :: iter :: repeat_n (boundary [1] , target)) ; } let last_boundary = boundaries . last () . copied () . ok_or_else (| | error (offset , "polycurve segment has no nonempty span")) ? ; elevated_knots . extend (std :: iter :: repeat_n (last_boundary [1] , target + 1)) ; let mut output_weights = Vec :: with_capacity (elevated . len ()) ; let mut control_points = Vec :: with_capacity (elevated . len ()) ; for point in elevated { let weight = point . 0 [3] ; if weight == 0.0 || ! weight . is_finite () { return Err (error (offset , "polycurve degree elevation produced an invalid weight" ,)) ; } control_points . push (Point3 :: new (point . 0 [0] / weight , point . 0 [1] / weight , point . 0 [2] / weight ,)) ; output_weights . push (weight) ; } NurbsCurve :: from_lanes (target as u32 , elevated_knots , control_points , rational . then_some (output_weights) , false ,) . map_err (| error | GeometryError :: malformed (offset , error . to_string ())) }
+pub fn join_nurbs_segments(
+    mut segments: Vec<NurbsCurve>,
+    offset: usize,
+) -> Result<NurbsJoin, GeometryError> { let Some (_) = segments . first () else { return Err (error (offset , "polycurve has no segments")) ; } ; let degree = segments . iter () . map (NurbsCurve :: degree) . max () . ok_or_else (| | error (offset , "polycurve has no segments")) ? ; let target = usize :: try_from (degree) . map_err (| _ | error (offset , "curve degree overflow")) ? ; if target == 0 { return Err (error (offset , "polycurve segment degree must be positive")) ; } segments = segments . iter () . map (| segment | elevate_to_degree (segment , target , offset)) . collect :: < Result < _ , _ > > () ? ; if segments . len () == 1 { return Ok (NurbsJoin { curve : segments . remove (0) , warnings : Diagnostics :: new () , }) ; } let multiplicity = usize :: try_from (degree) . ok () . and_then (| value | value . checked_add (1)) . ok_or_else (| | error (offset , "curve degree overflow")) ? ; for segment in & segments { let start = segment . knots () . get (multiplicity - 1) . copied () ; let end = segment . knots () . len () . checked_sub (multiplicity) . and_then (| index | segment . knots () . get (index)) . copied () ; if start . is_none () || end . is_none () || segment . knots () [.. multiplicity] . iter () . any (| value | Some (* value) != start) || segment . knots () [segment . knots () . len () - multiplicity ..] . iter () . any (| value | Some (* value) != end) { return Err (error (offset , "polycurve segment is not endpoint-clamped")) ; } } let rational = segments . iter () . any (| segment | segment . weights () . is_some ()) ; let control_count = segments . iter () . try_fold (0_usize , | total , segment | { total . checked_add (segment . control_points () . len ()) }) . ok_or_else (| | error (offset , "polycurve size overflow")) ? ; let knot_count = segments . iter () . try_fold (0_usize , | total , segment | { total . checked_add (segment . knots () . len ()) }) . and_then (| total | { (segments . len () - 1) . checked_mul (multiplicity + 1) . and_then (| duplicates | total . checked_sub (duplicates)) }) . ok_or_else (| | error (offset , "polycurve size overflow")) ? ; let mut control_points : Vec < Point3 > = Vec :: with_capacity (control_count) ; let mut knots : Vec < f64 > = Vec :: with_capacity (knot_count) ; let mut weights = rational . then (| | Vec :: with_capacity (control_count)) ; let mut warnings = Diagnostics :: new () ; for (index , mut segment) in segments . into_iter () . enumerate () { if index > 0 { let Some (previous) = control_points . last () . copied () else { return Err (error (offset , "polycurve join has no previous segment endpoint" ,)) ; } ; let next = segment . control_points () [0] ; let midpoint = Point3 :: new ((previous . x + next . x) * 0.5 , (previous . y + next . y) * 0.5 , (previous . z + next . z) * 0.5 ,) ; let gap = ((previous . x - next . x) . powi (2) + (previous . y - next . y) . powi (2) + (previous . z - next . z) . powi (2)) . sqrt () ; if gap > 0.0 { warnings . push_coded (crate :: loss :: RhinoLossCode :: PolycurveJoinGap , format ! ("polycurve join moved endpoints by half of gap {gap}") ,) ; } let Some (previous) = control_points . last_mut () else { return Err (error (offset , "polycurve join has no previous endpoint")) ; } ; * previous = midpoint ; let mut first = true ; segment . edit_control_points (| point | { if first { * point = midpoint ; first = false ; } Ok (()) }) . map_err (| error | GeometryError :: malformed (offset , error . to_string ())) ? ; } let skip = usize :: from (index > 0) ; let segment_points = segment . control_points () ; if let Some (target) = & mut weights { match segment . weights () { Some (values) => target . extend (values . iter () . copied () . skip (skip)) , None => target . extend (std :: iter :: repeat_n (1.0 , segment_points . len () - skip)) , } } control_points . extend (segment_points . iter () . copied () . skip (skip)) ; let segment_start = segment . knots () [multiplicity - 1] ; let dk = if index == 0 { 0.0 } else { knots . last () . copied () . unwrap_or (0.0) - segment_start } ; if index > 0 { knots . pop () ; } knots . extend (segment . knots () . iter () . copied () . map (| knot | knot + dk) . skip (if index == 0 { 0 } else { multiplicity }) ,) ; } Ok (NurbsJoin { curve : NurbsCurve :: from_lanes (degree , knots , control_points , weights , false) . map_err (| error | GeometryError :: malformed (offset , error . to_string ())) ? , warnings , }) }
+}
+mod nx_solver {
+use super::*;
+pub fn least_squares_step(
+    du: Vector3,
+    dv: Vector3,
+    residual: Vector3,
+) -> Option<(f64, f64)> { let du_squared = du . dot (du) ; let mixed = du . dot (dv) ; let dv_squared = dv . dot (dv) ; let determinant = du_squared * dv_squared - mixed * mixed ; if ! determinant . is_finite () || determinant . abs () <= f64 :: EPSILON * du_squared . max (dv_squared) . powi (2) { return None ; } let du_residual = du . dot (residual) ; let dv_residual = dv . dot (residual) ; Some (((dv_squared * du_residual - mixed * dv_residual) / determinant , (du_squared * dv_residual - mixed * du_residual) / determinant ,)) }
+pub fn determinant_3x3(matrix: [[f64; 3]; 3]) -> f64 { matrix [0] [0] * (matrix [1] [1] * matrix [2] [2] - matrix [1] [2] * matrix [2] [1]) - matrix [0] [1] * (matrix [1] [0] * matrix [2] [2] - matrix [1] [2] * matrix [2] [0]) + matrix [0] [2] * (matrix [1] [0] * matrix [2] [1] - matrix [1] [1] * matrix [2] [0]) }
+pub fn null_vector_3x4(matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> { let mut vector = [0.0 ; 4] ; for (omitted , component) in vector . iter_mut () . enumerate () { let minor = std :: array :: from_fn (| row | { let mut column = 0 ; std :: array :: from_fn (| _ | { while column == omitted { column += 1 ; } let value = matrix [row] [column] ; column += 1 ; value }) }) ; * component = if omitted % 2 == 0 { 1.0 } else { - 1.0 } * determinant_3x3 (minor) ; } let norm = vector . iter () . map (| value | value * value) . sum :: < f64 > () . sqrt () ; (norm . is_finite () && norm > 1.0e-14) . then (| | vector . map (| value | value / norm)) }
+}
+mod sld_angle {
+const SKETCH_POINT_TOLERANCE:f64=1e-9;
+pub fn line_direction(line: [[f64; 2]; 2]) -> [f64; 2] { [line [1] [0] - line [0] [0] , line [1] [1] - line [0] [1]] }
+pub fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> { let first_direction = line_direction (first) ; let second_direction = line_direction (second) ; let first_length = first_direction [0] . hypot (first_direction [1]) ; let second_length = second_direction [0] . hypot (second_direction [1]) ; if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE { return None ; } Some (((first_direction [0] * second_direction [0] + first_direction [1] * second_direction [1]) / (first_length * second_length)) . clamp (- 1.0 , 1.0) . acos () ,) }
+}
+mod sld_holes {
+use super::*;use std::collections::HashMap; use cadmpeg_ir::features::holes::HolePlacement; const EPS_HOLE_POSITION:f64=1e-8; const EPS_HOLE_EXACT_GEOMETRY:f64=1e-12;
+pub fn canonical_axis(axis: Vector3) -> Vector3 { let sign = [axis . x , axis . y , axis . z] . into_iter () . find (| component | component . abs () > EPS_HOLE_EXACT_GEOMETRY) . map_or (1.0 , f64 :: signum) ; Vector3 :: new (axis . x * sign , axis . y * sign , axis . z * sign) }
+pub fn carrier_placements(
+    axes: impl IntoIterator<Item = (Point3, Vector3)>,
+) -> Option<Vec<HolePlacement>> { const AXIS_QUANTUM : f64 = EPS_HOLE_POSITION ; let quantize = | value : f64 | (value / AXIS_QUANTUM) . round () as i64 ; let mut carriers = axes . into_iter () . map (| (origin , axis) | { let axis = canonical_axis (axis) ; let station = Vector3 :: new (origin . x , origin . y , origin . z) . dot (axis) ; let closest = Point3 :: new (origin . x - station * axis . x , origin . y - station * axis . y , origin . z - station * axis . z ,) ; Some (([quantize (closest . x) , quantize (closest . y) , quantize (closest . z) , quantize (axis . x) , quantize (axis . y) , quantize (axis . z) ,] , HolePlacement :: Axis { origin : cadmpeg_ir :: features :: FinitePoint3 :: new (closest) ? , axis : cadmpeg_ir :: features :: FeatureDirection3 :: new (axis) ? , } ,)) }) . collect :: < Option < HashMap < _ , _ > > > () ? . into_iter () . collect :: < Vec < _ > > () ; carriers . sort_by_key (| (key , _) | * key) ; let placements = carriers . into_iter () . map (| (_ , placement) | placement) . collect :: < Vec < _ > > () ; (! placements . is_empty ()) . then_some (placements) }
+}
+mod iges_real { use cadmpeg_core::CodecError; fn malformed(s:&str)->CodecError{CodecError::Malformed(s.to_string())} pub struct BitReader<'a>{pub bytes:&'a[u8],pub byte:usize,pub bit:u8} impl BitReader<'_>{pub fn read_bits(&mut self, count: u8) -> Result<u64, CodecError> { if count > 64 { return Err (malformed ("a Binary primitive requests more than 64 bits")) ; } let mut value = 0_u64 ; for _ in 0 .. count { let byte = * self . bytes . get (self . byte) . ok_or_else (| | malformed ("a Binary primitive is truncated")) ? ; let shift = 7_u8 . saturating_sub (self . bit) ; value = (value << 1) | u64 :: from ((byte >> shift) & 1) ; self . bit += 1 ; if self . bit == 8 { self . bit = 0 ; self . byte = self . byte . checked_add (1) . ok_or_else (| | malformed ("a Binary bit offset overflows")) ? ; } } Ok (value) }
+pub fn align_zero(&mut self) -> Result<(), CodecError> { if self . bit == 0 { return Ok (()) ; } let padding = self . read_bits (8 - self . bit) ? ; if padding != 0 { return Err (malformed ("Binary primitive padding contains a one bit")) ; } Ok (()) }
+pub fn read_real(&mut self, exponent_bits: u8, fraction_bits: u8) -> Result<f64, CodecError> { if exponent_bits == 0 { return Err (malformed ("a Binary real has zero exponent width")) ; } let total_bits = 1_u16 . checked_add (u16 :: from (exponent_bits)) . and_then (| bits | bits . checked_add (u16 :: from (fraction_bits))) . ok_or_else (| | malformed ("a Binary real width overflows")) ? ; if total_bits > 64 { return Err (malformed ("a Binary real exceeds the supported 64-bit primitive width" ,)) ; } let negative = self . read_bits (1) ? == 1 ; let biased_exponent = self . read_bits (exponent_bits) ? ; let fraction = self . read_bits (fraction_bits) ? ; self . align_zero () ? ; if biased_exponent == 0 { return Ok (0.0) ; } let bias = 2_f64 . powi (i32 :: from (exponent_bits) - 1) ; let exponent = biased_exponent as f64 - bias ; let fraction = 0.5 + (fraction as f64 / 2_f64 . powi (i32 :: from (fraction_bits) + 1)) ; let value = fraction * 2_f64 . powf (exponent) ; if ! value . is_finite () { return Err (malformed ("a Binary real is not finite")) ; } Ok (if negative { - value } else { value }) }
+}}
+mod rhino_mesh {
+use super::*;
+pub fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<[u32; 3]> { let mut triangles = Vec :: with_capacity (faces . len () . saturating_mul (2)) ; for face in faces { if unique_face_vertices (face) == 3 { let mut unique = Vec :: with_capacity (3) ; for index in face { if ! unique . contains (index) { unique . push (* index) ; } } triangles . push ([unique [0] , unique [1] , unique [2]]) ; } else if unique_face_vertices (face) == 4 { let diagonal_02 = distance_squared (vertices [face [0] as usize] , vertices [face [2] as usize]) ; let diagonal_13 = distance_squared (vertices [face [1] as usize] , vertices [face [3] as usize]) ; if diagonal_02 <= diagonal_13 { triangles . extend ([[face [0] , face [1] , face [2]] , [face [0] , face [2] , face [3]]]) ; } else { triangles . extend ([[face [0] , face [1] , face [3]] , [face [1] , face [2] , face [3]]]) ; } } } triangles }
+pub fn unique_face_vertices(face: &[u32; 4]) -> usize { let mut unique = Vec :: with_capacity (4) ; for index in face { if ! unique . contains (index) { unique . push (* index) ; } } unique . len () }
+pub fn distance_squared(a: Point3, b: Point3) -> f64 { (a . x - b . x) . powi (2) + (a . y - b . y) . powi (2) + (a . z - b . z) . powi (2) }
+}
+mod iges_extra {pub mod geometry {use super::super::*;#[derive(Clone, Copy)]
+pub(crate) struct Affine {
+    transform: cadmpeg_ir::transform::Transform,
+}
+
+impl Affine {
+    pub(crate) fn identity() -> Self {
+        Self {
+            transform: cadmpeg_ir::transform::Transform::identity(),
+        }
+    }
+
+    pub(crate) fn new(rows: [[f64; 4]; 3]) -> Option<Self> {
+        cadmpeg_ir::transform::Transform::affine(rows).map(|transform| Self { transform })
+    }
+
+    pub(crate) fn rows(self) -> [[f64; 4]; 3] {
+        let rows = self.transform.rows();
+        [rows[0], rows[1], rows[2]]
+    }
+
+    pub(crate) fn compose(self, local: Self) -> Option<Self> {
+        let rows = self.rows();
+        let local_rows = local.rows();
+        let mut composed = [[0.0; 4]; 3];
+        for (row, values) in composed.iter_mut().enumerate() {
+            for (column, value) in values.iter_mut().enumerate().take(3) {
+                *value = (0..3)
+                    .map(|index| rows[row][index] * local_rows[index][column])
+                    .sum();
+            }
+            values[3] = rows[row][3]
+                + (0..3)
+                    .map(|index| rows[row][index] * local_rows[index][3])
+                    .sum::<f64>();
+        }
+        Self::new(composed)
+    }
+
+    pub(super) fn point(self, point: Point3) -> Point3 {
+        let rows = self.rows();
+        let values = [point.x, point.y, point.z];
+        let coordinate = |row: usize| {
+            rows[row][3]
+                + values
+                    .iter()
+                    .enumerate()
+                    .map(|(column, value)| rows[row][column] * value)
+                    .sum::<f64>()
+        };
+        Point3::new(coordinate(0), coordinate(1), coordinate(2))
+    }
+
+    pub(super) fn vector(self, vector: Vector3) -> Vector3 {
+        let rows = self.rows();
+        let values = [vector.x, vector.y, vector.z];
+        let coordinate = |row: usize| {
+            values
+                .iter()
+                .enumerate()
+                .map(|(column, value)| rows[row][column] * value)
+                .sum::<f64>()
+        };
+        Vector3::new(coordinate(0), coordinate(1), coordinate(2))
+    }
+
+    pub(super) fn body_transform(self) -> cadmpeg_ir::transform::Transform {
+        self.transform
+    }
+}
+
+}mod surfaces {
+use super::super::*; const EPS_SURFACES_SIMILARITY_ORIENTATION_E10:f64=1e-10;
+pub fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> { let column = | index | { Vector3 :: new (transform . rows () [0] [index] , transform . rows () [1] [index] , transform . rows () [2] [index] ,) } ; let [x , y , z] = [column (0) , column (1) , column (2)] ; let squared_scale = x . dot (x) ; if ! squared_scale . is_finite () || squared_scale <= 0.0 { return None ; } let tolerance = squared_scale * EPS_SURFACES_SIMILARITY_ORIENTATION_E10 ; if (y . dot (y) - squared_scale) . abs () > tolerance || (z . dot (z) - squared_scale) . abs () > tolerance || x . dot (y) . abs () > tolerance || x . dot (z) . abs () > tolerance || y . dot (z) . abs () > tolerance { return None ; } let determinant = x . dot (y . cross (z)) ; let determinant_tolerance = squared_scale . sqrt () * squared_scale * EPS_SURFACES_SIMILARITY_ORIENTATION_E10 ; (determinant . is_finite () && determinant . abs () > determinant_tolerance) . then (| | determinant . signum ()) }
+}
+pub fn run(){
+let a=geometry::Affine::new([[1e110,0.,0.,0.],[0.,1e110,0.,0.],[0.,0.,1e110,0.]]).unwrap();
+println!("IGES similarity uniform positive scale: {:?}",surfaces::similarity_orientation(a));
+let a=geometry::Affine::new([[1.,1.,-1.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.]]).unwrap();
+println!("IGES Affine representable cancellation point: {:?}",a.point(cadmpeg_ir::math::Point3::new(f64::MAX,f64::MAX,f64::MAX)));
+}}
+
+fn surface(weights: Vec<Vec<f64>>, x1:f64,x2:f64)->NurbsSurface {
+ let axis=NurbsSurfaceAxis::new(1,vec![0.,0.,1.,1.],false);
+ NurbsSurface::from_lanes(axis.clone(),axis,NurbsSurfaceLanes::new(vec![vec![Point3::new(x1,0.,0.),Point3::new(x1,1.,0.)],vec![Point3::new(x2,0.,0.),Point3::new(x2,1.,0.)]],Some(weights)),false).unwrap()
+}
+fn main(){
+ for magnitude in [1e200,1e-200] {
+  let v=Vector3::new(magnitude,0.,0.);
+  println!("IR norm/distance magnitude={magnitude:e}: norm={:?}; distance={:?}; NX normalized={:?}",v.norm(),Point3::new(0.,0.,0.).distance(Point3::new(magnitude,0.,0.)),nx::unit_vector(v));
+ }
+ let knots=[0.,0.,1.,1.]; let poles=[Point3::new(2.,0.,0.),Point3::new(4.,0.,0.)];
+ for w in [1.,-1.,1e200,1e308,1e-200,f64::from_bits(1)] {
+  println!("IR rational common weight {w:e}: point={:?}; tangent={:?}; isocurve={:?}",ir::nurbs_curve_point(1,&knots,&poles,Some(&[w,w]),0.5),ir::nurbs_curve_tangent(1,&knots,&poles,Some(&[w,w]),0.5),ir::nurbs_surface_isocurve(&surface(vec![vec![w;2];2],2.,4.),SurfaceParameterAxis::U,0.5).map(|c|c.control_points().to_vec()));
+ }
+ println!("IR tiny knot span point={:?}",ir::nurbs_curve_point(1,&[0.,0.,1e-310,1e-310],&poles,None,0.5e-310));
+ let rotation=[[-1.,0.,0.,0.],[0.,0.,-1.,0.],[0.,-1.,0.,0.],[0.,0.,0.,1.]];
+ println!("F3D half turn={:?}",f3d_rotation::matrix_axis_angle(&rotation));
+ let arc=f3d_intersection::ProfileBoundarySegment::Arc{center:Point2::new(0.,0.),radius:1e-4,start_angle:0.,end_angle:std::f64::consts::TAU};
+ println!("F3D disjoint line/circle={:?}",f3d_intersection::line_arc_intersection_points((Point2::new(-1e-4,2e-4),Point2::new(1e-4,2e-4)),&arc));
+ println!("Creo disjoint line/circle={:?}",creo::trim_line_circle_intersection([-1e-4,2e-4],[1e-4,2e-4],[0.,0.],1e-4));
+ for scale in [1.,1e200,1e-200] {println!("FreeCAD rotate X by Z halfturn, q scale={scale:e}: {:?}",freecad::rotate_vector([0.,0.,scale,0.],[1.,0.,0.]));}
+ let max=f64::MAX; let a=Transform::affine([[1.,-1.,1.,max],[0.,1.,0.,max],[0.,0.,1.,max]]).unwrap();
+ println!("IR finite inverse translation={:?}",a.try_inverse_affine());
+ let a=Transform::affine([[1e110,0.,0.,0.],[0.,1e110,0.,0.],[0.,0.,1e110,0.]]).unwrap();
+ println!("IR inverse affine point={:?}; shared inverse succeeds={}",ir::inverse_affine_point(a,Point3::new(1e110,1e110,1e110)),a.try_inverse_affine().is_ok());
+ println!("IR periodic parameter={:?}",ir::periodic_parameter(&[-1e308,-1e308,-9e307,-9e307],1,2,true,1e308));
+ for word in ["9007199254740993","9223372036854775808"]{let (v,i)=sat::parse_number(word).unwrap();println!("SAT integer {word}: lexical_integral={i}; long={}",v as i64);}
+ let x=9223372036854775808f64; let i=x as i64; println!("SLDPRT align 2^63: cast={i}; accepted={}",i as f64==x);
+ let start=1e16;let end=start+2.;println!("IGES reversed range expected [{start:?}, {end:?}], actual {:?}",[start+end-end,start+end-start]);
+ println!("STEP input admitted: {:?}",cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(Point2::new(0.,0.),Point2::new(1e200,0.)));
+ let d:f64=1e200; let magnitude=(d*d).sqrt(); println!("STEP direction: unit={:?}; magnitude={magnitude}; formatter fallback={}",[d/magnitude,0./magnitude],if magnitude.is_finite(){"finite"}else{"0."});
+ let source_width=1e-200; let target_width=1e200;let factor=target_width/source_width;println!("Rhino remap finite endpoints: {:?}",[0.*factor,source_width*factor]);
+ let join:f64=1e308;println!("Rhino identical endpoint midpoint: {}",(join+join)*0.5);
+ let curve=|degree,knots,xy:Vec<[f64;2]>,weights|NurbsCurve::from_lanes(degree,knots,xy.into_iter().map(|[x,y]|Point3::new(x,y,0.)).collect(),weights,false).unwrap();
+ let a=curve(2,vec![0.,0.,0.,1.,1.,1.],vec![[-2.,0.],[-1.,0.],[0.,0.]],Some(vec![2.;3]));
+ let b=curve(2,vec![0.,0.,0.,1.,1.,1.],vec![[0.,0.],[0.,1.],[1.,1.]],Some(vec![1.;3]));
+ let bmid=ir::nurbs_curve_point(b.degree(),b.knots(),&b.control_points(),b.weights().as_deref(),0.5);
+ let joined=rhino::join_nurbs_segments(vec![a,b],0).unwrap();
+ println!("Rhino rational join second span midpoint: expected={bmid:?}; actual={:?}; weights={:?}",ir::nurbs_curve_point(joined.curve.degree(),joined.curve.knots(),&joined.curve.control_points(),joined.curve.weights().as_deref(),1.5),joined.curve.weights());
+ let un=curve(1,vec![-1.,0.,1.,2.],vec![[0.,0.],[1.,0.]],None);
+ println!("Rhino unclamped curve elevation (no degree change): {:?}",rhino::elevate_to_degree(&un,1,0));
+ let discontinuous=curve(2,vec![0.,0.,0.,1.,1.,1.,2.,2.,2.],vec![[0.,0.],[1.,0.],[2.,0.],[3.,0.],[4.,0.],[5.,0.]],None);
+ println!("Rhino discontinuous curve elevation (no degree change): {:?}",rhino::elevate_to_degree(&discontinuous,2,0));
+ let tiny=curve(1,vec![0.,0.,1e-200,1e-200],vec![[0.,0.],[1.,0.]],None);
+ println!("Rhino actual remap: {:?}",rhino::remap_nurbs_domain(tiny,[0.,1e200],0));
+ let unclamped=curve(2,vec![-1.,-1.,0.,1.,2.,2.],vec![[0.,0.],[1.,1.],[2.,0.]],None);
+ let elevated=rhino::elevate_to_degree(&unclamped,2,0);
+ println!("Rhino decoded-form unclamped quadratic: before={:?}; after={:?}",ir::nurbs_curve_point(unclamped.degree(),unclamped.knots(),&unclamped.control_points(),None,0.5),elevated.as_ref().ok().and_then(|c|ir::nurbs_curve_point(c.degree(),c.knots(),&c.control_points(),None,0.5)));
+ println!("Rhino decoded-form unclamped elevated carrier: {elevated:?}");
+ let a=curve(1,vec![0.,0.,1.,1.],vec![[0.,0.],[1e308,0.]],None);
+ let b=curve(1,vec![0.,0.,1.,1.],vec![[1e308,0.],[0.,0.]],None);
+ println!("Rhino identical large endpoints full join: {:?}",rhino::join_nurbs_segments(vec![a,b],0));
+ println!("NX orthogonal derivative LS: {:?}",nx_solver::least_squares_step(Vector3::new(1.,0.,0.),Vector3::new(0.,1e-9,0.),Vector3::new(0.,1e-9,0.)));
+ for scale in [1.,1e-5] {let m=[[scale,0.,-scale,0.],[0.,scale,0.,0.],[0.,0.,0.,-scale]];println!("NX null vector at scale {scale}: {:?}",nx_solver::null_vector_3x4(m));}
+ println!("SLDPRT parallel huge-line angle: {:?}",sld_angle::line_line_angle([[0.,0.],[1e200,0.]],[[0.,0.],[1e200,0.]]));
+ println!("SLDPRT distinct parallel hole count: {:?}",sld_holes::carrier_placements([(Point3::new(1e12,0.,0.),Vector3::new(0.,0.,1.)),(Point3::new(2e12,0.,0.),Vector3::new(0.,0.,1.))]).map(|v|v.len()));
+ let encoded=(3072u64<<51).to_be_bytes();let mut reader=iges_real::BitReader{bytes:&encoded,byte:0,bit:0};println!("IGES binary real expected 2^1023={}: {:?}",2f64.powi(1023),reader.read_real(12,51));
+ println!("Protein texture conversion finite 1e308 inches -> mm = {}",1e308f64*25.4);
+ let text=b"23200 0 2 2 
+16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 24 Fri Jul 17 14:46:47 2026 
+1 1e-06 1.0e-10 
+audit-integer 9007199254740993 9223372036854775808 #
+End-of-ASM-data 
+";
+ println!("ASM full SAT parser: {:?}",cadmpeg_asm::sat::parse(text).map(|v|v.records));
+ let transform=Transform::affine([[1.,1.,-1.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.]]).unwrap();
+ println!("IR apply finite cancellation point: {:?}",transform.apply_point(Point3::new(f64::MAX,f64::MAX,f64::MAX)));
+ let trans=Transform::affine([[1.,0.,0.,f64::MAX],[0.,1.,0.,f64::MAX],[0.,0.,1.,f64::MAX]]).unwrap();
+ println!("IR compose finite cancellation: {:?}",transform.compose(trans));
+ let vs=[Point3::new(0.,0.,0.),Point3::new(1e200,0.,0.),Point3::new(2e200,2e200,0.),Point3::new(0.,1e200,0.)];
+ println!("Rhino mesh shorter diagonal is 1--3, actual triangles={:?}",rhino_mesh::triangulate_faces(&[[0,1,2,3]],&vs));
+ iges_extra::run();
+ let mixed=surface(vec![vec![1e308,1e-308];2],2.,4.);
+ println!("CATIA mixed output weights: {:?}",catia::nurbs_surface_isocurve(&mixed,0.5,true,&mut Vec::new(),"audit").map(|c|c.control_points().to_vec()));
+ let mixed=surface(vec![vec![1e308;2],vec![1e-308;2]],0.,1e308);
+ println!("CATIA weighted coordinate expected 1e-308: {:?}",catia::nurbs_surface_isocurve(&mixed,0.5,true,&mut Vec::new(),"audit").map(|c|c.control_points().to_vec()));
+}

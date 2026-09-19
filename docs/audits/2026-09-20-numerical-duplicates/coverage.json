@@ -1,0 +1,128 @@
+[
+  {
+    "crate": "cadmpeg",
+    "files": 52,
+    "lines": 21647,
+    "functions": 390
+  },
+  {
+    "crate": "cadmpeg-asm",
+    "files": 42,
+    "lines": 35139,
+    "functions": 612
+  },
+  {
+    "crate": "cadmpeg-core",
+    "files": 20,
+    "lines": 7054,
+    "functions": 306
+  },
+  {
+    "crate": "cadmpeg-container",
+    "files": 4,
+    "lines": 4087,
+    "functions": 97
+  },
+  {
+    "crate": "cadmpeg-ir",
+    "files": 194,
+    "lines": 110771,
+    "functions": 2864
+  },
+  {
+    "crate": "cadmpeg-parasolid",
+    "files": 2,
+    "lines": 566,
+    "functions": 23
+  },
+  {
+    "crate": "cadmpeg-registry",
+    "files": 12,
+    "lines": 2904,
+    "functions": 67
+  },
+  {
+    "crate": "cadmpeg-test-support",
+    "files": 8,
+    "lines": 1691,
+    "functions": 58
+  },
+  {
+    "crate": "cadmpeg-protein",
+    "files": 4,
+    "lines": 1582,
+    "functions": 28
+  },
+  {
+    "crate": "cadmpeg-codec-f3d",
+    "files": 370,
+    "lines": 283477,
+    "functions": 3221
+  },
+  {
+    "crate": "cadmpeg-codec-inventor",
+    "files": 40,
+    "lines": 28019,
+    "functions": 548
+  },
+  {
+    "crate": "cadmpeg-codec-freecad",
+    "files": 59,
+    "lines": 56041,
+    "functions": 884
+  },
+  {
+    "crate": "cadmpeg-codec-sldprt",
+    "files": 253,
+    "lines": 213511,
+    "functions": 2321
+  },
+  {
+    "crate": "cadmpeg-codec-catia",
+    "files": 173,
+    "lines": 171484,
+    "functions": 2019
+  },
+  {
+    "crate": "cadmpeg-codec-creo",
+    "files": 218,
+    "lines": 172862,
+    "functions": 2341
+  },
+  {
+    "crate": "cadmpeg-codec-nx",
+    "files": 345,
+    "lines": 170113,
+    "functions": 3041
+  },
+  {
+    "crate": "cadmpeg-codec-rhino",
+    "files": 87,
+    "lines": 80978,
+    "functions": 1058
+  },
+  {
+    "crate": "cadmpeg-codec-iges",
+    "files": 136,
+    "lines": 107881,
+    "functions": 1129
+  },
+  {
+    "crate": "cadmpeg-codec-step",
+    "files": 82,
+    "lines": 57131,
+    "functions": 795
+  },
+  {
+    "crate": "cadmpeg-codec-sat",
+    "files": 13,
+    "lines": 2056,
+    "functions": 31
+  },
+  {
+    "crate": "cadmpeg-fuzz",
+    "files": 116,
+    "lines": 6010,
+    "functions": 203
+  }
+]
