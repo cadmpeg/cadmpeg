@@ -152,7 +152,7 @@ pub use validate::{entity_census, validate_neutral, validate_neutral_with_source
 pub mod unknown;
 
 /// Serde default for a flag whose absent form is `true`.
-pub(crate) const fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 

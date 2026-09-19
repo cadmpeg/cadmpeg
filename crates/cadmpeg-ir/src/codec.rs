@@ -222,7 +222,7 @@ impl DecodeResult {
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format.
     #[must_use]
-    pub(crate) fn new(decoded: Decoded, format: FormatId, container_only: bool) -> Self {
+    fn new(decoded: Decoded, format: FormatId, container_only: bool) -> Self {
         let Decoded {
             mut ir,
             body,

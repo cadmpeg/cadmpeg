@@ -52,7 +52,7 @@ use super::sketches::locus_entity;
 use crate::index::ModelIndex;
 use crate::sketches::SketchConstraintDefinitionInput as Definition;
 
-pub(super) fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target: &str) {
+fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target: &str) {
     findings.push(Finding {
         check: Check::ReferentialIntegrity,
         severity: Severity::Error,
@@ -4690,7 +4690,7 @@ fn check_composite_cycle<'a>(
     }
 }
 
-pub(super) fn wire_error(findings: &mut Vec<Finding>, id: &str, message: &str) {
+fn wire_error(findings: &mut Vec<Finding>, id: &str, message: &str) {
     findings.push(Finding {
         check: Check::WireTopology,
         severity: Severity::Error,

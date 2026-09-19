@@ -382,7 +382,7 @@ fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
 /// Native requests always name a catalog or preserved off-catalog dialect.
 /// A dialect-free neutral encoder handles its format identity locally instead
 /// of adding an identity case to every native writer.
-pub(super) fn resolve_write_request<'a>(
+fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
     catalog: TargetCatalog,

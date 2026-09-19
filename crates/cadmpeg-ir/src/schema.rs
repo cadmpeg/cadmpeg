@@ -465,7 +465,7 @@ impl SerializeStructVariant for &mut ReferenceSerializer<'_> {
 }
 
 /// Visits typed-ID newtypes without interpreting arbitrary strings as references.
-pub(crate) fn visit_typed_references<T: EntitySchema>(
+fn visit_typed_references<T: EntitySchema>(
     entity: &T,
     visitor: &mut dyn FnMut(Reference),
 ) -> Result<(), ReferenceWalkError> {
