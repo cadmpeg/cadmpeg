@@ -296,17 +296,10 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             pattern: admitted_pattern,
             ..
         }) if matches!(admitted_pattern.definition(), PatternTransform::Mirror {
-                plane_origin: Point3 {
-                    x: 13.0,
-                    y: 2.0,
-                    z: 3.0
-                },
-                plane_normal: Vector3 {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 1.0
-                },
-            })
+                plane_origin,
+                plane_normal,
+            } if *plane_origin == Point3::new(13.0, 2.0, 3.0)
+                && *plane_normal == Vector3::new(0.0, 0.0, 1.0))
     ));
 
     feature

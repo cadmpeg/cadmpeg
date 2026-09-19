@@ -1162,26 +1162,35 @@ fn encoder_writes_source_less_native_features() {
     }
     let patterns = [
         PatternKind::new(PatternTransform::Linear {
-            direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+            direction: Some(
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+            ),
             spacing: Length::new(10.0).unwrap(),
             count: 3,
             second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                direction: Vector3::new(0.0, 1.0, 0.0),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 1.0, 0.0,
+                ))
+                .unwrap(),
                 spacing: Length::new(20.0).unwrap(),
                 count: 4,
             }),
         })
         .unwrap(),
         PatternKind::new(PatternTransform::Circular {
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_dir: Vector3::new(0.0, 0.0, 1.0),
+            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
+            axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
             angle: Angle::new(std::f64::consts::TAU).unwrap(),
             count: 6,
         })
         .unwrap(),
         PatternKind::new(PatternTransform::Mirror {
-            plane_origin: Point3::new(0.0, 0.0, 0.0),
-            plane_normal: Vector3::new(1.0, 0.0, 0.0),
+            plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
+            plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                .unwrap(),
         })
         .unwrap(),
     ];
@@ -1265,16 +1274,13 @@ fn encoder_writes_source_less_native_features() {
                 ..
             }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
                     second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                        direction: Vector3 {
-                            x: 0.0,
-                            y: 1.0,
-                            z: 0.0
-                        },
+                        direction: actual_direction,
                         spacing: actual_spacing,
                         count: 4,
                     }),
                     ..
-                } if actual_spacing.get() == 20.0)
+                } if *actual_direction == Vector3::new(0.0, 1.0, 0.0)
+                    && actual_spacing.get() == 20.0)
         )
     ));
     assert!(decoded.ir().model.features.iter().any(|feature| matches!(

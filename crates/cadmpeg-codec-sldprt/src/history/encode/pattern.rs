@@ -230,7 +230,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         Some(direction) => {
                             properties.insert(
                                 cadmpeg_core::nonblank_literal!("Direction"),
-                                format_vector3(*direction),
+                                format_vector3(direction.get()),
                             );
                         }
                         None if existing.is_some() => {}
@@ -267,7 +267,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     if let Some(second) = second {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("Direction2"),
-                            format_vector3(second.direction),
+                            format_vector3(second.direction.get()),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("D4"),
@@ -287,11 +287,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 } => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                        format_point3_mm(*axis_origin),
+                        format_point3_mm(axis_origin.get()),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("AxisDirection"),
-                        format_vector3(*axis_dir),
+                        format_vector3(axis_dir.get()),
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Angle"),
@@ -352,11 +352,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 } => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("PlaneOrigin"),
-                        format_point3_mm(*plane_origin),
+                        format_point3_mm(plane_origin.get()),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("PlaneNormal"),
-                        format_vector3(*plane_normal),
+                        format_vector3(plane_normal.get()),
                     );
                 }
                 PatternTransform::MirrorReference { .. } => {

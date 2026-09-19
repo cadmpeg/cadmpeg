@@ -55,11 +55,12 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             seeds,
             pattern: admitted_pattern,
         }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
-                direction: Some(Vector3 { x: 1.0, y: 0.0, z: 0.0 }),
+                direction: Some(actual_direction),
                 spacing: actual_spacing,
                 count: 3,
                 second: None,
-            } if (seeds == &[cadmpeg_ir::features::patterns::PatternSeed::Feature(seed.clone())]) && actual_spacing.get() == 10.0)
+            } if *actual_direction == Vector3::new(1.0, 0.0, 0.0)
+                && (seeds == &[cadmpeg_ir::features::patterns::PatternSeed::Feature(seed.clone())]) && actual_spacing.get() == 10.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
@@ -67,11 +68,13 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             pattern: admitted_pattern,
             ..
         }) if matches!(admitted_pattern.definition(), PatternTransform::Circular {
-                axis_origin: Point3 { x: 0.0, y: 0.0, z: 0.0 },
-                axis_dir: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                axis_origin,
+                axis_dir,
                 angle: value,
                 count: 4,
-            } if (value.get() - std::f64::consts::TAU).abs() < EPS_PATTERN_ANGLE)
+            } if *axis_origin == Point3::new(0.0, 0.0, 0.0)
+                && *axis_dir == Vector3::new(0.0, 0.0, 1.0)
+                && (value.get() - std::f64::consts::TAU).abs() < EPS_PATTERN_ANGLE)
     ));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
@@ -79,17 +82,10 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             pattern: admitted_pattern,
             ..
         }) if matches!(admitted_pattern.definition(), PatternTransform::Mirror {
-                plane_origin: Point3 {
-                    x: 5.0,
-                    y: 0.0,
-                    z: 0.0
-                },
-                plane_normal: Vector3 {
-                    x: 1.0,
-                    y: 0.0,
-                    z: 0.0
-                },
-            })
+                plane_origin,
+                plane_normal,
+            } if *plane_origin == Point3::new(5.0, 0.0, 0.0)
+                && *plane_normal == Vector3::new(1.0, 0.0, 0.0))
     ));
 
     {
@@ -111,7 +107,9 @@ fn semantic_writer_round_trips_all_pattern_forms() {
         else {
             panic!("pattern form");
         };
-        *direction = Some(Vector3::new(0.0, 1.0, 0.0));
+        *direction = Some(
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+        );
         *spacing = Length::new(12.0).unwrap();
         *count = 5;
         *pattern = PatternKind::new(transform).unwrap();
@@ -133,7 +131,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
         else {
             panic!("pattern form");
         };
-        *axis_origin = Point3::new(1.0, 2.0, 3.0);
+        *axis_origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap();
         *angle = Angle::new(std::f64::consts::PI).unwrap();
         *count = 6;
         *pattern = PatternKind::new(transform).unwrap();
@@ -153,8 +151,10 @@ fn semantic_writer_round_trips_all_pattern_forms() {
         else {
             panic!("pattern form");
         };
-        *plane_origin = Point3::new(2.0, 0.0, 0.0);
-        *plane_normal = Vector3::new(0.0, 1.0, 0.0);
+        *plane_origin =
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap();
+        *plane_normal =
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
         *pattern = PatternKind::new(transform).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }

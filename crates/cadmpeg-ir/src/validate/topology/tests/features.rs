@@ -751,8 +751,12 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(seed.clone())],
                 pattern: PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: Point3::new(0.0, 0.0, 0.0),
-                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                    plane_origin: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    plane_normal: crate::features::FeatureDirection3::new(Vector3::new(
+                        1.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
                 })
                 .unwrap(),
             }),
@@ -848,8 +852,12 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(source.clone())],
                 pattern: PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: Point3::new(0.0, 0.0, 0.0),
-                    plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                    plane_origin: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    plane_normal: crate::features::FeatureDirection3::new(Vector3::new(
+                        1.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
                 })
                 .unwrap(),
             }),

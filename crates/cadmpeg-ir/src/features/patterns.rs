@@ -6,8 +6,7 @@ use super::{
     SelectionMembers,
 };
 use crate::ids::OccurrenceId;
-use crate::math::{Point3, Vector3};
-use crate::scalar::{Angle, Length};
+use crate::scalar::{Angle, Length, PositiveReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -131,22 +130,14 @@ impl<C> PatternKind<C> {
         match &transform {
             PatternTransform::Unresolved { .. } => {}
             PatternTransform::Linear {
-                direction,
                 spacing,
                 count,
                 second,
+                ..
             } => {
-                require(
-                    direction.is_none_or(|direction| FeatureDirection3::new(direction).is_some()),
-                    "pattern direction must have a finite nonzero norm",
-                )?;
                 require(spacing.get() > 0.0, "pattern spacing must be positive")?;
                 require(*count > 0, "pattern count must be positive")?;
                 if let Some(second) = second {
-                    require(
-                        FeatureDirection3::new(second.direction).is_some(),
-                        "pattern second.direction must have a finite nonzero norm",
-                    )?;
                     require(
                         second.spacing.get() > 0.0,
                         "pattern second.spacing must be positive",
@@ -154,46 +145,17 @@ impl<C> PatternKind<C> {
                     require(second.count > 0, "pattern second.count must be positive")?;
                 }
             }
-            PatternTransform::LinearOffsets { direction, offsets } => {
-                require(
-                    direction.is_none_or(|direction| FeatureDirection3::new(direction).is_some()),
-                    "pattern direction must have a finite nonzero norm",
-                )?;
+            PatternTransform::LinearOffsets { offsets, .. } => {
                 require(
                     valid_increasing_locations(offsets.iter().map(|offset| offset.get())),
                     "pattern offsets must start at zero and strictly increase",
                 )?;
             }
-            PatternTransform::Circular {
-                axis_origin,
-                axis_dir,
-                angle,
-                count,
-            } => {
-                require(
-                    FinitePoint3::new(*axis_origin).is_some(),
-                    "pattern axis_origin must be finite",
-                )?;
-                require(
-                    FeatureDirection3::new(*axis_dir).is_some(),
-                    "pattern axis_dir must have a finite nonzero norm",
-                )?;
+            PatternTransform::Circular { angle, count, .. } => {
                 require(angle.get() > 0.0, "pattern angle must be positive")?;
                 require(*count > 0, "pattern count must be positive")?;
             }
-            PatternTransform::CircularAngles {
-                axis_origin,
-                axis_dir,
-                angles,
-            } => {
-                require(
-                    FinitePoint3::new(*axis_origin).is_some(),
-                    "pattern axis_origin must be finite",
-                )?;
-                require(
-                    FeatureDirection3::new(*axis_dir).is_some(),
-                    "pattern axis_dir must have a finite nonzero norm",
-                )?;
+            PatternTransform::CircularAngles { angles, .. } => {
                 require(
                     valid_increasing_locations(angles.iter().map(|angle| angle.get())),
                     "pattern angles must start at zero and strictly increase",
@@ -203,19 +165,7 @@ impl<C> PatternKind<C> {
                 require(spacing.get() > 0.0, "pattern spacing must be positive")?;
                 require(*count > 0, "pattern count must be positive")?;
             }
-            PatternTransform::Mirror {
-                plane_origin,
-                plane_normal,
-            } => {
-                require(
-                    FinitePoint3::new(*plane_origin).is_some(),
-                    "pattern plane_origin must be finite",
-                )?;
-                require(
-                    FeatureDirection3::new(*plane_normal).is_some(),
-                    "pattern plane_normal must have a finite nonzero norm",
-                )?;
-            }
+            PatternTransform::Mirror { .. } => {}
             PatternTransform::MirrorReference {
                 plane: FaceSelection::Native(reference),
             } => {
@@ -225,21 +175,7 @@ impl<C> PatternKind<C> {
                 )?;
             }
             PatternTransform::MirrorReference { .. } => {}
-            PatternTransform::Scale {
-                center,
-                final_factor,
-                count,
-            } => {
-                if let PatternScaleCenter::Point(point) = center {
-                    require(
-                        FinitePoint3::new(*point).is_some(),
-                        "pattern center point must be finite",
-                    )?;
-                }
-                require(
-                    final_factor.is_finite() && *final_factor > 0.0,
-                    "pattern final_factor must be positive and finite",
-                )?;
+            PatternTransform::Scale { count, .. } => {
                 require(*count >= 2, "scale pattern count must be at least two")?;
             }
             PatternTransform::Composite { .. } => {}
@@ -407,7 +343,7 @@ pub enum PatternTransform<C = CompositePattern> {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_direction"
         )]
-        direction: Option<Vector3>,
+        direction: Option<FeatureDirection3>,
         /// Distance between consecutive instances.
         spacing: Length,
         /// Total number of instances, including the original.
@@ -428,16 +364,16 @@ pub enum PatternTransform<C = CompositePattern> {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_direction"
         )]
-        direction: Option<Vector3>,
+        direction: Option<FeatureDirection3>,
         /// Cumulative distances from the original instance, beginning with zero.
         offsets: Vec<Length>,
     },
     /// Repeats seeds evenly around an axis.
     Circular {
         /// A point on the pattern axis.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Unit direction of the pattern axis.
-        axis_dir: Vector3,
+        axis_dir: FeatureDirection3,
         /// Angular span covered by the pattern.
         angle: Angle,
         /// Total number of instances, including the original.
@@ -446,9 +382,9 @@ pub enum PatternTransform<C = CompositePattern> {
     /// Repeats seeds at explicitly located angles around an axis.
     CircularAngles {
         /// A point on the pattern axis.
-        axis_origin: Point3,
+        axis_origin: FinitePoint3,
         /// Unit direction of the pattern axis.
-        axis_dir: Vector3,
+        axis_dir: FeatureDirection3,
         /// Cumulative angles from the original instance, beginning with zero.
         angles: Vec<Angle>,
     },
@@ -469,9 +405,9 @@ pub enum PatternTransform<C = CompositePattern> {
     /// Reflects seeds across a plane.
     Mirror {
         /// A point on the mirror plane.
-        plane_origin: Point3,
+        plane_origin: FinitePoint3,
         /// Unit normal of the mirror plane.
-        plane_normal: Vector3,
+        plane_normal: FeatureDirection3,
     },
     /// Reflects seeds across a source-native plane selection whose frame is not resolved.
     MirrorReference {
@@ -483,7 +419,7 @@ pub enum PatternTransform<C = CompositePattern> {
         /// Fixed locus used by every scale transform.
         center: PatternScaleCenter,
         /// Scale factor of the final instance relative to the original.
-        final_factor: f64,
+        final_factor: PositiveReal,
         /// Total number of instances, including the original.
         count: u32,
     },
@@ -671,7 +607,7 @@ pub enum PatternScaleCenter {
     /// Volume centroid of the first seed feature.
     FirstSeedCentroid,
     /// Explicit model-space point.
-    Point(Point3),
+    Point(FinitePoint3),
     /// Format-native center reference.
     Native(String),
 }
@@ -705,7 +641,7 @@ pub enum PatternStageCombination {
 #[serde(deny_unknown_fields)]
 pub struct LinearPatternDirection {
     /// Unit translation direction.
-    pub direction: Vector3,
+    pub direction: FeatureDirection3,
     /// Distance between consecutive instances.
     pub spacing: Length,
     /// Total number of instances, including the original.
@@ -714,7 +650,7 @@ pub struct LinearPatternDirection {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_form, PatternForm, "form");
-cadmpeg_core::named_optional_field!(deserialize_direction, Vector3, "direction");
+cadmpeg_core::named_optional_field!(deserialize_direction, FeatureDirection3, "direction");
 cadmpeg_core::named_optional_field!(deserialize_second, LinearPatternDirection, "second");
 cadmpeg_core::named_optional_field!(deserialize_path, PathRef, "path");
 

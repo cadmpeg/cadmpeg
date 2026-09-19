@@ -41,7 +41,10 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
                 seed.clone()
             ]))],
             pattern: PatternKind::new(PatternTransform::Linear {
-                direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+                direction: Some(
+                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                        .unwrap(),
+                ),
                 spacing: Length::new(2.0).unwrap(),
                 count: 3,
                 second: None,
@@ -103,8 +106,12 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![seed]))],
             pattern: PatternKind::new(PatternTransform::Mirror {
-                plane_origin: Point3::new(0.0, 0.0, 0.0),
-                plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    1.0, 0.0, 0.0,
+                ))
+                .unwrap(),
             })
             .unwrap(),
         }),
@@ -137,8 +144,12 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Feature(seed.clone())],
             pattern: PatternKind::new(PatternTransform::Mirror {
-                plane_origin: Point3::new(0.0, 0.0, 0.0),
-                plane_normal: Vector3::new(1.0, 0.0, 0.0),
+                plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    1.0, 0.0, 0.0,
+                ))
+                .unwrap(),
             })
             .unwrap(),
         }),

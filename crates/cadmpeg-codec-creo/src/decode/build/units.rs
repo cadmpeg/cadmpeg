@@ -1321,9 +1321,13 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
             }
         }
         PatternTransform::CurveDriven { spacing, .. } => scale_length(spacing, scale)?,
-        PatternTransform::Circular { axis_origin, .. } => scale_point3(axis_origin, scale),
-        PatternTransform::CircularAngles { axis_origin, .. } => scale_point3(axis_origin, scale),
-        PatternTransform::Mirror { plane_origin, .. } => scale_point3(plane_origin, scale),
+        PatternTransform::Circular { axis_origin, .. }
+        | PatternTransform::CircularAngles { axis_origin, .. } => {
+            scale_finite_point3(axis_origin, scale)?;
+        }
+        PatternTransform::Mirror { plane_origin, .. } => {
+            scale_finite_point3(plane_origin, scale)?;
+        }
         PatternTransform::Composite { stages } => {
             let mut scaled = stages.stages().to_vec();
             for stage in &mut scaled {
@@ -1334,7 +1338,7 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
         }
         PatternTransform::Scale { center, .. } => {
             if let cadmpeg_ir::features::patterns::PatternScaleCenter::Point(point) = center {
-                scale_point3(point, scale);
+                scale_finite_point3(point, scale)?;
             }
         }
         cadmpeg_ir::features::patterns::PatternTransform::Unresolved { .. }
@@ -2169,8 +2173,12 @@ mod tests {
     fn scales_explicit_pattern_scale_center() {
         let mut pattern = PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::Scale {
-                center: PatternScaleCenter::Point(Point3::new(1.0, 2.0, 3.0)),
-                final_factor: 2.0,
+                center: PatternScaleCenter::Point(
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                        .expect("finite point fixture"),
+                ),
+                final_factor: cadmpeg_ir::scalar::PositiveReal::new(2.0)
+                    .expect("positive factor fixture"),
                 count: 3,
             },
         )
@@ -2187,8 +2195,8 @@ mod tests {
         let PatternScaleCenter::Point(point) = center else {
             panic!("test pattern center changed family");
         };
-        assert_point3(point, [25.4, 50.8, 76.2]);
-        assert_close(final_factor, 2.0);
+        assert_point3(point.get(), [25.4, 50.8, 76.2]);
+        assert_close(final_factor.get(), 2.0);
         assert_eq!(count, 3);
     }
 

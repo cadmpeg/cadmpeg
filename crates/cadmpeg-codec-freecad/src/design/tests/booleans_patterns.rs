@@ -1298,9 +1298,9 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
             ..
         }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Scale {
                 center: cadmpeg_ir::features::patterns::PatternScaleCenter::FirstSeedCentroid,
-                final_factor: 2.5,
+                final_factor,
                 count: 3,
-            })
+            } if final_factor.get() == 2.5)
     ));
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Pattern {
