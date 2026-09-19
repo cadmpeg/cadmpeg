@@ -175,7 +175,7 @@ impl NurbsPoles3 {
 /// Transposition requires admission as a [`NurbsSurface`].
 ///
 /// ```compile_fail
-/// use cadmpeg_ir::geometry::NurbsPoleGrid;
+/// use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
 /// let mut grid = NurbsPoleGrid::Polynomial { rows: Vec::new() };
 /// grid.transpose();
 /// ```
