@@ -110,11 +110,7 @@ enum DesignCanvasBoundaryForm {
 impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
     type Error = String;
     fn try_from(segments: [[Point2; 2]; 2]) -> Result<Self, Self::Error> {
-        if segments
-            .iter()
-            .flatten()
-            .any(|point| !point.u.is_finite() || !point.v.is_finite())
-        {
+        if segments.iter().flatten().any(|point| !point.is_finite()) {
             return Err("boundary_segments must contain finite coordinates".into());
         }
         let [[a, b], [c, d]] = segments;

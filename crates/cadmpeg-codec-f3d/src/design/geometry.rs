@@ -1855,9 +1855,10 @@ fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
     };
     if knots.iter().any(|value| !value.is_finite())
         || !knots_nondecreasing(knots)
-        || control_points.iter().zip(&weights).any(|(point, weight)| {
-            !point.u.is_finite() || !point.v.is_finite() || !weight.is_finite() || *weight <= 0.0
-        })
+        || control_points
+            .iter()
+            .zip(&weights)
+            .any(|(point, weight)| !point.is_finite() || !weight.is_finite() || *weight <= 0.0)
     {
         return None;
     }

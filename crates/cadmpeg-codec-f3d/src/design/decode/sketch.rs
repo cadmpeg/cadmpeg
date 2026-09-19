@@ -1731,7 +1731,7 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
     let determinant = at(0, 0) * at(1, 1) - at(0, 1) * at(1, 0);
     (planar && constant(determinant, 1.0)).then_some(())?;
     let anchor = Point2::new(at(0, 3) * 10.0, at(1, 3) * 10.0);
-    (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
+    anchor.is_finite().then_some(())?;
     Some(TextPlacement {
         anchor,
         rotation: Angle::new(at(1, 0).atan2(at(0, 0)))?,
@@ -2004,7 +2004,7 @@ fn decode_txt_tag_sketch_text_tail(
         View::f64_le_at(payload, cursor)? * 10.0,
         View::f64_le_at(payload, cursor.checked_add(8)?)? * 10.0,
     );
-    (anchor.u.is_finite() && anchor.v.is_finite()).then_some(())?;
+    anchor.is_finite().then_some(())?;
     let anchor_run = if class_version < TXT_TAG_ANCHOR_MEMBER_VERSION {
         TXT_TAG_ANCHOR_RUN - 1
     } else {
