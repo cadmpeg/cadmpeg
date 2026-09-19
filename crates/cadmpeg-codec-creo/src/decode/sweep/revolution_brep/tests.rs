@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::transfer_resolved_revolution_breps;
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
 };
+use cadmpeg_ir::AnnotationBuilder;
 
 fn definition() -> crate::feature::FeatureDefinition {
     crate::feature::FeatureDefinition {

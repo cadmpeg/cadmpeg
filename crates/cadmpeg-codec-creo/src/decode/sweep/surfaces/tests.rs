@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{transfer_saved_spline_curves, unique_feature_surface_row};
 use crate::decode::tests::surface_row;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::AnnotationBuilder;
 
 #[test]
 fn generated_surface_binding_requires_one_matching_row() {

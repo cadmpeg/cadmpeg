@@ -12,7 +12,12 @@ use crate::container::{self, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
 use crate::CreoCodec;
 
-use super::*;
+use super::type_code::LegacyTypeCode;
+use super::{
+    object_node_id, parse_declaration, scan, IntegerPayload, IntegerRun, NumericPayload,
+    NumericRun, ObjectPayload, PrincipalUnitSystem, Real, RealPayload, RealRun, StringPayload,
+    StringValue, UnsignedPayload, ValueKind,
+};
 
 #[test]
 fn unknown_declaration_codes_retain_scope_identity() {

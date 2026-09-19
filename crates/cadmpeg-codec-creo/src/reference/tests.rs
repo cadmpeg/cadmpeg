@@ -12,7 +12,13 @@ use cadmpeg_ir::Exactness;
 use crate::container::{self};
 use crate::CreoCodec;
 
-use super::*;
+use super::{
+    arc_z_coordinate, arc_z_fields, conic_local_system, conic_parameter, ellipse_carriers,
+    line3d_fields, line3d_lines, lines, named_conics, positional_conic_local_system,
+    positional_conics, scalar_suffix, ConicType, ReferenceConic, ReferenceEllipse,
+    ReferenceLineKind,
+};
+use crate::scalar::ScalarCache;
 
 #[test]
 fn decodes_complete_positional_line_rows() {

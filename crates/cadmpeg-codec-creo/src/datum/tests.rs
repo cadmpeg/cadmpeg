@@ -10,7 +10,10 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::container::{self};
 use crate::CreoCodec;
 
-use super::*;
+use super::{
+    cylinders, named_plane, planes, Axis, DatumPlane, DatumPlaneRecord,
+    EPS_DATUM_COORDINATE_AGREEMENT,
+};
 
 fn ieee8(value: f64) -> Vec<u8> {
     let mut raw = value.to_be_bytes();

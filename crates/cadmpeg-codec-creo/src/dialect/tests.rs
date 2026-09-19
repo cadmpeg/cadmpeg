@@ -8,8 +8,12 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    classify, DECLARED_LEGACY_ASCII_PRODUCT_RELEASE, DECLARED_LEGACY_ASCII_SCHEMA,
+    DECLARED_VERSION_LINE, FORMAT,
+};
 use crate::container::scan_bytes_ok;
+use crate::container::{Layout, UnknownLayout};
 use crate::test_support::{build_prt, build_prt_raw};
 use cadmpeg_core::dialect::Admission;
 
