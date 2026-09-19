@@ -41,7 +41,7 @@ use cadmpeg_ir::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
         FeatureDefinition, FeatureOperation, PathRef,
     },
-    scalar::{Angle, Length},
+    scalar::{PositiveAngle, PositiveLength},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -574,14 +574,15 @@ pub(crate) fn bind_pattern_inputs(
             match candidates.as_slice() {
                 [first] if direction.is_none() => *direction = Some(admitted_direction(*first)?),
                 [first, second_direction] => {
-                    let parameters = native.and_then(|feature| {
-                        Some((
-                            Length::new(feature.parameters.get("D4").and_then(|value| {
+                    let parameters =
+                        native.and_then(|feature| {
+                            Some((
+                            PositiveLength::new(feature.parameters.get("D4").and_then(|value| {
                                 crate::history::literals::parse_positive_dimension_length_mm(value)
                             })?)?,
                             feature.parameters.get("D2")?.parse::<u32>().ok()?,
                         ))
-                    });
+                        });
                     if let (true, true, Some((spacing, count))) =
                         (direction.is_none(), second.is_none(), parameters)
                     {
@@ -701,9 +702,9 @@ pub(crate) fn bind_pattern_inputs(
             *slot = PatternKind::new(PatternTransform::Circular {
                 axis_origin: admitted_point(*axis_origin)?,
                 axis_dir: admitted_direction(*axis_dir)?,
-                angle: Angle::new(angle).ok_or_else(|| {
+                angle: PositiveAngle::new(angle).ok_or_else(|| {
                     cadmpeg_core::CodecError::Malformed(
-                        "SolidWorks projected angle must be finite".into(),
+                        "SolidWorks projected angle must be positive and finite".into(),
                     )
                 })?,
                 count,

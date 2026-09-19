@@ -23,7 +23,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
-    scalar::Length,
+    scalar::PositiveLength,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -236,7 +236,7 @@ pub(super) fn typed_linear_pattern_dimensions(
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
-) -> Option<(Length, u32)> {
+) -> Option<(PositiveLength, u32)> {
     let parameter = |class_name: &str| {
         let mut classes = lane.classes.iter().filter(|class| {
             class.name == class_name
@@ -262,7 +262,7 @@ pub(super) fn typed_linear_pattern_dimensions(
     let spacing = crate::history::literals::parse_positive_dimension_length_mm(parameter(
         "ParallelPlaneDistanceDim_c",
     )?)?;
-    Some((Length::new(spacing)?, count))
+    Some((PositiveLength::new(spacing)?, count))
 }
 
 #[cfg(test)]

@@ -457,7 +457,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                 seeds: Vec::new(),
                 pattern: PatternKind::new(PatternTransform::CurveDriven {
                     path: None,
-                    spacing: Length::new(5.0).unwrap(),
+                    spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                     count: 3,
                 })
                 .unwrap(),
@@ -589,7 +589,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: None,
-                spacing: Length::new(5.0).unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 count: 3,
                 second: None,
             })
@@ -680,7 +680,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: None,
-                spacing: Length::new(5.0).unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 count: 3,
                 second: None,
             })

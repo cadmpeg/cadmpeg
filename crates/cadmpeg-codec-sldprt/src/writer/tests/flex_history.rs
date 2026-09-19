@@ -990,7 +990,7 @@ fn encoder_writes_source_less_native_features() {
             BodySelection, EdgeSelection, FaceMotion, FaceSelection, Feature, FeatureDefinition,
             FeatureId, FeatureOperation, LinearTermination,
         },
-        scalar::{Angle, Length},
+        scalar::Angle,
     };
     use std::collections::BTreeMap;
 
@@ -1165,14 +1165,14 @@ fn encoder_writes_source_less_native_features() {
             direction: Some(
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             ),
-            spacing: Length::new(10.0).unwrap(),
+            spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
             count: 3,
             second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                     0.0, 1.0, 0.0,
                 ))
                 .unwrap(),
-                spacing: Length::new(20.0).unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap(),
                 count: 4,
             }),
         })
@@ -1182,7 +1182,7 @@ fn encoder_writes_source_less_native_features() {
                 .unwrap(),
             axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
-            angle: Angle::new(std::f64::consts::TAU).unwrap(),
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
             count: 6,
         })
         .unwrap(),

@@ -24,14 +24,11 @@ const EPS_PATTERN_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn semantic_writer_round_trips_all_pattern_forms() {
-    use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{
-            patterns::{PatternKind, PatternTransform},
-            FeatureDefinition, FeatureOperation,
-        },
-        scalar::{Angle, Length},
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternTransform},
+        FeatureDefinition, FeatureOperation,
     };
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -110,7 +107,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
         *direction = Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
         );
-        *spacing = Length::new(12.0).unwrap();
+        *spacing = cadmpeg_ir::scalar::PositiveLength::new(12.0).unwrap();
         *count = 5;
         *pattern = PatternKind::new(transform).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
@@ -132,7 +129,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
             panic!("pattern form");
         };
         *axis_origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap();
-        *angle = Angle::new(std::f64::consts::PI).unwrap();
+        *angle = cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::PI).unwrap();
         *count = 6;
         *pattern = PatternKind::new(transform).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
@@ -246,7 +243,7 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
         let PatternTransform::CurveDriven { spacing, count, .. } = &mut transform else {
             panic!("pattern form");
         };
-        *spacing = Length::new(250.0).unwrap();
+        *spacing = cadmpeg_ir::scalar::PositiveLength::new(250.0).unwrap();
         *count = 8;
         *pattern = PatternKind::new(transform).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
@@ -343,7 +340,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
         let PatternTransform::Linear { spacing, count, .. } = &mut transform else {
             panic!("pattern form");
         };
-        *spacing = Length::new(3.5).unwrap();
+        *spacing = cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap();
         *count = 12;
         *pattern = PatternKind::new(transform).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
@@ -544,12 +541,9 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
 
 #[test]
 fn semantic_writer_round_trips_generic_pattern_type() {
-    use cadmpeg_ir::{
-        features::{
-            patterns::{PatternKind, PatternTransform},
-            FeatureDefinition, FeatureOperation,
-        },
-        scalar::Length,
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternTransform},
+        FeatureDefinition, FeatureOperation,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -575,7 +569,7 @@ fn semantic_writer_round_trips_generic_pattern_type() {
         let PatternTransform::Linear { spacing, count, .. } = &mut transform else {
             panic!("pattern form");
         };
-        *spacing = Length::new(6.0).unwrap();
+        *spacing = cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap();
         *count = 3;
         *pattern = PatternKind::new(transform).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);

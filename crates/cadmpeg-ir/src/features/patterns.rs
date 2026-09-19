@@ -6,7 +6,7 @@ use super::{
     SelectionMembers,
 };
 use crate::ids::OccurrenceId;
-use crate::scalar::{Angle, Length, PositiveReal};
+use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -129,19 +129,9 @@ impl<C> PatternKind<C> {
             |condition: bool, message: &'static str| condition.then_some(()).ok_or(message);
         match &transform {
             PatternTransform::Unresolved { .. } => {}
-            PatternTransform::Linear {
-                spacing,
-                count,
-                second,
-                ..
-            } => {
-                require(spacing.get() > 0.0, "pattern spacing must be positive")?;
+            PatternTransform::Linear { count, second, .. } => {
                 require(*count > 0, "pattern count must be positive")?;
                 if let Some(second) = second {
-                    require(
-                        second.spacing.get() > 0.0,
-                        "pattern second.spacing must be positive",
-                    )?;
                     require(second.count > 0, "pattern second.count must be positive")?;
                 }
             }
@@ -151,8 +141,7 @@ impl<C> PatternKind<C> {
                     "pattern offsets must start at zero and strictly increase",
                 )?;
             }
-            PatternTransform::Circular { angle, count, .. } => {
-                require(angle.get() > 0.0, "pattern angle must be positive")?;
+            PatternTransform::Circular { count, .. } => {
                 require(*count > 0, "pattern count must be positive")?;
             }
             PatternTransform::CircularAngles { angles, .. } => {
@@ -161,8 +150,7 @@ impl<C> PatternKind<C> {
                     "pattern angles must start at zero and strictly increase",
                 )?;
             }
-            PatternTransform::CurveDriven { spacing, count, .. } => {
-                require(spacing.get() > 0.0, "pattern spacing must be positive")?;
+            PatternTransform::CurveDriven { count, .. } => {
                 require(*count > 0, "pattern count must be positive")?;
             }
             PatternTransform::Mirror { .. } => {}
@@ -345,7 +333,7 @@ pub enum PatternTransform<C = CompositePattern> {
         )]
         direction: Option<FeatureDirection3>,
         /// Distance between consecutive instances.
-        spacing: Length,
+        spacing: PositiveLength,
         /// Total number of instances, including the original.
         count: u32,
         /// Optional complete second translation direction.
@@ -375,7 +363,7 @@ pub enum PatternTransform<C = CompositePattern> {
         /// Unit direction of the pattern axis.
         axis_dir: FeatureDirection3,
         /// Angular span covered by the pattern.
-        angle: Angle,
+        angle: PositiveAngle,
         /// Total number of instances, including the original.
         count: u32,
     },
@@ -398,7 +386,7 @@ pub enum PatternTransform<C = CompositePattern> {
         )]
         path: Option<PathRef>,
         /// Arc-length spacing between consecutive instances.
-        spacing: Length,
+        spacing: PositiveLength,
         /// Total number of instances, including the original.
         count: u32,
     },
@@ -643,7 +631,7 @@ pub struct LinearPatternDirection {
     /// Unit translation direction.
     pub direction: FeatureDirection3,
     /// Distance between consecutive instances.
-    pub spacing: Length,
+    pub spacing: PositiveLength,
     /// Total number of instances, including the original.
     pub count: u32,
 }

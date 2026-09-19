@@ -8,7 +8,7 @@ use crate::{
         },
         FaceSelection, FeatureDirection3, FinitePoint3,
     },
-    scalar::{Angle, Length, PositiveReal},
+    scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal},
 };
 use serde_json::json;
 
@@ -27,7 +27,7 @@ fn factor(value: f64) -> PositiveReal {
 fn linear<C>(count: u32) -> PatternTransform<C> {
     PatternTransform::Linear {
         direction: None,
-        spacing: Length::new(1.0).unwrap(),
+        spacing: PositiveLength::new(1.0).unwrap(),
         count,
         second: None,
     }
@@ -49,36 +49,19 @@ fn pattern_admission_rejects_invalid_numeric_operands() {
         linear::<CompositePattern>(0),
         PatternTransform::Linear {
             direction: None,
-            spacing: Length::ZERO,
-            count: 1,
-            second: None,
-        },
-        PatternTransform::Linear {
-            direction: None,
-            spacing: Length::new(1.0).unwrap(),
+            spacing: PositiveLength::new(1.0).unwrap(),
             count: 1,
             second: Some(LinearPatternDirection {
                 direction: axis,
-                spacing: Length::new(1.0).unwrap(),
+                spacing: PositiveLength::new(1.0).unwrap(),
                 count: 0,
             }),
         },
         PatternTransform::Circular {
             axis_origin: origin,
             axis_dir: axis,
-            angle: Angle::ZERO,
-            count: 1,
-        },
-        PatternTransform::Circular {
-            axis_origin: origin,
-            axis_dir: axis,
-            angle: Angle::FULL_TURN,
+            angle: PositiveAngle::FULL_TURN,
             count: 0,
-        },
-        PatternTransform::CurveDriven {
-            path: None,
-            spacing: Length::new(-1.0).unwrap(),
-            count: 1,
         },
         PatternTransform::MirrorReference {
             plane: FaceSelection::Native(String::new()),
@@ -91,16 +74,20 @@ fn pattern_admission_rejects_invalid_numeric_operands() {
     ] {
         assert!(PatternKind::new(transform).is_err());
     }
-    // A degenerate direction, a non-finite point and a non-positive scale
-    // factor have no spelling as a `PatternTransform`: the field carries
-    // `FeatureDirection3`, `FinitePoint3` or `PositiveReal`, which is where
-    // those values are refused.
+    // A degenerate direction, a non-finite point, a non-positive scale
+    // factor, a non-positive spacing and a non-positive angle have no
+    // spelling as a `PatternTransform`: the field carries
+    // `FeatureDirection3`, `FinitePoint3`, `PositiveReal`, `PositiveLength`
+    // or `PositiveAngle`, which is where those values are refused.
     assert!(FeatureDirection3::new(Vector3::new(0.0, 0.0, 0.0)).is_none());
     assert!(FeatureDirection3::new(Vector3::new(f64::MAX, 0.0, 0.0)).is_none());
     assert!(FinitePoint3::new(Point3::new(f64::NAN, 0.0, 0.0)).is_none());
     assert!(FinitePoint3::new(Point3::new(0.0, f64::INFINITY, 0.0)).is_none());
     assert!(PositiveReal::new(f64::INFINITY).is_none());
     assert!(PositiveReal::new(0.0).is_none());
+    assert!(PositiveLength::new(0.0).is_none());
+    assert!(PositiveLength::new(-1.0).is_none());
+    assert!(PositiveAngle::new(0.0).is_none());
 }
 
 #[test]
@@ -251,11 +238,11 @@ fn admitted_pattern_wire_preserves_tags_and_optional_fields() {
 fn composite_pattern_counts_use_primary_instance_counts() {
     let first = PatternTransform::Linear {
         direction: None,
-        spacing: Length::new(1.0).unwrap(),
+        spacing: PositiveLength::new(1.0).unwrap(),
         count: 2,
         second: Some(LinearPatternDirection {
             direction: direction(0.0, 1.0, 0.0),
-            spacing: Length::new(1.0).unwrap(),
+            spacing: PositiveLength::new(1.0).unwrap(),
             count: 3,
         }),
     };
