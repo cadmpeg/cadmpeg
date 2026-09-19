@@ -3208,7 +3208,7 @@ pub(crate) fn validate_pcurve_edits(
             && after_nurbs
                 .control_points()
                 .iter()
-                .all(|point| point.u.is_finite() && point.v.is_finite());
+                .all(cadmpeg_ir::math::Point2::is_finite);
         let contract_valid = before.wrapper_reversed().is_some()
             == after.wrapper_reversed().is_some()
             && before.native_tail_flags().is_some() == after.native_tail_flags().is_some()

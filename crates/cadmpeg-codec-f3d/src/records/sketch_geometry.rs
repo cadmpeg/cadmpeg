@@ -740,7 +740,7 @@ pub(crate) struct SketchPointDraft {
 impl TryFrom<SketchPointDraft> for SketchPoint {
     type Error = String;
     fn try_from(draft: SketchPointDraft) -> Result<Self, Self::Error> {
-        if !draft.coordinates.u.is_finite() || !draft.coordinates.v.is_finite() {
+        if !draft.coordinates.is_finite() {
             return Err("sketch point coordinates must be finite".into());
         }
         if !draft.record_form.depth().is_finite() {
@@ -770,7 +770,7 @@ impl SketchPoint {
         &self.record_form
     }
     pub(crate) fn try_set_coordinates(&mut self, coordinates: Point2) -> Result<(), String> {
-        if !coordinates.u.is_finite() || !coordinates.v.is_finite() {
+        if !coordinates.is_finite() {
             return Err("sketch point coordinates must be finite".into());
         }
         self.coordinates = coordinates;
