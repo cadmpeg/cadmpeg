@@ -1735,9 +1735,19 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_cor
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
+    use super::{
+        angular_measurement, apply_userdata, decode, legacy_text_scaling, modern_annotation_type,
+        semantic_json, v2_annotation_direct, v2_effective_text, Definition, DimensionFamily,
+        OrdinateAxis, ANGULAR, ANONYMOUS, CENTERMARK, LINEAR, ORDINATE, RADIAL, V2_ANGULAR,
+        V2_LINEAR, V2_RADIAL, V2_REALLY_BIG_NUMBER, V5_ANGULAR, V5_ANGULAR_EXTRA, V5_DIM_EXTRA,
+        V5_LINEAR, V5_ORDINATE, V5_RADIAL,
+    };
+    use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::objects::ClassUserdata;
+    use crate::objects::UserdataDescriptor;
+    use crate::settings::MillimeterScale;
     use crate::test_support::test_dump::{crc_chunk, utf16_bytes};
+    use crate::wire::Uuid;
 
     #[test]
     fn angular_measurement_uses_counterclockwise_extension_sweep() {

@@ -276,7 +276,13 @@ pub(crate) fn surface_class(uuid: Uuid) -> bool {
 
 #[cfg(test)]
 mod alias_tests {
-    use super::*;
+    use super::{
+        curve_class, read_cloud, supported_class, surface_class, NURBS_CURVE_LEGACY,
+        NURBS_CURVE_TL, NURBS_SURFACE_LEGACY, NURBS_SURFACE_TL, POLYCURVE_LEGACY,
+    };
+    use crate::chunks::BoundedReader;
+    use crate::settings::MillimeterScale;
+    use cadmpeg_ir::math::Point3;
 
     #[test]
     fn registered_aliases_keep_their_base_and_dispatch_families() {
@@ -1772,7 +1778,17 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        arc_nurbs, canonical_circle, checked_polycurve_parameter, circle_point, count,
+        decode_inner, exact_nurbs, join_nurbs_segments, read_cloud, read_line, read_polycurve,
+        read_polycurve_2d, read_polyline, scale_decoded_curve, Circle, DecodedCurve, GeometryError,
+        CURVE_ON_SURFACE, MAX_CURVE_DEPTH,
+    };
+    use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
+    use crate::loss::Diagnostics;
+    use crate::settings::MillimeterScale;
+    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
 

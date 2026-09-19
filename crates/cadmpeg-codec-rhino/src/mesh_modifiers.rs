@@ -842,7 +842,16 @@ fn same_name(node: roxmltree::Node<'_, '_>, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        field_uuid, parse_attribute_userdata, parse_xml, CapType, CURVE_PIPING_CLASS,
+        CURVE_PIPING_ITEM, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM, EDGE_SOFTENING_CLASS,
+        EDGE_SOFTENING_ITEM, MESH_MODIFIER_PLUGIN, SHUT_LINING_CLASS, SHUT_LINING_ITEM,
+        THICKENING_CLASS, THICKENING_ITEM, XML_USERDATA_VERSION,
+    };
+    use crate::chunks::{ArchiveVersion, FramingError};
+    use crate::loss::Diagnostics;
+    use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
+    use crate::wire::Uuid;
 
     fn descriptor(payload: &[u8], application_uuid: Option<Uuid>) -> AttributeUserdataDescriptor {
         descriptor_with_ids(

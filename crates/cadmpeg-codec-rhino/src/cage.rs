@@ -292,7 +292,9 @@ pub(crate) fn decode_at(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{decode, ANONYMOUS};
+    use crate::chunks::ArchiveVersion;
+    use crate::curves::GeometryError;
     use crate::test_support::test_dump::crc_chunk;
 
     fn rational_cage_body() -> Vec<u8> {

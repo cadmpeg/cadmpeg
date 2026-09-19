@@ -906,13 +906,20 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
+    use super::{
+        active_miter, cap_frame, exact_orientation, mitered_local, read_v5_mesh_cache,
+        split_profiles, ANONYMOUS, CLOSURE_ABSOLUTE_TOLERANCE, ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
+    };
     use crate::chunks::ArchiveVersion;
     use crate::curves::DecodedCurve;
+    use crate::curves::GeometryError;
     use crate::layout::anonymous_version_prefix as anon_ver;
     use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
+    use crate::loss::Diagnostics;
     use crate::objects::ClassUserdata;
+    use crate::objects::UserdataDescriptor;
+    use crate::settings::MillimeterScale;
     use crate::test_support::test_dump::{
         crc_chunk, crc_chunk_excluding, long_chunk, push_f64, push_i32,
     };

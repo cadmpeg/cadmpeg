@@ -121,7 +121,9 @@ pub(crate) fn decode(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::decode;
+    use crate::chunks::ArchiveVersion;
+    use crate::surfaces::DecodedSurface;
     use crate::test_support::test_archive::{
         class_wrapper, line_payload, polyline_payload, LINE_CLASS, POLYLINE_CLASS,
     };

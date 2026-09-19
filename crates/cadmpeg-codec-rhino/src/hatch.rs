@@ -531,8 +531,15 @@ fn parse_userdata(
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
+    use super::{
+        apply_userdata, decode, gradient_json, GradientKind, LoopKind, GRADIENT_COLOR_DATA,
+        V5_HATCH_EXTRA,
+    };
+    use crate::chunks::ArchiveVersion;
+    use crate::objects::{ClassUserdata, UserdataDescriptor};
+    use crate::settings::MillimeterScale;
     use crate::test_support::test_archive::{class_wrapper, polyline_payload, POLYLINE_CLASS};
+    use crate::wire::Uuid;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
     fn plane_bytes() -> Vec<u8> {
