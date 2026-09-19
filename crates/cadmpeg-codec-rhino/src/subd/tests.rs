@@ -28,6 +28,7 @@ struct Fixture {
     reversed_edge: bool,
     open_ring: bool,
     bad_pointer_type: bool,
+    mistyped_pointer: bool,
     null_endpoint: bool,
     omit_vertex_edge: bool,
     vertex_tag: u8,
@@ -49,6 +50,7 @@ impl Default for Fixture {
             reversed_edge: false,
             open_ring: false,
             bad_pointer_type: false,
+            mistyped_pointer: false,
             null_endpoint: false,
             omit_vertex_edge: false,
             vertex_tag: 1,
@@ -256,6 +258,8 @@ fn edge(bytes: &mut Vec<u8>, fixture: Fixture, archive_id: u32, endpoints: [u32;
     bytes.extend_from_slice(&2_u16.to_le_bytes());
     let first = if fixture.null_endpoint && archive_id == 5 {
         0
+    } else if fixture.mistyped_pointer && archive_id == 5 {
+        9
     } else {
         endpoints[0]
     };
@@ -975,4 +979,40 @@ fn an_offset_free_framing_refusal_names_no_byte() {
         assert_eq!(error.to_string(), expected);
         assert!(!error.to_string().contains("at byte"));
     }
+}
+
+#[test]
+fn an_unresolved_component_pointer_names_no_byte() {
+    let error = decode_fixture(
+        Fixture {
+            mistyped_pointer: true,
+            ..Fixture::default()
+        },
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect_err("a pointer outside its partition is refused");
+    assert!(
+        matches!(error, SubdError::Unpositioned { ref message }
+            if message == "SubD component pointer does not resolve within its partition"),
+        "{error}"
+    );
+    assert!(!error.to_string().contains("at byte"));
+}
+
+#[test]
+fn a_non_reciprocal_incidence_refusal_names_no_byte() {
+    let error = decode_fixture(
+        Fixture {
+            omit_vertex_edge: true,
+            ..Fixture::default()
+        },
+        crate::settings::MillimeterScale::IDENTITY,
+    )
+    .expect_err("a non-reciprocal incidence list is refused");
+    assert!(
+        matches!(error, SubdError::Unpositioned { ref message }
+            if message.contains("incidence is not reciprocal")),
+        "{error}"
+    );
+    assert!(!error.to_string().contains("at byte"));
 }
