@@ -122,9 +122,9 @@ pub(crate) fn decode(
     let profile_start = reader.position();
     let profile = decode_embedded_curve_2d(data, &mut reader, scale, archive, 1)?;
     let profile_range = profile_start..reader.position();
-    let path_from = scaled_point(point(&mut reader)?, scale)
+    let path_from = crate::wire::scaled_point(point(&mut reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?;
-    let path_to = scaled_point(point(&mut reader)?, scale)
+    let path_to = crate::wire::scaled_point(point(&mut reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?;
     let trim = increasing_interval(interval(&mut reader)?.0, reader.position(), "path trim")?;
     if trim[0] < 0.0 || trim[1] > 1.0 {
@@ -880,14 +880,6 @@ fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, Geome
         return Err(error(offset, format!("{name} is invalid")));
     }
     Ok(value.scale(1.0 / length))
-}
-
-fn scaled_point(value: crate::settings::Point3, scale: MillimeterScale) -> Option<Point3> {
-    Some(Point3::new(
-        crate::wire::scaled_coordinate(value.0[0], scale)?,
-        crate::wire::scaled_coordinate(value.0[1], scale)?,
-        crate::wire::scaled_coordinate(value.0[2], scale)?,
-    ))
 }
 
 fn local_to_world_vector(

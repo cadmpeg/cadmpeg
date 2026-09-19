@@ -11,11 +11,10 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
+use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
 use crate::settings::{
     bbox, interval, plane, point, vector as native_vector, MillimeterScale, Plane,
-    Point3 as NativePoint3,
 };
 use crate::wire::{vector, Uuid};
 
@@ -350,7 +349,7 @@ fn read_uuid_list(
             "unsupported clipping viewport-list version",
         ));
     }
-    let count = checked_count(&mut payload, 16)?;
+    let count = crate::wire::element_count(&mut payload, 16)?;
     payload.skip(count * 16)?;
     payload.skip_remaining()?;
     reader.skip(chunk.next_offset() - reader.position())?;
@@ -360,12 +359,12 @@ fn read_uuid_list(
 fn read_clipping_participation(reader: &mut BoundedReader<'_>) -> Result<(), GeometryError> {
     let mut item = reader.u8()?;
     if item == 10 {
-        let count = checked_count(reader, 16)?;
+        let count = crate::wire::element_count(reader, 16)?;
         reader.skip(count * 16)?;
         item = reader.u8()?;
     }
     if item == 11 {
-        let count = checked_count(reader, 4)?;
+        let count = crate::wire::element_count(reader, 4)?;
         reader.skip(count * 4)?;
         item = reader.u8()?;
     }
@@ -405,9 +404,9 @@ fn read_revolution(
             "unsupported revolution-surface version",
         ));
     }
-    let from = scale_native_point(point(reader)?, scale)
+    let from = crate::wire::scaled_point(point(reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
-    let to = scale_native_point(point(reader)?, scale)
+    let to = crate::wire::scaled_point(point(reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
     let angular_interval =
         finite_increasing(interval(reader)?.0, reader.position(), "revolution angle")?;
@@ -800,7 +799,7 @@ fn read_nurbs_curve_inner(
     {
         return Err(error(reader.position(), "invalid NURBS curve header"));
     }
-    let stored_knot_count = checked_count(reader, 8)?;
+    let stored_knot_count = crate::wire::element_count(reader, 8)?;
     let expected_knot_count = order
         .checked_add(cv_count)
         .and_then(|value| value.checked_sub(2))
@@ -810,7 +809,7 @@ fn read_nurbs_curve_inner(
     }
     let knots = read_knots(reader, stored_knot_count)?;
     validate_stored_domain(&knots, order, cv_count, reader.position())?;
-    let stored_cv_count = checked_count(reader, (dimension + rational) as usize * 8)?;
+    let stored_cv_count = crate::wire::element_count(reader, (dimension + rational) as usize * 8)?;
     if stored_cv_count != cv_count {
         return Err(error(reader.position(), "NURBS curve CV count mismatch"));
     }
@@ -870,7 +869,7 @@ pub(crate) fn read_nurbs_surface_prefix(
     {
         return Err(error(reader.position(), "invalid NURBS surface header"));
     }
-    let u_knot_count = checked_count(reader, 8)?;
+    let u_knot_count = crate::wire::element_count(reader, 8)?;
     let expected_u = u_order
         .checked_add(u_count)
         .and_then(|value| value.checked_sub(2))
@@ -880,7 +879,7 @@ pub(crate) fn read_nurbs_surface_prefix(
     }
     let u_knots = read_knots(reader, u_knot_count)?;
     validate_stored_domain(&u_knots, u_order, u_count, reader.position())?;
-    let v_knot_count = checked_count(reader, 8)?;
+    let v_knot_count = crate::wire::element_count(reader, 8)?;
     let expected_v = v_order
         .checked_add(v_count)
         .and_then(|value| value.checked_sub(2))
@@ -892,7 +891,7 @@ pub(crate) fn read_nurbs_surface_prefix(
     validate_stored_domain(&v_knots, v_order, v_count, reader.position())?;
     let u_periodic = periodic_knots(&u_knots, u_order, u_count);
     let v_periodic = periodic_knots(&v_knots, v_order, v_count);
-    let stored_cv_count = checked_count(reader, (dimension + rational) as usize * 8)?;
+    let stored_cv_count = crate::wire::element_count(reader, (dimension + rational) as usize * 8)?;
     let expected_cv_count = u_count
         .checked_mul(v_count)
         .ok_or_else(|| error(reader.position(), "surface CV count overflow"))?;
@@ -952,7 +951,7 @@ fn read_plane_surface_with_parameterization(
     };
     let geometry = TypedSurface::Plane {
         plane: cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            scale_native_point(native_plane.origin, scale)
+            crate::wire::scaled_point(native_plane.origin, scale)
                 .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
             vector(native_plane.zaxis),
             vector(native_plane.xaxis),
@@ -1109,18 +1108,6 @@ fn checked_positive(value: i32, offset: usize, label: &str) -> Result<usize, Geo
     usize::try_from(value).map_err(|_| error(offset, label))
 }
 
-fn checked_count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, GeometryError> {
-    let raw = reader.i32()?;
-    let bytes = checked_count_bytes(
-        raw,
-        width,
-        reader.remaining(),
-        reader.remaining() / width,
-        reader.position() - 4,
-    )?;
-    Ok(bytes / width)
-}
-
 fn finite_increasing(
     value: [f64; 2],
     offset: usize,
@@ -1147,7 +1134,7 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
         || x.dot(y).abs() > EPS_SURFACE_DEGENERATE
         || x.dot(z).abs() > EPS_SURFACE_DEGENERATE
         || y.dot(z).abs() > EPS_SURFACE_DEGENERATE
-        || !close(x.cross(y), z)
+        || !crate::wire::close_vector(x.cross(y), z, EPS_SURFACE_DEGENERATE)
     {
         return Err(error(
             offset,
@@ -1155,20 +1142,6 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
         ));
     }
     Ok(())
-}
-
-fn scale_native_point(value: NativePoint3, scale: MillimeterScale) -> Option<Point3> {
-    Some(Point3::new(
-        crate::wire::scaled_coordinate(value.0[0], scale)?,
-        crate::wire::scaled_coordinate(value.0[1], scale)?,
-        crate::wire::scaled_coordinate(value.0[2], scale)?,
-    ))
-}
-
-fn close(a: Vector3, b: Vector3) -> bool {
-    (a.x - b.x).abs() <= EPS_SURFACE_DEGENERATE
-        && (a.y - b.y).abs() <= EPS_SURFACE_DEGENERATE
-        && (a.z - b.z).abs() <= EPS_SURFACE_DEGENERATE
 }
 
 #[cfg(test)]

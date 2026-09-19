@@ -9,7 +9,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
 use crate::settings::{bbox, interval, plane, MillimeterScale, Point3 as NativePoint3};
 use crate::wire::{vector, Uuid};
@@ -1182,7 +1182,7 @@ fn read_polycurve_2d(
             "unsupported C2 polycurve payload version",
         ));
     }
-    let segment_count = count(reader, 1)?;
+    let segment_count = crate::wire::element_count(reader, 1)?;
     if segment_count == 0 {
         return Err(GeometryError::malformed(
             reader.position(),
@@ -1248,7 +1248,7 @@ fn read_point(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point = native_point(reader)?;
-    scale_point(point, scale)
+    crate::wire::scaled_point(point, scale)
         .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))
 }
 
@@ -1259,12 +1259,12 @@ fn read_cloud(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
-    let point_count = count(reader, 24)?;
+    let point_count = crate::wire::element_count(reader, 24)?;
     let mut points = Vec::with_capacity(point_count);
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
-            scale_point(point, scale)
+            crate::wire::scaled_point(point, scale)
                 .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))?,
         );
     }
@@ -1273,7 +1273,7 @@ fn read_cloud(
     reader.i32()?;
     let mut warnings = Diagnostics::new();
     if minor >= 1 {
-        let normal_count = count(reader, 24)?;
+        let normal_count = crate::wire::element_count(reader, 24)?;
         if normal_count != 0 && normal_count != point_count {
             warnings.push_coded(
                 crate::loss::RhinoLossCode::RedundantFieldRepaired,
@@ -1283,7 +1283,7 @@ fn read_cloud(
         for _ in 0..normal_count {
             crate::settings::vector(reader)?;
         }
-        let color_count = count(reader, 4)?;
+        let color_count = crate::wire::element_count(reader, 4)?;
         for _ in 0..color_count {
             reader.take(4)?;
         }
@@ -1295,7 +1295,7 @@ fn read_cloud(
         }
     }
     if minor >= 2 {
-        let value_count = count(reader, 8)?;
+        let value_count = crate::wire::element_count(reader, 8)?;
         for _ in 0..value_count {
             let value_offset = reader.position();
             let value = reader.f64()?;
@@ -1331,9 +1331,9 @@ fn read_line(
 ) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
-    let from = scale_point(native_point(reader)?, scale)
+    let from = crate::wire::scaled_point(native_point(reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?;
-    let to = scale_point(native_point(reader)?, scale)
+    let to = crate::wire::scaled_point(native_point(reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?;
     let domain = interval(reader)?.0;
     let dimension = reader.i32()?;
@@ -1361,7 +1361,7 @@ fn read_polyline(
 ) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
-    let point_count = count(reader, 24)?;
+    let point_count = crate::wire::element_count(reader, 24)?;
     if point_count < 2 {
         return Err(error(
             reader.position(),
@@ -1372,11 +1372,11 @@ fn read_polyline(
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points
-            .push(scale_point(point, scale).ok_or_else(|| {
+            .push(crate::wire::scaled_point(point, scale).ok_or_else(|| {
                 error(reader.position(), "scaled polyline coordinate is invalid")
             })?);
     }
-    let parameter_count = count(reader, 8)?;
+    let parameter_count = crate::wire::element_count(reader, 8)?;
     if parameter_count != point_count {
         return Err(error(
             reader.position(),
@@ -1487,7 +1487,7 @@ fn read_circle(
     let xaxis = vector(native.xaxis);
     let yaxis = vector(native.yaxis);
     let axis = vector(native.zaxis);
-    let center = scale_point(native.origin, scale)
+    let center = crate::wire::scaled_point(native.origin, scale)
         .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?;
     let norm_x = xaxis.norm();
     let norm_y = yaxis.norm();
@@ -1501,7 +1501,7 @@ fn read_circle(
         && xaxis.dot(yaxis).abs() < CIRCLE_TOLERANCE
         && xaxis.dot(axis).abs() < CIRCLE_TOLERANCE
         && yaxis.dot(axis).abs() < CIRCLE_TOLERANCE
-        && close_vector(xaxis.cross(yaxis), axis, CIRCLE_TOLERANCE)
+        && crate::wire::close_vector(xaxis.cross(yaxis), axis, CIRCLE_TOLERANCE)
         && close_native_point(zero, native.origin, native.xaxis, radius)
         && close_native_point(half_pi, native.origin, native.yaxis, radius)
         && close_native_point(at_pi, native.origin, negate(native.xaxis), radius))
@@ -1531,7 +1531,7 @@ fn read_polycurve(
             "unsupported polycurve payload version",
         ));
     }
-    let segment_count = count(reader, 1)?;
+    let segment_count = crate::wire::element_count(reader, 1)?;
     if segment_count == 0 {
         return Err(GeometryError::malformed(
             reader.position(),
@@ -1603,7 +1603,7 @@ fn read_polycurve_parameters(
     segment_count: usize,
     label: &str,
 ) -> Result<(Vec<f64>, f64), GeometryError> {
-    let parameter_count = count(reader, 8)?;
+    let parameter_count = crate::wire::element_count(reader, 8)?;
     if parameter_count != segment_count + 1 {
         return Err(GeometryError::malformed(
             reader.position(),
@@ -1713,26 +1713,6 @@ fn native_point(reader: &mut BoundedReader<'_>) -> Result<NativePoint3, FramingE
     crate::settings::point(reader)
 }
 
-fn scale_point(value: NativePoint3, scale: MillimeterScale) -> Option<Point3> {
-    Some(Point3::new(
-        crate::wire::scaled_coordinate(value.0[0], scale)?,
-        crate::wire::scaled_coordinate(value.0[1], scale)?,
-        crate::wire::scaled_coordinate(value.0[2], scale)?,
-    ))
-}
-
-fn count(reader: &mut BoundedReader<'_>, width: usize) -> Result<usize, GeometryError> {
-    let raw = reader.i32()?;
-    let bytes = checked_count_bytes(
-        raw,
-        width,
-        reader.remaining(),
-        reader.remaining() / width,
-        reader.position() - 4,
-    )?;
-    Ok(bytes / width)
-}
-
 fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
     if version >> 4 == 1 {
         Ok(())
@@ -1742,12 +1722,6 @@ fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
             "unsupported simple-geometry payload version",
         ))
     }
-}
-
-fn close_vector(left: Vector3, right: Vector3, tolerance: f64) -> bool {
-    (left.x - right.x).abs() <= tolerance
-        && (left.y - right.y).abs() <= tolerance
-        && (left.z - right.z).abs() <= tolerance
 }
 
 fn negate(value: crate::settings::Vector3) -> crate::settings::Vector3 {
@@ -1779,10 +1753,10 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 #[cfg(test)]
 mod tests {
     use super::{
-        arc_nurbs, canonical_circle, checked_polycurve_parameter, circle_point, count,
-        decode_inner, exact_nurbs, join_nurbs_segments, read_cloud, read_line, read_polycurve,
-        read_polycurve_2d, read_polyline, scale_decoded_curve, Circle, DecodedCurve, GeometryError,
-        CURVE_ON_SURFACE, MAX_CURVE_DEPTH,
+        arc_nurbs, canonical_circle, checked_polycurve_parameter, circle_point, decode_inner,
+        exact_nurbs, join_nurbs_segments, read_cloud, read_line, read_polycurve, read_polycurve_2d,
+        read_polyline, scale_decoded_curve, Circle, DecodedCurve, GeometryError, CURVE_ON_SURFACE,
+        MAX_CURVE_DEPTH,
     };
     use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
     use crate::loss::Diagnostics;
@@ -1873,7 +1847,7 @@ mod tests {
         bytes.resize(4 + item_count, 0);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
         assert_eq!(
-            count(&mut reader, 1).expect("payload-bounded count"),
+            crate::wire::element_count(&mut reader, 1).expect("payload-bounded count"),
             item_count
         );
     }

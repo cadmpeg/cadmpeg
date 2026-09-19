@@ -6,9 +6,10 @@ use std::fmt;
 
 use cadmpeg_core::decode::BoundedCount;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::chunks::{BoundedReader, FramingError};
+use crate::chunks::{checked_count_bytes, BoundedReader, FramingError};
+use crate::curves::GeometryError;
 use crate::layout::uuid_wire_form as uuid_wire;
 use crate::settings::MillimeterScale;
 
@@ -179,12 +180,48 @@ pub(crate) fn vector(value: crate::settings::Vector3) -> Vector3 {
 }
 
 /// Multiplies an archive coordinate by a unit scale.
+///
+/// The product is the only defect the caller can observe. A `MillimeterScale`
+/// is finite and greater than zero, so a non-finite input value always makes a
+/// non-finite product: `NaN` propagates and an infinity stays infinite.
 pub(crate) fn scaled_coordinate(value: f64, scale: MillimeterScale) -> Option<f64> {
-    if !value.is_finite() {
-        return None;
-    }
     let result = value * scale.value();
     result.is_finite().then_some(result)
+}
+
+/// Multiplies the three archive coordinates of a point by a unit scale.
+pub(crate) fn scaled_point(
+    value: crate::settings::Point3,
+    scale: MillimeterScale,
+) -> Option<Point3> {
+    Some(Point3::new(
+        scaled_coordinate(value.0[0], scale)?,
+        scaled_coordinate(value.0[1], scale)?,
+        scaled_coordinate(value.0[2], scale)?,
+    ))
+}
+
+/// Whether two vectors agree on every component within a tolerance.
+pub(crate) fn close_vector(left: Vector3, right: Vector3, tolerance: f64) -> bool {
+    (left.x - right.x).abs() <= tolerance
+        && (left.y - right.y).abs() <= tolerance
+        && (left.z - right.z).abs() <= tolerance
+}
+
+/// Reads a `width`-byte element count proven against the remaining window.
+pub(crate) fn element_count(
+    reader: &mut BoundedReader<'_>,
+    width: usize,
+) -> Result<usize, GeometryError> {
+    let raw = reader.i32()?;
+    let bytes = checked_count_bytes(
+        raw,
+        width,
+        reader.remaining(),
+        reader.remaining() / width,
+        reader.position() - 4,
+    )?;
+    Ok(bytes / width)
 }
 
 #[cfg(test)]
