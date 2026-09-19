@@ -1270,7 +1270,7 @@ pub(super) fn path_is_named(path: &syn::Path, name: &str) -> bool {
     })
 }
 
-pub(crate) mod classify;
+pub(super) mod classify;
 mod resolve;
 mod scan;
 #[cfg(test)]
