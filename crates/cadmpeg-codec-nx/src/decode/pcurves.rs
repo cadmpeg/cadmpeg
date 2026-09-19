@@ -897,7 +897,7 @@ fn reverse_analytic_pcurve_over_range(
             first_scale * first.u + second_scale * second.u,
             first_scale * first.v + second_scale * second.v,
         );
-        (value.u.is_finite() && value.v.is_finite()).then_some(value)
+        value.is_finite().then_some(value)
     };
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
@@ -1731,7 +1731,7 @@ fn exact_boundary_pcurve_with_index(
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
         let [first, second] = [first?, second?];
         for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
-            if !parameter.u.is_finite() || !parameter.v.is_finite() {
+            if !parameter.is_finite() {
                 return None;
             }
             if !geometry_budget.charge() {
@@ -1755,10 +1755,7 @@ fn exact_boundary_pcurve_with_index(
             (second.u - first.u) / parameter_span,
             (second.v - first.v) / parameter_span,
         );
-        (direction.u.is_finite()
-            && direction.v.is_finite()
-            && (direction.u != 0.0 || direction.v != 0.0))
-            .then_some(())?;
+        (direction.is_finite() && (direction.u != 0.0 || direction.v != 0.0)).then_some(())?;
         let candidate = PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(
