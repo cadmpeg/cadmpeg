@@ -5,7 +5,7 @@ pub(super) type PatternByte = Option<u8>;
 
 /// A nonempty byte pattern with optional wildcard positions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Pattern(Vec<PatternByte>);
+pub(in crate::inspect) struct Pattern(Vec<PatternByte>);
 
 impl Pattern {
     pub(super) fn new(bytes: Vec<PatternByte>) -> Result<Self, String> {
@@ -16,7 +16,7 @@ impl Pattern {
     }
 
     /// Returns the number of byte positions.
-    pub(crate) fn len(&self) -> usize {
+    pub(in crate::inspect) fn len(&self) -> usize {
         self.0.len()
     }
 

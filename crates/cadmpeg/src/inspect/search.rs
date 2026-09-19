@@ -15,7 +15,7 @@ use pattern::{Pattern, PatternByte};
 /// Returns a message when the pattern is empty, holds a character that is
 /// neither a hexadecimal digit nor `?`, mixes a digit with `?` inside one pair,
 /// or ends on a half byte.
-pub fn parse_pattern(text: &str) -> Result<Pattern, String> {
+pub(super) fn parse_pattern(text: &str) -> Result<Pattern, String> {
     let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
     if !chars.len().is_multiple_of(2) {
         return Err(format!(
@@ -55,7 +55,7 @@ fn hex_digit(c: char, text: &str) -> Result<u8, String> {
 /// # Errors
 ///
 /// Returns a message when the term is empty or holds a non-ASCII character.
-pub fn ascii_pattern(text: &str) -> Result<Pattern, String> {
+pub(super) fn ascii_pattern(text: &str) -> Result<Pattern, String> {
     if !text.is_ascii() {
         return Err(format!(
             "`{text}` is not ASCII; use --encoding utf16le or --encoding hex for other encodings"
@@ -69,7 +69,7 @@ pub fn ascii_pattern(text: &str) -> Result<Pattern, String> {
 /// # Errors
 ///
 /// Returns a message when the term is empty.
-pub fn utf16le_pattern(text: &str) -> Result<Pattern, String> {
+pub(super) fn utf16le_pattern(text: &str) -> Result<Pattern, String> {
     Pattern::new(
         text.encode_utf16()
             .flat_map(u16::to_le_bytes)
@@ -83,7 +83,11 @@ pub fn utf16le_pattern(text: &str) -> Result<Pattern, String> {
 ///
 /// `limit` caps the number of reported offsets; `None` reports all of them. The
 /// match is byte exact except at wildcard positions.
-pub fn find_all(haystack: &[u8], pattern: &Pattern, limit: Option<NonZeroUsize>) -> Vec<u64> {
+pub(super) fn find_all(
+    haystack: &[u8],
+    pattern: &Pattern,
+    limit: Option<NonZeroUsize>,
+) -> Vec<u64> {
     let mut hits = Vec::new();
     if haystack.len() < pattern.len() {
         return hits;
@@ -128,7 +132,7 @@ fn matches_at(haystack: &[u8], at: usize, pattern: &[PatternByte]) -> bool {
 
 /// Concrete character encoding of one extracted string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StringEncoding {
+pub(in crate::inspect) enum StringEncoding {
     /// A run of printable single-byte ASCII.
     Ascii,
     /// A run of printable ASCII widened to UTF-16LE code units.
@@ -137,7 +141,7 @@ pub enum StringEncoding {
 
 impl StringEncoding {
     /// Returns the label printed next to each extracted string.
-    pub const fn label(self) -> &'static str {
+    pub(super) const fn label(self) -> &'static str {
         match self {
             Self::Ascii => "ascii",
             Self::Utf16le => "utf16le",
@@ -147,7 +151,7 @@ impl StringEncoding {
 
 /// Character encodings selected for one string-extraction scan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum StringScan {
+pub(super) enum StringScan {
     /// Runs of printable single-byte ASCII.
     Ascii,
     /// Runs of printable ASCII widened to UTF-16LE code units.
@@ -158,13 +162,13 @@ pub enum StringScan {
 
 /// One printable run found in a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FoundString {
+pub(in crate::inspect) struct FoundString {
     /// Offset of the first byte of the run.
-    pub offset: u64,
+    pub(super) offset: u64,
     /// Encoding the run was read in.
-    pub encoding: StringEncoding,
+    pub(super) encoding: StringEncoding,
     /// The decoded text.
-    pub text: String,
+    pub(super) text: String,
 }
 
 /// Extracts printable runs of at least `min_len` characters.
@@ -174,7 +178,7 @@ pub struct FoundString {
 /// the results are sorted by offset, so a UTF-16LE run is also visible as the
 /// ASCII characters interleaved with its zero bytes only when those characters
 /// themselves form a long enough ASCII run.
-pub fn extract_strings(
+pub(super) fn extract_strings(
     bytes: &[u8],
     min_len: NonZeroUsize,
     encoding: StringScan,
@@ -268,7 +272,7 @@ fn long_enough(run: &str, min_len: usize) -> bool {
 }
 
 /// Escapes a decoded string for single-line output.
-pub fn escape(text: &str) -> String {
+pub(super) fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     for c in text.chars() {
         match c {

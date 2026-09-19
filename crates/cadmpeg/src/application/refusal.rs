@@ -19,7 +19,7 @@ use serde::Serialize;
 /// A conversion workflow either refuses a modeled request or fails
 /// operationally.
 #[derive(Debug)]
-pub enum ApplicationError {
+pub(crate) enum ApplicationError {
     /// A modeled conversion policy or capability refusal.
     Refusal(Box<ConversionRefusal>),
     /// Filesystem, I/O, malformed implementation, or artifact failure.
@@ -29,7 +29,7 @@ pub enum ApplicationError {
 impl ApplicationError {
     /// Returns the typed refusal when this is a modeled verdict.
     #[must_use]
-    pub fn refusal(&self) -> Option<&ConversionRefusal> {
+    pub(crate) fn refusal(&self) -> Option<&ConversionRefusal> {
         match self {
             Self::Refusal(refusal) => Some(refusal.as_ref()),
             Self::Operational(_) => None,
@@ -38,7 +38,7 @@ impl ApplicationError {
 
     /// Process exit status for this application result.
     #[must_use]
-    pub fn exit_code(&self) -> u8 {
+    pub(crate) fn exit_code(&self) -> u8 {
         self.refusal().map_or(2, ConversionRefusal::exit_code)
     }
 }
@@ -98,7 +98,7 @@ impl ApplicationError {
     /// floor keep their typed evidence; every other codec error is a decode
     /// refusal carrying the codec's message.
     #[must_use]
-    pub fn from_decode_failure(
+    pub(crate) fn from_decode_failure(
         path: &Path,
         format_id: cadmpeg_ir::codec::FormatId,
         failure: DecodeFailure,
@@ -128,7 +128,7 @@ impl ApplicationError {
 
 /// Stable refusal code written into command reports and used by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RefusalCode {
+pub(crate) enum RefusalCode {
     /// Native input decoding failed with a classified codec error.
     DecodeFailed,
     /// The input was identified but its dialect has no decode grammar.
@@ -199,7 +199,7 @@ impl Serialize for RefusalCode {
 
 /// Workflow stage that produced the refusal (`refusal.stage` on the wire).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RefusalStage {
+enum RefusalStage {
     /// Input resolved but conversion planning rejected the request.
     Plan,
     /// Decode completed with losses that the policy rejects.
@@ -229,7 +229,7 @@ impl Serialize for RefusalStage {
 
 /// The operation whose validation failed.
 #[derive(Debug, Clone, Copy)]
-pub enum CheckOperation {
+pub(crate) enum CheckOperation {
     /// Report validation findings without an export.
     Check,
     /// Refuse an export after validation.
@@ -241,7 +241,7 @@ pub enum CheckOperation {
 /// Presentation messages, codes, typed detail, and retained reports are all
 /// projected once by [`ConversionRefusal::evidence`].
 #[derive(Debug)]
-pub enum ConversionRefusal {
+pub(crate) enum ConversionRefusal {
     /// Native input decoding failed before a document could be produced.
     DecodeFailed {
         /// Human-readable message.
@@ -327,21 +327,21 @@ pub(crate) struct RefusalReport<'a> {
 /// Everything a surface may show or serialize about one refusal, projected
 /// once from the variant.
 #[derive(Debug)]
-pub struct RefusalEvidence<'a> {
+pub(crate) struct RefusalEvidence<'a> {
     /// Stable code for the report envelope and tests.
-    pub code: RefusalCode,
+    code: RefusalCode,
     /// Presentation message for stderr and `refusal.message`.
-    pub message: Cow<'a, str>,
+    pub(super) message: Cow<'a, str>,
     /// Typed evidence the refusal carries beyond its message.
-    pub detail: Option<RefusalDetail<'a>>,
+    detail: Option<RefusalDetail<'a>>,
     /// Reports completed before the refusal, for an optional `--report`.
-    pub reports: RefusalReports<'a>,
+    pub(crate) reports: RefusalReports<'a>,
 }
 
 /// Typed evidence serialized beside the refusal code.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RefusalDetail<'a> {
+enum RefusalDetail<'a> {
     /// Every format layer identified before the codec refused.
     Dialects(&'a DialectLayers),
     /// The encoder's typed target refusal and catalog.
@@ -350,13 +350,13 @@ pub enum RefusalDetail<'a> {
 
 /// Reports a refusal retains from the stages that completed before it.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct RefusalReports<'a> {
+pub(crate) struct RefusalReports<'a> {
     /// Completed decode report.
-    pub decode: Option<&'a DecodeReport>,
+    pub(crate) decode: Option<&'a DecodeReport>,
     /// Completed validation report.
-    pub check: Option<&'a ValidationReport>,
+    pub(crate) check: Option<&'a ValidationReport>,
     /// Export report computed by encoder planning before rejection.
-    pub export: Option<&'a ExportReport>,
+    pub(crate) export: Option<&'a ExportReport>,
 }
 
 /// Variant metadata that does not depend on a refusal's carried reports.
@@ -371,7 +371,10 @@ impl ConversionRefusal {
     /// Constructs a decode refusal without duplicating ownership and wording at
     /// each surface that can inspect or load a native container.
     #[must_use]
-    pub fn unsupported_dialect(dialects: Box<DialectLayers>, reason: impl Into<String>) -> Self {
+    pub(crate) fn unsupported_dialect(
+        dialects: Box<DialectLayers>,
+        reason: impl Into<String>,
+    ) -> Self {
         Self::UnsupportedDialect {
             dialects,
             reason: reason.into(),
@@ -380,7 +383,7 @@ impl ConversionRefusal {
 
     /// Projects code, message, typed detail, and retained reports at once.
     #[must_use]
-    pub fn evidence(&self) -> RefusalEvidence<'_> {
+    pub(crate) fn evidence(&self) -> RefusalEvidence<'_> {
         match self {
             Self::DecodeFailed { message } => RefusalEvidence {
                 code: RefusalCode::DecodeFailed,
@@ -521,7 +524,7 @@ impl ConversionRefusal {
 
     /// Stable code for tests and the report envelope.
     #[must_use]
-    pub fn code(&self) -> RefusalCode {
+    pub(crate) fn code(&self) -> RefusalCode {
         self.evidence().code
     }
 
@@ -543,7 +546,7 @@ impl ConversionRefusal {
     /// early target refusal writes its typed refusal without decode or check
     /// reports; later refusals serialize every report they hold.
     #[must_use]
-    pub fn may_write_report(&self) -> bool {
+    pub(crate) fn may_write_report(&self) -> bool {
         self.code().disposition().may_write_report
     }
 
@@ -552,7 +555,7 @@ impl ConversionRefusal {
     /// Semantic model refusals exit 1. Decode failure and binary-stdout remain
     /// exit 2 because they are operational failures.
     #[must_use]
-    pub fn exit_code(&self) -> u8 {
+    pub(super) fn exit_code(&self) -> u8 {
         self.code().disposition().exit_code
     }
 }

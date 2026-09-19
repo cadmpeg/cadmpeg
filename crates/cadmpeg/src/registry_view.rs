@@ -17,7 +17,7 @@ use cadmpeg_registry::{
 /// Two columns, because reading and writing differ per format: Inventor,
 /// CATIA, Creo, NX, and SAT are read-only, and one column would have to
 /// misstate one half of each of them.
-pub fn print_formats(inputs: &InputCatalog) -> Result<(), RegistryLoadError> {
+pub(crate) fn print_formats(inputs: &InputCatalog) -> Result<(), RegistryLoadError> {
     println!("FORMAT     READ   WRITE  EXTENSIONS");
     for row in format_rows(inputs) {
         println!(
@@ -42,7 +42,7 @@ const fn yes_no(value: bool) -> &'static str {
 }
 
 /// Prints the identity registry crossed with the capability registry.
-pub fn print_dialects(format: Option<&str>) -> Result<(), DialectTableError> {
+pub(crate) fn print_dialects(format: Option<&str>) -> Result<(), DialectTableError> {
     for (index, section) in dialect_table(format)?.iter().enumerate() {
         if index > 0 {
             println!();
@@ -87,7 +87,7 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), DialectTableError> {
 /// disposition, and the write targets this build can synthesize. `None` when
 /// the codec reported no dialects at all, which is the honest output for a
 /// codec that does not classify.
-pub fn dialect_lines(
+pub(crate) fn dialect_lines(
     dialects: Option<&cadmpeg_core::dialect::DialectLayers>,
 ) -> Result<Vec<String>, RegistryLoadError> {
     let Some(dialects) = dialects else {

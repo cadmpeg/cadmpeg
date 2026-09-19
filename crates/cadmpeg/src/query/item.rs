@@ -21,30 +21,30 @@ use super::{print_json, read_input};
 
 /// Input selection for `query item`.
 #[derive(Debug, Args)]
-pub struct ItemArgs {
+pub(crate) struct ItemArgs {
     /// JSON file, or `-` for standard input.
-    pub file: std::path::PathBuf,
+    file: std::path::PathBuf,
     /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
     /// `query counts --json`.
-    pub arena: String,
+    arena: String,
     /// Which records of the arena to print.
     #[command(flatten)]
-    pub records: RecordSelection,
+    records: RecordSelection,
     /// Record output selection.
     #[command(flatten)]
-    pub(crate) output: OutputArgs,
+    output: OutputArgs,
 }
 
 /// Where the requested arena lives in the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ArenaTarget {
+pub(super) enum ArenaTarget {
     Model { arena: String },
     Native { codec: String, arena: String },
 }
 
 impl ArenaTarget {
-    pub(crate) fn parse(spec: &str) -> Result<Self> {
+    pub(super) fn parse(spec: &str) -> Result<Self> {
         if !spec.contains('.') {
             return Ok(Self::Model {
                 arena: spec.to_owned(),
@@ -69,7 +69,7 @@ impl ArenaTarget {
         }
     }
 
-    pub(crate) fn dotted(&self) -> String {
+    pub(super) fn dotted(&self) -> String {
         match self {
             Self::Model { arena } => format!("model.{arena}"),
             Self::Native { codec, arena } => format!("native.{codec}.{arena}"),
@@ -116,7 +116,7 @@ fn string_id(raw: &RawValue) -> Option<String> {
 }
 
 /// Runs `query item` against one artifact.
-pub fn run(args: &ItemArgs) -> Result<()> {
+pub(super) fn run(args: &ItemArgs) -> Result<()> {
     let output = args.output.mode();
     let bytes = read_input(&args.file)?;
     reject_non_cadir(&bytes, &args.file, "item")?;
@@ -214,7 +214,7 @@ fn resolve_ids(
 }
 
 /// Pretty-print records, TSV `--fields`, or the `--json` envelope.
-pub(crate) fn emit_values(
+pub(super) fn emit_values(
     view: &str,
     output: Output<'_>,
     values: &[serde_json::Value],
@@ -248,7 +248,7 @@ pub(crate) fn emit_values(
     Ok(())
 }
 
-pub(crate) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
+pub(super) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
     let list = if addressable.is_empty() {
         "(none — this document has no array arenas)".to_owned()
     } else {
@@ -266,7 +266,7 @@ pub(crate) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String
     )
 }
 
-pub(crate) fn miss_id_message(
+pub(super) fn miss_id_message(
     arena: &str,
     request: &str,
     entry_count: u64,
@@ -299,7 +299,7 @@ pub(crate) fn miss_id_message(
     }
 }
 
-pub(crate) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
+pub(super) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
     const SHOWN: usize = 10;
     let shown: Vec<&str> = matches.iter().take(SHOWN).map(String::as_str).collect();
     format!(
@@ -309,7 +309,7 @@ pub(crate) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) 
     )
 }
 
-pub(crate) fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) -> String {
+fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) -> String {
     let mut parts = Vec::new();
     for path in empty_paths {
         let keys = first_parent_keys(values, path);
@@ -354,10 +354,7 @@ fn first_parent_keys(values: &[serde_json::Value], path: &str) -> Option<Vec<Str
 /// Cell rules (projection-specific; not the other views' [`super::cell`]):
 /// JSON strings/numbers/bools are bare; tab/newline in a string become `\t`/
 /// `\n`; null or absent is an empty cell; arrays/objects are compact JSON.
-pub(crate) fn project_fields(
-    values: &[serde_json::Value],
-    paths: &[String],
-) -> Result<(String, Vec<String>)> {
+fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(String, Vec<String>)> {
     if paths.is_empty() {
         bail!("--fields requires at least one dotted path");
     }
@@ -397,10 +394,7 @@ pub(crate) fn project_fields(
     Ok((out, empty_paths))
 }
 
-pub(crate) fn navigate<'a>(
-    value: &'a serde_json::Value,
-    path: &str,
-) -> Option<&'a serde_json::Value> {
+fn navigate<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
     let mut cur = value;
     for part in path.split('.') {
         cur = cur.as_object()?.get(part)?;
@@ -408,7 +402,7 @@ pub(crate) fn navigate<'a>(
     Some(cur)
 }
 
-pub(crate) fn field_cell(value: &serde_json::Value) -> String {
+pub(super) fn field_cell(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => String::new(),
         serde_json::Value::Bool(b) => b.to_string(),

@@ -26,7 +26,7 @@ pub(crate) fn validate_ir(
 }
 
 /// Runs every registered codec's native validator over the namespace it owns.
-pub fn validate_native(inputs: &InputCatalog, ir: &CadIr) -> Vec<Finding> {
+fn validate_native(inputs: &InputCatalog, ir: &CadIr) -> Vec<Finding> {
     inputs
         .descriptors()
         .filter_map(|descriptor| {

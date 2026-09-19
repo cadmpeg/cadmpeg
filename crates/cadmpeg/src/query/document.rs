@@ -16,21 +16,21 @@ use super::{read_input, sniff_kind, ArtifactKind};
 
 /// One addressable JSON-array arena and its records.
 #[derive(Debug, Clone)]
-pub(crate) struct Arena {
-    pub target: ArenaTarget,
-    pub records: Vec<Value>,
+pub(in crate::query) struct Arena {
+    pub(super) target: ArenaTarget,
+    pub(super) records: Vec<Value>,
 }
 
 /// A record location valid only in the document whose index constructed it.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub(crate) struct RecordRef {
+pub(super) struct RecordRef {
     arena: usize,
     rec: usize,
 }
 
 /// Indexed CADIR document: arenas, addressable names, and id lookup.
 #[derive(Debug, Clone)]
-pub(crate) struct CadirDocument {
+pub(super) struct CadirDocument {
     arenas: Vec<Arena>,
     /// Exact ID to each record location that carries it.
     by_id: BTreeMap<String, Vec<RecordRef>>,
@@ -41,7 +41,7 @@ pub(crate) struct CadirDocument {
 /// The two forms are exclusive: a list of requested IDs, or the first N records
 /// in arena order.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RecordSelection {
+pub(super) enum RecordSelection {
     /// Records matching these IDs, exactly or as a unique suffix.
     Ids(RequestedIds),
     /// The first N records in arena order.
@@ -50,16 +50,16 @@ pub enum RecordSelection {
 
 /// A record-ID request naming at least one ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RequestedIds(Vec<String>);
+pub(super) struct RequestedIds(Vec<String>);
 
 impl RequestedIds {
     /// Returns the request, or `None` when the list names no ID.
-    pub fn new(ids: Vec<String>) -> Option<Self> {
+    pub(super) fn new(ids: Vec<String>) -> Option<Self> {
         (!ids.is_empty()).then_some(Self(ids))
     }
 
     /// Returns the requested IDs in the order they were given.
-    pub fn as_slice(&self) -> &[String] {
+    pub(super) fn as_slice(&self) -> &[String] {
         &self.0
     }
 }
@@ -119,19 +119,19 @@ impl clap::FromArgMatches for RecordSelection {
 
 impl CadirDocument {
     /// Reads `path`, rejects reports and sidecars, and indexes every array arena.
-    pub(crate) fn load(path: &Path, view: &str) -> Result<Self> {
+    pub(super) fn load(path: &Path, view: &str) -> Result<Self> {
         let bytes = read_input(path)?;
         reject_non_cadir(&bytes, path, view)?;
         Self::from_bytes(&bytes, path)
     }
 
-    pub(crate) fn from_bytes(bytes: &[u8], path: &Path) -> Result<Self> {
+    pub(super) fn from_bytes(bytes: &[u8], path: &Path) -> Result<Self> {
         let root: Value = serde_json::from_slice(bytes)
             .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
         Ok(Self::from_value(&root))
     }
 
-    pub(crate) fn from_value(root: &Value) -> Self {
+    pub(super) fn from_value(root: &Value) -> Self {
         let mut arenas = Vec::new();
         if let Some(model) = root.get("model").and_then(Value::as_object) {
             for (name, value) in model {
@@ -179,34 +179,34 @@ impl CadirDocument {
         Self { arenas, by_id }
     }
 
-    pub(crate) fn arenas(&self) -> &[Arena] {
+    pub(super) fn arenas(&self) -> &[Arena] {
         &self.arenas
     }
 
-    pub(crate) fn id_locations(&self, id: &str) -> Option<&[RecordRef]> {
+    pub(super) fn id_locations(&self, id: &str) -> Option<&[RecordRef]> {
         self.by_id.get(id).map(Vec::as_slice)
     }
 
-    pub(crate) fn addressable(&self) -> Vec<(String, u64)> {
+    pub(super) fn addressable(&self) -> Vec<(String, u64)> {
         self.arenas
             .iter()
             .map(|arena| (arena.target.dotted(), arena.records.len() as u64))
             .collect()
     }
 
-    pub(crate) fn require_arena(&self, target: &ArenaTarget) -> Result<&Arena> {
+    pub(super) fn require_arena(&self, target: &ArenaTarget) -> Result<&Arena> {
         self.arenas
             .iter()
             .find(|arena| &arena.target == target)
             .ok_or_else(|| anyhow::anyhow!(unknown_arena_message(target, &self.addressable())))
     }
 
-    pub(crate) fn all_ids(&self) -> std::collections::BTreeSet<String> {
+    pub(super) fn all_ids(&self) -> std::collections::BTreeSet<String> {
         self.by_id.keys().cloned().collect()
     }
 
     /// Returns each record with its indexed location.
-    pub(crate) fn records(&self) -> impl Iterator<Item = (RecordRef, &Value)> {
+    pub(super) fn records(&self) -> impl Iterator<Item = (RecordRef, &Value)> {
         self.arenas.iter().enumerate().flat_map(|(ai, arena)| {
             arena
                 .records
@@ -217,12 +217,12 @@ impl CadirDocument {
     }
 
     /// Returns a record using a location constructed by this document only.
-    pub(crate) fn record(&self, location: RecordRef) -> &Value {
+    pub(super) fn record(&self, location: RecordRef) -> &Value {
         &self.arenas[location.arena].records[location.rec]
     }
 
     /// Formats a location constructed by this document only.
-    pub(crate) fn locator(&self, location: RecordRef) -> String {
+    pub(super) fn locator(&self, location: RecordRef) -> String {
         let arena = &self.arenas[location.arena];
         match record_id(self.record(location)) {
             Some(id) => format!("{}#{id}", arena.target.dotted()),
@@ -231,7 +231,7 @@ impl CadirDocument {
     }
 
     /// Selects indexed records by first-N, exact ID, or unique ID suffix.
-    pub(crate) fn select_records(
+    pub(super) fn select_records(
         &self,
         target: &ArenaTarget,
         selection: &RecordSelection,
@@ -287,18 +287,18 @@ impl CadirDocument {
 }
 
 /// Top-level JSON-string `id`, if present.
-pub(crate) fn record_id(record: &Value) -> Option<&str> {
+fn record_id(record: &Value) -> Option<&str> {
     record.get("id").and_then(Value::as_str)
 }
 
 /// Failure to select one record by ID.
-pub(crate) enum ResolveError {
+pub(super) enum ResolveError {
     Missing,
     Ambiguous(Vec<String>),
 }
 
 /// Resolves the first exact ID or one unique suffix match.
-pub(crate) fn resolve_one<'a, T: Copy>(
+pub(super) fn resolve_one<'a, T: Copy>(
     request: &str,
     indexed: impl Iterator<Item = (Option<&'a str>, T)> + Clone,
 ) -> Result<T, ResolveError> {
@@ -329,7 +329,7 @@ pub(crate) fn resolve_one<'a, T: Copy>(
 ///
 /// Decides on the top-level keys alone, so a caller that goes on to index the
 /// document parses the body once.
-pub(crate) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<()> {
+pub(super) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<()> {
     match sniff_kind(bytes, path)? {
         ArtifactKind::Cadir => Ok(()),
         ArtifactKind::Report => bail!(
