@@ -26,7 +26,7 @@ cadmpeg_core::named_optional_field!(deserialize_variant, u8, "variant");
 /// Semantic family of one Design parameter record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignParameterKind {
+pub(crate) enum DesignParameterKind {
     /// A document-level named user parameter.
     User,
     /// A dimensional constraint parameter.
@@ -38,7 +38,7 @@ pub enum DesignParameterKind {
 /// Admitted Design parameter family discriminator values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
-pub enum DesignParameterDiscriminator {
+pub(crate) enum DesignParameterDiscriminator {
     Code0 = 0,
     Code3 = 3,
     Code4 = 4,
@@ -71,7 +71,7 @@ impl TryFrom<u64> for DesignParameterDiscriminator {
 
 /// Source family and ownership of one Design parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DesignParameterSource {
+pub(crate) enum DesignParameterSource {
     User {
         family_discriminator: Located<DesignParameterDiscriminator>,
     },
@@ -82,7 +82,7 @@ const USER_PARAMETER_SOURCE_KIND: &str = "User Parameter";
 
 /// An owned source family. Its nonempty name cannot identify a user parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OwnedDesignParameter {
+pub(crate) struct OwnedDesignParameter {
     source_kind: NonBlankString,
     owner_record_index: u32,
     family_discriminator: Option<Located<DesignParameterDiscriminator>>,
@@ -126,17 +126,17 @@ impl DesignParameterSource {
 /// One indexed Design parameter or expression record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignParameterSerde", into = "DesignParameterSerde")]
-pub struct DesignParameter {
+pub(crate) struct DesignParameter {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
     byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Source indexed-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Source ordering value stored by the parameter record.
-    pub source_ordinal: u32,
+    pub(crate) source_ordinal: u32,
     /// Indexed owner: user parameters have none; feature and dimension
     /// parameters name their owning record.
     source: DesignParameterSource,
@@ -161,20 +161,20 @@ pub struct DesignParameter {
 
 /// Unchecked Design parameter input.
 pub(crate) struct DesignParameterDraft {
-    pub id: String,
-    pub byte_offset: u64,
-    pub class_tag: DesignClassTag,
-    pub record_index: u32,
-    pub source_ordinal: u32,
-    pub source: DesignParameterSource,
-    pub expression: String,
-    pub expression_offset: u64,
-    pub source_kind_offset: u64,
-    pub unit: Option<RecordedValue<String>>,
-    pub name: String,
-    pub name_offset: u64,
-    pub evaluated_value: f64,
-    pub evaluated_value_offset: u64,
+    pub(crate) id: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) class_tag: DesignClassTag,
+    pub(crate) record_index: u32,
+    pub(crate) source_ordinal: u32,
+    pub(crate) source: DesignParameterSource,
+    pub(crate) expression: String,
+    pub(crate) expression_offset: u64,
+    pub(crate) source_kind_offset: u64,
+    pub(crate) unit: Option<RecordedValue<String>>,
+    pub(crate) name: String,
+    pub(crate) name_offset: u64,
+    pub(crate) evaluated_value: f64,
+    pub(crate) evaluated_value_offset: u64,
 }
 
 impl TryFrom<DesignParameterDraft> for DesignParameter {
@@ -265,39 +265,39 @@ impl DesignParameter {
     }
 
     /// Indexed record header offset.
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
     /// Expression code-unit offset.
-    pub fn expression_offset(&self) -> u64 {
+    pub(crate) fn expression_offset(&self) -> u64 {
         self.expression_offset
     }
     /// Source-family code-unit offset.
-    pub fn source_kind_offset(&self) -> u64 {
+    fn source_kind_offset(&self) -> u64 {
         self.source_kind_offset
     }
     /// Name code-unit offset.
-    pub fn name_offset(&self) -> u64 {
+    fn name_offset(&self) -> u64 {
         self.name_offset
     }
     /// Evaluated scalar offset.
-    pub fn evaluated_value_offset(&self) -> u64 {
+    pub(crate) fn evaluated_value_offset(&self) -> u64 {
         self.evaluated_value_offset
     }
     /// Finite evaluated scalar.
-    pub fn evaluated_value(&self) -> f64 {
+    pub(crate) fn evaluated_value(&self) -> f64 {
         self.evaluated_value
     }
     /// Nonempty parameter name.
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         self.name.as_str()
     }
     /// Nonempty source expression.
-    pub fn expression(&self) -> &str {
+    pub(crate) fn expression(&self) -> &str {
         self.expression.as_str()
     }
     /// Located nonempty unit token, when present.
-    pub fn unit(&self) -> Option<&Located<NonBlankString>> {
+    pub(crate) fn unit(&self) -> Option<&Located<NonBlankString>> {
         self.unit.as_ref()
     }
 
@@ -502,7 +502,7 @@ impl From<DesignParameter> for DesignParameterSerde {
     try_from = "DesignParameterOwnerWire",
     into = "DesignParameterOwnerWire"
 )]
-pub struct DesignParameterOwner {
+pub(crate) struct DesignParameterOwner {
     id: String,
     byte_offset: u64,
     frame_length: u64,
@@ -526,23 +526,23 @@ enum ParameterFrameOrder {
 
 impl DesignParameterOwner {
     /// The id value.
-    pub fn id(&self) -> &String {
+    pub(crate) fn id(&self) -> &String {
         &self.id
     }
     /// The byte offset value.
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
     /// The frame length value.
-    pub fn frame_length(&self) -> u64 {
+    pub(crate) fn frame_length(&self) -> u64 {
         self.frame_length
     }
     /// The class tag value.
-    pub fn class_tag(&self) -> &DesignClassTag {
+    pub(crate) fn class_tag(&self) -> &DesignClassTag {
         &self.class_tag
     }
     /// The record index value.
-    pub fn record_index(&self) -> u32 {
+    pub(crate) fn record_index(&self) -> u32 {
         self.base_index
             + match self.order {
                 ParameterFrameOrder::OwnerParameterCompanion => 0,
@@ -551,23 +551,23 @@ impl DesignParameterOwner {
             }
     }
     /// The scope record index value.
-    pub fn scope_record_index(&self) -> u32 {
+    pub(crate) fn scope_record_index(&self) -> u32 {
         self.scope_record_index
     }
     /// The local ordinal value.
-    pub fn local_ordinal(&self) -> u32 {
+    pub(crate) fn local_ordinal(&self) -> u32 {
         self.local_ordinal
     }
     /// The evaluated value value.
-    pub fn evaluated_value(&self) -> f64 {
+    pub(crate) fn evaluated_value(&self) -> f64 {
         self.evaluated_value
     }
     /// The evaluated value offset value.
-    pub fn evaluated_value_offset(&self) -> u64 {
+    pub(crate) fn evaluated_value_offset(&self) -> u64 {
         self.evaluated_value_offset
     }
     /// The parameter record index value.
-    pub fn parameter_record_index(&self) -> u32 {
+    pub(crate) fn parameter_record_index(&self) -> u32 {
         self.base_index
             + match self.order {
                 ParameterFrameOrder::OwnerParameterCompanion => 1,
@@ -576,7 +576,7 @@ impl DesignParameterOwner {
             }
     }
     /// The companion record index value.
-    pub fn companion_record_index(&self) -> u32 {
+    pub(crate) fn companion_record_index(&self) -> u32 {
         self.base_index
             + match self.order {
                 ParameterFrameOrder::OwnerParameterCompanion => 2,
@@ -686,44 +686,44 @@ impl From<DesignParameterOwner> for DesignParameterOwnerWire {
 
 /// Unchecked parameter owner fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignParameterOwnerWire {
+pub(crate) struct DesignParameterOwnerWire {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Byte length from the primary header to its same-index paired header.
     #[serde(default)]
-    pub frame_length: u64,
+    pub(crate) frame_length: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Source indexed-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Feature or sketch record that scopes this parameter.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Position among parameters in the same scope.
-    pub local_ordinal: u32,
+    pub(crate) local_ordinal: u32,
     /// Evaluated scalar duplicated from the parameter record.
-    pub evaluated_value: f64,
+    pub(crate) evaluated_value: f64,
     /// Byte offset of `evaluated_value`.
-    pub evaluated_value_offset: u64,
+    pub(crate) evaluated_value_offset: u64,
     /// Indexed parameter record owned by this frame.
-    pub parameter_record_index: u32,
+    pub(crate) parameter_record_index: u32,
     /// Native owner ordering value.
-    pub owned_ordinal: u32,
+    pub(crate) owned_ordinal: u32,
     /// Source owner-frame variant flag when the frame carries one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_variant"
     )]
-    pub variant: Option<u8>,
+    pub(crate) variant: Option<u8>,
     /// Paired indexed record following the parameter record.
-    pub companion_record_index: u32,
+    pub(crate) companion_record_index: u32,
 }
 
 /// Owned payload bound to a Design parameter companion.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignCompanionPayload {
+pub(crate) struct DesignCompanionPayload {
     byte_offset: u64,
     byte_length: u64,
     owned_recipe_ids: Vec<String>,
@@ -732,7 +732,7 @@ pub struct DesignCompanionPayload {
 impl DesignCompanionPayload {
     /// The byte interval a companion owns, with the recipes nested in it.
     #[must_use]
-    pub fn new(byte_offset: u64, byte_length: u64, owned_recipe_ids: Vec<String>) -> Self {
+    pub(crate) fn new(byte_offset: u64, byte_length: u64, owned_recipe_ids: Vec<String>) -> Self {
         Self {
             byte_offset,
             byte_length,
@@ -742,19 +742,19 @@ impl DesignCompanionPayload {
 
     /// First byte owned after the fixed companion prefix.
     #[must_use]
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
 
     /// Number of bytes owned before the next sibling Design record.
     #[must_use]
-    pub fn byte_length(&self) -> u64 {
+    pub(crate) fn byte_length(&self) -> u64 {
         self.byte_length
     }
 
     /// Construction recipes contained by the owned payload, in byte order.
     #[must_use]
-    pub fn owned_recipe_ids(&self) -> &[String] {
+    pub(crate) fn owned_recipe_ids(&self) -> &[String] {
         &self.owned_recipe_ids
     }
 }
@@ -765,7 +765,7 @@ impl DesignCompanionPayload {
     try_from = "DesignParameterCompanionWire",
     into = "DesignParameterCompanionWire"
 )]
-pub struct DesignParameterCompanion {
+pub(crate) struct DesignParameterCompanion {
     id: String,
     byte_offset: u64,
     class_tag: DesignClassTag,
@@ -779,7 +779,7 @@ pub struct DesignParameterCompanion {
 impl DesignParameterCompanion {
     /// A companion prefix whose owned payload has not been bound.
     #[must_use]
-    pub fn unbound(
+    pub(crate) fn unbound(
         id: String,
         byte_offset: u64,
         class_tag: DesignClassTag,
@@ -802,7 +802,7 @@ impl DesignParameterCompanion {
 
     /// The same companion with its owned payload bound.
     #[must_use]
-    pub fn bound(self, payload: DesignCompanionPayload) -> Self {
+    pub(crate) fn bound(self, payload: DesignCompanionPayload) -> Self {
         Self {
             payload: Some(payload),
             ..self
@@ -811,80 +811,80 @@ impl DesignParameterCompanion {
 
     /// Globally unique deterministic identifier for this native record.
     #[must_use]
-    pub fn id(&self) -> &str {
+    pub(crate) fn id(&self) -> &str {
         &self.id
     }
 
     /// Byte offset of the indexed record header in its Design `BulkStream`.
     #[must_use]
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
 
     /// Source indexed-record identity.
     #[must_use]
-    pub fn record_index(&self) -> u32 {
+    pub(crate) fn record_index(&self) -> u32 {
         self.record_index
     }
 
     /// Indexed parameter-owner record referenced by this prefix.
     #[must_use]
-    pub fn owner_record_index(&self) -> u32 {
+    pub(crate) fn owner_record_index(&self) -> u32 {
         self.owner_record_index
     }
 
     /// Byte offset of `timestamp_micros`.
     #[must_use]
-    pub fn timestamp_micros_offset(&self) -> u64 {
+    pub(crate) fn timestamp_micros_offset(&self) -> u64 {
         self.timestamp_micros_offset
     }
 
     /// Owned payload, when the binding pass reached this companion.
     #[must_use]
-    pub fn payload(&self) -> Option<&DesignCompanionPayload> {
+    pub(crate) fn payload(&self) -> Option<&DesignCompanionPayload> {
         self.payload.as_ref()
     }
 }
 
 /// Serialized form of [`DesignParameterCompanion`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DesignParameterCompanionWire {
+struct DesignParameterCompanionWire {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    class_tag: DesignClassTag,
     /// Source indexed-record identity.
-    pub record_index: u32,
+    record_index: u32,
     /// Indexed parameter-owner record referenced by this prefix.
-    pub owner_record_index: u32,
+    owner_record_index: u32,
     /// Nonzero Unix-epoch timestamp in microseconds.
     #[serde(
         alias = "opaque_value",
         deserialize_with = "deserialize_companion_timestamp"
     )]
-    pub timestamp_micros: NonZeroU64,
+    timestamp_micros: NonZeroU64,
     /// Byte offset of `timestamp_micros`.
     #[serde(alias = "opaque_value_offset")]
-    pub timestamp_micros_offset: u64,
+    timestamp_micros_offset: u64,
     /// First byte owned after the fixed companion prefix, when bound.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_payload_byte_offset"
     )]
-    pub payload_byte_offset: Option<u64>,
+    payload_byte_offset: Option<u64>,
     /// Number of bytes owned before the next sibling Design record, when bound.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_payload_byte_length"
     )]
-    pub payload_byte_length: Option<u64>,
+    payload_byte_length: Option<u64>,
     /// Construction recipes contained by the owned payload, in byte order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub owned_recipe_ids: Vec<String>,
+    owned_recipe_ids: Vec<String>,
 }
 
 impl TryFrom<DesignParameterCompanionWire> for DesignParameterCompanion {

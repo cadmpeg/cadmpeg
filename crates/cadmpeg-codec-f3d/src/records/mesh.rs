@@ -35,10 +35,10 @@ cadmpeg_core::named_optional_field!(deserialize_tessellation_id, String, "tessel
 /// A hyphenated hexadecimal GUID with its original letter case.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct DesignGuidText(String);
+pub(crate) struct DesignGuidText(String);
 
 impl DesignGuidText {
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -62,11 +62,11 @@ impl From<DesignGuidText> for String {
 /// A relaxed GUID with its original text.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct DesignRelaxedGuidText(cadmpeg_ir::ids::IdentityKey);
+pub(crate) struct DesignRelaxedGuidText(cadmpeg_ir::ids::IdentityKey);
 
 impl DesignRelaxedGuidText {
     /// The original GUID text.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         self.0.as_str()
     }
 
@@ -98,30 +98,30 @@ impl From<DesignRelaxedGuidText> for String {
 
 /// One texture resource owned by a Design mesh feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshTextureResource {
+pub(crate) struct DesignMeshTextureResource {
     /// Zero-based position in the serialized flags map.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Stable resource GUID used as the key in both texture maps.
-    pub resource_guid: DesignGuidText,
+    pub(crate) resource_guid: DesignGuidText,
     /// Opaque resource flags retained without reinterpretation.
-    pub flags: u32,
+    pub(crate) flags: u32,
     /// Zero-based position of the same GUID in the serialized filename map.
-    pub filename_ordinal: u32,
+    pub(crate) filename_ordinal: u32,
     /// Filename record joined to its archive entry.
-    pub file: DesignMeshTextureFile,
+    pub(crate) file: DesignMeshTextureFile,
     /// Neutral embedded asset projected from the matching archive entry.
-    pub asset: AssetId,
+    pub(crate) asset: AssetId,
 }
 
 /// A filename record and the archive entry with its exact basename.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshTextureFile {
+pub(crate) struct DesignMeshTextureFile {
     record: DesignMeshRecordIdentity,
     archive_entry_name: String,
 }
 
 impl DesignMeshTextureFile {
-    pub fn new(
+    pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         filename: &str,
         archive_entry_name: String,
@@ -144,25 +144,25 @@ impl DesignMeshTextureFile {
         }
         Ok(value)
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity {
+    pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub fn filename(&self) -> &str {
+    pub(crate) fn filename(&self) -> &str {
         self.archive_entry_name
             .rsplit_once('/')
             .map_or(self.archive_entry_name.as_str(), |(_, basename)| basename)
     }
-    pub fn archive_entry_name(&self) -> &str {
+    pub(crate) fn archive_entry_name(&self) -> &str {
         &self.archive_entry_name
     }
-    pub fn filename_offset(&self) -> u64 {
+    pub(super) fn filename_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_texture_filename_prefix::LEN as u64
     }
 }
 
 /// One texture resource owned by a Design mesh feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct DesignMeshTextureResourceWire {
+pub(in crate::records) struct DesignMeshTextureResourceWire {
     /// Zero-based position in the serialized flags map.
     ordinal: u32,
     /// Stable resource GUID used as the key in both texture maps.
@@ -197,13 +197,13 @@ const MESH_TEXTURE_FILENAME_ENTRY_BYTES: u64 = 4 + 36 + 11;
 
 /// Texture resources with complete flags and filename ordinal permutations.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshTextureTable {
+pub(crate) struct DesignMeshTextureTable {
     record: DesignMeshRecordIdentity,
     resources: Vec<DesignMeshTextureResource>,
 }
 
 impl DesignMeshTextureTable {
-    pub fn new(
+    pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, String> {
@@ -234,14 +234,14 @@ impl DesignMeshTextureTable {
         }
         Ok(Self { record, resources })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity {
+    pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub fn resources(&self) -> &[DesignMeshTextureResource] {
+    pub(crate) fn resources(&self) -> &[DesignMeshTextureResource] {
         &self.resources
     }
     /// Borrow resources in the serialized flags-map order.
-    pub fn resources_in_flags_order(&self) -> Vec<&DesignMeshTextureResource> {
+    pub(crate) fn resources_in_flags_order(&self) -> Vec<&DesignMeshTextureResource> {
         let mut resources = self.resources.iter().collect::<Vec<_>>();
         resources.sort_by_key(|resource| resource.ordinal);
         resources
@@ -363,13 +363,13 @@ impl DesignMeshTextureTable {
 
 /// One finite axis-aligned bound stored by a mesh Scene record.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DesignMeshSceneBounds {
+pub(crate) struct DesignMeshSceneBounds {
     maximum: [f64; 3],
     minimum: [f64; 3],
 }
 
 impl DesignMeshSceneBounds {
-    pub fn new(maximum: [f64; 3], minimum: [f64; 3]) -> Result<Self, String> {
+    pub(crate) fn new(maximum: [f64; 3], minimum: [f64; 3]) -> Result<Self, String> {
         if !maximum
             .iter()
             .chain(&minimum)
@@ -386,10 +386,10 @@ impl DesignMeshSceneBounds {
         }
         Ok(Self { maximum, minimum })
     }
-    pub fn maximum(&self) -> [f64; 3] {
+    pub(crate) fn maximum(&self) -> [f64; 3] {
         self.maximum
     }
-    pub fn minimum(&self) -> [f64; 3] {
+    pub(crate) fn minimum(&self) -> [f64; 3] {
         self.minimum
     }
     // This conversion consumes the input carrier at the typed construction boundary.
@@ -413,30 +413,30 @@ impl DesignMeshSceneBounds {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct DesignMeshSceneBoundsWire {
+pub(in crate::records) struct DesignMeshSceneBoundsWire {
     /// Component-wise upper corner, serialized first.
-    pub(super) maximum: [f64; 3],
+    maximum: [f64; 3],
     /// Component-wise lower corner, serialized second.
-    pub(super) minimum: [f64; 3],
+    minimum: [f64; 3],
     /// Byte offsets of the serialized upper and lower corners.
     pub(super) offsets: [u64; 2],
 }
 
 /// A fixed Scene-state record and its optional finite bounds.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignMeshSceneState {
+pub(crate) struct DesignMeshSceneState {
     record: DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }>,
     bounds: Option<DesignMeshSceneBounds>,
 }
 
 impl DesignMeshSceneState {
-    pub fn new(
+    pub(crate) fn new(
         record: DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }>,
         bounds: Option<DesignMeshSceneBounds>,
     ) -> Self {
         Self { record, bounds }
     }
-    pub fn record(
+    pub(crate) fn record(
         &self,
     ) -> &DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }> {
         &self.record
@@ -467,7 +467,7 @@ impl DesignMeshSceneState {
 
 /// A compact or placed Scene-node record with bounds at the form's fixed location.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignMeshSceneNode {
+pub(crate) struct DesignMeshSceneNode {
     form: DesignMeshSceneNodeForm,
     bounds: Option<DesignMeshSceneBounds>,
 }
@@ -482,7 +482,7 @@ enum DesignMeshSceneNodeForm {
 }
 
 impl DesignMeshSceneNode {
-    pub fn new(
+    pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         bounds: Option<DesignMeshSceneBounds>,
         transform: Option<MeshAffineTransform>,
@@ -496,19 +496,19 @@ impl DesignMeshSceneNode {
         };
         Ok(Self { form, bounds })
     }
-    pub fn record_index(&self) -> u32 {
+    pub(crate) fn record_index(&self) -> u32 {
         match &self.form {
             DesignMeshSceneNodeForm::Compact(record) => record.record_index(),
             DesignMeshSceneNodeForm::Placed { record, .. } => record.record_index(),
         }
     }
-    pub fn byte_offset(&self) -> u64 {
+    fn byte_offset(&self) -> u64 {
         match &self.form {
             DesignMeshSceneNodeForm::Compact(record) => record.byte_offset(),
             DesignMeshSceneNodeForm::Placed { record, .. } => record.byte_offset(),
         }
     }
-    pub fn frame_length(&self) -> u64 {
+    pub(crate) fn frame_length(&self) -> u64 {
         match &self.form {
             DesignMeshSceneNodeForm::Compact(_) => crate::layout::paramesh_scene_node::LEN as u64,
             DesignMeshSceneNodeForm::Placed { .. } => {
@@ -516,10 +516,10 @@ impl DesignMeshSceneNode {
             }
         }
     }
-    pub fn bounds(&self) -> Option<&DesignMeshSceneBounds> {
+    pub(crate) fn bounds(&self) -> Option<&DesignMeshSceneBounds> {
         self.bounds.as_ref()
     }
-    pub fn bounds_offsets(&self) -> [u64; 2] {
+    pub(crate) fn bounds_offsets(&self) -> [u64; 2] {
         let relative = match &self.form {
             DesignMeshSceneNodeForm::Compact(_) => crate::layout::paramesh_scene_node::FOOTER_MASK,
             DesignMeshSceneNodeForm::Placed { .. } => {
@@ -529,7 +529,7 @@ impl DesignMeshSceneNode {
         let start = self.byte_offset() + relative as u64;
         [start, start + 24]
     }
-    pub fn transform(&self) -> Option<Located<MeshAffineTransform>> {
+    pub(crate) fn transform(&self) -> Option<Located<MeshAffineTransform>> {
         match &self.form {
             DesignMeshSceneNodeForm::Compact(_) => None,
             DesignMeshSceneNodeForm::Placed { record, transform } => Some(Located {
@@ -539,10 +539,10 @@ impl DesignMeshSceneNode {
             }),
         }
     }
-    pub fn state_reference_offset(&self) -> u64 {
+    pub(super) fn state_reference_offset(&self) -> u64 {
         self.byte_offset() + crate::layout::paramesh_scene_node::SCENE_STATE_REFERENCE as u64
     }
-    pub fn auxiliary_reference_offset(&self) -> u64 {
+    pub(super) fn auxiliary_reference_offset(&self) -> u64 {
         self.byte_offset() + crate::layout::paramesh_scene_node::AUXILIARY_RECORD_REFERENCE as u64
     }
     pub(super) fn from_wire(
@@ -583,10 +583,10 @@ impl DesignMeshSceneNode {
 /// A lowercase RFC 4122 version-4 UUID from the mesh registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct DesignMeshUuid(DesignGuidText);
+pub(crate) struct DesignMeshUuid(DesignGuidText);
 
 impl DesignMeshUuid {
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         self.0.as_str()
     }
 }
@@ -614,13 +614,16 @@ impl From<DesignMeshUuid> for String {
 
 /// A container GUID in a record with the complete fixed join prefix.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshGuid {
+pub(crate) struct DesignMeshGuid {
     record: DesignMeshRecordIdentity,
     value: DesignGuidText,
 }
 
 impl DesignMeshGuid {
-    pub fn new(record: DesignMeshRecordIdentity, value: DesignGuidText) -> Result<Self, String> {
+    pub(crate) fn new(
+        record: DesignMeshRecordIdentity,
+        value: DesignGuidText,
+    ) -> Result<Self, String> {
         if record.frame_length() < crate::layout::paramesh_guid_join_prefix::LEN as u64 {
             return Err(
                 "guid_record.frame_length must contain the complete GUID join prefix".into(),
@@ -628,16 +631,16 @@ impl DesignMeshGuid {
         }
         Ok(Self { record, value })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity {
+    pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub fn value(&self) -> &str {
+    pub(crate) fn value(&self) -> &str {
         self.value.as_str()
     }
-    pub fn value_offset(&self) -> u64 {
+    pub(super) fn value_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_guid_join_prefix::FUSION_UUID as u64 + 4
     }
-    pub fn entry_reference_offset(&self) -> u64 {
+    pub(super) fn entry_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_guid_join_prefix::ENTRY_NAME_BACKLINK as u64
     }
@@ -645,13 +648,13 @@ impl DesignMeshGuid {
 
 /// An entry-name record whose UTF-16 name ends at the record boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshEntryName {
+pub(crate) struct DesignMeshEntryName {
     record: DesignMeshRecordIdentity,
     name: String,
 }
 
 impl DesignMeshEntryName {
-    pub fn new(record: DesignMeshRecordIdentity, name: String) -> Result<Self, String> {
+    pub(crate) fn new(record: DesignMeshRecordIdentity, name: String) -> Result<Self, String> {
         let expected = u64::try_from(name.encode_utf16().count())
             .ok()
             .and_then(|units| units.checked_mul(2))
@@ -666,16 +669,16 @@ impl DesignMeshEntryName {
         }
         Ok(Self { record, name })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity {
+    pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
-    pub fn name_offset(&self) -> u64 {
+    pub(super) fn name_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_entry_name_prefix::LEN as u64 + 4
     }
-    pub fn guid_reference_offset(&self) -> u64 {
+    pub(super) fn guid_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_entry_name_prefix::GUID_RECORD_REFERENCE as u64
     }
@@ -683,13 +686,13 @@ impl DesignMeshEntryName {
 
 /// Mesh-body placement and the complete prefix plus terminal collection reference.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignMeshPlacement {
+pub(crate) struct DesignMeshPlacement {
     record: DesignMeshRecordIdentity,
     transform: MeshAffineTransform,
 }
 
 impl DesignMeshPlacement {
-    pub fn new(
+    pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         transform: MeshAffineTransform,
     ) -> Result<Self, String> {
@@ -698,13 +701,13 @@ impl DesignMeshPlacement {
         }
         Ok(Self { record, transform })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity {
+    pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub fn transform(&self) -> MeshAffineTransform {
+    pub(crate) fn transform(&self) -> MeshAffineTransform {
         self.transform
     }
-    pub fn transform_offsets(&self) -> [u64; 2] {
+    pub(super) fn transform_offsets(&self) -> [u64; 2] {
         [
             self.record.byte_offset()
                 + crate::layout::paramesh_mesh_body_join_prefix::FIRST_TRANSFORM as u64,
@@ -712,56 +715,57 @@ impl DesignMeshPlacement {
                 + crate::layout::paramesh_mesh_body_join_prefix::SECOND_TRANSFORM as u64,
         ]
     }
-    pub fn scope_reference_offset(&self) -> u64 {
+    pub(super) fn scope_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::FEATURE_SCOPE_REFERENCE as u64
     }
-    pub fn wrapper_reference_offset(&self) -> u64 {
+    pub(super) fn wrapper_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::WRAPPER_REFERENCE as u64
     }
-    pub fn owner_reference_offset(&self) -> u64 {
+    pub(super) fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::BODY_OWNER_REFERENCE as u64
     }
-    pub fn guid_reference_offset(&self) -> u64 {
+    pub(super) fn guid_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::CONTAINER_GUID_REFERENCE as u64
     }
-    pub fn scene_node_reference_offset(&self) -> u64 {
+    pub(super) fn scene_node_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::SCENE_NODE_REFERENCE as u64
     }
-    pub fn collection_reference_offset(&self) -> u64 {
+    pub(super) fn collection_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
     }
 }
 
 /// One mesh body and its complete Design identity graph.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignMeshBody {
+pub(crate) struct DesignMeshBody {
     /// Mesh-body record carrying placement and graph references.
-    pub placement: DesignMeshPlacement,
+    pub(crate) placement: DesignMeshPlacement,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
-    pub entry: DesignMeshEntryName,
+    pub(crate) entry: DesignMeshEntryName,
     /// GUID record joining the body to the container's `fusion_uuid`.
-    pub guid: DesignMeshGuid,
+    pub(crate) guid: DesignMeshGuid,
     /// One-to-one `ParaMesh` wrapper around the mesh-body record.
-    pub wrapper_record: DesignMeshFixedRecord<{ crate::layout::paramesh_body_wrapper::LEN as u64 }>,
+    pub(crate) wrapper_record:
+        DesignMeshFixedRecord<{ crate::layout::paramesh_body_wrapper::LEN as u64 }>,
     /// Fixed Scene-state record and optional bounds.
-    pub scene_state: DesignMeshSceneState,
+    pub(crate) scene_state: DesignMeshSceneState,
     /// Compact or placed Scene node with its optional bounds.
-    pub scene_node: DesignMeshSceneNode,
+    pub(crate) scene_node: DesignMeshSceneNode,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
-    pub scene_auxiliary_record: DesignMeshRecordIdentity,
+    pub(crate) scene_auxiliary_record: DesignMeshRecordIdentity,
     /// Typed Design body-owner record referenced by the mesh-body record.
     /// Multiple mesh bodies can reference the same owner.
-    pub owner_record: DesignMeshRecordIdentity,
+    pub(crate) owner_record: DesignMeshRecordIdentity,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
-    pub container_mesh_uuid: Option<DesignMeshUuid>,
+    pub(crate) container_mesh_uuid: Option<DesignMeshUuid>,
     /// Neutral tessellation projected from the joined container, when present.
-    pub tessellation_id: Option<String>,
+    pub(crate) tessellation_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -918,7 +922,7 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
 }
 
 impl DesignMeshBody {
-    pub fn wrapper_body_reference_offset(&self) -> u64 {
+    fn wrapper_body_reference_offset(&self) -> u64 {
         self.wrapper_record.byte_offset()
             + crate::layout::paramesh_body_wrapper::BODY_REFERENCE as u64
     }
@@ -1004,11 +1008,11 @@ impl DesignMeshBody {
 /// A finite, nonsingular row-major affine map.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
-pub struct MeshAffineTransform([f64; 16]);
+pub(crate) struct MeshAffineTransform([f64; 16]);
 
 impl MeshAffineTransform {
     /// Check finite coefficients, an affine last row, and a nonzero finite determinant.
-    pub fn new(cells: [f64; 16]) -> Result<Self, String> {
+    pub(crate) fn new(cells: [f64; 16]) -> Result<Self, String> {
         let value = Self(cells);
         let rows = value.rows();
         if !cells.iter().all(|cell| cell.is_finite()) || rows[3] != [0.0, 0.0, 0.0, 1.0] {
@@ -1024,12 +1028,12 @@ impl MeshAffineTransform {
     }
 
     /// Row-major coefficients.
-    pub fn cells(self) -> [f64; 16] {
+    pub(crate) fn cells(self) -> [f64; 16] {
         self.0
     }
 
     /// Four row-major rows.
-    pub fn rows(self) -> [[f64; 4]; 4] {
+    fn rows(self) -> [[f64; 4]; 4] {
         let cells = self.0;
         [
             [cells[0], cells[1], cells[2], cells[3]],
@@ -1055,7 +1059,7 @@ impl From<MeshAffineTransform> for [[f64; 4]; 4] {
 
 /// Collection-owner record with a fixed-prefix or terminal backlink.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshCollectionOwner {
+pub(crate) struct DesignMeshCollectionOwner {
     record: DesignMeshRecordIdentity,
     backlink: DesignMeshCollectionBacklink,
 }
@@ -1068,7 +1072,10 @@ enum DesignMeshCollectionBacklink {
 }
 
 impl DesignMeshCollectionOwner {
-    pub fn new(record: DesignMeshRecordIdentity, backlink_offset: u64) -> Result<Self, String> {
+    pub(crate) fn new(
+        record: DesignMeshRecordIdentity,
+        backlink_offset: u64,
+    ) -> Result<Self, String> {
         let relative = backlink_offset
             .checked_sub(record.byte_offset())
             .ok_or("collection_owner_backlink_offset precedes its record")?;
@@ -1090,10 +1097,10 @@ impl DesignMeshCollectionOwner {
         };
         Ok(Self { record, backlink })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity {
+    pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub fn backlink_offset(&self) -> u64 {
+    pub(crate) fn backlink_offset(&self) -> u64 {
         let relative = match self.backlink {
             DesignMeshCollectionBacklink::Fixed241 => {
                 crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK as u64
@@ -1109,14 +1116,14 @@ impl DesignMeshCollectionOwner {
 
 /// Feature-scope record with its same-index closing base and owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshScope {
+pub(crate) struct DesignMeshScope {
     record: DesignMeshRecordIdentity,
     base_class_tag: DesignClassTag,
     owner_record_index: std::num::NonZeroU32,
 }
 
 impl DesignMeshScope {
-    pub fn new(
+    pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         base_record: DesignMeshRecordIdentity,
         owner_record_index: u32,
@@ -1146,10 +1153,10 @@ impl DesignMeshScope {
             owner_record_index,
         })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity {
+    pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub fn base_record(&self) -> DesignMeshRecordIdentity {
+    pub(crate) fn base_record(&self) -> DesignMeshRecordIdentity {
         let frame_length = crate::layout::paramesh_feature_scope_base::LEN as u64;
         DesignMeshRecordIdentity {
             class_tag: self.base_class_tag.clone(),
@@ -1158,10 +1165,10 @@ impl DesignMeshScope {
             frame_length,
         }
     }
-    pub fn owner_record_index(&self) -> u32 {
+    pub(super) fn owner_record_index(&self) -> u32 {
         self.owner_record_index.get()
     }
-    pub fn owner_reference_offset(&self) -> u64 {
+    pub(super) fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length()
             - crate::layout::paramesh_feature_scope_base::LEN as u64
             + crate::layout::paramesh_feature_scope_base::SCOPE_OWNER_REFERENCE as u64
@@ -1170,13 +1177,13 @@ impl DesignMeshScope {
 
 /// Mesh collection with its same-index nested base and complete body-reference run.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshCollection {
+pub(crate) struct DesignMeshCollection {
     record: DesignMeshRecordIdentity,
     base_class_tag: DesignClassTag,
 }
 
 impl DesignMeshCollection {
-    pub fn new(
+    pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         base_record: DesignMeshRecordIdentity,
     ) -> Result<Self, String> {
@@ -1206,10 +1213,10 @@ impl DesignMeshCollection {
             base_class_tag: base_record.class_tag,
         })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity {
+    pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub fn base_record(&self) -> DesignMeshRecordIdentity {
+    pub(super) fn base_record(&self) -> DesignMeshRecordIdentity {
         let prefix = crate::layout::paramesh_mesh_collection_prefix::LEN as u64;
         DesignMeshRecordIdentity {
             class_tag: self.base_class_tag.clone(),
@@ -1218,18 +1225,18 @@ impl DesignMeshCollection {
             frame_length: self.record.frame_length() - prefix,
         }
     }
-    pub fn body_count(&self) -> u64 {
+    pub(super) fn body_count(&self) -> u64 {
         (self.record.frame_length()
             - crate::layout::paramesh_mesh_collection_prefix::LEN as u64
             - crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64
             - 11)
             / 11
     }
-    pub fn texture_table_reference_offset(&self) -> u64 {
+    pub(super) fn texture_table_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_collection_prefix::TEXTURE_TABLE_REFERENCE as u64
     }
-    pub fn owner_reference_offset(&self) -> u64 {
+    pub(super) fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
     }
 }
@@ -1237,23 +1244,23 @@ impl DesignMeshCollection {
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignMeshFeatureWire", into = "DesignMeshFeatureWire")]
-pub struct DesignMeshFeature {
+pub(crate) struct DesignMeshFeature {
     /// Globally unique deterministic identity keyed by the feature-scope record.
-    pub id: String,
+    pub(crate) id: String,
     /// Feature scope and its closing owner reference.
     scope: DesignMeshScope,
     /// Mesh collection and its nested base.
     collection: DesignMeshCollection,
     /// Typed `ParaMesh` texture-table record owned by the collection.
-    pub texture_table: DesignMeshTextureTable,
+    pub(crate) texture_table: DesignMeshTextureTable,
     /// Typed Design owner of the mesh-body collection.
-    pub collection_owner: DesignMeshCollectionOwner,
+    pub(crate) collection_owner: DesignMeshCollectionOwner,
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBody>,
 }
 
 impl DesignMeshFeature {
-    pub fn new(
+    pub(crate) fn new(
         id: String,
         scope: DesignMeshScope,
         collection: DesignMeshCollection,
@@ -1280,13 +1287,13 @@ impl DesignMeshFeature {
             bodies,
         })
     }
-    pub fn scope(&self) -> &DesignMeshScope {
+    pub(crate) fn scope(&self) -> &DesignMeshScope {
         &self.scope
     }
-    pub fn collection(&self) -> &DesignMeshCollection {
+    pub(crate) fn collection(&self) -> &DesignMeshCollection {
         &self.collection
     }
-    pub fn bodies(&self) -> &[DesignMeshBody] {
+    pub(crate) fn bodies(&self) -> &[DesignMeshBody] {
         &self.bodies
     }
     pub(crate) fn bodies_mut(&mut self) -> &mut [DesignMeshBody] {
@@ -1495,7 +1502,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
     try_from = "DesignMeshRecordIdentityWire",
     into = "DesignMeshRecordIdentityWire"
 )]
-pub struct DesignMeshRecordIdentity {
+pub(crate) struct DesignMeshRecordIdentity {
     class_tag: DesignClassTag,
     record_index: std::num::NonZeroU32,
     byte_offset: u64,
@@ -1503,7 +1510,7 @@ pub struct DesignMeshRecordIdentity {
 }
 
 impl DesignMeshRecordIdentity {
-    pub fn new(
+    pub(crate) fn new(
         class_tag: DesignClassTag,
         record_index: u32,
         byte_offset: u64,
@@ -1524,16 +1531,16 @@ impl DesignMeshRecordIdentity {
             frame_length,
         })
     }
-    pub fn class_tag(&self) -> &DesignClassTag {
+    pub(crate) fn class_tag(&self) -> &DesignClassTag {
         &self.class_tag
     }
-    pub fn record_index(&self) -> u32 {
+    pub(crate) fn record_index(&self) -> u32 {
         self.record_index.get()
     }
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
-    pub fn frame_length(&self) -> u64 {
+    pub(super) fn frame_length(&self) -> u64 {
         self.frame_length
     }
 }
@@ -1576,17 +1583,17 @@ impl From<DesignMeshRecordIdentity> for DesignMeshRecordIdentityWire {
 
 /// An indexed mesh record with a fixed byte length.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignMeshFixedRecord<const LENGTH: u64> {
+pub(crate) struct DesignMeshFixedRecord<const LENGTH: u64> {
     class_tag: DesignClassTag,
     record_index: std::num::NonZeroU32,
     byte_offset: u64,
 }
 
 impl<const LENGTH: u64> DesignMeshFixedRecord<LENGTH> {
-    pub fn record_index(&self) -> u32 {
+    pub(crate) fn record_index(&self) -> u32 {
         self.record_index.get()
     }
-    pub fn byte_offset(&self) -> u64 {
+    pub(super) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
 }

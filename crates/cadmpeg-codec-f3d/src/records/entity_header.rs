@@ -289,7 +289,7 @@ impl DesignTimelineFrame {
         self.byte_offset
     }
     #[cfg(test)]
-    pub fn frame_length(&self) -> u64 {
+    pub(crate) fn frame_length(&self) -> u64 {
         self.frame_length
     }
     pub(crate) fn items(&self) -> &[Located<u64>] {
@@ -297,7 +297,7 @@ impl DesignTimelineFrame {
     }
 
     #[cfg(test)]
-    pub fn test_items(byte_offset: u64, items: Vec<Located<u64>>) -> Self {
+    pub(crate) fn test_items(byte_offset: u64, items: Vec<Located<u64>>) -> Self {
         let items = items
             .into_iter()
             .enumerate()

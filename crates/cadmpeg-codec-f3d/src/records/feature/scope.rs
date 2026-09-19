@@ -283,7 +283,7 @@ cadmpeg_core::named_optional_field!(
 /// Construction-recipe families admitted by a face selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ConstructionRecipeKind", into = "ConstructionRecipeKind")]
-pub enum DesignFaceRecipeKind {
+pub(crate) enum DesignFaceRecipeKind {
     Face,
     BoundedFace,
 }
@@ -315,7 +315,7 @@ impl From<DesignFaceRecipeKind> for ConstructionRecipeKind {
 
 /// Nonempty source spelling outside the specialized feature-family names.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct DesignNativeFeatureName(std::sync::Arc<str>);
+pub(crate) struct DesignNativeFeatureName(std::sync::Arc<str>);
 
 macro_rules! design_feature_kinds {
     (data { $($variant:ident => $lit:literal : $payload:ty),+ $(,)? }
@@ -325,7 +325,7 @@ macro_rules! design_feature_kinds {
         /// Source feature-family name stored on a parameter scope.
         #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
         #[serde(try_from = "String", into = "String")]
-        pub enum DesignFeatureKind {
+        pub(crate) enum DesignFeatureKind {
             $($variant,)+
             $($fixed,)+
             $($required,)+
@@ -336,7 +336,7 @@ macro_rules! design_feature_kinds {
 
         impl DesignFeatureKind {
             /// Source spelling written on the wire.
-            pub fn as_str(&self) -> &str {
+            pub(crate) fn as_str(&self) -> &str {
                 match self {
                     $(Self::$variant => $lit,)+
                     $(Self::$fixed => $fixed_lit,)+
@@ -376,7 +376,7 @@ macro_rules! design_feature_kinds {
         /// Source family and its construction carrier. An independently decoded
         /// scope envelope can lack specialized construction data.
         #[derive(Debug, Clone, PartialEq)]
-        pub enum DesignScopePayload {
+        pub(crate) enum DesignScopePayload {
             $($variant($payload),)+
             $($fixed($fixed_payload),)+
             $($required($required_payload),)+
@@ -545,15 +545,15 @@ const HISTORY_STATE_ID_BACK_OFFSET: u64 = 8;
     try_from = "DesignParameterScopeSerde",
     into = "DesignParameterScopeSerde"
 )]
-pub struct DesignParameterScope {
+pub(crate) struct DesignParameterScope {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Byte offset of the primary indexed record header.
     byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Shared logical record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte length from the primary header to the paired header.
     frame_length: u64,
     /// Byte offset of the kind's UTF-16LE code units.
@@ -561,7 +561,7 @@ pub struct DesignParameterScope {
     /// Byte offset of the state word before the length-prefixed kind name.
     history_state_id_offset: u64,
     /// One-based ordinal among scopes of the same feature family.
-    pub feature_ordinal: std::num::NonZeroU32,
+    pub(crate) feature_ordinal: std::num::NonZeroU32,
     /// Byte offset of `feature_ordinal`.
     feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
@@ -581,192 +581,192 @@ pub struct DesignParameterScope {
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unclosed_construction_operand_groups: Vec<u32>,
+    pub(crate) unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     paired_byte_offset: u64,
 }
 
 /// Unadmitted parameter-scope fields.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignParameterScopeDraft {
+pub(crate) struct DesignParameterScopeDraft {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    pub(crate) id: String,
     /// Byte offset of the primary indexed record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Shared logical record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte length from the primary header to the paired header.
-    pub frame_length: u64,
+    pub(crate) frame_length: u64,
     /// Byte offset of the kind's UTF-16LE code units.
-    pub kind_offset: u64,
+    pub(crate) kind_offset: u64,
     /// One-based ordinal among scopes of the same feature family.
-    pub feature_ordinal: std::num::NonZeroU32,
+    pub(crate) feature_ordinal: std::num::NonZeroU32,
     /// Byte offset of `feature_ordinal`.
-    pub feature_ordinal_offset: u64,
+    pub(crate) feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
-    pub history_state_id: Option<i64>,
+    pub(crate) history_state_id: Option<i64>,
     /// ASM delta-state identity immediately preceding this scope, when active.
-    pub previous_history_state_id: Option<i64>,
+    pub(crate) previous_history_state_id: Option<i64>,
     /// Byte offset of the encoded preceding-state identity, when present.
-    pub previous_history_state_id_offset: Option<u64>,
+    pub(crate) previous_history_state_id_offset: Option<u64>,
     /// Byte offset of the ordered reference-table count.
-    pub reference_count_offset: u64,
+    pub(crate) reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
-    pub reference_members: ReferenceRun<u32>,
+    pub(crate) reference_members: ReferenceRun<u32>,
     /// Family-specific construction records.
-    pub payload: DesignScopePayload,
+    pub(crate) payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
-    pub unclosed_construction_operand_groups: Vec<u32>,
+    pub(crate) unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
-    pub paired_byte_offset: u64,
+    pub(crate) paired_byte_offset: u64,
 }
 
 /// Wire form of [`DesignParameterScope`] with the historical flat field set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct DesignParameterScopeSerde {
     /// Globally unique deterministic identifier for this native record.
-    pub id: String,
+    id: String,
     /// Byte offset of the primary indexed record header.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    class_tag: String,
     /// Shared logical record identity.
-    pub record_index: u32,
+    record_index: u32,
     /// Byte length from the primary header to the paired header.
-    pub frame_length: u64,
+    frame_length: u64,
     /// Source feature-family name.
-    pub kind: DesignFeatureKind,
+    kind: DesignFeatureKind,
     /// Byte offset of the kind's UTF-16LE code units.
-    pub kind_offset: u64,
+    kind_offset: u64,
     /// Extrude prologue, fixed parameters, and profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "extrude_scope_is_absent")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
-    pub extrude: Option<DesignExtrudeScope>,
+    extrude: Option<DesignExtrudeScope>,
     /// Coil discriminators, placement, and transform.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "coil_scope_is_absent")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
-    pub coil: Option<DesignCoilScope>,
+    coil: Option<DesignCoilScope>,
     /// One-based ordinal among scopes of the same feature family.
-    pub feature_ordinal: u32,
+    feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.
-    pub feature_ordinal_offset: u64,
+    feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_history_state_id"
     )]
-    pub history_state_id: Option<i64>,
+    history_state_id: Option<i64>,
     /// Byte offset of the encoded history-state identity or null sentinel.
-    pub history_state_id_offset: u64,
+    history_state_id_offset: u64,
     /// ASM delta-state identity immediately preceding this scope, when active.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_previous_history_state_id"
     )]
-    pub previous_history_state_id: Option<i64>,
+    previous_history_state_id: Option<i64>,
     /// Byte offset of the encoded preceding-state identity, when present.
     #[serde(
         default,
         serialize_with = "serialize_absent_u64_offset",
         deserialize_with = "deserialize_absent_u64_offset"
     )]
-    pub previous_history_state_id_offset: Option<u64>,
+    previous_history_state_id_offset: Option<u64>,
     /// Byte offset of the ordered reference-table count.
-    pub reference_count_offset: u64,
+    reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
-    pub reference_members: Vec<u32>,
+    reference_members: Vec<u32>,
     /// Byte offsets parallel to `reference_members`.
-    pub reference_member_offsets: Vec<u64>,
+    reference_member_offsets: Vec<u64>,
     /// Exact solid-primitive construction carried by this scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_solid_primitive"
     )]
-    pub solid_primitive: Option<DesignSolidPrimitive>,
+    solid_primitive: Option<DesignSolidPrimitive>,
     /// Exact fixed-form construction carried by a direct-face scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_direct_face_operation"
     )]
-    pub direct_face_operation: Option<DesignDirectFaceOperation>,
+    direct_face_operation: Option<DesignDirectFaceOperation>,
     /// Exact rigid transform carried by a Move scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_move_operation"
     )]
-    pub move_operation: Option<DesignMoveOperation>,
+    move_operation: Option<DesignMoveOperation>,
     /// Exact uniform body-scale construction carried by a Scale scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_scale_operation"
     )]
-    pub scale_operation: Option<DesignScaleOperation>,
+    scale_operation: Option<DesignScaleOperation>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_surface_stitch_operation"
     )]
-    pub surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
+    surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
     /// Exact distance, method, and boundary records carried by a `SurfaceExtend` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_surface_extend_operation"
     )]
-    pub surface_extend_operation: Option<DesignSurfaceExtendOperation>,
+    surface_extend_operation: Option<DesignSurfaceExtendOperation>,
     /// Exact distance and boundary records carried by a `SurfaceOffset` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_surface_offset_operation"
     )]
-    pub surface_offset_operation: Option<DesignSurfaceOffsetOperation>,
+    surface_offset_operation: Option<DesignSurfaceOffsetOperation>,
     /// Exact mode, parameter, and selection records carried by a `SurfaceRuled` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_ruled_surface_operation"
     )]
-    pub ruled_surface_operation: Option<DesignRuledSurfaceOperation>,
+    ruled_surface_operation: Option<DesignRuledSurfaceOperation>,
     /// `BaseFlange` operation and sketch profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "base_flange_scope_is_absent")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
-    pub base_flange: Option<DesignBaseFlangeScope>,
+    base_flange: Option<DesignBaseFlangeScope>,
     /// Per-boundary-component settings carried by a `SurfacePatch` scope, in
     /// scope reference order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_patch_boundaries: Vec<DesignSurfacePatchBoundary>,
+    surface_patch_boundaries: Vec<DesignSurfacePatchBoundary>,
     /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_edge_flange_operation"
     )]
-    pub edge_flange_operation: Option<DesignEdgeFlangeOperation>,
+    edge_flange_operation: Option<DesignEdgeFlangeOperation>,
     /// Exact edge, parameter, and settings records carried by a `Hem` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_hem_operation"
     )]
-    pub hem_operation: Option<DesignHemOperation>,
+    hem_operation: Option<DesignHemOperation>,
 
     /// Exact fixed scalar lanes carried by a Fillet scope.
     #[serde(
@@ -774,120 +774,120 @@ struct DesignParameterScopeSerde {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_fixed_fillet_parameters"
     )]
-    pub fixed_fillet_parameters: Option<DesignFixedFilletParameters>,
+    fixed_fillet_parameters: Option<DesignFixedFilletParameters>,
     /// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_fixed_chamfer_parameters"
     )]
-    pub fixed_chamfer_parameters: Option<DesignFixedChamferParameters>,
+    fixed_chamfer_parameters: Option<DesignFixedChamferParameters>,
     /// Path-feature construction and Sweep sketch profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "path_feature_scope_is_absent")]
     #[serde(deserialize_with = "deserialize_flattened_scope")]
-    pub path_feature: Option<DesignPathFeatureWire>,
+    path_feature: Option<DesignPathFeatureWire>,
     /// Exact Boolean construction carried by a `Combine` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_combine_operation"
     )]
-    pub combine_operation: Option<DesignCombineOperation>,
+    combine_operation: Option<DesignCombineOperation>,
     /// Exact form and size construction carried by a `Thread` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_thread_construction"
     )]
-    pub thread_construction: Option<DesignThreadConstruction>,
+    thread_construction: Option<DesignThreadConstruction>,
     /// Exact signed-angle construction carried by a `Draft` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_draft_operation"
     )]
-    pub draft_operation: Option<DesignDraftOperation>,
+    draft_operation: Option<DesignDraftOperation>,
     /// Exact construction carried by a circular-pattern scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_circular_pattern_construction"
     )]
-    pub circular_pattern_construction: Option<DesignCircularPatternConstruction>,
+    circular_pattern_construction: Option<DesignCircularPatternConstruction>,
     /// Exact scalar lanes carried by a rectangular-pattern scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_rectangular_pattern_construction"
     )]
-    pub rectangular_pattern_construction: Option<DesignRectangularPatternConstruction>,
+    rectangular_pattern_construction: Option<DesignRectangularPatternConstruction>,
     /// Exact alignment scalars carried by an `Assemble` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_assembly_alignment"
     )]
-    pub assembly_alignment: Option<DesignAssemblyAlignment>,
+    assembly_alignment: Option<DesignAssemblyAlignment>,
     /// Exact external-occurrence construction carried by a `Component Insert` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_component_insert_construction"
     )]
-    pub component_insert_construction: Option<DesignComponentInsertConstruction>,
+    component_insert_construction: Option<DesignComponentInsertConstruction>,
     /// Exact local-occurrence construction carried by a `DerivedInstance` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_derived_instance_construction"
     )]
-    pub derived_instance_construction: Option<DesignDerivedInstanceConstruction>,
+    derived_instance_construction: Option<DesignDerivedInstanceConstruction>,
     /// Exact local-component construction carried by a legacy `CopyPaste` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_copy_paste_component_operation"
     )]
-    pub copy_paste_component_operation: Option<DesignCopyPasteComponentOperation>,
+    copy_paste_component_operation: Option<DesignCopyPasteComponentOperation>,
     /// Exact construction carried by a Mirror scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_mirror_construction"
     )]
-    pub mirror_construction: Option<DesignMirrorConstruction>,
+    mirror_construction: Option<DesignMirrorConstruction>,
     /// Exact source-to-copy body mapping carried by a `CopyPasteBodies` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_copy_paste_bodies_operation"
     )]
-    pub copy_paste_bodies_operation: Option<DesignCopyPasteBodiesOperation>,
+    copy_paste_bodies_operation: Option<DesignCopyPasteBodiesOperation>,
     /// Exact result-body references carried by a `Base Feature` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_base_feature_construction"
     )]
-    pub base_feature_construction: Option<DesignBaseFeatureConstruction>,
+    base_feature_construction: Option<DesignBaseFeatureConstruction>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_work_plane_frame")]
-    pub work_plane_frame: Option<DesignWorkPlaneTransform>,
+    work_plane_frame: Option<DesignWorkPlaneTransform>,
     /// Exact two-point construction carried by a `WorkAxis` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_work_axis_construction"
     )]
-    pub work_axis_construction: Option<DesignWorkAxisConstruction>,
+    work_axis_construction: Option<DesignWorkAxisConstruction>,
     /// Exact row-major local-to-model frame owned by a `JointOrigin` scope.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_joint_origin_frame")]
-    pub joint_origin_frame: Option<DesignJointOriginTransform>,
+    joint_origin_frame: Option<DesignJointOriginTransform>,
 
     /// Exact solved construction carried by a `WorkPoint` scope.
     #[serde(
@@ -895,28 +895,28 @@ struct DesignParameterScopeSerde {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_work_point_construction"
     )]
-    pub work_point_construction: Option<DesignWorkPointConstruction>,
+    work_point_construction: Option<DesignWorkPointConstruction>,
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unclosed_construction_operand_groups: Vec<u32>,
+    unclosed_construction_operand_groups: Vec<u32>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_hole_construction"
     )]
-    pub hole_construction: Option<DesignHoleConstruction>,
+    hole_construction: Option<DesignHoleConstruction>,
 
     /// Sketch-module entity bound to this sketch scope.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_sketch_entity")]
-    pub sketch_entity: Option<DesignSketchEntityBinding>,
+    sketch_entity: Option<DesignSketchEntityBinding>,
     /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: String,
+    paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
-    pub paired_byte_offset: u64,
+    paired_byte_offset: u64,
 }
 
 // Deserialize the payload itself: flattened Option<T> suppresses T's errors.
@@ -1140,54 +1140,54 @@ fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureWire>) ->
 
 /// BaseFlange-specific records carried by a `BaseFlange` parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct DesignBaseFlangeScope {
+pub(crate) struct DesignBaseFlangeScope {
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_base_flange_operation"
     )]
-    pub base_flange_operation: Option<DesignBaseFlangeOperation>,
+    pub(crate) base_flange_operation: Option<DesignBaseFlangeOperation>,
     /// Sketch-profile operand carried by a `BaseFlange` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_base_flange_profile"
     )]
-    pub base_flange_profile: Option<DesignSketchProfileOperand>,
+    pub(crate) base_flange_profile: Option<DesignSketchProfileOperand>,
 }
 
 /// Extrude-specific records carried by an Extrude parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct DesignExtrudeScope {
+pub(crate) struct DesignExtrudeScope {
     /// Extrude fixed prologue.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_extrude_prologue"
     )]
-    pub extrude_prologue: Option<DesignExtrudePrologue>,
+    pub(crate) extrude_prologue: Option<DesignExtrudePrologue>,
     /// Exact fixed scalar lanes carried by an Extrude scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_fixed_extrude_parameters"
     )]
-    pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
+    pub(crate) fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
     /// Profile operand carried by an Extrude scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_extrude_profile"
     )]
-    pub extrude_profile: Option<DesignSketchProfileOperand>,
+    pub(crate) extrude_profile: Option<DesignSketchProfileOperand>,
 }
 
 /// Sweep construction and its independently decoded profile operand.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct DesignSweepScope {
-    pub construction: Option<DesignSweepConstruction>,
-    pub sweep_profile: Option<DesignSketchProfileOperand>,
+pub(crate) struct DesignSweepScope {
+    pub(crate) construction: Option<DesignSweepConstruction>,
+    pub(crate) sweep_profile: Option<DesignSketchProfileOperand>,
 }
 
 impl From<DesignPathFeatureConstruction> for DesignScopePayload {
@@ -1213,14 +1213,14 @@ struct DesignPathFeatureWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_path_feature_construction"
     )]
-    pub path_feature_construction: Option<DesignPathFeatureConstruction>,
+    path_feature_construction: Option<DesignPathFeatureConstruction>,
     /// Sketch-profile operand carried by a `Sweep` scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_sweep_profile"
     )]
-    pub sweep_profile: Option<DesignSketchProfileOperand>,
+    sweep_profile: Option<DesignSketchProfileOperand>,
 }
 
 /// Sketch-module entity named by a sketch parameter scope.
@@ -1229,11 +1229,11 @@ struct DesignPathFeatureWire {
     try_from = "DesignSketchEntityBindingWire",
     into = "DesignSketchEntityBindingWire"
 )]
-pub struct DesignSketchEntityBinding {
+pub(crate) struct DesignSketchEntityBinding {
     /// Full Design entity id of a sketch scope.
-    pub entity_id: DesignEntityId,
+    pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the sketch entity suffix.
-    pub entity_reference_offset: u64,
+    pub(crate) entity_reference_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1276,49 +1276,49 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
 
 /// Explicit 16-f64 frame carried by a `WorkPlane` scope.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct DesignWorkPlaneTransform {
+pub(crate) struct DesignWorkPlaneTransform {
     /// Exact row-major local-to-model frame.
-    pub work_plane_transform: SketchPlacementMatrix,
+    pub(crate) work_plane_transform: SketchPlacementMatrix,
     /// Byte offset of the explicit 16-f64 matrix.
-    pub work_plane_transform_offset: u64,
+    pub(crate) work_plane_transform_offset: u64,
     /// Construction record referenced by the frame, when present.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference: Option<DesignWorkPlaneReference>,
+    pub(crate) reference: Option<DesignWorkPlaneReference>,
     /// Exact construction rule carried by this `WorkPlane` frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work_plane_construction: Option<DesignWorkPlaneConstruction>,
+    pub(crate) work_plane_construction: Option<DesignWorkPlaneConstruction>,
 }
 
 /// Construction record named by a `WorkPlane` frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignWorkPlaneReference {
+pub(crate) struct DesignWorkPlaneReference {
     /// Construction record referenced by the `WorkPlane` frame.
-    pub work_plane_reference: u32,
+    pub(crate) work_plane_reference: u32,
     /// Byte offset of the `WorkPlane` construction reference.
-    pub work_plane_reference_offset: u64,
+    pub(crate) work_plane_reference_offset: u64,
 }
 
 /// Explicit 16-f64 frame carried by a `JointOrigin` scope.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct DesignJointOriginTransform {
+pub(crate) struct DesignJointOriginTransform {
     /// Exact row-major local-to-model frame.
-    pub joint_origin_transform: SketchPlacementMatrix,
+    pub(crate) joint_origin_transform: SketchPlacementMatrix,
     /// Byte offset of the explicit 16-f64 matrix.
-    pub joint_origin_transform_offset: u64,
+    pub(crate) joint_origin_transform_offset: u64,
     /// Construction record referenced by the frame, when present.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference: Option<DesignJointOriginReference>,
+    pub(crate) reference: Option<DesignJointOriginReference>,
 }
 
 /// Construction record named by a `JointOrigin` frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignJointOriginReference {
+pub(crate) struct DesignJointOriginReference {
     /// Construction record referenced by the `JointOrigin` frame.
-    pub joint_origin_reference: u32,
+    pub(crate) joint_origin_reference: u32,
     /// Byte offset of the `JointOrigin` construction reference.
-    pub joint_origin_reference_offset: u64,
+    pub(crate) joint_origin_reference_offset: u64,
 }
 
 impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
@@ -2195,7 +2195,7 @@ impl DesignParameterScope {
 
 impl DesignParameterScope {
     /// Byte offset of the state word before the length-prefixed kind name.
-    pub fn history_state_id_offset(&self) -> u64 {
+    fn history_state_id_offset(&self) -> u64 {
         self.history_state_id_offset
     }
 
@@ -2209,7 +2209,7 @@ impl DesignParameterScope {
         self.payload.kind_name()
     }
 
-    pub(crate) fn extrude(&self) -> Option<&DesignExtrudeScope> {
+    fn extrude(&self) -> Option<&DesignExtrudeScope> {
         match &self.payload {
             DesignScopePayload::Extrude(value)
             | DesignScopePayload::Extrusion(value)
@@ -2228,7 +2228,7 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn coil(&self) -> Option<&DesignCoilScope> {
+    fn coil(&self) -> Option<&DesignCoilScope> {
         match &self.payload {
             DesignScopePayload::SpirePrimitive(value)
             | DesignScopePayload::CoilPrimitive(value) => value.as_ref(),
@@ -2236,7 +2236,7 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn base_flange(&self) -> Option<&DesignBaseFlangeScope> {
+    fn base_flange(&self) -> Option<&DesignBaseFlangeScope> {
         match &self.payload {
             DesignScopePayload::BaseFlange(value) => value.as_ref(),
             _ => None,

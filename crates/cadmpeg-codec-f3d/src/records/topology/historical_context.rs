@@ -9,64 +9,64 @@ use serde::Serialize;
 /// Stable surface-support relation from an active face candidate to the
 /// topology preceding its owning feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignHistoricalFaceSupportContext {
+pub(crate) struct DesignHistoricalFaceSupportContext {
     /// Stable slot of the active face candidate.
-    pub active_face_slot: i64,
+    pub(crate) active_face_slot: i64,
     /// Invariant stable surface-carrier slot.
-    pub surface_slot: i64,
+    pub(crate) surface_slot: i64,
     /// Preceding face slots owning the surface carrier.
-    pub preceding_face_slots: Vec<i64>,
+    pub(crate) preceding_face_slots: Vec<i64>,
     /// Ordered loop boundaries of the preceding carrier owners.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
+    pub(crate) preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Preceding owners deleted or updated by the feature transition.
-    pub changed_preceding_face_slots: Vec<i64>,
+    pub(crate) changed_preceding_face_slots: Vec<i64>,
 }
 
 /// Historical edge-boundary context for one ordered edge-recipe prefix reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignEdgeRecipeReferenceContext {
+pub(crate) struct DesignEdgeRecipeReferenceContext {
     /// Zero-based position in the edge recipe's prefix reference sequence.
-    pub reference_ordinal: u32,
+    pub(crate) reference_ordinal: u32,
     /// Referenced faces present in the owning feature's result topology.
-    pub result_faces: Vec<FaceId>,
+    pub(crate) result_faces: Vec<FaceId>,
     /// Ordered loop boundaries of each referenced result face.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub result_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
+    pub(crate) result_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Stable result edge slots shared by the referenced-face boundaries and
     /// the primary candidate-face boundaries.
-    pub result_shared_edge_slots: Vec<i64>,
+    pub(crate) result_shared_edge_slots: Vec<i64>,
     /// Referenced faces present in the immediately preceding ASM topology.
-    pub preceding_faces: Vec<FaceId>,
+    pub(crate) preceding_faces: Vec<FaceId>,
     /// Ordered loop boundaries of each referenced preceding face.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
+    pub(crate) preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Preceding faces uniquely owning the surface carriers of the referenced
     /// result faces.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_support_face_slots: Vec<i64>,
+    pub(crate) preceding_support_face_slots: Vec<i64>,
     /// Ordered loop boundaries of the uniquely matched preceding support
     /// faces.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_support_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
+    pub(crate) preceding_support_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Stable edge slots shared by the referenced-face boundaries and the
     /// primary candidate-face boundaries.
-    pub shared_edge_slots: Vec<i64>,
+    pub(crate) shared_edge_slots: Vec<i64>,
     /// Shared edge slots deleted or updated by the owning feature transition.
-    pub changed_shared_edge_slots: Vec<i64>,
+    pub(crate) changed_shared_edge_slots: Vec<i64>,
     /// Changed primary-boundary edges belonging to either a directly
     /// persistent referenced face or its unique preceding surface support.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changed_reference_edge_slots: Vec<i64>,
+    pub(crate) changed_reference_edge_slots: Vec<i64>,
 }
 
 /// Ordered loop topology retained for one historical face.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignHistoricalFaceBoundaryContext {
+pub(crate) struct DesignHistoricalFaceBoundaryContext {
     /// Stable ASM face slot.
-    pub face_slot: i64,
+    pub(crate) face_slot: i64,
     /// Face loops in their serialized membership order.
-    pub loops: Vec<DesignHistoricalFaceLoopContext>,
+    pub(crate) loops: Vec<DesignHistoricalFaceLoopContext>,
 }
 
 /// Ordered topology and available geometry of one historical face loop.
@@ -75,14 +75,14 @@ pub struct DesignHistoricalFaceBoundaryContext {
     try_from = "DesignHistoricalFaceLoopWire",
     into = "DesignHistoricalFaceLoopWire"
 )]
-pub struct DesignHistoricalFaceLoopContext {
-    pub loop_slot: i64,
-    pub boundary: DesignHistoricalLoopBoundary,
+pub(crate) struct DesignHistoricalFaceLoopContext {
+    pub(crate) loop_slot: i64,
+    pub(crate) boundary: DesignHistoricalLoopBoundary,
 }
 
 /// Complete runs of the available loop member bindings.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DesignHistoricalLoopBoundary {
+pub(crate) enum DesignHistoricalLoopBoundary {
     Coedges(Vec<DesignHistoricalLoopCoedge>),
     Vertices(Vec<DesignHistoricalLoopVertex>),
     Points(Vec<DesignHistoricalLoopPoint>),
@@ -90,27 +90,27 @@ pub enum DesignHistoricalLoopBoundary {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignHistoricalLoopCoedge {
-    pub coedge_slot: i64,
-    pub edge_slot: i64,
+pub(crate) struct DesignHistoricalLoopCoedge {
+    pub(crate) coedge_slot: i64,
+    pub(crate) edge_slot: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignHistoricalLoopVertex {
-    pub coedge: DesignHistoricalLoopCoedge,
-    pub vertex_slot: i64,
+pub(crate) struct DesignHistoricalLoopVertex {
+    pub(crate) coedge: DesignHistoricalLoopCoedge,
+    pub(crate) vertex_slot: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignHistoricalLoopPoint {
-    pub vertex: DesignHistoricalLoopVertex,
-    pub point_slot: i64,
+pub(crate) struct DesignHistoricalLoopPoint {
+    pub(crate) vertex: DesignHistoricalLoopVertex,
+    pub(crate) point_slot: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignHistoricalLoopPosition {
-    pub point: DesignHistoricalLoopPoint,
-    pub position: Point3,
+pub(crate) struct DesignHistoricalLoopPosition {
+    pub(crate) point: DesignHistoricalLoopPoint,
+    pub(crate) position: Point3,
 }
 
 impl DesignHistoricalLoopBoundary {
@@ -261,30 +261,30 @@ impl From<DesignHistoricalFaceLoopContext> for DesignHistoricalFaceLoopWire {
 
 /// Historical topology surrounding one candidate edge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignHistoricalEdgeContext {
+pub(crate) struct DesignHistoricalEdgeContext {
     /// Stable ASM edge slot.
-    pub edge_slot: i64,
+    pub(crate) edge_slot: i64,
     /// Incident coedge uses in stable coedge-slot order.
-    pub incident_loops: Vec<DesignHistoricalEdgeLoopContext>,
+    pub(crate) incident_loops: Vec<DesignHistoricalEdgeLoopContext>,
 }
 
 /// One historical coedge use of a candidate edge and its ordered loop neighbors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignHistoricalEdgeLoopContext {
+pub(crate) struct DesignHistoricalEdgeLoopContext {
     /// Stable ASM coedge slot using the candidate edge.
-    pub coedge_slot: i64,
+    pub(crate) coedge_slot: i64,
     /// Stable ASM owner-loop slot.
-    pub loop_slot: i64,
+    pub(crate) loop_slot: i64,
     /// Stable ASM owner-face slot.
-    pub face_slot: i64,
+    pub(crate) face_slot: i64,
     /// Number of coedges in the owner loop.
-    pub boundary_edge_count: u32,
+    pub(crate) boundary_edge_count: u32,
     /// Zero-based position of this coedge in the owner loop's ordered membership.
-    pub coedge_ordinal: u32,
+    pub(crate) coedge_ordinal: u32,
     /// Stable edge slot used by the preceding coedge.
-    pub previous_edge_slot: i64,
+    pub(crate) previous_edge_slot: i64,
     /// Stable edge slot used by the following coedge.
-    pub next_edge_slot: i64,
+    pub(crate) next_edge_slot: i64,
 }
 
 #[cfg(test)]

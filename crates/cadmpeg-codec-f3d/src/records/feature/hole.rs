@@ -45,9 +45,9 @@ cadmpeg_core::named_optional_field!(
 );
 /// Tangent-point payload of a version-four Hole point carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignHoleTangentPoint {
-    pub prefix: u8,
-    pub data: Located<[f64; 3]>,
+pub(crate) struct DesignHoleTangentPoint {
+    pub(crate) prefix: u8,
+    pub(crate) data: Located<[f64; 3]>,
 }
 
 /// Exact point-and-direction construction carried by a `Hole` scope.
@@ -61,34 +61,34 @@ pub struct DesignHoleTangentPoint {
     try_from = "DesignHoleConstructionWire",
     into = "DesignHoleConstructionWire"
 )]
-pub struct DesignHoleConstruction {
+pub(crate) struct DesignHoleConstruction {
     /// Point-data record selected by the Hole scope.
-    pub point_record_index: u32,
+    pub(crate) point_record_index: u32,
     /// Byte offset of the point-data record header.
-    pub point_record_byte_offset: u64,
+    pub(crate) point_record_byte_offset: u64,
     /// Hole entry position in source model centimetres.
-    pub position: [f64; 3],
+    pub(crate) position: [f64; 3],
     /// Byte offset of the first position coordinate.
-    pub position_offset: u64,
+    pub(crate) position_offset: u64,
     /// Directed drilling vector in model space.
-    pub direction: [f64; 3],
+    pub(crate) direction: [f64; 3],
     /// Byte offset of the first direction component.
-    pub direction_offset: u64,
+    pub(crate) direction_offset: u64,
     /// Two point-construction parameters carried by the point-data base level.
-    pub point_parameters: [f64; 2],
+    pub(crate) point_parameters: [f64; 2],
     /// Byte offsets of the two point-construction parameters.
-    pub point_parameter_offsets: [u64; 2],
+    pub(crate) point_parameter_offsets: [u64; 2],
     /// `refType` construction rule carried by the point-data record.
-    pub reference_type: u32,
+    pub(crate) reference_type: u32,
     /// Byte offset of `reference_type`.
-    pub reference_type_offset: u64,
+    pub(crate) reference_type_offset: u64,
     /// Version-four tangent-point data with its prefix and source location.
-    pub tangent_point_data: Option<DesignHoleTangentPoint>,
+    pub(crate) tangent_point_data: Option<DesignHoleTangentPoint>,
     /// Located targets of the counted input-reference run.
-    pub input_records: Vec<Located<u32>>,
+    pub(crate) input_records: Vec<Located<u32>>,
     /// Direct persistent face selection carried by the Hole scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub face_selection: Option<DesignHoleFaceSelection>,
+    pub(crate) face_selection: Option<DesignHoleFaceSelection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -227,38 +227,38 @@ impl From<DesignHoleConstruction> for DesignHoleConstructionWire {
     try_from = "DesignHoleFaceSelectionWire",
     into = "DesignHoleFaceSelectionWire"
 )]
-pub struct DesignHoleFaceSelection {
+pub(crate) struct DesignHoleFaceSelection {
     /// Indexed record carrying the persistent selection envelope.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the selection envelope header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Nested indexed record carrying the persistent identity.
-    pub identity_record_index: u32,
+    pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
-    pub identity_record_offset: u64,
+    pub(crate) identity_record_offset: u64,
     /// Primary persistent identity of the selected face.
-    pub primary_identity: u64,
+    pub(crate) primary_identity: u64,
     /// Byte offset of the primary persistent identity.
-    pub primary_identity_offset: u64,
+    pub(crate) primary_identity_offset: u64,
     /// Secondary identity and any dependent curve identity, with their source locations.
-    pub secondary: Option<DesignSecondaryIdentity<Located<u64>>>,
+    pub(crate) secondary: Option<DesignSecondaryIdentity<Located<u64>>>,
     /// History-qualified face proofs for the primary identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
+    pub(crate) historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
     /// Indexed record immediately following the selection envelope.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the following indexed record.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

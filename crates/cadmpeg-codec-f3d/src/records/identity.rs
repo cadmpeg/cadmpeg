@@ -11,14 +11,14 @@ pub(super) const IDENTITY_MATRIX: [[f64; 4]; 4] = [
 
 /// A secondary selection identity and its optional curve identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct DesignSecondaryIdentity<Id> {
+pub(crate) struct DesignSecondaryIdentity<Id> {
     #[serde(rename = "secondary_identity")]
-    pub identity: Id,
+    pub(crate) identity: Id,
     #[serde(
         rename = "curve_secondary_identity",
         skip_serializing_if = "Option::is_none"
     )]
-    pub curve_identity: Option<Id>,
+    pub(crate) curve_identity: Option<Id>,
 }
 
 impl<Id> DesignSecondaryIdentity<Id> {
@@ -39,7 +39,7 @@ impl<Id> DesignSecondaryIdentity<Id> {
 
 /// Design entity identity with a decimal u64 suffix after its final underscore.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignEntityId {
+pub(crate) struct DesignEntityId {
     pub(super) text: String,
     suffix: u64,
 }
@@ -62,27 +62,27 @@ impl TryFrom<String> for DesignEntityId {
 }
 
 impl DesignEntityId {
-    pub fn from_parts(prefix: &str, suffix: u64) -> Self {
+    pub(crate) fn from_parts(prefix: &str, suffix: u64) -> Self {
         Self {
             text: format!("{prefix}_{suffix}"),
             suffix,
         }
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.text
     }
 
-    pub fn suffix(&self) -> u64 {
+    pub(crate) fn suffix(&self) -> u64 {
         self.suffix
     }
 }
 
 /// A source value and the byte offset of its encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Located<T, O = u64> {
-    pub value: T,
-    pub offset: O,
+pub(crate) struct Located<T, O = u64> {
+    pub(crate) value: T,
+    pub(crate) offset: O,
 }
 
 impl<T, O> Located<T, O> {
@@ -107,12 +107,12 @@ enum ReferenceRunData<T, O> {
 
 /// An ordered run whose encoding locations are either complete or absent.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReferenceRun<T, O = u64>(ReferenceRunData<T, O>);
+pub(crate) struct ReferenceRun<T, O = u64>(ReferenceRunData<T, O>);
 
 impl<T, O> ReferenceRun<T, O> {
     /// A run whose values carry no encoding locations. The empty run has no
     /// locations in either wire form, so it is always `Located(vec![])`.
-    pub fn unlocated(values: Vec<T>) -> Self {
+    pub(crate) fn unlocated(values: Vec<T>) -> Self {
         if values.is_empty() {
             Self(ReferenceRunData::Located(Vec::new()))
         } else {
@@ -121,7 +121,7 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     /// A run whose values each carry an encoding location.
-    pub fn located(rows: Vec<Located<T, O>>) -> Self {
+    pub(crate) fn located(rows: Vec<Located<T, O>>) -> Self {
         Self(ReferenceRunData::Located(rows))
     }
 
@@ -132,14 +132,14 @@ impl<T, O> ReferenceRun<T, O> {
         }
     }
 
-    pub fn values(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone {
+    pub(crate) fn values(&self) -> impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone {
         (0..self.len()).map(|index| match &self.0 {
             ReferenceRunData::Unlocated(values) => &values[index],
             ReferenceRunData::Located(values) => &values[index].value,
         })
     }
 
-    pub fn values_in(
+    pub(crate) fn values_in(
         &self,
         range: std::ops::Range<usize>,
     ) -> Option<impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone> {
@@ -153,7 +153,7 @@ impl<T, O> ReferenceRun<T, O> {
         )
     }
 
-    pub fn values_array<const N: usize>(&self) -> Option<[&T; N]> {
+    pub(crate) fn values_array<const N: usize>(&self) -> Option<[&T; N]> {
         match &self.0 {
             ReferenceRunData::Unlocated(values) => {
                 let values: &[T; N] = values.as_slice().try_into().ok()?;
@@ -166,7 +166,9 @@ impl<T, O> ReferenceRun<T, O> {
         }
     }
 
-    pub fn offsets(&self) -> impl ExactSizeIterator<Item = &O> + DoubleEndedIterator + Clone {
+    pub(crate) fn offsets(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &O> + DoubleEndedIterator + Clone {
         let rows: &[Located<T, O>] = match &self.0 {
             ReferenceRunData::Unlocated(_) => &[],
             ReferenceRunData::Located(rows) => rows,
@@ -175,7 +177,7 @@ impl<T, O> ReferenceRun<T, O> {
     }
 
     #[cfg(test)]
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
+    pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut T> {
         let (unlocated, located): (&mut [T], &mut [Located<T, O>]) = match &mut self.0 {
             ReferenceRunData::Unlocated(values) => (values, &mut []),
             ReferenceRunData::Located(values) => (&mut [], values),
@@ -185,14 +187,14 @@ impl<T, O> ReferenceRun<T, O> {
             .chain(located.iter_mut().map(|row| &mut row.value))
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         match &self.0 {
             ReferenceRunData::Unlocated(values) => values.len(),
             ReferenceRunData::Located(values) => values.len(),
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         match &self.0 {
             ReferenceRunData::Unlocated(values) => values.is_empty(),
             ReferenceRunData::Located(values) => values.is_empty(),
@@ -234,58 +236,58 @@ impl<T, O> ReferenceRun<T, O> {
 
 /// A vector that always holds at least one element.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NonEmptyVec<T>(Vec<T>);
+pub(super) struct NonEmptyVec<T>(Vec<T>);
 
 impl<T> NonEmptyVec<T> {
     /// Wrap `items`, or return `None` when `items` is empty.
-    pub fn new(items: Vec<T>) -> Option<Self> {
+    pub(super) fn new(items: Vec<T>) -> Option<Self> {
         (!items.is_empty()).then_some(Self(items))
     }
 
     /// Borrow the elements in order.
-    pub fn as_slice(&self) -> &[T] {
+    pub(super) fn as_slice(&self) -> &[T] {
         &self.0
     }
 
     /// Take the elements in order.
-    pub fn into_vec(self) -> Vec<T> {
+    pub(super) fn into_vec(self) -> Vec<T> {
         self.0
     }
 }
 
 /// A non-empty half-open interval of source bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NonEmptyByteSpan {
+pub(crate) struct NonEmptyByteSpan {
     start: u64,
     end: u64,
 }
 
 impl NonEmptyByteSpan {
-    pub fn new(start: u64, end: u64) -> Option<Self> {
+    pub(crate) fn new(start: u64, end: u64) -> Option<Self> {
         if start >= end {
             return None;
         }
         Some(Self { start, end })
     }
 
-    pub fn start(&self) -> u64 {
+    pub(crate) fn start(&self) -> u64 {
         self.start
     }
 
-    pub fn end(&self) -> u64 {
+    pub(crate) fn end(&self) -> u64 {
         self.end
     }
 
-    pub fn byte_len(&self) -> u64 {
+    pub(super) fn byte_len(&self) -> u64 {
         self.end - self.start
     }
 }
 
 /// A value with its source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RecordedValue<T> {
-    pub value: T,
-    pub offset: u64,
+pub(crate) struct RecordedValue<T> {
+    pub(crate) value: T,
+    pub(crate) offset: u64,
 }
 
 impl<T> RecordedValue<T> {
@@ -305,7 +307,7 @@ impl<T> RecordedValue<T> {
 
 /// A value that its record form may leave without a source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MaybeRecordedValue<T> {
+pub(crate) enum MaybeRecordedValue<T> {
     /// The form stores the value at a known offset.
     Located(RecordedValue<T>),
     /// The form fixes the value in its envelope and stores no member for it.
@@ -314,7 +316,7 @@ pub enum MaybeRecordedValue<T> {
 
 impl<T: Copy> MaybeRecordedValue<T> {
     /// The value, located or not.
-    pub fn value(&self) -> T {
+    pub(super) fn value(&self) -> T {
         match self {
             Self::Located(recorded) => recorded.value,
             Self::Unlocated(value) => *value,
@@ -322,7 +324,7 @@ impl<T: Copy> MaybeRecordedValue<T> {
     }
 
     /// The source encoding location, when the form stores one.
-    pub fn offset(&self) -> Option<u64> {
+    pub(super) fn offset(&self) -> Option<u64> {
         match self {
             Self::Located(recorded) => Some(recorded.offset),
             Self::Unlocated(_) => None,
@@ -362,11 +364,11 @@ pub(super) fn deserialize_absent_u64_offset<'de, D: Deserializer<'de>>(
 /// A finite row-major affine placement.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
-pub struct DesignAffineTransform(pub(super) [[f64; 4]; 4]);
+pub(super) struct DesignAffineTransform(pub(super) [[f64; 4]; 4]);
 
 impl DesignAffineTransform {
     /// Four row-major rows.
-    pub fn rows(self) -> [[f64; 4]; 4] {
+    pub(super) fn rows(self) -> [[f64; 4]; 4] {
         self.0
     }
 }

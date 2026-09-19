@@ -17,29 +17,29 @@ use std::num::NonZeroU32;
     try_from = "DesignExtrudeSelectionGroupWire",
     into = "DesignExtrudeSelectionGroupWire"
 )]
-pub struct DesignExtrudeSelectionGroup {
+pub(crate) struct DesignExtrudeSelectionGroup {
     /// Globally unique deterministic identifier for this native group.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning Extrude parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Primary indexed-record identity named by the scope table.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the primary indexed-record header.
     byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Ordered indexed selection-member records.
     members: Vec<Located<u32>>,
     /// Opaque nonzero u32 repeated around the f64 scalar.
-    pub opaque_index: NonZeroU32,
+    pub(crate) opaque_index: NonZeroU32,
     /// Opaque finite f64 between the repeated u32 copies.
     opaque_scalar: f64,
     /// Boolean byte between the two nested-record references.
-    pub variant: bool,
+    pub(crate) variant: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    paired_class_tag: DesignClassTag,
     offsets: [u64; 4],
 }
 
@@ -47,37 +47,37 @@ pub struct DesignExtrudeSelectionGroup {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignExtrudeSelectionGroupWire {
     /// Globally unique deterministic identifier for this native group.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning Extrude parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Primary indexed-record identity named by the scope table.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the primary indexed-record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub(crate) class_tag: String,
     /// Byte offset of the counted member-run length.
-    pub member_count_offset: u64,
+    pub(crate) member_count_offset: u64,
     /// Ordered indexed selection-member records.
-    pub members: Vec<u32>,
+    pub(crate) members: Vec<u32>,
     /// Byte offsets parallel to `members`.
-    pub member_offsets: Vec<u64>,
+    pub(crate) member_offsets: Vec<u64>,
     /// Opaque nonzero u32 repeated around the f64 scalar.
-    pub opaque_index: u32,
+    pub(crate) opaque_index: u32,
     /// Byte offset of the first `opaque_index` copy.
-    pub opaque_index_offset: u64,
+    pub(crate) opaque_index_offset: u64,
     /// Opaque finite f64 between the repeated u32 copies.
-    pub opaque_scalar: f64,
+    pub(crate) opaque_scalar: f64,
     /// Byte offset of `opaque_scalar`.
-    pub opaque_scalar_offset: u64,
+    pub(crate) opaque_scalar_offset: u64,
     /// Boolean byte between the two nested-record references.
-    pub variant: bool,
+    pub(crate) variant: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: String,
+    pub(crate) paired_class_tag: String,
     /// Byte offset of the same-index paired header.
-    pub paired_byte_offset: u64,
+    pub(crate) paired_byte_offset: u64,
 }
 
 impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
@@ -205,13 +205,13 @@ impl DesignExtrudeSelectionGroup {
     pub(crate) fn members(&self) -> &[Located<u32>] {
         &self.members
     }
-    pub(crate) fn member_count_offset(&self) -> u64 {
+    fn member_count_offset(&self) -> u64 {
         self.offsets[0]
     }
-    pub(crate) fn opaque_index_offset(&self) -> u64 {
+    fn opaque_index_offset(&self) -> u64 {
         self.offsets[1]
     }
-    pub(crate) fn opaque_scalar_offset(&self) -> u64 {
+    fn opaque_scalar_offset(&self) -> u64 {
         self.offsets[2]
     }
     pub(crate) fn paired_byte_offset(&self) -> u64 {
@@ -241,7 +241,7 @@ impl DesignExtrudeSelectionGroup {
 
 /// Semantic role of a counted Extrude operand group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignExtrudeOperandRole {
+pub(crate) enum DesignExtrudeOperandRole {
     /// Existing bodies consumed by the Boolean operation.
     Bodies,
     /// Sketch profile swept by the Extrude.
@@ -263,7 +263,7 @@ pub(super) enum DesignExtrudeOperandRoleTag {
 /// Semantic use of an ordered Extrude face-operand group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignExtrudeFaceRole {
+pub(crate) enum DesignExtrudeFaceRole {
     /// Face supporting a selected-face start.
     Start,
     /// Face terminating a one-sided to-face extent.
@@ -276,47 +276,47 @@ pub enum DesignExtrudeFaceRole {
 /// `extrude_operand_role` returns `None` for them, so this is a newtype with
 /// named codes rather than a closed enum. One spelling per value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct DesignOperandRole(u64);
+pub(crate) struct DesignOperandRole(u64);
 
 impl DesignOperandRole {
     /// Extrude body operand run A.
-    pub const BODIES_A: Self = Self(0x0000_0004_0000_0000);
+    pub(crate) const BODIES_A: Self = Self(0x0000_0004_0000_0000);
     /// Extrude body operand run B.
-    pub const BODIES_B: Self = Self(0x0000_0008_0000_0000);
+    pub(crate) const BODIES_B: Self = Self(0x0000_0008_0000_0000);
     /// Extrude profile operand run.
-    pub const PROFILE: Self = Self(0x0000_0041_0000_0000);
+    pub(crate) const PROFILE: Self = Self(0x0000_0041_0000_0000);
     /// Extrude face operand run.
-    pub const FACES: Self = Self(0x0000_0011_0000_0000);
+    pub(crate) const FACES: Self = Self(0x0000_0011_0000_0000);
 
     // These codes have scope-dependent meanings and no single semantic name.
     /// Scope-dependent role code 0x5.
-    pub const ROLE_0X5: Self = Self(0x0000_0005_0000_0000);
+    pub(crate) const ROLE_0X5: Self = Self(0x0000_0005_0000_0000);
     /// Scope-dependent role code 0x7.
-    pub const ROLE_0X7: Self = Self(0x0000_0007_0000_0000);
+    pub(crate) const ROLE_0X7: Self = Self(0x0000_0007_0000_0000);
     /// Scope-dependent role code 0x9.
-    pub const ROLE_0X9: Self = Self(0x0000_0009_0000_0000);
+    pub(crate) const ROLE_0X9: Self = Self(0x0000_0009_0000_0000);
     /// Scope-dependent role code 0x10.
-    pub const ROLE_0X10: Self = Self(0x0000_0010_0000_0000);
+    pub(crate) const ROLE_0X10: Self = Self(0x0000_0010_0000_0000);
     /// Scope-dependent role code 0x12.
-    pub const ROLE_0X12: Self = Self(0x0000_0012_0000_0000);
+    pub(crate) const ROLE_0X12: Self = Self(0x0000_0012_0000_0000);
     /// Scope-dependent role code 0x21.
-    pub const ROLE_0X21: Self = Self(0x0000_0021_0000_0000);
+    pub(crate) const ROLE_0X21: Self = Self(0x0000_0021_0000_0000);
     /// Scope-dependent role code 0x43.
-    pub const ROLE_0X43: Self = Self(0x0000_0043_0000_0000);
+    pub(crate) const ROLE_0X43: Self = Self(0x0000_0043_0000_0000);
 
     /// Wrap the stored u64 role code.
-    pub const fn from_raw(raw: u64) -> Self {
+    pub(crate) const fn from_raw(raw: u64) -> Self {
         Self(raw)
     }
     /// The stored u64 role code.
-    pub const fn raw(self) -> u64 {
+    pub(crate) const fn raw(self) -> u64 {
         self.0
     }
 }
 
 /// Source encoding of an Extrude face operand run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignExtrudeFaceEncoding {
+pub(crate) enum DesignExtrudeFaceEncoding {
     /// Standard face-group encoding.
     Faces,
     /// Selected-face start encoding.
@@ -331,43 +331,43 @@ pub enum DesignExtrudeFaceEncoding {
     try_from = "DesignExtrudeSelectionMemberDraft",
     into = "DesignExtrudeSelectionMemberDraft"
 )]
-pub struct DesignExtrudeSelectionMember {
+pub(crate) struct DesignExtrudeSelectionMember {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native member.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning selection-group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    pub(crate) group_member_ordinal: u32,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Local persistent selection identity preceding the two UUID fields.
-    pub local_id: u64,
+    pub(crate) local_id: u64,
     /// Asset UUID qualifying the local selection identity.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// UUID of the local selection-identity context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     /// Whether the fixed tail's optional slot is present.
     #[serde(default)]
-    pub tail_slot_present: bool,
+    pub(crate) tail_slot_present: bool,
     /// Byte offset of the optional-slot marker.
     #[serde(default)]
-    pub tail_slot_offset: u64,
+    pub(crate) tail_slot_offset: u64,
     /// Sketch geometry carrying `local_id`, when it resolves uniquely in
     /// the selected Sketch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_geometry: Option<SketchRelationOperand>,
+    pub(crate) resolved_geometry: Option<SketchRelationOperand>,
     /// Construction-operand identity chains that terminate at this member.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub operand_identity_ids: Vec<String>,
+    pub(crate) operand_identity_ids: Vec<String>,
     /// Stable ASM history family, entity slot, and states carrying `local_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(flatten, deserialize_with = "deserialize_historical_binding")]
-    pub historical: Option<HistoricalBinding>,
+    pub(crate) historical: Option<HistoricalBinding>,
     /// Identity of the indexed record immediately following this member.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
 }
 
 impl DesignExtrudeSelectionMember {
@@ -443,10 +443,10 @@ impl DesignExtrudeSelectionMember {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.frame.offset(0)
     }
-    pub(crate) fn local_id_offset(&self) -> u64 {
+    fn local_id_offset(&self) -> u64 {
         self.frame.offset(21)
     }
-    pub(crate) fn asset_id_offset(&self) -> u64 {
+    fn asset_id_offset(&self) -> u64 {
         self.frame.offset(33)
     }
     pub(crate) fn next_byte_offset(&self) -> u64 {
@@ -458,35 +458,35 @@ impl DesignExtrudeSelectionMember {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignExtrudeSelectionMemberDraft {
     /// Globally unique deterministic identifier for this native member.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning selection-group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    pub(crate) group_member_ordinal: u32,
     /// Indexed-record identity named by the selection group.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the indexed-record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Local persistent selection identity preceding the two UUID fields.
-    pub local_id: u64,
+    pub(crate) local_id: u64,
     /// Byte offset of `local_id`.
-    pub local_id_offset: u64,
+    pub(crate) local_id_offset: u64,
     /// Asset UUID qualifying the local selection identity.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// UUID of the local selection-identity context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Whether the fixed tail's optional slot is present.
     #[serde(default)]
-    pub tail_slot_present: bool,
+    pub(crate) tail_slot_present: bool,
     /// Byte offset of the optional-slot marker.
     #[serde(default)]
-    pub tail_slot_offset: u64,
+    pub(crate) tail_slot_offset: u64,
     /// Sketch geometry carrying `local_id`, when it resolves uniquely in
     /// the selected Sketch.
     #[serde(
@@ -494,18 +494,18 @@ pub(crate) struct DesignExtrudeSelectionMemberDraft {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_resolved_geometry"
     )]
-    pub resolved_geometry: Option<SketchRelationOperand>,
+    pub(crate) resolved_geometry: Option<SketchRelationOperand>,
     /// Construction-operand identity chains that terminate at this member.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub operand_identity_ids: Vec<String>,
+    pub(crate) operand_identity_ids: Vec<String>,
     /// Stable ASM history family, entity slot, and states carrying `local_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(flatten, deserialize_with = "deserialize_historical_binding")]
-    pub historical: Option<HistoricalBinding>,
+    pub(crate) historical: Option<HistoricalBinding>,
     /// Identity of the indexed record immediately following this member.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record immediately following this member.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 impl TryFrom<DesignExtrudeSelectionMemberDraft> for DesignExtrudeSelectionMember {

@@ -7,26 +7,26 @@ use serde::Serialize;
 
 /// One radius assignment and its ordered edge group in a Fillet scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFilletRadiusGroup {
+pub(crate) struct DesignFilletRadiusGroup {
     /// Globally unique deterministic identifier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning Fillet scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Position among construction-operand groups in scope-reference order.
-    pub group_ordinal: u32,
+    pub(crate) group_ordinal: u32,
     /// Counted construction-operand group carrying the edges.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Ordered edge-operand records assigned this radius.
-    pub edge_operand_record_indices: Vec<u32>,
+    pub(crate) edge_operand_record_indices: Vec<u32>,
     /// Radius law paired with this edge group.
-    pub law: DesignFilletRadiusLaw,
+    pub(crate) law: DesignFilletRadiusLaw,
     /// Tangency-weight parameter record paired with this edge group.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_tangency_weight_parameter_record_index"
     )]
-    pub tangency_weight_parameter_record_index: Option<u32>,
+    pub(crate) tangency_weight_parameter_record_index: Option<u32>,
 }
 
 /// Parameter records defining one Fillet group's radius law.
@@ -35,7 +35,7 @@ pub struct DesignFilletRadiusGroup {
     try_from = "DesignFilletRadiusLawWire",
     into = "DesignFilletRadiusLawWire"
 )]
-pub enum DesignFilletRadiusLaw {
+pub(crate) enum DesignFilletRadiusLaw {
     /// One radius applies along the complete edge group.
     Constant {
         /// Radius parameter record.
@@ -65,9 +65,9 @@ pub enum DesignFilletRadiusLaw {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignFilletMidpoint {
-    pub radius_parameter_record_index: u32,
-    pub parameter_record_index: u32,
+pub(crate) struct DesignFilletMidpoint {
+    pub(crate) radius_parameter_record_index: u32,
+    pub(crate) parameter_record_index: u32,
 }
 
 /// Parameter records defining one Fillet group's radius law.
@@ -203,17 +203,17 @@ impl From<DesignFilletRadiusLaw> for DesignFilletRadiusLawWire {
 
 /// ASM history family, entity slot, and states for one selected identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HistoricalBinding {
+pub(crate) struct HistoricalBinding {
     /// Stable ASM family containing the selected identity.
     #[serde(rename = "historical_entity_kind")]
-    pub kind: AsmHistoricalEntityKind,
+    pub(crate) kind: AsmHistoricalEntityKind,
     /// Stable ASM entity slot after record-revision normalization.
     #[serde(rename = "historical_entity_ref")]
-    pub entity_ref: i64,
+    pub(crate) entity_ref: i64,
     /// ASM history states containing the identity, in history arena order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "historical_state_ids")]
-    pub state_ids: Vec<i64>,
+    pub(crate) state_ids: Vec<i64>,
 }
 
 #[derive(Deserialize)]

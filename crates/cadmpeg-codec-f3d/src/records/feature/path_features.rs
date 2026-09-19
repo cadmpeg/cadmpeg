@@ -20,7 +20,7 @@ cadmpeg_core::named_optional_field!(
 /// Exact construction carried by a Revolve, Loft, or Sweep scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignPathFeatureConstruction {
+pub(crate) enum DesignPathFeatureConstruction {
     /// One-sided fixed-angle revolution result operation.
     Revolve(DesignRevolveConstruction),
     /// Loft result operation.
@@ -37,20 +37,20 @@ pub enum DesignPathFeatureConstruction {
     try_from = "DesignRevolveConstructionWire",
     into = "DesignRevolveConstructionWire"
 )]
-pub struct DesignRevolveConstruction {
+pub(crate) struct DesignRevolveConstruction {
     /// Boolean result operation.
-    pub operation: DesignExtrudeOperation,
+    pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
     /// Positive angular travel in radians.
-    pub angle: DesignPositiveScalar,
+    pub(crate) angle: DesignPositiveScalar,
     /// Referenced angular-travel scalar record.
-    pub angle_record_index: u32,
+    pub(crate) angle_record_index: u32,
     /// Byte offset of the angular-travel scalar.
-    pub angle_offset: u64,
+    pub(crate) angle_offset: u64,
     /// Zero-valued opposite-side angle scalar record, when serialized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opposite_angle: Option<Located<u32>>,
+    pub(crate) opposite_angle: Option<Located<u32>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -124,49 +124,49 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
 
 /// Fixed construction of a `Loft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignLoftConstruction {
+pub(crate) struct DesignLoftConstruction {
     /// Boolean result operation.
-    pub operation: DesignExtrudeOperation,
+    pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
 }
 
 /// Fixed construction of a `Sweep` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignSweepConstruction {
+pub(crate) struct DesignSweepConstruction {
     /// Boolean result operation.
-    pub operation: DesignExtrudeOperation,
+    pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
     /// Six scalar values in `AlongDistance`, `AgainstDistance`,
     /// `AlongRailDistance`, `AgainstRailDistance`, `TwistAngle`, and `TaperAngle` order.
-    pub values: [f64; 6],
+    pub(crate) values: [f64; 6],
     /// Referenced scalar records in lane order.
-    pub record_indexes: [u32; 6],
+    pub(crate) record_indexes: [u32; 6],
     /// Byte offsets of the scalar values in lane order.
-    pub value_offsets: [u64; 6],
+    pub(crate) value_offsets: [u64; 6],
 }
 
 /// Fixed construction of a `Pipe` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignPipeConstruction {
+pub(crate) struct DesignPipeConstruction {
     /// Boolean result operation.
-    pub operation: DesignExtrudeOperation,
+    pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
     /// Section-shape selector byte.
-    pub section_shape: DesignPipeSectionShape,
+    pub(crate) section_shape: DesignPipeSectionShape,
     /// Byte offset of the section-shape selector.
-    pub section_shape_offset: u64,
+    pub(crate) section_shape_offset: u64,
     /// Whether the generated section is filled.
-    pub filled: bool,
+    pub(crate) filled: bool,
     /// Byte offset of the filled-section flag.
-    pub filled_offset: u64,
+    pub(crate) filled_offset: u64,
     /// Four scalar values in path-fraction, reverse-path-fraction,
     /// section-size, and section-thickness order.
-    pub values: [f64; 4],
+    pub(crate) values: [f64; 4],
     /// Referenced scalar records in lane order.
-    pub record_indexes: [u32; 4],
+    pub(crate) record_indexes: [u32; 4],
     /// Byte offsets of the scalar values in lane order.
-    pub value_offsets: [u64; 4],
+    pub(crate) value_offsets: [u64; 4],
 }

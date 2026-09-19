@@ -8,21 +8,21 @@ use crate::records::{
 use serde::{Deserialize, Serialize};
 /// Fixed operation records named by a `SurfaceStitch` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignSurfaceStitchOperation {
+pub(crate) struct DesignSurfaceStitchOperation {
     /// Positive maximum stitched-boundary gap in centimetres.
-    pub gap_tolerance: DesignPositiveScalar,
+    pub(crate) gap_tolerance: DesignPositiveScalar,
     /// Byte offset of `gap_tolerance`.
-    pub gap_tolerance_offset: u64,
+    pub(crate) gap_tolerance_offset: u64,
     /// Indexed tolerance-record identity.
-    pub tolerance_record_index: u32,
+    pub(crate) tolerance_record_index: u32,
     /// Indexed operation-settings record identity.
-    pub settings_record_index: u32,
+    pub(crate) settings_record_index: u32,
 }
 
 /// Geometric continuation law encoded by a `SurfaceExtend` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignSurfaceExtendMethod {
+pub(crate) enum DesignSurfaceExtendMethod {
     /// Continue the source surface parameterization.
     Natural,
     /// Create faces tangent to the source faces.
@@ -33,35 +33,35 @@ pub enum DesignSurfaceExtendMethod {
 
 /// Fixed construction records named by a `SurfaceExtend` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignSurfaceExtendOperation {
+pub(crate) struct DesignSurfaceExtendOperation {
     /// Extension distance in source centimetres.
-    pub distance: f64,
+    pub(crate) distance: f64,
     /// Byte offset of `distance`.
-    pub distance_offset: u64,
+    pub(crate) distance_offset: u64,
     /// Indexed scalar record carrying `distance`.
-    pub distance_record_index: u32,
+    pub(crate) distance_record_index: u32,
     /// Geometric continuation law.
-    pub method: DesignSurfaceExtendMethod,
+    pub(crate) method: DesignSurfaceExtendMethod,
     /// Byte offset of the method enum.
-    pub method_offset: u64,
+    pub(crate) method_offset: u64,
     /// Indexed boundary-carrier record.
-    pub boundary_record_index: u32,
+    pub(crate) boundary_record_index: u32,
     /// Additional indexed reference carried by the boundary tail.
-    pub boundary_reference_record_index: u32,
+    pub(crate) boundary_reference_record_index: u32,
     /// Byte offset of `boundary_reference_record_index`'s marked reference.
-    pub boundary_reference_offset: u64,
+    pub(crate) boundary_reference_offset: u64,
     /// Ordered edge-recipe records contained by the boundary carrier.
-    pub edge_record_indices: Vec<u32>,
+    pub(crate) edge_record_indices: Vec<u32>,
     /// Positive modelling tolerance in source centimetres.
-    pub tolerance: f64,
+    pub(crate) tolerance: f64,
     /// Byte offset of `tolerance`.
-    pub tolerance_offset: u64,
+    pub(crate) tolerance_offset: u64,
 }
 
 /// Source selection form named by a `SurfaceOffset` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum DesignSurfaceOffsetSupport {
+pub(crate) enum DesignSurfaceOffsetSupport {
     /// A boundary carrier followed by edge recipes.
     BoundaryCarrier {
         /// Indexed boundary-carrier record.
@@ -86,41 +86,41 @@ pub enum DesignSurfaceOffsetSupport {
 
 /// Fixed construction records named by a `SurfaceOffset` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignSurfaceOffsetOperation {
+pub(crate) struct DesignSurfaceOffsetOperation {
     /// Signed offset distance in source centimetres.
-    pub distance: f64,
+    pub(crate) distance: f64,
     /// Byte offset of `distance`.
-    pub distance_offset: u64,
+    pub(crate) distance_offset: u64,
     /// Indexed scalar record carrying `distance`.
-    pub distance_record_index: u32,
+    pub(crate) distance_record_index: u32,
     /// Exact source selection form.
-    pub support: DesignSurfaceOffsetSupport,
+    pub(crate) support: DesignSurfaceOffsetSupport,
 }
 
 /// One indexed record in the auxiliary chain preceding a `SurfaceTrim` cell table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignSurfaceTrimChainRecord {
+pub(crate) struct DesignSurfaceTrimChainRecord {
     /// Indexed record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Primary indexed-header byte offset.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Bytes from the primary header to the following indexed header.
-    pub frame_length: u64,
+    pub(crate) frame_length: u64,
 }
 
 /// One source `BRep` cell entry in a `SurfaceTrim` cell table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DesignSurfaceTrimCellEntry {
+pub(crate) struct DesignSurfaceTrimCellEntry {
     /// Indexed cell-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the marked cell-record reference.
-    pub record_reference_offset: u64,
+    pub(crate) record_reference_offset: u64,
     /// One-based partition ordinal of a cell selected for removal.
-    pub ordinal: u64,
+    pub(crate) ordinal: u64,
     /// Byte offset of the serialized entry ordinal.
-    pub ordinal_offset: u64,
+    pub(crate) ordinal_offset: u64,
 }
 
 /// Exact auxiliary carrier of a `SurfaceTrim` operation.
@@ -129,83 +129,83 @@ pub struct DesignSurfaceTrimCellEntry {
     try_from = "DesignSurfaceTrimOperationWire",
     into = "DesignSurfaceTrimOperationWire"
 )]
-pub struct DesignSurfaceTrimOperation {
+pub(crate) struct DesignSurfaceTrimOperation {
     /// Globally unique deterministic identifier for this native carrier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning `SurfaceTrim` parameter-scope record index.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Indexed entity-selection record that starts the trimming tool chain.
-    pub selection_record_index: u32,
+    pub(crate) selection_record_index: u32,
     /// Byte offset of the entity-selection record.
-    pub selection_byte_offset: u64,
+    selection_byte_offset: u64,
     /// Indexed record immediately following the entity-selection frame.
-    pub selection_next_record_index: u32,
+    pub(crate) selection_next_record_index: u32,
     /// Byte offset of the record immediately following the entity-selection frame.
-    pub selection_next_byte_offset: u64,
+    selection_next_byte_offset: u64,
     /// Two indexed records between the entity selection and the cell table.
-    pub chain_records: [DesignSurfaceTrimChainRecord; 2],
+    pub(crate) chain_records: [DesignSurfaceTrimChainRecord; 2],
     /// Indexed record carrying the counted BRep-cell table.
-    pub cell_table_record_index: u32,
+    pub(crate) cell_table_record_index: u32,
     /// Byte offset of the cell-table primary header.
-    pub cell_table_byte_offset: u64,
+    cell_table_byte_offset: u64,
     /// Dynamic class tag of the cell-table primary frame.
-    pub cell_table_class_tag: DesignClassTag,
+    pub(crate) cell_table_class_tag: DesignClassTag,
     /// Bytes from the cell-table primary header to its paired header.
-    pub cell_table_frame_length: u64,
+    cell_table_frame_length: u64,
     /// Dynamic class tag of the cell-table paired frame.
-    pub cell_table_paired_class_tag: DesignClassTag,
+    pub(crate) cell_table_paired_class_tag: DesignClassTag,
     /// Byte offset of the cell-table paired header.
-    pub cell_table_paired_byte_offset: u64,
+    cell_table_paired_byte_offset: u64,
     /// Byte offset of the cell-table count.
-    pub cell_count_offset: u64,
+    cell_count_offset: u64,
     /// Ordered cell-table entries.
     cell_entries: NonEmptyVec<DesignSurfaceTrimCellEntry>,
     /// Total number of cells in the operation's partition.
-    pub trailing_value: u32,
+    pub(crate) trailing_value: u32,
     /// Byte offset of `trailing_value`.
-    pub trailing_value_offset: u64,
+    pub(crate) trailing_value_offset: u64,
     /// Byte offset of the zero value after `trailing_value`.
-    pub trailing_zero_offset: u64,
+    pub(crate) trailing_zero_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct DesignSurfaceTrimOperationWire {
     /// Globally unique deterministic identifier for this native carrier.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning `SurfaceTrim` parameter-scope record index.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Indexed entity-selection record that starts the trimming tool chain.
-    pub selection_record_index: u32,
+    pub(crate) selection_record_index: u32,
     /// Byte offset of the entity-selection record.
-    pub selection_byte_offset: u64,
+    pub(crate) selection_byte_offset: u64,
     /// Indexed record immediately following the entity-selection frame.
-    pub selection_next_record_index: u32,
+    pub(crate) selection_next_record_index: u32,
     /// Byte offset of the record immediately following the entity-selection frame.
-    pub selection_next_byte_offset: u64,
+    pub(crate) selection_next_byte_offset: u64,
     /// Two indexed records between the entity selection and the cell table.
-    pub chain_records: [DesignSurfaceTrimChainRecord; 2],
+    pub(crate) chain_records: [DesignSurfaceTrimChainRecord; 2],
     /// Indexed record carrying the counted BRep-cell table.
-    pub cell_table_record_index: u32,
+    pub(crate) cell_table_record_index: u32,
     /// Byte offset of the cell-table primary header.
-    pub cell_table_byte_offset: u64,
+    pub(crate) cell_table_byte_offset: u64,
     /// Dynamic class tag of the cell-table primary frame.
-    pub cell_table_class_tag: DesignClassTag,
+    pub(crate) cell_table_class_tag: DesignClassTag,
     /// Bytes from the cell-table primary header to its paired header.
-    pub cell_table_frame_length: u64,
+    pub(crate) cell_table_frame_length: u64,
     /// Dynamic class tag of the cell-table paired frame.
-    pub cell_table_paired_class_tag: DesignClassTag,
+    pub(crate) cell_table_paired_class_tag: DesignClassTag,
     /// Byte offset of the cell-table paired header.
-    pub cell_table_paired_byte_offset: u64,
+    pub(crate) cell_table_paired_byte_offset: u64,
     /// Byte offset of the cell-table count.
-    pub cell_count_offset: u64,
+    pub(crate) cell_count_offset: u64,
     /// Ordered cell-table entries.
-    pub cell_entries: Vec<DesignSurfaceTrimCellEntry>,
+    pub(crate) cell_entries: Vec<DesignSurfaceTrimCellEntry>,
     /// Total number of cells in the operation's partition.
-    pub trailing_value: u32,
+    pub(crate) trailing_value: u32,
     /// Byte offset of `trailing_value`.
-    pub trailing_value_offset: u64,
+    pub(crate) trailing_value_offset: u64,
     /// Byte offset of the zero value after `trailing_value`.
-    pub trailing_zero_offset: u64,
+    pub(crate) trailing_zero_offset: u64,
 }
 
 impl TryFrom<DesignSurfaceTrimOperationWire> for DesignSurfaceTrimOperation {
@@ -270,7 +270,7 @@ impl DesignSurfaceTrimOperation {
 /// Direction law encoded by a `SurfaceRuled` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignRuledSurfaceMethod {
+pub(crate) enum DesignRuledSurfaceMethod {
     /// Generate ruled strips tangent to the support faces.
     Tangent,
     /// Generate ruled strips normal to the support faces.
@@ -282,7 +282,7 @@ pub enum DesignRuledSurfaceMethod {
 /// Corner law encoded by a `SurfaceRuled` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignRuledSurfaceCorner {
+pub(crate) enum DesignRuledSurfaceCorner {
     /// Round adjacent ruled strips through a common corner.
     Rounded,
     /// Intersect adjacent ruled strips at a miter.
@@ -291,36 +291,36 @@ pub enum DesignRuledSurfaceCorner {
 
 /// Fixed construction carried by a `SurfaceRuled` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignRuledSurfaceOperation {
+pub(crate) struct DesignRuledSurfaceOperation {
     /// Direction law.
-    pub method: DesignRuledSurfaceMethod,
+    pub(crate) method: DesignRuledSurfaceMethod,
     /// Byte offset of the direction-law enum.
-    pub method_offset: u64,
+    pub(crate) method_offset: u64,
     /// Corner construction law.
-    pub corner: DesignRuledSurfaceCorner,
+    pub(crate) corner: DesignRuledSurfaceCorner,
     /// Byte offset of the corner-law enum.
-    pub corner_offset: u64,
+    pub(crate) corner_offset: u64,
     /// Whether the opposite incident face supplies the angle reference.
-    pub alternate_face: bool,
+    pub(crate) alternate_face: bool,
     /// Byte offset of the alternate-face Boolean.
-    pub alternate_face_offset: u64,
+    pub(crate) alternate_face_offset: u64,
     /// Referenced ruled-angle parameter owner.
-    pub angle_owner_record_index: u32,
+    pub(crate) angle_owner_record_index: u32,
     /// Referenced ruled-distance parameter owner.
-    pub distance_owner_record_index: u32,
+    pub(crate) distance_owner_record_index: u32,
     /// Ordered role-`0x08` edge-group records.
-    pub edge_group_record_indices: Vec<u32>,
+    pub(crate) edge_group_record_indices: Vec<u32>,
     /// Ordered auxiliary selection records between the edge-group runs.
-    pub auxiliary_record_indices: Vec<u32>,
+    pub(crate) auxiliary_record_indices: Vec<u32>,
     /// Serialized direction entity identity; the all-zero UUID means absent.
-    pub direction_entity_id: Option<DesignRelaxedGuidText>,
+    pub(crate) direction_entity_id: Option<DesignRelaxedGuidText>,
 }
 
 /// Boundary condition a `SurfacePatch` component imposes against its adjacent
 /// face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignPatchContinuity {
+pub(crate) enum DesignPatchContinuity {
     /// Positional continuity only.
     Connected,
     /// First-derivative continuity.
@@ -334,7 +334,7 @@ pub enum DesignPatchContinuity {
 impl DesignPatchContinuity {
     /// Decode the serialized continuity ordinal without discarding unknown values.
     #[must_use]
-    pub fn from_code(code: u32) -> Self {
+    pub(crate) fn from_code(code: u32) -> Self {
         match code {
             0 => Self::Connected,
             1 => Self::Tangent,
@@ -347,14 +347,14 @@ impl DesignPatchContinuity {
 /// Pipe generated-section shape selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "u8", into = "u8")]
-pub enum DesignPipeSectionShape {
+pub(crate) enum DesignPipeSectionShape {
     Circular,
     Unknown(u8),
 }
 
 impl DesignPipeSectionShape {
     #[must_use]
-    pub fn from_code(code: u8) -> Self {
+    pub(crate) fn from_code(code: u8) -> Self {
         match code {
             1 => Self::Circular,
             code => Self::Unknown(code),
@@ -362,7 +362,7 @@ impl DesignPipeSectionShape {
     }
 
     #[must_use]
-    pub fn code(self) -> u8 {
+    fn code(self) -> u8 {
         match self {
             Self::Circular => 1,
             Self::Unknown(code) => code,
@@ -384,20 +384,20 @@ impl From<DesignPipeSectionShape> for u8 {
 
 /// Settings a `SurfacePatch` scope carries for one boundary component.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignSurfacePatchBoundary {
+pub(crate) struct DesignSurfacePatchBoundary {
     /// Position of the settings record in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Indexed settings-record identity.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Source `IsSeedSel` flag.
-    pub is_seed_selection: bool,
+    pub(crate) is_seed_selection: bool,
     /// Boundary condition this component imposes against its adjacent face.
-    pub continuity: DesignPatchContinuity,
+    pub(crate) continuity: DesignPatchContinuity,
     /// Source `PatchFlip` ordinal. Retained without a neutral meaning.
-    pub flip: u32,
+    pub(crate) flip: u32,
     /// Source `PatchScale` value.
-    pub scale: f64,
+    pub(crate) scale: f64,
     /// Indexed record the `rPatchModelRef` reference names: this boundary
     /// component's model reference.
-    pub model_reference: u32,
+    pub(crate) model_reference: u32,
 }

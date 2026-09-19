@@ -12,7 +12,7 @@ cadmpeg_core::named_optional_field!(deserialize_transform_offset, u64, "transfor
 /// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "primitive")]
-pub enum DesignSolidPrimitive {
+pub(crate) enum DesignSolidPrimitive {
     /// Axis-aligned box defined by five owned dimensions and offsets.
     Box(DesignBoxPrimitive),
     /// Circular cylinder defined by height and diameter owners.
@@ -25,41 +25,41 @@ pub enum DesignSolidPrimitive {
 
 /// Exact `Box` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignBoxPrimitive {
+pub(crate) struct DesignBoxPrimitive {
     /// Length along the source x-axis in source centimetres.
-    pub length: f64,
+    pub(crate) length: f64,
     /// Referenced length owner.
-    pub length_record_index: u32,
+    pub(crate) length_record_index: u32,
     /// Byte offset of the evaluated length.
-    pub length_offset: u64,
+    pub(crate) length_offset: u64,
     /// Width along the source y-axis in source centimetres.
-    pub width: f64,
+    pub(crate) width: f64,
     /// Referenced width owner.
-    pub width_record_index: u32,
+    pub(crate) width_record_index: u32,
     /// Byte offset of the evaluated width.
-    pub width_offset: u64,
+    pub(crate) width_offset: u64,
     /// Height along the source z-axis in source centimetres.
-    pub height: f64,
+    pub(crate) height: f64,
     /// Referenced height owner.
-    pub height_record_index: u32,
+    pub(crate) height_record_index: u32,
     /// Byte offset of the evaluated height.
-    pub height_offset: u64,
+    pub(crate) height_offset: u64,
     /// Translation along the source x-axis in source centimetres.
-    pub offset_x: f64,
+    pub(crate) offset_x: f64,
     /// Referenced x-offset owner.
-    pub offset_x_record_index: u32,
+    pub(crate) offset_x_record_index: u32,
     /// Byte offset of the evaluated x offset.
-    pub offset_x_offset: u64,
+    pub(crate) offset_x_offset: u64,
     /// Translation along the source y-axis in source centimetres.
-    pub offset_y: f64,
+    pub(crate) offset_y: f64,
     /// Referenced y-offset owner.
-    pub offset_y_record_index: u32,
+    pub(crate) offset_y_record_index: u32,
     /// Byte offset of the evaluated y offset.
-    pub offset_y_offset: u64,
+    pub(crate) offset_y_offset: u64,
     /// Result Boolean operation.
-    pub operation: DesignExtrudeOperation,
+    pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
 }
 
 /// Exact `Cylinder` primitive construction.
@@ -68,26 +68,26 @@ pub struct DesignBoxPrimitive {
     try_from = "DesignCylinderPrimitiveWire",
     into = "DesignCylinderPrimitiveWire"
 )]
-pub struct DesignCylinderPrimitive {
+pub(crate) struct DesignCylinderPrimitive {
     /// Axial height in source centimetres.
-    pub height: f64,
+    pub(crate) height: f64,
     /// Referenced height owner.
-    pub height_record_index: u32,
+    pub(crate) height_record_index: u32,
     /// Byte offset of the evaluated height.
-    pub height_offset: u64,
+    pub(crate) height_offset: u64,
     /// Circular diameter in source centimetres.
-    pub diameter: f64,
+    pub(crate) diameter: f64,
     /// Referenced diameter owner.
-    pub diameter_record_index: u32,
+    pub(crate) diameter_record_index: u32,
     /// Byte offset of the evaluated diameter.
-    pub diameter_offset: u64,
+    pub(crate) diameter_offset: u64,
     /// Source frame carried by the shifted cylinder form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<Located<SketchPlacementMatrix>>,
+    pub(crate) transform: Option<Located<SketchPlacementMatrix>>,
     /// Result Boolean operation.
-    pub operation: DesignExtrudeOperation,
+    pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -160,46 +160,46 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
 
 /// Exact `Sphere` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignSpherePrimitive {
+pub(crate) struct DesignSpherePrimitive {
     /// Row-major local-to-model placement frame.
-    pub transform: SketchPlacementMatrix,
+    pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
-    pub transform_offset: u64,
+    pub(crate) transform_offset: u64,
     /// Sphere diameter in source centimetres.
-    pub diameter: f64,
+    pub(crate) diameter: f64,
     /// Referenced diameter record.
-    pub diameter_record_index: u32,
+    pub(crate) diameter_record_index: u32,
     /// Byte offset of the diameter scalar.
-    pub diameter_offset: u64,
+    pub(crate) diameter_offset: u64,
     /// Result Boolean operation.
-    pub operation: DesignExtrudeOperation,
+    pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
 }
 
 /// Exact `Torus` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignTorusPrimitive {
+pub(crate) struct DesignTorusPrimitive {
     /// Row-major local-to-model placement frame.
-    pub transform: SketchPlacementMatrix,
+    pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the placement matrix.
-    pub transform_offset: u64,
+    pub(crate) transform_offset: u64,
     /// Major diameter in source centimetres.
-    pub major_diameter: f64,
+    pub(crate) major_diameter: f64,
     /// Referenced major-diameter record.
-    pub major_diameter_record_index: u32,
+    pub(crate) major_diameter_record_index: u32,
     /// Byte offset of the major-diameter scalar.
-    pub major_diameter_offset: u64,
+    pub(crate) major_diameter_offset: u64,
     /// Tube diameter in source centimetres.
-    pub minor_diameter: f64,
+    pub(crate) minor_diameter: f64,
     /// Referenced minor-diameter record.
-    pub minor_diameter_record_index: u32,
+    pub(crate) minor_diameter_record_index: u32,
     /// Byte offset of the minor-diameter scalar.
-    pub minor_diameter_offset: u64,
+    pub(crate) minor_diameter_offset: u64,
     /// Result Boolean operation.
-    pub operation: DesignExtrudeOperation,
+    pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum.
-    pub operation_offset: u64,
+    pub(crate) operation_offset: u64,
 }
 
 impl From<DesignSolidPrimitive> for DesignScopePayload {

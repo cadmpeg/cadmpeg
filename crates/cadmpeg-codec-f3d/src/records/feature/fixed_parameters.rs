@@ -21,19 +21,19 @@ cadmpeg_core::named_optional_field!(
 );
 /// One exact scalar carrier used by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFixedExtrudeScalar {
+pub(crate) struct DesignFixedExtrudeScalar {
     /// Scalar value in source centimetres for a distance or radians for an angle.
-    pub value: f64,
+    pub(crate) value: f64,
     /// Referenced record carrying the scalar.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the scalar.
-    pub value_offset: u64,
+    pub(crate) value_offset: u64,
 }
 
 /// Exact carrier of an Extrude's one-sided distance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "carrier", content = "scalar", rename_all = "snake_case")]
-pub enum DesignFixedExtrudeDistance {
+pub(crate) enum DesignFixedExtrudeDistance {
     /// Signed distance in an owner-local scalar lane.
     FixedScalar(DesignFixedExtrudeScalar),
     /// Positive magnitude in an owned distance-construction frame.
@@ -42,28 +42,28 @@ pub enum DesignFixedExtrudeDistance {
 
 /// Exact fixed scalar lanes carried by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFixedExtrudeParameters {
+pub(crate) struct DesignFixedExtrudeParameters {
     /// One-sided distance carrier in source centimetres.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_along_distance"
     )]
-    pub along_distance: Option<DesignFixedExtrudeDistance>,
+    pub(crate) along_distance: Option<DesignFixedExtrudeDistance>,
     /// Taper-angle lane in radians.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_taper_angle"
     )]
-    pub taper_angle: Option<DesignFixedExtrudeScalar>,
+    pub(crate) taper_angle: Option<DesignFixedExtrudeScalar>,
 }
 
 /// Exact fixed scalar lanes carried by a Fillet scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFixedFilletParameters {
+pub(crate) struct DesignFixedFilletParameters {
     /// Radius laws in scalar-lane order.
-    pub groups: Vec<DesignFixedFilletGroup>,
+    pub(crate) groups: Vec<DesignFixedFilletGroup>,
 }
 
 /// One fillet radius law and its optional tangency weight.
@@ -72,14 +72,14 @@ pub struct DesignFixedFilletParameters {
     try_from = "DesignFixedFilletGroupWire",
     into = "DesignFixedFilletGroupWire"
 )]
-pub struct DesignFixedFilletGroup {
+pub(crate) struct DesignFixedFilletGroup {
     tangency_weight: Option<DesignFixedFilletScalar>,
     law: DesignFixedFilletLaw,
 }
 
 impl DesignFixedFilletGroup {
     /// Admit a fillet radius law and optional tangency weight.
-    pub fn try_new(
+    pub(crate) fn try_new(
         tangency_weight: Option<DesignFixedFilletScalar>,
         law: DesignFixedFilletLaw,
     ) -> Result<Self, String> {
@@ -119,18 +119,18 @@ impl DesignFixedFilletGroup {
     }
 
     /// The admitted radius law.
-    pub fn law(&self) -> &DesignFixedFilletLaw {
+    pub(crate) fn law(&self) -> &DesignFixedFilletLaw {
         &self.law
     }
 
     /// The optional positive tangency weight.
-    pub fn tangency_weight(&self) -> Option<&DesignFixedFilletScalar> {
+    pub(crate) fn tangency_weight(&self) -> Option<&DesignFixedFilletScalar> {
         self.tangency_weight.as_ref()
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum DesignFixedFilletLaw {
+pub(crate) enum DesignFixedFilletLaw {
     Constant(DesignFixedFilletScalar),
     Variable {
         start: DesignFixedFilletScalar,
@@ -140,9 +140,9 @@ pub enum DesignFixedFilletLaw {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignFixedFilletIntermediate {
-    pub radius: DesignFixedFilletScalar,
-    pub parameter: DesignFixedFilletScalar,
+pub(crate) struct DesignFixedFilletIntermediate {
+    pub(crate) radius: DesignFixedFilletScalar,
+    pub(crate) parameter: DesignFixedFilletScalar,
 }
 
 impl DesignFixedFilletLaw {
@@ -304,19 +304,19 @@ impl From<DesignFixedFilletGroup> for DesignFixedFilletGroupWire {
 
 /// One fixed fillet scalar and its source record and value location.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFixedFilletScalar {
+pub(crate) struct DesignFixedFilletScalar {
     /// Radius, normalized position, or tangency weight.
-    pub value: f64,
+    pub(crate) value: f64,
     /// Referenced scalar record.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the scalar.
-    pub value_offset: u64,
+    pub(crate) value_offset: u64,
 }
 
 /// Exact fixed scalar lanes carried by a Chamfer scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignFixedChamferParameters {
+pub(crate) enum DesignFixedChamferParameters {
     /// One equal setback distance applies to both incident faces.
     EqualDistance {
         /// Equal setback distance.
@@ -333,11 +333,11 @@ pub enum DesignFixedChamferParameters {
 
 /// One fixed Chamfer distance lane and its source provenance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignFixedChamferDistance {
+pub(crate) struct DesignFixedChamferDistance {
     /// Positive distance in source centimetres.
-    pub value: f64,
+    pub(crate) value: f64,
     /// Referenced scalar record.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the scalar.
-    pub value_offset: u64,
+    pub(crate) value_offset: u64,
 }

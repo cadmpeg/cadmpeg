@@ -24,7 +24,7 @@ use std::num::NonZeroU32;
 /// The three source framings differ only in the length of the zero run before
 /// the presence marker, which fixes where every following field sits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignEdgeIdentityLayout {
+pub(crate) enum DesignEdgeIdentityLayout {
     /// Twelve-zero prologue; the presence marker sits at byte 23.
     Full,
     /// Eleven-zero prologue; the presence marker sits at byte 22.
@@ -66,43 +66,43 @@ impl DesignEdgeIdentityLayout {
     try_from = "DesignEdgeIdentityOperandWire",
     into = "DesignEdgeIdentityOperandWire"
 )]
-pub struct DesignEdgeIdentityOperand {
+pub(crate) struct DesignEdgeIdentityOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Owning construction-operand group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    pub(crate) group_member_ordinal: u32,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Prologue framing, which fixes `local_id_offset` relative to
     /// `byte_offset`.
     layout: DesignEdgeIdentityLayout,
     /// Local persistent selection identity preceding the two UUID fields.
-    pub local_id: u64,
+    pub(crate) local_id: u64,
     /// Asset UUID qualifying the local selection identity.
-    pub asset_id: DesignRelaxedGuidText,
+    asset_id: DesignRelaxedGuidText,
     /// UUID of the local selection-identity context.
-    pub context_id: DesignRelaxedGuidText,
+    context_id: DesignRelaxedGuidText,
     /// Stable ASM history family, entity slot, and states carrying `local_id`.
-    pub historical: Option<HistoricalBinding>,
+    pub(crate) historical: Option<HistoricalBinding>,
     /// Complete radius-qualified deleted source-edge set proved by the owning
     /// feature transition. The transition-scoped set repeats on each operand.
-    pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    pub(crate) treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
     /// Complete deleted source-edge chain proved by the owning feature
     /// transition. The transition-scoped chain repeats on each operand.
-    pub transition_edge_candidates: Vec<i64>,
+    pub(crate) transition_edge_candidates: Vec<i64>,
     /// Ordered deleted treatment edges selected by an embedded bounded-face
     /// rule owned by this operand.
-    pub resolved_edge_slots: Vec<i64>,
+    pub(crate) resolved_edge_slots: Vec<i64>,
     /// Unique edge slot selected in the owning feature's preceding state.
-    pub resolved_edge_slot: Option<i64>,
+    pub(crate) resolved_edge_slot: Option<i64>,
     /// Native identity or embedded bounded-face operand proving the resolved
     /// edge selection.
-    pub resolution_identity_id: Option<String>,
+    pub(crate) resolution_identity_id: Option<String>,
 }
 
 impl DesignEdgeIdentityOperand {
@@ -175,10 +175,10 @@ impl DesignEdgeIdentityOperand {
     pub(crate) fn layout(&self) -> DesignEdgeIdentityLayout {
         self.layout
     }
-    pub(crate) fn asset_id_offset(&self) -> u64 {
+    fn asset_id_offset(&self) -> u64 {
         self.local_id_offset() + 18
     }
-    pub(crate) fn context_id_offset(&self) -> u64 {
+    fn context_id_offset(&self) -> u64 {
         self.local_id_offset() + 94
     }
 }
@@ -187,53 +187,53 @@ impl DesignEdgeIdentityOperand {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignEdgeIdentityOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Owning construction-operand group record.
-    pub group_record_index: u32,
+    pub(crate) group_record_index: u32,
     /// Zero-based position in the group's ordered member run.
-    pub group_member_ordinal: u32,
+    pub(crate) group_member_ordinal: u32,
     /// Indexed-record identity named by the construction group.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the indexed-record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Prologue framing, which fixes `local_id_offset` relative to
     /// `byte_offset`.
-    pub layout: DesignEdgeIdentityLayout,
+    pub(crate) layout: DesignEdgeIdentityLayout,
     /// Local persistent selection identity preceding the two UUID fields.
-    pub local_id: u64,
+    pub(crate) local_id: u64,
     /// Asset UUID qualifying the local selection identity.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// UUID of the local selection-identity context.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Stable ASM history family, entity slot, and states carrying `local_id`.
-    pub historical: Option<HistoricalBinding>,
+    pub(crate) historical: Option<HistoricalBinding>,
     /// Complete radius-qualified deleted source-edge set proved by the owning
     /// feature transition. The transition-scoped set repeats on each operand.
-    pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    pub(crate) treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
     /// Complete deleted source-edge chain proved by the owning feature
     /// transition. The transition-scoped chain repeats on each operand.
-    pub transition_edge_candidates: Vec<i64>,
+    pub(crate) transition_edge_candidates: Vec<i64>,
     /// Ordered deleted treatment edges selected by an embedded bounded-face
     /// rule owned by this operand.
-    pub resolved_edge_slots: Vec<i64>,
+    pub(crate) resolved_edge_slots: Vec<i64>,
     /// Unique edge slot selected in the owning feature's preceding state.
-    pub resolved_edge_slot: Option<i64>,
+    pub(crate) resolved_edge_slot: Option<i64>,
     /// Native identity or embedded bounded-face operand proving the resolved
     /// edge selection.
-    pub resolution_identity_id: Option<String>,
+    pub(crate) resolution_identity_id: Option<String>,
 }
 
 impl DesignEdgeIdentityOperand {
     /// Byte offset of `local_id`, fixed by the prologue framing.
-    pub fn local_id_offset(&self) -> u64 {
+    pub(super) fn local_id_offset(&self) -> u64 {
         self.byte_offset() + self.layout.local_id_offset()
     }
 }
@@ -348,119 +348,119 @@ impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
 /// Edge-selection operand owned by an edge-selecting parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignEdgeOperandDraft", into = "DesignEdgeOperandDraft")]
-pub struct DesignEdgeOperand {
+pub(crate) struct DesignEdgeOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     paired_byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    paired_class_tag: DesignClassTag,
     /// Byte offset of the recipe record's indexed header.
     recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Complete recipe-specific prefix before the length-prefixed family name.
     #[serde(with = "cadmpeg_ir::bytes")]
-    pub recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference entries decoded from the prefix.
-    pub recipe_references: Vec<DesignRecipeReference>,
+    pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first i32 after the framed recipe-family name.
-    pub recipe_program_offset: u64,
+    pub(crate) recipe_program_offset: u64,
     /// Complete post-name i32 program ending at the next indexed record.
-    pub recipe_program: Vec<i32>,
+    pub(crate) recipe_program: Vec<i32>,
     /// Standard two-side structure decoded from the recipe program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recipe_structure: Option<DesignEdgeRecipeStructure>,
+    pub(crate) recipe_structure: Option<DesignEdgeRecipeStructure>,
     /// Alternate two-clause structure decoded from a `SurfacePatch` edge
     /// recipe program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface_patch_recipe_structure: Option<DesignSurfacePatchRecipeStructure>,
+    pub(crate) surface_patch_recipe_structure: Option<DesignSurfacePatchRecipeStructure>,
     /// Ordered local topology references when every nonzero root and side scalar
     /// is a valid prefix-reference ordinal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_topology_references: Option<Vec<NonZeroU32>>,
+    pub(crate) local_topology_references: Option<Vec<NonZeroU32>>,
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub candidate_faces: Vec<FaceId>,
+    pub(crate) candidate_faces: Vec<FaceId>,
     /// Candidate faces present in the ASM topology produced by the owning
     /// edge-treatment feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub result_candidate_faces: Vec<FaceId>,
+    pub(crate) result_candidate_faces: Vec<FaceId>,
     /// Stable edge slots on the result candidate-face boundaries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub result_boundary_edge_slots: Vec<i64>,
+    pub(crate) result_boundary_edge_slots: Vec<i64>,
     /// Candidate faces present in the ASM topology immediately preceding the
     /// owning edge-treatment feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_candidate_faces: Vec<FaceId>,
+    pub(crate) preceding_candidate_faces: Vec<FaceId>,
     /// Candidate and effective prefix-reference faces in the terminal topology
     /// used by a suppressed feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub terminal_candidate_faces: Vec<FaceId>,
+    pub(crate) terminal_candidate_faces: Vec<FaceId>,
     /// Preceding candidate faces deleted or updated by the owning feature's
     /// exact ASM state transition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changed_candidate_faces: Vec<FaceId>,
+    pub(crate) changed_candidate_faces: Vec<FaceId>,
     /// Stable edge slots on the preceding candidate-face boundaries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_boundary_edge_slots: Vec<i64>,
+    pub(crate) preceding_boundary_edge_slots: Vec<i64>,
     /// Stable edge slots on terminal candidate-face boundaries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub terminal_boundary_edge_slots: Vec<i64>,
+    pub(crate) terminal_boundary_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots deleted or updated by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changed_boundary_edge_slots: Vec<i64>,
+    pub(crate) changed_boundary_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots deleted by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub deleted_boundary_edge_slots: Vec<i64>,
+    pub(crate) deleted_boundary_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots assigned a different record revision by
     /// the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub updated_boundary_edge_slots: Vec<i64>,
+    pub(crate) updated_boundary_edge_slots: Vec<i64>,
     /// Deleted predecessor edges associated with inserted treatment-carrier radii.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    pub(crate) treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
     /// Ordered incident-loop topology for every changed boundary edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
+    pub(crate) changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
     /// Ordered incident-loop topology for terminal candidate-face boundaries
     /// used by a suppressed feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub terminal_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
+    pub(crate) terminal_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
     /// Boundary-edge sets of the prefix-reference faces in the terminal
     /// topology, indexed by zero-based prefix-reference ordinal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub terminal_reference_edge_slots: Vec<Vec<i64>>,
+    pub(crate) terminal_reference_edge_slots: Vec<Vec<i64>>,
     /// Ordered historical topology context for each prefix reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
+    pub(crate) recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
     /// Topology entries grouped by source selector with evaluation-state edge
     /// context matching the selector's incident-loop boundary counts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub recipe_selectors: Vec<DesignEdgeRecipeSelectorContext>,
+    pub(crate) recipe_selectors: Vec<DesignEdgeRecipeSelectorContext>,
     /// Historical topology state against which the edge recipe was evaluated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recipe_state_id: Option<i64>,
+    pub(crate) recipe_state_id: Option<i64>,
     /// Stable historical edge slot proven by the selector/reference candidate
     /// intersection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_edge_slot: Option<i64>,
+    pub(crate) resolved_edge_slot: Option<i64>,
     /// Selected historical carrier axis, when exact.
     #[serde(
         flatten,
         serialize_with = "serialize_edge_resolved_axis",
         deserialize_with = "deserialize_edge_resolved_axis"
     )]
-    pub resolved_axis: Option<DesignAxis>,
+    pub(crate) resolved_axis: Option<DesignAxis>,
     /// Identity of the indexed record following the operand frame.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     next_byte_offset: u64,
 }
@@ -607,45 +607,45 @@ impl DesignEdgeOperand {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignEdgeOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning parameter-scope record.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Primary indexed-record identity named by the scope table.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the primary indexed-record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
-    pub paired_byte_offset: u64,
+    pub(crate) paired_byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Indexed record containing the edge regeneration recipe.
-    pub recipe_record_index: u32,
+    pub(crate) recipe_record_index: u32,
     /// Byte offset of the recipe record's indexed header.
-    pub recipe_record_byte_offset: u64,
+    pub(crate) recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Byte offset of the recipe-specific prefix after the indexed header.
-    pub recipe_prefix_offset: u64,
+    pub(crate) recipe_prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
     #[serde(with = "cadmpeg_ir::bytes")]
-    pub recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference entries decoded from the prefix.
-    pub recipe_references: Vec<DesignRecipeReference>,
+    pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first i32 after the framed recipe-family name.
-    pub recipe_program_offset: u64,
+    pub(crate) recipe_program_offset: u64,
     /// Complete post-name i32 program ending at the next indexed record.
-    pub recipe_program: Vec<i32>,
+    pub(crate) recipe_program: Vec<i32>,
     /// Standard two-side structure decoded from the recipe program.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_recipe_structure"
     )]
-    pub recipe_structure: Option<DesignEdgeRecipeStructure>,
+    pub(crate) recipe_structure: Option<DesignEdgeRecipeStructure>,
     /// Alternate two-clause structure decoded from a `SurfacePatch` edge
     /// recipe program.
     #[serde(
@@ -653,7 +653,7 @@ pub(crate) struct DesignEdgeOperandDraft {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_surface_patch_recipe_structure"
     )]
-    pub surface_patch_recipe_structure: Option<DesignSurfacePatchRecipeStructure>,
+    pub(crate) surface_patch_recipe_structure: Option<DesignSurfacePatchRecipeStructure>,
     /// Ordered local topology references when every nonzero root and side scalar
     /// is a valid prefix-reference ordinal.
     #[serde(
@@ -661,73 +661,73 @@ pub(crate) struct DesignEdgeOperandDraft {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_local_topology_references"
     )]
-    pub local_topology_references: Option<Vec<NonZeroU32>>,
+    pub(crate) local_topology_references: Option<Vec<NonZeroU32>>,
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub candidate_faces: Vec<FaceId>,
+    pub(crate) candidate_faces: Vec<FaceId>,
     /// Candidate faces present in the ASM topology produced by the owning
     /// edge-treatment feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub result_candidate_faces: Vec<FaceId>,
+    pub(crate) result_candidate_faces: Vec<FaceId>,
     /// Stable edge slots on the result candidate-face boundaries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub result_boundary_edge_slots: Vec<i64>,
+    pub(crate) result_boundary_edge_slots: Vec<i64>,
     /// Candidate faces present in the ASM topology immediately preceding the
     /// owning edge-treatment feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_candidate_faces: Vec<FaceId>,
+    pub(crate) preceding_candidate_faces: Vec<FaceId>,
     /// Candidate and effective prefix-reference faces in the terminal topology
     /// used by a suppressed feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub terminal_candidate_faces: Vec<FaceId>,
+    pub(crate) terminal_candidate_faces: Vec<FaceId>,
     /// Preceding candidate faces deleted or updated by the owning feature's
     /// exact ASM state transition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changed_candidate_faces: Vec<FaceId>,
+    pub(crate) changed_candidate_faces: Vec<FaceId>,
     /// Stable edge slots on the preceding candidate-face boundaries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub preceding_boundary_edge_slots: Vec<i64>,
+    pub(crate) preceding_boundary_edge_slots: Vec<i64>,
     /// Stable edge slots on terminal candidate-face boundaries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub terminal_boundary_edge_slots: Vec<i64>,
+    pub(crate) terminal_boundary_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots deleted or updated by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changed_boundary_edge_slots: Vec<i64>,
+    pub(crate) changed_boundary_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots deleted by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub deleted_boundary_edge_slots: Vec<i64>,
+    pub(crate) deleted_boundary_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots assigned a different record revision by
     /// the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub updated_boundary_edge_slots: Vec<i64>,
+    pub(crate) updated_boundary_edge_slots: Vec<i64>,
     /// Deleted predecessor edges associated with inserted treatment-carrier radii.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    pub(crate) treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
     /// Ordered incident-loop topology for every changed boundary edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
+    pub(crate) changed_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
     /// Ordered incident-loop topology for terminal candidate-face boundaries
     /// used by a suppressed feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub terminal_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
+    pub(crate) terminal_boundary_edge_contexts: Vec<DesignHistoricalEdgeContext>,
     /// Boundary-edge sets of the prefix-reference faces in the terminal
     /// topology, indexed by zero-based prefix-reference ordinal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub terminal_reference_edge_slots: Vec<Vec<i64>>,
+    pub(crate) terminal_reference_edge_slots: Vec<Vec<i64>>,
     /// Ordered historical topology context for each prefix reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
+    pub(crate) recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
     /// Topology entries grouped by source selector with evaluation-state edge
     /// context matching the selector's incident-loop boundary counts.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub recipe_selectors: Vec<DesignEdgeRecipeSelectorContext>,
+    pub(crate) recipe_selectors: Vec<DesignEdgeRecipeSelectorContext>,
     /// Historical topology state against which the edge recipe was evaluated.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_recipe_state_id"
     )]
-    pub recipe_state_id: Option<i64>,
+    pub(crate) recipe_state_id: Option<i64>,
     /// Stable historical edge slot proven by the selector/reference candidate
     /// intersection.
     #[serde(
@@ -735,18 +735,18 @@ pub(crate) struct DesignEdgeOperandDraft {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_resolved_edge_slot"
     )]
-    pub resolved_edge_slot: Option<i64>,
+    pub(crate) resolved_edge_slot: Option<i64>,
     /// Selected historical carrier axis, when exact.
     #[serde(
         flatten,
         serialize_with = "serialize_edge_resolved_axis",
         deserialize_with = "deserialize_edge_resolved_axis"
     )]
-    pub resolved_axis: Option<DesignAxis>,
+    pub(crate) resolved_axis: Option<DesignAxis>,
     /// Identity of the indexed record following the operand frame.
-    pub next_record_index: u32,
+    pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 impl TryFrom<DesignEdgeOperandDraft> for DesignEdgeOperand {
@@ -850,11 +850,11 @@ fn deserialize_edge_resolved_axis<'de, D: serde::Deserializer<'de>>(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// One radius-qualified historical edge candidate recovered from an inserted
 /// treatment face and its carrier-stable adjacent supports.
-pub struct DesignEdgeTreatmentRadiusCandidate {
+pub(crate) struct DesignEdgeTreatmentRadiusCandidate {
     /// Deleted stable edge slot shared by the preceding support faces.
-    pub edge_slot: i64,
+    pub(crate) edge_slot: i64,
     /// Positive characteristic radius of the inserted treatment carrier.
-    pub radius: f64,
+    pub(crate) radius: f64,
 }
 
 cadmpeg_core::named_optional_field!(pub(super) deserialize_resolved_edge_slot, i64, "resolved_edge_slot");

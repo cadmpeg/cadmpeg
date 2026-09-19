@@ -13,28 +13,28 @@ use serde::Serialize;
     try_from = "DesignSketchProfileOperandWire",
     into = "DesignSketchProfileOperandWire"
 )]
-pub struct DesignSketchProfileOperand {
+pub(crate) struct DesignSketchProfileOperand {
     /// Zero-based position in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Primary indexed-record identity named by the scope table.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the primary indexed-record header.
     byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selected Sketch reference.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     asset_id_offset: u64,
     /// Full Design entity id of the selected Sketch.
-    pub entity_id: DesignEntityId,
+    pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the suffix's UTF-16LE code units.
     entity_reference_offset: u64,
     /// Exact nested profile-region selection, when its complete frame closes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub region_selection: Option<DesignSketchProfileRegionSelection>,
+    pub(crate) region_selection: Option<DesignSketchProfileRegionSelection>,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     paired_byte_offset: u64,
 }
@@ -91,27 +91,27 @@ impl DesignSketchProfileOperand {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignSketchProfileOperandDraft {
     /// Zero-based position in the scope's ordered reference table.
-    pub scope_reference_ordinal: u32,
+    pub(crate) scope_reference_ordinal: u32,
     /// Primary indexed-record identity named by the scope table.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the primary indexed-record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selected Sketch reference.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// Full Design entity id of the selected Sketch.
-    pub entity_id: DesignEntityId,
+    pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the suffix's UTF-16LE code units.
-    pub entity_reference_offset: u64,
+    pub(crate) entity_reference_offset: u64,
     /// Exact nested profile-region selection, when its complete frame closes.
-    pub region_selection: Option<DesignSketchProfileRegionSelection>,
+    pub(crate) region_selection: Option<DesignSketchProfileRegionSelection>,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: DesignClassTag,
+    pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
-    pub paired_byte_offset: u64,
+    pub(crate) paired_byte_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -194,30 +194,30 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
 
 /// Nested ordered region selection carried by a sketch-profile operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignSketchProfileRegionSelection {
+pub(crate) struct DesignSketchProfileRegionSelection {
     /// Indexed identity of the region-selection record.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the region-selection indexed header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII region-selection class tag.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Byte offset of the selected-region count.
-    pub region_count_offset: u64,
+    pub(crate) region_count_offset: u64,
     /// Selected regions in source order.
-    pub regions: Vec<DesignSketchProfileRegion>,
+    pub(crate) regions: Vec<DesignSketchProfileRegion>,
     /// Source per-file dynamic three-digit ASCII companion class tag.
-    pub companion_class_tag: DesignClassTag,
+    pub(crate) companion_class_tag: DesignClassTag,
     /// Byte offset of the same-index companion header.
-    pub companion_byte_offset: u64,
+    pub(crate) companion_byte_offset: u64,
 }
 
 /// One selected region in a nested sketch-profile selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignSketchProfileRegion {
+pub(crate) struct DesignSketchProfileRegion {
     /// Byte offset of this region's member count.
-    pub member_count_offset: u64,
+    pub(crate) member_count_offset: u64,
     /// Persistent curve members in source order.
-    pub members: Vec<DesignSketchProfileRegionMember>,
+    pub(crate) members: Vec<DesignSketchProfileRegionMember>,
 }
 
 /// One fixed-width persistent curve member of a selected sketch region.
@@ -226,24 +226,24 @@ pub struct DesignSketchProfileRegion {
     try_from = "DesignSketchProfileRegionMemberWire",
     into = "DesignSketchProfileRegionMemberWire"
 )]
-pub struct DesignSketchProfileRegionMember {
+pub(crate) struct DesignSketchProfileRegionMember {
     /// Byte offset of the member-kind code.
-    pub kind_offset: u64,
+    pub(crate) kind_offset: u64,
     /// Primary persistent identity of the selected Sketch curve.
-    pub curve_primary_id: std::num::NonZeroU32,
+    pub(crate) curve_primary_id: std::num::NonZeroU32,
     /// Byte offset of the persistent curve identity.
-    pub curve_primary_id_offset: u64,
+    pub(crate) curve_primary_id_offset: u64,
     /// First incidence value, encoded as zero or one.
-    pub incidence_flag: bool,
+    pub(crate) incidence_flag: bool,
     /// Second and third incidence values, in source order.
-    pub incidence_values: [DesignRegionIncidence; 2],
+    pub(crate) incidence_values: [DesignRegionIncidence; 2],
     /// Byte offset of the first incidence word.
-    pub incidence_words_offset: u64,
+    pub(crate) incidence_words_offset: u64,
 }
 
 /// One of the two admitted nonzero region-incidence values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignRegionIncidence {
+pub(crate) enum DesignRegionIncidence {
     One,
     Two,
 }
