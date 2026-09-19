@@ -1758,7 +1758,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
     };
     let corners = corners
         .iter()
-        .all(|corner| corner.u.is_finite() && corner.v.is_finite())
+        .all(Point2::is_finite)
         .then(|| {
             if edges.len() == 3 {
                 ordered_tolerant_rectangle_corners(&corners)
