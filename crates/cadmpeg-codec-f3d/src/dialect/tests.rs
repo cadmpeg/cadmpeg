@@ -4,7 +4,13 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    classify_layers, dialect_loss, kernel_dialect_loss, F3dDialect, DECLARED_ROOT_DOCUMENT_MEMBERS,
+    DECLARED_TOP_LEVEL_MANIFEST_VERSION, FORMAT,
+};
+use crate::loss::F3dLossCode;
+use cadmpeg_core::dialect::{Admission, DialectMatch};
+use std::collections::BTreeMap;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {

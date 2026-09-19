@@ -20,7 +20,7 @@ use cadmpeg_test_support::roundtrip::{
     MutationOutcome, SemanticOutcome,
 };
 
-use super::*;
+use super::F3dCodec;
 use crate::test_support::native_test::TestEncode;
 use crate::test_support::smbh_bf4_test::{
     synthetic_geometry_bf4_nurbs_smbh, synthetic_geometry_bf4_smbh,
@@ -69,6 +69,7 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
     f3d_with_smbh_and_protein_with_generated_surface_stitch,
 };
+use cadmpeg_core::CodecError;
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
 #[allow(clippy::vec_init_then_push)]

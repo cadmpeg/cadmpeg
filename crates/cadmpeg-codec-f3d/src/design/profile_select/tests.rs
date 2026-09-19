@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{
+    historical_profile_face_candidates, resolve_entity_selection_path,
+    resolve_entity_selection_profile, resolved_loft_entity_selection_path,
+    resolved_sketch_profile_regions, resolved_spatial_extrude_profile_selection,
+    resolved_spatial_sketch_profile_regions, spatial_profile_containing_entity,
+    EntitySelectionPathResolution, ExtrudeProfileResolution, SketchProfileResolution,
+};
 use crate::design::geometry::{region_containing_points, MAX_ARRANGEMENT_WALK_WORK};
 use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
@@ -31,6 +37,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     SpatialSketchProfile,
 };
+use std::collections::{HashMap, HashSet};
 
 mod spatial_transition;
 

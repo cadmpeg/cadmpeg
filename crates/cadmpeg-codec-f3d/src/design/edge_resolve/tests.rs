@@ -3,11 +3,19 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
 
-use super::*;
+use super::{
+    contextual_deleted_edge_group_candidates, deleted_boundary_edge_group_candidates,
+    partial_historical_edge_selection, project_fixed_fillet, radius_edge_identity_group_candidates,
+    resolved_edge_candidate_intersection, resolved_edge_flange_group, resolved_edge_group,
+    resolved_edge_operand, resolved_edge_treatment_group,
+    resolved_edge_treatment_group_with_corners, resolved_surface_patch_edge_group,
+    result_boundary_reference_edge_group_candidates, surface_patch_grouped_recipe_edges,
+    transition_chain_is_supported_by_recipe, unique_hem_transition_edge_candidate,
+    SurfacePatchRecipeEdges,
+};
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
