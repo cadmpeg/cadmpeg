@@ -3163,6 +3163,23 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>> {
     pub trailing_flags: Vec<bool>,
 }
 
+impl<F: Default> RevisionSurfaceForm<F> {
+    /// Whether every scalar this form carries is finite. The carrier run and
+    /// the post-tail run are booleans, and a solved cache states its tolerance
+    /// as a `FitTolerance`, which is finite by type.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.support_bounds
+            .iter()
+            .chain(self.reference_endpoints.iter())
+            .chain(self.second_endpoints.iter())
+            .flatten()
+            .chain(self.discontinuities.iter().flatten())
+            .all(|value| value.is_finite())
+            && self.cache.values_are_finite()
+    }
+}
+
 /// Mutually exclusive payloads of a revision-gated approximation cache.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3277,6 +3294,14 @@ impl VariableBlendCache {
             Self::Current { fit_tolerance, .. } => Some(fit_tolerance.get()),
             _ => None,
         }
+    }
+
+    /// Whether every stored scalar is finite. A current approximation states
+    /// its tolerance as a `FitTolerance`, which is finite by type.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.parameterization()
+            .is_none_or(RevisionSurfaceParameterization::values_are_finite)
     }
 }
 
@@ -6107,6 +6132,20 @@ pub struct SweepRevisionForm {
     pub path_endpoints: [Option<f64>; 2],
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm,
+}
+
+impl SweepRevisionForm {
+    /// Whether every scalar this form carries is finite. A solved cache states
+    /// its tolerance as a `FitTolerance`, which is finite by type.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.profile_endpoints
+            .iter()
+            .chain(self.path_endpoints.iter())
+            .flatten()
+            .all(|value| value.is_finite())
+            && self.cache.values_are_finite()
+    }
 }
 
 /// Complete native `sweep_spl_sur` construction graph.
