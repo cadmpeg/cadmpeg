@@ -26,7 +26,7 @@ use super::geometry::{
 use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
-pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet<i64>) {
+pub(super) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet<i64>) {
     let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
     let mut inward_normal_surfaces = HashSet::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
@@ -55,7 +55,7 @@ pub(crate) fn decode_analytic_carriers(records: &[Record]) -> (Carriers, HashSet
 /// Pass 2 (faces): keep every face whose surface reference resolves, decoding
 /// or classifying its carrier and recording surface reachability.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn keep_faces_and_carriers(
+pub(super) fn keep_faces_and_carriers(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -219,7 +219,7 @@ pub(crate) fn keep_faces_and_carriers(
 /// Pass 2 (topology): walk each kept face's loops and coedge rings, pulling in
 /// the supporting edge/vertex/point graph and decoding curve and pcurve carriers.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn walk_reachable_topology(
+pub(super) fn walk_reachable_topology(
     out: &mut AsmBrep,
     by_index: &HashMap<i64, &Record>,
     token_table: &nurbs::toks::SubtypeTable,
@@ -496,7 +496,7 @@ pub(crate) fn walk_reachable_topology(
 /// Pass 2 (wires): collect shell wire edges and free vertices, decoding wire
 /// curve carriers and emitting wire topologies.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn collect_wire_topology(
+pub(super) fn collect_wire_topology(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -759,7 +759,7 @@ fn keep_wire_edge(
 
 /// Partition kept edges' curve references by sense so a carrier shared across
 /// both senses can emit a `:reversed` clone beside its forward orientation.
-pub(crate) fn classify_edge_curve_senses(
+pub(super) fn classify_edge_curve_senses(
     records: &[Record],
     reach: &Reachable,
 ) -> (HashSet<i64>, HashSet<i64>) {
@@ -785,7 +785,7 @@ pub(crate) fn classify_edge_curve_senses(
     (reversed_curve_refs, forward_curve_refs)
 }
 
-pub(crate) fn ring_coedges(
+pub(super) fn ring_coedges(
     loop_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
@@ -812,7 +812,7 @@ pub(crate) fn ring_coedges(
     out
 }
 
-pub(crate) fn loop_chain(
+pub(super) fn loop_chain(
     face_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
@@ -858,7 +858,7 @@ fn face_chain(
     out
 }
 
-pub(crate) fn subshell_ancestor_shells(
+pub(super) fn subshell_ancestor_shells(
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
 ) -> HashMap<i64, i64> {
@@ -883,7 +883,7 @@ pub(crate) fn subshell_ancestor_shells(
     out
 }
 
-pub(crate) fn shell_faces(
+pub(super) fn shell_faces(
     shell: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
@@ -910,7 +910,7 @@ pub(crate) fn shell_faces(
     out
 }
 
-pub(crate) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>) -> Vec<i64> {
+pub(super) fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>) -> Vec<i64> {
     let mut out = shell.ref_at(6).into_iter().collect::<Vec<_>>();
     let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
     let mut guard = HashSet::new();
@@ -954,7 +954,7 @@ fn face_chain_from(
     out
 }
 
-pub(crate) fn shell_chain(
+pub(super) fn shell_chain(
     region_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     format: IdFormat,
@@ -974,7 +974,7 @@ pub(crate) fn shell_chain(
     out
 }
 
-pub(crate) fn region_chain(
+pub(super) fn region_chain(
     body_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     format: IdFormat,

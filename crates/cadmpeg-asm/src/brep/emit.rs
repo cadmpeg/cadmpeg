@@ -3809,7 +3809,7 @@ fn emit_law_curve(
 
 /// Pass 3: emit surface and curve carriers in `RecordTable` order for
 /// deterministic output.
-pub(crate) fn emit_carrier_records(
+pub(super) fn emit_carrier_records(
     out: &mut AsmBrep,
     records: &[Record],
     carriers: &mut Carriers,
@@ -3852,7 +3852,7 @@ pub(crate) fn emit_carrier_records(
 }
 
 /// Emit reachable pcurve carriers with their wrapper and fit-tolerance tails.
-pub(crate) fn emit_pcurves(
+pub(super) fn emit_pcurves(
     out: &mut AsmBrep,
     records: &[Record],
     carriers: &mut Carriers,
@@ -3924,7 +3924,7 @@ pub(crate) fn emit_pcurves(
 }
 
 /// Emit reachable point carriers, scaled to millimetres.
-pub(crate) fn emit_points(
+pub(super) fn emit_points(
     out: &mut AsmBrep,
     records: &[Record],
     reach: &Reachable,
@@ -3951,7 +3951,7 @@ pub(crate) fn emit_points(
 }
 
 /// Emit reachable vertices with their tolerant tails and ownership records.
-pub(crate) fn emit_vertices(
+pub(super) fn emit_vertices(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4061,7 +4061,7 @@ pub(crate) fn emit_vertices(
 
 /// Emit reachable edges with parameter ranges, tolerant tails, ownership, and
 /// continuity records, folding reversed senses onto the shared carrier.
-pub(crate) fn emit_edges(
+pub(super) fn emit_edges(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4211,7 +4211,7 @@ pub(crate) fn emit_edges(
 
 /// Emit reachable coedges with pcurve links, tolerant parameters, and any
 /// embedded use-curve carrier.
-pub(crate) fn emit_coedges(
+pub(super) fn emit_coedges(
     out: &mut AsmBrep,
     records: &[Record],
     token_table: &nurbs::toks::SubtypeTable,
@@ -4350,7 +4350,7 @@ pub(crate) fn emit_coedges(
 }
 
 /// Emit reachable loops with their coedge rings filtered to kept coedges.
-pub(crate) fn emit_loops(
+pub(super) fn emit_loops(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4381,7 +4381,7 @@ pub(crate) fn emit_loops(
 
 /// Emit reachable faces, folding surface reversal into the normalized sense and
 /// recording native sidedness.
-pub(crate) fn emit_faces(
+pub(super) fn emit_faces(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4468,7 +4468,7 @@ pub(crate) fn emit_faces(
 /// Emit shells, regions, and bodies for every record so back-references
 /// resolve, filtering child lists to reachable entities.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn emit_containers(
+pub(super) fn emit_containers(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4606,7 +4606,7 @@ pub(crate) fn emit_containers(
 
 /// Emit direct and inherited entity attributes and derive the link, tag, and
 /// timestamp projections. Returns the set of emitted attribute record indices.
-pub(crate) fn emit_attributes(
+pub(super) fn emit_attributes(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
@@ -4699,7 +4699,7 @@ pub(crate) fn emit_attributes(
 
 /// Preserve undecoded carriers and opaque cached procedural surfaces referenced
 /// by real topology as passthrough unknown records.
-pub(crate) fn emit_passthrough_unknowns(
+pub(super) fn emit_passthrough_unknowns(
     out: &mut AsmBrep,
     records: &[Record],
     bytes: &[u8],
@@ -4740,7 +4740,7 @@ pub(crate) fn emit_passthrough_unknowns(
 }
 
 /// Count record kinds that were neither emitted nor preserved.
-pub(crate) fn count_other_records(
+pub(super) fn count_other_records(
     out: &mut AsmBrep,
     records: &[Record],
     reach: &Reachable,
