@@ -306,3 +306,70 @@ fn loft_payload_admits_only_finite_entries_and_bridge_doubles() {
     invalid["parameters"]["ranges"][0] = serde_json::json!([1.0, 0.0]);
     assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
 }
+
+#[test]
+fn a_compound_loft_scale_member_direction_is_refused_by_the_payload_admission() {
+    use super::CompoundLoftSurfacePayload;
+    use crate::geometry::{
+        ClassicLoftProfileData, CompoundLoftConstruction, CompoundLoftDirection, CompoundLoftScale,
+        CompoundLoftScaleMember, CompoundLoftScales, CompoundLoftTail, LoftSubdata,
+    };
+    use crate::math::Vector3;
+
+    let construction = |direction| {
+        Box::new(CompoundLoftConstruction {
+            scales: CompoundLoftScales::try_new(vec![CompoundLoftScale {
+                members: vec![CompoundLoftScaleMember {
+                    type_code: 0,
+                    curve: "test:model:curve#member".try_into().unwrap(),
+                    data: ClassicLoftProfileData {
+                        surface: support(),
+                        pcurve: None,
+                        first_flag: false,
+                        asm_extension: 0,
+                        subdata: LoftSubdata::Type211 {
+                            dimensions: [1, 0],
+                            row: [0.0, 1.0],
+                        },
+                        direction,
+                    },
+                }],
+                path: "test:model:curve#path".try_into().unwrap(),
+                auxiliaries: Vec::new(),
+                tail: [0, 0],
+            }])
+            .unwrap(),
+            flags: [false; 2],
+            tail: CompoundLoftTail::Zero {
+                flags: [false; 2],
+                direction: CompoundLoftDirection::Vector {
+                    value: Vector3::new(0.0, 0.0, 1.0),
+                },
+                trailing_flags: [false; 2],
+            },
+        })
+    };
+    let admitted =
+        CompoundLoftSurfacePayload::try_new(construction(Some(Vector3::new(0.0, 0.0, 1.0))), None)
+            .unwrap();
+    let definition = ProceduralSurfaceDefinition::CompoundLoft(admitted);
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+    assert!(CompoundLoftSurfacePayload::try_new(construction(None), None).is_ok());
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(CompoundLoftSurfacePayload::try_new(
+            construction(Some(Vector3::new(value, 0.0, 1.0))),
+            None
+        )
+        .is_err());
+    }
+    // JSON states no infinity or NaN, so the wire cannot spell the refused
+    // direction; the admission above is the route that reads it.
+    assert_eq!(
+        wire["construction"]["scales"][0]["members"][0]["data"]["direction"],
+        serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
+    );
+}
