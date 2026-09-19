@@ -757,3 +757,683 @@ fn the_loft_and_net_admissions_refuse_a_non_finite_section_or_cache_scalar() {
         }
     }
 }
+
+#[test]
+fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
+    use super::{
+        BlendSurfacePayload, BlendSurfacePayloadWire, VariableBlendSurfacePayload,
+        VariableBlendSurfacePayloadWire,
+    };
+    use crate::geometry::{
+        BlendCrossSection, BlendRadiusLaw, CacheContract, RevisionCacheForm,
+        RevisionSurfaceParameterization, RollingBallConstruction, RollingBallRadiusSelector,
+        RollingBallSide, RollingBallSupportCurve, RollingBallSupportSurface, VariableBlendCache,
+        VariableBlendConstruction, VariableBlendConvexity, VariableBlendRadii,
+        VariableBlendRenderMode, VariableBlendSupportKind, VariableBlendSurfaceSubtype,
+        VariableBlendValue, VariableBlendValuePayload,
+    };
+    use crate::ids::{CurveId, SurfaceId};
+    use crate::math::Point3;
+
+    // One value per float field family the two admissions reach and the
+    // predecessor left unrefused.
+    #[derive(Clone, Copy)]
+    struct Fields {
+        side_surface_range: [[Option<f64>; 2]; 2],
+        side_curve_range: [Option<f64>; 2],
+        slice_range: [Option<f64>; 2],
+        u_interval: [Option<f64>; 2],
+        discontinuity: f64,
+    }
+    let admitted = Fields {
+        side_surface_range: [[Some(0.0), None], [None, Some(1.0)]],
+        side_curve_range: [None, Some(2.0)],
+        slice_range: [Some(3.0), None],
+        u_interval: [Some(4.0), None],
+        discontinuity: 5.0,
+    };
+    let curve = || CurveId::mint("synthetic:test:curve#blend").unwrap();
+    let surface = || SurfaceId::mint("synthetic:test:surface#blend").unwrap();
+    let side = |fields: Fields| RollingBallSide {
+        support_kind: VariableBlendSupportKind::Surface,
+        surface: Some(RollingBallSupportSurface {
+            surface: surface(),
+            parameter_ranges: fields.side_surface_range,
+        }),
+        curve: Some(RollingBallSupportCurve {
+            curve: curve(),
+            parameter_range: fields.side_curve_range,
+        }),
+        pcurve: None,
+        location: Point3::new(0.0, 0.0, 0.0),
+        secondary_pcurve: None,
+        extension: None,
+    };
+    let parameterization = |fields: Fields| RevisionSurfaceParameterization {
+        u_interval: fields.u_interval,
+        v_interval: [None, None],
+        u_closure: 0,
+        v_closure: 0,
+        u_singularity: 0,
+        v_singularity: 0,
+    };
+    let discontinuities = |fields: Fields| {
+        [
+            vec![fields.discontinuity],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ]
+    };
+
+    let variable = |fields: Fields| {
+        Box::new(VariableBlendConstruction {
+            subtype: VariableBlendSurfaceSubtype::VariableBlend,
+            revision: 1,
+            sides: Box::new([side(fields), side(admitted)]),
+            slice: curve(),
+            slice_range: fields.slice_range,
+            offsets: [0.0, 0.0],
+            radii: VariableBlendRadii::Single {
+                value: VariableBlendValue {
+                    modern_flag: false,
+                    calibrated: 0,
+                    payload: VariableBlendValuePayload::TwoEnds {
+                        discriminator: 0,
+                        parameters: [0.0, 1.0],
+                        radii: [1.0, 1.0],
+                    },
+                },
+            },
+            cross_section: None,
+            u_range: [0.0, 1.0],
+            v_lower: None,
+            shape_parameter: 0.0,
+            shape_length: 0.0,
+            shape_tail: 0,
+            cache: VariableBlendCache::Parameterization {
+                shape_prefix: 0,
+                parameterization: parameterization(fields),
+            },
+            discontinuities: discontinuities(fields),
+            tail_flag: false,
+            tail_extensions: [0; 3],
+            secondary_curve: None,
+            convexity: VariableBlendConvexity::Convex,
+            render_mode: VariableBlendRenderMode::RollingBallEnvelope,
+            post_range: [None, None],
+            post_curve: None,
+            post_pcurve: None,
+        })
+    };
+    let variable_new = |fields: Fields| VariableBlendSurfacePayload::try_new(variable(fields));
+    let variable_wire = |fields: Fields| {
+        VariableBlendSurfacePayload::try_from(VariableBlendSurfacePayloadWire {
+            construction: variable(fields),
+        })
+    };
+
+    let rolling = |fields: Fields| {
+        CacheContract::from_form(Some(Box::new(RollingBallConstruction {
+            definition_index: 0,
+            sides: Box::new([side(fields), side(admitted)]),
+            slice: curve(),
+            slice_range: fields.slice_range,
+            offsets: [0.0, 0.0],
+            radius_selector: RollingBallRadiusSelector::None {},
+            u_range: [None, None],
+            v_range: [None, None],
+            shape_prefix: 0,
+            parameters: [0.0, 0.0],
+            tail: 0,
+            cache: RevisionCacheForm::Parameterization(parameterization(fields)),
+            discontinuities: discontinuities(fields),
+            tail_flag: false,
+            third: None,
+            tail_extensions: [0; 3],
+        })))
+    };
+    let blend_new = |fields: Fields| {
+        BlendSurfacePayload::try_new(
+            [None, None],
+            None,
+            BlendRadiusLaw::Constant { signed_radius: 1.0 },
+            BlendCrossSection::Circular,
+            rolling(fields),
+        )
+    };
+    let blend_wire = |fields: Fields| {
+        BlendSurfacePayload::try_from(BlendSurfacePayloadWire {
+            supports: [None, None],
+            spine: None,
+            radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
+            cross_section: BlendCrossSection::Circular,
+            cache: rolling(fields),
+        })
+    };
+
+    let definition = ProceduralSurfaceDefinition::VariableBlend(variable_new(admitted).unwrap());
+    let wire = serde_json::to_value(&definition).unwrap();
+    let first_side = &wire["construction"]["sides"][0];
+    assert_eq!(
+        first_side["surface"]["parameter_ranges"],
+        serde_json::json!([[0.0, null], [null, 1.0]])
+    );
+    assert_eq!(
+        first_side["curve"]["parameter_range"],
+        serde_json::json!([null, 2.0])
+    );
+    assert_eq!(
+        wire["construction"]["slice_range"],
+        serde_json::json!([3.0, null])
+    );
+    assert_eq!(
+        wire["construction"]["cache"]["parameterization"]["u_interval"],
+        serde_json::json!([4.0, null])
+    );
+    assert_eq!(
+        wire["construction"]["discontinuities"][0],
+        serde_json::json!([5.0])
+    );
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        definition
+    );
+    assert!(variable_wire(admitted).is_ok());
+    assert!(blend_new(admitted).is_ok());
+    assert!(blend_wire(admitted).is_ok());
+
+    // JSON itself states no infinity or NaN, so the wire cannot spell a
+    // refused value; `TryFrom<…Wire>` is the conversion the deserializer
+    // runs, and it is exercised directly here.
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for fields in [
+            Fields {
+                side_surface_range: [[Some(value), None], [None, Some(1.0)]],
+                ..admitted
+            },
+            Fields {
+                side_curve_range: [None, Some(value)],
+                ..admitted
+            },
+            Fields {
+                slice_range: [Some(value), None],
+                ..admitted
+            },
+            Fields {
+                u_interval: [Some(value), None],
+                ..admitted
+            },
+            Fields {
+                discontinuity: value,
+                ..admitted
+            },
+        ] {
+            assert!(variable_new(fields).is_err());
+            assert!(variable_wire(fields).is_err());
+            assert!(blend_new(fields).is_err());
+            assert!(blend_wire(fields).is_err());
+        }
+    }
+}
+
+#[test]
+fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
+    use super::{
+        DeformableSurfacePayload, DeformableSurfacePayloadWire, ExactSurfacePayload,
+        ExactSurfacePayloadWire, ExtrusionSurfaceConstruction, ExtrusionSurfaceConstructionWire,
+        RevolutionSurfaceConstruction, RevolutionSurfaceConstructionWire, SumSurfaceConstruction,
+        SumSurfaceConstructionWire, TaperSurfaceConstruction, TaperSurfaceConstructionWire,
+    };
+    use crate::geometry::{
+        CacheContract, DeformableSurfaceConstruction, DeformableSurfaceData, ExactSpline,
+        RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization, TaperSurfaceKind,
+    };
+    use crate::ids::CurveId;
+    use crate::math::{Point3, Vector3};
+
+    // One value per float field family the shared revision-gated form carries.
+    #[derive(Clone, Copy)]
+    struct Fields {
+        support_bounds: [Option<f64>; 4],
+        reference_endpoints: [Option<f64>; 2],
+        second_endpoints: [Option<f64>; 2],
+        u_interval: [Option<f64>; 2],
+        discontinuity: f64,
+    }
+    let admitted = Fields {
+        support_bounds: [Some(0.0), None, Some(1.0), None],
+        reference_endpoints: [Some(2.0), None],
+        second_endpoints: [None, Some(3.0)],
+        u_interval: [Some(4.0), None],
+        discontinuity: 5.0,
+    };
+    let form = |fields: Fields| RevisionSurfaceForm {
+        revision: 1,
+        support_bounds: fields.support_bounds,
+        reference_endpoints: fields.reference_endpoints,
+        second_endpoints: fields.second_endpoints,
+        flags: Vec::new(),
+        cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization {
+            u_interval: fields.u_interval,
+            v_interval: [None, None],
+            u_closure: 0,
+            v_closure: 0,
+            u_singularity: 0,
+            v_singularity: 0,
+        }),
+        discontinuities: [
+            vec![fields.discontinuity],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ],
+        tail_flag: false,
+        trailing_flags: Vec::new(),
+    };
+    let offset_form = |fields: Fields| RevisionSurfaceForm::<[bool; 4]> {
+        revision: 1,
+        support_bounds: fields.support_bounds,
+        reference_endpoints: fields.reference_endpoints,
+        second_endpoints: fields.second_endpoints,
+        flags: [false; 4],
+        cache: form(fields).cache,
+        discontinuities: form(fields).discontinuities,
+        tail_flag: false,
+        trailing_flags: Vec::new(),
+    };
+    let cache = |fields: Fields| CacheContract::from_form(Some(form(fields)));
+    let curve = || CurveId::mint("synthetic:test:curve#revision").unwrap();
+
+    let taper = |fields: Fields| {
+        TaperSurfaceConstruction::try_new(
+            support(),
+            curve(),
+            None,
+            0.0,
+            TaperSurfaceKind::Standard {},
+            cache(fields),
+        )
+    };
+    let taper_wire = |fields: Fields| {
+        TaperSurfaceConstruction::try_from(TaperSurfaceConstructionWire {
+            support: support(),
+            reference: curve(),
+            pcurve: None,
+            parameter: 0.0,
+            taper: TaperSurfaceKind::Standard {},
+            cache: cache(fields),
+        })
+    };
+    let extrusion = |fields: Fields| {
+        ExtrusionSurfaceConstruction::try_new(
+            curve(),
+            None,
+            Vector3::new(0.0, 0.0, 1.0),
+            None,
+            cache(fields),
+        )
+    };
+    let extrusion_wire = |fields: Fields| {
+        ExtrusionSurfaceConstruction::try_from(ExtrusionSurfaceConstructionWire {
+            directrix: curve(),
+            parameter_interval: None,
+            direction: Vector3::new(0.0, 0.0, 1.0),
+            native_position: None,
+            cache: cache(fields),
+        })
+    };
+    let revolution = |fields: Fields| {
+        RevolutionSurfaceConstruction::try_new(
+            curve(),
+            (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            [0.0, 1.0],
+            None,
+            None,
+            false,
+            cache(fields),
+        )
+    };
+    let revolution_wire = |fields: Fields| {
+        RevolutionSurfaceConstruction::try_from(RevolutionSurfaceConstructionWire {
+            directrix: curve(),
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            angular_interval: [0.0, 1.0],
+            angular_parameter_interval: None,
+            parameter_interval: None,
+            transposed: false,
+            cache: cache(fields),
+        })
+    };
+    let sum = |fields: Fields| {
+        SumSurfaceConstruction::try_new(
+            curve(),
+            curve(),
+            Vector3::new(0.0, 0.0, 0.0),
+            cache(fields),
+        )
+    };
+    let sum_wire = |fields: Fields| {
+        SumSurfaceConstruction::try_from(SumSurfaceConstructionWire {
+            first: curve(),
+            second: curve(),
+            basepoint: Vector3::new(0.0, 0.0, 0.0),
+            cache: cache(fields),
+        })
+    };
+    let offset = |fields: Fields| {
+        OffsetSurfaceConstruction::try_new(
+            support(),
+            1.0,
+            None,
+            None,
+            false,
+            OffsetExtension::Revision {
+                form: offset_form(fields),
+            },
+        )
+    };
+    let spline = |fields: Fields| ExactSpline::Revision {
+        intervals: [[Some(0.0), None], [None, Some(1.0)]],
+        extension: 0,
+        form: form(fields),
+    };
+    let exact = |fields: Fields| ExactSurfacePayload::try_new(spline(fields));
+    let exact_wire = |fields: Fields| {
+        ExactSurfacePayload::try_from(ExactSurfacePayloadWire {
+            spline: spline(fields),
+        })
+    };
+    let deformable_construction = |fields: Fields| {
+        Box::new(DeformableSurfaceConstruction {
+            support: support(),
+            data: DeformableSurfaceData::Minimal {
+                vectors: [Vector3::new(0.0, 0.0, 1.0); 4],
+                selector: 0,
+            },
+            cache: cache(fields),
+            discontinuities: Default::default(),
+            discontinuity_flag: false,
+        })
+    };
+    let deformable =
+        |fields: Fields| DeformableSurfacePayload::try_new(deformable_construction(fields));
+    let deformable_wire = |fields: Fields| {
+        DeformableSurfacePayload::try_from(DeformableSurfacePayloadWire {
+            construction: deformable_construction(fields),
+        })
+    };
+
+    let definition = ProceduralSurfaceDefinition::Exact(exact(admitted).unwrap());
+    let wire = serde_json::to_value(&definition).unwrap();
+    let stored = &wire["spline"]["form"];
+    assert_eq!(
+        stored["support_bounds"],
+        serde_json::json!([0.0, null, 1.0, null])
+    );
+    assert_eq!(
+        stored["reference_endpoints"],
+        serde_json::json!([2.0, null])
+    );
+    assert_eq!(stored["second_endpoints"], serde_json::json!([null, 3.0]));
+    assert_eq!(
+        stored["cache"]["u_interval"],
+        serde_json::json!([4.0, null])
+    );
+    assert_eq!(stored["discontinuities"][0], serde_json::json!([5.0]));
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        definition
+    );
+    for ok in [
+        taper(admitted).is_ok(),
+        taper_wire(admitted).is_ok(),
+        extrusion(admitted).is_ok(),
+        extrusion_wire(admitted).is_ok(),
+        revolution(admitted).is_ok(),
+        revolution_wire(admitted).is_ok(),
+        sum(admitted).is_ok(),
+        sum_wire(admitted).is_ok(),
+        offset(admitted).is_ok(),
+        exact_wire(admitted).is_ok(),
+        deformable(admitted).is_ok(),
+        deformable_wire(admitted).is_ok(),
+    ] {
+        assert!(ok);
+    }
+
+    // JSON itself states no infinity or NaN, so the wire cannot spell a
+    // refused value; `TryFrom<…Wire>` is the conversion the deserializer
+    // runs, and it is exercised directly here.
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for fields in [
+            Fields {
+                support_bounds: [None, Some(value), None, None],
+                ..admitted
+            },
+            Fields {
+                reference_endpoints: [Some(value), None],
+                ..admitted
+            },
+            Fields {
+                second_endpoints: [None, Some(value)],
+                ..admitted
+            },
+            Fields {
+                u_interval: [Some(value), None],
+                ..admitted
+            },
+            Fields {
+                discontinuity: value,
+                ..admitted
+            },
+        ] {
+            for refused in [
+                taper(fields).is_err(),
+                taper_wire(fields).is_err(),
+                extrusion(fields).is_err(),
+                extrusion_wire(fields).is_err(),
+                revolution(fields).is_err(),
+                revolution_wire(fields).is_err(),
+                sum(fields).is_err(),
+                sum_wire(fields).is_err(),
+                offset(fields).is_err(),
+                exact(fields).is_err(),
+                exact_wire(fields).is_err(),
+                deformable(fields).is_err(),
+                deformable_wire(fields).is_err(),
+            ] {
+                assert!(refused);
+            }
+        }
+    }
+}
+
+#[test]
+fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars() {
+    use super::{
+        SweepSurfacePayload, SweepSurfacePayloadWire, VertexBlendSurfacePayload,
+        VertexBlendSurfacePayloadWire,
+    };
+    use crate::geometry::{
+        CacheContract, FitTolerance, RevisionCacheForm, RevisionSurfaceParameterization,
+        SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout, VertexBlendBoundary,
+        VertexBlendBoundaryGeometry, VertexBlendConstruction, VertexBlendTwists,
+    };
+    use crate::ids::CurveId;
+    use crate::math::Vector3;
+
+    // One value per float field family these two admissions left unrefused.
+    #[derive(Clone, Copy)]
+    struct Fields {
+        profile_endpoints: [Option<f64>; 2],
+        path_endpoints: [Option<f64>; 2],
+        sweep_u_interval: [Option<f64>; 2],
+        curve_endpoints: [Option<f64>; 2],
+        boundary_support_bounds: [Option<f64>; 4],
+    }
+    let admitted = Fields {
+        profile_endpoints: [Some(0.0), None],
+        path_endpoints: [None, Some(1.0)],
+        sweep_u_interval: [Some(2.0), None],
+        curve_endpoints: [Some(3.0), None],
+        boundary_support_bounds: [None, Some(4.0), None, None],
+    };
+    let curve = || CurveId::mint("synthetic:test:curve#sweep").unwrap();
+
+    let sweep_construction = |fields: Fields| {
+        Box::new(SweepSurfaceConstruction {
+            primary_kind: 0,
+            cache: CacheContract::from_form(Some(SweepRevisionForm {
+                revision: 1,
+                primary_flag: false,
+                profile_endpoints: fields.profile_endpoints,
+                path_endpoints: fields.path_endpoints,
+                cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization {
+                    u_interval: fields.sweep_u_interval,
+                    v_interval: [None, None],
+                    u_closure: 0,
+                    v_closure: 0,
+                    u_singularity: 0,
+                    v_singularity: 0,
+                }),
+            })),
+            layout: SweepSurfaceLayout::ProfileFirst {
+                secondary_kind: 0,
+                directions: [Vector3::new(0.0, 0.0, 1.0); 5],
+                origin: crate::math::Point3::new(0.0, 0.0, 0.0),
+                parameters: [0.0; 4],
+                formulas: Box::new(std::array::from_fn(
+                    |_| crate::geometry::LawFormula::Null {},
+                )),
+            },
+            discontinuities: Default::default(),
+            discontinuity_flag: false,
+        })
+    };
+    let sweep = |fields: Fields| {
+        SweepSurfacePayload::try_new(curve(), curve(), Some(sweep_construction(fields)))
+    };
+    let sweep_wire = |fields: Fields| {
+        SweepSurfacePayload::try_from(SweepSurfacePayloadWire {
+            profile: curve(),
+            spine: curve(),
+            native: Some(sweep_construction(fields)),
+        })
+    };
+
+    let vertex_construction = |fields: Fields| {
+        Box::new(VertexBlendConstruction {
+            revision: Some(1),
+            boundaries: vec![
+                VertexBlendBoundary {
+                    boundary_type: false,
+                    magic: Vector3::new(0.0, 0.0, 1.0),
+                    u_smoothing: false,
+                    v_smoothing: false,
+                    fullness: 0.0,
+                    geometry: VertexBlendBoundaryGeometry::Circle {
+                        curve: curve(),
+                        curve_endpoints: fields.curve_endpoints,
+                        twists: VertexBlendTwists::None {},
+                        parameters: [0.0, 1.0],
+                        sense: false,
+                    },
+                },
+                VertexBlendBoundary {
+                    boundary_type: false,
+                    magic: Vector3::new(0.0, 0.0, 1.0),
+                    u_smoothing: false,
+                    v_smoothing: false,
+                    fullness: 0.0,
+                    geometry: VertexBlendBoundaryGeometry::Pcurve {
+                        surface: support(),
+                        support_bounds: fields.boundary_support_bounds,
+                        pcurve: None,
+                        sense: false,
+                        fit_tolerance: FitTolerance::try_new(0.0).unwrap(),
+                    },
+                },
+                VertexBlendBoundary {
+                    boundary_type: false,
+                    magic: Vector3::new(0.0, 0.0, 1.0),
+                    u_smoothing: false,
+                    v_smoothing: false,
+                    fullness: 0.0,
+                    geometry: VertexBlendBoundaryGeometry::Plane {
+                        normal: Vector3::new(0.0, 0.0, 1.0),
+                        parameters: [0.0, 1.0],
+                        curve: curve(),
+                        curve_endpoints: fields.curve_endpoints,
+                    },
+                },
+            ],
+            grid_size: 0,
+            fit_tolerance: FitTolerance::try_new(0.0).unwrap(),
+        })
+    };
+    let vertex = |fields: Fields| VertexBlendSurfacePayload::try_new(vertex_construction(fields));
+    let vertex_wire = |fields: Fields| {
+        VertexBlendSurfacePayload::try_from(VertexBlendSurfacePayloadWire {
+            construction: vertex_construction(fields),
+        })
+    };
+
+    let definition = ProceduralSurfaceDefinition::Sweep(sweep(admitted).unwrap());
+    let wire = serde_json::to_value(&definition).unwrap();
+    let stored = &wire["native"]["cache"]["form"];
+    assert_eq!(stored["profile_endpoints"], serde_json::json!([0.0, null]));
+    assert_eq!(stored["path_endpoints"], serde_json::json!([null, 1.0]));
+    assert_eq!(
+        stored["cache"]["u_interval"],
+        serde_json::json!([2.0, null])
+    );
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        definition
+    );
+    assert!(sweep_wire(admitted).is_ok());
+    assert!(vertex(admitted).is_ok());
+    assert!(vertex_wire(admitted).is_ok());
+
+    // JSON itself states no infinity or NaN, so the wire cannot spell a
+    // refused value; `TryFrom<…Wire>` is the conversion the deserializer
+    // runs, and it is exercised directly here.
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for fields in [
+            Fields {
+                profile_endpoints: [Some(value), None],
+                ..admitted
+            },
+            Fields {
+                path_endpoints: [None, Some(value)],
+                ..admitted
+            },
+            Fields {
+                sweep_u_interval: [Some(value), None],
+                ..admitted
+            },
+        ] {
+            assert!(sweep(fields).is_err());
+            assert!(sweep_wire(fields).is_err());
+        }
+        for fields in [
+            Fields {
+                curve_endpoints: [Some(value), None],
+                ..admitted
+            },
+            Fields {
+                boundary_support_bounds: [None, Some(value), None, None],
+                ..admitted
+            },
+        ] {
+            assert!(vertex(fields).is_err());
+            assert!(vertex_wire(fields).is_err());
+        }
+    }
+}

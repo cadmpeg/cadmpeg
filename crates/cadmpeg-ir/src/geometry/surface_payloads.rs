@@ -170,7 +170,11 @@ impl TaperSurfaceConstruction {
                 factor,
             } => draft.is_finite() && sine.is_finite() && cosine.is_finite() && factor.is_finite(),
         };
-        if !tail_finite {
+        if !tail_finite
+            || !cache
+                .form()
+                .is_none_or(RevisionSurfaceForm::values_are_finite)
+        {
             return Err(ProceduralGeometryError::Payload(
                 "taper surface parameter or subtype tail is not finite",
             ));
@@ -298,6 +302,14 @@ impl ExtrusionSurfaceConstruction {
         native_position: Option<Point3>,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
+        if !cache
+            .form()
+            .is_none_or(RevisionSurfaceForm::values_are_finite)
+        {
+            return Err(ProceduralGeometryError::Payload(
+                "Extrusion.cache is not finite",
+            ));
+        }
         Ok(Self {
             directrix,
             parameter_interval: parameter_interval
@@ -444,6 +456,14 @@ impl RevolutionSurfaceConstruction {
         transposed: bool,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
+        if !cache
+            .form()
+            .is_none_or(RevisionSurfaceForm::values_are_finite)
+        {
+            return Err(ProceduralGeometryError::Payload(
+                "revolution cache form is not finite",
+            ));
+        }
         let admit_interval = |range: [f64; 2], message| {
             let interval = ParameterInterval::new(range)
                 .map_err(|_| ProceduralGeometryError::Payload(message))?;
@@ -628,6 +648,15 @@ impl OffsetSurfaceConstruction {
         linear_support_extension: bool,
         extension: OffsetExtension,
     ) -> Result<Self, ProceduralGeometryError> {
+        let extension_finite = match &extension {
+            OffsetExtension::Legacy { .. } => true,
+            OffsetExtension::Revision { form } => form.values_are_finite(),
+        };
+        if !extension_finite {
+            return Err(ProceduralGeometryError::Payload(
+                "Offset.extension is not finite",
+            ));
+        }
         Ok(Self {
             support,
             distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
@@ -1045,6 +1074,14 @@ impl SumSurfaceConstruction {
         basepoint: Vector3,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
+        if !cache
+            .form()
+            .is_none_or(RevisionSurfaceForm::values_are_finite)
+        {
+            return Err(ProceduralGeometryError::Payload(
+                "sum cache form is not finite",
+            ));
+        }
         Ok(Self {
             first,
             second,
@@ -1100,11 +1137,16 @@ impl ExactSurfacePayload {
             crate::geometry::ExactSpline::Legacy { ranges, .. } => ranges
                 .iter()
                 .all(|range| range.iter().all(|value| value.is_finite()) && range[0] <= range[1]),
-            crate::geometry::ExactSpline::Revision { intervals, .. } => intervals
-                .iter()
-                .flatten()
-                .flatten()
-                .all(|value| value.is_finite()),
+            crate::geometry::ExactSpline::Revision {
+                intervals, form, ..
+            } => {
+                intervals
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .all(|value| value.is_finite())
+                    && form.values_are_finite()
+            }
         };
         if !valid {
             return Err(ProceduralGeometryError::Payload(
@@ -1859,7 +1901,11 @@ impl SweepSurfacePayload {
                     .discontinuities
                     .iter()
                     .flatten()
-                    .all(|value| value.is_finite());
+                    .all(|value| value.is_finite())
+                && construction
+                    .cache
+                    .form()
+                    .is_none_or(crate::geometry::SweepRevisionForm::values_are_finite);
             if !scalars_valid {
                 return Err(ProceduralGeometryError::Payload(
                     "sweep surface construction payload is invalid",
@@ -1995,6 +2041,10 @@ impl DeformableSurfacePayload {
                 .iter()
                 .flatten()
                 .all(|value| value.is_finite())
+            || !construction
+                .cache
+                .form()
+                .is_none_or(RevisionSurfaceForm::values_are_finite)
         {
             return Err(ProceduralGeometryError::Payload(
                 "deformable surface construction payload is invalid",
@@ -2137,7 +2187,7 @@ impl VariableBlendSurfacePayload {
         let sides_valid = construction
             .sides
             .iter()
-            .all(|side| side.location.is_finite());
+            .all(crate::geometry::RollingBallSide::values_are_finite);
         let values_valid = match &construction.radii {
             crate::geometry::VariableBlendRadii::Single { value } => {
                 variable_blend_value_valid(value)
@@ -2159,9 +2209,14 @@ impl VariableBlendSurfacePayload {
                 }
                 crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
             });
-        let scalar_tail_valid = construction.offsets.iter().all(|value| value.is_finite())
+        let scalar_tail_valid = construction
+            .offsets
+            .iter()
+            .chain(construction.discontinuities.iter().flatten())
+            .all(|value| value.is_finite())
             && construction.shape_parameter.is_finite()
-            && construction.shape_length.is_finite();
+            && construction.shape_length.is_finite()
+            && construction.cache.values_are_finite();
         if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
             return Err(ProceduralGeometryError::Payload(
                 "variable blend construction payload is invalid",
@@ -2205,12 +2260,16 @@ impl VertexBlendSurfacePayload {
                 && boundary.fullness.is_finite()
                 && match &boundary.geometry {
                     crate::geometry::VertexBlendBoundaryGeometry::Circle {
+                        curve_endpoints,
                         twists,
                         parameters,
                         ..
                     } => {
                         twists.entries().iter().all(crate::math::Point3::is_finite)
-                            && parameters.iter().all(|value| value.is_finite())
+                            && parameters
+                                .iter()
+                                .chain(curve_endpoints.iter().flatten())
+                                .all(|value| value.is_finite())
                     }
                     crate::geometry::VertexBlendBoundaryGeometry::Degenerate {
                         location,
@@ -2221,15 +2280,24 @@ impl VertexBlendSurfacePayload {
                                 .iter()
                                 .all(|normal| normal.is_finite() && (normal.norm() > f64::EPSILON))
                     }
-                    crate::geometry::VertexBlendBoundaryGeometry::Pcurve { .. } => true,
+                    crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
+                        support_bounds, ..
+                    } => support_bounds
+                        .iter()
+                        .flatten()
+                        .all(|value| value.is_finite()),
                     crate::geometry::VertexBlendBoundaryGeometry::Plane {
                         normal,
                         parameters,
+                        curve_endpoints,
                         ..
                     } => {
                         normal.is_finite()
                             && (normal.norm() > f64::EPSILON)
-                            && parameters.iter().all(|value| value.is_finite())
+                            && parameters
+                                .iter()
+                                .chain(curve_endpoints.iter().flatten())
+                                .all(|value| value.is_finite())
                     }
                 }
         });
@@ -2326,11 +2394,13 @@ impl BlendSurfacePayload {
                 .iter()
                 .chain(construction.parameters.iter())
                 .chain(construction.discontinuities.iter().flatten())
-                .all(|value| value.is_finite());
+                .chain(construction.slice_range.iter().flatten())
+                .all(|value| value.is_finite())
+                && construction.cache.values_are_finite();
             let sides_valid = construction
                 .sides
                 .iter()
-                .all(|side| side.location.is_finite());
+                .all(crate::geometry::RollingBallSide::values_are_finite);
             let third_valid = construction
                 .third
                 .as_ref()
