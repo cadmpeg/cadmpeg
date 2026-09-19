@@ -8,23 +8,23 @@ use serde::{Deserialize, Serialize};
 /// Complete alternate extrusion construction using the structured `32` branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ConstructionWire", into = "ConstructionWire")]
-pub(crate) struct FeatureExtrude32Construction {
+pub(in crate::native) struct FeatureExtrude32Construction {
     /// Globally unique construction identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `EXTRUDE` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Structured branch supplying the body-anchored construction lanes.
-    pub branch: String,
+    pub(super) branch: String,
     /// Body object index witnessed at both ends of the structured branch.
-    pub body_object_index: u32,
+    pub(super) body_object_index: u32,
     /// Nonempty ordered profile references paired with resolved targets.
-    pub profiles: BranchItems<FeatureConstructionMember>,
+    pub(super) profiles: BranchItems<FeatureConstructionMember>,
     /// Ordered uniquely resolved blocks from the fixed-atom lane.
-    pub atom_data_blocks: BranchItems<String>,
+    pub(super) atom_data_blocks: BranchItems<String>,
     /// Ordered uniquely resolved blocks from the first compact-index lane.
-    pub first_data_blocks: BranchItems<String>,
+    pub(super) first_data_blocks: BranchItems<String>,
     /// Ordered uniquely resolved blocks from the second compact-index lane.
-    pub second_data_blocks: BranchItems<String>,
+    pub(super) second_data_blocks: BranchItems<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -100,10 +100,10 @@ impl TryFrom<ConstructionWire> for FeatureExtrude32Construction {
     try_from = "FeatureExtrudePayload32BranchWire",
     into = "FeatureExtrudePayload32BranchWire"
 )]
-pub(crate) struct FeatureExtrudePayload32Branch {
-    pub id: String,
-    pub operation_label: String,
-    pub frame: crate::om::extrude_32::Extrude32Frame<Option<String>>,
+pub(in crate::native) struct FeatureExtrudePayload32Branch {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
+    pub(super) frame: crate::om::extrude_32::Extrude32Frame<Option<String>>,
 }
 
 #[derive(Serialize, Deserialize)]

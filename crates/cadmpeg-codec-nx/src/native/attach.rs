@@ -92,7 +92,7 @@ use super::toggle::has_complete_saved_toggle_stream;
 use super::TypedNative;
 use cadmpeg_ir::native::catalogue::NotePhase;
 
-pub(crate) fn attach_container_layer(
+pub(super) fn attach_container_layer(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     scan: &Scan,
@@ -211,7 +211,7 @@ fn attach_indexed_om_unknowns(
     Ok(())
 }
 
-pub(crate) fn attach(
+pub(super) fn attach(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
@@ -4533,9 +4533,9 @@ fn attach_parasolid_topology_string_attributes(
 }
 
 struct ParasolidNumericAttributeSources<'a> {
-    pub(crate) numeric_uses: &'a [crate::native::parasolid::ParasolidEntity51NumericUse],
-    pub(crate) integers: &'a [crate::native::parasolid::ParasolidEntity52IntegerRecord],
-    pub(crate) doubles: &'a [crate::native::parasolid::ParasolidEntity53DoubleRecord],
+    numeric_uses: &'a [crate::native::parasolid::ParasolidEntity51NumericUse],
+    integers: &'a [crate::native::parasolid::ParasolidEntity52IntegerRecord],
+    doubles: &'a [crate::native::parasolid::ParasolidEntity53DoubleRecord],
 }
 
 struct ParasolidAttributeNameIndex<'a> {
@@ -5185,7 +5185,7 @@ fn text_semantic_annotation(
     })
 }
 
-pub(crate) fn parameter_owner_dependencies(
+pub(super) fn parameter_owner_dependencies(
     parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
     parameter_references: &[ParameterId],
 ) -> Vec<FeatureId> {
@@ -5777,7 +5777,7 @@ fn uniform_face_sense(senses: &[Sense]) -> Option<Sense> {
     rest.iter().all(|sense| sense == first).then_some(*first)
 }
 
-pub(crate) fn feature_source_content(
+pub(super) fn feature_source_content(
     payload_strings: &[&crate::native::features::FeaturePayloadString],
 ) -> cadmpeg_ir::features::FeatureContent {
     let mut content = payload_strings
@@ -6231,12 +6231,12 @@ fn non_modeling_history_definition(
 /// Permutation-invariant hole properties derived from one complete body partition.
 #[derive(Default)]
 struct HoleProjection {
-    pub(crate) placements: Vec<HolePlacement>,
-    pub(crate) diameter: Option<Length>,
-    pub(crate) extent: Option<LinearTermination>,
-    pub(crate) counterbore: Option<CounterboreDimensions>,
-    pub(crate) chamfer: Option<HoleKind>,
-    pub(crate) grouped_simple_through: bool,
+    placements: Vec<HolePlacement>,
+    diameter: Option<Length>,
+    extent: Option<LinearTermination>,
+    counterbore: Option<CounterboreDimensions>,
+    chamfer: Option<HoleKind>,
+    grouped_simple_through: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -8486,7 +8486,7 @@ fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<BodyI
     bodies.first().cloned()
 }
 
-pub(crate) fn boolean_feature_definition(
+pub(super) fn boolean_feature_definition(
     operation: &crate::native::features::FeatureBooleanOperation,
     body_alias_roots: &BTreeMap<u32, u32>,
     offset_store_resolution: &BooleanOffsetStoreResolution,
@@ -9022,7 +9022,7 @@ fn body_writes_match_boolean_target(
             .any(|token| token.token.value() == write.frame.body_image().value())
 }
 
-pub(crate) fn attach_expression_parameters(
+pub(super) fn attach_expression_parameters(
     ir: &mut CadIr,
     expressions: &[crate::native::om::Expression],
     declarations: &[crate::native::om::ExpressionDeclaration],

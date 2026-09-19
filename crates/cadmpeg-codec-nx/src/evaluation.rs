@@ -171,7 +171,7 @@ impl BodyCensusEvaluation {
 /// The caller must validate the IR first. This evaluator checks replay order,
 /// operation completeness, and body lineage; it does not repeat topology or
 /// selection-target validation.
-pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
+pub(crate) fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
     let rederived = match rederived_body_census(ir) {
         Ok(bodies) => bodies,
         Err((feature, reason)) => {

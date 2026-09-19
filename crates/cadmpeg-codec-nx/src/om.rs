@@ -78,7 +78,7 @@ pub(crate) mod state_status;
 pub(crate) mod state_table;
 pub(crate) mod state_tagged_value;
 use state_table::OperationStateStatusTable;
-pub(crate) mod state_block;
+mod state_block;
 use state_block::{operation_state_block_before_boundary, OperationStateBlock};
 pub(crate) mod roll_forward;
 pub(crate) mod state_link;
@@ -87,7 +87,7 @@ use roll_forward::{
 };
 pub(crate) mod state_group;
 use state_index::OperationStateIndex;
-pub(crate) mod state_message_text;
+mod state_message_text;
 use nonempty::NonEmpty;
 pub(crate) mod state_message;
 use state_message::OperationStateMessage;
@@ -125,27 +125,27 @@ use parameter_name::ParameterName;
 
 /// One NX object-model entity payload without a fixed object-id table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EntityRecord<'a> {
+pub(crate) struct EntityRecord<'a> {
     /// Absolute byte offset of the entity payload.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exactly bounded serialized entity payload.
-    pub bytes: &'a [u8],
+    pub(crate) bytes: &'a [u8],
 }
 
 /// One NX object-model entity in a fixed-width object-id table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FixedEntityRecord<'a> {
+pub(crate) struct FixedEntityRecord<'a> {
     /// Object identifier and the absolute offset of its table word.
-    pub object_id: (u32, u64),
+    pub(crate) object_id: (u32, u64),
     /// Absolute byte offset of the entity payload.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exactly bounded serialized entity payload.
-    pub bytes: &'a [u8],
+    pub(crate) bytes: &'a [u8],
 }
 
 /// How one indexed section stores entity identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IndexedStore<'a> {
+pub(crate) enum IndexedStore<'a> {
     /// Every record carries a fixed-width object id.
     Fixed {
         /// Entity records following the reserved zero-offset slot.
@@ -164,93 +164,93 @@ pub enum IndexedStore<'a> {
 
 /// One length-framed NX object-model class definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeDefinition<'a> {
+pub(crate) struct TypeDefinition<'a> {
     /// Absolute byte offset of the definition's length byte.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Registered `UGS::` class name.
-    pub name: &'a str,
+    pub(crate) name: &'a str,
     /// Complete registry bytes following the class name.
-    pub registry_tail: &'a [u8],
+    pub(crate) registry_tail: &'a [u8],
 }
 
 /// One member declaration in an NX OM field registry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldDefinition<'a> {
+pub(crate) struct FieldDefinition<'a> {
     /// Offset of the declaration length byte.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Registered `m_` member name.
-    pub name: &'a str,
+    pub(crate) name: &'a str,
     /// Complete registry bytes following the member name.
-    pub registry_tail: &'a [u8],
+    pub(crate) registry_tail: &'a [u8],
 }
 
 /// One self-framed printable string value in an NX OM entity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StringValue<'a> {
+pub(crate) struct StringValue<'a> {
     /// Absolute byte offset of the `66 32 03` marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Printable value bytes.
-    pub value: PrintableString<&'a str>,
+    pub(crate) value: PrintableString<&'a str>,
 }
 
 /// One canonical UUID in the compact NX OM string frame `03 26, text, 00`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UuidStringValue<'a> {
+pub(crate) struct UuidStringValue<'a> {
     /// Absolute byte offset of the `03 26` marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Canonical lowercase UUID text.
-    pub value: crate::canonical_uuid::CanonicalUuid<&'a str>,
+    pub(crate) value: crate::canonical_uuid::CanonicalUuid<&'a str>,
 }
 
 /// One self-framed printable string in a surface-referenced payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SurfacePayloadString<'a> {
+pub(crate) struct SurfacePayloadString<'a> {
     /// Payload-relative offset of the `66 1b 03` marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact non-empty string value.
-    pub value: crate::payload_text::PayloadText<&'a str>,
+    pub(crate) value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// Self-framed NX product/version marker in an OM store root.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoreVersion<'a> {
+pub(crate) struct StoreVersion<'a> {
     /// Absolute offset of the `04 01` marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact printable product/version text, including the `NX ` prefix.
-    pub value: ProductText<&'a str>,
+    pub(crate) value: ProductText<&'a str>,
 }
 
 /// Header of an internally pointed size-framed OM record area.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RecordAreaHeader<'a> {
+pub(crate) struct RecordAreaHeader<'a> {
     /// Absolute offset of the first control word.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Three little-endian control words preceding the product record.
-    pub control_words: [u32; 3],
+    pub(crate) control_words: [u32; 3],
     /// Product/version record following the control words.
-    pub product: StoreVersion<'a>,
+    pub(crate) product: StoreVersion<'a>,
 }
 
 /// One RGB definition from an NX part color table.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ColorTableDefinition<'a> {
+pub(crate) struct ColorTableDefinition<'a> {
     /// Color name paired by table order.
-    pub name: &'a str,
+    pub(crate) name: &'a str,
     /// Exact normalized components and their payload offsets.
-    pub components: [(ColorComponent, usize); 3],
+    pub(crate) components: [(ColorComponent, usize); 3],
     /// Byte offset of the opening `05` marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Complete 216-entry NX part color table.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ColorTable<'a> {
+pub(crate) struct ColorTable<'a> {
     /// Byte offset of the counted name roster.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact background components and their payload offsets.
-    pub background: [(ColorComponent, usize); 3],
+    pub(crate) background: [(ColorComponent, usize); 3],
     /// Ordered definitions for color indices 1 through 216.
-    pub definitions: [ColorTableDefinition<'a>; PALETTE_SIZE],
+    pub(crate) definitions: [ColorTableDefinition<'a>; PALETTE_SIZE],
 }
 
 fn color_components(bytes: &[u8], at: &mut usize) -> Option<[(ColorComponent, usize); 3]> {
@@ -364,7 +364,7 @@ fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
 }
 
 /// Decode every complete NX part color table in a bounded byte region.
-pub fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
+pub(crate) fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
     let mut tables = Vec::new();
     let mut start = 0;
     while start + COLOR_TABLE_NAME_HEADER.len() <= bytes.len() {
@@ -387,19 +387,21 @@ pub fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
 
 /// One exact shifted-IEEE scalar field in a reconstructed construction payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ConstructionPayloadScalarField {
+pub(crate) struct ConstructionPayloadScalarField {
     /// Payload-relative offset of the `50 59 66` marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Serialized field discriminator following the marker.
-    pub field_code: u8,
+    pub(crate) field_code: u8,
     /// Checked shifted-binary64 atom.
-    pub scalar: ShiftedBinary64,
+    pub(crate) scalar: ShiftedBinary64,
 }
 
 const SHIFTED_BINARY64_SCALAR_FRAME_LEN: usize = 13;
 
 /// Decode exact `50 59 66, field_code, 00, shifted-f64` construction fields.
-pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPayloadScalarField> {
+pub(crate) fn construction_payload_scalar_fields(
+    bytes: &[u8],
+) -> Vec<ConstructionPayloadScalarField> {
     let mut fields = Vec::new();
     for start in 0..bytes.len().saturating_sub(12) {
         if bytes.get(start..start + 3) != Some(b"PYf") || bytes.get(start + 4) != Some(&0x00) {
@@ -422,13 +424,13 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
 
 /// Exact type-free named point record spanning consecutive store blocks.
 #[derive(Debug, Clone, PartialEq)]
-pub struct OffsetStoreNamedPoint {
+pub(crate) struct OffsetStoreNamedPoint {
     /// Exact `Point<positive decimal>` name.
-    pub name: String,
+    pub(crate) name: String,
     /// Two checked scalar atoms and their frame offsets in block order.
-    pub values: [LocatedBinary64; 2],
+    pub(crate) values: [LocatedBinary64; 2],
     /// Minimal number of consecutive blocks containing both scalar frames.
-    pub block_count: usize,
+    pub(crate) block_count: usize,
 }
 
 /// Decode a named two-scalar point from a streaming block sequence.
@@ -498,7 +500,7 @@ fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {
 
 /// Unit declared by an NX numeric-expression serialization.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExpressionUnit {
+pub(crate) enum ExpressionUnit {
     /// Model length in millimeters as serialized by NX.
     Millimeter,
     /// Model length in inches as serialized by NX.
@@ -511,17 +513,17 @@ pub enum ExpressionUnit {
 
 /// One numeric expression decoded from an exactly bounded OM entity.
 #[derive(Debug, Clone, PartialEq)]
-pub struct NumericExpression<'a> {
+pub(crate) struct NumericExpression<'a> {
     /// Persistent identity of the containing OM entity, when indexed.
-    pub object_id: Option<u32>,
+    pub(crate) object_id: Option<u32>,
     /// Absolute byte offset of the expression text.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// NX parameter name.
-    pub name: ParameterName<&'a str>,
+    pub(crate) name: ParameterName<&'a str>,
     /// Declared native unit.
-    pub unit: ExpressionUnit,
+    pub(crate) unit: ExpressionUnit,
     /// Exact expression text following the serialized name separator.
-    pub expression: &'a str,
+    pub(crate) expression: &'a str,
 }
 
 impl NumericExpression<'_> {
@@ -533,59 +535,59 @@ impl NumericExpression<'_> {
 
 /// One validated external entity-index/object-id-table pair.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexedSection<'a> {
+pub(crate) struct IndexedSection<'a> {
     /// Self-anchored base used by every entity-index offset.
-    pub base: usize,
+    pub(crate) base: usize,
     /// Absolute offset of the entity-index array.
-    pub entity_index_offset: usize,
+    pub(crate) entity_index_offset: usize,
     /// Absolute offset of the object-id table or offset-only identity metadata.
-    pub object_id_table_offset: usize,
+    pub(crate) object_id_table_offset: usize,
     /// Length-framed class definitions preceding the entity index.
-    pub types: Arc<[TypeDefinition<'a>]>,
+    pub(crate) types: Arc<[TypeDefinition<'a>]>,
     /// Length-framed member definitions preceding the entity index.
-    pub fields: Arc<[FieldDefinition<'a>]>,
+    pub(crate) fields: Arc<[FieldDefinition<'a>]>,
     /// Identity store used by this section.
-    pub store: IndexedStore<'a>,
+    pub(crate) store: IndexedStore<'a>,
 }
 
 /// Internally pointed record-area bytes with their absolute offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RecordArea<'a> {
+pub(crate) struct RecordArea<'a> {
     /// Absolute offset of the record-area start.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact record-area bytes, including the 12-byte control prefix.
-    pub bytes: &'a [u8],
+    pub(crate) bytes: &'a [u8],
 }
 
 /// One size-framed NX object-model section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Section<'a> {
+pub(crate) struct Section<'a> {
     /// Offset of the `ff ff ff ff` section signature.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Complete section length including its 16-byte header.
-    pub byte_len: usize,
+    byte_len: usize,
     /// Class declarations in the section's contiguous type registry.
-    pub types: Arc<[TypeDefinition<'a>]>,
+    pub(crate) types: Arc<[TypeDefinition<'a>]>,
     /// Member declarations in the section's field registry.
-    pub fields: Arc<[FieldDefinition<'a>]>,
+    pub(crate) fields: Arc<[FieldDefinition<'a>]>,
     /// Internally pointed record area, when the section carries one.
-    pub record_area: Option<RecordArea<'a>>,
+    pub(crate) record_area: Option<RecordArea<'a>>,
     /// Operation labels decoded while the section's record area is framed.
     cached_operation_labels: Arc<[OperationLabel<'a>]>,
 }
 
 /// A feature operation name in a size-framed feature-history record area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationLabel<'a> {
+pub(crate) struct OperationLabel<'a> {
     /// Complete operation header and its exact reference encodings.
-    pub header: OperationHeader,
+    pub(crate) header: OperationHeader,
     /// Printable operation name without its terminating NUL.
-    pub value: &'a str,
+    pub(crate) value: &'a str,
 }
 
 /// One unlabeled operation record bounded by validated operation headers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UnlabeledOperationRecord<'a> {
+pub(crate) struct UnlabeledOperationRecord<'a> {
     header: OperationHeader,
     bytes: &'a [u8],
 }
@@ -610,138 +612,138 @@ impl<'a> UnlabeledOperationRecord<'a> {
 
 /// Terminal common-frame suffix with its independently matched preceding frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationTerminalFrame {
-    pub immediate_common_frame_offset: Option<usize>,
-    pub frame: TerminalFrame<usize>,
+pub(crate) struct OperationTerminalFrame {
+    pub(crate) immediate_common_frame_offset: Option<usize>,
+    pub(crate) frame: TerminalFrame<usize>,
 }
 
 /// One length-framed UTF-8 string in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationPayloadString<'a> {
+pub(crate) struct OperationPayloadString<'a> {
     /// Absolute offset of the `04` marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact non-empty string value.
-    pub value: crate::payload_text::PayloadText<&'a str>,
+    pub(crate) value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// Marker selecting a bounded operation text frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationTextMarker {
+pub(crate) enum OperationTextMarker {
     Text,
     String,
 }
 
 /// One length-framed UTF-8 text frame in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationPayloadTextFrame<'a> {
+pub(crate) struct OperationPayloadTextFrame<'a> {
     /// Marker selecting the payload text-frame family.
-    pub marker: OperationTextMarker,
+    pub(crate) marker: OperationTextMarker,
     /// Absolute offset of the marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact non-empty text value.
-    pub value: crate::payload_text::PayloadText<&'a str>,
+    pub(crate) value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// One canonical variable-width object index in an operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
+pub(crate) struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
     /// Absolute offset of the width marker.
-    pub offset: O,
+    pub(crate) offset: O,
     /// Checked token retaining the exact marker and width.
-    pub token: T,
+    pub(crate) token: T,
 }
 
 /// One exact counted transform lane in a pattern operation payload.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PatternPayloadTransformLane {
+pub(crate) struct PatternPayloadTransformLane {
     /// Absolute offset of the opening `01, count` field.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Schema index framing every row in the lane.
-    pub row_schema_index: NonZeroU8,
-    pub rows: PatternRows<LocatedCompactIndex, usize>,
+    pub(crate) row_schema_index: NonZeroU8,
+    pub(crate) rows: PatternRows<LocatedCompactIndex, usize>,
 }
 
 /// Exact counted instance-output lane in a multi-instance operation payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultiInstanceOutputPayloadLane {
+pub(crate) struct MultiInstanceOutputPayloadLane {
     /// Absolute offset of the opening `25 01, count` field.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Complete selector groups and their trailing references.
-    pub outputs: instances::MultiInstanceOutputs<usize>,
+    pub(crate) outputs: instances::MultiInstanceOutputs<usize>,
 }
 
 /// Count schema index with room for the three consecutive selector-row indices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct IdenticalInstanceSchemaIndex(u8);
+pub(crate) struct IdenticalInstanceSchemaIndex(u8);
 
 impl IdenticalInstanceSchemaIndex {
-    pub fn new(value: u8) -> Option<Self> {
+    pub(crate) fn new(value: u8) -> Option<Self> {
         value.checked_add(3).map(|_| Self(value))
     }
 
-    pub fn value(self) -> u8 {
+    pub(crate) fn value(self) -> u8 {
         self.0
     }
 
-    pub fn row_indices(self) -> [u8; 3] {
+    pub(crate) fn row_indices(self) -> [u8; 3] {
         [self.0 + 1, self.0 + 2, self.0 + 3]
     }
 }
 
 /// Exact counted selector lane in an identical-instance output payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdenticalInstanceOutputPayloadLane {
+pub(crate) struct IdenticalInstanceOutputPayloadLane {
     /// Absolute offset of the leading schema index.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Schema index preceding the count field.
-    pub leading_schema_index: u8,
+    pub(crate) leading_schema_index: u8,
     /// Schema index framing the serialized count.
-    pub count_schema_index: IdenticalInstanceSchemaIndex,
+    pub(crate) count_schema_index: IdenticalInstanceSchemaIndex,
     /// Ordered non-null compact selectors with their exact source tokens.
-    pub selectors: compact::CountedIndexMembers<LocatedCompactIndex>,
+    pub(crate) selectors: compact::CountedIndexMembers<LocatedCompactIndex>,
 }
 
 /// Exact construction header in a point-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PointFeaturePayloadHeader {
+pub(crate) struct PointFeaturePayloadHeader {
     /// Construction object referenced by the header.
-    pub reference: PayloadObjectReference,
+    pub(crate) reference: PayloadObjectReference,
     /// Serialized header mode.
-    pub mode: discriminators::PointHeaderMode,
+    pub(crate) mode: discriminators::PointHeaderMode,
 }
 
 /// Exact six-scalar lane selected by a point-feature construction header.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PointFeatureScalarLane {
+pub(crate) struct PointFeatureScalarLane {
     /// Six checked shifted-binary64 atoms in byte order.
-    pub values: [ShiftedBinary64; 6],
+    pub(crate) values: [ShiftedBinary64; 6],
     /// Start of the contiguous lane in the joined blocks.
     offset: usize,
 }
 
 impl PointFeatureScalarLane {
-    pub fn value_offsets(&self) -> [usize; 6] {
+    pub(crate) fn value_offsets(&self) -> [usize; 6] {
         std::array::from_fn(|i| self.offset + i * 8)
     }
 }
 
 /// Exact leading construction branch in a `SWP104` payload.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Swp104PayloadLeadingBranch {
+pub(crate) struct Swp104PayloadLeadingBranch {
     /// Nonzero construction discriminator at the payload start.
-    pub discriminator: NonZeroU8,
+    pub(crate) discriminator: NonZeroU8,
     /// Four finite shifted-binary64 values in serialized order.
-    pub scalars: [ShiftedBinary64; 4],
+    pub(crate) scalars: [ShiftedBinary64; 4],
     /// Whether one zero byte precedes the branch mode.
-    pub leading_zero: bool,
+    pub(crate) leading_zero: bool,
     /// Serialized nonzero branch mode.
-    pub mode: NonZeroU8,
+    pub(crate) mode: NonZeroU8,
     /// Exact state lane preceding the terminal marker.
-    pub state_lane: Swp104StateLane,
+    pub(crate) state_lane: Swp104StateLane,
     /// Ordered nonterminal references.
-    pub members: BranchItems<reference_index::PayloadIndexToken>,
+    pub(crate) members: BranchItems<reference_index::PayloadIndexToken>,
     /// Terminal reference.
-    pub terminal: reference_index::PayloadIndexToken,
+    pub(crate) terminal: reference_index::PayloadIndexToken,
 }
 
 impl Swp104PayloadLeadingBranch {
@@ -762,20 +764,20 @@ impl Swp104PayloadLeadingBranch {
 
 /// Exact pair of scaled shifted-binary64 atoms in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SketchPayloadFixedPair {
+pub(crate) struct SketchPayloadFixedPair {
     /// Payload-relative offset of the discriminator.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
-    pub values: [SketchScaledAtom; 2],
+    pub(crate) values: [SketchScaledAtom; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
-    pub form: SketchPairForm,
+    pub(crate) form: SketchPairForm,
 }
 
 impl SketchPayloadFixedPair {
-    pub fn discriminator(&self) -> &'static [u8] {
+    fn discriminator(&self) -> &'static [u8] {
         self.form.discriminator()
     }
-    pub fn value_offsets(&self) -> [usize; 2] {
+    pub(crate) fn value_offsets(&self) -> [usize; 2] {
         let first = self.offset + self.discriminator().len();
         [first, first + 8 + self.form.separator_width()]
     }
@@ -783,15 +785,15 @@ impl SketchPayloadFixedPair {
 
 /// Exact mixed scaled shifted-binary64 and shifted-binary32 pair in a sketch payload.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SketchPayloadMixedPair {
+pub(crate) struct SketchPayloadMixedPair {
     /// Payload-relative offset of the discriminator.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact scaled binary64 and binary32 atoms.
-    pub scalars: SketchMixedScalars,
+    pub(crate) scalars: SketchMixedScalars,
 }
 
 impl SketchPayloadMixedPair {
-    pub fn value_offsets(&self) -> [usize; 2] {
+    pub(crate) fn value_offsets(&self) -> [usize; 2] {
         let first = self.offset + SketchPairForm::Legacy.discriminator().len();
         [first, first + 8 + 1]
     }
@@ -799,20 +801,20 @@ impl SketchPayloadMixedPair {
 
 /// Exact pair of signed Q1.55 atoms following a datum-CSYS branch discriminator.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DatumCsysPayloadFixedPair {
+pub(crate) struct DatumCsysPayloadFixedPair {
     /// Payload-relative offset of the discriminator.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Ordered dimensionless Q1.55 values.
-    pub values: [Q155; 2],
+    pub(crate) values: [Q155; 2],
     /// Exact discriminator selecting the pair branch.
-    pub form: DatumPairForm,
+    pub(crate) form: DatumPairForm,
 }
 
 impl DatumCsysPayloadFixedPair {
-    pub fn discriminator(&self) -> &'static [u8] {
+    fn discriminator(&self) -> &'static [u8] {
         self.form.discriminator()
     }
-    pub fn value_offsets(&self) -> [usize; 2] {
+    pub(crate) fn value_offsets(&self) -> [usize; 2] {
         let first = self.offset + self.discriminator().len();
         [first, first + 8 + 1]
     }
@@ -820,102 +822,102 @@ impl DatumCsysPayloadFixedPair {
 
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ExtrudePayloadHeader {
+pub(crate) struct ExtrudePayloadHeader {
     /// Absolute offset of the first shifted-IEEE scalar.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Ordered finite scalar values.
-    pub scalars: [ShiftedBinary64; 2],
+    pub(crate) scalars: [ShiftedBinary64; 2],
 }
 
 /// Four construction-block references carried by a `HOLE PACKAGE` payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HolePackageConstructionGroupLane {
+pub(crate) struct HolePackageConstructionGroupLane {
     /// Payload-relative offset of the fixed lane prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Compact selector preceding the repeated branch byte.
-    pub selector: NonZeroU8,
+    pub(crate) selector: NonZeroU8,
     /// Branch byte repeated between the two reference pairs.
-    pub branch: NonZeroU8,
+    pub(crate) branch: NonZeroU8,
     /// Ordered first and second construction-block pairs.
-    pub references: [PayloadObjectReference; 4],
+    pub(crate) references: [PayloadObjectReference; 4],
 }
 
 /// One wrapped member index in a branch-`11` operation body clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationBodyMemberGroup {
+pub(crate) struct OperationBodyMemberGroup {
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    pub(crate) body_reference_ordinal: u32,
     /// Serialized body object index.
-    pub body_object_index: u32,
+    pub(crate) body_object_index: u32,
     /// Ordered compact indices and their absolute source positions.
-    pub members: Vec<LocatedCompactIndex>,
+    pub(crate) members: Vec<LocatedCompactIndex>,
 }
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationBody11Continuation {
+pub(crate) struct OperationBody11Continuation {
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    pub(crate) body_reference_ordinal: u32,
     /// Serialized body object index.
-    pub body_object_index: u32,
+    pub(crate) body_object_index: u32,
     /// Exact compact continuation index and its absolute source offset.
-    pub continuation: LocatedCompactIndex,
+    pub(crate) continuation: LocatedCompactIndex,
     /// Exact required terminal reference and its absolute source offset.
-    pub terminal: PayloadObjectReference,
+    pub(crate) terminal: PayloadObjectReference,
 }
 
 /// Homogeneous checked references in an operation body lane.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OperationBodyReferenceLaneValues {
+pub(crate) enum OperationBodyReferenceLaneValues {
     CompactIndex(Vec<LocatedCompactIndex>),
     PayloadObjectIndex(Vec<PayloadObjectReference<reference_index::PayloadIndexToken>>),
 }
 
 /// Counted reference lane following an operation body scalar clause.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationBodyReferenceLane {
+pub(crate) struct OperationBodyReferenceLane {
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    pub(crate) body_reference_ordinal: u32,
     /// Serialized body object index.
-    pub body_object_index: u32,
+    pub(crate) body_object_index: u32,
     /// Branch discriminator following the body-reference terminator.
-    pub branch: discriminators::OperationBodyReferenceBranch,
+    pub(crate) branch: discriminators::OperationBodyReferenceBranch,
     /// Ordered non-null lane values with their encoding.
-    pub values: OperationBodyReferenceLaneValues,
+    pub(crate) values: OperationBodyReferenceLaneValues,
 }
 
 /// Self-framed NX parameter name in one bounded expression declaration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExpressionDeclarationName<'a> {
+pub(crate) struct ExpressionDeclarationName<'a> {
     /// Byte offset of the `04` marker within the containing byte range.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact `p<decimal>[_qualifier]` name.
-    pub name: ParameterName<&'a str, u32>,
+    pub(crate) name: ParameterName<&'a str, u32>,
     /// Independently framed numeric literal in the declaration record.
-    pub literal: Option<&'a str>,
+    pub(crate) literal: Option<&'a str>,
 }
 
 /// Primary body-object reference carried by one bounded operation record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationBodyReference {
+pub(crate) struct OperationBodyReference {
     /// Absolute offset of the object-index token.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Referenced body object index.
-    pub object_index: reference_index::FeatureReferenceToken,
+    pub(crate) object_index: reference_index::FeatureReferenceToken,
 }
 
 /// Object-index reference in one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataBlockObjectReference {
+pub(crate) struct DataBlockObjectReference {
     /// Byte offset of the object-index token within the containing byte range.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Required feature index with its exact encoding.
-    pub object_index: reference_index::FeatureReferenceToken,
+    pub(crate) object_index: reference_index::FeatureReferenceToken,
 }
 
 /// Boolean operation kind stored after an operation label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BooleanOperationKind {
+pub(crate) enum BooleanOperationKind {
     /// Add tool bodies to the target.
     Unite,
     /// Remove tool bodies from the target.
@@ -926,25 +928,25 @@ pub enum BooleanOperationKind {
 
 /// One feature-history Boolean with object-index operands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BooleanOperation {
+pub(crate) struct BooleanOperation {
     /// Absolute offset of the operation label tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Boolean operation kind.
-    pub kind: BooleanOperationKind,
+    pub(crate) kind: BooleanOperationKind,
     /// Target body reference and its exact source token.
-    pub target: PayloadObjectReference,
+    pub(crate) target: PayloadObjectReference,
     /// Ordered tool body references and their exact source tokens.
-    pub tools: Vec<PayloadObjectReference>,
+    pub(crate) tools: Vec<PayloadObjectReference>,
 }
 
 impl<'a> IndexedSection<'a> {
     /// Return the section base used by its external record offsets.
-    pub const fn base_offset(&self) -> usize {
+    pub(crate) const fn base_offset(&self) -> usize {
         self.base
     }
 
     /// Fixed-width object-id records, when this section is that store.
-    pub fn as_fixed(&self) -> Option<&[FixedEntityRecord<'a>]> {
+    pub(crate) fn as_fixed(&self) -> Option<&[FixedEntityRecord<'a>]> {
         match &self.store {
             IndexedStore::Fixed { records } => Some(records.as_ref()),
             IndexedStore::OffsetOnly { .. } => None,
@@ -952,7 +954,9 @@ impl<'a> IndexedSection<'a> {
     }
 
     /// Control block, column storage, and records of an offset-only store.
-    pub fn as_offset_only(&self) -> Option<(&EntityRecord<'a>, &'a [u8], &[EntityRecord<'a>])> {
+    pub(crate) fn as_offset_only(
+        &self,
+    ) -> Option<(&EntityRecord<'a>, &'a [u8], &[EntityRecord<'a>])> {
         match &self.store {
             IndexedStore::OffsetOnly {
                 control,
@@ -964,7 +968,7 @@ impl<'a> IndexedSection<'a> {
     }
 
     /// Decode explicit numeric-expression text within bounded entity records.
-    pub fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
+    pub(crate) fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
         self.numeric_expression_records()
             .into_iter()
             .map(|(_, expression)| expression)
@@ -972,7 +976,7 @@ impl<'a> IndexedSection<'a> {
     }
 
     /// Decode expressions together with their owning record ordinal.
-    pub fn numeric_expression_records(&self) -> Vec<(usize, NumericExpression<'a>)> {
+    pub(crate) fn numeric_expression_records(&self) -> Vec<(usize, NumericExpression<'a>)> {
         let records: Vec<(usize, &'a [u8], Option<u32>)> = match &self.store {
             IndexedStore::Fixed { records } => records
                 .iter()
@@ -1003,12 +1007,15 @@ impl<'a> IndexedSection<'a> {
 
 impl<'a> FixedEntityRecord<'a> {
     /// Decode every strictly framed printable string in this bounded record.
-    pub fn string_values(&self) -> Vec<StringValue<'a>> {
+    pub(crate) fn string_values(&self) -> Vec<StringValue<'a>> {
         string_values(self.bytes, self.offset)
     }
 
     /// Decode tagged references within this fixed-record table.
-    pub fn references(&self, record_count: usize) -> Vec<LocatedReference<RecordReference<()>>> {
+    pub(crate) fn references(
+        &self,
+        record_count: usize,
+    ) -> Vec<LocatedReference<RecordReference<()>>> {
         let mut references = record_references(self.bytes, self.offset)
             .into_iter()
             .map(|reference| LocatedReference {
@@ -1038,7 +1045,7 @@ impl<'a> Section<'a> {
     }
 
     /// Decode the validated record-area control and product header.
-    pub fn record_area_header(&self) -> Option<RecordAreaHeader<'a>> {
+    pub(crate) fn record_area_header(&self) -> Option<RecordAreaHeader<'a>> {
         let (offset, bytes) = self.record_area_parts()?;
         let control_words = [
             View::u32_le_at(bytes, 0)?,
@@ -1060,12 +1067,12 @@ impl<'a> Section<'a> {
 
     /// Decode strictly framed operation labels for parser/cache tests.
     #[cfg(test)]
-    pub fn operation_labels(&self) -> Vec<OperationLabel<'a>> {
+    pub(crate) fn operation_labels(&self) -> Vec<OperationLabel<'a>> {
         self.cached_operation_labels.to_vec()
     }
 
     /// Decode fully framed Boolean operations from the pointed record area.
-    pub fn boolean_operations(&self) -> Vec<BooleanOperation> {
+    pub(crate) fn boolean_operations(&self) -> Vec<BooleanOperation> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
             return Vec::new();
         };
@@ -1073,7 +1080,9 @@ impl<'a> Section<'a> {
     }
 
     /// Bound operation records and retain their ordinal in the complete label sequence.
-    pub fn operation_records_with_label_ordinals(&self) -> Vec<(usize, OperationRecord<'a>)> {
+    pub(crate) fn operation_records_with_label_ordinals(
+        &self,
+    ) -> Vec<(usize, OperationRecord<'a>)> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
             return Vec::new();
         };
@@ -1085,7 +1094,7 @@ impl<'a> Section<'a> {
     }
 
     /// Bound validated operation headers that have no complete label frame.
-    pub fn unlabeled_operation_records_with_ordinals(
+    pub(crate) fn unlabeled_operation_records_with_ordinals(
         &self,
     ) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
@@ -1098,7 +1107,7 @@ impl<'a> Section<'a> {
     ///
     /// The section-role check is intentional. The same byte patterns occur in
     /// ordinary model-store payloads, where they do not carry operation state.
-    pub fn operation_state_counter_map(&self) -> Option<StateCounterMap> {
+    pub(crate) fn operation_state_counter_map(&self) -> Option<StateCounterMap> {
         let is_feature_history = self
             .types
             .iter()
@@ -1116,7 +1125,7 @@ impl<'a> Section<'a> {
 
     /// Decode the field-declared `m_rollForwardStates` group table before the
     /// bounded operation-state counter map.
-    pub fn operation_state_group_table(&self) -> Option<OperationStateGroupTable> {
+    pub(crate) fn operation_state_group_table(&self) -> Option<OperationStateGroupTable> {
         if !self
             .fields
             .iter()
@@ -1137,7 +1146,7 @@ impl<'a> Section<'a> {
     /// separator form may be skipped when it leads to another complete group.
     /// Any other byte stops the journal so later record-region data cannot
     /// become state.
-    pub fn operation_state_journal_groups(&self) -> Option<Vec<JournalGroup<usize>>> {
+    pub(crate) fn operation_state_journal_groups(&self) -> Option<Vec<JournalGroup<usize>>> {
         let is_feature_history = self
             .types
             .iter()
@@ -1184,13 +1193,13 @@ impl<'a> Section<'a> {
     }
 
     /// Decode the bounded per-object status lane after the operation records.
-    pub fn operation_state_status_table(&self) -> Option<OperationStateStatusTable<'a>> {
+    pub(crate) fn operation_state_status_table(&self) -> Option<OperationStateStatusTable<'a>> {
         self.operation_state_block()?.into_status_table()
     }
 
     /// Decode the contiguous standalone message records immediately before
     /// the roll-forward table or counter-map boundary.
-    pub fn operation_state_messages(&self) -> Option<Vec<OperationStateMessage<'a>>> {
+    pub(crate) fn operation_state_messages(&self) -> Option<Vec<OperationStateMessage<'a>>> {
         self.operation_state_block()?.into_messages()
     }
 
@@ -1200,7 +1209,7 @@ impl<'a> Section<'a> {
     /// feature-history and model areas from being interpreted as audit data.
     /// Unknown bytes before, between, and after complete rows remain outside
     /// this typed view.
-    pub fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow>> {
+    pub(crate) fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow>> {
         let has_audit_marker = self
             .types
             .iter()
@@ -1227,7 +1236,7 @@ impl<'a> Section<'a> {
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
-    pub fn operation_body_references(&self) -> Vec<(usize, OperationBodyReference)> {
+    pub(crate) fn operation_body_references(&self) -> Vec<(usize, OperationBodyReference)> {
         self.operation_records_with_label_ordinals()
             .into_iter()
             .filter_map(|(ordinal, record)| {
@@ -1238,7 +1247,7 @@ impl<'a> Section<'a> {
 }
 
 /// Decode complete feature-operation headers and their label frames.
-pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
+fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
     validated_operation_headers(bytes, base_offset)
         .into_iter()
         .filter_map(|header| operation_label_at(bytes, base_offset, header))
@@ -1361,7 +1370,7 @@ fn unlabeled_operation_records_with_ordinals<'a>(
 }
 
 /// Decode ordered `03|04, length, text, 00` frames from one operation payload.
-pub fn operation_payload_text_frames(
+pub(crate) fn operation_payload_text_frames(
     record: OperationPayload<'_>,
 ) -> Vec<OperationPayloadTextFrame<'_>> {
     let mut frames = Vec::new();
@@ -1406,7 +1415,9 @@ pub fn operation_payload_text_frames(
 }
 
 /// Decode ordered `04, length, text, 00` strings from one operation payload.
-pub fn operation_payload_strings(record: OperationPayload<'_>) -> Vec<OperationPayloadString<'_>> {
+pub(crate) fn operation_payload_strings(
+    record: OperationPayload<'_>,
+) -> Vec<OperationPayloadString<'_>> {
     operation_payload_text_frames(record)
         .into_iter()
         .filter(|frame| frame.marker == OperationTextMarker::String)
@@ -1418,7 +1429,7 @@ pub fn operation_payload_strings(record: OperationPayload<'_>) -> Vec<OperationP
 }
 
 /// Decode an exact nonempty duplicated shifted-binary64 lane before a hole template.
-pub fn simple_hole_repeated_scalar_lane(
+pub(crate) fn simple_hole_repeated_scalar_lane(
     record: OperationPayload<'_>,
 ) -> Option<NonEmpty<RepeatedScalar<usize>>> {
     if record.name() != "SIMPLE HOLE" {
@@ -1469,7 +1480,7 @@ pub fn simple_hole_repeated_scalar_lane(
 }
 
 /// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.
-pub fn hole_package_construction_group_lane(
+pub(crate) fn hole_package_construction_group_lane(
     record: OperationPayload<'_>,
 ) -> Option<HolePackageConstructionGroupLane> {
     const PREFIX: [u8; 5] = [0x00, 0x00, 0x01, 0x00, 0x00];
@@ -1532,7 +1543,9 @@ pub fn hole_package_construction_group_lane(
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
-pub fn sketch_payload_references(record: OperationPayload<'_>) -> Option<SketchReferenceField> {
+pub(crate) fn sketch_payload_references(
+    record: OperationPayload<'_>,
+) -> Option<SketchReferenceField> {
     if record.name() != "SKETCH" {
         return None;
     }
@@ -1552,7 +1565,7 @@ fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
 }
 
 /// Decode the unique exactly counted transform lane in a bounded pattern payload.
-pub fn pattern_payload_transform_lane(
+pub(crate) fn pattern_payload_transform_lane(
     record: OperationPayload<'_>,
 ) -> Option<PatternPayloadTransformLane> {
     const FEATURE_PREFIX_TAIL: [u8; 3] = [0x01, 0x00, 0x00];
@@ -1705,7 +1718,7 @@ pub fn pattern_payload_transform_lane(
 }
 
 /// Decode the unique exactly counted instance-output lane in a bounded payload.
-pub fn multi_instance_output_payload_lane(
+pub(crate) fn multi_instance_output_payload_lane(
     record: OperationPayload<'_>,
 ) -> Option<MultiInstanceOutputPayloadLane> {
     const ENVELOPE: [u8; 10] = [0x3a, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x25, 0x01];
@@ -1773,7 +1786,7 @@ pub fn multi_instance_output_payload_lane(
 
 /// Decode the unique exactly counted selector lane in an
 /// `IDENTICAL INSTANCE OUTPUT` payload.
-pub fn identical_instance_output_payload_lane(
+pub(crate) fn identical_instance_output_payload_lane(
     record: OperationPayload<'_>,
 ) -> Option<IdenticalInstanceOutputPayloadLane> {
     const ROW_MIDDLE: [u8; 2] = [0x01, 0x02];
@@ -1826,7 +1839,7 @@ pub fn identical_instance_output_payload_lane(
 }
 
 /// Decode the exact leading construction header in a bounded `POINT` payload.
-pub fn point_feature_payload_header(
+pub(crate) fn point_feature_payload_header(
     record: OperationPayload<'_>,
 ) -> Option<PointFeaturePayloadHeader> {
     const PREFIX: [u8; 7] = [0x72, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
@@ -1862,7 +1875,7 @@ pub fn point_feature_payload_header(
 }
 
 /// Decode the exact cross-block scalar lane selected by a `POINT` header target.
-pub fn point_feature_scalar_lane(
+pub(crate) fn point_feature_scalar_lane(
     preceding_block: &[u8],
     target_block: &[u8],
 ) -> Option<PointFeatureScalarLane> {
@@ -1889,7 +1902,7 @@ pub fn point_feature_scalar_lane(
 
 /// Decode the exact leading construction branch in a bounded `SWP104`
 /// payload.
-pub fn swp104_payload_leading_branch(
+pub(crate) fn swp104_payload_leading_branch(
     record: OperationPayload<'_>,
 ) -> Option<Swp104PayloadLeadingBranch> {
     const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
@@ -1959,7 +1972,7 @@ pub fn swp104_payload_leading_branch(
 }
 
 /// Decode the fixed two-scalar header in a bounded `EXTRUDE` payload.
-pub fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePayloadHeader> {
+pub(crate) fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePayloadHeader> {
     if record.name() != "EXTRUDE"
         || record.payload().get(..5) != Some(&[0x0f, 0x00, 0x00, 0x01, 0x00])
     {
@@ -1975,7 +1988,9 @@ pub fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePay
 }
 
 /// Decode wrapped member lanes following branch-`11` body scalar clauses.
-pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBodyMemberGroup> {
+pub(crate) fn operation_body_members(
+    record: OperationBodyInput<'_>,
+) -> Vec<OperationBodyMemberGroup> {
     operation_body_references(record)
         .into_iter()
         .enumerate()
@@ -2026,7 +2041,7 @@ pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBo
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
-pub fn operation_body_11_continuations(
+pub(crate) fn operation_body_11_continuations(
     record: OperationBodyInput<'_>,
 ) -> Vec<OperationBody11Continuation> {
     if record.name() != "TRIM BODY" {
@@ -2100,7 +2115,7 @@ pub fn operation_body_11_continuations(
 }
 
 /// Decode complete unwrapped counted reference lanes following body scalar clauses.
-pub fn operation_body_reference_lanes(
+pub(crate) fn operation_body_reference_lanes(
     record: OperationBodyInput<'_>,
 ) -> Vec<OperationBodyReferenceLane> {
     operation_body_references(record)
@@ -2173,13 +2188,17 @@ fn operation_body_reference_lane_values<T>(
 }
 
 /// Decode one complete datum-plane descriptor block.
-pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<plane_descriptor::PlaneDescriptor> {
+pub(crate) fn datum_plane_descriptor_block(
+    bytes: &[u8],
+) -> Option<plane_descriptor::PlaneDescriptor> {
     plane_descriptor::PlaneDescriptor::read(bytes)
 }
 
 /// Decode every complete scalar-vector frame in a reconstructed sketch
 /// payload.
-pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<SketchScalarLaneForm, ()>> {
+pub(crate) fn sketch_payload_scalar_lanes(
+    bytes: &[u8],
+) -> Vec<FramedScalarRun<SketchScalarLaneForm, ()>> {
     let mut lanes = [SketchScalarLaneForm::Form03, SketchScalarLaneForm::Form07]
         .into_iter()
         .flat_map(|form| {
@@ -2208,7 +2227,7 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<SketchSc
 }
 
 /// Decode every exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
-pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
+pub(crate) fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
     let mut pairs = Vec::new();
     for form in SketchPairForm::ALL {
         let discriminator = form.discriminator();
@@ -2243,7 +2262,7 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
 }
 
 /// Decode every exactly framed mixed scaled shifted-binary64/binary32 pair in a sketch payload.
-pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
+pub(crate) fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
     let discriminator = SketchPairForm::Legacy.discriminator();
     let mut pairs = Vec::new();
     for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
@@ -2285,7 +2304,7 @@ fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<SketchScaledAtom> {
 }
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
-pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixedPair> {
+pub(crate) fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixedPair> {
     let mut pairs = Vec::new();
     for form in DatumPairForm::ALL {
         let discriminator = form.discriminator();
@@ -2325,7 +2344,9 @@ pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixed
 }
 
 /// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
-pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<Q155LaneFrame, ()>> {
+pub(crate) fn draft_construction_fixed_lanes(
+    bytes: &[u8],
+) -> Vec<FramedScalarRun<Q155LaneFrame, ()>> {
     bytes
         .windows(Q155LaneFrame::DISCRIMINATOR.len())
         .enumerate()
@@ -2353,7 +2374,7 @@ pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<Q155L
 }
 
 /// Decode every complete shifted-binary32 lane in a reconstructed draft graph payload.
-pub fn draft_construction_binary32_lanes(
+pub(crate) fn draft_construction_binary32_lanes(
     bytes: &[u8],
 ) -> Vec<FramedScalarRun<DraftBinary32Branch, ()>> {
     let mut lanes = [DraftBinary32Branch::Form04, DraftBinary32Branch::Form03]
@@ -2385,19 +2406,21 @@ pub fn draft_construction_binary32_lanes(
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
-pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<csys_descriptor::CsysDescriptor> {
+pub(crate) fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<csys_descriptor::CsysDescriptor> {
     csys_descriptor::CsysDescriptor::read(bytes)
 }
 
 /// Decode every complete identity frame in a reconstructed draft construction payload.
-pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<draft_identity::DraftIdentityFrame> {
+pub(crate) fn draft_construction_identity_frames(
+    bytes: &[u8],
+) -> Vec<draft_identity::DraftIdentityFrame> {
     (0..bytes.len())
         .filter_map(|offset| draft_identity::DraftIdentityFrame::read(bytes, offset))
         .collect()
 }
 
 /// Decode compact object IDs followed by their complete frame discriminator.
-pub fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
+pub(crate) fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
     const DISCRIMINATOR: [u8; 18] = [
         0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
         0x02, 0x80, 0xa4,
@@ -2421,7 +2444,7 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
-pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclarationName<'_>> {
+pub(crate) fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclarationName<'_>> {
     let mut declaration = None;
     let mut literal = None;
     let mut multiple_literals = false;
@@ -2465,7 +2488,9 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
 }
 
 /// Decode the unique direct primary-body field in one operation.
-pub fn operation_body_reference(record: OperationBodyInput<'_>) -> Option<OperationBodyReference> {
+pub(crate) fn operation_body_reference(
+    record: OperationBodyInput<'_>,
+) -> Option<OperationBodyReference> {
     unique_candidate(operation_body_reference_candidates(record))
 }
 
@@ -2511,7 +2536,9 @@ fn operation_body_reference_candidates(
 }
 
 /// Decode every ordered direct primary-body field in one operation.
-pub fn operation_body_references(record: OperationBodyInput<'_>) -> Vec<OperationBodyReference> {
+pub(crate) fn operation_body_references(
+    record: OperationBodyInput<'_>,
+) -> Vec<OperationBodyReference> {
     operation_body_reference_candidates(record).collect()
 }
 
@@ -2519,12 +2546,14 @@ pub fn operation_body_references(record: OperationBodyInput<'_>) -> Vec<Operatio
 ///
 /// Both indices are non-null and canonical. Endpoint tags `10`, `12`, and
 /// `15` select the body-image field across the supported schema generations.
-pub fn operation_body_write_frames(record: OperationPayload<'_>) -> Vec<BodyWriteFrame<usize>> {
+pub(crate) fn operation_body_write_frames(
+    record: OperationPayload<'_>,
+) -> Vec<BodyWriteFrame<usize>> {
     body_write_frames(record.payload(), record.payload_offset())
 }
 
 /// Decode body-write frames from one independently bounded unlabeled record.
-pub fn unlabeled_operation_body_write_frames(
+pub(crate) fn unlabeled_operation_body_write_frames(
     record: UnlabeledOperationRecord<'_>,
 ) -> Vec<BodyWriteFrame<usize>> {
     body_write_frames(record.payload(), record.header().end_offset())
@@ -2755,7 +2784,7 @@ fn audit_trail_row_at(
 /// in source order. This rejects a coincidental inner match instead of
 /// assigning a second interpretation to a row sequence. Bytes that do not
 /// complete the row grammar are left untyped.
-pub fn audit_trail_rows(
+fn audit_trail_rows(
     bytes: &[u8],
     start: usize,
     end: usize,
@@ -2892,7 +2921,7 @@ fn unique_candidate<T>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
 }
 
 /// Decode every exact common frame in one bounded operation payload.
-pub fn operation_common_frames(record: OperationPayload<'_>) -> Vec<CommonFrame<usize>> {
+pub(crate) fn operation_common_frames(record: OperationPayload<'_>) -> Vec<CommonFrame<usize>> {
     let decode = |start: usize, marker| {
         if marker == [1, 1, 1] && record.name() != "DELETE" {
             return None;
@@ -2923,7 +2952,9 @@ pub fn operation_common_frames(record: OperationPayload<'_>) -> Vec<CommonFrame<
 }
 
 /// Decode the unique terminal common-frame suffix and its exact immediate common frame.
-pub fn operation_terminal_frame(record: OperationPayload<'_>) -> Option<OperationTerminalFrame> {
+pub(crate) fn operation_terminal_frame(
+    record: OperationPayload<'_>,
+) -> Option<OperationTerminalFrame> {
     let terminator = record.payload().len().checked_sub(1)?;
     (record.payload().get(terminator) == Some(&0)).then_some(())?;
     let common_frames = operation_common_frames(record);
@@ -2949,7 +2980,7 @@ pub fn operation_terminal_frame(record: OperationPayload<'_>) -> Option<Operatio
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.
-pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReference> {
+pub(crate) fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReference> {
     let mut references = Vec::new();
     let mut at = 0usize;
     while at + 5 <= bytes.len() {
@@ -3053,7 +3084,7 @@ fn counted_feature_object_indices(
 }
 
 /// Decode count-framed runs of same-section record references.
-pub fn counted_record_references(
+pub(crate) fn counted_record_references(
     bytes: &[u8],
     base_offset: usize,
     record_count: usize,
@@ -3095,10 +3126,7 @@ pub fn counted_record_references(
 }
 
 /// Decode self-identifying persistent handles and exact adjacent handle pairs.
-pub fn record_references(
-    bytes: &[u8],
-    base_offset: usize,
-) -> Vec<LocatedReference<DirectReference>> {
+fn record_references(bytes: &[u8], base_offset: usize) -> Vec<LocatedReference<DirectReference>> {
     let parsed = references(bytes, base_offset);
     let mut out = parsed
         .iter()
@@ -3125,7 +3153,10 @@ pub fn record_references(
 }
 
 /// Decode tagged references wholly contained in `bytes`.
-pub fn references(bytes: &[u8], base_offset: usize) -> Vec<LocatedReference<DirectReference>> {
+pub(crate) fn references(
+    bytes: &[u8],
+    base_offset: usize,
+) -> Vec<LocatedReference<DirectReference>> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
@@ -3154,7 +3185,7 @@ pub fn references(bytes: &[u8], base_offset: usize) -> Vec<LocatedReference<Dire
 }
 
 /// Decode `66 32 03` printable-string values wholly contained in `bytes`.
-pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
+pub(crate) fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
     const MARKER: &[u8] = &[0x66, 0x32, 0x03];
     bytes
         .windows(MARKER.len())
@@ -3177,7 +3208,7 @@ pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
 }
 
 /// Decode complete `03 26, canonical UUID text, 00` values in `bytes`.
-pub fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringValue<'_>> {
+pub(crate) fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringValue<'_>> {
     const MARKER: &[u8] = &[0x03, 0x26];
     const TEXT_LEN: usize = 36;
     bytes
@@ -3240,7 +3271,7 @@ mod uuid_string_value_tests {
 }
 
 /// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.
-pub fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
+pub(crate) fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
     const MARKER: &[u8] = &[0x66, 0x1b, 0x03];
     bytes
         .windows(MARKER.len())
@@ -3264,7 +3295,7 @@ pub fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
 /// records are self-framed as `handle, 04, length, text, 00`, so expression
 /// decoding does not depend on an object-id table having the same cardinality
 /// as an external entity-index array.
-pub fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
+pub(crate) fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
     if !bytes
         .windows(b"hostglobalvariables".len())
         .any(|window| window == b"hostglobalvariables")
@@ -3286,7 +3317,7 @@ pub fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
 }
 
 /// Locate independently size-framed OM sections and their type registries.
-pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
+pub(crate) fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 16 <= bytes.len() {
@@ -3549,7 +3580,7 @@ fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSect
 /// monotone, its first offset is zero, its second offset self-anchors the first
 /// entity exactly at the end of the object-id table, and that entity carries the
 /// NX root marker.
-pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
+pub(crate) fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
     let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
     let product_record_ranges = (0..bytes.len())
@@ -3672,7 +3703,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.
-pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
+pub(crate) fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
     (0..bytes.len().saturating_sub(3)).find_map(|at| {
         let product = ProductRecord::read(&bytes[at..], ProductRecordForm::Modern)?;
         Some(StoreVersion {
@@ -3685,7 +3716,7 @@ pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_
 /// Decode the zero-prefixed offset-store control form as ordered 24-bit values.
 ///
 /// Each word is serialized `00, value:u24 LE`. The complete form is atomic.
-pub fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord24>> {
+fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord24>> {
     bytes.len().is_multiple_of(4).then_some(())?;
     NonEmpty::new(
         bytes
@@ -3702,7 +3733,7 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord2
 /// retained declaration count is not an ordinal bound. The class lane is
 /// instead the unique nonempty prefix whose identities are distinct and all
 /// smaller than every following metadata value.
-pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
+pub(crate) fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     let values = offset_store_control_values(bytes)?
         .into_iter()
         .map(ControlWord24::value)
@@ -3790,7 +3821,7 @@ fn offset_store_product_anchored_form(
 
 /// One complete admitted offset-only store control-block form.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OffsetStoreControlForm {
+pub(crate) enum OffsetStoreControlForm {
     /// Complete `00 + value:u24 LE` word array.
     ZeroPrefixed {
         /// Ordered values decoded from the complete control block.
@@ -3811,7 +3842,7 @@ pub enum OffsetStoreControlForm {
 /// Product-anchored storage may cross the physical boundary between the
 /// control block and the first column block. Exactly one admitted grammar must
 /// accept the complete control envelope.
-pub fn offset_store_control_form(
+pub(crate) fn offset_store_control_form(
     control: &[u8],
     first_record: Option<&[u8]>,
 ) -> Option<OffsetStoreControlForm> {

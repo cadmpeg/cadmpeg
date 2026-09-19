@@ -24,23 +24,23 @@ macro_rules! loss_codes {
     ($( $(#[$meta:meta])* $variant:ident => ($code:literal, $severity:ident, $taxonomy:ident), )*) => {
         /// Stable NX transfer-loss identifier.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub enum NxLossCode {
+        pub(crate) enum NxLossCode {
             $( $(#[$meta])* $variant, )*
         }
 
         impl NxLossCode {
             /// Every code in declaration order.
-            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+            const ALL: &'static [Self] = &[$(Self::$variant),*];
 
             /// Stable loss code string.
             #[must_use]
-            pub const fn code(self) -> &'static str {
+            pub(crate) const fn code(self) -> &'static str {
                 match self { $(Self::$variant => $code),* }
             }
 
             /// Loss severity.
             #[must_use]
-            pub const fn severity(self) -> Severity {
+            const fn severity(self) -> Severity {
                 match self { $(Self::$variant => Severity::$severity),* }
             }
 
@@ -120,7 +120,7 @@ loss_codes! {
 impl NxLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
                 match cadmpeg_ir::report::LossNamespace::new("nx") {
@@ -138,7 +138,7 @@ impl NxLossCode {
     /// The structured code is `nx/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }

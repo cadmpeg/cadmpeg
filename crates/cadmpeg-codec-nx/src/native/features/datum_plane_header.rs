@@ -16,9 +16,9 @@ use std::collections::BTreeSet;
 
 /// A retained common header with an optional decoded construction branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FeatureDatumPlaneHeader {
-    pub id: String,
-    pub operation_label: String,
+pub(in crate::native) struct FeatureDatumPlaneHeader {
+    pub(in crate::native) id: String,
+    pub(in crate::native) operation_label: String,
     control: u8,
     construction: Construction,
 }
@@ -58,7 +58,9 @@ impl FeatureDatumPlaneHeader {
 }
 
 /// Decode common datum-plane payload headers from feature-history records.
-pub(crate) fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPlaneHeader> {
+pub(in crate::native) fn feature_datum_plane_headers(
+    container: &Container,
+) -> Vec<FeatureDatumPlaneHeader> {
     let indexed = container.indexed_om_sections();
     let inputs = feature_input_blocks(container);
     let mut headers = Vec::new();

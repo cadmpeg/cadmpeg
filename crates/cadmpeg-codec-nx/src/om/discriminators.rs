@@ -49,11 +49,11 @@ macro_rules! u8_discriminator {
     };
 }
 
-pub(crate) use u8_discriminator;
+pub(super) use u8_discriminator;
 
 u8_discriminator! {
     /// Admitted `row_kind` values for an operation-state row.
-    pub OperationStateCounterKind {
+    pub(crate) OperationStateCounterKind {
         /// Serialized `0x01` form.
         Form01 = 0x01,
         /// Serialized `0x02` form.
@@ -64,7 +64,7 @@ u8_discriminator! {
 
 u8_discriminator! {
     /// Admitted `tag` values for an operation-state row.
-    pub OperationStatePairTag {
+    pub(crate) OperationStatePairTag {
         /// Serialized `0x4f` form.
         Form4f = 0x4f,
         /// Serialized `0x48` form.
@@ -75,7 +75,7 @@ u8_discriminator! {
 
 u8_discriminator! {
     /// Admitted branch values for `DraftIdentityBranch`.
-    pub DraftIdentityBranch {
+    pub(crate) DraftIdentityBranch {
         /// Serialized `0x02` form.
         Form02 = 2,
         /// Serialized `0x03` form.
@@ -86,7 +86,7 @@ u8_discriminator! {
 
 u8_discriminator! {
     /// Admitted branch values for `DraftBinary32Branch`.
-    pub DraftBinary32Branch {
+    pub(crate) DraftBinary32Branch {
         /// Serialized `0x03` form.
         Form03 = 3,
         /// Serialized `0x04` form.
@@ -97,7 +97,7 @@ u8_discriminator! {
 
 impl DraftBinary32Branch {
     /// Complete serialized discriminator for this branch.
-    pub fn discriminator(self) -> [u8; 18] {
+    pub(crate) fn discriminator(self) -> [u8; 18] {
         match self {
             Self::Form04 => [
                 0x90, 0x18, 0x45, 0x01, 0x04, 0x01, 0x04, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86,
@@ -113,7 +113,7 @@ impl DraftBinary32Branch {
 
 u8_discriminator! {
     /// Admitted mode values for a surface construction branch.
-    pub SurfaceBranchMode {
+    pub(crate) SurfaceBranchMode {
         /// Serialized `0x16` form.
         Form16 = 0x16,
         /// Serialized `0x40` form.
@@ -124,7 +124,7 @@ u8_discriminator! {
 
 u8_discriminator! {
     /// Admitted discriminator values for an index row.
-    pub LinkedIndexDiscriminator {
+    pub(crate) LinkedIndexDiscriminator {
         /// Serialized `0x16` form.
         Form16 = 0x16,
         /// Serialized `0x17` form.
@@ -137,7 +137,7 @@ u8_discriminator! {
 
 u8_discriminator! {
     /// Admitted flag values for an index row.
-    pub LinkedIndexFlag {
+    pub(crate) LinkedIndexFlag {
         /// Serialized `0x03` form.
         Form03 = 0x03,
         /// Serialized `0x07` form.
@@ -148,7 +148,7 @@ u8_discriminator! {
 
 u8_discriminator! {
     /// Admitted mode values for an index row.
-    pub IndexRowMode {
+    pub(crate) IndexRowMode {
         /// Serialized `0x04` form.
         Form04 = 0x04,
         /// Serialized `0x07` form.
@@ -166,7 +166,7 @@ impl super::scalar_run::ScalarFrame for DraftBinary32Branch {
 
 u8_discriminator! {
     /// Branch introducing an operation body reference lane.
-    pub OperationBodyReferenceBranch {
+    pub(crate) OperationBodyReferenceBranch {
         Form11 = 0x11,
         Form1c = 0x1c,
     }
@@ -177,7 +177,7 @@ u8_discriminator! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 #[repr(u8)]
-pub enum PointHeaderMode {
+pub(crate) enum PointHeaderMode {
     /// Serialized `0x02` form.
     Form02 = 0x02,
     /// Serialized `0x03` form.

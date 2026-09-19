@@ -8,17 +8,17 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Wire", into = "Wire")]
-pub(crate) struct OmOperationStateStatus {
-    pub(crate) id: String,
-    pub(crate) section_link: String,
-    pub(crate) ordinal: u32,
+pub(in crate::native) struct OmOperationStateStatus {
+    pub(in crate::native) id: String,
+    section_link: String,
+    ordinal: u32,
     body: StateStatus<String, Vec<u8>>,
-    pub(crate) source_entry: String,
+    source_entry: String,
     source_offset: u64,
 }
 
 impl OmOperationStateStatus {
-    pub(crate) fn new(
+    pub(super) fn new(
         id: String,
         section_link: String,
         ordinal: u32,
@@ -36,10 +36,10 @@ impl OmOperationStateStatus {
             source_offset,
         })
     }
-    pub(crate) fn source_offset(&self) -> u64 {
+    pub(in crate::native) fn source_offset(&self) -> u64 {
         self.source_offset
     }
-    pub(crate) fn end_offset(&self) -> u64 {
+    fn end_offset(&self) -> u64 {
         self.source_offset + self.body.byte_len() as u64
     }
     #[cfg(test)]

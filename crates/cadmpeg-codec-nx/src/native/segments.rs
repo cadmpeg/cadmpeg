@@ -13,7 +13,7 @@ use crate::native::features::{
     FeatureOperationBodyOperand, FeatureOperationLabel,
 };
 use crate::native::om::{DataBlock, DataBlockRole, OmSchemaRole};
-pub(crate) mod om_location;
+pub(super) mod om_location;
 use om_location::OmLocation;
 mod row_wire;
 
@@ -48,25 +48,25 @@ fn classify_om_schema_role(section: &crate::om::Section<'_>) -> OmSchemaRole {
 
 /// One row retained from the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SegmentIndexRow {
+pub(super) struct SegmentIndexRow {
     /// Globally unique row identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based row ordinal.
-    pub ordinal: u32,
+    ordinal: u32,
     /// First little-endian row word.
-    pub type_code: u32,
+    type_code: u32,
     /// Second little-endian row word.
-    pub subtype_code: u32,
+    subtype_code: u32,
     /// Third little-endian row word.
-    pub value: u32,
+    value: u32,
     /// Directory entry containing the index.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the row.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Decode the canonical `UG_PART` segment-index rows.
-pub fn segment_index_rows(container: &Container) -> Vec<SegmentIndexRow> {
+pub(super) fn segment_index_rows(container: &Container) -> Vec<SegmentIndexRow> {
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };
@@ -90,7 +90,7 @@ pub fn segment_index_rows(container: &Container) -> Vec<SegmentIndexRow> {
 /// Word position within one segment-index row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SegmentIndexSlot {
+pub(super) enum SegmentIndexSlot {
     /// First row word.
     TypeCode,
     /// Second row word.
@@ -102,49 +102,49 @@ pub enum SegmentIndexSlot {
 /// Validated link from a segment-index word to a compressed stream wrapper.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "row_wire::Wire", into = "row_wire::Wire")]
-pub struct SegmentStreamLink {
+pub(super) struct SegmentStreamLink {
     /// Globally unique link identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning segment-index row.
-    pub row: usize,
+    row: usize,
     /// Row word containing the wrapper offset.
-    pub slot: SegmentIndexSlot,
+    slot: SegmentIndexSlot,
     /// Zero-based stream ordinal in first segment-wrapper order.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Decoded stream classification.
-    pub stream_kind: crate::parasolid::StreamKind,
+    pub(super) stream_kind: crate::parasolid::StreamKind,
     /// Bytes from the wrapper start to its zlib header.
-    pub wrapper_byte_len: u32,
+    wrapper_byte_len: u32,
     /// Absolute file offset of the wrapper.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Body-image identity carried beside one validated Parasolid stream wrapper.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SegmentBodyBinding {
+pub(crate) struct SegmentBodyBinding {
     /// Globally unique binding identity.
-    pub id: String,
+    pub(super) id: String,
     /// Validated stream-wrapper link owning the metadata tuple.
-    pub stream_link: String,
+    pub(super) stream_link: String,
     /// Zero-based stream ordinal in first segment-wrapper order.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Partition or plain cached-body stream classification.
-    pub stream_kind: crate::parasolid::StreamKind,
+    pub(super) stream_kind: crate::parasolid::StreamKind,
     /// Object index used by feature-history body operands.
-    pub body_object_index: u32,
+    pub(super) body_object_index: u32,
     /// Second object index naming the same body image in feature history.
-    pub body_alias_object_index: u32,
+    pub(super) body_alias_object_index: u32,
     /// Serialized role word completing the five-word segment tuple.
-    pub stream_role: u32,
+    pub(super) stream_role: u32,
     /// Absolute file offset of the object-index word in the segment index.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Return the one segment body binding named by an object index.
 ///
 /// A primary-body or operand relation is valid only when the index matches
 /// exactly one alias pair. Zero matches and alias collisions are unresolved.
-pub(crate) fn unique_segment_body_binding(
+pub(super) fn unique_segment_body_binding(
     object_index: u32,
     bindings: &[SegmentBodyBinding],
 ) -> Option<&SegmentBodyBinding> {
@@ -161,7 +161,7 @@ pub(crate) fn unique_segment_body_binding(
 /// object index. Callers use this function only when another native field
 /// carries the alias identity and must not silently accept a primary-index
 /// collision from a different body.
-pub(crate) fn unique_segment_body_alias_binding(
+pub(super) fn unique_segment_body_alias_binding(
     object_index: u32,
     bindings: &[SegmentBodyBinding],
 ) -> Option<&SegmentBodyBinding> {
@@ -180,35 +180,35 @@ pub(crate) fn unique_segment_body_alias_binding(
 
 /// Unambiguous terminal status of one segment-bound body image.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SegmentBodyLineageStatus {
+pub(crate) struct SegmentBodyLineageStatus {
     /// Globally unique status identity.
-    pub id: String,
+    pub(super) id: String,
     /// Segment binding whose alias pair names the body image.
-    pub segment_body_binding: String,
+    pub(super) segment_body_binding: String,
     /// First serialized body identity.
-    pub body_object_index: u32,
+    pub(super) body_object_index: u32,
     /// Alias identity naming the same body image.
-    pub body_alias_object_index: u32,
+    pub(super) body_alias_object_index: u32,
     /// Whether the image remains terminal after retained history.
-    pub terminal: bool,
+    pub(super) terminal: bool,
     /// Absolute source offset of the segment binding.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Validated link from a segment-index word to a framed OM section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SegmentOmLink {
+pub(super) struct SegmentOmLink {
     /// Globally unique link identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning segment-index row.
-    pub row: String,
+    pub(super) row: String,
     /// Row word containing the section offset.
-    pub slot: SegmentIndexSlot,
+    pub(super) slot: SegmentIndexSlot,
     /// Role established by exact class declarations in the pointed registry.
-    pub schema_role: OmSchemaRole,
+    pub(super) schema_role: OmSchemaRole,
     /// Checked pointed and signature offsets.
     #[serde(flatten)]
-    pub location: OmLocation,
+    pub(super) location: OmLocation,
 }
 
 /// Return body objects whose latest decoded writer is not consumed by a later
@@ -220,7 +220,7 @@ pub struct SegmentOmLink {
 /// source/newest-first; all history positions below use oldest-first order
 /// within each section.
 #[allow(clippy::too_many_arguments)]
-pub fn terminal_feature_body_indices(
+fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
@@ -358,7 +358,7 @@ pub fn terminal_feature_body_indices(
 
 /// Resolve one atomic terminal status for every segment-bound body image.
 #[allow(clippy::too_many_arguments)]
-pub fn segment_body_lineage_statuses(
+pub(super) fn segment_body_lineage_statuses(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
@@ -404,7 +404,7 @@ pub fn segment_body_lineage_statuses(
 
 /// Namespace proof for one Boolean's target and ordered tool participants.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum BooleanOffsetStoreResolution {
+pub(super) enum BooleanOffsetStoreResolution {
     /// No participant ordinal occurs in an offset-only data block.
     None,
     /// Every participant resolves to one block in one offset store.
@@ -417,7 +417,7 @@ pub(crate) enum BooleanOffsetStoreResolution {
 /// Classify one Boolean participant set before applying any integer identity.
 /// A partial, duplicate, or cross-store offset-store relation is unresolved;
 /// it must not fall back to a segment-body alias with the same integer.
-pub(crate) fn boolean_offset_store_resolution(
+pub(super) fn boolean_offset_store_resolution(
     operation: &FeatureBooleanOperation,
     data_blocks: &[DataBlock],
 ) -> BooleanOffsetStoreResolution {
@@ -491,7 +491,7 @@ fn segment_boolean_operation_labels(
 }
 
 /// Map each segment body identity to the smallest identity in its transitive alias component.
-pub(crate) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeMap<u32, u32>> {
+pub(super) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeMap<u32, u32>> {
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     for binding in bindings {
         adjacency
@@ -530,7 +530,7 @@ pub(crate) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeM
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.
-pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
+pub(super) fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };
@@ -585,7 +585,10 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
 }
 
 /// Resolve segment-index words that point to validated compressed wrappers.
-pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<SegmentStreamLink> {
+pub(super) fn segment_stream_links(
+    container: &Container,
+    streams: &[Stream],
+) -> Vec<SegmentStreamLink> {
     let mut links = Vec::new();
     for wrapper in container.segment_stream_wrappers() {
         let slot = match wrapper.word_ordinal {
@@ -615,7 +618,10 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
 }
 
 /// Bind partition and cached-body streams to feature-history body object indices.
-pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<SegmentBodyBinding> {
+pub(super) fn segment_body_bindings(
+    container: &Container,
+    streams: &[Stream],
+) -> Vec<SegmentBodyBinding> {
     let Some((entry, index)) = container.segment_index() else {
         return Vec::new();
     };

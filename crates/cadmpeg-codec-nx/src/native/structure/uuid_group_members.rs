@@ -14,10 +14,10 @@ struct ListSlot {
 
 /// Slots retain positions in the two independent lists, not matched instances.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UuidGroupMembers(NonEmpty<ListSlot>);
+pub(super) struct UuidGroupMembers(NonEmpty<ListSlot>);
 
 impl UuidGroupMembers {
-    pub(crate) fn new(
+    pub(super) fn new(
         occurrences: Vec<String>,
         object_uuid_values: Vec<String>,
     ) -> Result<Self, &'static str> {
@@ -34,11 +34,11 @@ impl UuidGroupMembers {
         .ok_or("occurrences/object_uuid_values: lists must be nonempty")
     }
 
-    pub(crate) fn occurrences(&self) -> impl Iterator<Item = &str> {
+    pub(super) fn occurrences(&self) -> impl Iterator<Item = &str> {
         self.0.iter().map(|slot| slot.occurrence.as_str())
     }
 
-    pub(crate) fn object_uuid_values(&self) -> impl Iterator<Item = &str> {
+    pub(super) fn object_uuid_values(&self) -> impl Iterator<Item = &str> {
         self.0.iter().map(|slot| slot.object_uuid_value.as_str())
     }
 }

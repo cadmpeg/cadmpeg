@@ -40,31 +40,31 @@ mod support_uv;
 use build::try_decode_geometry;
 use emit::{source_meta, unknown_stream};
 
-pub(crate) const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
+const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 /// Parsed container data shared by inspection and entity decoding.
-pub struct Scan<'a> {
+pub(crate) struct Scan<'a> {
     /// Parsed SPLMSSTR container.
-    pub container: Container<'a>,
+    pub(crate) container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
-    pub streams: Vec<Stream>,
+    pub(crate) streams: Vec<Stream>,
 }
 
 impl Scan<'_> {
     /// Count streams with the requested classification.
-    pub fn count(&self, kind: StreamKind) -> usize {
+    fn count(&self, kind: StreamKind) -> usize {
         self.streams.iter().filter(|s| s.kind() == kind).count()
     }
 
     /// Return whether the file contains an inline Parasolid stream.
     ///
     /// NX assemblies may contain only references to external child parts.
-    pub fn has_parasolid(&self) -> bool {
+    fn has_parasolid(&self) -> bool {
         self.streams.iter().any(|s| s.kind().is_parasolid())
     }
 }
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
+pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, CodecError> {
     let (container, streams) = if container::looks_like_nx(root.window()) {
         let container = container::scan_bytes(root.window())?;
         let streams = parasolid::extract_streams(ctx, root, &container)?;
@@ -84,7 +84,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
 /// emits supported geometry and resolvable topology. A valid container can
 /// decode successfully with no geometry, including an assembly whose geometry
 /// resides in external child parts.
-pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
+pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let scan = scan(ctx, root)?;
     let (classification, notes) = summarize(&scan);
     let (dialects, dialect_losses) = classification.into_report_parts();
@@ -333,7 +333,7 @@ fn build_container_body(
 }
 
 /// Classify a scan and build its inspection and decode notes.
-pub fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<String>) {
+pub(crate) fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Vec<String>) {
     let c = &scan.container;
     let (control_count, classified_control_count) = offset_store_control_counts(c);
     let header_entry_count = c.entry_count(crate::container::Region::Header);

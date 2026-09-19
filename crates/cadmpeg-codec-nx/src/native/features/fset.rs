@@ -16,12 +16,12 @@ use serde::{Deserialize, Serialize};
     try_from = "FeatureFsetReferenceGraphWire",
     into = "FeatureFsetReferenceGraphWire"
 )]
-pub struct FeatureFsetReferenceGraph {
+pub(in crate::native) struct FeatureFsetReferenceGraph {
     /// Globally unique graph identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `FSET` operation label.
-    pub operation_label: String,
-    pub references: FsetReferences<Option<String>>,
+    pub(in crate::native) operation_label: String,
+    references: FsetReferences<Option<String>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -143,7 +143,7 @@ impl TryFrom<FeatureFsetReferenceGraphWire> for FeatureFsetReferenceGraph {
 /// Serialized reference group selecting one logical `FSET` construction payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureFsetReferenceGroup {
+pub(in crate::native) enum FeatureFsetReferenceGroup {
     /// Two-reference group inside the byte-counted angle-bracket frame.
     First,
     /// Three-reference group following the angle-bracket frame.
@@ -152,7 +152,9 @@ pub enum FeatureFsetReferenceGroup {
 
 /// Decode and resolve exact `FSET` reference graphs without assigning semantic
 /// roles to either reference group.
-pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetReferenceGraph> {
+pub(in crate::native) fn feature_fset_reference_graphs(
+    container: &Container,
+) -> Vec<FeatureFsetReferenceGraph> {
     let indexed = container.indexed_om_sections();
     let mut graphs = Vec::new();
     visit_feature_history_operation_records(
@@ -182,7 +184,7 @@ pub fn feature_fset_reference_graphs(container: &Container) -> Vec<FeatureFsetRe
 
 /// Reconstruct the two ordered logical payloads selected by each complete
 /// same-store `FSET` reference graph.
-pub fn feature_fset_construction_payloads(
+pub(in crate::native) fn feature_fset_construction_payloads(
     container: &Container,
     graphs: &[FeatureFsetReferenceGraph],
 ) -> Vec<FeatureConstructionPayload> {

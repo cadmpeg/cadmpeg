@@ -37,7 +37,7 @@ use crate::intersection::finite_point::FinitePoint;
 
 /// Semantic family of one admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
-pub enum RecordFamily {
+pub(crate) enum RecordFamily {
     Body {
         references: Vec<u32>,
         node_id: u32,
@@ -205,7 +205,7 @@ pub enum RecordFamily {
 
 impl RecordFamily {
     /// Numeric Parasolid node type for this family.
-    pub const fn kind(&self) -> u16 {
+    pub(crate) const fn kind(&self) -> u16 {
         self.record_kind().code() as u16
     }
 
@@ -267,7 +267,7 @@ impl RecordFamily {
     }
 
     /// Kernel node identifier when this family serializes one.
-    pub const fn node_id(&self) -> Option<u32> {
+    pub(crate) const fn node_id(&self) -> Option<u32> {
         match self {
             Self::Body { node_id, .. }
             | Self::Shell { node_id, .. }
@@ -326,7 +326,7 @@ impl RecordFamily {
     }
 
     /// The record's last position tuple in Parasolid metres.
-    pub fn position(&self) -> Option<[f64; 3]> {
+    pub(crate) fn position(&self) -> Option<[f64; 3]> {
         match self {
             Self::Point { position, .. } => Some(position.0),
             Self::Line { position, .. }
@@ -343,7 +343,7 @@ impl RecordFamily {
     }
 
     /// Stable family name used by the deltas census and native records.
-    pub const fn family_name(&self) -> &'static str {
+    pub(crate) const fn family_name(&self) -> &'static str {
         match self {
             Self::IntersectionData { .. } => "INTERSECTION_DATA",
             _ => self.record_kind().name(),
@@ -351,7 +351,7 @@ impl RecordFamily {
     }
 
     /// Ordered references retained by this record layout.
-    pub fn references(&self) -> Vec<u32> {
+    pub(crate) fn references(&self) -> Vec<u32> {
         match self {
             Self::Body { references, .. } => references.clone(),
             Self::Shell { references, .. } => references.to_vec(),

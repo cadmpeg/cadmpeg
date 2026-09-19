@@ -21,37 +21,37 @@ const MODEL_FRAME: &[u8] = &[4, 7, b'M', b'O', b'D', b'E', b'L', 0];
 
 /// One reusable component prototype named by the fast-load structure roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FastLoadComponentPrototype {
+pub(super) struct FastLoadComponentPrototype {
     /// Globally unique prototype identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based position in the serialized prototype table.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Serialized component name.
-    pub name: String,
+    name: String,
     /// Directory entry containing the roster.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the name tag.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// One UUID identity in the fast-load component roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FastLoadComponentUuid {
+pub(super) struct FastLoadComponentUuid {
     /// Globally unique native UUID-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based position in the serialized UUID table.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Canonical lowercase UUID text.
-    pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
+    uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Directory entry containing the UUID table.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the UUID tag.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum OccurrenceLaneForm {
+enum OccurrenceLaneForm {
     Base,
     Extended,
 }
@@ -79,7 +79,7 @@ impl From<OccurrenceLaneForm> for u8 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum OccurrenceMarker {
+enum OccurrenceMarker {
     One,
     Nine,
 }
@@ -108,7 +108,7 @@ impl From<OccurrenceMarker> for u8 {
 /// One-based slot in a count-minus-one roster table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) struct RosterIndex(u8);
+struct RosterIndex(u8);
 
 impl TryFrom<u8> for RosterIndex {
     type Error = &'static str;
@@ -136,30 +136,30 @@ impl RosterIndex {
 
 /// One ordered component use referencing a reusable fast-load prototype.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FastLoadComponentOccurrence {
+pub(crate) struct FastLoadComponentOccurrence {
     /// Globally unique occurrence identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based position in the serialized occurrence table.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact marker byte in the serialized occurrence marker lane.
-    pub marker: OccurrenceMarker,
+    marker: OccurrenceMarker,
     /// Absolute file offset of the occurrence marker.
-    pub marker_source_offset: u64,
+    marker_source_offset: u64,
     /// One-based serialized prototype-table index.
     prototype_index: RosterIndex,
     /// Referenced [`FastLoadComponentUuid::id`].
-    pub component_uuid: String,
+    component_uuid: String,
     /// Absolute file offset of the UUID-table index.
-    pub uuid_source_offset: u64,
+    uuid_source_offset: u64,
     /// Directory entry containing the roster.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the prototype index.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 impl FastLoadComponentOccurrence {
     /// Referenced fast-load prototype identity.
-    pub fn prototype(&self) -> String {
+    fn prototype(&self) -> String {
         format!("nx:fast-load:prototype#{}", self.prototype_index.ordinal())
     }
 }
@@ -222,24 +222,24 @@ impl From<(&FastLoadComponentOccurrence, OccurrenceLaneForm)> for FastLoadCompon
 ///
 /// The two ordered lists intentionally do not assert an instance-level pairing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FastLoadComponentObjectGroup {
+pub(super) struct FastLoadComponentObjectGroup {
     /// Globally unique group identity.
-    pub id: String,
+    pub(super) id: String,
     /// Referenced [`FastLoadComponentUuid::id`].
-    pub component_uuid: String,
+    component_uuid: String,
     /// Canonical lowercase UUID shared by every member.
-    pub uuid: crate::canonical_uuid::CanonicalUuid<String>,
+    uuid: crate::canonical_uuid::CanonicalUuid<String>,
     /// Independent ordered occurrence and OM UUID-value lists of equal cardinality.
     #[serde(flatten)]
-    pub members: UuidGroupMembers,
+    members: UuidGroupMembers,
     /// Directory entry containing the component roster.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the roster UUID tag.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Join fast-load occurrences and OM UUID frames only at the UUID group level.
-pub fn fast_load_component_object_groups(
+pub(super) fn fast_load_component_object_groups(
     uuids: &[FastLoadComponentUuid],
     occurrences: &[FastLoadComponentOccurrence],
     object_uuid_values: &[ObjectUuidValue],
@@ -319,7 +319,7 @@ fn select_roster_candidate(mut candidates: Vec<Candidate>) -> Option<Candidate> 
 
 /// Extract the component roster only when its entry and internal frame are
 /// unique and every counted lane is complete.
-pub fn fast_load_component_roster(
+pub(super) fn fast_load_component_roster(
     container: &Container<'_>,
 ) -> Result<
     (

@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 /// Finite numeric value of an NX expression.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "f64", into = "f64")]
-pub(crate) struct FiniteValue(f64);
+pub(in crate::native) struct FiniteValue(f64);
 
 impl FiniteValue {
-    pub(crate) fn get(self) -> f64 {
+    pub(in crate::native) fn get(self) -> f64 {
         self.0
     }
 }

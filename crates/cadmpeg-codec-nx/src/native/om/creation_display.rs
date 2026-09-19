@@ -10,7 +10,7 @@ mod wire;
 const CLASS_NAME: &str = "UGS::RM_creation_display_data";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RmCreationDisplayDataEncoding {
+enum RmCreationDisplayDataEncoding {
     Index(IndexRow<(), u64>),
     Linked {
         row: LinkedRow<(), u64>,
@@ -23,7 +23,7 @@ pub(crate) enum RmCreationDisplayDataEncoding {
 }
 
 impl RmCreationDisplayDataEncoding {
-    pub(crate) fn offset(&self) -> u64 {
+    fn offset(&self) -> u64 {
         match self {
             Self::Index(row) => row.offset(),
             Self::Linked { row, .. } => row.offset(),
@@ -37,18 +37,18 @@ impl RmCreationDisplayDataEncoding {
     try_from = "wire::RmCreationDisplayDataRelationWire",
     into = "wire::RmCreationDisplayDataRelationWire"
 )]
-pub(crate) struct RmCreationDisplayDataRelation {
-    pub(crate) id: String,
-    pub(crate) ordinal: u32,
-    pub(crate) class_definition: String,
-    pub(crate) encoding: RmCreationDisplayDataEncoding,
-    pub(crate) source_entry: String,
+pub(in crate::native) struct RmCreationDisplayDataRelation {
+    id: String,
+    ordinal: u32,
+    class_definition: String,
+    encoding: RmCreationDisplayDataEncoding,
+    source_entry: String,
 }
 
 /// Decode class-selected creation-display relations from `RMFastLoad` record
 /// areas. The compact indices remain uninterpreted until their object roles are
 /// established independently.
-pub fn rm_creation_display_data_relations(
+pub(in crate::native) fn rm_creation_display_data_relations(
     container: &Container,
     object_ids: &[RmFastLoadObjectId],
 ) -> Vec<RmCreationDisplayDataRelation> {

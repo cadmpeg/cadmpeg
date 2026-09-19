@@ -12,21 +12,21 @@ const TIFF_VERSION: u16 = 42;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum TiffByteOrder {
+pub(in crate::native::om) enum TiffByteOrder {
     LittleEndian,
     BigEndian,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "TextureWire", into = "TextureWire")]
-pub(crate) struct MaterialTextureAsset {
-    pub(crate) id: String,
-    pub(crate) byte_order: TiffByteOrder,
+pub(in crate::native) struct MaterialTextureAsset {
+    pub(in crate::native) id: String,
+    pub(super) byte_order: TiffByteOrder,
     first_ifd_offset: u32,
     byte_len: u64,
-    pub(crate) sha256: crate::native::hex::Sha256Hex,
+    pub(in crate::native) sha256: crate::native::hex::Sha256Hex,
     source_entry: String,
-    pub(crate) source_offset: u64,
+    pub(in crate::native) source_offset: u64,
 }
 
 impl MaterialTextureAsset {
@@ -59,23 +59,23 @@ impl MaterialTextureAsset {
         })
     }
 
-    pub(crate) fn name(&self) -> &str {
+    pub(in crate::native) fn name(&self) -> &str {
         &self.source_entry()[TEXTURE_PREFIX.len()..]
     }
 
-    pub(crate) fn storage_path(&self) -> &str {
+    pub(super) fn storage_path(&self) -> &str {
         &self.source_entry()[ROOT_PREFIX.len()..]
     }
 
-    pub(crate) fn source_entry(&self) -> &str {
+    pub(super) fn source_entry(&self) -> &str {
         &self.source_entry
     }
 
-    pub(crate) fn first_ifd_offset(&self) -> u32 {
+    pub(super) fn first_ifd_offset(&self) -> u32 {
         self.first_ifd_offset
     }
 
-    pub(crate) fn byte_len(&self) -> u64 {
+    pub(in crate::native) fn byte_len(&self) -> u64 {
         self.byte_len
     }
 }
@@ -132,7 +132,9 @@ impl TryFrom<TextureWire> for MaterialTextureAsset {
     }
 }
 
-pub(crate) fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsset> {
+pub(in crate::native) fn material_texture_assets(
+    container: &Container,
+) -> Vec<MaterialTextureAsset> {
     let mut entries = container
         .entries
         .iter()

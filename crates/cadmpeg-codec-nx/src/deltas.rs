@@ -12,13 +12,13 @@ use census::{walk, Census};
 pub(crate) mod record_family;
 pub(crate) mod record_kind;
 use record_family::RecordFamily;
-pub(crate) mod attdef_state;
+mod attdef_state;
 pub(crate) mod inline_schema_fields;
-pub(crate) mod precision_state;
+mod precision_state;
 pub(crate) mod reference_lanes;
-pub(crate) mod type101_state;
-pub(crate) mod type38_state;
-pub(crate) mod type70_state;
+mod type101_state;
+mod type38_state;
+mod type70_state;
 use attdef_state::AttdefState;
 use inline_schema_fields::{
     BodyStateBytes, InlineBodyStateFields, InlineSchemaFields, TermUseValues,
@@ -29,7 +29,7 @@ use type38_state::{IntersectionMarker, ReferenceLaneForm, Type38State};
 use type70_state::{TrailingCopies, Type70State};
 pub(crate) mod packet_marker;
 pub(crate) mod state_frame;
-pub(crate) mod state_references;
+mod state_references;
 pub(crate) mod transmit_state;
 use crate::framing::xmt_reference::NonNullXmt;
 use state_frame::{ReferenceStateFrame, StateFrames};
@@ -52,158 +52,158 @@ use cadmpeg_core::decode::View;
 
 /// One complete admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Record {
+pub(crate) struct Record {
     /// Semantic family, including family-owned node identity and POINT/GROUP data.
-    pub family: RecordFamily,
+    pub(crate) family: RecordFamily,
     /// Stream-local XMT identifier.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Partition-style bytes for fixed records and exact bytes for variable records.
-    pub canonical_bytes: Vec<u8>,
+    pub(crate) canonical_bytes: Vec<u8>,
     /// Record start offset in the inflated stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the record.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 impl Record {
     /// Numeric Parasolid node type.
-    pub const fn kind(&self) -> u16 {
+    pub(crate) const fn kind(&self) -> u16 {
         self.family.kind()
     }
 
     /// Stable family name used by the deltas census and native records.
-    pub const fn family_name(&self) -> &'static str {
+    const fn family_name(&self) -> &'static str {
         self.family.family_name()
     }
 }
 
 /// One compact deletion carrying an explicit Parasolid type and XMT identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Tombstone {
+pub(crate) struct Tombstone {
     /// Admitted Parasolid node kind.
-    pub kind: RecordKind,
+    pub(crate) kind: RecordKind,
     /// Stream-local XMT identifier.
-    pub xmt: u32,
+    pub(crate) xmt: u32,
     /// Record start offset in the inflated deltas stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One deltas BODY revision envelope.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BodyRevision {
+pub(crate) struct BodyRevision {
     /// Stream-local BODY XMT identity.
-    pub xmt: NonNullXmt,
+    pub(crate) xmt: NonNullXmt,
     /// Monotonic kernel revision identity.
-    pub node_id: u32,
+    pub(crate) node_id: u32,
     /// Eight ordered BODY references decoded from status-framed XMT fields.
-    pub references: [u32; 8],
+    pub(crate) references: [u32; 8],
     /// Record start offset in the inflated deltas stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte after the validated prefix.
-    pub prefix_end: usize,
+    pub(crate) prefix_end: usize,
     /// First byte following the complete revision envelope.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// Framed Parasolid transmit header at the start of a deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransmitHeader {
-    pub state: TransmitState,
+pub(crate) struct TransmitHeader {
+    pub(crate) state: TransmitState,
     /// First byte following the header.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// Maximal deltas gap containing only typed stream-local references.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaggedReferenceLane {
+pub(crate) struct TaggedReferenceLane {
     /// Ordered `(Parasolid record kind, XMT identity)` references.
-    pub references: TaggedReferences,
+    pub(crate) references: TaggedReferences,
     /// First byte of the first tagged reference.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the final tagged reference.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// One framed map from stream-local references to Parasolid type codes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReferenceTypeMap {
+pub(crate) struct ReferenceTypeMap {
     /// Ordered `(reference, type_code)` entries.
-    pub entries: MapEntries,
+    pub(crate) entries: MapEntries,
     /// Type code of the optional terminal map target.
-    pub target_kind: Option<NonZeroU16>,
+    pub(crate) target_kind: Option<NonZeroU16>,
     /// First byte of the map.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the map.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// One deltas packet carrying one or more reference-state frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReferenceStatePacket {
+pub(crate) struct ReferenceStatePacket {
     /// Ordered packet frames.
-    pub frames: StateFrames,
+    pub(crate) frames: StateFrames,
     /// Whether the packet ends with `ref(1)[3], u32(1)`.
-    pub terminal: bool,
+    pub(crate) terminal: bool,
     /// First byte of the packet.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the packet.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// One deltas schema preamble carrying typed references and unassigned state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SchemaReferencePreamble {
-    pub state: PreambleState,
+pub(crate) struct SchemaReferencePreamble {
+    pub(crate) state: PreambleState,
     /// First byte of the preamble.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the preamble.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// One deltas packet carrying a reference and a serialized marker byte.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReferenceMarkerPacket {
+pub(crate) struct ReferenceMarkerPacket {
     /// Non-null stream-local XMT reference.
-    pub reference: NonNullXmt,
+    pub(crate) reference: NonNullXmt,
     /// Serialized marker byte.
-    pub marker: ReferenceMarker,
+    pub(crate) marker: ReferenceMarker,
     /// First byte of the packet.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the packet.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// One single-byte type-150 deltas state packet.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Type150StatePacket {
+pub(crate) struct Type150StatePacket {
     /// Validated references, marker, and finite state values.
-    pub state: Type150State,
+    pub(crate) state: Type150State,
     /// First byte of the packet.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the packet.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// One complete inline schema declaration.
 #[derive(Debug, Clone, PartialEq)]
-pub struct InlineSchemaDeclaration {
+pub(crate) struct InlineSchemaDeclaration {
     /// Schema-specific declaration body.
-    pub fields: InlineSchemaFields,
+    pub(crate) fields: InlineSchemaFields,
     /// First byte of the declaration.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the declaration.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 /// One complete schema-bound type-12 `BODY` instance state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InlineBodyState {
+pub(crate) struct InlineBodyState {
     /// Serialized state form.
-    pub fields: InlineBodyStateFields,
+    pub(crate) fields: InlineBodyStateFields,
     /// First state byte following a type-12 schema header.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// First byte following the state.
-    pub end: usize,
+    pub(crate) end: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1590,7 +1590,7 @@ enum MergeEvent {
 /// sequence contribute to the current image. Raw current-revision deltas bytes
 /// remain available to independent procedural decoders.
 #[cfg(test)]
-pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
+pub(crate) fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
     merge_full_records_with_census(partition, deltas, &census)
 }
@@ -1737,14 +1737,14 @@ fn merge_records(
 /// Events are keyed by Parasolid type and XMT identity. A later full record
 /// supersedes an earlier tombstone, while a full record followed by a
 /// tombstone is a resolved deletion even when the base image lacked the key.
-pub fn unmatched_terminal_tombstones(partition: &[u8], deltas: &[u8]) -> usize {
+pub(crate) fn unmatched_terminal_tombstones(partition: &[u8], deltas: &[u8]) -> usize {
     unmatched_terminal_tombstones_by_family(partition, deltas)
         .values()
         .sum()
 }
 
 /// Count unmatched terminal tombstones by Parasolid record family.
-pub fn unmatched_terminal_tombstones_by_family(
+fn unmatched_terminal_tombstones_by_family(
     partition: &[u8],
     deltas: &[u8],
 ) -> BTreeMap<&'static str, usize> {
@@ -1926,7 +1926,7 @@ fn current_scope_contains(scopes: &[RevisionScope], offset: usize) -> bool {
 /// Historical BODY revision intervals are also masked. Current-revision records
 /// needed by semantic scanners are appended in their partition form.
 #[cfg(test)]
-pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
+pub(crate) fn semantic_residual(stream: &[u8]) -> Vec<u8> {
     let census = walk(stream);
     semantic_residual_with_census(stream, &census)
 }
@@ -2731,7 +2731,7 @@ fn is_next_kind(kind: u16) -> bool {
     (family_name(kind).is_some() && kind != 98) || matches!(kind, 70 | 79 | 80)
 }
 
-pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
+fn family_name(kind: u16) -> Option<&'static str> {
     RecordKind::try_from(kind).ok().map(RecordKind::name)
 }
 

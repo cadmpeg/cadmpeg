@@ -7,17 +7,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
 
-pub(crate) mod delete;
-pub(crate) mod draft;
-pub(crate) mod extrude_32;
-pub(crate) mod fset;
+pub(super) mod delete;
+pub(super) mod draft;
+pub(super) mod extrude_32;
+pub(super) mod fset;
 use self::fset::FeatureFsetReferenceGroup;
 use extrude_32::{FeatureExtrude32Construction, FeatureExtrudePayload32Branch};
-pub(crate) mod holes;
-pub(crate) mod pattern;
-pub(crate) mod point_scalar_lane;
+pub(super) mod holes;
+pub(super) mod pattern;
+pub(super) mod point_scalar_lane;
 use point_scalar_lane::{FeaturePointConstructionScalarLane, PointScalarPositions};
-pub(crate) mod payload_name;
+pub(super) mod payload_name;
 use payload_name::FeaturePayloadName;
 
 mod reference;
@@ -26,19 +26,19 @@ use crate::om::datum_csys::DatumCsysSlot;
 use crate::om::header_references::HeaderSlot;
 use reference::ConstructionReference;
 
-pub(crate) mod block_reference;
-pub(crate) mod body_scalar_triple;
+pub(super) mod block_reference;
+pub(super) mod body_scalar_triple;
 use body_scalar_triple::FeatureOperationBodyScalarTriple;
 mod body_write_wire;
 mod common_frame_wire;
-pub(crate) mod object_frame;
-pub(crate) mod operation_record;
-pub(crate) mod surface_branches;
-pub(crate) mod swp104_branch;
-pub(crate) mod terminal_discriminator;
-pub(crate) mod thru_curve_branches;
+pub(super) mod object_frame;
+pub(super) mod operation_record;
+pub(super) mod surface_branches;
+pub(super) mod swp104_branch;
+pub(super) mod terminal_discriminator;
+pub(super) mod thru_curve_branches;
 use terminal_discriminator::FeatureOperationTerminalDiscriminator;
-pub(crate) mod unlabeled_record;
+pub(super) mod unlabeled_record;
 use crate::native::om::column_row::{
     DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
 };
@@ -79,7 +79,7 @@ use crate::om::csys_descriptor::{
 use crate::om::plane_descriptor::PlaneDescriptor;
 use crate::om::thru_curve_controls::ThruCurveControls;
 
-pub(crate) mod datum_plane_header;
+pub(super) mod datum_plane_header;
 mod joined_payload;
 mod payload_content;
 use datum_plane_header::FeatureDatumPlaneHeader;
@@ -88,18 +88,18 @@ use payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 
 /// Ordered feature operation label from a feature-history record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationLabel {
+pub(super) struct FeatureOperationLabel {
     /// Globally unique label identity.
-    pub id: String,
+    pub(super) id: String,
     /// Link identifying the owning ordered OM section.
-    pub section_link: String,
+    pub(super) section_link: String,
     /// Zero-based order within the record area.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Exact printable operation name.
-    pub value: String,
+    pub(super) value: String,
     /// Four nullable references with their exact source encodings.
     #[serde(flatten)]
-    pub objects: crate::om::header_references::HeaderReferences,
+    pub(super) objects: crate::om::header_references::HeaderReferences,
     /// Record-order-independent header identity when every non-null slot
     /// resolves to a unique content-backed offset-store block and the tuple
     /// is unique across the feature-history sections.
@@ -108,9 +108,9 @@ pub struct FeatureOperationLabel {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_stable_identity"
     )]
-    pub stable_identity: Option<String>,
+    pub(super) stable_identity: Option<String>,
     /// Absolute file offset of the `03` label tag.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Return operation labels in neutral construction-history order.
@@ -118,7 +118,7 @@ pub struct FeatureOperationLabel {
 /// Each feature-history section stores its operation records newest first. The
 /// native label arena retains that source order, but neutral dependencies and
 /// feature ordinals use oldest-first construction order within each section.
-pub(crate) fn feature_operation_chronological_labels(
+pub(super) fn feature_operation_chronological_labels(
     labels: &[FeatureOperationLabel],
 ) -> Vec<&FeatureOperationLabel> {
     let mut sections = Vec::<(&str, Vec<&FeatureOperationLabel>)>::new();
@@ -154,82 +154,82 @@ pub(crate) fn feature_operation_chronological_labels(
     try_from = "body_write_wire::BodyWriteWire",
     into = "body_write_wire::BodyWriteWire"
 )]
-pub struct FeatureOperationBodyWrite {
-    pub id: String,
-    pub operation_label: Option<String>,
-    pub operation_record: String,
-    pub ordinal: u32,
-    pub frame: crate::om::body_write::BodyWriteFrame<u64>,
-    pub body_image_data_block: Option<String>,
+pub(super) struct FeatureOperationBodyWrite {
+    pub(super) id: String,
+    pub(super) operation_label: Option<String>,
+    pub(super) operation_record: String,
+    pub(super) ordinal: u32,
+    pub(super) frame: crate::om::body_write::BodyWriteFrame<u64>,
+    pub(super) body_image_data_block: Option<String>,
 }
 
 /// Exact bridge from a body-write image block to one plain cached-body stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationBodyImageSegmentUse {
+pub(super) struct FeatureOperationBodyImageSegmentUse {
     /// Globally unique bridge identity.
-    pub id: String,
+    pub(super) id: String,
     /// Body-write frame owning both the body identity and image block.
-    pub operation_body_write: String,
+    pub(super) operation_body_write: String,
     /// Unambiguous offset-store block containing the serialized body image.
-    pub body_image_data_block: String,
+    pub(super) body_image_data_block: String,
     /// Plain cached-body tuple whose alias equals the body identity.
-    pub segment_body_binding: String,
+    pub(super) segment_body_binding: String,
 }
 
 /// Exact persistent body-identity match to one plain cached-body stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationBodyIdentitySegmentUse {
+pub(super) struct FeatureOperationBodyIdentitySegmentUse {
     /// Globally unique bridge identity.
-    pub id: String,
+    pub(super) id: String,
     /// Body-write frame carrying the persistent body identity.
-    pub operation_body_write: String,
+    pub(super) operation_body_write: String,
     /// Persistent body identity shared by the frame and plain-stream alias.
-    pub body_identity: u8,
+    pub(super) body_identity: u8,
     /// Unique plain cached-body tuple with the equal alias.
-    pub segment_body_binding: String,
+    pub(super) segment_body_binding: String,
 }
 
 /// Exact owning-partition scope for one body-write image and its GROUP node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationBodyPartitionUse {
+pub(super) struct FeatureOperationBodyPartitionUse {
     /// Globally unique partition-use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Body-write frame carrying the partition-local GROUP node.
-    pub operation_body_write: String,
+    pub(super) operation_body_write: String,
     /// Exact body-image relation that selects the cached-body stream.
-    pub body_image_segment_use: String,
+    pub(super) body_image_segment_use: String,
     /// Plain cached-body binding inside the partition's body-history run.
-    pub segment_body_binding: String,
+    pub(super) segment_body_binding: String,
     /// Partition stream that terminates the complete cached-body run.
-    pub partition_stream_ordinal: u32,
+    pub(super) partition_stream_ordinal: u32,
     /// Partition-local GROUP node carried by the body-write frame.
-    pub group_node: u32,
+    pub(super) group_node: u32,
     /// Ordered GROUP record updates retained inside the owning partition scope.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parasolid_group_records: Vec<String>,
+    pub(super) parasolid_group_records: Vec<String>,
     /// Current ordered GROUP members resolved inside the owning partition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parasolid_group_members: Vec<String>,
+    pub(super) parasolid_group_members: Vec<String>,
 }
 
 /// Exact partition ownership of one labeled or unlabeled body-write GROUP.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureBodyWriteGroupPartitionUse {
+pub(super) struct FeatureBodyWriteGroupPartitionUse {
     /// Globally unique partition-use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Labeled or unlabeled body-write frame carrying the GROUP node.
-    pub body_write: String,
+    pub(super) body_write: String,
     /// Persistent body identity carried by the frame.
-    pub body_identity: u8,
+    pub(super) body_identity: u8,
     /// Partition-local GROUP node carried by the frame.
-    pub group_node: u32,
+    pub(super) group_node: u32,
     /// Unique partition namespace containing every matched GROUP record.
-    pub partition_stream_ordinal: u32,
+    pub(super) partition_stream_ordinal: u32,
     /// Ordered GROUP record updates retained inside the partition scope.
-    pub parasolid_group_records: Vec<String>,
+    pub(super) parasolid_group_records: Vec<String>,
     /// Current ordered GROUP members resolved inside the partition scope.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parasolid_group_members: Vec<String>,
+    pub(super) parasolid_group_members: Vec<String>,
 }
 
 /// Exact direct object-reference field retained from one feature operation.
@@ -241,54 +241,54 @@ pub struct FeatureBodyWriteGroupPartitionUse {
     try_from = "FeatureOperationObjectReferenceWire",
     into = "FeatureOperationObjectReferenceWire"
 )]
-pub struct FeatureOperationObjectReference {
+pub(super) struct FeatureOperationObjectReference {
     /// Globally unique reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation-label identity.
-    pub operation_label: String,
+    operation_label: String,
     /// Owning bounded operation-record identity.
-    pub operation_record: String,
+    operation_record: String,
     /// Zero-based reference order within the operation payload.
-    pub ordinal: u32,
-    pub frame: crate::om::direct_reference::DirectReferenceFrame<u64>,
+    ordinal: u32,
+    pub(super) frame: crate::om::direct_reference::DirectReferenceFrame<u64>,
     /// Unique target in the native offset-store data-block arena, when found.
-    pub data_block: Option<String>,
+    data_block: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct FeatureOperationObjectReferenceWire {
     /// Globally unique reference identity.
-    pub id: String,
+    id: String,
     /// Owning operation-label identity.
-    pub operation_label: String,
+    operation_label: String,
     /// Owning bounded operation-record identity.
-    pub operation_record: String,
+    operation_record: String,
     /// Zero-based reference order within the operation payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Byte between the opening `01 02` marker and the object index.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_tag"
     )]
-    pub tag: Option<u8>,
+    tag: Option<u8>,
     /// Referenced feature object index.
-    pub object_index: u32,
+    object_index: u32,
     /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    raw_object_index: Vec<u8>,
     /// Unique target in the native offset-store data-block arena, when found.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    data_block: Option<String>,
     /// Absolute offset of the object-index token.
-    pub object_index_source_offset: u64,
+    object_index_source_offset: u64,
     /// Exact serialized field byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// Absolute offset of the opening `01 02` marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 impl From<FeatureOperationObjectReference> for FeatureOperationObjectReferenceWire {
@@ -347,11 +347,11 @@ impl TryFrom<FeatureOperationObjectReferenceWire> for FeatureOperationObjectRefe
     try_from = "common_frame_wire::CommonFrameWire",
     into = "common_frame_wire::CommonFrameWire"
 )]
-pub struct FeatureOperationCommonFrame {
-    pub id: String,
-    pub operation_record: String,
-    pub ordinal: u32,
-    pub frame: crate::om::common_frame::CommonFrame<u64, Option<String>>,
+pub(super) struct FeatureOperationCommonFrame {
+    pub(super) id: String,
+    pub(super) operation_record: String,
+    pub(super) ordinal: u32,
+    pub(super) frame: crate::om::common_frame::CommonFrame<u64, Option<String>>,
 }
 
 /// Canonical terminal common-frame suffix of one feature operation.
@@ -360,51 +360,51 @@ pub struct FeatureOperationCommonFrame {
     try_from = "common_frame_wire::TerminalFrameWire",
     into = "common_frame_wire::TerminalFrameWire"
 )]
-pub struct FeatureOperationTerminalFrame {
-    pub id: String,
-    pub operation_record: String,
-    pub immediate_common_frame: Option<String>,
-    pub frame: crate::om::common_frame::TerminalFrame<u64, Option<String>>,
+pub(super) struct FeatureOperationTerminalFrame {
+    pub(super) id: String,
+    pub(super) operation_record: String,
+    pub(super) immediate_common_frame: Option<String>,
+    pub(super) frame: crate::om::common_frame::TerminalFrame<u64, Option<String>>,
 }
 
 /// Exact join from an operation terminal ordinal to its state-journal row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationStateJournalUse {
+pub(super) struct FeatureOperationStateJournalUse {
     /// Globally unique operation-to-journal relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning feature-history section.
-    pub section_link: String,
+    section_link: String,
     /// Owning operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Owning bounded operation record.
-    pub operation_record: String,
+    operation_record: String,
     /// Terminal frame carrying the local ordinal.
-    pub operation_terminal_frame: String,
+    operation_terminal_frame: String,
     /// State-journal group containing the matching row.
-    pub journal_group: String,
+    journal_group: String,
     /// Zero-based row order within the journal group.
-    pub journal_row_ordinal: u32,
+    pub(super) journal_row_ordinal: u32,
     /// Ordinal shared by the operation terminal frame and the journal row.
-    pub state_ordinal: u32,
+    state_ordinal: u32,
     /// Absolute source offset of the operation terminal frame.
-    pub operation_source_offset: u64,
+    pub(super) operation_source_offset: u64,
     /// Absolute source offset of the matching journal row.
-    pub journal_source_offset: u64,
+    journal_source_offset: u64,
 }
 
 /// Ordered length-framed string from one bounded feature-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeaturePayloadString {
+pub(super) struct FeaturePayloadString {
     /// Globally unique string identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning exact feature-operation record.
-    pub operation_record: String,
+    pub(super) operation_record: String,
     /// Zero-based string order within the post-label payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact UTF-8 string value.
-    pub value: crate::payload_text::PayloadText<String>,
+    pub(super) value: crate::payload_text::PayloadText<String>,
     /// Absolute file offset of the `04` marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Primary selection or ordered body-reference field in one feature operation.
@@ -413,38 +413,38 @@ pub struct FeaturePayloadString {
     try_from = "FeatureBodyReferenceWire",
     into = "FeatureBodyReferenceWire"
 )]
-pub struct FeatureBodyReference {
+pub(super) struct FeatureBodyReference {
     /// Globally unique reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation-label identity.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based field order; absent for the primary body selection.
-    pub ordinal: Option<u32>,
+    pub(super) ordinal: Option<u32>,
     /// Serialized reference index interpreted through its resolved namespace.
-    pub body: crate::om::reference_index::FeatureReferenceToken,
+    pub(super) body: crate::om::reference_index::FeatureReferenceToken,
     /// Absolute file offset of the object-index token.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
 struct FeatureBodyReferenceWire {
     /// Globally unique reference identity.
-    pub id: String,
+    id: String,
     /// Owning operation-label identity.
-    pub operation_label: String,
+    operation_label: String,
     /// Zero-based field order; absent for the primary body selection.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_ordinal"
     )]
-    pub ordinal: Option<u32>,
+    ordinal: Option<u32>,
     /// Serialized reference index interpreted through its resolved namespace.
-    pub body_object_index: u32,
+    body_object_index: u32,
     /// Exact serialized variable-width object-index token.
-    pub raw_body_object_index: Vec<u8>,
+    raw_body_object_index: Vec<u8>,
     /// Absolute file offset of the object-index token.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 impl From<FeatureBodyReference> for FeatureBodyReferenceWire {
@@ -479,42 +479,42 @@ impl TryFrom<FeatureBodyReferenceWire> for FeatureBodyReference {
 
 /// Unambiguous reuse of one segment body image by a primary feature body field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureBodySegmentUse {
+pub(super) struct FeatureBodySegmentUse {
     /// Globally unique use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Primary field in the native `feature_body_references` arena.
-    pub feature_body_reference: String,
+    pub(super) feature_body_reference: String,
     /// Segment image in the native `segment_body_bindings` arena.
-    pub segment_body_binding: String,
+    pub(super) segment_body_binding: String,
 }
 
 /// Primary feature body field resolved in its operation's offset-store namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureBodyDataBlockUse {
+pub(super) struct FeatureBodyDataBlockUse {
     /// Globally unique use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Primary field in the native `feature_body_references` arena.
-    pub feature_body_reference: String,
+    pub(super) feature_body_reference: String,
     /// Target in the native `data_blocks` arena.
-    pub data_block: String,
+    pub(super) data_block: String,
 }
 
 /// Operation-header input resolved to one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputBlock {
+pub(super) struct FeatureInputBlock {
     /// Globally unique input-binding identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation-label identity.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based operation-header input slot.
-    pub input_slot: HeaderSlot,
+    pub(super) input_slot: HeaderSlot,
     /// Required reference with its exact source encoding.
     #[serde(flatten)]
-    pub object: crate::om::reference_index::FeatureReferenceToken,
+    pub(super) object: crate::om::reference_index::FeatureReferenceToken,
     /// Target in the native `data_blocks` arena.
-    pub data_block: String,
+    pub(super) data_block: String,
     /// Absolute file offset of the object-index token.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Input-block bindings from distinct operations that resolve to one data block.
@@ -523,21 +523,21 @@ pub struct FeatureInputBlock {
     try_from = "FeatureInputBlockIdentityGroupWire",
     into = "FeatureInputBlockIdentityGroupWire"
 )]
-pub struct FeatureInputBlockIdentityGroup {
+pub(super) struct FeatureInputBlockIdentityGroup {
     /// Globally unique group identity.
-    pub id: String,
+    pub(super) id: String,
     /// Shared target in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Input bindings in ascending source-offset order.
-    pub members: Vec<FeatureInputBlockIdentityMember>,
+    pub(super) members: Vec<FeatureInputBlockIdentityMember>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureInputBlockIdentityMember {
-    pub input_block: String,
-    pub operation_label: String,
-    pub input_slot: HeaderSlot,
-    pub source_offset: u64,
+pub(in crate::native) struct FeatureInputBlockIdentityMember {
+    pub(super) input_block: String,
+    operation_label: String,
+    input_slot: HeaderSlot,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -616,7 +616,7 @@ impl TryFrom<FeatureInputBlockIdentityGroupWire> for FeatureInputBlockIdentityGr
 /// Serialized column-row grammar carrying a reused feature input block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ColumnIndexRowKind {
+enum ColumnIndexRowKind {
     /// `2d 02 0b ... 93 8a` index row.
     Index,
     /// `02 0b ... 93 8c` linked-index row.
@@ -637,37 +637,37 @@ impl ColumnIndexRowKind {
 
 /// Exact reuse of one feature input block by any column-row slot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputColumnRowUse {
+pub(super) struct FeatureInputColumnRowUse {
     /// Globally unique use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Feature input binding that resolves to the shared block.
-    pub input_block: String,
+    input_block: String,
     /// Owning feature operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Input slot in the operation header.
-    pub input_slot: HeaderSlot,
+    input_slot: HeaderSlot,
     /// Serialized grammar of the referenced column row.
-    pub row_kind: ColumnIndexRowKind,
+    row_kind: ColumnIndexRowKind,
     /// Native row identity in its grammar-specific arena.
-    pub column_row: String,
+    column_row: String,
     /// Unique complete composite table containing the row, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_column_table"
     )]
-    pub column_table: Option<String>,
+    column_table: Option<String>,
     /// Zero-based slot in the row's four-block lane.
-    pub row_slot: ColumnRowSlot,
+    row_slot: ColumnRowSlot,
     /// Exact shared target in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Absolute file offset of the row's compact block index.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Linked or target-index row whose slot zero is a feature input block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeatureInputColumnTargetRow {
+enum FeatureInputColumnTargetRow {
     /// Linked-index row grammar.
     Linked {
         leading_index: u32,
@@ -685,33 +685,33 @@ pub enum FeatureInputColumnTargetRow {
     try_from = "FeatureInputColumnTargetWire",
     into = "FeatureInputColumnTargetWire"
 )]
-pub struct FeatureInputColumnTarget {
+pub(super) struct FeatureInputColumnTarget {
     /// Globally unique target identity.
-    pub id: String,
+    pub(super) id: String,
     /// Feature input binding that resolves to the target block.
-    pub input_block: String,
+    input_block: String,
     /// Owning feature operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Input slot in the operation header.
-    pub input_slot: HeaderSlot,
+    input_slot: HeaderSlot,
     /// Linked or target-index row whose slot zero is the input block.
-    pub column_row: String,
+    column_row: String,
     /// Linked or target-index grammar of `column_row`.
-    pub row: FeatureInputColumnTargetRow,
+    row: FeatureInputColumnTargetRow,
     /// Three compact values following the fixed row marker.
-    pub field_indices: [u32; 3],
+    field_indices: [u32; 3],
     /// Three same-section blocks addressed by `field_indices`.
-    pub field_data_blocks: [String; 3],
+    field_data_blocks: [String; 3],
     /// Absolute offsets of the three compact field values.
-    pub field_source_offsets: [u64; 3],
+    field_source_offsets: [u64; 3],
     /// Serialized row mode.
-    pub mode: crate::om::discriminators::IndexRowMode,
+    mode: crate::om::discriminators::IndexRowMode,
     /// Unique complete composite table containing `column_row`.
-    pub column_table: String,
+    column_table: String,
     /// Exact target in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Absolute file offset of the row's target block index.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -849,50 +849,50 @@ impl TryFrom<FeatureInputColumnTargetWire> for FeatureInputColumnTarget {
 
 /// Ordered parameter declaration reached through one feature input block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureParameterBinding {
+pub(super) struct FeatureParameterBinding {
     /// Globally unique binding identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation-label identity.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based operation-header input slot.
-    pub input_slot: HeaderSlot,
+    pub(super) input_slot: HeaderSlot,
     /// Input block carrying the object-reference field.
-    pub input_block: String,
+    pub(super) input_block: String,
     /// Zero-based object-reference order within the input block.
-    pub reference_ordinal: u32,
+    pub(super) reference_ordinal: u32,
     /// Target parameter declaration in the native expression arena.
-    pub expression_declaration: String,
+    pub(super) expression_declaration: String,
     /// Exact numeric expression bound to the declaration, when unique.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_expression"
     )]
-    pub expression: Option<String>,
+    pub(super) expression: Option<String>,
     /// Persistent OM object ID of the declaration.
-    pub object_id: u32,
+    pub(super) object_id: u32,
     /// Absolute file offset of the object-index token.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// All binding occurrences by which one operation consumes one expression.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "FeatureParameterUseWire", into = "FeatureParameterUseWire")]
-pub struct FeatureParameterUse {
+pub(super) struct FeatureParameterUse {
     /// Globally unique use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Consuming operation-label identity.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Exact numeric expression consumed by the operation.
-    pub expression: String,
+    pub(super) expression: String,
     /// Binding occurrences in ascending source-offset order.
-    pub bindings: Vec<FeatureParameterUseBinding>,
+    pub(super) bindings: Vec<FeatureParameterUseBinding>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureParameterUseBinding {
-    pub binding: String,
-    pub source_offset: u64,
+pub(super) struct FeatureParameterUseBinding {
+    pub(super) binding: String,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -946,21 +946,21 @@ impl TryFrom<FeatureParameterUseWire> for FeatureParameterUse {
 
 /// Ordered sketch-history record and its exact native input lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSketchRecord {
+pub(super) struct FeatureSketchRecord {
     /// Globally unique sketch-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based order within the feature-history area.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Exact bounded operation record.
-    pub operation_record: String,
+    operation_record: String,
     /// Resolved input bindings in header-slot order.
-    pub input_blocks: Vec<String>,
+    input_blocks: Vec<String>,
     /// Ordered references carried by the sketch payload.
-    pub payload_references: Vec<String>,
+    payload_references: Vec<String>,
     /// Absolute file offset of the operation label.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Completely resolved native construction lane of a datum coordinate system.
@@ -969,9 +969,9 @@ pub struct FeatureSketchRecord {
     try_from = "FeatureDatumCsysConstructionWire",
     into = "FeatureDatumCsysConstructionWire"
 )]
-pub struct FeatureDatumCsysConstruction {
-    pub id: String,
-    pub operation_label: String,
+pub(super) struct FeatureDatumCsysConstruction {
+    pub(super) id: String,
+    pub(super) operation_label: String,
     frame: crate::om::datum_csys::DatumCsysFrame<String>,
 }
 
@@ -1047,67 +1047,67 @@ impl TryFrom<FeatureDatumCsysConstructionWire> for FeatureDatumCsysConstruction 
 
 /// Exact reuse of one datum-CSYS construction block by a column-row slot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDatumCsysColumnRowUse {
+pub(super) struct FeatureDatumCsysColumnRowUse {
     /// Globally unique use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning datum-CSYS construction.
-    pub construction: String,
+    construction: String,
     /// Owning `DATUM_CSYS` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based slot in the construction's eight-block lane.
-    pub construction_slot: DatumCsysSlot,
+    construction_slot: DatumCsysSlot,
     /// Serialized grammar of the referenced column row.
-    pub row_kind: ColumnIndexRowKind,
+    row_kind: ColumnIndexRowKind,
     /// Native row identity in its grammar-specific arena.
-    pub column_row: String,
+    column_row: String,
     /// Unique complete composite table containing the row, when present.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_column_table"
     )]
-    pub column_table: Option<String>,
+    column_table: Option<String>,
     /// Zero-based slot in the row's four-block lane.
-    pub row_slot: ColumnRowSlot,
+    row_slot: ColumnRowSlot,
     /// Exact shared target in the native `data_blocks` arena.
-    pub data_block: String,
+    data_block: String,
     /// Absolute file offset of the construction's object-index token.
-    pub construction_source_offset: u64,
+    construction_source_offset: u64,
     /// Absolute file offset of the row's compact block index.
-    pub row_source_offset: u64,
+    row_source_offset: u64,
 }
 
 /// Exact logical payload reconstructed from the two leading datum-CSYS blocks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDatumCsysPayload {
+pub(super) struct FeatureDatumCsysPayload {
     /// Globally unique reconstructed-payload identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `DATUM_CSYS` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Construction defining the ordered block lane.
-    pub construction: String,
+    construction: String,
     /// Ordered source blocks and the hash of their concatenated bytes.
     #[serde(flatten)]
-    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 2]>,
+    content: FeaturePayloadContent<[FeaturePayloadBlock; 2]>,
 }
 
 /// One exactly framed scalar pair in a reconstructed feature payload.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "FeaturePayloadScalarPairWire")]
-pub struct FeaturePayloadScalarPair {
+pub(super) struct FeaturePayloadScalarPair {
     /// Globally unique scalar-pair identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed payload carrying the frame.
     #[serde(flatten)]
-    pub payload: FeatureScalarPairPayload,
+    pub(super) payload: FeatureScalarPairPayload,
     /// Zero-based frame order within the payload.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Absolute source offsets of the scalar encodings across payload blocks.
-    pub value_source_offsets: [u64; 2],
+    pub(super) value_source_offsets: [u64; 2],
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Deserialize)]
@@ -1242,7 +1242,7 @@ enum FeatureScalarPairPayloadWire {
 
 /// Payload identity and the exact scalar-pair frame for that owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeatureScalarPairPayload {
+pub(super) enum FeatureScalarPairPayload {
     DatumCsys {
         datum_csys_payload: String,
         frame: Binary64Pair<ObjectPairForm, u64>,
@@ -1263,7 +1263,7 @@ pub enum FeatureScalarPairPayload {
 
 impl FeatureScalarPairPayload {
     #[must_use]
-    pub fn id(&self) -> &str {
+    pub(super) fn id(&self) -> &str {
         match self {
             Self::DatumCsys {
                 datum_csys_payload, ..
@@ -1361,23 +1361,23 @@ impl Serialize for FeaturePayloadScalarPair {
     try_from = "pair_wire::FeatureDatumCsysPayloadFixedPairWire",
     into = "pair_wire::FeatureDatumCsysPayloadFixedPairWire"
 )]
-pub struct FeatureDatumCsysPayloadFixedPair {
+pub(super) struct FeatureDatumCsysPayloadFixedPair {
     /// Globally unique fixed-pair identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `DATUM_CSYS` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed payload carrying the frame.
-    pub datum_csys_payload: String,
+    datum_csys_payload: String,
     /// Zero-based frame order within the payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Ordered dimensionless Q1.55 values.
-    pub values: [Q155; 2],
+    values: [Q155; 2],
     /// Closed pair framing and checked payload position.
-    pub position: PairPosition<DatumPairForm>,
+    position: PairPosition<DatumPairForm>,
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute source offsets of the two `30` atom markers.
-    pub value_source_offsets: [u64; 2],
+    value_source_offsets: [u64; 2],
 }
 
 /// One exactly framed scalar field in a reconstructed feature payload.
@@ -1386,24 +1386,24 @@ pub struct FeatureDatumCsysPayloadFixedPair {
     try_from = "FeaturePayloadScalarWire",
     into = "FeaturePayloadScalarWire"
 )]
-pub struct FeaturePayloadScalar {
+pub(super) struct FeaturePayloadScalar {
     /// Globally unique scalar-field identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed payload carrying the field.
     #[serde(flatten)]
-    pub payload: FeatureScalarPayload,
+    pub(super) payload: FeatureScalarPayload,
     /// Zero-based field order within the payload.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Serialized discriminator following the `50 59 66` marker.
-    pub field_code: u8,
+    pub(super) field_code: u8,
     /// Checked shifted-binary64 atom.
-    pub scalar: ShiftedBinary64,
+    pub(super) scalar: ShiftedBinary64,
     /// Payload-relative offset of the field marker.
-    pub payload_offset: u64,
+    pub(super) payload_offset: u64,
     /// Absolute source offset of the field marker.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1466,14 +1466,14 @@ impl TryFrom<FeaturePayloadScalarWire> for FeaturePayloadScalar {
 /// Payload identity under its native record field name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum FeatureScalarPayload {
+pub(super) enum FeatureScalarPayload {
     DatumCsys { datum_csys_payload: String },
     Construction { construction_payload: String },
 }
 
 impl FeatureScalarPayload {
     #[must_use]
-    pub fn id(&self) -> &str {
+    fn id(&self) -> &str {
         match self {
             Self::DatumCsys { datum_csys_payload } => datum_csys_payload,
             Self::Construction {
@@ -1489,19 +1489,19 @@ impl FeatureScalarPayload {
     try_from = "FeatureDatumCsysDescriptorWire",
     into = "FeatureDatumCsysDescriptorWire"
 )]
-pub struct FeatureDatumCsysDescriptor {
+pub(super) struct FeatureDatumCsysDescriptor {
     /// Globally unique descriptor identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `DATUM_CSYS` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Construction carrying the descriptor lane.
-    pub construction: String,
+    construction: String,
     /// Construction reference ordinal in the range 5–7.
-    pub reference_ordinal: CsysDescriptorSlot,
+    reference_ordinal: CsysDescriptorSlot,
     /// Resolved source block.
-    pub data_block: String,
+    data_block: String,
     /// Checked descriptor bytes and source position.
-    pub descriptor: LocatedCsysDescriptor,
+    descriptor: LocatedCsysDescriptor,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1574,21 +1574,21 @@ impl TryFrom<FeatureDatumCsysDescriptorWire> for FeatureDatumCsysDescriptor {
 
 /// Exact shared descriptor identity between datum-plane and datum-CSYS history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDatumPlaneCsysIdentityUse {
+pub(super) struct FeatureDatumPlaneCsysIdentityUse {
     /// Globally unique relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Shared lowercase hexadecimal identity.
-    pub identity: CsysIdentity,
+    identity: CsysIdentity,
     /// Typed datum-plane descriptor.
-    pub datum_plane_descriptor: String,
+    datum_plane_descriptor: String,
     /// Datum-plane operation carrying the descriptor.
-    pub datum_plane_operation_label: String,
+    pub(super) datum_plane_operation_label: String,
     /// Typed datum-CSYS descriptor.
-    pub datum_csys_descriptor: String,
+    datum_csys_descriptor: String,
     /// Datum-CSYS operation carrying the descriptor.
-    pub datum_csys_operation_label: String,
+    pub(super) datum_csys_operation_label: String,
     /// Datum-CSYS construction reference ordinal.
-    pub datum_csys_reference_ordinal: CsysDescriptorSlot,
+    datum_csys_reference_ordinal: CsysDescriptorSlot,
 }
 
 /// Exact logical datum-plane object payload reconstructed in lane order.
@@ -1597,17 +1597,17 @@ pub struct FeatureDatumPlaneCsysIdentityUse {
     try_from = "FeatureDatumPlanePayloadWire",
     into = "FeatureDatumPlanePayloadWire"
 )]
-pub struct FeatureDatumPlanePayload {
+pub(super) struct FeatureDatumPlanePayload {
     /// Globally unique reconstructed-payload identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `DATUM_PLANE` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Header defining the ordered object-block lane.
-    pub datum_plane_header: String,
+    datum_plane_header: String,
     /// Ordered source blocks and the hash of their concatenated bytes.
-    pub content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
+    content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
     /// Unique terminal index lane, when the payload has exactly one.
-    pub index_lane: Option<crate::om::datum_index::DatumIndexLane<u64>>,
+    index_lane: Option<crate::om::datum_index::DatumIndexLane<u64>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1751,21 +1751,21 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
     try_from = "FeatureDatumPlaneDescriptorWire",
     into = "FeatureDatumPlaneDescriptorWire"
 )]
-pub struct FeatureDatumPlaneDescriptor {
+pub(super) struct FeatureDatumPlaneDescriptor {
     /// Globally unique descriptor identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `DATUM_PLANE` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Header carrying the descriptor reference.
-    pub datum_plane_header: String,
+    datum_plane_header: String,
     /// Zero-based descriptor-lane order.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Resolved source block.
-    pub data_block: String,
+    data_block: String,
     /// Exact identity, schema token, and terminal label.
-    pub descriptor: PlaneDescriptor,
+    descriptor: PlaneDescriptor,
     /// Absolute source offset of the descriptor block.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1830,7 +1830,7 @@ impl TryFrom<FeatureDatumPlaneDescriptorWire> for FeatureDatumPlaneDescriptor {
 /// Datum-plane construction lane containing a reused block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DatumPlaneBlockLane {
+enum DatumPlaneBlockLane {
     /// Compact descriptor lane.
     Descriptor,
     /// Canonical object-reference lane.
@@ -1839,53 +1839,53 @@ pub enum DatumPlaneBlockLane {
 
 /// Exact reuse of one resolved datum-plane construction block by an operation input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDatumPlaneBlockUse {
+pub(super) struct FeatureDatumPlaneBlockUse {
     /// Globally unique relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning datum-plane header.
-    pub datum_plane_header: String,
+    datum_plane_header: String,
     /// `DATUM_PLANE` operation owning the construction.
-    pub construction_operation_label: String,
+    pub(super) construction_operation_label: String,
     /// Construction lane containing the block.
-    pub lane: DatumPlaneBlockLane,
+    lane: DatumPlaneBlockLane,
     /// Zero-based position within the lane.
-    pub reference_ordinal: u32,
+    reference_ordinal: u32,
     /// Shared offset-store block.
-    pub data_block: String,
+    data_block: String,
     /// Matching operation-header input binding.
-    pub input_binding: String,
+    input_binding: String,
     /// Operation whose header addresses the shared block.
-    pub input_operation_label: String,
+    pub(super) input_operation_label: String,
     /// Zero-based operation-header input slot.
-    pub input_slot: HeaderSlot,
+    input_slot: HeaderSlot,
 }
 
 /// Exact reuse of one datum-coordinate-system construction block by an operation input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDatumCsysBlockUse {
+pub(super) struct FeatureDatumCsysBlockUse {
     /// Globally unique block-use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning datum-coordinate-system construction.
-    pub construction: String,
+    construction: String,
     /// `DATUM_CSYS` operation owning the construction lane.
-    pub construction_operation_label: String,
+    pub(super) construction_operation_label: String,
     /// Zero-based position in the eight-reference construction lane.
-    pub reference_ordinal: DatumCsysSlot,
+    reference_ordinal: DatumCsysSlot,
     /// Shared offset-store block.
-    pub data_block: String,
+    data_block: String,
     /// Matching operation-header input binding.
-    pub input_binding: String,
+    input_binding: String,
     /// Operation whose header addresses the shared block.
-    pub input_operation_label: String,
+    pub(super) input_operation_label: String,
     /// Zero-based operation-header input slot.
-    pub input_slot: HeaderSlot,
+    input_slot: HeaderSlot,
 }
 
 /// A construction reference paired with its uniquely resolved source block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureConstructionMember {
-    pub reference: String,
-    pub data_block: String,
+struct FeatureConstructionMember {
+    reference: String,
+    data_block: String,
 }
 
 /// Completely resolved counted-reference field of one sketch construction.
@@ -1894,19 +1894,19 @@ pub struct FeatureConstructionMember {
     try_from = "FeatureSketchConstructionInputsWire",
     into = "FeatureSketchConstructionInputsWire"
 )]
-pub struct FeatureSketchConstructionInputs {
+pub(super) struct FeatureSketchConstructionInputs {
     /// Globally unique construction-input identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Joined typed sketch record.
-    pub sketch_record: String,
+    sketch_record: String,
     /// Ordered references and their uniquely resolved source blocks.
-    pub members: Vec<FeatureConstructionMember>,
+    members: Vec<FeatureConstructionMember>,
     /// Reference following the field separator.
-    pub terminal_reference: String,
+    terminal_reference: String,
     /// Uniquely resolved terminal block.
-    pub terminal_data_block: String,
+    terminal_data_block: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1969,17 +1969,17 @@ impl TryFrom<FeatureSketchConstructionInputsWire> for FeatureSketchConstructionI
 
 /// Exact logical payload reconstructed from ordered feature-construction blocks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureConstructionPayload {
+pub(super) struct FeatureConstructionPayload {
     /// Globally unique reconstructed-payload identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Construction records selecting the ordered source blocks.
     #[serde(flatten)]
-    pub owner: FeatureConstructionOwner,
+    pub(super) owner: FeatureConstructionOwner,
     /// Ordered source blocks and the hash of their concatenated bytes.
     #[serde(flatten)]
-    pub content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
+    content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
 }
 
 /// Construction-specific ownership fields of a reconstructed payload.
@@ -1988,7 +1988,7 @@ pub struct FeatureConstructionPayload {
     untagged,
     expecting = "construction ownership fields with a valid operation_kind for the selected grammar"
 )]
-pub enum FeatureConstructionOwner {
+pub(super) enum FeatureConstructionOwner {
     Sketch {
         construction_inputs: String,
     },
@@ -2014,7 +2014,7 @@ pub enum FeatureConstructionOwner {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FeatureProjectedCurveKind {
+pub(in crate::native) enum FeatureProjectedCurveKind {
     #[serde(rename = "CPROJ")]
     Projected,
     #[serde(rename = "CPROJ_CMB")]
@@ -2022,7 +2022,7 @@ pub enum FeatureProjectedCurveKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FeaturePatternKind {
+pub(in crate::native) enum FeaturePatternKind {
     #[serde(rename = "Pattern Feature")]
     Feature,
     #[serde(rename = "Pattern Geometry")]
@@ -2035,23 +2035,23 @@ pub enum FeaturePatternKind {
     try_from = "pair_wire::FeatureSketchPayloadFixedPairWire",
     into = "pair_wire::FeatureSketchPayloadFixedPairWire"
 )]
-pub struct FeatureSketchPayloadFixedPair {
+pub(super) struct FeatureSketchPayloadFixedPair {
     /// Globally unique fixed-pair identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed sketch payload carrying the frame.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based frame order within the payload.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
-    pub values: [SketchScaledAtom; 2],
+    values: [SketchScaledAtom; 2],
     /// Closed pair framing and checked payload position.
-    pub position: PairPosition<SketchPairForm>,
+    position: PairPosition<SketchPairForm>,
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
     /// Absolute source offsets of the two atom markers.
-    pub value_source_offsets: [u64; 2],
+    value_source_offsets: [u64; 2],
 }
 
 /// One exactly framed mixed scaled shifted-binary64/binary32 pair in a reconstructed sketch payload.
@@ -2060,23 +2060,23 @@ pub struct FeatureSketchPayloadFixedPair {
     try_from = "pair_wire::FeatureSketchPayloadMixedPairWire",
     into = "pair_wire::FeatureSketchPayloadMixedPairWire"
 )]
-pub struct FeatureSketchPayloadMixedPair {
+pub(super) struct FeatureSketchPayloadMixedPair {
     /// Globally unique mixed-pair identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed sketch payload carrying the frame.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based frame order within the payload.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Exact scaled binary64 and binary32 atoms.
-    pub scalars: SketchMixedScalars,
+    scalars: SketchMixedScalars,
     /// Closed pair framing and checked payload position.
-    pub position: PairPosition<MixedPairForm>,
+    position: PairPosition<MixedPairForm>,
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
     /// Absolute source offsets of the two atom markers.
-    pub value_source_offsets: [u64; 2],
+    value_source_offsets: [u64; 2],
 }
 
 /// Exact scalar-vector frame retained from one reconstructed sketch payload.
@@ -2085,21 +2085,21 @@ pub struct FeatureSketchPayloadMixedPair {
     try_from = "FeatureSketchPayloadScalarLaneWire",
     into = "FeatureSketchPayloadScalarLaneWire"
 )]
-pub struct FeatureSketchPayloadScalarLane {
+pub(super) struct FeatureSketchPayloadScalarLane {
     /// Globally unique scalar-lane identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed sketch payload carrying this lane.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based lane order within the reconstructed payload.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Typed lane form and contiguous atoms with their absolute source locations.
-    pub lane: FramedScalarRun<SketchScalarLaneForm, u64>,
+    lane: FramedScalarRun<SketchScalarLaneForm, u64>,
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute source offset of the terminating zero atom.
-    pub terminator_source_offset: u64,
+    terminator_source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2211,77 +2211,77 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
 
 /// Named sketch payload interval and its ordered framed numeric fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSketchPayloadNamedRecord {
+pub(super) struct FeatureSketchPayloadNamedRecord {
     /// Globally unique named-record identity.
-    pub id: String,
+    id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Reconstructed sketch payload carrying this record.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Name field opening the retained interval.
-    pub name_field: String,
+    name_field: String,
     /// Ordered scalar fields before the next complete name field.
-    pub scalar_fields: Vec<String>,
+    scalar_fields: Vec<String>,
     /// Ordered fixed-pair fields before the next complete name field.
-    pub fixed_pairs: Vec<String>,
+    fixed_pairs: Vec<String>,
     /// Mixed scaled shifted-binary64/binary32 pairs contained by this interval in payload order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub mixed_pairs: Vec<String>,
+    mixed_pairs: Vec<String>,
     /// Payload-relative offset of the opening name marker.
-    pub payload_start_offset: u64,
+    payload_start_offset: u64,
     /// Payload-relative exclusive end at the next name or payload boundary.
-    pub payload_end_offset: u64,
+    payload_end_offset: u64,
 }
 
 /// Complete named two-dimensional point in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSketchPoint {
+pub(super) struct FeatureSketchPoint {
     /// Globally unique point identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Name-delimited payload record carrying the point.
-    pub named_record: String,
+    pub(super) named_record: String,
     /// Exact `Point<decimal>` source name.
-    pub name: String,
+    pub(super) name: String,
     /// Ordered scalar fields carrying the two coordinates.
-    pub scalar_fields: [String; 2],
+    pub(super) scalar_fields: [String; 2],
     /// Ordered finite native coordinate values.
-    pub coordinates: [f64; 2],
+    pub(super) coordinates: [f64; 2],
 }
 
 /// Complete named scaled shifted-binary64 record in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSketchFixedPoint {
+pub(super) struct FeatureSketchFixedPoint {
     /// Globally unique fixed-point identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Name-delimited payload record carrying the pair.
-    pub named_record: String,
+    pub(super) named_record: String,
     /// Exact `Point<positive decimal>` source name.
-    pub name: String,
+    pub(super) name: String,
     /// Exact fixed-pair field carrying the two values.
-    pub fixed_pair: String,
+    pub(super) fixed_pair: String,
     /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
-    pub values: [f64; 2],
+    pub(super) values: [f64; 2],
     /// Absolute source offset of the fixed-pair discriminator.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Exact same-name point identity within one reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureSketchPointGroup {
+pub(super) struct FeatureSketchPointGroup {
     /// Globally unique point-group identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Exact `Point<positive decimal>` source name.
-    pub name: String,
+    pub(super) name: String,
     /// Identical point records in payload order.
-    pub points: Vec<String>,
+    pub(super) points: Vec<String>,
     /// Bit-identical ordered coordinate values.
-    pub coordinates: [f64; 2],
+    pub(super) coordinates: [f64; 2],
 }
 
 /// Named two-scalar point object spanning consecutive offset-store blocks.
@@ -2290,17 +2290,17 @@ pub struct FeatureSketchPointGroup {
     try_from = "OffsetStoreNamedPointWire",
     into = "OffsetStoreNamedPointWire"
 )]
-pub struct OffsetStoreNamedPoint {
+pub(super) struct OffsetStoreNamedPoint {
     /// Globally unique point-object identity.
-    pub id: String,
+    pub(super) id: String,
     /// Exact `Point<positive decimal>` source name.
-    pub name: String,
+    name: String,
     /// Minimal consecutive source-block span carrying the object.
-    pub data_blocks: Vec<String>,
+    data_blocks: Vec<String>,
     /// Checked scalar atoms and their absolute frame offsets.
-    pub values: [FeatureBinary64ScalarToken; 2],
+    values: [FeatureBinary64ScalarToken; 2],
     /// Absolute source offset of the name frame.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2359,42 +2359,42 @@ impl TryFrom<OffsetStoreNamedPointWire> for OffsetStoreNamedPoint {
 
 /// Exact reuse of one named-point block by a sketch reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSketchNamedPointBlockUse {
+pub(super) struct FeatureSketchNamedPointBlockUse {
     /// Globally unique block-use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Sketch operation carrying the reference.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Typed sketch-reference occurrence.
-    pub sketch_reference: String,
+    sketch_reference: String,
     /// Reference order within the sketch field.
-    pub reference_ordinal: u32,
+    reference_ordinal: u32,
     /// Typed named-point object containing the block.
-    pub named_point: String,
+    named_point: String,
     /// Shared offset-store block.
-    pub data_block: String,
+    data_block: String,
     /// Block position within the named-point span.
-    pub point_block_ordinal: u32,
+    point_block_ordinal: u32,
     /// Absolute source offset of the sketch reference.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Exact predecessor relation between a named point and a sketch construction lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSketchPrecedingNamedPointUse {
+pub(super) struct FeatureSketchPrecedingNamedPointUse {
     /// Globally unique predecessor-use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Sketch operation carrying the construction lane.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// First typed sketch-reference occurrence.
-    pub first_sketch_reference: String,
+    first_sketch_reference: String,
     /// Typed named-point object ending immediately before the construction lane.
-    pub named_point: String,
+    named_point: String,
     /// Complete ordered block span of the named point.
-    pub point_data_blocks: Vec<String>,
+    point_data_blocks: Vec<String>,
     /// First construction block immediately following the point span.
-    pub following_data_block: String,
+    following_data_block: String,
     /// Absolute source offset of the first sketch reference.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Exact identity of one solved sketch point across its payload and reference lanes.
@@ -2403,19 +2403,19 @@ pub struct FeatureSketchPrecedingNamedPointUse {
     try_from = "FeatureSketchPointUseWire",
     into = "FeatureSketchPointUseWire"
 )]
-pub struct FeatureSketchPointUse {
-    pub id: String,
-    pub operation_label: String,
-    pub references: Vec<FeatureSketchPointUseReference>,
-    pub sketch_point_group: String,
-    pub named_point: String,
+pub(super) struct FeatureSketchPointUse {
+    pub(super) id: String,
+    pub(super) operation_label: String,
+    pub(super) references: Vec<FeatureSketchPointUseReference>,
+    pub(super) sketch_point_group: String,
+    pub(super) named_point: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSketchPointUseReference {
-    pub sketch_reference: String,
-    pub block_use: String,
-    pub source_offset: u64,
+pub(super) struct FeatureSketchPointUseReference {
+    pub(super) sketch_reference: String,
+    pub(super) block_use: String,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2497,7 +2497,7 @@ impl TryFrom<FeatureSketchPointUseWire> for FeatureSketchPointUse {
 /// Exact ordered dependency from a sketch point to a datum coordinate system.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum FeatureSketchDatumCsysBlockRelation {
+pub(super) enum FeatureSketchDatumCsysBlockRelation {
     /// The named-point span and coordinate-system construction address one block.
     Shared {
         /// Block addressed by both the named-point span and construction.
@@ -2514,236 +2514,236 @@ pub enum FeatureSketchDatumCsysBlockRelation {
 
 /// One byte-identical scalar shared by a named sketch point and datum-CSYS payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSketchDatumCsysScalarAlias {
+pub(in crate::native) struct FeatureSketchDatumCsysScalarAlias {
     /// Zero-based coordinate within the named sketch point.
-    pub sketch_coordinate_ordinal: u8,
+    pub(super) sketch_coordinate_ordinal: u8,
     /// Exact datum-CSYS scalar field occupying the same source bytes.
-    pub datum_csys_scalar: String,
+    pub(super) datum_csys_scalar: String,
     /// Absolute source offset of the shared scalar field marker.
-    pub value_source_offset: u64,
+    value_source_offset: u64,
 }
 
 /// Exact ordered dependency from a sketch point to a datum coordinate system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSketchDatumCsysDependency {
+pub(super) struct FeatureSketchDatumCsysDependency {
     /// Globally unique dependency identity.
-    pub id: String,
+    pub(super) id: String,
     /// Earlier sketch operation owning the point identity.
-    pub sketch_operation_label: String,
+    pub(super) sketch_operation_label: String,
     /// Later datum-coordinate-system operation consuming the point block.
-    pub datum_csys_operation_label: String,
+    pub(super) datum_csys_operation_label: String,
     /// Exact sketch-point identity witnessing ownership.
-    pub sketch_point_use: String,
+    pub(super) sketch_point_use: String,
     /// Exact datum-coordinate-system construction witnessing consumption.
-    pub datum_csys_construction: String,
+    datum_csys_construction: String,
     /// Exact block relation between the complete point span and construction.
-    pub block_relation: FeatureSketchDatumCsysBlockRelation,
+    pub(super) block_relation: FeatureSketchDatumCsysBlockRelation,
     /// Scalar encodings occupying the same source bytes in both typed records.
-    pub scalar_aliases: Vec<FeatureSketchDatumCsysScalarAlias>,
+    pub(super) scalar_aliases: Vec<FeatureSketchDatumCsysScalarAlias>,
     /// Absolute source offset of the first sketch reference witnessing the point identity.
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 /// Ordered object reference carried by a bounded sketch-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSketchReference {
+pub(super) struct FeatureSketchReference {
     /// Globally unique sketch-reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKETCH` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Checked position in the counted field; terminal status is derived.
     #[serde(flatten)]
-    pub position: crate::om::sketch_references::SketchReferencePosition,
+    pub(super) position: crate::om::sketch_references::SketchReferencePosition,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
+    pub(super) token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    pub(super) data_block: Option<String>,
     /// Absolute file offset of the width marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Ordered construction reference carried by a bounded projected-curve payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureProjectedCurveReference {
+pub(super) struct FeatureProjectedCurveReference {
     /// Globally unique projected-curve reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `CPROJ` or `CPROJ_CMB` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based order among the field's non-repeated references.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: PayloadIndexToken,
+    pub(super) token: PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    pub(super) data_block: Option<String>,
     /// Absolute file offset of the width marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Canonical printable string in a reconstructed projected-curve payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureProjectedCurveConstructionString {
+pub(super) struct FeatureProjectedCurveConstructionString {
     /// Globally unique string identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `CPROJ` or `CPROJ_CMB` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed projected-curve payload carrying the string.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Zero-based string order within the payload.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Exact printable value.
-    pub value: PrintableString<String>,
+    value: PrintableString<String>,
     /// Payload-relative offset of the `66 32 03` marker.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Absolute source offset of the marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Exact leading construction header carried by a bounded point-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeaturePointConstructionHeader {
+pub(super) struct FeaturePointConstructionHeader {
     /// Globally unique point-construction-header identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `POINT` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
+    pub(super) token: crate::om::reference_index::ReferenceIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    pub(super) data_block: Option<String>,
     /// Serialized header mode.
-    pub mode: crate::om::discriminators::PointHeaderMode,
+    pub(super) mode: crate::om::discriminators::PointHeaderMode,
     /// Absolute file offset of the reference width marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FeatureBinary64ScalarToken {
-    pub scalar: ShiftedBinary64,
-    pub source_offset: u64,
+struct FeatureBinary64ScalarToken {
+    scalar: ShiftedBinary64,
+    source_offset: u64,
 }
 
 /// Ordered construction reference carried by a bounded surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSurfaceConstructionReference {
+pub(super) struct FeatureSurfaceConstructionReference {
     /// Globally unique surface-construction-reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKIN`, `Studio Surface`, or `THRU_CURVE` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based slot order in the exact common envelope.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::PayloadIndexToken,
+    pub(super) token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    pub(super) data_block: Option<String>,
     /// Absolute file offset of the width marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Exact leading construction envelope in a `THRU_CURVE` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureThruCurveConstructionEnvelope {
+pub(super) struct FeatureThruCurveConstructionEnvelope {
     /// Globally unique envelope identity.
-    pub id: String,
+    id: String,
     /// Owning `THRU_CURVE` operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Nonzero construction discriminator.
-    pub discriminator: NonZeroU8,
+    discriminator: NonZeroU8,
     /// Exact opaque controls between the reference groups.
-    pub controls: ThruCurveControls,
+    controls: ThruCurveControls,
     /// Nonzero control following the second reference group.
-    pub trailing_control: NonZeroU8,
+    trailing_control: NonZeroU8,
     /// Exact two-byte value selected by the `a0` marker.
-    pub trailing_value: [u8; 2],
+    trailing_value: [u8; 2],
     /// Absolute source offset of the discriminator.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Exact logical payload reconstructed from an ordered surface-construction graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSurfaceConstructionPayload {
+pub(super) struct FeatureSurfaceConstructionPayload {
     /// Globally unique reconstructed-payload identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKIN` or `Studio Surface` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Ordered construction-reference records.
-    pub construction_references: [String; 14],
+    construction_references: [String; 14],
     /// Ordered source blocks and the hash of their concatenated bytes.
     #[serde(flatten)]
-    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 14]>,
+    content: FeaturePayloadContent<[FeaturePayloadBlock; 14]>,
 }
 
 /// One printable string frame in a reconstructed surface payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureSurfaceConstructionString {
+pub(super) struct FeatureSurfaceConstructionString {
     /// Globally unique string identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `SKIN` or `Studio Surface` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Reconstructed surface payload carrying the frame.
-    pub surface_construction_payload: String,
+    surface_construction_payload: String,
     /// Zero-based string order within the payload.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Exact printable value.
-    pub value: crate::payload_text::PayloadText<String>,
+    value: crate::payload_text::PayloadText<String>,
     /// Payload-relative offset of the `66 1b 03` marker.
-    pub payload_offset: u64,
+    payload_offset: u64,
     /// Absolute source offset of the marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Ordered profile reference carried by a bounded extrusion payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureExtrudeProfileReference {
+pub(super) struct FeatureExtrudeProfileReference {
     /// Globally unique profile-reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `EXTRUDE` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based profile-reference order.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Field tag serialized before the counted reference list.
-    pub field_tag: u8,
+    field_tag: u8,
     /// Absolute source offset of the matching duplicate-list index marker.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_witness_source_offset"
     )]
-    pub witness_source_offset: Option<u64>,
+    witness_source_offset: Option<u64>,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::PayloadIndexToken,
+    pub(super) token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    pub(super) data_block: Option<String>,
     /// Absolute file offset of the width marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 /// Fixed shifted-IEEE scalar header from a bounded extrusion payload.
@@ -2752,15 +2752,15 @@ pub struct FeatureExtrudeProfileReference {
     try_from = "FeatureExtrudePayloadHeaderWire",
     into = "FeatureExtrudePayloadHeaderWire"
 )]
-pub struct FeatureExtrudePayloadHeader {
+pub(super) struct FeatureExtrudePayloadHeader {
     /// Globally unique header identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `EXTRUDE` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Ordered finite scalar values.
-    pub scalars: [ShiftedBinary64; 2],
+    scalars: [ShiftedBinary64; 2],
     /// Absolute file offset of the first shifted-IEEE scalar.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2811,39 +2811,39 @@ impl TryFrom<FeatureExtrudePayloadHeaderWire> for FeatureExtrudePayloadHeader {
     try_from = "FeatureOperationBodyMemberWire",
     into = "FeatureOperationBodyMemberWire"
 )]
-pub struct FeatureOperationBodyMember {
+pub(super) struct FeatureOperationBodyMember {
     /// Globally unique member identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    pub(super) body_reference_ordinal: u32,
     /// Serialized body object index.
-    pub body_object_index: u32,
+    body_object_index: u32,
     /// Zero-based member order in the counted lane.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Exact compact index and its absolute file position.
-    pub member: LocatedCompactIndex<u64>,
+    member: LocatedCompactIndex<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct FeatureOperationBodyMemberWire {
     /// Globally unique member identity.
-    pub id: String,
+    id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    body_reference_ordinal: u32,
     /// Serialized body object index.
-    pub body_object_index: u32,
+    body_object_index: u32,
     /// Zero-based member order in the counted lane.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Decoded compact index.
-    pub member_index: u32,
+    member_index: u32,
     /// Exact compact-index token.
-    pub raw_member_index: Vec<u8>,
+    raw_member_index: Vec<u8>,
     /// Absolute file offset of the compact-index marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 impl From<FeatureOperationBodyMember> for FeatureOperationBodyMemberWire {
@@ -2886,53 +2886,53 @@ impl TryFrom<FeatureOperationBodyMemberWire> for FeatureOperationBodyMember {
     try_from = "FeatureOperationBodyOperandWire",
     into = "FeatureOperationBodyOperandWire"
 )]
-pub struct FeatureOperationBodyOperand {
+pub(super) struct FeatureOperationBodyOperand {
     /// Globally unique operand identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Body clause containing the operand.
-    pub body_object_index: u32,
+    pub(super) body_object_index: u32,
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    pub(super) body_reference_ordinal: u32,
     /// Zero-based operand order in the wrapped member lane.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// Exact operand compact index and its absolute file position.
-    pub operand: LocatedCompactIndex<u64>,
+    pub(super) operand: LocatedCompactIndex<u64>,
     /// Same-store offset data block named by the operand, when resolved.
-    pub operand_data_block: Option<String>,
+    pub(super) operand_data_block: Option<String>,
     /// Segment body bindings naming the same body image.
-    pub segment_body_bindings: Vec<String>,
+    pub(super) segment_body_bindings: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct FeatureOperationBodyOperandWire {
     /// Globally unique operand identity.
-    pub id: String,
+    id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Body clause containing the operand.
-    pub body_object_index: u32,
+    body_object_index: u32,
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    body_reference_ordinal: u32,
     /// Zero-based operand order in the wrapped member lane.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Serialized operand body object index.
-    pub operand_object_index: u32,
+    operand_object_index: u32,
     /// Exact serialized compact-index token.
-    pub raw_operand_object_index: Vec<u8>,
+    raw_operand_object_index: Vec<u8>,
     /// Same-store offset data block named by the operand, when resolved.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_operand_data_block"
     )]
-    pub operand_data_block: Option<String>,
+    operand_data_block: Option<String>,
     /// Segment body bindings naming the same body image.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub segment_body_bindings: Vec<String>,
+    segment_body_bindings: Vec<String>,
     /// Absolute file offset of the compact-index marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 impl From<FeatureOperationBodyOperand> for FeatureOperationBodyOperandWire {
@@ -2975,7 +2975,7 @@ impl TryFrom<FeatureOperationBodyOperandWire> for FeatureOperationBodyOperand {
 }
 
 impl FeatureOperationBodyOperand {
-    pub(crate) fn source_property_key(&self) -> String {
+    pub(super) fn source_property_key(&self) -> String {
         format!(
             "operation_body_operand.{}.{}",
             self.body_reference_ordinal, self.ordinal
@@ -2989,21 +2989,21 @@ impl FeatureOperationBodyOperand {
     try_from = "reference::Body11ContinuationWire",
     into = "reference::Body11ContinuationWire"
 )]
-pub struct FeatureOperationBody11Continuation {
+pub(super) struct FeatureOperationBody11Continuation {
     /// Globally unique continuation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Zero-based body-reference occurrence order.
-    pub body_reference_ordinal: u32,
+    pub(super) body_reference_ordinal: u32,
     /// Serialized body object index.
-    pub body_object_index: u32,
+    body_object_index: u32,
     /// Exact compact continuation index and its absolute file offset.
-    pub continuation: crate::om::compact::LocatedCompactIndex<u64>,
+    continuation: crate::om::compact::LocatedCompactIndex<u64>,
     /// Exact required terminal reference.
-    pub terminal: crate::om::reference_index::ReferenceIndexToken,
+    terminal: crate::om::reference_index::ReferenceIndexToken,
     /// Absolute file offset of the terminal object-index marker.
-    pub terminal_source_offset: u64,
+    terminal_source_offset: u64,
 }
 
 /// Homogeneous value encoding in an operation body-reference lane.
@@ -3018,7 +3018,7 @@ enum FeatureOperationBodyReferenceLaneEncoding {
 
 /// A homogeneous operation body lane with checked grammar-specific tokens.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeatureOperationBodyReferences {
+enum FeatureOperationBodyReferences {
     CompactIndex(Vec<ConstructionReference<Option<String>, CompactIndexAtom>>),
     PayloadObjectIndex(Vec<ConstructionReference<Option<String>, PayloadIndexToken>>),
 }
@@ -3029,13 +3029,13 @@ pub enum FeatureOperationBodyReferences {
     try_from = "FeatureOperationBodyReferenceLaneWire",
     into = "FeatureOperationBodyReferenceLaneWire"
 )]
-pub struct FeatureOperationBodyReferenceLane {
-    pub id: String,
-    pub operation_label: String,
-    pub body_reference_ordinal: u32,
-    pub body_object_index: u32,
-    pub branch: crate::om::discriminators::OperationBodyReferenceBranch,
-    pub references: FeatureOperationBodyReferences,
+pub(super) struct FeatureOperationBodyReferenceLane {
+    pub(super) id: String,
+    pub(super) operation_label: String,
+    pub(super) body_reference_ordinal: u32,
+    body_object_index: u32,
+    branch: crate::om::discriminators::OperationBodyReferenceBranch,
+    references: FeatureOperationBodyReferences,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3187,18 +3187,18 @@ impl TryFrom<FeatureOperationBodyReferenceLaneWire> for FeatureOperationBodyRefe
     try_from = "FeatureExtrudeConstructionProfileWire",
     into = "FeatureExtrudeConstructionProfileWire"
 )]
-pub struct FeatureExtrudeConstructionProfile {
-    pub id: String,
-    pub operation_label: String,
-    pub references: Vec<FeatureExtrudeConstructionProfileReference>,
+pub(super) struct FeatureExtrudeConstructionProfile {
+    pub(super) id: String,
+    pub(super) operation_label: String,
+    references: Vec<FeatureExtrudeConstructionProfileReference>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureExtrudeConstructionProfileReference {
-    pub object_index: u32,
-    pub data_block: String,
-    pub profile_source_offset: u64,
-    pub witness_source_offset: u64,
+struct FeatureExtrudeConstructionProfileReference {
+    object_index: u32,
+    data_block: String,
+    profile_source_offset: u64,
+    witness_source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3287,19 +3287,19 @@ impl TryFrom<FeatureExtrudeConstructionProfileWire> for FeatureExtrudeConstructi
     try_from = "FeatureBlockConstructionWire",
     into = "FeatureBlockConstructionWire"
 )]
-pub struct FeatureBlockConstruction {
+pub(super) struct FeatureBlockConstruction {
     /// Globally unique construction identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `BLOCK` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Payload control byte preceding the construction field.
-    pub control: u8,
+    control: u8,
     /// Ordered references and their uniquely resolved source blocks.
-    pub members: [FeatureConstructionMember; 18],
+    members: [FeatureConstructionMember; 18],
     /// Reference following the separator.
-    pub terminal_reference: String,
+    terminal_reference: String,
     /// Uniquely resolved terminal block.
-    pub terminal_data_block: String,
+    terminal_data_block: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3364,53 +3364,53 @@ impl TryFrom<FeatureBlockConstructionWire> for FeatureBlockConstruction {
 
 /// Name-delimited interval in a reconstructed `BLOCK` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureBlockPayloadNamedRecord {
+pub(super) struct FeatureBlockPayloadNamedRecord {
     /// Globally unique interval identity.
-    pub id: String,
+    id: String,
     /// Owning `BLOCK` operation label.
-    pub operation_label: String,
+    operation_label: String,
     /// Reconstructed payload containing the interval.
-    pub construction_payload: String,
+    construction_payload: String,
     /// Name field opening the interval.
-    pub name_field: String,
+    name_field: String,
     /// Complete scalar fields in payload order within the interval.
-    pub scalar_fields: Vec<String>,
+    scalar_fields: Vec<String>,
     /// Inclusive payload-relative start.
-    pub payload_start_offset: u64,
+    payload_start_offset: u64,
     /// Exclusive payload-relative end.
-    pub payload_end_offset: u64,
+    payload_end_offset: u64,
 }
 
 /// Exactly two-scalar `Point<positive decimal>` record in a `BLOCK` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureBlockPayloadPoint {
+pub(super) struct FeatureBlockPayloadPoint {
     /// Globally unique typed-point identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `BLOCK` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Name-delimited payload interval carrying the point.
-    pub named_record: String,
+    named_record: String,
     /// Exact `Point<positive decimal>` source name.
-    pub name: String,
+    name: String,
     /// Ordered scalar fields carrying the two coordinates.
-    pub scalar_fields: [String; 2],
+    scalar_fields: [String; 2],
     /// Ordered finite native coordinate values.
-    pub coordinates: [f64; 2],
+    coordinates: [f64; 2],
 }
 
 /// Exact same-name point identity within one reconstructed `BLOCK` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FeatureBlockPayloadPointGroup {
+pub(super) struct FeatureBlockPayloadPointGroup {
     /// Globally unique point-group identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning `BLOCK` operation label.
-    pub operation_label: String,
+    pub(super) operation_label: String,
     /// Exact `Point<positive decimal>` source name.
-    pub name: String,
+    name: String,
     /// Identical point records in payload order.
-    pub points: Vec<String>,
+    points: Vec<String>,
     /// Bit-identical ordered coordinate values.
-    pub coordinates: [f64; 2],
+    coordinates: [f64; 2],
 }
 
 /// Ordered three-parameter dimension run of one `BLOCK` feature.
@@ -3419,19 +3419,19 @@ pub struct FeatureBlockPayloadPointGroup {
     from = "FeatureBlockDimensionsWire",
     into = "FeatureBlockDimensionsWire"
 )]
-pub struct FeatureBlockDimensions {
-    pub id: String,
-    pub operation_label: String,
-    pub construction: String,
-    pub anchor_bindings: Vec<String>,
-    pub dimensions: [FeatureBlockDimension; 3],
+pub(super) struct FeatureBlockDimensions {
+    pub(super) id: String,
+    pub(super) operation_label: String,
+    pub(super) construction: String,
+    pub(super) anchor_bindings: Vec<String>,
+    pub(super) dimensions: [FeatureBlockDimension; 3],
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureBlockDimension {
-    pub declaration: String,
-    pub expression: String,
-    pub value: f64,
+pub(super) struct FeatureBlockDimension {
+    pub(super) declaration: String,
+    pub(super) expression: String,
+    pub(super) value: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3494,7 +3494,7 @@ impl From<FeatureBlockDimensionsWire> for FeatureBlockDimensions {
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FeatureBooleanKind {
+pub(super) enum FeatureBooleanKind {
     /// Add tool bodies to the target.
     Unite,
     /// Remove tool bodies from the target.
@@ -3509,16 +3509,16 @@ pub enum FeatureBooleanKind {
     try_from = "FeatureBooleanOperationWire",
     into = "FeatureBooleanOperationWire"
 )]
-pub struct FeatureBooleanOperation {
-    pub id: String,
-    pub operation_label: String,
-    pub kind: FeatureBooleanKind,
-    pub target:
+pub(super) struct FeatureBooleanOperation {
+    pub(super) id: String,
+    pub(super) operation_label: String,
+    pub(super) kind: FeatureBooleanKind,
+    pub(super) target:
         crate::om::PayloadObjectReference<crate::om::reference_index::ReferenceIndexToken, u64>,
-    pub tools: Vec<
+    pub(super) tools: Vec<
         crate::om::PayloadObjectReference<crate::om::reference_index::ReferenceIndexToken, u64>,
     >,
-    pub source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3690,7 +3690,7 @@ fn visit_feature_history_unlabeled_operation_records(
     }
 }
 
-pub(crate) fn canonical_feature_history_links(
+pub(super) fn canonical_feature_history_links(
     links: impl IntoIterator<Item = SegmentOmLink>,
 ) -> Vec<SegmentOmLink> {
     let mut links = links
@@ -3787,7 +3787,7 @@ fn assign_operation_header_identities(
 }
 
 /// Decode ordered operation labels from feature-history record areas.
-pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLabel> {
+pub(super) fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLabel> {
     let sections = container.om_sections();
     let block_identities = operation_header_block_identities(container);
     let mut labels = Vec::new();
@@ -3829,7 +3829,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
 }
 
 /// Decode ordered Boolean target/tool bindings from feature-history sections.
-pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOperation> {
+pub(super) fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOperation> {
     let mut operations = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -3872,7 +3872,7 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
 }
 
 /// Decode exact feature-operation record boundaries and byte identities.
-pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationRecord> {
+pub(super) fn feature_operation_records(container: &Container) -> Vec<FeatureOperationRecord> {
     let block_identities = operation_header_block_identities(container);
     let mut identity_counts = BTreeMap::<String, usize>::new();
     let mut records = Vec::new();
@@ -3924,7 +3924,7 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
 }
 
 /// Retain operation records whose validated headers have no complete label.
-pub fn feature_unlabeled_operation_records(
+pub(super) fn feature_unlabeled_operation_records(
     container: &Container,
 ) -> Vec<FeatureUnlabeledOperationRecord> {
     let mut records = Vec::new();
@@ -3943,7 +3943,7 @@ pub fn feature_unlabeled_operation_records(
 }
 
 /// Decode body-write frames owned by independently bounded unlabeled records.
-pub fn feature_unlabeled_operation_body_writes(
+pub(super) fn feature_unlabeled_operation_body_writes(
     container: &Container,
 ) -> Vec<FeatureOperationBodyWrite> {
     let indexed = container.indexed_om_sections();
@@ -3987,7 +3987,9 @@ pub fn feature_unlabeled_operation_body_writes(
 }
 
 /// Decode exact body-write frames from bounded feature operations.
-pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperationBodyWrite> {
+pub(super) fn feature_operation_body_writes(
+    container: &Container,
+) -> Vec<FeatureOperationBodyWrite> {
     let indexed = container.indexed_om_sections();
     let mut writes = Vec::new();
     visit_feature_history_operation_records(
@@ -4035,7 +4037,7 @@ pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperat
 /// Partition aliases use a separate identity namespace and do not participate.
 /// A missing image block, no plain alias, or duplicate plain alias leaves the
 /// write unresolved.
-pub fn feature_operation_body_image_segment_uses(
+pub(super) fn feature_operation_body_image_segment_uses(
     writes: &[FeatureOperationBodyWrite],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureOperationBodyImageSegmentUse> {
@@ -4069,7 +4071,7 @@ pub fn feature_operation_body_image_segment_uses(
 ///
 /// This cross-store relation is independent of body-image block resolution.
 /// Partition-stream aliases use another identity namespace and do not match.
-pub fn feature_operation_body_identity_segment_uses(
+pub(super) fn feature_operation_body_identity_segment_uses(
     writes: &[FeatureOperationBodyWrite],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureOperationBodyIdentitySegmentUse> {
@@ -4148,7 +4150,7 @@ fn body_history_partition_stream(
 /// the run has one terminal role-16 binding. GROUP records from other
 /// partition-local namespaces never participate, even when their node IDs are
 /// equal.
-pub fn feature_operation_body_partition_uses(
+pub(super) fn feature_operation_body_partition_uses(
     writes: &[FeatureOperationBodyWrite],
     image_uses: &[FeatureOperationBodyImageSegmentUse],
     bindings: &[SegmentBodyBinding],
@@ -4208,7 +4210,7 @@ pub fn feature_operation_body_partition_uses(
 /// The relation requires at least one retained GROUP record and exactly one
 /// partition namespace for that node. Labeled and independently bounded
 /// unlabeled writes participate in the same persistent body-identity domain.
-pub fn feature_body_write_group_partition_uses(
+pub(super) fn feature_body_write_group_partition_uses(
     writes: &[FeatureOperationBodyWrite],
     unlabeled_writes: &[FeatureOperationBodyWrite],
     groups: &[crate::native::parasolid::ParasolidGroupRecord],
@@ -4265,7 +4267,7 @@ pub fn feature_body_write_group_partition_uses(
 }
 
 /// Decode one direct-reference field family from bounded feature operations.
-pub fn feature_operation_object_references(
+pub(super) fn feature_operation_object_references(
     container: &Container,
     kind: crate::om::direct_reference::ReferenceFieldKind,
 ) -> Vec<FeatureOperationObjectReference> {
@@ -4317,7 +4319,9 @@ pub fn feature_operation_object_references(
 }
 
 /// Decode every exact common frame from bounded feature operations.
-pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOperationCommonFrame> {
+pub(super) fn feature_operation_common_frames(
+    container: &Container,
+) -> Vec<FeatureOperationCommonFrame> {
     let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     visit_feature_history_operation_records(
@@ -4356,7 +4360,7 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
 }
 
 /// Decode canonical terminal common-frame suffixes from bounded operations.
-pub fn feature_operation_terminal_frames(
+pub(super) fn feature_operation_terminal_frames(
     container: &Container,
     common_frames: &[FeatureOperationCommonFrame],
 ) -> Vec<FeatureOperationTerminalFrame> {
@@ -4402,7 +4406,7 @@ pub fn feature_operation_terminal_frames(
 }
 
 /// Join operation terminal ordinals to exact rows in the owning state journal.
-pub fn feature_operation_state_journal_uses(
+pub(super) fn feature_operation_state_journal_uses(
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     terminal_frames: &[FeatureOperationTerminalFrame],
@@ -4474,7 +4478,7 @@ pub fn feature_operation_state_journal_uses(
 }
 
 /// Decode ordered self-framed strings from feature-operation payloads.
-pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadString> {
+pub(super) fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadString> {
     let mut strings = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -4502,7 +4506,7 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
 }
 
 /// Decode complete body-reference fields from feature-history operations.
-pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReference> {
+pub(super) fn feature_body_references(container: &Container) -> Vec<FeatureBodyReference> {
     let mut references = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -4528,7 +4532,7 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
 
 /// Return the one body-reference field owned by each operation that has
 /// exactly one such field.
-pub(crate) fn unique_feature_body_references(
+pub(super) fn unique_feature_body_references(
     references: &[FeatureBodyReference],
 ) -> BTreeMap<&str, &FeatureBodyReference> {
     let mut by_operation = BTreeMap::<&str, Vec<&FeatureBodyReference>>::new();
@@ -4550,7 +4554,9 @@ pub(crate) fn unique_feature_body_references(
 }
 
 /// Decode every ordered body-reference field from bounded feature operations.
-pub fn feature_body_reference_occurrences(container: &Container) -> Vec<FeatureBodyReference> {
+pub(super) fn feature_body_reference_occurrences(
+    container: &Container,
+) -> Vec<FeatureBodyReference> {
     let mut references = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -4597,7 +4603,7 @@ fn unique_offset_store_body_frame<'a>(
     matches.next().is_none().then_some(frame)
 }
 
-pub fn feature_body_segment_uses(
+pub(super) fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
     inputs: &[FeatureInputBlock],
@@ -4674,7 +4680,7 @@ pub fn feature_body_segment_uses(
 /// This set identifies operations whose body fields must be resolved in the
 /// offset-store namespace. The one-store requirement for a segment bridge is
 /// checked separately from this broader namespace classification.
-pub(crate) fn feature_input_store_operations(
+pub(super) fn feature_input_store_operations(
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
 ) -> BTreeSet<String> {
@@ -4685,7 +4691,7 @@ pub(crate) fn feature_input_store_operations(
 }
 
 /// Group resolved operation-header inputs by their indexed offset-store section.
-pub(crate) fn feature_input_store_sections(
+fn feature_input_store_sections(
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
 ) -> BTreeMap<String, BTreeSet<u32>> {
@@ -4707,7 +4713,7 @@ pub(crate) fn feature_input_store_sections(
 }
 
 /// Resolve primary feature body fields in an unambiguous operation input store.
-pub fn feature_body_data_block_uses(
+pub(super) fn feature_body_data_block_uses(
     references: &[FeatureBodyReference],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
@@ -4752,7 +4758,7 @@ pub fn feature_body_data_block_uses(
 }
 
 /// Resolve operation-header object indices to unique offset-only data blocks.
-pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
+pub(super) fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
     let indexed = container.indexed_om_sections();
     let mut inputs = Vec::new();
     visit_feature_history_operation_records(
@@ -4786,7 +4792,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
 }
 
 /// Group bindings from distinct operations by exact resolved data-block identity.
-pub fn feature_input_block_identity_groups(
+pub(super) fn feature_input_block_identity_groups(
     inputs: &[FeatureInputBlock],
 ) -> Vec<FeatureInputBlockIdentityGroup> {
     let mut by_block = BTreeMap::<&str, Vec<&FeatureInputBlock>>::new();
@@ -4894,7 +4900,7 @@ fn column_relations_by_block<'a>(
 }
 
 /// Join feature inputs to every column-row slot addressing the same block.
-pub fn feature_input_column_row_uses(
+pub(super) fn feature_input_column_row_uses(
     inputs: &[FeatureInputBlock],
     index_rows: &[DataBlockIndexRow],
     linked_rows: &[DataBlockLinkedIndexRow],
@@ -4939,7 +4945,7 @@ pub fn feature_input_column_row_uses(
 
 /// Join every datum-CSYS construction lane to column-row slots addressing the
 /// same block. The relation assigns no geometric role to either lane.
-pub fn feature_datum_csys_column_row_uses(
+pub(super) fn feature_datum_csys_column_row_uses(
     constructions: &[FeatureDatumCsysConstruction],
     index_rows: &[DataBlockIndexRow],
     linked_rows: &[DataBlockLinkedIndexRow],
@@ -4992,7 +4998,7 @@ pub fn feature_datum_csys_column_row_uses(
 }
 
 /// Retain inputs having exactly one slot-zero use in one complete column table.
-pub fn feature_input_column_targets(
+pub(super) fn feature_input_column_targets(
     inputs: &[FeatureInputBlock],
     uses: &[FeatureInputColumnRowUse],
     linked_rows: &[DataBlockLinkedIndexRow],
@@ -5078,7 +5084,7 @@ pub fn feature_input_column_targets(
 
 /// Decode and atomically resolve datum coordinate-system construction lanes
 /// through the offset store selected by each operation header.
-pub fn feature_datum_csys_constructions(
+pub(super) fn feature_datum_csys_constructions(
     container: &Container,
 ) -> Vec<FeatureDatumCsysConstruction> {
     let indexed = container.indexed_om_sections();
@@ -5128,7 +5134,7 @@ pub fn feature_datum_csys_constructions(
 }
 
 /// Reconstruct datum-plane object payloads across ordered store blocks.
-pub fn feature_datum_plane_payloads(
+pub(super) fn feature_datum_plane_payloads(
     container: &Container,
     headers: &[FeatureDatumPlaneHeader],
 ) -> Vec<FeatureDatumPlanePayload> {
@@ -5162,7 +5168,7 @@ pub fn feature_datum_plane_payloads(
 }
 
 /// Reconstruct the two leading object blocks of each datum coordinate system.
-pub fn feature_datum_csys_payloads(
+pub(super) fn feature_datum_csys_payloads(
     container: &Container,
     constructions: &[FeatureDatumCsysConstruction],
 ) -> Vec<FeatureDatumCsysPayload> {
@@ -5220,7 +5226,7 @@ fn construction_payload_frames<P, S, R>(
 }
 
 /// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
-pub fn feature_datum_csys_payload_scalar_pairs(
+pub(super) fn feature_datum_csys_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeaturePayloadScalarPair> {
@@ -5249,7 +5255,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
 }
 
 /// Decode complete signed Q1.55 pair frames from reconstructed datum-CSYS payloads.
-pub fn feature_datum_csys_payload_fixed_pairs(
+pub(super) fn feature_datum_csys_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeatureDatumCsysPayloadFixedPair> {
@@ -5277,7 +5283,7 @@ pub fn feature_datum_csys_payload_fixed_pairs(
 }
 
 /// Decode complete shifted-binary64 fields from reconstructed datum-CSYS payloads.
-pub fn feature_datum_csys_payload_scalars(
+pub(super) fn feature_datum_csys_payload_scalars(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Vec<FeaturePayloadScalar> {
@@ -5304,7 +5310,7 @@ pub fn feature_datum_csys_payload_scalars(
 }
 
 /// Decode the final three descriptor lanes of datum coordinate systems.
-pub fn feature_datum_csys_descriptors(
+pub(super) fn feature_datum_csys_descriptors(
     container: &Container,
     constructions: &[FeatureDatumCsysConstruction],
 ) -> Vec<FeatureDatumCsysDescriptor> {
@@ -5338,7 +5344,7 @@ pub fn feature_datum_csys_descriptors(
 }
 
 /// Join equal typed descriptor identities across datum-plane and datum-CSYS history.
-pub fn feature_datum_plane_csys_identity_uses(
+pub(super) fn feature_datum_plane_csys_identity_uses(
     plane_descriptors: &[FeatureDatumPlaneDescriptor],
     csys_descriptors: &[FeatureDatumCsysDescriptor],
 ) -> Vec<FeatureDatumPlaneCsysIdentityUse> {
@@ -5369,7 +5375,7 @@ pub fn feature_datum_plane_csys_identity_uses(
 }
 
 /// Decode exact scalar-pair frames from reconstructed datum-plane payloads.
-pub fn feature_datum_plane_payload_scalar_pairs(
+pub(super) fn feature_datum_plane_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
 ) -> Vec<FeaturePayloadScalarPair> {
@@ -5398,7 +5404,7 @@ pub fn feature_datum_plane_payload_scalar_pairs(
 }
 
 /// Decode atomically resolved datum-plane descriptor blocks.
-pub fn feature_datum_plane_descriptors(
+pub(super) fn feature_datum_plane_descriptors(
     container: &Container,
     headers: &[FeatureDatumPlaneHeader],
 ) -> Vec<FeatureDatumPlaneDescriptor> {
@@ -5428,7 +5434,7 @@ pub fn feature_datum_plane_descriptors(
 }
 
 /// Join resolved datum-plane blocks to operation inputs addressing the same block.
-pub fn feature_datum_plane_block_uses(
+pub(super) fn feature_datum_plane_block_uses(
     headers: &[FeatureDatumPlaneHeader],
     inputs: &[FeatureInputBlock],
 ) -> Vec<FeatureDatumPlaneBlockUse> {
@@ -5475,7 +5481,7 @@ pub fn feature_datum_plane_block_uses(
 
 /// Join resolved datum-coordinate-system blocks to every exact operation input
 /// addressing the same native block.
-pub fn feature_datum_csys_block_uses(
+pub(super) fn feature_datum_csys_block_uses(
     constructions: &[FeatureDatumCsysConstruction],
     inputs: &[FeatureInputBlock],
 ) -> Vec<FeatureDatumCsysBlockUse> {
@@ -5518,7 +5524,7 @@ pub fn feature_datum_csys_block_uses(
 }
 
 /// Join each sketch operation to its bounded record and ordered input blocks.
-pub fn feature_sketch_records(
+pub(super) fn feature_sketch_records(
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     inputs: &[FeatureInputBlock],
@@ -5565,7 +5571,7 @@ pub fn feature_sketch_records(
 }
 
 /// Join complete, uniquely resolved sketch construction-reference fields.
-pub fn feature_sketch_construction_inputs(
+pub(super) fn feature_sketch_construction_inputs(
     sketches: &[FeatureSketchRecord],
     references: &[FeatureSketchReference],
 ) -> Vec<FeatureSketchConstructionInputs> {
@@ -5618,7 +5624,7 @@ pub fn feature_sketch_construction_inputs(
 }
 
 /// Reconstruct exact sketch payloads across offset-store block boundaries.
-pub fn feature_sketch_construction_payloads(
+pub(super) fn feature_sketch_construction_payloads(
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Vec<FeatureConstructionPayload> {
@@ -5651,7 +5657,7 @@ pub fn feature_sketch_construction_payloads(
 }
 
 /// Decode exact coordinate-pair frames from reconstructed sketch payloads.
-pub fn feature_sketch_payload_coordinate_pairs(
+pub(super) fn feature_sketch_payload_coordinate_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePayloadScalarPair> {
@@ -5680,7 +5686,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
 }
 
 /// Decode exact scaled shifted-binary64 pair frames from reconstructed sketch payloads.
-pub fn feature_sketch_payload_fixed_pairs(
+pub(super) fn feature_sketch_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureSketchPayloadFixedPair> {
@@ -5708,7 +5714,7 @@ pub fn feature_sketch_payload_fixed_pairs(
 }
 
 /// Decode exact mixed scaled shifted-binary64/binary32 pair frames from reconstructed sketch payloads.
-pub fn feature_sketch_payload_mixed_pairs(
+pub(super) fn feature_sketch_payload_mixed_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureSketchPayloadMixedPair> {
@@ -5735,7 +5741,7 @@ pub fn feature_sketch_payload_mixed_pairs(
     )
 }
 
-pub(crate) fn offset_data_block_bytes_for_section<'a>(
+fn offset_data_block_bytes_for_section<'a>(
     section_ordinal: usize,
     entry_offset: u64,
     control: &crate::om::EntityRecord<'a>,
@@ -5785,7 +5791,7 @@ fn offset_data_block_bytes<'a>(
 }
 
 /// Decode exact framed scalar fields across reconstructed sketch payloads.
-pub fn feature_sketch_payload_scalars(
+pub(super) fn feature_sketch_payload_scalars(
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Vec<FeaturePayloadScalar> {
@@ -5837,7 +5843,7 @@ pub fn feature_sketch_payload_scalars(
 }
 
 /// Decode exact scalar-vector frames across reconstructed sketch payloads.
-pub fn feature_sketch_payload_scalar_lanes(
+pub(super) fn feature_sketch_payload_scalar_lanes(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureSketchPayloadScalarLane> {
@@ -5864,7 +5870,7 @@ pub fn feature_sketch_payload_scalar_lanes(
 }
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.
-pub fn feature_sketch_payload_names(
+pub(super) fn feature_sketch_payload_names(
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Vec<FeaturePayloadName> {
@@ -5912,7 +5918,7 @@ pub fn feature_sketch_payload_names(
 }
 
 /// Join complete name-delimited intervals to their framed scalar fields.
-pub fn feature_sketch_payload_named_records(
+pub(super) fn feature_sketch_payload_named_records(
     payloads: &[FeatureConstructionPayload],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
@@ -5989,7 +5995,7 @@ pub fn feature_sketch_payload_named_records(
 }
 
 /// Decode complete `Point<decimal>` records with exactly two scalar fields.
-pub fn feature_sketch_points(
+pub(super) fn feature_sketch_points(
     records: &[FeatureSketchPayloadNamedRecord],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
@@ -6039,7 +6045,7 @@ pub fn feature_sketch_points(
 }
 
 /// Decode `Point<positive decimal>` records containing exactly one fixed pair.
-pub fn feature_sketch_fixed_points(
+pub(super) fn feature_sketch_fixed_points(
     records: &[FeatureSketchPayloadNamedRecord],
     names: &[FeaturePayloadName],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
@@ -6104,7 +6110,9 @@ pub fn feature_sketch_fixed_points(
 }
 
 /// Group every bit-identical same-name sketch-point witness.
-pub fn feature_sketch_point_groups(points: &[FeatureSketchPoint]) -> Vec<FeatureSketchPointGroup> {
+pub(super) fn feature_sketch_point_groups(
+    points: &[FeatureSketchPoint],
+) -> Vec<FeatureSketchPointGroup> {
     let mut grouped = BTreeSet::new();
     let mut groups = Vec::new();
     for point in points {
@@ -6145,7 +6153,7 @@ pub fn feature_sketch_point_groups(points: &[FeatureSketchPoint]) -> Vec<Feature
 }
 
 /// Decode exact named point objects across consecutive offset-store blocks.
-pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedPoint> {
+pub(super) fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedPoint> {
     let mut points = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
@@ -6199,7 +6207,7 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
 }
 
 /// Join sketch references to named points through exact shared block identity.
-pub fn feature_sketch_named_point_block_uses(
+pub(super) fn feature_sketch_named_point_block_uses(
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
 ) -> Vec<FeatureSketchNamedPointBlockUse> {
@@ -6249,7 +6257,7 @@ fn block_key(block: &str) -> Option<(&str, u32)> {
 }
 
 /// Join one named point to a complete sketch lane through unique consecutive block adjacency.
-pub fn feature_sketch_preceding_named_point_uses(
+pub(super) fn feature_sketch_preceding_named_point_uses(
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
 ) -> Vec<FeatureSketchPrecedingNamedPointUse> {
@@ -6325,7 +6333,7 @@ pub fn feature_sketch_preceding_named_point_uses(
 }
 
 /// Join the two exact encodings of a solved sketch point.
-pub fn feature_sketch_point_uses(
+pub(super) fn feature_sketch_point_uses(
     point_groups: &[FeatureSketchPointGroup],
     named_points: &[OffsetStoreNamedPoint],
     block_uses: &[FeatureSketchNamedPointBlockUse],
@@ -6401,7 +6409,7 @@ pub fn feature_sketch_point_uses(
 }
 
 /// Join one uniquely sketch-owned named-point block to a later datum-CSYS construction.
-pub fn feature_sketch_datum_csys_dependencies(
+pub(super) fn feature_sketch_datum_csys_dependencies(
     labels: &[FeatureOperationLabel],
     named_points: &[OffsetStoreNamedPoint],
     point_uses: &[FeatureSketchPointUse],
@@ -6539,7 +6547,7 @@ pub fn feature_sketch_datum_csys_dependencies(
     dependencies
 }
 
-pub(crate) fn parse_sketch_point_name(value: &str) -> Option<u32> {
+fn parse_sketch_point_name(value: &str) -> Option<u32> {
     let suffix = value.strip_prefix("Point")?;
     if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
@@ -6549,7 +6557,7 @@ pub(crate) fn parse_sketch_point_name(value: &str) -> Option<u32> {
 }
 
 /// Decode and resolve the ordered counted-reference field in sketch payloads.
-pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchReference> {
+pub(super) fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchReference> {
     let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
@@ -6620,7 +6628,7 @@ fn resolved_feature_payload_references(
 
 /// Decode and resolve the exact ordered construction-reference field in
 /// projected-curve payloads without assigning semantic roles to its slots.
-pub fn feature_projected_curve_references(
+pub(super) fn feature_projected_curve_references(
     container: &Container,
 ) -> Vec<FeatureProjectedCurveReference> {
     resolved_feature_payload_references(container, |record, base| {
@@ -6656,7 +6664,7 @@ pub fn feature_projected_curve_references(
 }
 
 /// Reconstruct ordered logical payloads from projected-curve reference fields.
-pub fn feature_projected_curve_construction_payloads(
+pub(super) fn feature_projected_curve_construction_payloads(
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeatureProjectedCurveReference],
@@ -6723,7 +6731,7 @@ pub fn feature_projected_curve_construction_payloads(
 }
 
 /// Decode canonical printable strings from reconstructed projected-curve payloads.
-pub fn feature_projected_curve_construction_strings(
+pub(super) fn feature_projected_curve_construction_strings(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeatureProjectedCurveConstructionString> {
@@ -6756,7 +6764,7 @@ pub fn feature_projected_curve_construction_strings(
 }
 
 /// Decode exact point-feature construction headers without assigning coordinate semantics.
-pub fn feature_point_construction_headers(
+pub(super) fn feature_point_construction_headers(
     container: &Container,
 ) -> Vec<FeaturePointConstructionHeader> {
     let indexed = container.indexed_om_sections();
@@ -6786,7 +6794,7 @@ pub fn feature_point_construction_headers(
 }
 
 /// Decode exact scalar lanes selected by uniquely resolved point-feature headers.
-pub fn feature_point_construction_scalar_lanes(
+pub(super) fn feature_point_construction_scalar_lanes(
     container: &Container,
     headers: &[FeaturePointConstructionHeader],
 ) -> Vec<FeaturePointConstructionScalarLane> {
@@ -6859,7 +6867,7 @@ pub fn feature_point_construction_scalar_lanes(
 
 /// Decode and resolve the exact common reference envelope in surface-feature
 /// payloads without assigning section or guide semantics to its slots.
-pub fn feature_surface_construction_references(
+pub(super) fn feature_surface_construction_references(
     container: &Container,
 ) -> Vec<FeatureSurfaceConstructionReference> {
     resolved_feature_payload_references(container, |record, base| {
@@ -6894,7 +6902,7 @@ pub fn feature_surface_construction_references(
 }
 
 /// Decode the exact leading construction envelope in each `THRU_CURVE` payload.
-pub fn feature_thru_curve_construction_envelopes(
+pub(super) fn feature_thru_curve_construction_envelopes(
     container: &Container,
 ) -> Vec<FeatureThruCurveConstructionEnvelope> {
     let mut envelopes = Vec::new();
@@ -6923,7 +6931,9 @@ pub fn feature_thru_curve_construction_envelopes(
 }
 
 /// Decode and resolve each exact leading `SWP104` construction branch.
-pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp104LeadingBranch> {
+pub(super) fn feature_swp104_leading_branches(
+    container: &Container,
+) -> Vec<FeatureSwp104LeadingBranch> {
     let indexed = container.indexed_om_sections();
     let mut branches = Vec::new();
     visit_feature_history_operation_records(
@@ -6953,7 +6963,7 @@ pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp1
 }
 
 /// Reconstruct ordered logical payloads from complete surface-construction graphs.
-pub fn feature_surface_construction_payloads(
+pub(super) fn feature_surface_construction_payloads(
     container: &Container,
     references: &[FeatureSurfaceConstructionReference],
 ) -> Vec<FeatureSurfaceConstructionPayload> {
@@ -7003,7 +7013,7 @@ pub fn feature_surface_construction_payloads(
 }
 
 /// Decode exact scalar-pair frames from reconstructed surface payloads.
-pub fn feature_surface_construction_scalar_pairs(
+pub(super) fn feature_surface_construction_scalar_pairs(
     container: &Container,
     payloads: &[FeatureSurfaceConstructionPayload],
 ) -> Vec<FeaturePayloadScalarPair> {
@@ -7040,7 +7050,7 @@ pub fn feature_surface_construction_scalar_pairs(
 }
 
 /// Decode exact printable string frames from reconstructed surface payloads.
-pub fn feature_surface_construction_strings(
+pub(super) fn feature_surface_construction_strings(
     container: &Container,
     payloads: &[FeatureSurfaceConstructionPayload],
 ) -> Vec<FeatureSurfaceConstructionString> {
@@ -7073,7 +7083,7 @@ pub fn feature_surface_construction_strings(
 }
 
 /// Decode and resolve the witnessed ordered profile list in extrusion payloads.
-pub fn feature_extrude_profile_references(
+pub(super) fn feature_extrude_profile_references(
     container: &Container,
 ) -> Vec<FeatureExtrudeProfileReference> {
     let indexed = container.indexed_om_sections();
@@ -7109,7 +7119,9 @@ pub fn feature_extrude_profile_references(
 }
 
 /// Decode fixed scalar headers from bounded extrusion payloads.
-pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtrudePayloadHeader> {
+pub(super) fn feature_extrude_payload_headers(
+    container: &Container,
+) -> Vec<FeatureExtrudePayloadHeader> {
     let mut headers = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -7133,7 +7145,7 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
 }
 
 /// Decode exact terminal discriminator lanes from bounded operation payloads.
-pub fn feature_operation_terminal_discriminators(
+pub(super) fn feature_operation_terminal_discriminators(
     container: &Container,
 ) -> Vec<FeatureOperationTerminalDiscriminator> {
     let mut lanes = Vec::new();
@@ -7157,7 +7169,7 @@ pub fn feature_operation_terminal_discriminators(
 }
 
 /// Decode typed scalar clauses anchored to operation body-reference fields.
-pub fn feature_operation_body_scalar_triples(
+pub(super) fn feature_operation_body_scalar_triples(
     container: &Container,
 ) -> Vec<FeatureOperationBodyScalarTriple> {
     let mut triples = Vec::new();
@@ -7190,7 +7202,9 @@ pub fn feature_operation_body_scalar_triples(
 }
 
 /// Decode ordered member lanes following branch-`11` operation body clauses.
-pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOperationBodyMember> {
+pub(super) fn feature_operation_body_members(
+    container: &Container,
+) -> Vec<FeatureOperationBodyMember> {
     let mut members = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -7218,7 +7232,7 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
 }
 
 /// Resolve wrapped operation members that name known feature-body identities.
-pub fn feature_operation_body_operands(
+pub(super) fn feature_operation_body_operands(
     members: &[FeatureOperationBodyMember],
     references: &[FeatureBodyReference],
     inputs: &[FeatureInputBlock],
@@ -7313,7 +7327,7 @@ pub fn feature_operation_body_operands(
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
-pub fn feature_operation_body_11_continuations(
+pub(super) fn feature_operation_body_11_continuations(
     container: &Container,
 ) -> Vec<FeatureOperationBody11Continuation> {
     let mut continuations = Vec::new();
@@ -7347,7 +7361,7 @@ pub fn feature_operation_body_11_continuations(
 }
 
 /// Decode complete unwrapped counted reference lanes following body scalar clauses.
-pub fn feature_operation_body_reference_lanes(
+pub(super) fn feature_operation_body_reference_lanes(
     container: &Container,
 ) -> Vec<FeatureOperationBodyReferenceLane> {
     let indexed = container.indexed_om_sections();
@@ -7408,7 +7422,7 @@ pub fn feature_operation_body_reference_lanes(
 }
 
 /// Join the two exact encodings of an extrusion construction profile.
-pub fn feature_extrude_construction_profiles(
+pub(super) fn feature_extrude_construction_profiles(
     references: &[FeatureExtrudeProfileReference],
 ) -> Vec<FeatureExtrudeConstructionProfile> {
     let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureExtrudeProfileReference>>::new();
@@ -7452,7 +7466,7 @@ pub fn feature_extrude_construction_profiles(
 }
 
 /// Decode structured `32` branches following extrusion body-reference fields.
-pub fn feature_extrude_payload_32_branches(
+pub(super) fn feature_extrude_payload_32_branches(
     container: &Container,
 ) -> Vec<FeatureExtrudePayload32Branch> {
     let indexed = container.indexed_om_sections();
@@ -7476,7 +7490,7 @@ pub fn feature_extrude_payload_32_branches(
 }
 
 /// Join exact profile fields to self-witnessed structured extrusion branches.
-pub fn feature_extrude_32_constructions(
+pub(super) fn feature_extrude_32_constructions(
     references: &[FeatureExtrudeProfileReference],
     branches: &[FeatureExtrudePayload32Branch],
 ) -> Vec<FeatureExtrude32Construction> {
@@ -7563,7 +7577,7 @@ pub fn feature_extrude_32_constructions(
 }
 
 /// Decode and resolve ordered construction references in `BLOCK` payloads.
-pub fn feature_block_construction_references(
+pub(super) fn feature_block_construction_references(
     container: &Container,
 ) -> Vec<FeatureBlockConstructionReference> {
     let indexed = container.indexed_om_sections();
@@ -7600,7 +7614,7 @@ pub fn feature_block_construction_references(
 /// Join complete, uniquely resolved `BLOCK` construction-reference fields.
 // Names follow the ordered source slots in this fixed-width lane.
 #[allow(clippy::many_single_char_names)]
-pub fn feature_block_constructions(
+pub(super) fn feature_block_constructions(
     references: &[FeatureBlockConstructionReference],
 ) -> Vec<FeatureBlockConstruction> {
     let mut by_operation = BTreeMap::<&str, Vec<&FeatureBlockConstructionReference>>::new();
@@ -7653,7 +7667,7 @@ pub fn feature_block_constructions(
 }
 
 /// Reconstruct complete `BLOCK` construction payloads in reference order.
-pub fn feature_block_construction_payloads(
+pub(super) fn feature_block_construction_payloads(
     container: &Container,
     constructions: &[FeatureBlockConstruction],
 ) -> Vec<FeatureConstructionPayload> {
@@ -7683,7 +7697,7 @@ pub fn feature_block_construction_payloads(
 }
 
 /// Decode exact framed scalar fields across reconstructed `BLOCK` payloads.
-pub fn feature_block_payload_scalars(
+pub(super) fn feature_block_payload_scalars(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePayloadScalar> {
@@ -7719,7 +7733,7 @@ pub fn feature_block_payload_scalars(
 }
 
 /// Decode exact compact-code name fields across reconstructed `BLOCK` payloads.
-pub fn feature_block_payload_names(
+pub(super) fn feature_block_payload_names(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Vec<FeaturePayloadName> {
@@ -7751,7 +7765,7 @@ pub fn feature_block_payload_names(
 }
 
 /// Join complete `BLOCK` payload names to scalar fields in their intervals.
-pub fn feature_block_payload_named_records(
+pub(super) fn feature_block_payload_named_records(
     payloads: &[FeatureConstructionPayload],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
@@ -7794,7 +7808,7 @@ pub fn feature_block_payload_named_records(
 }
 
 /// Type exact two-scalar `Point<positive decimal>` `BLOCK` payload intervals.
-pub fn feature_block_payload_points(
+pub(super) fn feature_block_payload_points(
     records: &[FeatureBlockPayloadNamedRecord],
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
@@ -7830,7 +7844,7 @@ pub fn feature_block_payload_points(
 }
 
 /// Group every bit-identical same-name `BLOCK` construction-point witness.
-pub fn feature_block_payload_point_groups(
+pub(super) fn feature_block_payload_point_groups(
     points: &[FeatureBlockPayloadPoint],
 ) -> Vec<FeatureBlockPayloadPointGroup> {
     let mut grouped = BTreeSet::new();
@@ -7870,7 +7884,7 @@ pub fn feature_block_payload_point_groups(
 }
 
 /// Resolve the consecutive three-parameter dimension run of `BLOCK` features.
-pub fn feature_block_dimensions(
+pub(super) fn feature_block_dimensions(
     constructions: &[FeatureBlockConstruction],
     bindings: &[FeatureParameterBinding],
     declarations: &[ExpressionDeclaration],
@@ -7965,7 +7979,7 @@ pub fn feature_block_dimensions(
 }
 
 /// Decode persistent object frames from bounded offset-store blocks.
-pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFrame> {
+pub(super) fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFrame> {
     let blocks = offset_data_block_bytes(container);
     blocks
         .iter()
@@ -7987,7 +8001,7 @@ pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFra
         .collect()
 }
 
-pub(crate) fn data_block_object_frame_id(data_block: &str, ordinal: usize) -> String {
+fn data_block_object_frame_id(data_block: &str, ordinal: usize) -> String {
     format!(
         "{}-{ordinal}",
         data_block
@@ -8039,7 +8053,7 @@ fn unique_offset_data_store(
 }
 
 /// Join operation input lanes to uniquely resolved parameter declarations.
-pub fn feature_parameter_bindings(
+pub(super) fn feature_parameter_bindings(
     inputs: &[FeatureInputBlock],
     references: &[DataBlockReference],
     expressions: &[Expression],
@@ -8089,7 +8103,9 @@ pub fn feature_parameter_bindings(
 }
 
 /// Group exact expression bindings by consuming operation and expression.
-pub fn feature_parameter_uses(bindings: &[FeatureParameterBinding]) -> Vec<FeatureParameterUse> {
+pub(super) fn feature_parameter_uses(
+    bindings: &[FeatureParameterBinding],
+) -> Vec<FeatureParameterUse> {
     let mut grouped = BTreeMap::<(&str, &str), Vec<&FeatureParameterBinding>>::new();
     for binding in bindings {
         if let Some(expression) = binding.expression.as_deref() {

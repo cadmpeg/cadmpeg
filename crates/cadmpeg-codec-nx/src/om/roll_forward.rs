@@ -7,7 +7,7 @@ use super::state_index::{OperationStateIndex, StateIndexToken};
 
 /// One row in an `m_rollForwardStates` group table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateGroupRow {
+pub(crate) enum OperationStateGroupRow {
     /// `4a object_index position ff` list member. The common position is a
     /// direct byte; one generation uses the same compact token family as an
     /// object index for positions above the direct range.
@@ -257,7 +257,7 @@ impl OperationStateGroupTable {
         end.checked_add(trailing_bytes.len())?;
         Some(Self { groups, footer })
     }
-    pub(crate) fn offset(&self) -> usize {
+    pub(super) fn offset(&self) -> usize {
         self.groups.first().offset()
     }
     pub(crate) fn end_offset(&self) -> usize {
@@ -266,10 +266,10 @@ impl OperationStateGroupTable {
     pub(crate) fn footer(&self) -> GroupTableFooter {
         self.footer
     }
-    pub(crate) fn trailing_bytes(&self) -> &'static [u8] {
+    pub(super) fn trailing_bytes(&self) -> &'static [u8] {
         self.footer.bytes()
     }
-    pub(crate) fn groups(&self) -> &super::nonempty::NonEmpty<OperationStateGroup> {
+    pub(super) fn groups(&self) -> &super::nonempty::NonEmpty<OperationStateGroup> {
         &self.groups
     }
     pub(crate) fn into_groups(self) -> super::nonempty::NonEmpty<OperationStateGroup> {

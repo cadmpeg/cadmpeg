@@ -83,7 +83,7 @@ fn prepare_topology_streams<'a>(
 /// Map each partition stream ordinal to the delta stream ordinals that pair with it,
 /// restricting the delta candidates to those the segment stream links mark as `deltas`
 /// when any links are present.
-pub(crate) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
+pub(super) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
     let links = super::segments::segment_stream_links(&scan.container, &scan.streams);
     let linked_deltas = links
         .iter()
@@ -96,7 +96,7 @@ pub(crate) fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
 /// Pair each eligible delta stream with the nearest preceding partition stream of the
 /// same schema. `eligible_deltas`, when `Some`, restricts pairing to those delta
 /// ordinals; when `None`, every delta stream is eligible.
-pub(crate) fn pair_stream_indices(
+pub(super) fn pair_stream_indices(
     streams: &[Stream],
     eligible_deltas: Option<&BTreeSet<usize>>,
 ) -> BTreeMap<usize, Vec<usize>> {
@@ -227,7 +227,7 @@ pub(crate) struct StreamParses {
 
 impl StreamParses {
     /// The view the native record extractors read: parses of `stream.inflated`.
-    pub(crate) fn view_for_records(&self) -> &StreamView {
+    pub(super) fn view_for_records(&self) -> &StreamView {
         &self.raw
     }
 
@@ -350,7 +350,7 @@ impl<'a> ParsedStreams<'a> {
 
     /// Move the delta censuses into the native extractor after all semantic
     /// residuals have been built. Each delta walk is owned by one decode.
-    pub(crate) fn take_delta_censuses(&mut self) -> Vec<Option<Census>> {
+    pub(super) fn take_delta_censuses(&mut self) -> Vec<Option<Census>> {
         self.streams
             .iter_mut()
             .map(|stream| stream.delta_census.take())
@@ -363,7 +363,7 @@ impl<'a> ParsedStreams<'a> {
     }
 
     /// Iterate `(ordinal, parses)` over every stream.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (usize, &StreamParses)> {
+    pub(super) fn iter(&self) -> impl Iterator<Item = (usize, &StreamParses)> {
         self.streams
             .iter()
             .enumerate()

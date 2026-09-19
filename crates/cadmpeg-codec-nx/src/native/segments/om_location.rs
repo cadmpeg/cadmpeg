@@ -3,28 +3,28 @@ use serde::{Deserialize, Serialize};
 /// Pointed and signature offsets of one OM section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Wire", into = "Wire")]
-pub(crate) struct OmLocation {
+pub(in crate::native) struct OmLocation {
     source_offset: u64,
     section_offset: u64,
 }
 
 impl OmLocation {
-    pub(crate) fn new(source_offset: u64, separator_byte_len: u32) -> Option<Self> {
+    pub(in crate::native) fn new(source_offset: u64, separator_byte_len: u32) -> Option<Self> {
         Some(Self {
             source_offset,
             section_offset: source_offset.checked_add(u64::from(separator_byte_len))?,
         })
     }
 
-    pub(crate) fn source_offset(self) -> u64 {
+    pub(in crate::native) fn source_offset(self) -> u64 {
         self.source_offset
     }
 
-    pub(crate) fn section_offset(self) -> u64 {
+    pub(in crate::native) fn section_offset(self) -> u64 {
         self.section_offset
     }
 
-    pub(crate) fn separator_byte_len(self) -> u32 {
+    pub(super) fn separator_byte_len(self) -> u32 {
         (self.section_offset - self.source_offset) as u32
     }
 }

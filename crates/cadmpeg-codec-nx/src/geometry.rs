@@ -31,29 +31,29 @@ const EPS_GEOMETRY_IS_ORTHONORMAL_FRAME_E6: f64 = 1.0e-6;
 
 /// A decoded analytic surface and its source offset.
 #[derive(Debug, Clone)]
-pub struct DecodedSurface {
+pub(crate) struct DecodedSurface {
     /// Byte offset of the record's type tag within the stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// The decoded surface geometry.
-    pub geometry: SurfaceGeometry,
+    pub(crate) geometry: SurfaceGeometry,
 }
 
 /// A decoded analytic curve and its source offset.
 #[derive(Debug, Clone)]
-pub struct DecodedCurve {
+pub(crate) struct DecodedCurve {
     /// Byte offset of the record's type tag within the stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// The decoded curve geometry.
-    pub geometry: CurveGeometry,
+    pub(crate) geometry: CurveGeometry,
 }
 
 /// A decoded point and its source offset.
 #[derive(Debug, Clone)]
-pub struct DecodedPoint {
+pub(crate) struct DecodedPoint {
     /// Byte offset of the record's `00 1d` tag within the stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Position in millimetres.
-    pub position: Point3,
+    pub(crate) position: Point3,
 }
 
 /// The analytic surface type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
@@ -67,7 +67,7 @@ enum AnalyticRecord {
 /// Decode validated point records in source order.
 ///
 /// Positions are returned in millimetres. Malformed candidates are skipped.
-pub fn points(stream: &[u8]) -> Vec<DecodedPoint> {
+pub(crate) fn points(stream: &[u8]) -> Vec<DecodedPoint> {
     analytic_records(stream)
         .into_iter()
         .filter_map(|record| match record {
@@ -78,7 +78,7 @@ pub fn points(stream: &[u8]) -> Vec<DecodedPoint> {
 }
 
 /// Decode validated analytic surface records in source order.
-pub fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
+pub(crate) fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
     analytic_records(stream)
         .into_iter()
         .filter_map(|record| match record {
@@ -89,7 +89,7 @@ pub fn surfaces(stream: &[u8]) -> Vec<DecodedSurface> {
 }
 
 /// Decode validated analytic curve records in source order.
-pub fn curves(stream: &[u8]) -> Vec<DecodedCurve> {
+pub(crate) fn curves(stream: &[u8]) -> Vec<DecodedCurve> {
     analytic_records(stream)
         .into_iter()
         .filter_map(|record| match record {

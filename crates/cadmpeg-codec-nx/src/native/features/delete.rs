@@ -16,26 +16,26 @@ use serde::{Deserialize, Serialize};
     try_from = "DeleteReferenceFieldWire",
     into = "DeleteReferenceFieldWire"
 )]
-pub struct FeatureDeleteReferenceField {
+pub(in crate::native) struct FeatureDeleteReferenceField {
     /// Globally unique field identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DELETE` operation label.
-    pub operation_label: String,
-    pub references: DeleteReferences<Option<String>>,
+    pub(in crate::native) operation_label: String,
+    references: DeleteReferences<Option<String>>,
 }
 
 /// Exact logical payload reconstructed from a complete non-null `DELETE` field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureDeleteConstructionPayload {
+pub(in crate::native) struct FeatureDeleteConstructionPayload {
     /// Globally unique reconstructed-payload identity.
-    pub id: String,
+    pub(in crate::native) id: String,
     /// Owning `DELETE` operation label.
-    pub operation_label: String,
+    pub(in crate::native) operation_label: String,
     /// Complete five-slot reference field selecting the source blocks.
-    pub reference_field: String,
+    reference_field: String,
     /// Ordered source blocks and the hash of their concatenated bytes.
     #[serde(flatten)]
-    pub content: FeaturePayloadContent<[FeaturePayloadBlock; 5]>,
+    content: FeaturePayloadContent<[FeaturePayloadBlock; 5]>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -126,7 +126,9 @@ impl TryFrom<DeleteReferenceFieldWire> for FeatureDeleteReferenceField {
 
 /// Decode exact `DELETE` payload reference fields and independently resolve
 /// their non-null slots without assigning a target object family.
-pub fn feature_delete_reference_fields(container: &Container) -> Vec<FeatureDeleteReferenceField> {
+pub(in crate::native) fn feature_delete_reference_fields(
+    container: &Container,
+) -> Vec<FeatureDeleteReferenceField> {
     let indexed = container.indexed_om_sections();
     let mut fields = Vec::new();
     visit_feature_history_operation_records(
@@ -156,7 +158,7 @@ pub fn feature_delete_reference_fields(container: &Container) -> Vec<FeatureDele
 
 /// Reconstruct one ordered logical payload from each complete same-store
 /// non-null `DELETE` reference field.
-pub fn feature_delete_construction_payloads(
+pub(in crate::native) fn feature_delete_construction_payloads(
     container: &Container,
     fields: &[FeatureDeleteReferenceField],
 ) -> Vec<FeatureDeleteConstructionPayload> {

@@ -44,7 +44,7 @@ use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum StreamKind {
+pub(crate) enum StreamKind {
     /// A Parasolid `(partition)` body snapshot.
     Partition,
     /// A Parasolid `(deltas)` edit overlay.
@@ -57,7 +57,7 @@ pub enum StreamKind {
 
 impl StreamKind {
     /// Return the stable label used in summaries and reports.
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             StreamKind::Partition => "partition",
             StreamKind::Deltas => "deltas",
@@ -67,14 +67,14 @@ impl StreamKind {
     }
 
     /// Return whether this kind contains Parasolid neutral-binary records.
-    pub fn is_parasolid(self) -> bool {
+    pub(crate) fn is_parasolid(self) -> bool {
         !matches!(self, StreamKind::Preview)
     }
 }
 
 /// Parasolid stream record subtype.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParasolidSubtype {
+pub(crate) enum ParasolidSubtype {
     /// Body snapshot.
     Partition,
     /// Edit overlay.
@@ -94,7 +94,7 @@ impl ParasolidSubtype {
 
 /// Classified stream body and its Parasolid schema.
 #[derive(Debug, Clone)]
-pub enum StreamBody {
+pub(crate) enum StreamBody {
     /// Parasolid records.
     Parasolid {
         /// Record subtype.
@@ -128,32 +128,32 @@ impl StreamBody {
 
 /// A located and inflated stream from the canonical part payload.
 #[derive(Debug, Clone)]
-pub struct Stream {
+pub(crate) struct Stream {
     /// Byte offset of the stream start in the source file.
     ///
     /// Modern streams start at a zlib header. Legacy streams start at a clear
     /// Parasolid transmit header.
-    pub file_offset: usize,
+    pub(crate) file_offset: usize,
     /// Source bytes consumed by the stream at `file_offset`.
     ///
     /// For modern streams this is the compressed member length. For legacy
     /// streams it is the clear section length. The physical extent
     /// `[file_offset, file_offset + consumed)` is source-owned.
-    pub consumed: u64,
+    pub(crate) consumed: u64,
     /// Inflated bytes.
-    pub inflated: Vec<u8>,
+    pub(crate) inflated: Vec<u8>,
     /// Payload classification.
-    pub body: StreamBody,
+    pub(crate) body: StreamBody,
 }
 
 impl Stream {
     /// Stream classification.
-    pub fn kind(&self) -> StreamKind {
+    pub(crate) fn kind(&self) -> StreamKind {
         self.body.kind()
     }
 
     /// Parasolid schema token.
-    pub fn schema_token(&self) -> Option<&cadmpeg_parasolid::OwnedSchemaToken> {
+    pub(crate) fn schema_token(&self) -> Option<&cadmpeg_parasolid::OwnedSchemaToken> {
         match &self.body {
             StreamBody::Parasolid { schema, .. } => schema.as_ref(),
             StreamBody::Preview => None,
@@ -163,7 +163,7 @@ impl Stream {
 
 /// Owner-flag layouts admitted by the attribute-definition grammar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LegalOwnerFlags {
+pub(crate) enum LegalOwnerFlags {
     /// Fourteen flags in the compact definition layout.
     Fourteen([bool; 14]),
     /// Sixteen flags in the extended definition layout.
@@ -171,7 +171,7 @@ pub enum LegalOwnerFlags {
 }
 
 impl LegalOwnerFlags {
-    pub fn as_slice(&self) -> &[bool] {
+    pub(crate) fn as_slice(&self) -> &[bool] {
         match self {
             Self::Fourteen(flags) => flags,
             Self::Sixteen(flags) => flags,
@@ -179,7 +179,7 @@ impl LegalOwnerFlags {
     }
 
     /// Fixed-width native JSON representation, padded after the source flags.
-    pub fn padded(self) -> [u8; 16] {
+    pub(crate) fn padded(self) -> [u8; 16] {
         let mut padded = [0; 16];
         for (byte, flag) in padded.iter_mut().zip(self.as_slice()) {
             *byte = u8::from(*flag);
@@ -206,61 +206,61 @@ impl TryFrom<&[u8]> for LegalOwnerFlags {
 
 /// One Parasolid type-80 attribute definition joined to its type-79 identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AttributeDefinition<'a> {
+pub(crate) struct AttributeDefinition<'a> {
     /// Inflated-stream offset of the `00 50` definition tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stream-local definition record identity.
-    pub xmt: NonNullXmt,
+    pub(crate) xmt: NonNullXmt,
     /// Optional stream-local next-definition target.
-    pub next_definition_xmt: Option<XmtTarget>,
+    pub(crate) next_definition_xmt: Option<XmtTarget>,
     /// Stream-local type-79 identifier identity.
-    pub identifier_xmt: NonNullXmt,
+    pub(crate) identifier_xmt: NonNullXmt,
     /// Inflated-stream offset of the resolved `00 4f` identifier tag.
-    pub identifier_offset: usize,
+    pub(crate) identifier_offset: usize,
     /// Exact printable class name.
-    pub name: PrintableString<&'a str>,
+    pub(crate) name: PrintableString<&'a str>,
     /// Numeric attribute type identifier.
-    pub type_id: NonZeroU32,
+    pub(crate) type_id: NonZeroU32,
     /// Ordered actions for the eight logged event families.
-    pub action_codes: [AttributeAction; 8],
+    pub(crate) action_codes: [AttributeAction; 8],
     /// Optional stream-local field-name-list target.
-    pub field_names_xmt: Option<XmtTarget>,
+    pub(crate) field_names_xmt: Option<XmtTarget>,
     /// Ordered legal-owner flags.
-    pub legal_owner_flags: LegalOwnerFlags,
+    pub(crate) legal_owner_flags: LegalOwnerFlags,
     /// One serialized field code for every declared field.
-    pub field_codes: Vec<AttributeField>,
+    pub(crate) field_codes: Vec<AttributeField>,
 }
 
 /// One framed type-81 Parasolid entity/attribute-list record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Entity51Record {
+pub(crate) struct Entity51Record {
     /// Inflated-stream offset of the `00 51` tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact framed record length.
-    pub byte_len: usize,
+    pub(crate) byte_len: usize,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    pub(crate) xmt: NonNullXmt,
     /// Serialized sequence value.
-    pub sequence: NonZeroU32,
+    pub(crate) sequence: NonZeroU32,
     /// Stream-local type-80 attribute-definition identity.
-    pub definition_xmt: u32,
+    pub(crate) definition_xmt: u32,
     /// Five fixed leading stream-local references.
-    pub leading_references: [u32; 5],
+    pub(crate) leading_references: [u32; 5],
     /// Variable trailing stream-local references counted by `flags`.
-    pub trailing_references: EntityReferences,
+    pub(crate) trailing_references: EntityReferences,
 }
 
 /// One counted type-99 attribute field-name record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldNamesRecord {
+pub(crate) struct FieldNamesRecord {
     /// Inflated-stream offset of the `00 63` tag.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Exact framed record length.
-    pub byte_len: usize,
+    pub(crate) byte_len: usize,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    pub(crate) xmt: NonNullXmt,
     /// Ordered stream-local character or Unicode value references.
-    pub name_xmts: NameReferences,
+    pub(crate) name_xmts: NameReferences,
 }
 
 /// Locate unique snapshot values owned by typed attribute relations.
@@ -351,7 +351,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
 }
 
 /// Decode counted type-99 attribute field-name records.
-pub fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
+pub(crate) fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -365,7 +365,7 @@ pub fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
     records
 }
 
-pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord> {
+fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0, 0x63])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -386,7 +386,7 @@ pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<Field
 }
 
 /// Decode framed type-81 entity/attribute-list records.
-pub fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
+pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -540,7 +540,7 @@ fn attribute_identifiers(bytes: &[u8]) -> Vec<AttributeIdentifier<'_>> {
 }
 
 /// Decode complete type-80 attribute definitions and resolve their type-79 identifiers.
-pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
+pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
     let identifiers = attribute_identifiers(bytes);
     (0..bytes.len())
         .filter_map(|offset| {
@@ -610,7 +610,7 @@ fn attribute_definition_boundary(bytes: &[u8], offset: usize) -> bool {
 }
 
 /// Locates, inflates, and classifies zlib streams in `/Root/UG_PART/UG_PART`.
-pub fn extract_streams<'a>(
+pub(crate) fn extract_streams<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
     container: &Container,
@@ -768,7 +768,7 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
 /// printable `TRANSMIT FILE` description. Only those complete transmit headers
 /// are admitted as boundaries; arbitrary `PS\0\0` bytes in the payload do not
 /// split a stream.
-pub fn extract_legacy_streams<'a>(
+pub(crate) fn extract_legacy_streams<'a>(
     ctx: &DecodeContext<'a>,
     part: View<'a>,
 ) -> Result<Vec<Stream>, CodecError> {

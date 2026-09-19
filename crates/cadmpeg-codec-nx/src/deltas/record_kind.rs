@@ -4,7 +4,7 @@
 /// Named Parasolid node kind, independent of full-record payload form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum RecordKind {
+pub(crate) enum RecordKind {
     Body = 12,
     Shell = 13,
     Face = 14,
@@ -60,11 +60,11 @@ pub enum RecordKind {
 }
 
 impl RecordKind {
-    pub const fn code(self) -> u8 {
+    pub(crate) const fn code(self) -> u8 {
         self as u8
     }
 
-    pub const fn name(self) -> &'static str {
+    pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::Body => "BODY",
             Self::Shell => "SHELL",

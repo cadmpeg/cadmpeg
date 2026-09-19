@@ -28,36 +28,36 @@ use curve_references::CurveDescriptorReferences;
 
 /// A decoded NURBS surface and its source descriptor offset.
 #[derive(Debug, Clone)]
-pub struct Surface {
+pub(crate) struct Surface {
     /// Byte offset of the tag-126 descriptor record within the input stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Reconstructed surface geometry.
-    pub geometry: SurfaceGeometry,
+    pub(crate) geometry: SurfaceGeometry,
 }
 
 /// A decoded NURBS curve and its source descriptor offset.
 #[derive(Debug, Clone)]
-pub struct Curve {
+pub(crate) struct Curve {
     /// Byte offset of the tag-136 descriptor record within the input stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Reconstructed curve geometry.
-    pub geometry: CurveGeometry,
+    pub(crate) geometry: CurveGeometry,
 }
 
 /// A decoded parameter-space NURBS curve and its source wrapper offset.
 #[derive(Debug, Clone)]
-pub struct Pcurve {
+pub(crate) struct Pcurve {
     /// Byte offset of the tag-134 wrapper record within the input stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Reconstructed parameter-space geometry.
-    pub geometry: PcurveGeometry,
+    pub(crate) geometry: PcurveGeometry,
 }
 
 /// Decode valid NURBS surface record families in source order.
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
+pub(crate) fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
     let descriptors = surface_descriptors(bytes);
@@ -179,7 +179,7 @@ fn decode_surfaces(
 }
 
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
-pub fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
+pub(crate) fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
@@ -275,7 +275,7 @@ fn decode_pcurves(
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
+pub(crate) fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
@@ -386,13 +386,13 @@ pub(crate) struct Parsed {
 
 /// A carrier record of the right family whose lanes the IR carrier refused.
 #[derive(Debug, Clone)]
-pub struct CarrierRefusal {
+pub(crate) struct CarrierRefusal {
     /// Byte offset of the descriptor record within the stream.
-    pub pos: usize,
+    pub(crate) pos: usize,
     /// Carrier family the record states.
-    pub family: &'static str,
+    pub(crate) family: &'static str,
     /// The carrier's refusal.
-    pub error: NurbsError,
+    pub(crate) error: NurbsError,
 }
 
 pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {

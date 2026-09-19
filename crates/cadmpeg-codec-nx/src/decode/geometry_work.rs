@@ -7,7 +7,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 /// Maximum adaptive geometry work admitted for one decoded model.
-pub(crate) const MAX_ADAPTIVE_GEOMETRY_WORK: usize = 8_000_000;
+pub(super) const MAX_ADAPTIVE_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Maximum geometry evaluation work admitted while completing intersection
 /// pcurves for one decoded model.
@@ -16,19 +16,19 @@ pub(crate) const MAX_ADAPTIVE_GEOMETRY_WORK: usize = 8_000_000;
 /// independent prevents a large but valid completion set from exhausting the
 /// carrier and topology-certification budget, while retaining a hard bound on
 /// the completion phase itself.
-pub(crate) const MAX_PCURVE_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
+pub(super) const MAX_PCURVE_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Maximum geometry evaluation work admitted while validating serialized
 /// EXT11 support-UV lanes for one decoded model.
-pub(crate) const MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
+pub(super) const MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Maximum geometry evaluation work admitted while validating or completing
 /// EXT11 support-UV lanes for one decoded model.
-pub(crate) const MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
+pub(super) const MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Maximum geometry evaluation work admitted while continuing coupled
 /// surface-intersection support lanes for one decoded model.
-pub(crate) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
+pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Geometry work accounting plus the cache of successful blend-geometry
 /// certificates earned within the same accounting scope.
@@ -43,7 +43,7 @@ impl<'a> GeometryWorkBudget<'a> {
         Self::from_work_budget(WorkBudget::new(limit))
     }
 
-    pub(crate) fn from_work_budget(work: WorkBudget<'a>) -> Self {
+    pub(super) fn from_work_budget(work: WorkBudget<'a>) -> Self {
         Self {
             work,
             blend_frame_cache: Rc::new(RefCell::new(
@@ -52,18 +52,18 @@ impl<'a> GeometryWorkBudget<'a> {
         }
     }
 
-    pub(crate) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'static> {
+    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'static> {
         GeometryWorkBudget {
             work: self.work.child_slice(limit),
             blend_frame_cache: Rc::clone(&self.blend_frame_cache),
         }
     }
 
-    pub(crate) fn clear_blend_frame_cache(&self) {
+    pub(super) fn clear_blend_frame_cache(&self) {
         self.blend_frame_cache.borrow_mut().clear();
     }
 
-    pub(crate) fn blend_frame_cache(&self) -> &RefCell<super::blend::BlendSurfaceFrameCache> {
+    pub(super) fn blend_frame_cache(&self) -> &RefCell<super::blend::BlendSurfaceFrameCache> {
         self.blend_frame_cache.as_ref()
     }
 }

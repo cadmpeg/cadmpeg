@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::ParasolidDeltasBodyRevision;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RevisionLengths {
+pub(super) struct RevisionLengths {
     prefix: u64,
     tail: u64,
 }

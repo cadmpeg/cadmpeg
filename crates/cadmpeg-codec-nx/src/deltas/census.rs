@@ -30,33 +30,33 @@ pub(crate) struct Census {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct CensusEvents {
     /// Complete stream transmit header.
-    pub transmit_header: Option<TransmitHeader>,
+    pub(crate) transmit_header: Option<TransmitHeader>,
     /// Complete null-reference stream trailer.
-    pub terminal_null_references: Option<TerminalNullReferences>,
+    pub(crate) terminal_null_references: Option<TerminalNullReferences>,
     /// Complete records in source order.
-    pub records: Vec<Record>,
+    pub(crate) records: Vec<Record>,
     /// Compact tombstones in source order.
-    pub tombstones: Vec<Tombstone>,
+    pub(crate) tombstones: Vec<Tombstone>,
     /// BODY revision envelopes in source order.
-    pub body_revisions: Vec<BodyRevision>,
+    pub(crate) body_revisions: Vec<BodyRevision>,
     /// Complete count-selected numeric tails following `term_use` records.
-    pub term_use_numeric_tails: Vec<TermUseNumericTail>,
+    pub(crate) term_use_numeric_tails: Vec<TermUseNumericTail>,
     /// Maximal event gaps composed entirely of typed stream-local references.
-    pub tagged_reference_lanes: Vec<TaggedReferenceLane>,
+    pub(crate) tagged_reference_lanes: Vec<TaggedReferenceLane>,
     /// Complete framed reference/type maps in source order.
-    pub reference_type_maps: Vec<ReferenceTypeMap>,
+    pub(crate) reference_type_maps: Vec<ReferenceTypeMap>,
     /// Complete four-reference state packets in source order.
-    pub reference_state_packets: Vec<ReferenceStatePacket>,
+    pub(crate) reference_state_packets: Vec<ReferenceStatePacket>,
     /// Complete schema reference preambles in source order.
-    pub schema_reference_preambles: Vec<SchemaReferencePreamble>,
+    pub(crate) schema_reference_preambles: Vec<SchemaReferencePreamble>,
     /// Complete reference-marker packets in source order.
-    pub reference_marker_packets: Vec<ReferenceMarkerPacket>,
+    pub(crate) reference_marker_packets: Vec<ReferenceMarkerPacket>,
     /// Complete single-byte type-150 state packets in source order.
-    pub type_150_state_packets: Vec<Type150StatePacket>,
+    pub(crate) type_150_state_packets: Vec<Type150StatePacket>,
     /// Complete inline schema declarations in source order.
-    pub inline_schema_declarations: Vec<InlineSchemaDeclaration>,
+    pub(crate) inline_schema_declarations: Vec<InlineSchemaDeclaration>,
     /// Complete schema-bound type-12 BODY states in source order.
-    pub inline_body_states: Vec<InlineBodyState>,
+    pub(crate) inline_body_states: Vec<InlineBodyState>,
 }
 
 impl std::ops::Deref for Census {
@@ -77,7 +77,7 @@ impl Census {
     }
 
     /// Complete-record counts keyed by Parasolid family name.
-    pub fn full_counts(&self) -> BTreeMap<&'static str, usize> {
+    pub(crate) fn full_counts(&self) -> BTreeMap<&'static str, usize> {
         let mut counts = BTreeMap::new();
         for record in &self.records {
             *counts.entry(record.family_name()).or_default() += 1;
@@ -86,7 +86,7 @@ impl Census {
     }
 
     /// Compact tombstone counts keyed by Parasolid family name.
-    pub fn tombstone_counts(&self) -> BTreeMap<&'static str, usize> {
+    pub(crate) fn tombstone_counts(&self) -> BTreeMap<&'static str, usize> {
         let mut counts = BTreeMap::new();
         for tombstone in &self.tombstones {
             *counts.entry(tombstone.kind.name()).or_default() += 1;

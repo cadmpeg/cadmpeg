@@ -15,17 +15,17 @@ use std::num::NonZeroU8;
 /// One exact counted branch in a bounded surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "SurfaceBranchWire", into = "SurfaceBranchWire")]
-pub(crate) struct FeatureSurfaceConstructionBranch {
-    pub(crate) id: String,
-    pub(crate) operation_label: String,
+pub(in crate::native) struct FeatureSurfaceConstructionBranch {
+    id: String,
+    pub(in crate::native) operation_label: String,
     order: NonZeroU8,
-    pub(crate) family: SurfaceFamily,
-    pub(crate) header_code: u8,
-    pub(crate) references: SurfaceBranch<Option<String>>,
+    family: SurfaceFamily,
+    header_code: u8,
+    pub(in crate::native) references: SurfaceBranch<Option<String>>,
 }
 
 impl FeatureSurfaceConstructionBranch {
-    pub(crate) fn ordinal(&self) -> u32 {
+    pub(in crate::native) fn ordinal(&self) -> u32 {
         u32::from(self.order.get()) - 1
     }
 }
@@ -159,7 +159,7 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
 }
 
 /// Resolve branch references without assigning section or guide semantics.
-pub(crate) fn feature_surface_construction_branches(
+pub(in crate::native) fn feature_surface_construction_branches(
     container: &Container,
 ) -> Vec<FeatureSurfaceConstructionBranch> {
     let indexed = container.indexed_om_sections();

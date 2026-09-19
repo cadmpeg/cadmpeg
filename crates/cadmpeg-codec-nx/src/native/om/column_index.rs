@@ -6,14 +6,14 @@ use serde::{Deserialize, Serialize};
 /// Complete target and linked row lists with a nonnegative descending index range.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ColumnIndexRowsWire", into = "ColumnIndexRowsWire")]
-pub(crate) struct ColumnIndexRows {
+pub(in crate::native) struct ColumnIndexRows {
     target_rows: Vec<String>,
     linked_rows: Vec<String>,
     first_target_index: u32,
 }
 
 impl ColumnIndexRows {
-    pub(crate) fn new(
+    pub(in crate::native) fn new(
         first_target_index: u32,
         target_rows: Vec<String>,
         linked_rows: Vec<String>,
@@ -36,15 +36,15 @@ impl ColumnIndexRows {
         })
     }
 
-    pub(crate) fn target_rows(&self) -> &[String] {
+    pub(in crate::native) fn target_rows(&self) -> &[String] {
         &self.target_rows
     }
 
-    pub(crate) fn linked_rows(&self) -> &[String] {
+    pub(in crate::native) fn linked_rows(&self) -> &[String] {
         &self.linked_rows
     }
 
-    pub(crate) fn last_target_index(&self) -> u32 {
+    pub(super) fn last_target_index(&self) -> u32 {
         self.first_target_index - (self.target_rows.len() + self.linked_rows.len()) as u32
     }
 }

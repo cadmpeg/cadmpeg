@@ -15,11 +15,11 @@ mod wire;
     try_from = "DataBlockCountedIndexLaneWire",
     into = "DataBlockCountedIndexLaneWire"
 )]
-pub(crate) struct DataBlockCountedIndexLane {
-    pub(crate) id: String,
-    pub(crate) data_block: String,
-    pub(crate) ordinal: u32,
-    pub(crate) frame: CountedLane<String, u64>,
+pub(in crate::native) struct DataBlockCountedIndexLane {
+    id: String,
+    data_block: String,
+    ordinal: u32,
+    frame: CountedLane<String, u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,16 +27,16 @@ pub(crate) struct DataBlockCountedIndexLane {
     try_from = "DataBlockAbrReferenceLaneWire",
     into = "DataBlockAbrReferenceLaneWire"
 )]
-pub(crate) struct DataBlockAbrReferenceLane {
-    pub(crate) id: String,
-    pub(crate) section_ordinal: u32,
-    pub(crate) ordinal: u32,
-    pub(crate) frame: AbrLane<String, u64>,
-    pub(crate) source_entry: String,
+pub(in crate::native) struct DataBlockAbrReferenceLane {
+    pub(in crate::native) id: String,
+    section_ordinal: u32,
+    ordinal: u32,
+    pub(in crate::native) frame: AbrLane<String, u64>,
+    source_entry: String,
 }
 
 /// Decode complete in-range counted block-index lanes from offset-only stores.
-pub(crate) fn data_block_counted_index_lanes(
+pub(in crate::native) fn data_block_counted_index_lanes(
     container: &Container,
 ) -> Vec<DataBlockCountedIndexLane> {
     container
@@ -81,7 +81,7 @@ pub(crate) fn data_block_counted_index_lanes(
 }
 
 /// Decode complete in-range `ABR` reference lanes from offset-store column storage.
-pub(crate) fn data_block_abr_reference_lanes(
+pub(in crate::native) fn data_block_abr_reference_lanes(
     container: &Container,
 ) -> Vec<DataBlockAbrReferenceLane> {
     container

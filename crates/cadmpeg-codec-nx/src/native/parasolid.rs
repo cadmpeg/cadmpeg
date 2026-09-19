@@ -15,13 +15,13 @@ use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
 use std::num::NonZeroU32;
 
-pub(crate) mod structured_value_kind;
+pub(super) mod structured_value_kind;
 use structured_value_kind::StructuredValueKind;
 
 mod field_use_wire;
 use field_use_wire::FieldUseWire;
 
-pub(crate) mod topology_attribute_kind;
+pub(super) mod topology_attribute_kind;
 use topology_attribute_kind::TopologyAttributeKind;
 
 mod entity51_wire;
@@ -30,7 +30,7 @@ use crate::parasolid::entity_references::{EntityReferences, FieldPosition};
 use crate::parasolid::unicode_value::UnicodeValue;
 use crate::printable_string::PrintableString;
 use entity51_wire::Entity51Wire;
-pub(crate) mod named_fields;
+pub(super) mod named_fields;
 use named_fields::NamedField;
 mod body_revision_wire;
 mod chart_wire;
@@ -48,9 +48,9 @@ use crate::deltas::type150_state::Type150State;
 use crate::framing::xmt_reference::NonNullXmt;
 use body_revision_wire::RevisionLengths;
 use transmit_header_wire::TransmitHeaderWire;
-pub(crate) mod group_member;
+pub(super) mod group_member;
 use group_member::GroupMemberTarget;
-pub(crate) mod group_record;
+pub(super) mod group_record;
 use crate::deltas::group::{GroupReferenceStatus, GroupSelector};
 use group_record::GroupOrigin;
 
@@ -61,25 +61,25 @@ use std::collections::{BTreeMap, BTreeSet};
 /// One complete Parasolid GROUP record with its source and owning-partition scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "group_record::GroupWire", into = "group_record::GroupWire")]
-pub struct ParasolidGroupRecord {
+pub(super) struct ParasolidGroupRecord {
     /// Globally unique source-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Exact source stream and its partition namespace.
-    pub origin: GroupOrigin,
+    pub(super) origin: GroupOrigin,
     /// Stream-local XMT identity.
-    pub xmt: u32,
+    pub(super) xmt: u32,
     /// Partition-local kernel node identity.
-    pub node_id: u32,
+    pub(super) node_id: u32,
     /// Ordered GROUP references without their framing status bytes.
-    pub references: [u32; 5],
+    pub(super) references: [u32; 5],
     /// Selector between the four leading references and the linked reference.
-    pub selector: GroupSelector,
+    pub(super) selector: GroupSelector,
     /// Status byte following the linked reference.
-    pub linked_reference_status: GroupReferenceStatus,
+    pub(super) linked_reference_status: GroupReferenceStatus,
     /// Exact serialized record length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// GROUP tag offset in the inflated source stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// One topology member in a fully closed current Parasolid GROUP chain.
@@ -88,23 +88,23 @@ pub struct ParasolidGroupRecord {
     try_from = "group_member::MemberWire",
     into = "group_member::MemberWire"
 )]
-pub struct ParasolidGroupMember {
+pub(super) struct ParasolidGroupMember {
     /// Globally unique membership identity.
-    pub id: String,
+    pub(super) id: String,
     /// Partition whose local XMT and node namespaces own the chain.
-    pub partition_stream_ordinal: u32,
+    pub(super) partition_stream_ordinal: u32,
     /// Current GROUP record XMT identity.
-    pub group_xmt: u32,
+    pub(super) group_xmt: u32,
     /// Current GROUP kernel node identity.
-    pub group_node_id: u32,
+    pub(super) group_node_id: u32,
     /// Zero-based member order from the list head to tail.
-    pub ordinal: u32,
+    pub(super) ordinal: u32,
     /// `TYPE_91` list-record XMT identity.
-    pub list_record_xmt: u32,
+    pub(super) list_record_xmt: u32,
     /// Member record XMT identity.
-    pub member_xmt: u32,
+    pub(super) member_xmt: u32,
     /// Member family with its required node and optional current identity.
-    pub target: GroupMemberTarget,
+    pub(super) target: GroupMemberTarget,
 }
 
 /// Retain GROUP records from partition streams and raw deltas overlays.
@@ -112,7 +112,7 @@ pub struct ParasolidGroupMember {
 /// Deltas records use the partition pairing already selected for topology
 /// reconstruction. A record in an unpaired deltas stream remains exact native
 /// evidence but has no partition-local namespace assignment.
-pub(crate) fn parasolid_group_records(
+pub(super) fn parasolid_group_records(
     streams: &[Stream],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     deltas_records: &[ParasolidDeltasRecord],
@@ -318,7 +318,7 @@ fn apply_group_state_events(records: &mut BTreeMap<u32, crate::deltas::Record>, 
 }
 
 /// Resolve current GROUP membership from partition and ordered deltas events.
-pub(crate) fn parasolid_group_members(
+pub(super) fn parasolid_group_members(
     streams: &[Stream],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     parsed: &ParsedStreams<'_>,
@@ -357,19 +357,19 @@ pub(crate) fn parasolid_group_members(
     try_from = "ParasolidDeltasRecordWire",
     into = "ParasolidDeltasRecordWire"
 )]
-pub struct ParasolidDeltasRecord {
+pub(super) struct ParasolidDeltasRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Semantic family, including POINT position and GROUP controls.
-    pub family: crate::deltas::record_family::RecordFamily,
+    pub(super) family: crate::deltas::record_family::RecordFamily,
     /// Stream-local XMT identity.
-    pub xmt: u32,
+    pub(super) xmt: u32,
     /// Exact serialized record length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// Record tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -587,17 +587,17 @@ mod deltas_record_wire_tests {
     try_from = "ParasolidDeltasTombstoneWire",
     into = "ParasolidDeltasTombstoneWire"
 )]
-pub struct ParasolidDeltasTombstone {
+pub(super) struct ParasolidDeltasTombstone {
     /// Globally unique event identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Numeric Parasolid node type.
-    pub kind: crate::deltas::record_kind::RecordKind,
+    kind: crate::deltas::record_kind::RecordKind,
     /// Stream-local deleted XMT identity.
-    pub xmt: u32,
+    xmt: u32,
     /// Record tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -658,52 +658,52 @@ impl TryFrom<ParasolidDeltasTombstoneWire> for ParasolidDeltasTombstone {
     try_from = "body_revision_wire::RevisionWire",
     into = "body_revision_wire::RevisionWire"
 )]
-pub struct ParasolidDeltasBodyRevision {
+pub(super) struct ParasolidDeltasBodyRevision {
     /// Globally unique revision identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local BODY XMT identity.
-    pub xmt: NonNullXmt,
+    xmt: NonNullXmt,
     /// Monotonic kernel revision identity.
-    pub node_id: u32,
+    node_id: u32,
     /// Eight ordered BODY references.
-    pub references: [u32; 8],
+    references: [u32; 8],
     /// Prefix and state-tail lengths with a representable total.
-    pub lengths: RevisionLengths,
+    lengths: RevisionLengths,
     /// SHA-256 of the exact bounded state-tail bytes.
-    pub state_tail_sha256: crate::native::hex::Sha256Hex,
+    state_tail_sha256: crate::native::hex::Sha256Hex,
     /// BODY tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Parasolid transmit header at the start of a deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "TransmitHeaderWire", into = "TransmitHeaderWire")]
-pub struct ParasolidDeltasTransmitHeader {
+pub(super) struct ParasolidDeltasTransmitHeader {
     /// Globally unique header identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
-    pub state: TransmitState,
+    pub(super) stream_ordinal: u32,
+    state: TransmitState,
     /// Exact header byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact header bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
 }
 
 /// Null references at the boundary of a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "tail_wire::NullTailWire", into = "tail_wire::NullTailWire")]
-pub struct ParasolidDeltasTerminalNullReferences {
+pub(super) struct ParasolidDeltasTerminalNullReferences {
     /// Globally unique trailer identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Complete two- or four-reference trailer form.
-    pub form: NullTailForm,
+    form: NullTailForm,
     /// First trailer byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Count-selected numeric lane following one deltas `term_use` endpoint.
@@ -712,54 +712,54 @@ pub struct ParasolidDeltasTerminalNullReferences {
     try_from = "tail_wire::NumericTailWire",
     into = "tail_wire::NumericTailWire"
 )]
-pub struct ParasolidDeltasTermUseNumericTail {
+pub(super) struct ParasolidDeltasTermUseNumericTail {
     /// Globally unique numeric-tail identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// XMT identity of the owning `term_use` record.
-    pub term_use_xmt: u32,
+    term_use_xmt: u32,
     /// Complete finite numeric tail for its endpoint count.
-    pub values: NumericTailValues,
+    values: NumericTailValues,
     /// First numeric byte following the complete `term_use` record.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Maximal deltas gap composed entirely of typed stream-local references.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasTaggedReferenceLane {
+pub(super) struct ParasolidDeltasTaggedReferenceLane {
     /// Globally unique reference-lane identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Ordered `(Parasolid record kind, XMT identity)` references.
-    pub references: TaggedReferences,
+    references: TaggedReferences,
     /// Exact reference-lane byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact reference-lane bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First byte of the first tagged reference.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Framed reference/type map in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasReferenceTypeMap {
+pub(super) struct ParasolidDeltasReferenceTypeMap {
     /// Globally unique map identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Ordered `(XMT identity, Parasolid type code)` entries.
-    pub entries: MapEntries,
+    entries: MapEntries,
     /// Type code of the optional terminal map target.
     #[serde(deserialize_with = "deserialize_map_target_kind")]
-    pub target_kind: Option<std::num::NonZeroU16>,
+    target_kind: Option<std::num::NonZeroU16>,
     /// Exact map byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact map bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First map byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 fn deserialize_map_target_kind<'de, D>(
@@ -779,143 +779,143 @@ where
 
 /// Reference-state packet in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasReferenceStatePacket {
+pub(super) struct ParasolidDeltasReferenceStatePacket {
     /// Globally unique packet identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Ordered packet frames.
-    pub frames: StateFrames,
+    frames: StateFrames,
     /// Whether the packet ends with `ref(1)[3], u32(1)`.
-    pub terminal: bool,
+    terminal: bool,
     /// Exact packet byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First packet byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Schema reference preamble in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasSchemaReferencePreamble {
+pub(super) struct ParasolidDeltasSchemaReferencePreamble {
     /// Globally unique preamble identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     #[serde(flatten)]
-    pub state: PreambleState,
+    state: PreambleState,
     /// Exact preamble byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact preamble bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First preamble byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Reference-marker packet in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasReferenceMarkerPacket {
+pub(super) struct ParasolidDeltasReferenceMarkerPacket {
     /// Globally unique packet identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Non-null stream-local XMT reference.
-    pub reference: NonNullXmt,
+    reference: NonNullXmt,
     /// Serialized marker byte.
-    pub marker: ReferenceMarker,
+    marker: ReferenceMarker,
     /// Exact packet byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First packet byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Single-byte type-150 state packet in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidDeltasType150StatePacket {
+pub(super) struct ParasolidDeltasType150StatePacket {
     /// Globally unique packet identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Validated references, marker, and finite state values.
     #[serde(flatten)]
-    pub state: Type150State,
+    state: Type150State,
     /// Exact packet byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First packet byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Inline schema declaration in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidDeltasInlineSchemaDeclaration {
+pub(super) struct ParasolidDeltasInlineSchemaDeclaration {
     /// Globally unique declaration identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Schema-specific declaration body.
     #[serde(flatten)]
-    pub fields: InlineSchemaFields,
+    fields: InlineSchemaFields,
     /// Exact declaration byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact declaration bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First declaration byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Schema-bound type-12 `BODY` instance state in a Parasolid deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasInlineBodyState {
+pub(super) struct ParasolidDeltasInlineBodyState {
     /// Globally unique state identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Serialized state form.
-    pub fields: InlineBodyStateFields,
+    fields: InlineBodyStateFields,
     /// Exact state byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the exact state bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First state byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Maximal inflated-stream span outside every admitted deltas event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidDeltasResidualSpan {
+pub(super) struct ParasolidDeltasResidualSpan {
     /// Globally unique residual-span identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Exact residual byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// SHA-256 of the residual bytes.
-    pub sha256: crate::native::hex::Sha256Hex,
+    sha256: crate::native::hex::Sha256Hex,
     /// First residual byte offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
-pub(crate) struct ParasolidDeltasEvents {
-    pub(crate) transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
-    pub(crate) terminal_null_references: Vec<ParasolidDeltasTerminalNullReferences>,
-    pub(crate) records: Vec<ParasolidDeltasRecord>,
-    pub(crate) tombstones: Vec<ParasolidDeltasTombstone>,
-    pub(crate) body_revisions: Vec<ParasolidDeltasBodyRevision>,
-    pub(crate) term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
-    pub(crate) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
-    pub(crate) reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
-    pub(crate) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
-    pub(crate) schema_reference_preambles: Vec<ParasolidDeltasSchemaReferencePreamble>,
-    pub(crate) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
-    pub(crate) type_150_state_packets: Vec<ParasolidDeltasType150StatePacket>,
-    pub(crate) inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
-    pub(crate) inline_body_states: Vec<ParasolidDeltasInlineBodyState>,
-    pub(crate) residual_spans: Vec<ParasolidDeltasResidualSpan>,
+pub(in crate::native) struct ParasolidDeltasEvents {
+    pub(super) transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
+    pub(super) terminal_null_references: Vec<ParasolidDeltasTerminalNullReferences>,
+    pub(super) records: Vec<ParasolidDeltasRecord>,
+    pub(super) tombstones: Vec<ParasolidDeltasTombstone>,
+    pub(super) body_revisions: Vec<ParasolidDeltasBodyRevision>,
+    pub(super) term_use_numeric_tails: Vec<ParasolidDeltasTermUseNumericTail>,
+    pub(super) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
+    pub(super) reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
+    pub(super) reference_state_packets: Vec<ParasolidDeltasReferenceStatePacket>,
+    pub(super) schema_reference_preambles: Vec<ParasolidDeltasSchemaReferencePreamble>,
+    pub(super) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
+    pub(super) type_150_state_packets: Vec<ParasolidDeltasType150StatePacket>,
+    pub(super) inline_schema_declarations: Vec<ParasolidDeltasInlineSchemaDeclaration>,
+    pub(super) inline_body_states: Vec<ParasolidDeltasInlineBodyState>,
+    pub(super) residual_spans: Vec<ParasolidDeltasResidualSpan>,
 }
 
 /// Retain every completely bounded event in every Parasolid deltas stream.
@@ -936,7 +936,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
 /// The function consumes the census vector after semantic construction has
 /// finished, so the large record walk is performed once and its owned records
 /// are moved directly into native output.
-pub(crate) fn parasolid_deltas_events_with_censuses(
+pub(super) fn parasolid_deltas_events_with_censuses(
     streams: &[Stream],
     mut delta_censuses: Vec<Option<Census>>,
 ) -> ParasolidDeltasEvents {
@@ -1269,7 +1269,7 @@ fn push_deltas_residual_span(
 /// record view. It owns the stream loop, the `nx:s{ordinal}:{ID_STEM}#{xmt}`
 /// identity, and the sort by identity; each family supplies only its cached row
 /// slice and its record constructor.
-pub(crate) trait ParasolidStreamRecords {
+trait ParasolidStreamRecords {
     /// Cached row type read from the stream's record [`StreamView`].
     type Row: Copy;
     /// Emitted native record type.
@@ -1289,9 +1289,7 @@ pub(crate) trait ParasolidStreamRecords {
 /// Run the cached-view record skeleton for one family: map every cached row of
 /// every stream to a record, then sort by identity. Non-Parasolid streams hold
 /// empty views, so no per-stream guard is needed.
-pub(crate) fn per_parasolid_stream<P: ParasolidStreamRecords>(
-    parsed: &ParsedStreams,
-) -> Vec<P::Record> {
+fn per_parasolid_stream<P: ParasolidStreamRecords>(parsed: &ParsedStreams) -> Vec<P::Record> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in parsed.iter() {
         for row in P::rows(stream.view_for_records()) {
@@ -1307,7 +1305,7 @@ pub(crate) fn per_parasolid_stream<P: ParasolidStreamRecords>(
 /// Parasolid stream's inflated bytes. It owns the `is_parasolid()` guard, the
 /// stream loop, the `nx:s{ordinal}:{ID_STEM}#{xmt}` identity, and the sort; each
 /// family supplies only its scanner and its record constructor.
-pub(crate) trait ParasolidScanRecords {
+trait ParasolidScanRecords {
     /// Scanned row type produced from the inflated stream bytes.
     type Row;
     /// Emitted native record type.
@@ -1326,7 +1324,7 @@ pub(crate) trait ParasolidScanRecords {
 
 /// Run the fresh-scan record skeleton for one family: scan every Parasolid
 /// stream, map each scanned row to a record, then sort by identity.
-pub(crate) fn per_parasolid_scan<P: ParasolidScanRecords>(streams: &[Stream]) -> Vec<P::Record> {
+fn per_parasolid_scan<P: ParasolidScanRecords>(streams: &[Stream]) -> Vec<P::Record> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
@@ -1343,26 +1341,26 @@ pub(crate) fn per_parasolid_scan<P: ParasolidScanRecords>(streams: &[Stream]) ->
 
 /// Complete typed source record for one Parasolid offset surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidOffsetSurfaceRecord {
+pub(super) struct ParasolidOffsetSurfaceRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Cross-reference index of the offset surface.
-    pub xmt: u32,
+    xmt: u32,
     /// Serialized `V`, `I`, or `U` discriminator.
-    pub discriminator: crate::topology::OffsetSurfaceDiscriminator,
+    discriminator: crate::topology::OffsetSurfaceDiscriminator,
     /// Serialized true-offset flag.
-    pub true_offset: bool,
+    true_offset: bool,
     /// Checked support reference and signed model distance.
     #[serde(flatten)]
-    pub state: OffsetSurfaceState,
+    state: OffsetSurfaceState,
     /// Record tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Decode complete typed source records for Parasolid offset surfaces.
-pub(crate) fn parasolid_offset_surface_records(
+pub(super) fn parasolid_offset_surface_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidOffsetSurfaceRecord> {
     per_parasolid_stream::<ParasolidOffsetSurfaceRecord>(parsed)
@@ -1396,21 +1394,21 @@ impl ParasolidStreamRecords for ParasolidOffsetSurfaceRecord {
 
 /// Complete typed source record for one Parasolid trimmed curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidTrimmedCurveRecord {
+pub(super) struct ParasolidTrimmedCurveRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Cross-reference index of the trimmed curve.
-    pub xmt: u32,
+    xmt: u32,
     #[serde(flatten)]
-    pub state: crate::topology::trimmed_curve_state::TrimmedCurveState,
+    state: crate::topology::trimmed_curve_state::TrimmedCurveState,
     /// Record tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Decode complete typed source records for Parasolid trimmed curves.
-pub(crate) fn parasolid_trimmed_curve_records(
+pub(super) fn parasolid_trimmed_curve_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidTrimmedCurveRecord> {
     per_parasolid_stream::<ParasolidTrimmedCurveRecord>(parsed)
@@ -1442,21 +1440,21 @@ impl ParasolidStreamRecords for ParasolidTrimmedCurveRecord {
 
 /// Complete typed source record for one Parasolid surface curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidSurfaceCurveRecord {
+pub(super) struct ParasolidSurfaceCurveRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Cross-reference index of the surface curve.
-    pub xmt: u32,
+    xmt: u32,
     #[serde(flatten)]
-    pub state: crate::topology::surface_curve_state::SurfaceCurveState,
+    state: crate::topology::surface_curve_state::SurfaceCurveState,
     /// Record tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Decode complete typed source records for Parasolid surface curves.
-pub(crate) fn parasolid_surface_curve_records(
+pub(super) fn parasolid_surface_curve_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidSurfaceCurveRecord> {
     per_parasolid_stream::<ParasolidSurfaceCurveRecord>(parsed)
@@ -1488,21 +1486,21 @@ impl ParasolidStreamRecords for ParasolidSurfaceCurveRecord {
 
 /// Complete typed source record for one Parasolid blend-bound bridge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidBlendBoundRecord {
+pub(super) struct ParasolidBlendBoundRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     #[serde(flatten)]
-    pub state: crate::intersection::blend_bound_state::BlendBoundState,
+    state: crate::intersection::blend_bound_state::BlendBoundState,
     /// Serialized partition/deltas and direct/escaped framing.
-    pub framing: crate::intersection::BlendBoundFraming,
+    framing: crate::intersection::BlendBoundFraming,
     /// Record tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Decode complete typed source records for Parasolid blend-bound bridges.
-pub fn parasolid_blend_bound_records(streams: &[Stream]) -> Vec<ParasolidBlendBoundRecord> {
+pub(super) fn parasolid_blend_bound_records(streams: &[Stream]) -> Vec<ParasolidBlendBoundRecord> {
     per_parasolid_scan::<ParasolidBlendBoundRecord>(streams)
 }
 
@@ -1536,21 +1534,21 @@ impl ParasolidScanRecords for ParasolidBlendBoundRecord {
     try_from = "ParasolidTermUseRecordWire",
     into = "ParasolidTermUseRecordWire"
 )]
-pub struct ParasolidTermUseRecord {
+pub(super) struct ParasolidTermUseRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Cross-reference index of the endpoint.
-    pub xmt: u32,
+    xmt: u32,
     /// Two-byte endpoint-form discriminator as printable ASCII.
-    pub form: crate::intersection::TermUseForm,
+    form: crate::intersection::TermUseForm,
     /// Endpoint position in millimetres.
-    pub point: FinitePoint,
+    point: FinitePoint,
     /// Serialized record framing.
-    pub framing: crate::intersection::TermUseFraming,
+    framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1619,7 +1617,7 @@ mod term_use_wire_tests {
 }
 
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
-pub fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRecord> {
+pub(super) fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRecord> {
     per_parasolid_scan::<ParasolidTermUseRecord>(streams)
 }
 
@@ -1655,23 +1653,23 @@ impl ParasolidScanRecords for ParasolidTermUseRecord {
     try_from = "support_uv_wire::SupportUvWire",
     into = "support_uv_wire::SupportUvWire"
 )]
-pub struct ParasolidSupportUvRecord {
+pub(super) struct ParasolidSupportUvRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Cross-reference index of the values array.
-    pub xmt: u32,
+    xmt: u32,
     /// Exact finite packed support tuples.
-    pub values: crate::intersection::support_uv_values::SupportUvValues,
+    values: crate::intersection::support_uv_values::SupportUvValues,
     /// Serialized record framing.
-    pub framing: crate::intersection::SupportUvFraming,
+    framing: crate::intersection::SupportUvFraming,
     /// Tag or inline-payload offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Decode complete typed source records for Parasolid support-UV arrays.
-pub fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportUvRecord> {
+pub(super) fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportUvRecord> {
     per_parasolid_scan::<ParasolidSupportUvRecord>(streams)
 }
 
@@ -1703,25 +1701,25 @@ impl ParasolidScanRecords for ParasolidSupportUvRecord {
 /// Complete typed source record for one physical Parasolid `CHART_s` record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "chart_wire::ChartWire", into = "chart_wire::ChartWire")]
-pub struct ParasolidChartRecord {
+pub(super) struct ParasolidChartRecord {
     /// Globally unique physical-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Cross-reference index of the chart.
-    pub xmt: u32,
+    xmt: u32,
     /// Checked chart preamble.
-    pub preamble: crate::intersection::chart_samples::ChartPreamble,
+    preamble: crate::intersection::chart_samples::ChartPreamble,
     /// Points with exactly the fields admitted by their Hvec layout.
-    pub data: crate::intersection::chart_samples::SourceChartData,
+    data: crate::intersection::chart_samples::SourceChartData,
     /// Serialized record framing.
-    pub framing: crate::intersection::ChartFraming,
+    framing: crate::intersection::ChartFraming,
     /// Type-tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Decode every complete physical Parasolid chart source record.
-pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> {
+pub(super) fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
@@ -1749,27 +1747,27 @@ pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> 
 
 /// Complete typed source record for one Parasolid surface-intersection curve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidIntersectionRecord {
+pub(super) struct ParasolidIntersectionRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Cross-reference index of the construction.
-    pub xmt: u32,
+    xmt: u32,
     /// Five ordered common-header references.
-    pub header_references: [u32; 5],
+    header_references: [u32; 5],
     /// Serialized orientation sense.
-    pub sense: bool,
+    sense: bool,
     /// Six ordered support and witness references.
-    pub construction_references: [u32; 6],
+    construction_references: [u32; 6],
     /// Whether the record uses the single-byte delta-twin tag.
-    pub delta_twin: bool,
+    pub(super) delta_twin: bool,
     /// Record tag offset in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Decode complete typed source records for retained intersection constructions.
-pub(crate) fn parasolid_intersection_records(
+pub(super) fn parasolid_intersection_records(
     parsed: &ParsedStreams<'_>,
 ) -> Vec<ParasolidIntersectionRecord> {
     per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)
@@ -1808,18 +1806,18 @@ impl ParasolidStreamRecords for ParasolidIntersectionRecord {
 
 /// Complete typed type-56 rolling-ball blend-surface record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidBlendSurfaceRecord {
+pub(super) struct ParasolidBlendSurfaceRecord {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based embedded Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local `BLEND_SURF` identity.
-    pub xmt: u32,
+    xmt: u32,
     /// Checked supports, offsets, and thumb weights.
     #[serde(flatten)]
-    pub state: BlendSurfaceState,
+    state: BlendSurfaceState,
     /// Offset of the type tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 #[cfg(test)]
@@ -1861,33 +1859,33 @@ fn is_default_legal_owner_flag_count(value: &u8) -> bool {
     try_from = "ParasolidAttributeDefinitionWire",
     into = "ParasolidAttributeDefinitionWire"
 )]
-pub struct ParasolidAttributeDefinition {
+pub(super) struct ParasolidAttributeDefinition {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based embedded stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local definition record identity.
-    pub xmt: NonNullXmt,
+    pub(super) xmt: NonNullXmt,
     /// Optional stream-local next-definition target.
-    pub next_definition_xmt: Option<XmtTarget>,
+    pub(super) next_definition_xmt: Option<XmtTarget>,
     /// Stream-local type-79 identifier identity.
-    pub identifier_xmt: NonNullXmt,
+    pub(super) identifier_xmt: NonNullXmt,
     /// Offset of the resolved type-79 identifier in the inflated stream.
-    pub identifier_inflated_offset: u64,
+    pub(super) identifier_inflated_offset: u64,
     /// Exact printable attribute class name.
-    pub name: PrintableString<String>,
+    pub(super) name: PrintableString<String>,
     /// Numeric attribute type identifier.
-    pub type_id: NonZeroU32,
+    pub(super) type_id: NonZeroU32,
     /// Ordered actions for the eight logged event families.
-    pub action_codes: [AttributeAction; 8],
+    pub(super) action_codes: [AttributeAction; 8],
     /// Optional stream-local field-name-list target.
-    pub field_names_xmt: Option<XmtTarget>,
+    pub(super) field_names_xmt: Option<XmtTarget>,
     /// Ordered legal-owner flags.
-    pub legal_owner_flags: crate::parasolid::LegalOwnerFlags,
+    pub(super) legal_owner_flags: crate::parasolid::LegalOwnerFlags,
     /// One serialized code for every declared field.
-    pub field_codes: Vec<AttributeField>,
+    pub(super) field_codes: Vec<AttributeField>,
     /// Offset of the declaration in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1987,19 +1985,19 @@ impl TryFrom<ParasolidAttributeDefinitionWire> for ParasolidAttributeDefinition 
 
 /// Counted Parasolid type-99 field-name reference record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidFieldNamesRecord {
+pub(super) struct ParasolidFieldNamesRecord {
     /// Globally unique native-record identity.
-    pub id: String,
+    id: String,
     /// Zero-based embedded stream ordinal.
-    pub stream_ordinal: u32,
+    stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    xmt: NonNullXmt,
     /// Ordered stream-local character or Unicode value references.
-    pub name_xmts: NameReferences,
+    name_xmts: NameReferences,
     /// Exact framed record length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    inflated_offset: u64,
 }
 
 /// Complete type-80 declaration-to-field-name-list relation.
@@ -2008,122 +2006,122 @@ pub struct ParasolidFieldNamesRecord {
     try_from = "named_fields::FieldNamesWire",
     into = "named_fields::FieldNamesWire"
 )]
-pub struct ParasolidAttributeFieldNames {
+pub(super) struct ParasolidAttributeFieldNames {
     /// Globally unique relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based embedded stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Owning type-80 declaration.
-    pub attribute_definition: String,
+    pub(super) attribute_definition: String,
     /// Uniquely resolved type-99 field-name record.
-    pub field_names_record: String,
+    pub(super) field_names_record: String,
     /// Ordered exact names paired with their resolved value records.
-    pub fields: Vec<NamedField>,
+    pub(super) fields: Vec<NamedField>,
 }
 
 /// Explicit topology-record ownership of one Parasolid attribute list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidTopologyAttributeListReference {
+pub(super) struct ParasolidTopologyAttributeListReference {
     /// Globally unique reference identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Parasolid topology record type.
-    pub topology_type: TopologyAttributeKind,
+    pub(super) topology_type: TopologyAttributeKind,
     /// Stream-local topology-record identity.
-    pub topology_xmt: u32,
+    pub(super) topology_xmt: u32,
     /// Stream-local attribute-list identity.
-    pub attribute_list_xmt: u32,
+    pub(super) attribute_list_xmt: u32,
     /// Uniquely resolved type-81 attribute-list record.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_attribute_list_record"
     )]
-    pub attribute_list_record: Option<String>,
+    pub(super) attribute_list_record: Option<String>,
     /// Offset of the attribute-list field in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Framed Parasolid type-81 entity/attribute-list record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Entity51Wire", into = "Entity51Wire")]
-pub struct ParasolidEntity51Record {
+pub(super) struct ParasolidEntity51Record {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    xmt: NonNullXmt,
     /// Serialized sequence value.
-    pub sequence: NonZeroU32,
+    sequence: NonZeroU32,
     /// Stream-local type-80 attribute-definition identity.
-    pub definition_xmt: u32,
+    definition_xmt: u32,
     /// Five fixed leading stream-local references.
-    pub leading_references: [u32; 5],
+    leading_references: [u32; 5],
     /// Variable trailing stream-local references counted by `flags`.
-    pub trailing_references: EntityReferences,
+    trailing_references: EntityReferences,
     /// Exact framed record length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Self-framed printable Parasolid type-84 string record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidEntity54StringRecord {
+pub(super) struct ParasolidEntity54StringRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    xmt: NonNullXmt,
     /// Exact nonempty printable value.
-    pub value: PrintableString<String>,
+    pub(super) value: PrintableString<String>,
     /// Exact framed record length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Counted Parasolid type-82 unsigned-integer record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidEntity52IntegerRecord {
+pub(super) struct ParasolidEntity52IntegerRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    pub(super) xmt: NonNullXmt,
     /// Ordered big-endian unsigned values.
-    pub values: CountedValues<u32>,
+    pub(super) values: CountedValues<u32>,
     /// Exact framed record length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Counted Parasolid type-83 finite binary64 record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidEntity53DoubleRecord {
+pub(super) struct ParasolidEntity53DoubleRecord {
     /// Globally unique record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    pub(super) xmt: NonNullXmt,
     /// Ordered finite big-endian binary64 values.
-    pub values: CountedValues<f64>,
+    pub(super) values: CountedValues<f64>,
     /// Exact framed record length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Parasolid vector-shaped attribute-value family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ParasolidVectorValueKind {
+pub(super) enum ParasolidVectorValueKind {
     /// Type-85 point values.
     Points,
     /// Type-86 free-vector values.
@@ -2134,55 +2132,55 @@ pub enum ParasolidVectorValueKind {
 
 /// Counted Parasolid type-85, type-86, or type-89 vector-shaped value record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidEntityVectorRecord {
+pub(super) struct ParasolidEntityVectorRecord {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Exact value family.
-    pub kind: ParasolidVectorValueKind,
+    pub(super) kind: ParasolidVectorValueKind,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    pub(super) xmt: NonNullXmt,
     /// Ordered finite xyz values.
-    pub values: CountedValues<[f64; 3]>,
+    pub(super) values: CountedValues<[f64; 3]>,
     /// Exact framed record length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Counted Parasolid type-87 axis-value record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParasolidEntity57AxisRecord {
+pub(super) struct ParasolidEntity57AxisRecord {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    pub(super) xmt: NonNullXmt,
     /// Ordered axes, each retaining its two serialized xyz vectors.
-    pub values: CountedValues<[[f64; 3]; 2]>,
+    pub(super) values: CountedValues<[[f64; 3]; 2]>,
     /// Exact framed record length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Counted Parasolid type-88 tag-value record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidEntity58TagRecord {
+pub(super) struct ParasolidEntity58TagRecord {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    pub(super) xmt: NonNullXmt,
     /// Ordered exact tag values.
-    pub values: CountedValues<u32>,
+    pub(super) values: CountedValues<u32>,
     /// Exact framed record length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Counted Parasolid type-98 Unicode-value record.
@@ -2191,19 +2189,19 @@ pub struct ParasolidEntity58TagRecord {
     try_from = "ParasolidEntity62UnicodeRecordWire",
     into = "ParasolidEntity62UnicodeRecordWire"
 )]
-pub struct ParasolidEntity62UnicodeRecord {
+pub(super) struct ParasolidEntity62UnicodeRecord {
     /// Globally unique native-record identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: NonNullXmt,
+    pub(super) xmt: NonNullXmt,
     /// Validated Unicode scalar string.
-    pub value: UnicodeValue,
+    pub(super) value: UnicodeValue,
     /// Exact framed record length.
-    pub byte_len: u64,
+    pub(super) byte_len: u64,
     /// Offset of the record tag in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2255,22 +2253,22 @@ impl TryFrom<ParasolidEntity62UnicodeRecordWire> for ParasolidEntity62UnicodeRec
 }
 
 /// Attribute-value records discovered by one pass over the Parasolid streams.
-pub(crate) struct ParasolidEntityValueRecords {
-    pub(crate) integers: Vec<ParasolidEntity52IntegerRecord>,
-    pub(crate) doubles: Vec<ParasolidEntity53DoubleRecord>,
-    pub(crate) strings: Vec<ParasolidEntity54StringRecord>,
-    pub(crate) vectors: Vec<ParasolidEntityVectorRecord>,
-    pub(crate) axes: Vec<ParasolidEntity57AxisRecord>,
-    pub(crate) tags: Vec<ParasolidEntity58TagRecord>,
-    pub(crate) unicode: Vec<ParasolidEntity62UnicodeRecord>,
+pub(in crate::native) struct ParasolidEntityValueRecords {
+    pub(super) integers: Vec<ParasolidEntity52IntegerRecord>,
+    pub(super) doubles: Vec<ParasolidEntity53DoubleRecord>,
+    pub(super) strings: Vec<ParasolidEntity54StringRecord>,
+    pub(super) vectors: Vec<ParasolidEntityVectorRecord>,
+    pub(super) axes: Vec<ParasolidEntity57AxisRecord>,
+    pub(super) tags: Vec<ParasolidEntity58TagRecord>,
+    pub(super) unicode: Vec<ParasolidEntity62UnicodeRecord>,
     /// Value-record frames whose payload did not materialize.
-    pub(crate) unmaterialized: Vec<crate::parasolid::value_records::UnmaterializedValueRecord>,
+    pub(super) unmaterialized: Vec<crate::parasolid::value_records::UnmaterializedValueRecord>,
 }
 
 /// Numeric value-record family referenced by a type-81 record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ParasolidEntity51NumericKind {
+pub(super) enum ParasolidEntity51NumericKind {
     /// Type-82 unsigned-integer lane.
     UnsignedIntegers,
     /// Type-83 binary64 lane.
@@ -2279,84 +2277,84 @@ pub enum ParasolidEntity51NumericKind {
 
 /// Exact type-81 reference to one uniquely resolved numeric value record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidEntity51NumericUse {
+pub(super) struct ParasolidEntity51NumericUse {
     /// Globally unique use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Owning type-81 record.
-    pub entity_51_record: String,
+    pub(super) entity_51_record: String,
     /// Zero-based position in the type-81 reference lane.
     #[serde(rename = "reference_ordinal")]
-    pub position: FieldPosition,
+    pub(super) position: FieldPosition,
     /// Stream-local referenced xmt.
-    pub referenced_xmt: NonNullXmt,
+    pub(super) referenced_xmt: NonNullXmt,
     /// Numeric record family.
-    pub kind: ParasolidEntity51NumericKind,
+    pub(super) kind: ParasolidEntity51NumericKind,
     /// Uniquely resolved numeric record.
-    pub value_record: String,
+    pub(super) value_record: String,
     /// Offset of the owning type-81 record in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Exact type-81 reference to a uniquely resolved type-84 string record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidEntity51StringUse {
+pub(super) struct ParasolidEntity51StringUse {
     /// Globally unique use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Owning type-81 record.
-    pub entity_51_record: String,
+    pub(super) entity_51_record: String,
     /// Zero-based position in the type-81 reference lane.
     #[serde(rename = "reference_ordinal")]
-    pub position: FieldPosition,
+    pub(super) position: FieldPosition,
     /// Stream-local referenced xmt.
-    pub referenced_xmt: NonNullXmt,
+    referenced_xmt: NonNullXmt,
     /// Uniquely resolved type-84 string record.
-    pub string_record: String,
+    pub(super) string_record: String,
     /// Offset of the owning type-81 record in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Exact type-81 reference to one uniquely resolved structured value record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ParasolidEntity51StructuredUse {
+pub(super) struct ParasolidEntity51StructuredUse {
     /// Globally unique use identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Owning type-81 record.
-    pub entity_51_record: String,
+    pub(super) entity_51_record: String,
     /// Zero-based position in the type-81 reference lane.
     #[serde(rename = "reference_ordinal")]
-    pub position: FieldPosition,
+    pub(super) position: FieldPosition,
     /// Stream-local referenced xmt.
-    pub referenced_xmt: NonNullXmt,
+    pub(super) referenced_xmt: NonNullXmt,
     /// Structured value-record family.
-    pub kind: StructuredValueKind,
+    pub(super) kind: StructuredValueKind,
     /// Uniquely resolved structured value record.
-    pub value_record: String,
+    pub(super) value_record: String,
     /// Offset of the owning type-81 record in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Resolved registered class of one Parasolid type-81 attribute instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(into = "ParasolidAttributeClassUseWire")]
-pub struct ParasolidAttributeClassUse {
+pub(super) struct ParasolidAttributeClassUse {
     /// Globally unique relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Type-81 attribute-instance record.
-    pub entity_51_record: String,
+    entity_51_record: String,
     /// Stream-local XMT of the matched type-80 definition.
-    pub definition_xmt: NonNullXmt,
+    definition_xmt: NonNullXmt,
     /// Uniquely matched attribute definition.
-    pub attribute_definition: String,
+    attribute_definition: String,
     /// Offset of the owning type-81 record in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2383,7 +2381,7 @@ impl From<ParasolidAttributeClassUse> for ParasolidAttributeClassUseWire {
 /// Value-record family assigned to one declared Parasolid attribute field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ParasolidAttributeFieldValueKind {
+pub(super) enum ParasolidAttributeFieldValueKind {
     /// Type-82 integer values.
     UnsignedIntegers,
     /// Type-83 binary64 values.
@@ -2405,7 +2403,7 @@ pub enum ParasolidAttributeFieldValueKind {
 }
 
 impl ParasolidAttributeFieldValueKind {
-    pub(crate) fn field_code(self) -> AttributeField {
+    pub(super) fn field_code(self) -> AttributeField {
         match self {
             Self::UnsignedIntegers => AttributeField::Integer,
             Self::Doubles => AttributeField::Real,
@@ -2423,49 +2421,49 @@ impl ParasolidAttributeFieldValueKind {
 /// One uniquely typed type-81 field reference joined to its type-80 declaration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "FieldUseWire", into = "FieldUseWire")]
-pub struct ParasolidAttributeFieldUse {
+pub(super) struct ParasolidAttributeFieldUse {
     /// Globally unique relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Zero-based inflated Parasolid stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Resolved class relation for the attribute instance.
-    pub attribute_class_use: String,
+    pub(super) attribute_class_use: String,
     /// Type-81 attribute-instance record.
-    pub entity_51_record: String,
+    pub(super) entity_51_record: String,
     /// Uniquely matched attribute definition.
-    pub attribute_definition: String,
+    pub(super) attribute_definition: String,
     /// Position in the field declaration and complete type-81 reference lane.
-    pub position: FieldPosition,
+    pub(super) position: FieldPosition,
     /// Resolved value-record family.
-    pub value_kind: ParasolidAttributeFieldValueKind,
+    pub(super) value_kind: ParasolidAttributeFieldValueKind,
     /// Type-81-to-value relation carrying this field.
-    pub value_use: String,
+    pub(super) value_use: String,
     /// Uniquely resolved value record.
-    pub value_record: String,
+    pub(super) value_record: String,
     /// Offset of the owning type-81 record in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 /// Resolved class of one topology-owned Parasolid attribute instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(into = "ParasolidTopologyAttributeClassUseWire")]
-pub struct ParasolidTopologyAttributeClassUse {
+pub(super) struct ParasolidTopologyAttributeClassUse {
     /// Globally unique relation identity.
-    pub id: String,
+    pub(super) id: String,
     /// Owning topology-to-attribute relation.
-    pub topology_attribute_reference: String,
+    pub(super) topology_attribute_reference: String,
     /// Topology-owned type-81 attribute-instance record.
-    pub entity_51_record: String,
+    pub(super) entity_51_record: String,
     /// Resolved class relation for the attribute instance.
-    pub attribute_class_use: String,
+    pub(super) attribute_class_use: String,
     /// Stream-local XMT of the matched type-80 definition.
-    pub definition_xmt: NonNullXmt,
+    pub(super) definition_xmt: NonNullXmt,
     /// Uniquely matched attribute definition.
-    pub attribute_definition: String,
+    pub(super) attribute_definition: String,
     /// Zero-based source stream ordinal.
-    pub stream_ordinal: u32,
+    pub(super) stream_ordinal: u32,
     /// Offset of the owning type-81 record in the inflated stream.
-    pub inflated_offset: u64,
+    pub(super) inflated_offset: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2492,7 +2490,9 @@ impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClas
 }
 
 /// Retain named attribute-class declarations from all Parasolid streams.
-pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttributeDefinition> {
+pub(super) fn parasolid_attribute_definitions(
+    streams: &[Stream],
+) -> Vec<ParasolidAttributeDefinition> {
     streams
         .iter()
         .enumerate()
@@ -2523,7 +2523,7 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
 }
 
 /// Decode every counted type-99 attribute field-name record.
-pub fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNamesRecord> {
+pub(super) fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNamesRecord> {
     let mut records = streams
         .iter()
         .enumerate()
@@ -2550,7 +2550,7 @@ pub fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNa
 }
 
 /// Resolve complete type-80 field-name lists through type-99 and character records.
-pub fn parasolid_attribute_field_names(
+pub(super) fn parasolid_attribute_field_names(
     definitions: &[ParasolidAttributeDefinition],
     field_names: &[ParasolidFieldNamesRecord],
     strings: &[ParasolidEntity54StringRecord],
@@ -2638,7 +2638,7 @@ pub fn parasolid_attribute_field_names(
 }
 
 /// Retain complete typed rolling-ball blend records from all Parasolid streams.
-pub(crate) fn parasolid_blend_surface_records(
+pub(super) fn parasolid_blend_surface_records(
     parsed: &ParsedStreams,
 ) -> Vec<ParasolidBlendSurfaceRecord> {
     per_parasolid_stream::<ParasolidBlendSurfaceRecord>(parsed)
@@ -2669,7 +2669,7 @@ impl ParasolidStreamRecords for ParasolidBlendSurfaceRecord {
 }
 
 /// Retain every non-null topology-to-attribute-list reference.
-pub(crate) fn parasolid_topology_attribute_list_references(
+pub(super) fn parasolid_topology_attribute_list_references(
     parsed: &ParsedStreams,
     entity_records: &[ParasolidEntity51Record],
 ) -> Vec<ParasolidTopologyAttributeListReference> {
@@ -2738,7 +2738,7 @@ pub(crate) fn parasolid_topology_attribute_list_references(
 }
 
 /// Decode every framed type-81 entity/attribute-list record.
-pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51Record> {
+pub(super) fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51Record> {
     let mut records = streams
         .iter()
         .enumerate()
@@ -2768,7 +2768,7 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
 }
 
 /// Decode value records from their retained deltas or attribute owners.
-pub(crate) fn parasolid_entity_value_records(
+pub(super) fn parasolid_entity_value_records(
     streams: &[Stream],
     deltas_records: &[ParasolidDeltasRecord],
 ) -> ParasolidEntityValueRecords {
@@ -2968,7 +2968,7 @@ pub(crate) fn parasolid_entity_value_records(
 }
 
 /// Join type-81 reference slots to unique same-stream numeric value records.
-pub fn parasolid_entity_51_numeric_uses(
+pub(super) fn parasolid_entity_51_numeric_uses(
     entities: &[ParasolidEntity51Record],
     integers: &[ParasolidEntity52IntegerRecord],
     doubles: &[ParasolidEntity53DoubleRecord],
@@ -3027,7 +3027,7 @@ pub fn parasolid_entity_51_numeric_uses(
 }
 
 /// Join type-81 reference slots to unique same-stream type-84 strings.
-pub fn parasolid_entity_51_string_uses(
+pub(super) fn parasolid_entity_51_string_uses(
     entities: &[ParasolidEntity51Record],
     strings: &[ParasolidEntity54StringRecord],
 ) -> Vec<ParasolidEntity51StringUse> {
@@ -3070,7 +3070,7 @@ pub fn parasolid_entity_51_string_uses(
 }
 
 /// Join type-81 reference slots to unique same-stream structured value records.
-pub fn parasolid_entity_51_structured_uses(
+pub(super) fn parasolid_entity_51_structured_uses(
     entities: &[ParasolidEntity51Record],
     vectors: &[ParasolidEntityVectorRecord],
     axes: &[ParasolidEntity57AxisRecord],
@@ -3153,7 +3153,7 @@ pub fn parasolid_entity_51_structured_uses(
 }
 
 /// Resolve topology-owned attribute instances through their type-80 definition.
-pub fn parasolid_topology_attribute_class_uses(
+pub(super) fn parasolid_topology_attribute_class_uses(
     topology_references: &[ParasolidTopologyAttributeListReference],
     entity_records: &[ParasolidEntity51Record],
     class_uses: &[ParasolidAttributeClassUse],
@@ -3248,7 +3248,7 @@ pub fn parasolid_topology_attribute_class_uses(
 }
 
 /// Resolve every type-81 attribute instance through its type-80 definition reference.
-pub fn parasolid_attribute_class_uses(
+pub(super) fn parasolid_attribute_class_uses(
     entities: &[ParasolidEntity51Record],
     definitions: &[ParasolidAttributeDefinition],
 ) -> Vec<ParasolidAttributeClassUse> {
@@ -3290,7 +3290,7 @@ pub fn parasolid_attribute_class_uses(
 }
 
 /// Assign uniquely resolved attribute values to declared type-80 fields.
-pub fn parasolid_attribute_field_uses(
+pub(super) fn parasolid_attribute_field_uses(
     class_uses: &[ParasolidAttributeClassUse],
     definitions: &[ParasolidAttributeDefinition],
     numeric_uses: &[ParasolidEntity51NumericUse],
@@ -3400,7 +3400,7 @@ pub fn parasolid_attribute_field_uses(
 }
 
 /// Whether a concrete topology-owned attribute field lacks its exact value relation.
-pub fn parasolid_topology_attribute_fields_have_untransferred_values(
+pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
     definitions: &[ParasolidAttributeDefinition],
     entities: &[ParasolidEntity51Record],
     field_uses: &[ParasolidAttributeFieldUse],

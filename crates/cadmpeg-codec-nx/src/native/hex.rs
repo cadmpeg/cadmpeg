@@ -60,7 +60,7 @@ impl From<Sha256Hex> for String {
 /// A saved-toggle identity encoded as 32 lowercase hexadecimal digits.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub(crate) struct ToggleId(String);
+pub(super) struct ToggleId(String);
 
 impl TryFrom<String> for ToggleId {
     type Error = &'static str;
