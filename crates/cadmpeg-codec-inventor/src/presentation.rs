@@ -900,11 +900,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn node_reference(&mut self, field: &'static str) -> Result<PmDcReference, CodecError> {
-        let value = self.u32(field)?;
-        Ok(PmDcReference {
-            index: value & 0x7fff_ffff,
-            qualified: value & 0x8000_0000 != 0,
-        })
+        crate::reader::pmdc_reference(&mut self.source, field)
     }
 
     fn reference_list(
@@ -1034,8 +1030,8 @@ mod tests {
     };
     use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
     use crate::record_identity::Located;
+    use crate::test_support::truncation::displayed_truncation;
     use cadmpeg_core::decode::{DecodeContext, View};
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
@@ -1432,73 +1428,73 @@ mod tests {
         }
     }
 
-    /// The diagnostic a truncated read produces, without an unwrap on the route.
-    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
-        match result {
-            Ok(value) => format!("the read succeeded with {value:?}"),
-            Err(error) => error.to_string(),
-        }
-    }
-
     #[test]
     fn truncated_presentation_reads_name_the_field() {
         let empty = &[];
         for (field, text) in [
             (
                 "graphics primary-color state",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty)).u8("graphics primary-color state"),
                 ),
             ),
             (
                 "graphics-face header id",
-                truncation(Cursor::new(View::over_retained(empty)).u16("graphics-face header id")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).u16("graphics-face header id"),
+                ),
             ),
             (
                 "graphics-face key",
-                truncation(Cursor::new(View::over_retained(empty)).u32("graphics-face key")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).u32("graphics-face key"),
+                ),
             ),
             (
                 "graphics-face bound",
-                truncation(Cursor::new(View::over_retained(empty)).f64("graphics-face bound")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).f64("graphics-face bound"),
+                ),
             ),
             (
                 "graphics primary-color component",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty)).f32("graphics primary-color component"),
                 ),
             ),
             (
                 "graphics-face legacy object padding",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty))
                         .take(4, "graphics-face legacy object padding"),
                 ),
             ),
             (
                 "default-style suffix padding",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty))
                         .zeroes(8, "default-style suffix padding"),
                 ),
             ),
             (
                 "default-style material reference",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty))
                         .reference("default-style material reference"),
                 ),
             ),
             (
                 "graphics-face styles reference",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty))
                         .node_reference("graphics-face styles reference"),
                 ),
             ),
             (
                 "rendering-style guid",
-                truncation(Cursor::new(View::over_retained(empty)).guid("rendering-style guid")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).guid("rendering-style guid"),
+                ),
             ),
         ] {
             assert_eq!(
@@ -1514,7 +1510,7 @@ mod tests {
         bytes.extend(31_u32.to_le_bytes());
         bytes.extend(32_u16.to_le_bytes());
         assert_eq!(
-            truncation(parse_graphics_primary_color_style(
+            displayed_truncation(parse_graphics_primary_color_style(
                 View::over_retained(&bytes),
                 26
             )),

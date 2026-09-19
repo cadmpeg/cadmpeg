@@ -904,6 +904,8 @@ impl<'a> Cursor<'a> {
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
+    use crate::test_support::truncation::located_truncation;
+
     use super::{
         has_property_set_header, parse_property_set_stream, Cursor, PropertySetStream,
         PropertyValue, BYTE_ORDER_LE,
@@ -964,19 +966,6 @@ mod tests {
         assert!(!parsed.sections[0].offsets_ordered);
     }
 
-    /// The truncation a read reports, as its variant, field and offset,
-    /// without an unwrap on the route.
-    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
-        match result {
-            Ok(value) => format!("the read succeeded with {value:?}"),
-            Err(CodecError::Truncated {
-                location,
-                operation,
-            }) => format!("Truncated {operation} at offset {}", location.offset),
-            Err(error) => error.to_string(),
-        }
-    }
-
     #[test]
     fn a_truncated_property_set_read_is_located_and_names_its_field() {
         let empty: &[u8] = &[];
@@ -984,23 +973,29 @@ mod tests {
         for (field, text) in [
             (
                 "byte order",
-                truncation(Cursor::new(View::over_retained(empty), scope).u16("byte order")),
+                located_truncation(
+                    Cursor::new(View::over_retained(empty), scope).u16("byte order"),
+                ),
             ),
             (
                 "property id",
-                truncation(Cursor::new(View::over_retained(empty), scope).u32("property id")),
+                located_truncation(
+                    Cursor::new(View::over_retained(empty), scope).u32("property id"),
+                ),
             ),
             (
                 "VT_I8",
-                truncation(Cursor::new(View::over_retained(empty), scope).i64("VT_I8")),
+                located_truncation(Cursor::new(View::over_retained(empty), scope).i64("VT_I8")),
             ),
             (
                 "CLSID",
-                truncation(Cursor::new(View::over_retained(empty), scope).array::<16>("CLSID")),
+                located_truncation(
+                    Cursor::new(View::over_retained(empty), scope).array::<16>("CLSID"),
+                ),
             ),
             (
                 "BLOB",
-                truncation(Cursor::new(View::over_retained(empty), scope).take(4, "BLOB")),
+                located_truncation(Cursor::new(View::over_retained(empty), scope).take(4, "BLOB")),
             ),
         ] {
             assert_eq!(text, format!("Truncated {field} at offset 0"));
@@ -1012,11 +1007,9 @@ mod tests {
         let arena = DecodeArena::new();
         let bytes = [0x41, 0x00];
         let text = match DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()) {
-            Ok((ctx, root)) => truncation(Cursor::new(root, "OLE typed property").unicode_string(
-                &ctx,
-                4,
-                "Unicode string",
-            )),
+            Ok((ctx, root)) => located_truncation(
+                Cursor::new(root, "OLE typed property").unicode_string(&ctx, 4, "Unicode string"),
+            ),
             Err(error) => error.to_string(),
         };
         assert_eq!(text, "Truncated Unicode string at offset 0");
@@ -1040,7 +1033,10 @@ mod tests {
         let mut bytes = one_section_header(48);
         bytes.extend_from_slice(&[0, 0]);
         with_parse(&bytes, |parsed| {
-            assert_eq!(truncation(parsed), "Truncated section size at offset 48");
+            assert_eq!(
+                located_truncation(parsed),
+                "Truncated section size at offset 48"
+            );
         });
     }
 
@@ -1052,7 +1048,10 @@ mod tests {
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         bytes.extend_from_slice(&808_u32.to_le_bytes());
         with_parse(&bytes, |parsed| {
-            assert_eq!(truncation(parsed), "Truncated property id at offset 64");
+            assert_eq!(
+                located_truncation(parsed),
+                "Truncated property id at offset 64"
+            );
         });
     }
 

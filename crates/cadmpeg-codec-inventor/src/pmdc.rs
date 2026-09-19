@@ -338,11 +338,7 @@ impl<'a> Cursor<'a> {
     }
 
     pub(crate) fn reference(&mut self, field: &'static str) -> Result<PmDcReference, CodecError> {
-        let value = self.u32(field)?;
-        Ok(PmDcReference {
-            index: value & 0x7fff_ffff,
-            qualified: value & 0x8000_0000 != 0,
-        })
+        crate::reader::pmdc_reference(&mut self.source, field)
     }
 
     pub(crate) fn finish(&self, record: &str) -> Result<(), CodecError> {
@@ -524,17 +520,9 @@ impl<V> TryFrom<PmDcPairedMapWire<V>> for PmDcPairedMap<V> {
 #[cfg(test)]
 mod tests {
     use super::{content_header, reference_list, Cursor};
+    use crate::test_support::truncation::displayed_truncation;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_core::decode::{DecodeContext, View};
-    use cadmpeg_core::CodecError;
-
-    /// The diagnostic a truncated read produces, without an unwrap on the route.
-    fn truncation<T: std::fmt::Debug>(result: Result<T, CodecError>) -> String {
-        match result {
-            Ok(value) => format!("the read succeeded with {value:?}"),
-            Err(error) => error.to_string(),
-        }
-    }
 
     #[test]
     fn truncated_scalar_reads_name_the_field() {
@@ -542,33 +530,39 @@ mod tests {
         for (field, text) in [
             (
                 "unit visibility",
-                truncation(Cursor::new(View::over_retained(empty)).u8("unit visibility")),
+                displayed_truncation(Cursor::new(View::over_retained(empty)).u8("unit visibility")),
             ),
             (
                 "parameter tolerance",
-                truncation(Cursor::new(View::over_retained(empty)).u16("parameter tolerance")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).u16("parameter tolerance"),
+                ),
             ),
             (
                 "parameter terminal value",
-                truncation(Cursor::new(View::over_retained(empty)).i16("parameter terminal value")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).i16("parameter terminal value"),
+                ),
             ),
             (
                 "sketch state",
-                truncation(Cursor::new(View::over_retained(empty)).u32("sketch state")),
+                displayed_truncation(Cursor::new(View::over_retained(empty)).u32("sketch state")),
             ),
             (
                 "edge-item index reference value",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty)).i32("edge-item index reference value"),
                 ),
             ),
             (
                 "transform prefix",
-                truncation(Cursor::new(View::over_retained(empty)).peek_u32("transform prefix")),
+                displayed_truncation(
+                    Cursor::new(View::over_retained(empty)).peek_u32("transform prefix"),
+                ),
             ),
             (
                 "content header next reference",
-                truncation(
+                displayed_truncation(
                     Cursor::new(View::over_retained(empty))
                         .reference("content header next reference"),
                 ),
@@ -588,7 +582,7 @@ mod tests {
         bytes.extend_from_slice(&9_u16.to_le_bytes());
         let mut cursor = Cursor::new(View::over_retained(&bytes));
         assert_eq!(
-            truncation(content_header(&mut cursor)),
+            displayed_truncation(content_header(&mut cursor)),
             "truncated input during content header next reference at space 0 offset 6"
         );
     }
@@ -602,7 +596,7 @@ mod tests {
         let text = match DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()) {
             Ok((ctx, root)) => {
                 let mut cursor = Cursor::new(root);
-                truncation(reference_list(&ctx, &mut cursor, 8, "sketch entity array"))
+                displayed_truncation(reference_list(&ctx, &mut cursor, 8, "sketch entity array"))
             }
             Err(error) => error.to_string(),
         };
