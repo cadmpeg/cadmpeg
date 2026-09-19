@@ -894,7 +894,13 @@ fn scan_with_point_framing(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        parse_bridge, parse_point, parse_vertex_use, patch_point, patch_point_values, scan,
+        scan_deltas_with_curve_attrs_excluding, scan_with_curve_attrs_excluding, EdgeReferences,
+        MAGIC,
+    };
+    use cadmpeg_ir::topology::Sense;
+    use std::collections::HashSet;
 
     #[test]
     fn edge_candidate_equivalence_preserves_null_cells_across_layouts() {

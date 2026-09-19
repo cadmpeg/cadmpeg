@@ -675,8 +675,10 @@ pub(crate) fn resolve_body_selection(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::surface_selection_face_bindings;
     use crate::records::FeatureInputComponentPathEntry;
+    use crate::records::FeatureInputSurfaceSelection;
+    use std::collections::HashMap;
 
     fn component(feature_source_id: u32, local_face_id: u32) -> FeatureInputComponentPathEntry {
         let mut type_signature = [0; 12];

@@ -181,7 +181,12 @@ mod tests {
     use cadmpeg_ir::geometry::NurbsCurve;
     use cadmpeg_ir::math::Vector3;
 
-    use super::*;
+    use super::super::index::CarrierIndex;
+    use super::super::CurveCarrier;
+    use super::{nurbs_point, scan, TAG};
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::math::Point3;
 
     fn wrapper(end_y: f64, has_ff: bool) -> Vec<u8> {
         let mut bytes = vec![0x00, TAG];

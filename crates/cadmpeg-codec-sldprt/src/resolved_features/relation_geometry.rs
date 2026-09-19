@@ -2849,7 +2849,30 @@ pub(super) fn relation_parameter_by_display_name<'a>(
 
 #[cfg(test)]
 mod relation_geometry_tests {
-    use super::*;
+    use super::super::relation_loci::same_dimension_length;
+    use super::{
+        project_relation_bindings, project_relation_solved_line_geometry,
+        project_relation_solved_point_geometry, project_spatial_relation_bindings,
+        spatial_point_line_distance, unique_dynamic_line_pair,
+    };
+    use crate::records::operand_tag::NativeOperandTag;
+    use crate::records::FeatureInputLane;
+    use crate::records::FeatureInputOperand;
+    use crate::records::FeatureInputOperandKind;
+    use crate::records::FeatureInputRelationFamily;
+    use crate::records::FeatureInputRelationInstance;
+    use crate::records::FeatureInputScalar;
+    use crate::records::FeatureInputScalarRole;
+    use crate::records::SketchInputEntity;
+    use crate::records::SketchInputKind;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+    use cadmpeg_ir::sketches::SketchEntity;
+    use cadmpeg_ir::sketches::SketchEntityId;
+    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    use std::collections::HashMap;
 
     const TEST_LINE_GEOMETRY_QUANTUM: f64 = 1.0 / 100_000_000.0;
 

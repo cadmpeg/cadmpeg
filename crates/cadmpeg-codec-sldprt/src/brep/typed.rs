@@ -901,7 +901,14 @@ pub(crate) fn scan(bytes: &[u8]) -> Facts {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        read_ref, region_chain, scan, BodyNode, FaceNode, Facts, RegionNode, ShellNode, BODY_TAG,
+        FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
+    };
+    use cadmpeg_ir::topology::BodyKind;
+    use cadmpeg_ir::topology::Sense;
+    use std::collections::HashMap;
+    use std::collections::HashSet;
 
     fn push_ref(bytes: &mut Vec<u8>, value: u32) {
         if value <= 0x7ffe {

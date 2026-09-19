@@ -25,14 +25,6 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 
-#[cfg(test)]
-use super::selections::{coordinate_marker_local_links, marker_local_links};
-#[cfg(test)]
-use super::write_generate::{
-    append_coordinate_marker, append_coordinate_marker_link, append_reference_marker,
-    generated_marker_relations, GeneratedMarkerRelation,
-};
-
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
 /// Bitwise comparison against the machine-local document baseline; see
@@ -1552,7 +1544,16 @@ mod source_less_lane_tests {
         SketchLocus,
     };
 
-    use super::*;
+    use super::super::selections::coordinate_marker_local_links;
+    use super::super::selections::marker_local_links;
+    use super::super::write_generate::append_coordinate_marker;
+    use super::super::write_generate::append_coordinate_marker_link;
+    use super::super::write_generate::append_generated_sketch_markers;
+    use super::super::write_generate::append_reference_marker;
+    use super::super::write_generate::generated_marker_relations;
+    use super::super::write_generate::GeneratedMarkerRelation;
+    use super::{assemble_source_less_lanes, validate_source_less_constraints};
+    use cadmpeg_ir::sketches::SketchCoordinateAxis;
 
     fn generated_sketch() -> Sketch {
         Sketch {

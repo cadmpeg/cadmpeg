@@ -482,7 +482,11 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::transform_curve;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::transform::Transform;
 
     #[test]
     fn transform_curve_rejects_non_explicit_geometry() {

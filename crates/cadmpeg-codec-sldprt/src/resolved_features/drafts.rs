@@ -16,10 +16,6 @@ use crate::layout::draft_aligned_direction_frame as aligned_dir;
 use crate::layout::draft_compact_selection_prefix as compact_sel;
 use crate::layout::draft_extended_direction_frame as extended_dir;
 use crate::layout::draft_plane_reference_prefix as draft_plane;
-#[cfg(test)]
-use crate::records::FeatureSource;
-#[cfg(test)]
-use crate::records::ObjectId;
 
 const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1.0e-12;
 const EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9: f64 = 1.0e-9;
@@ -366,9 +362,18 @@ pub(super) fn draft_operand_candidates(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
+    use super::{
+        compact_draft_selection_at, draft_operands, draft_plane_reference_at,
+        unique_draft_direction, DraftAnchor,
+    };
+    use crate::layout::draft_extended_direction_frame as extended_dir;
+    use crate::records::FeatureInputLane;
+    use crate::records::FeatureSource;
+    use crate::records::ObjectId;
     use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputName};
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::math::Vector3;
     use std::collections::BTreeMap;
 
     fn component(instance: u16, source: u32, identity: u32, local_id: u32) -> Vec<u8> {
