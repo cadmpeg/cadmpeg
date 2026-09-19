@@ -276,7 +276,7 @@ fn generated_parameterized_revision_g2_blend_round_trips() {
     else {
         panic!("expected a revision g2 blend construction")
     };
-    assert_parameterized_tail(&construction.cache);
+    assert_parameterized_tail(construction.cache());
 }
 
 #[test]

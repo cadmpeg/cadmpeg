@@ -474,7 +474,7 @@ fn emit_carrier_surface(
                 emit_revision_compound_loft_surface(out, i, construction, format)?
             }
             DecodedProceduralSurfaceDefinition::RevisionG2Blend(construction) => {
-                emit_revision_g2_blend_surface(out, i, construction, format)
+                emit_revision_g2_blend_surface(out, i, construction, format)?
             }
             DecodedProceduralSurfaceDefinition::VertexBlend(construction) => {
                 emit_vertex_blend_surface(out, i, *construction, format)?
@@ -2600,7 +2600,7 @@ fn emit_revision_g2_blend_surface(
     i: i64,
     construction: Box<EmbeddedRevisionG2Blend>,
     format: IdFormat,
-) -> ProceduralSurfaceDefinition {
+) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let [first_side, second_side] = *construction.sides;
     let sides = [
         {
@@ -2623,27 +2623,32 @@ fn emit_revision_g2_blend_surface(
         geometry: construction.center,
         source_object: None,
     });
-    ProceduralSurfaceDefinition::RevisionG2Blend {
-        construction: Box::new(cadmpeg_ir::geometry::RevisionG2BlendConstruction {
-            revision: construction.revision,
-            leading_parameters: construction.leading_parameters,
-            sides: Box::new(sides),
-            center: center_id,
-            center_range: construction.center_range,
-            radii: construction.radii,
-            radius_selector: construction.radius_selector,
-            u_range: construction.u_range,
-            v_range: construction.v_range,
-            shape_prefix: construction.shape_prefix,
-            shape_parameter: construction.shape_parameter,
-            shape_length: construction.shape_length,
-            shape_tail: construction.shape_tail,
-            cache: construction.cache,
-            discontinuities: construction.discontinuities,
-            tail_flag: construction.tail_flag,
-            tail_extensions: construction.tail_extensions,
-        }),
-    }
+    Ok(ProceduralSurfaceDefinition::RevisionG2Blend {
+        construction: Box::new(
+            cadmpeg_ir::geometry::RevisionG2BlendConstruction::admit(
+                cadmpeg_ir::geometry::RevisionG2BlendConstructionWire {
+                    revision: construction.revision,
+                    leading_parameters: construction.leading_parameters,
+                    sides: Box::new(sides),
+                    center: center_id,
+                    center_range: construction.center_range,
+                    radii: construction.radii,
+                    radius_selector: construction.radius_selector,
+                    u_range: construction.u_range,
+                    v_range: construction.v_range,
+                    shape_prefix: construction.shape_prefix,
+                    shape_parameter: construction.shape_parameter,
+                    shape_length: construction.shape_length,
+                    shape_tail: construction.shape_tail,
+                    cache: construction.cache,
+                    discontinuities: construction.discontinuities,
+                    tail_flag: construction.tail_flag,
+                    tail_extensions: construction.tail_extensions,
+                },
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        ),
+    })
 }
 
 fn emit_vertex_blend_surface(

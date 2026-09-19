@@ -824,7 +824,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
-                for side in construction.sides.iter() {
+                for side in construction.sides() {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.surface.as_str()).is_none() {
                             ref_error(
@@ -846,12 +846,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         }
                     }
                 }
-                if ids.curves(construction.center.as_str()).is_none() {
+                if ids.curves(construction.center().as_str()).is_none() {
                     ref_error(
                         findings,
                         procedural.id.as_str(),
                         "curve",
-                        construction.center.as_str(),
+                        construction.center().as_str(),
                     );
                 }
             }
