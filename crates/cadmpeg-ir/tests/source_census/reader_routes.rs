@@ -1270,10 +1270,8 @@ pub(super) fn path_is_named(path: &syn::Path, name: &str) -> bool {
     })
 }
 
-mod classify;
+pub(crate) mod classify;
 mod resolve;
 mod scan;
 #[cfg(test)]
 mod tests;
-
-pub(crate) use classify::assert_hand_written_reader_routes;
