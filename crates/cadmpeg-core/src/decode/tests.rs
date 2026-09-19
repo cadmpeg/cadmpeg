@@ -6,7 +6,11 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use crate::CodecError;
 
-use super::*;
+use super::{
+    refuse_local_limit, resolve_address, AddressStepKind, ByteRange, DecodeArena, DecodeContext,
+    DecodePolicy, ExpandSpec, ResourceDimension, ResourceLimits, SourceLocation, SpaceDerivation,
+    SpaceDescriptor, SpaceId, WorkBudget,
+};
 
 fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
     let mut policy = DecodePolicy::default();
