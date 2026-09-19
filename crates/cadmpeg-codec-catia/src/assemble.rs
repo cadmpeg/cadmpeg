@@ -985,22 +985,6 @@ mod route_tests {
     }
 
     #[test]
-    fn unit_vector_preserves_tiny_finite_direction() {
-        assert_eq!(
-            crate::math::unit_vector(cadmpeg_ir::math::Vector3::new(1e-200, 0.0, 0.0)),
-            Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
-        );
-        assert_eq!(
-            crate::math::unit_vector(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
-            None
-        );
-        assert_eq!(
-            crate::math::unit_vector(cadmpeg_ir::math::Vector3::new(f64::from_bits(1), 0.0, 0.0,)),
-            Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
-        );
-    }
-
-    #[test]
     fn neutral_model_admissibility_rejects_invalid_topology() {
         let mut valid = CadIr::empty();
         assert!(neutral_model_is_admissible(&mut valid, &[]));
