@@ -3,10 +3,9 @@
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
     clippy::trivially_copy_pass_by_ref,
-    clippy::uninlined_format_args,
-    clippy::wildcard_imports
+    clippy::uninlined_format_args
 )]
-use super::*;
+use super::exact_surface_trim_operation;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;

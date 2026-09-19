@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{
+    analytic_segment_intersections, angle_strictly_inside_arc,
+    arrangement_region_containing_points, closed_sketch_profiles, point_on_sketch_entity,
+    region_containing_points, sketch_arrangement_faces, ProfileBoundary, ProfileBoundarySegment,
+    MAX_ARRANGEMENT_WALK_WORK,
+};
 use crate::design::dimensions::point_lies_on_sketch_geometry;
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::SketchProfileRegion;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};

@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![allow(clippy::cloned_ref_to_slice_refs)]
-use super::*;
+use super::{
+    project_sketch_design, project_spatial_sketch_constraints, project_spatial_sketch_design,
+    sketch_text_horizontal_alignment, sketch_text_vertical_alignment,
+};
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_geometry};
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
+use crate::ids::neutral_sketch_curve_id;
+use crate::records::sketch_geometry::{SketchCurveGeometry, SketchSurface};
+use crate::records::sketch_relations::SketchConstraintKind;
 use crate::records::{
     sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchText},
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
