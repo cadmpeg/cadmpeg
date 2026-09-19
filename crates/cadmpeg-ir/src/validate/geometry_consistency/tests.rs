@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    check_procedural_support_consistency, edge_pcurve_parameter_ranges, pcurve_parameter_domain,
+    pcurve_parameter_ranges, pcurve_parameter_seeds_on_surface, SurfacePcurveContext,
+};
 use crate::document::CadIr;
 use crate::examples::unit_cube;
 use crate::geometry::{
@@ -12,7 +15,7 @@ use crate::geometry::{
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
-use crate::report::Check;
+use crate::report::{Check, Severity};
 use crate::topology::{Coedge, Edge, Face, Loop, PcurveUse, Sense, Vertex};
 use crate::validate::validate_neutral;
 

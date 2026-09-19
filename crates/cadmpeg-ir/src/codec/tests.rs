@@ -11,7 +11,13 @@ use crate::report::{LossKind, LossNote, LossTaxonomy};
 use crate::source_fidelity::SourceFidelity;
 use crate::CadIr;
 
-use super::*;
+use super::{
+    Codec, CodecBackend, Confidence, DecodeBody, DecodeFailure, DecodeOptions, DecodeResult,
+    Decoded, FormatId,
+};
+use crate::ContainerSummary;
+use cadmpeg_core::decode::{DecodeContext, DecodeMode, InspectOptions, View};
+use cadmpeg_core::CodecError;
 
 fn decoded(ir: CadIr) -> Decoded {
     Decoded {

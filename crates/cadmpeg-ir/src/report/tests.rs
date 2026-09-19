@@ -7,7 +7,11 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers};
 
 use crate::SourceProvenance;
 
-use super::*;
+use super::{
+    CensusBasis, DecodeReport, DecodeTransfer, EntityCensus, ExportReport, LossCategory, LossKind,
+    LossNamespace, LossNamespaceError, LossNote, LossTaxonomy, NamespacedLossKind, Severity,
+    StrictConsequence, TransferLedger, SHARED_LOSS_NAMESPACE,
+};
 
 #[test]
 fn loss_code_serializes_as_namespaced_object() {

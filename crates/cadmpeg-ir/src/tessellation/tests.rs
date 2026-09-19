@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    ChannelAddressing, Strip, Strips, Tessellation, TessellationChannel, TessellationError,
+    TessellationId, TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup,
+    TessellationWire,
+};
+use crate::math::{Point3, Vector3};
 
 fn square() -> Vec<Point3> {
     vec![
